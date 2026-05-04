@@ -2,11 +2,11 @@
 
 import { useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
 import { flushSync, createPortal } from "react-dom";
-import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
 import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId, isPollOpen, THREAD_QUERY_PARAM } from "@/lib/threadUtils";
+import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId } from "@/lib/threadUtils";
 import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting, type PreparedNonYesNoEntry } from "@/lib/useThreadVoting";
@@ -51,6 +51,19 @@ import type { Thread } from "@/lib/threadUtils";
 // doesn't re-run its effect on every parent render.
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
+
+// Default placeholder height for not-yet-measured groups in the virtualized
+// thread list. Tuned to typical compact yes_no card height; the ResizeObserver
+// replaces this with the measured value as soon as a group has been mounted
+// once. Subsequent unmounts use the measured height, so unmount→remount cycles
+// don't shift the document layout.
+const ESTIMATED_GROUP_HEIGHT = 110;
+
+// Group key for `groupedThreadQuestions` — questions of the same poll share
+// poll_id; legacy (non-poll) questions get a unique `solo-` prefix so they
+// don't collide. Used in the .map() loop's key + virtualization mountedKeys.
+const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
+  q.poll_id ?? `solo-${q.id}`;
 
 const SCROLL_HELPER_BUTTON_CLASS =
   'fixed left-1/2 -translate-x-1/2 z-40 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
@@ -273,6 +286,52 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // + confirmation modal flow the per-question Submit used to invoke.
   const subQuestionBallotRefs = useRef<Map<string, QuestionBallotHandle>>(new Map());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
+
+  // === Windowed virtualization ===
+  // Only mount cards within ~2 viewport heights of the visible region. Cards
+  // outside collapse to a measured-height placeholder div. Bounds DOM weight
+  // on long threads; placeholders take the same height the card occupied so
+  // mount/unmount cycles don't shift the document layout.
+  const groupHeightById = useRef<Map<string, number>>(new Map());
+  const groupSizeObserverRef = useRef<ResizeObserver | null>(null);
+  // Shared ref-callback wiring for both placeholder and real card divs:
+  // both register in cardRefs (so the existing scroll-helper logic that
+  // iterates cardRefs works regardless of mount state) and observe via the
+  // visibleQuestionIds + groupSize observers.
+  const attachCardEl = (el: HTMLElement, anchorId: string, groupKey: string) => {
+    el.dataset.questionId = anchorId;
+    el.dataset.groupKey = groupKey;
+    cardRefs.current.set(anchorId, el as HTMLDivElement);
+    intersectionObserverRef.current?.observe(el);
+    groupSizeObserverRef.current?.observe(el);
+  };
+  const detachCardEl = (anchorId: string) => {
+    const prev = cardRefs.current.get(anchorId);
+    if (prev) {
+      intersectionObserverRef.current?.unobserve(prev);
+      groupSizeObserverRef.current?.unobserve(prev);
+    }
+    cardRefs.current.delete(anchorId);
+  };
+  // Both anchor modes (card-anchor and bottom-pin) keep their pin active
+  // until the user explicitly interacts (wheel, touch, keyboard). The earlier
+  // delta-based approach (track prev offsetTop, scrollBy diff) couldn't
+  // distinguish a real user scroll from the browser's silent scrollY clamp
+  // when the doc shrinks; gating on real input events sidesteps that.
+  const userInteractedRef = useRef(false);
+  const [mountedGroupKeys, setMountedGroupKeys] = useState<Set<string>>(() => {
+    if (!initialThread) return new Set();
+    // Seed with the URL-anchored group only — keeps initial paint cheap
+    // (one card rendered) even for very long threads. The progressive-fill
+    // effect below mounts the rest in idle-time batches around the anchor.
+    const initial = new Set<string>();
+    const target = initialExpandedQuestionId
+      ? initialThread.questions.find(p => p.id === initialExpandedQuestionId)
+      : null;
+    const seed = target ?? initialThread.questions[initialThread.questions.length - 1] ?? null;
+    if (seed) initial.add(groupKeyFor(seed));
+    return initial;
+  });
 
   // Long press state
   const [modalQuestion, setModalQuestion] = useState<Question | null>(null);
@@ -677,7 +736,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // ===================================================================
   // Thread-page scroll strategy (single source of truth — keep cohesive)
   // ===================================================================
-  // Three scroll surfaces all serve the same goal: keep the viewer's
+  // Four scroll surfaces all serve the same goal: keep the viewer's
   // attention on whichever poll most likely wants their input next. The
   // "awaiting set" = open polls the viewer has neither voted on nor
   // abstained from.
@@ -694,6 +753,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   //    and a cleanup that reset the ref would re-fire on every
   //    dep-change (e.g. async accessible-polls refresh) and re-scroll
   //    against a now-taller page.
+  //
+  // 1b. ANCHOR PIN (`applyScrollAdjustmentRef`, called from layout effect
+  //    AND ResizeObserver): until the user first interacts (wheel,
+  //    touchstart, keydown), each layout settling re-applies the path-1
+  //    target. Without this, cards above the URL anchor mounting from
+  //    placeholder→card with a different actual height would slide the
+  //    anchor away from the top, and async content (draft form, fonts)
+  //    would shift the bottom-pin'd page off the bottom. Gating on user
+  //    interaction (rather than scrollY deltas) avoids fighting the
+  //    browser's silent scrollY clamp when the doc shrinks — that clamp
+  //    fires a scroll event indistinguishable from a user gesture, but
+  //    no wheel/touch/keydown happens.
   //
   // 2. TAP-EXPAND (`useEffect` further below, fires after initial layout
   //    has settled): smoothly scrolls (rAF, ease-out cubic, 300ms —
@@ -941,7 +1012,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     const groups: Group[] = [];
     const seen = new Set<string>();
     for (const question of threadQuestions) {
-      const groupKey = question.poll_id ?? `solo-${question.id}`;
+      const groupKey = groupKeyFor(question);
       if (seen.has(groupKey)) continue;
       seen.add(groupKey);
       const subQuestions = question.poll_id
@@ -962,6 +1033,209 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     }
     return groups;
   }, [threadQuestions, pollWrapperMap]);
+
+  // === Virtualization helpers (anchor + observer wiring) ===
+  // The URL-targeted group is the layout-shift compensation anchor + the
+  // initial mount seed. When the URL signals "no expand" (suppressExpand →
+  // null), fall back to the last group so the document stays pinned to the
+  // bottom while cards above mount.
+  const anchorGroupKey = useMemo(() => {
+    if (groupedThreadQuestions.length === 0) return null;
+    if (initialExpandedQuestionId) {
+      const found = groupedThreadQuestions.find(g =>
+        g.subQuestions.some(p => p.id === initialExpandedQuestionId)
+      );
+      if (found) return found.key;
+    }
+    return groupedThreadQuestions[groupedThreadQuestions.length - 1].key;
+  }, [groupedThreadQuestions, initialExpandedQuestionId]);
+
+  // Drop mountedGroupKeys entries for groups that no longer exist (forget,
+  // error reload). Always include the anchor. Progressive fill below adds
+  // the rest of the keys.
+  useEffect(() => {
+    if (groupedThreadQuestions.length === 0) return;
+    const validKeys = new Set(groupedThreadQuestions.map(g => g.key));
+    setMountedGroupKeys(prev => {
+      const next = new Set<string>();
+      for (const k of prev) if (validKeys.has(k)) next.add(k);
+      if (anchorGroupKey) next.add(anchorGroupKey);
+      if (next.size === prev.size) {
+        let same = true;
+        for (const k of next) if (!prev.has(k)) { same = false; break; }
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, [groupedThreadQuestions, anchorGroupKey]);
+
+  // Progressive fill: after first paint, mount remaining groups in idle-time
+  // batches, prioritizing the cards closest to the anchor so the user sees
+  // surrounding content fill in first. Batches of N groups per idle tick keep
+  // each setState's re-render bounded; once all are mounted, no more setState
+  // fires, so subsequent scroll is steady. For very long threads this still
+  // loads everything (memory grows linearly with thread size) — a real
+  // bounded-memory window would need each card extracted into a
+  // React.memo'd component (TODO when threads hit ~hundreds of polls;
+  // see CLAUDE.md "Thread-Page Layout Stability"). The progressive fill
+  // matches the "polls get loaded in around it" UX from the spec.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (groupedThreadQuestions.length === 0) return;
+    if (mountedGroupKeys.size >= groupedThreadQuestions.length) return;
+    const anchorIdx = anchorGroupKey
+      ? groupedThreadQuestions.findIndex(g => g.key === anchorGroupKey)
+      : 0;
+    // Build a queue ordered by distance from anchor.
+    const queue: string[] = [];
+    const len = groupedThreadQuestions.length;
+    for (let d = 1; queue.length < len; d++) {
+      const before = anchorIdx - d;
+      const after = anchorIdx + d;
+      if (after < len) queue.push(groupedThreadQuestions[after].key);
+      if (before >= 0) queue.push(groupedThreadQuestions[before].key);
+      if (before < 0 && after >= len) break;
+    }
+    const BATCH = 4;
+    let cancelled = false;
+    let cursor = 0;
+    const ric: ((cb: () => void) => number) =
+      (window as any).requestIdleCallback?.bind(window)
+      ?? ((cb: () => void) => window.setTimeout(cb, 16));
+    const tick = () => {
+      if (cancelled) return;
+      const batch = queue.slice(cursor, cursor + BATCH).filter(k => !mountedGroupKeys.has(k));
+      cursor += BATCH;
+      if (batch.length > 0) {
+        setMountedGroupKeys(prev => {
+          const next = new Set(prev);
+          for (const k of batch) next.add(k);
+          return next;
+        });
+      }
+      if (cursor < queue.length) ric(tick);
+    };
+    const handle = ric(tick);
+    return () => {
+      cancelled = true;
+      if ((window as any).cancelIdleCallback) (window as any).cancelIdleCallback(handle);
+    };
+    // We deliberately omit mountedGroupKeys from deps so this effect runs
+    // once per groupedThreadQuestions change rather than on each batch
+    // setState; the cursor + filter handle resumption.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupedThreadQuestions, anchorGroupKey]);
+
+  // ResizeObserver: keep groupHeightById in sync with each rendered group's
+  // actual height (mounted card OR placeholder). Placeholders use these
+  // measurements so unmounting a card doesn't shift the document.
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      let layoutDirty = false;
+      for (const entry of entries) {
+        const el = entry.target as HTMLElement;
+        if (el === document.documentElement) {
+          // The doc itself resized — usually means content below the cards
+          // (draft poll portal filling in, async-loaded images/fonts) just
+          // landed. Trigger pin recheck regardless of card-height changes.
+          layoutDirty = true;
+          continue;
+        }
+        const key = el.dataset.groupKey;
+        if (!key) continue;
+        // Use borderBoxSize to avoid the forced layout that el.offsetHeight
+        // triggers per entry — during iOS URL-bar transitions every observed
+        // card fires at once, and 26 forced layouts back-to-back stutters
+        // the scroll. Round to 1px so sub-pixel jitter doesn't churn.
+        const blockSize = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+        const h = Math.round(blockSize);
+        if (h <= 0) continue;
+        if (groupHeightById.current.get(key) === h) continue;
+        groupHeightById.current.set(key, h);
+        layoutDirty = true;
+      }
+      // Re-apply scroll adjustment on layout-only changes (async content
+      // filling cards, draft form mounting, fonts/images settling). Without
+      // this, neither bottom-pin nor card-anchor compensation re-fires when
+      // doc size changes outside React's render cycle.
+      if (layoutDirty) {
+        applyScrollAdjustmentRef.current();
+      }
+    });
+    groupSizeObserverRef.current = ro;
+    cardRefs.current.forEach(el => {
+      if (el.dataset.groupKey) ro.observe(el);
+    });
+    // Also observe the document element so post-card growth (the draft poll
+    // portal filling in, async-mounted images, fonts loading) triggers
+    // bottom-pin re-application even though those don't go through cards.
+    const docEl = document.documentElement;
+    if (docEl) ro.observe(docEl);
+    return () => {
+      ro.disconnect();
+      groupSizeObserverRef.current = null;
+    };
+  }, []);
+
+  // ===================================================================
+  // Layout-shift compensation + bottom-pin. One unified function called
+  // from both useLayoutEffect (every render) and the ResizeObserver (every
+  // layout change, including async growth that doesn't trigger a render).
+  //
+  // - Card-anchor mode (initialExpandedQuestionId set): track the URL
+  //   anchor's offsetTop. When it changes — e.g. cards above mount with
+  //   H_actual ≠ H_estimate — scrollBy the delta so the anchor stays at
+  //   the same viewport position. User scrolls between calls aren't
+  //   disturbed because we only react to offsetTop deltas, not scrollY.
+  //
+  // - Bottom-pin mode (initialExpandedQuestionId null, suppressExpand):
+  //   as the doc grows, keep scrollY at max so the user lands on the
+  //   draft form. The pin disables once the user scrolls >50px above
+  //   bottom.
+  // ===================================================================
+  const applyScrollAdjustmentRef = useRef<() => void>(() => {});
+  applyScrollAdjustmentRef.current = () => {
+    if (typeof window === 'undefined' || !thread) return;
+    if (userInteractedRef.current) return;
+    if (initialExpandedQuestionId === null) {
+      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      if (Math.abs(window.scrollY - max) > 0.5) {
+        window.scrollTo(0, max);
+      }
+      return;
+    }
+    if (headerHeight === 0) return;
+    const card = cardRefs.current.get(initialExpandedQuestionId);
+    if (!card || !card.isConnected) return;
+    const desiredScrollY = card.offsetTop - headerHeight;
+    if (Math.abs(window.scrollY - desiredScrollY) > 0.5) {
+      window.scrollTo(0, Math.max(0, desiredScrollY));
+    }
+  };
+  useLayoutEffect(() => {
+    applyScrollAdjustmentRef.current();
+  });
+
+  // Disable both pins on first user interaction. We listen to wheel /
+  // touchstart / keydown rather than scroll because programmatic scrolls
+  // (our own scrollTo, browser clamp on doc shrink) also fire scroll events
+  // and would falsely disable the pin during initial layout settling.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const disable = () => { userInteractedRef.current = true; };
+    // pointerdown covers mouse + touch + pen on every platform (including
+    // iOS where touchstart sometimes doesn't bubble during scroll-engaged
+    // gestures). Keep wheel + keydown for trackpads and keyboard scrolls.
+    window.addEventListener('pointerdown', disable, { passive: true, capture: true });
+    window.addEventListener('wheel', disable, { passive: true, capture: true });
+    window.addEventListener('keydown', disable, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener('pointerdown', disable, { capture: true } as any);
+      window.removeEventListener('wheel', disable, { capture: true } as any);
+      window.removeEventListener('keydown', disable, { capture: true } as any);
+    };
+  }, []);
 
   // Refetch on vote-change events: when any question's votes change, the
   // wrapper's voter_names may have shifted. Refresh affected poll
@@ -1164,6 +1438,25 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       {/* paddingTop reserves space for the fixed header above. */}
       <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
         {groupedThreadQuestions.map((group) => {
+            // Virtualized window: groups outside ±2 viewport heights of the
+            // visible region render as a measured-height placeholder div. The
+            // anchor (URL-targeted card or last group when suppressExpand) is
+            // always in mountedGroupKeys so its compact-form measurements feed
+            // the layout-shift compensation effect from the very first paint.
+            if (!mountedGroupKeys.has(group.key)) {
+              const measured = groupHeightById.current.get(group.key);
+              const placeholderHeight = measured ?? ESTIMATED_GROUP_HEIGHT;
+              const anchorId = group.anchor.id;
+              return (
+                <div
+                  key={`placeholder-${group.key}`}
+                  ref={(el) => { el ? attachCardEl(el, anchorId, group.key) : detachCardEl(anchorId); }}
+                  className="mr-1.5 mb-3"
+                  style={{ height: placeholderHeight }}
+                  aria-hidden="true"
+                />
+              );
+            }
             const question = group.anchor;
             const isMultiGroup = group.subQuestions.length > 1;
             const wrapper = group.poll;
@@ -1364,17 +1657,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             return (
               <div
                 key={question.id}
-                ref={(el) => {
-                  if (el) {
-                    el.dataset.questionId = question.id;
-                    cardRefs.current.set(question.id, el);
-                    intersectionObserverRef.current?.observe(el);
-                  } else {
-                    const prev = cardRefs.current.get(question.id);
-                    if (prev) intersectionObserverRef.current?.unobserve(prev);
-                    cardRefs.current.delete(question.id);
-                  }
-                }}
+                ref={(el) => { el ? attachCardEl(el, question.id, group.key) : detachCardEl(question.id); }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
                 {/* mt-[4px] sits closer to cap-to-baseline centering (5px)
@@ -2172,15 +2455,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 function PollPageInner() {
   const router = useRouter();
   const params = useParams();
-  const searchParams = useSearchParams();
   const shortId = params.shortId as string;
-  // The `thread=1` query param is set by the home page's ThreadList when it
-  // picks a URL via the thread-level rule (oldest open+unresponded poll, or
-  // newest as fallback). Without the flag, the URL is treated as a direct
-  // share and the linked poll is always expanded; with the flag, we suppress
-  // the auto-expand when nothing about the linked poll is actionable
-  // (voted on AND closed).
-  const fromThreadList = searchParams.get(THREAD_QUERY_PARAM) !== null;
 
   // Memo on shortId — without it the IIFE allocates a new object every render,
   // and the useEffect below (which depends on resolvedInitial) would refire
@@ -2261,23 +2536,29 @@ function PollPageInner() {
     return () => { cancelled = true; };
   }, [shortId, router, resolvedInitial]);
 
-  // When the URL came from the home thread-list (`?thread=1`) and the
-  // linked poll is voted on AND closed already, skip the auto-expand —
-  // there's nothing actionable, so let ThreadContent's "scroll to draft
-  // form" path land the user on the place to compose a follow-up.
+  // When the URL came from the home thread-list (`?thread=1`), the picker
+  // returns either (a) the oldest awaiting poll, or (b) the newest poll as a
+  // fallback when nothing is awaiting. In case (b) — every poll responded to,
+  // Suppress auto-expand when the user has already responded to every
+  // question in the linked poll (single-question voted/abstained, or
+  // every sub-question of a multi-question poll responded). Refresh,
+  // back-nav from /info, and create-poll redirects all land here without
+  // `?thread=1`, so we can't use that flag as the gate — the only
+  // reliable signal is "the user is done with this poll, show them the
+  // draft form instead of an already-responded card". A closed poll the
+  // user never voted on still expands so they see the results.
   const suppressExpand = useMemo(() => {
     if (!resolved) return false;
-    if (!fromThreadList) return false;
     if (typeof window === 'undefined') return false;
     const cachedPoll = resolved.question.poll_id
       ? getCachedPollById(resolved.question.poll_id)
       : null;
-    if (!cachedPoll || isPollOpen(cachedPoll)) return false;
+    if (!cachedPoll) return false;
     const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
-    return cachedPoll.questions.some(
+    return cachedPoll.questions.every(
       sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
     );
-  }, [fromThreadList, resolved]);
+  }, [resolved]);
 
   if (error) {
     return (
