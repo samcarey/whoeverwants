@@ -1101,9 +1101,18 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   // QuestionResultsDisplay would duplicate them — so skip them entirely for
   // yes_no questions in that context.
   const suppressYesNoHere = !!externalYesNoResults && question.question_type === 'yes_no';
+  // The binary 2-option ballot bakes in winner color + percentages + counts,
+  // so the rounds list would duplicate them. Skip suppression post-vote — the
+  // "Your Ballot" amber-link path hides the cards, leaving rounds as the only
+  // result surface.
+  const suppressBinaryRcHere =
+    question.question_type === 'ranked_choice' &&
+    questionOptions.length === 2 &&
+    !canSubmitSuggestions &&
+    (!hasVoted || isEditingVote);
 
   const preliminaryResultsBlock = (className: string) => (
-    showPrelimResults && !isQuestionClosed && !suppressYesNoHere ? (
+    showPrelimResults && !isQuestionClosed && !suppressYesNoHere && !suppressBinaryRcHere ? (
       <div className={className}>
         {loadingResults ? (
           <div className="flex justify-center items-center py-3">
@@ -1415,6 +1424,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                     isEditingSuggestions={isEditingVote}
                     newOptions={newOptions}
                     wrapperHandlesSubmit={wrapperHandlesSubmit}
+                    questionResults={questionResults}
                   />
 
                 </>

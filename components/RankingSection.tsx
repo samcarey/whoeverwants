@@ -4,10 +4,10 @@ import Countdown from "@/components/Countdown";
 import RankableOptions from "@/components/RankableOptions";
 import AbstainButton from "@/components/AbstainButton";
 import CompactNameField from "@/components/CompactNameField";
-import OptionLabel from "@/components/OptionLabel";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import VoterList from "@/components/VoterList";
-import type { OptionsMetadata } from "@/lib/types";
+import BinaryRankedChoiceBallot from "@/components/QuestionBallot/BinaryRankedChoiceBallot";
+import type { OptionsMetadata, QuestionResults } from "@/lib/types";
 import type { ApiVote } from "@/lib/api";
 
 interface RankingSectionProps {
@@ -51,6 +51,9 @@ interface RankingSectionProps {
   // imperative `submit()` ref method, which routes through the same
   // submitVote flow this Submit button used to trigger.
   wrapperHandlesSubmit?: boolean;
+  // Live results — the 2-option branch reads first-round counts + winner
+  // to color the winner card and show the % + count row below the cards.
+  questionResults?: QuestionResults | null;
 }
 
 const rankingsVoterFilter = (v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0);
@@ -87,6 +90,7 @@ export default function RankingSection({
   isEditingSuggestions,
   newOptions,
   wrapperHandlesSubmit = false,
+  questionResults,
 }: RankingSectionProps) {
   const hasSubmittedRankings = hasVoted && userVoteData?.ranked_choices?.length > 0;
   // For suggestion questions, is_abstain means "abstained from suggestions" not "abstained from ranking".
@@ -200,33 +204,20 @@ export default function RankingSection({
         {showBallot && (
           <>
             {questionOptions.length === 2 && !canSubmitSuggestions ? (
-              <>
-                <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
-                  Select your preference
-                </h4>
-                <div className={`flex gap-2 transition-opacity ${isAbstaining ? 'opacity-40 pointer-events-none' : ''}`}>
-                  {twoOptionDisplayOrder.map((option: string) => (
-                    <button
-                      key={option}
-                      onClick={(e) => {
-                        if ((e.target as HTMLElement).closest?.('[data-place-name]')) return;
-                        // Two-option questions: a single tap picks one. Pass
-                        // the flat list and a singleton tier (no ties).
-                        handleRankingChange([option], [[option]]);
-                        setIsAbstaining(false);
-                      }}
-                      disabled={isSubmitting || isAbstaining}
-                      className={`flex-1 min-w-0 py-3 px-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                        rankedChoices[0] === option
-                          ? 'bg-blue-200 dark:bg-blue-800 text-blue-900 dark:text-blue-100 border-2 border-blue-400 dark:border-blue-600 active:bg-blue-300 dark:active:bg-blue-700'
-                          : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 border-2 border-transparent active:bg-blue-300 dark:active:bg-blue-700'
-                      }`}
-                    >
-                      <OptionLabel text={option} metadata={optionsMetadata?.[option]} layout="stacked" />
-                    </button>
-                  ))}
-                </div>
-              </>
+              <BinaryRankedChoiceBallot
+                displayOrder={twoOptionDisplayOrder}
+                currentChoice={isAbstaining ? "abstain" : rankedChoices[0] ?? null}
+                results={questionResults}
+                onChoose={(option) => {
+                  // Two-option questions: a single tap picks one. Pass
+                  // the flat list and a singleton tier (no ties).
+                  handleRankingChange([option], [[option]]);
+                  setIsAbstaining(false);
+                }}
+                onAbstain={handleAbstain}
+                disabled={isSubmitting}
+                optionsMetadata={optionsMetadata}
+              />
             ) : (
               <>
                 <h4 className="text-base font-medium text-gray-900 dark:text-white mb-3">
@@ -245,13 +236,12 @@ export default function RankingSection({
                     newOptions={newOptions}
                   />
                 )}
+                <AbstainButton
+                  isAbstaining={isAbstaining}
+                  onClick={handleAbstain}
+                />
               </>
             )}
-
-            <AbstainButton
-              isAbstaining={isAbstaining}
-              onClick={handleAbstain}
-            />
 
             {voteError && (
               <div className="mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
