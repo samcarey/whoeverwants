@@ -718,7 +718,12 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
               }`}
               aria-hidden={!isExpanded}
             >
-              <div className="overflow-hidden" ref={setExpandedWrapperEl}>
+              {/* overflow-y: clip clips the height-animation as `overflow:
+                  hidden` did, but overflow-x: visible lets each question's
+                  category icon hang to the left of the card (mirroring the
+                  poll's icon column). `clip` is required (vs `hidden`) so the
+                  per-axis overrides don't get coerced to `auto`. */}
+              <div className="overflow-y-clip overflow-x-visible" ref={setExpandedWrapperEl}>
                 <div className={allYesNo && !usePollSubmit ? "" : "mt-1.5"}>
                   {group.subQuestions.map((sp, idx) => {
                     // Phase 3.3: every yes_no question uses external
@@ -738,18 +743,32 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                       >
                         {isMultiGroup && (
                           // Per-question section label inside the grouped
-                          // card. Shows the category icon + the question's
-                          // `details` (its disambiguation context); falls
-                          // back to category when details is empty.
-                          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                            <span className="text-base leading-none">
+                          // card. The category icon is absolute-positioned
+                          // into the outer grid's col-start-1 (left of the
+                          // card) so it lines up with the poll's icon column,
+                          // but vertically aligned with the question's title
+                          // instead of the poll's title. The title text
+                          // (sp.details disambiguation context, fallback to
+                          // category) is rendered at the same size as the
+                          // poll title and capitalized.
+                          //
+                          // left: -2.375rem = -(card px-2 0.5rem + outer grid
+                          // gap-x-0.5 0.125rem + col-1 width 1.75rem); width
+                          // matches the outer grid's col-1 width so the icon
+                          // sits centered there.
+                          <div className="mb-2 relative">
+                            <div
+                              className="absolute flex items-center justify-center text-lg leading-none h-7"
+                              style={{ width: '1.75rem', left: '-2.375rem', top: '4px' }}
+                              aria-hidden="true"
+                            >
                               {getCategoryIcon(sp, isClosed)}
-                            </span>
-                            <span className="truncate">
+                            </div>
+                            <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white capitalize truncate">
                               {(sp.details && sp.details.trim()) ||
                                 sp.category ||
                                 sp.question_type.replace("_", "/")}
-                            </span>
+                            </div>
                           </div>
                         )}
                         {isYesNo &&
