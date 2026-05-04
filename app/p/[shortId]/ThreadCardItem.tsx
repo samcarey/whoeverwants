@@ -722,8 +722,15 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                   hidden` did, but overflow-x: visible lets each question's
                   category icon hang to the left of the card (mirroring the
                   poll's icon column). `clip` is required (vs `hidden`) so the
-                  per-axis overrides don't get coerced to `auto`. */}
-              <div className="overflow-y-clip overflow-x-visible" ref={setExpandedWrapperEl}>
+                  per-axis overrides don't get coerced to `auto`. `min-h-0`
+                  is required because `overflow: clip` does NOT establish a
+                  BFC (unlike `overflow: hidden`), so the grid item's default
+                  `min-height: auto` would otherwise prevent it from shrinking
+                  to 0 against the `grid-template-rows: 0fr` collapse —
+                  leaving the card visually expanded even after the React
+                  state has collapsed.
+                  See CLAUDE.md → "Thread-page scroll strategy" pitfalls. */}
+              <div className="overflow-y-clip overflow-x-visible min-h-0" ref={setExpandedWrapperEl}>
                 <div className={allYesNo && !usePollSubmit ? "" : "mt-1.5"}>
                   {group.subQuestions.map((sp, idx) => {
                     // Phase 3.3: every yes_no question uses external
@@ -756,10 +763,18 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                           // gap-x-0.5 0.125rem + col-1 width 1.75rem); width
                           // matches the outer grid's col-1 width so the icon
                           // sits centered there.
+                          //
+                          // top: -2px optically aligns the icon's vertical
+                          // center with the title's first-line text center.
+                          // The title uses text-lg leading-tight (line-height
+                          // ≈ 22.5px → text center ≈ 11.25px from wrapper top)
+                          // and the icon uses h-7 (28px → center at 14px from
+                          // its top edge). Setting top:-2px lands the icon's
+                          // center at 12px ≈ the title's center.
                           <div className="mb-2 relative">
                             <div
                               className="absolute flex items-center justify-center text-lg leading-none h-7"
-                              style={{ width: '1.75rem', left: '-2.375rem', top: '4px' }}
+                              style={{ width: '1.75rem', left: '-2.375rem', top: '-2px' }}
                               aria-hidden="true"
                             >
                               {getCategoryIcon(sp, isClosed)}
