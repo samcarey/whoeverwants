@@ -1228,7 +1228,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                 null
               ) : (
                 <>
-                  <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
+                  <div className="mb-2">
                     <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
                       Select your preference
                     </h4>

@@ -169,7 +169,7 @@ export default function RankingSection({
         </div>
       )}
 
-      <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
+      <div className="mb-2">
         {showSummary && hasSubmittedRankings && (
           <>
             <div className="flex items-center justify-between mb-2">
