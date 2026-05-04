@@ -249,7 +249,10 @@ export function useThreadVoting({
   // Swipe-to-abstain on a thread card. Submits a single batched abstain for
   // every un-responded sub-question of the poll. The caller drives the
   // slide-off animation; this function is the data side of the gesture.
-  const submitSwipeAbstain = async (
+  // Pinned via useRef so the identity is stable across renders — the thread
+  // page passes this to React.memo'd ThreadCardItem and a fresh closure on
+  // every parent render would defeat memoization.
+  const submitSwipeAbstain = useRef(async (
     pollId: string,
     subQuestions: Question[],
   ): Promise<{ ok: true } | { ok: false; error: string }> => {
@@ -275,7 +278,7 @@ export function useThreadVoting({
       const message = err instanceof Error ? err.message : "Submit failed.";
       return { ok: false, error: message };
     }
-  };
+  }).current;
 
   const confirmVoteChange = async () => {
     if (!pendingVoteChange) return;
