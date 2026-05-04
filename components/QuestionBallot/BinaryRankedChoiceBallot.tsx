@@ -19,9 +19,6 @@ interface BinaryRankedChoiceBallotProps {
   optionsMetadata: OptionsMetadata | null;
 }
 
-// First-round IRV counts give the per-option first-choice tally, which
-// is the analogue of yes_count / no_count for a 2-option ranked-choice
-// question.
 function getFirstRoundCount(
   results: QuestionResults | null | undefined,
   option: string,
@@ -55,10 +52,8 @@ export default function BinaryRankedChoiceBallot({
 
   const userAbstained = currentChoice === "abstain";
 
-  // Visual treatment mirrors YesNoResults: the winner gets a bold colored
-  // surface; non-winners stay neutral. We use green for the winner and gray
-  // for the loser (instead of yes/no's red) since "loser" doesn't carry the
-  // "no" semantic.
+  // Green for winner, gray for loser — the "no" red yes/no uses doesn't fit
+  // here since a losing option isn't a negation.
   const cardClass = (option: string, isUserChoice: boolean): string => {
     const base =
       "relative flex-1 min-w-0 text-center px-3 py-3 rounded-lg border-2 transition-all";
@@ -95,8 +90,7 @@ export default function BinaryRankedChoiceBallot({
 
   const renderCard = (option: string) => {
     const isUserChoice = currentChoice === option;
-    // Outer-edge corner mirrors yes/no so the badge can't overlap the
-    // neighboring card regardless of which side the viewer picked.
+    // Badge hugs the outer corner so it can't overlap the neighboring card.
     const isLeft = option === displayOrder[0];
     const badgeCornerClass = isLeft ? "-top-2 -left-2" : "-top-2 -right-2";
     return (
