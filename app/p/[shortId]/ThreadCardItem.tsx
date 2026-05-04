@@ -792,28 +792,20 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                           // card. The category icon is absolute-positioned
                           // into the outer grid's col-start-1 (left of the
                           // card) so it lines up with the poll's icon column,
-                          // but vertically aligned with the question's title
-                          // instead of the poll's title. The title text
-                          // (sp.details disambiguation context, fallback to
-                          // category) is rendered at the same size as the
-                          // poll title and capitalized.
+                          // anchored at the top of the question's vertical
+                          // range — same placement as single-question polls.
+                          // The title text (sp.details disambiguation
+                          // context, fallback to category) is rendered at
+                          // the same size as the poll title and capitalized.
                           //
                           // left: -2.375rem = -(card px-2 0.5rem + outer grid
                           // gap-x-0.5 0.125rem + col-1 width 1.75rem); width
                           // matches the outer grid's col-1 width so the icon
                           // sits centered there.
-                          //
-                          // top: -6px biases the icon up so the visible emoji
-                          // glyph (which sits in the lower portion of its
-                          // line-box for most emojis) optically aligns with
-                          // the title's visible text glyphs (cap-height,
-                          // which sits in the upper portion of its line-box).
-                          // Pure bounding-box centering looks too low because
-                          // of this emoji-vs-text glyph-position asymmetry.
                           <div className="mb-2 relative">
                             <div
                               className="absolute flex items-center justify-center text-lg leading-none h-7"
-                              style={{ width: '1.75rem', left: '-2.375rem', top: '-6px' }}
+                              style={{ width: '1.75rem', left: '-2.375rem', top: '0' }}
                               aria-hidden="true"
                             >
                               {getCategoryIcon(sp, isClosed)}
