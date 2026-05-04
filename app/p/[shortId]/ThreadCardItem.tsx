@@ -35,7 +35,7 @@ import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { getUserInitials, getUserName } from "@/lib/userProfile";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
-import { nameToColor } from "@/components/RespondentCircles";
+import { ANONYMOUS_FALLBACK_COLOR, nameToColor } from "@/components/RespondentCircles";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import CompactNameField from "@/components/CompactNameField";
 import QuestionBallot, { type QuestionBallotHandle } from "@/components/QuestionBallot";
@@ -73,6 +73,32 @@ const SWIPE_DIRECTION_THRESHOLD_PX = 12;
 // re-run its effect on every parent render.
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
+
+// Per-question category emoji that hangs to the LEFT of the card,
+// vertically anchored at the top of its parent's relative box. The parent
+// must be `position: relative` (or be the cardFrame itself).
+//
+// left: -2.375rem = -(card px-2 0.5rem + outer-grid gap-x-0.5 0.125rem +
+//   col-1 width 1.75rem) — places the icon centered in the same column
+//   the creator bubble occupies at the top of the card. width matches
+//   col-1 so the glyph centers there.
+function HangingCategoryIcon({
+  question,
+  isClosed,
+}: {
+  question: Question;
+  isClosed: boolean;
+}) {
+  return (
+    <div
+      className="absolute flex items-center justify-center text-lg leading-none h-7"
+      style={{ width: '1.75rem', left: '-2.375rem', top: 0 }}
+      aria-hidden="true"
+    >
+      {getCategoryIcon(question, isClosed)}
+    </div>
+  );
+}
 
 // Inverse grid-rows clip for compact pills in the thread card header:
 // full height when collapsed, 0 when expanded, animating in lockstep with the
@@ -590,31 +616,22 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
       ref={setCardEl}
       className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
     >
-      {/* The poll-title row's left slot shows the creator's initials in a
-          colored circle (mirroring the page-header RespondentCircles look)
-          rather than a category emoji. The per-question category icons
-          inside the expanded card still use the emoji style. The h-7
-          circle's vertical center sits 0.75px below the poll title's
-          first-line text center — same offset the previous emoji icon
-          used, so the visual position is unchanged. */}
-      {/* h-7 on the wrapper is critical: without an explicit height the
-          grid item's default `align-items: stretch` stretches the wrapper
-          to fill row-2 (the entire card's height when expanded), centering
-          the bubble vertically in the middle of the card. With h-7 the
-          wrapper anchors at the top of the row, matching where the
-          previous emoji sat. */}
-      <div className="col-start-1 row-start-2 flex items-center justify-center h-7 mt-[4px]">
-        <div
-          className="w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-xs select-none"
-          style={{
-            backgroundColor: wrapper?.creator_name?.trim()
-              ? nameToColor(wrapper.creator_name)
-              : '#9CA3AF',
-          }}
-          aria-hidden="true"
-        >
-          {getUserInitials(wrapper?.creator_name ?? null)}
-        </div>
+      {/* Poll-title row's left slot: creator's initials in a colored
+          circle (matching the page-header RespondentCircles look). The
+          explicit h-7 anchors the bubble at the top of row-2 — without it,
+          the grid item's default `align-items: stretch` would expand the
+          element to the full card height when expanded, vertically
+          centering the bubble in the middle of the card. */}
+      <div
+        className="col-start-1 row-start-2 mt-[4px] w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-xs select-none"
+        style={{
+          backgroundColor: wrapper?.creator_name?.trim()
+            ? nameToColor(wrapper.creator_name)
+            : ANONYMOUS_FALLBACK_COLOR,
+        }}
+        aria-hidden="true"
+      >
+        {getUserInitials(wrapper?.creator_name ?? null)}
       </div>
 
       {/* Row 1 used to hold the above-card status label; the label now lives
@@ -770,46 +787,17 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                         } ${!isMultiGroup ? "relative" : ""}`}
                       >
                         {!isMultiGroup && (
-                          // Single-question poll: render the category icon
-                          // alone (no title — the poll title at the top of
-                          // the card already names the question). Absolute-
-                          // positioned to the same col-start-1 column the
-                          // creator bubble occupies, but anchored at the top
-                          // of the expanded ballot's content area (top: 0)
-                          // so it sits within the ballot's vertical range
-                          // and is fully clipped by overflow-y-clip when
-                          // the card is collapsed.
-                          <div
-                            className="absolute flex items-center justify-center text-lg leading-none h-7"
-                            style={{ width: '1.75rem', left: '-2.375rem', top: '0' }}
-                            aria-hidden="true"
-                          >
-                            {getCategoryIcon(sp, isClosed)}
-                          </div>
+                          // Single-question poll: icon alone — the poll
+                          // title at the top of the card already names the
+                          // question, so no title text is rendered here.
+                          <HangingCategoryIcon question={sp} isClosed={isClosed} />
                         )}
                         {isMultiGroup && (
-                          // Per-question section label inside the grouped
-                          // card. The category icon is absolute-positioned
-                          // into the outer grid's col-start-1 (left of the
-                          // card) so it lines up with the poll's icon column,
-                          // anchored at the top of the question's vertical
-                          // range — same placement as single-question polls.
-                          // The title text (sp.details disambiguation
-                          // context, fallback to category) is rendered at
-                          // the same size as the poll title and capitalized.
-                          //
-                          // left: -2.375rem = -(card px-2 0.5rem + outer grid
-                          // gap-x-0.5 0.125rem + col-1 width 1.75rem); width
-                          // matches the outer grid's col-1 width so the icon
-                          // sits centered there.
+                          // Multi-question poll: icon + title text per
+                          // section. Title falls back to category, then
+                          // question type, when sp.details is empty.
                           <div className="mb-2 relative">
-                            <div
-                              className="absolute flex items-center justify-center text-lg leading-none h-7"
-                              style={{ width: '1.75rem', left: '-2.375rem', top: '0' }}
-                              aria-hidden="true"
-                            >
-                              {getCategoryIcon(sp, isClosed)}
-                            </div>
+                            <HangingCategoryIcon question={sp} isClosed={isClosed} />
                             <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white capitalize truncate">
                               {(sp.details && sp.details.trim()) ||
                                 sp.category ||

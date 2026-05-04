@@ -18,6 +18,8 @@ const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
 
 const MAX_NAMED = 6;
 
+export const ANONYMOUS_FALLBACK_COLOR = '#9CA3AF';
+
 const COLORS = [
   '#4F46E5', '#2563EB', '#0891B2', '#0D9488', '#059669',
   '#EA580C', '#DC2626', '#DB2777', '#9333EA', '#7C3AED',
@@ -52,7 +54,7 @@ export default function RespondentCircles({ names, anonymousCount }: RespondentC
   }
 
   if (circles.length === 0) {
-    circles.push({ label: '?', fill: '#9CA3AF' });
+    circles.push({ label: '?', fill: ANONYMOUS_FALLBACK_COLOR });
   }
 
   const n = Math.min(circles.length, LAYOUTS.length - 1);
