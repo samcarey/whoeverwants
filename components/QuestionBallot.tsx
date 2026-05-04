@@ -1415,6 +1415,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                     isEditingSuggestions={isEditingVote}
                     newOptions={newOptions}
                     wrapperHandlesSubmit={wrapperHandlesSubmit}
+                    questionResults={questionResults}
                   />
 
                 </>
