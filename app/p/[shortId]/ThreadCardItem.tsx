@@ -763,12 +763,30 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                     return (
                       <div
                         key={sp.id}
-                        className={
+                        className={`${
                           isMultiGroup && idx > 0
                             ? "mt-4 pt-3 border-t border-gray-200 dark:border-gray-800"
                             : ""
-                        }
+                        } ${!isMultiGroup ? "relative" : ""}`}
                       >
+                        {!isMultiGroup && (
+                          // Single-question poll: render the category icon
+                          // alone (no title — the poll title at the top of
+                          // the card already names the question). Absolute-
+                          // positioned to the same col-start-1 column the
+                          // creator bubble occupies, but anchored at the top
+                          // of the expanded ballot's content area (top: 0)
+                          // so it sits within the ballot's vertical range
+                          // and is fully clipped by overflow-y-clip when
+                          // the card is collapsed.
+                          <div
+                            className="absolute flex items-center justify-center text-lg leading-none h-7"
+                            style={{ width: '1.75rem', left: '-2.375rem', top: '0' }}
+                            aria-hidden="true"
+                          >
+                            {getCategoryIcon(sp, isClosed)}
+                          </div>
+                        )}
                         {isMultiGroup && (
                           // Per-question section label inside the grouped
                           // card. The category icon is absolute-positioned
