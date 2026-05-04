@@ -32,9 +32,10 @@ import {
   relativeTime,
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
-import { getUserName } from "@/lib/userProfile";
+import { getUserInitials, getUserName } from "@/lib/userProfile";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
+import { ANONYMOUS_FALLBACK_COLOR, nameToColor } from "@/components/RespondentCircles";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import CompactNameField from "@/components/CompactNameField";
 import QuestionBallot, { type QuestionBallotHandle } from "@/components/QuestionBallot";
@@ -72,6 +73,32 @@ const SWIPE_DIRECTION_THRESHOLD_PX = 12;
 // re-run its effect on every parent render.
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
+
+// Per-question category emoji that hangs to the LEFT of the card,
+// vertically anchored at the top of its parent's relative box. The parent
+// must be `position: relative` (or be the cardFrame itself).
+//
+// left: -2.375rem = -(card px-2 0.5rem + outer-grid gap-x-0.5 0.125rem +
+//   col-1 width 1.75rem) — places the icon centered in the same column
+//   the creator bubble occupies at the top of the card. width matches
+//   col-1 so the glyph centers there.
+function HangingCategoryIcon({
+  question,
+  isClosed,
+}: {
+  question: Question;
+  isClosed: boolean;
+}) {
+  return (
+    <div
+      className="absolute flex items-center justify-center text-lg leading-none h-7"
+      style={{ width: '1.75rem', left: '-2.375rem', top: 0 }}
+      aria-hidden="true"
+    >
+      {getCategoryIcon(question, isClosed)}
+    </div>
+  );
+}
 
 // Inverse grid-rows clip for compact pills in the thread card header:
 // full height when collapsed, 0 when expanded, animating in lockstep with the
@@ -589,11 +616,22 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
       ref={setCardEl}
       className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
     >
-      {/* mt-[4px] sits closer to cap-to-baseline centering (5px) than
-          line-box centering (9px); emoji glyphs feel slightly low at the
-          pure line-box center, so we bias upward. */}
-      <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[4px]">
-        {getCategoryIcon(question, isClosed)}
+      {/* Poll-title row's left slot: creator's initials in a colored
+          circle (matching the page-header RespondentCircles look). The
+          explicit h-7 anchors the bubble at the top of row-2 — without it,
+          the grid item's default `align-items: stretch` would expand the
+          element to the full card height when expanded, vertically
+          centering the bubble in the middle of the card. */}
+      <div
+        className="col-start-1 row-start-2 mt-[4px] w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-xs select-none"
+        style={{
+          backgroundColor: wrapper?.creator_name?.trim()
+            ? nameToColor(wrapper.creator_name)
+            : ANONYMOUS_FALLBACK_COLOR,
+        }}
+        aria-hidden="true"
+      >
+        {getUserInitials(wrapper?.creator_name ?? null)}
       </div>
 
       {/* Row 1 used to hold the above-card status label; the label now lives
@@ -718,7 +756,19 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
               }`}
               aria-hidden={!isExpanded}
             >
-              <div className="overflow-hidden" ref={setExpandedWrapperEl}>
+              {/* overflow-y: clip clips the height-animation as `overflow:
+                  hidden` did, but overflow-x: visible lets each question's
+                  category icon hang to the left of the card (mirroring the
+                  poll's icon column). `clip` is required (vs `hidden`) so the
+                  per-axis overrides don't get coerced to `auto`. `min-h-0`
+                  is required because `overflow: clip` does NOT establish a
+                  BFC (unlike `overflow: hidden`), so the grid item's default
+                  `min-height: auto` would otherwise prevent it from shrinking
+                  to 0 against the `grid-template-rows: 0fr` collapse —
+                  leaving the card visually expanded even after the React
+                  state has collapsed.
+                  See CLAUDE.md → "Thread-page scroll strategy" pitfalls. */}
+              <div className="overflow-y-clip overflow-x-visible min-h-0" ref={setExpandedWrapperEl}>
                 <div className={allYesNo && !usePollSubmit ? "" : "mt-1.5"}>
                   {group.subQuestions.map((sp, idx) => {
                     // Phase 3.3: every yes_no question uses external
@@ -730,26 +780,29 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                     return (
                       <div
                         key={sp.id}
-                        className={
+                        className={`${
                           isMultiGroup && idx > 0
                             ? "mt-4 pt-3 border-t border-gray-200 dark:border-gray-800"
                             : ""
-                        }
+                        } ${!isMultiGroup ? "relative" : ""}`}
                       >
+                        {!isMultiGroup && (
+                          // Single-question poll: icon alone — the poll
+                          // title at the top of the card already names the
+                          // question, so no title text is rendered here.
+                          <HangingCategoryIcon question={sp} isClosed={isClosed} />
+                        )}
                         {isMultiGroup && (
-                          // Per-question section label inside the grouped
-                          // card. Shows the category icon + the question's
-                          // `details` (its disambiguation context); falls
-                          // back to category when details is empty.
-                          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                            <span className="text-base leading-none">
-                              {getCategoryIcon(sp, isClosed)}
-                            </span>
-                            <span className="truncate">
+                          // Multi-question poll: icon + title text per
+                          // section. Title falls back to category, then
+                          // question type, when sp.details is empty.
+                          <div className="mb-2 relative">
+                            <HangingCategoryIcon question={sp} isClosed={isClosed} />
+                            <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white capitalize truncate">
                               {(sp.details && sp.details.trim()) ||
                                 sp.category ||
                                 sp.question_type.replace("_", "/")}
-                            </span>
+                            </div>
                           </div>
                         )}
                         {isYesNo &&
