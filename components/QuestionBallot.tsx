@@ -1101,9 +1101,21 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   // QuestionResultsDisplay would duplicate them — so skip them entirely for
   // yes_no questions in that context.
   const suppressYesNoHere = !!externalYesNoResults && question.question_type === 'yes_no';
+  // 2-option ranked_choice (when no suggestion phase is in flight) renders the
+  // yes/no-style binary ballot which already bakes in the winner highlight,
+  // percentages, and counts — so the rounds visualization below would just
+  // duplicate the same numbers. Only suppress when the binary cards are
+  // actually on screen: pre-vote OR while editing. Post-vote (the "Your
+  // Ballot" amber link path) hides the cards, so leave the rounds list as
+  // the sole result surface.
+  const suppressBinaryRcHere =
+    question.question_type === 'ranked_choice' &&
+    questionOptions.length === 2 &&
+    !canSubmitSuggestions &&
+    (!hasVoted || isEditingVote);
 
   const preliminaryResultsBlock = (className: string) => (
-    showPrelimResults && !isQuestionClosed && !suppressYesNoHere ? (
+    showPrelimResults && !isQuestionClosed && !suppressYesNoHere && !suppressBinaryRcHere ? (
       <div className={className}>
         {loadingResults ? (
           <div className="flex justify-center items-center py-3">
