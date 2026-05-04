@@ -764,17 +764,17 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                           // matches the outer grid's col-1 width so the icon
                           // sits centered there.
                           //
-                          // top: -2px optically aligns the icon's vertical
-                          // center with the title's first-line text center.
-                          // The title uses text-lg leading-tight (line-height
-                          // ≈ 22.5px → text center ≈ 11.25px from wrapper top)
-                          // and the icon uses h-7 (28px → center at 14px from
-                          // its top edge). Setting top:-2px lands the icon's
-                          // center at 12px ≈ the title's center.
+                          // top: -6px biases the icon up so the visible emoji
+                          // glyph (which sits in the lower portion of its
+                          // line-box for most emojis) optically aligns with
+                          // the title's visible text glyphs (cap-height,
+                          // which sits in the upper portion of its line-box).
+                          // Pure bounding-box centering looks too low because
+                          // of this emoji-vs-text glyph-position asymmetry.
                           <div className="mb-2 relative">
                             <div
                               className="absolute flex items-center justify-center text-lg leading-none h-7"
-                              style={{ width: '1.75rem', left: '-2.375rem', top: '-2px' }}
+                              style={{ width: '1.75rem', left: '-2.375rem', top: '-6px' }}
                               aria-hidden="true"
                             >
                               {getCategoryIcon(sp, isClosed)}
