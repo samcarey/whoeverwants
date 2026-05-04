@@ -1459,7 +1459,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                 pollVoterNames={pollVoterNames}
                 pollSubmitting={pollSubmitting}
                 pollSubmitError={pollSubmitError}
-                cardRefs={cardRefs}
                 cardFrameRefs={cardFrameRefs}
                 expandedWrapperRefs={expandedWrapperRefs}
                 subQuestionBallotRefs={subQuestionBallotRefs}

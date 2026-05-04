@@ -13,6 +13,7 @@
  */
 
 import * as React from "react";
+import { useCallback } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { Poll, Question, QuestionResults } from "@/lib/types";
 import type { ApiVote } from "@/lib/api";
@@ -120,7 +121,6 @@ export interface ThreadCardItemProps {
   pollSubmitError: Map<string, string>;
 
   // Refs (stable identity — no need to compare in equality fn) -------------
-  cardRefs: MutableRefObject<Map<string, HTMLDivElement>>;
   cardFrameRefs: MutableRefObject<Map<string, HTMLDivElement>>;
   expandedWrapperRefs: MutableRefObject<Map<string, HTMLDivElement>>;
   subQuestionBallotRefs: MutableRefObject<Map<string, QuestionBallotHandle>>;
@@ -176,7 +176,6 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
     pollVoterNames,
     pollSubmitting,
     pollSubmitError,
-    cardRefs,
     cardFrameRefs,
     expandedWrapperRefs,
     subQuestionBallotRefs,
@@ -220,6 +219,35 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
   // has voted on q1 but not q2 are skipped (anchor not awaiting) — by then
   // they've engaged with the poll.
   const swipeEligible = isAwaiting && !isExpanded && !isClosed && !!group.pollId;
+
+  // Stable ref-callbacks. Without useCallback the inline arrows would have
+  // fresh identity every time THIS card re-renders (e.g. when isExpanded
+  // flips); React would call the previous callback with `null` (detaching
+  // observers) then the new callback with the element (re-attaching),
+  // churning the IntersectionObserver / ResizeObserver wiring on every
+  // expand/press/swipe-threshold flip. Deps are `question.id` + `group.key`
+  // (both stable per card) plus the parent's stable handler identities.
+  const setCardEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (el) attachCardEl(el, question.id, group.key);
+      else detachCardEl(question.id);
+    },
+    [attachCardEl, detachCardEl, question.id, group.key],
+  );
+  const setCardFrameEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (el) cardFrameRefs.current.set(question.id, el);
+      else cardFrameRefs.current.delete(question.id);
+    },
+    [cardFrameRefs, question.id],
+  );
+  const setExpandedWrapperEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (el) expandedWrapperRefs.current.set(question.id, el);
+      else expandedWrapperRefs.current.delete(question.id);
+    },
+    [expandedWrapperRefs, question.id],
+  );
 
   const handleTouchStart = (e: React.TouchEvent) => {
     isLongPressRef.current = false;
@@ -558,10 +586,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
 
   return (
     <div
-      ref={(el) => {
-        if (el) attachCardEl(el, question.id, group.key);
-        else detachCardEl(question.id);
-      }}
+      ref={setCardEl}
       className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
     >
       {/* mt-[4px] sits closer to cap-to-baseline centering (5px) than
@@ -609,10 +634,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
           </div>
         )}
         <div
-          ref={(el) => {
-            if (el) cardFrameRefs.current.set(question.id, el);
-            else cardFrameRefs.current.delete(question.id);
-          }}
+          ref={setCardFrameEl}
           className={`min-w-0 px-2 pt-1.5 ${
             isExpanded ? "pb-1.5" : "pb-0.5"
           } rounded-2xl border shadow-sm ${
@@ -646,10 +668,10 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
               </h3>
               <div
                 className="shrink-0 -mt-0.5 -mr-1"
-                onClick={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-                onTouchEnd={(e) => e.stopPropagation()}
-                onTouchMove={(e) => e.stopPropagation()}
+                onClick={stopBubble}
+                onTouchStart={stopBubble}
+                onTouchEnd={stopBubble}
+                onTouchMove={stopBubble}
               >
                 <FloatingCopyLinkButton
                   url={(() => {
@@ -696,13 +718,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
               }`}
               aria-hidden={!isExpanded}
             >
-              <div
-                className="overflow-hidden"
-                ref={(el) => {
-                  if (el) expandedWrapperRefs.current.set(question.id, el);
-                  else expandedWrapperRefs.current.delete(question.id);
-                }}
-              >
+              <div className="overflow-hidden" ref={setExpandedWrapperEl}>
                 <div className={allYesNo && !usePollSubmit ? "" : "mt-1.5"}>
                   {group.subQuestions.map((sp, idx) => {
                     // Phase 3.3: every yes_no question uses external
@@ -1085,15 +1101,28 @@ function arePropsEqual(
     return false;
   }
 
-  // Group identity. groupedThreadQuestions is memoized on (threadQuestions,
-  // pollWrapperMap), so the group reference is stable across most renders.
-  // When a thread mutation rebuilds the group array, this catches it.
-  if (prev.group !== next.group) return false;
+  // Group identity is recreated on every parent re-render: groupedThreadQuestions
+  // is memoized on (threadQuestions, pollWrapperMap), and BOTH inputs get a new
+  // identity whenever `thread` mutates (vote, hydrate, results refresh). So a
+  // naive `prev.group !== next.group` would invalidate every card on every
+  // thread mutation, defeating the memoization. Instead, compare the parts that
+  // actually drive the render — both preserve identity across no-op updates
+  // because patchThreadPolls / patchThreadQuestions only allocate new objects
+  // for mutated entries:
+  //   - poll wrapper identity (Poll object)
+  //   - per-question identity (Question objects in subQuestions)
+  if (prev.group.pollId !== next.group.pollId) return false;
+  if (prev.group.poll !== next.group.poll) return false;
+  const prevSubs = prev.group.subQuestions;
+  const nextSubs = next.group.subQuestions;
+  if (prevSubs.length !== nextSubs.length) return false;
+  for (let i = 0; i < nextSubs.length; i++) {
+    if (prevSubs[i] !== nextSubs[i]) return false;
+  }
 
   // Per-question slice of state Maps.
-  const subQuestions = next.group.subQuestions;
-  for (let i = 0; i < subQuestions.length; i++) {
-    const id = subQuestions[i].id;
+  for (let i = 0; i < nextSubs.length; i++) {
+    const id = nextSubs[i].id;
     if (prev.questionResultsMap.get(id) !== next.questionResultsMap.get(id))
       return false;
     if (prev.userVoteMap.get(id) !== next.userVoteMap.get(id)) return false;
