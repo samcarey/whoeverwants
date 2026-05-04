@@ -597,7 +597,13 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
           circle's vertical center sits 0.75px below the poll title's
           first-line text center — same offset the previous emoji icon
           used, so the visual position is unchanged. */}
-      <div className="col-start-1 row-start-2 flex items-center justify-center mt-[4px]">
+      {/* h-7 on the wrapper is critical: without an explicit height the
+          grid item's default `align-items: stretch` stretches the wrapper
+          to fill row-2 (the entire card's height when expanded), centering
+          the bubble vertically in the middle of the card. With h-7 the
+          wrapper anchors at the top of the row, matching where the
+          previous emoji sat. */}
+      <div className="col-start-1 row-start-2 flex items-center justify-center h-7 mt-[4px]">
         <div
           className="w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-xs select-none"
           style={{
