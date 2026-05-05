@@ -663,11 +663,15 @@ export function CreateQuestionContent() {
   const scrollDraftCardUnderHeader = useCallback(() => {
     const tryScroll = (): boolean => {
       const card = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
-      if (!card) return false;
+      if (!card) {
+        console.log('[draft-scroll] card not in DOM yet');
+        return false;
+      }
       const header = document.querySelector(`[${THREAD_HEADER_ATTR}]`) as HTMLElement | null;
       const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
       const cardTop = card.getBoundingClientRect().top;
       const target = Math.max(0, window.scrollY + cardTop - headerBottom);
+      console.log('[draft-scroll] scrollY:', window.scrollY, 'cardTop:', cardTop, 'headerBottom:', headerBottom, 'target:', target);
       window.scrollTo({ top: target, behavior: 'smooth' });
       return true;
     };
