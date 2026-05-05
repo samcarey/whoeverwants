@@ -67,6 +67,12 @@ export const dynamic = 'force-dynamic';
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
+// Order matches the dropdown inside the modal so muscle memory carries over.
+const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon: string }> = [
+  ...BUILT_IN_TYPES,
+  { value: 'custom', label: 'Custom', icon: '✨' },
+];
+
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
@@ -127,17 +133,11 @@ export function CreateQuestionContent() {
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
 
-  // Drafts list — every question committed via the modal checkmark becomes
-  // a draft. The poll is built from this list at submit time.
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
-  // When non-null, the modal is editing a previously-committed draft.
-  // Confirming replaces at this index; dismissing leaves the list untouched.
+  // When non-null, the modal is editing this draft index; confirm
+  // replaces in place, dismiss leaves the list untouched (the draft
+  // is never popped on edit-pencil click).
   const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
-  // The question-form modal. Tapping a category bubble opens it preset to
-  // that category; the checkmark in the upper-right confirms (stages the
-  // question), backdrop / X dismisses (discards). The draft card only
-  // renders when drafts.length > 0 — so dismissing a first-question modal
-  // leaves no trace of an in-progress poll.
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
@@ -641,10 +641,6 @@ export function CreateQuestionContent() {
     setMinimumParticipation(d.minimumParticipation);
   }, []);
 
-  // Pencil on a staged question: load the draft into the modal form for
-  // editing. We DON'T remove from the list — confirm replaces at the index,
-  // dismiss leaves the list untouched (so dismissing an edit preserves the
-  // original draft).
   const handleEditDraft = useCallback((index: number) => {
     const target = drafts[index];
     if (!target) return;
@@ -654,50 +650,32 @@ export function CreateQuestionContent() {
     setIsModalOpen(true);
   }, [drafts, applyDraftToState]);
 
-  // Smoothly scroll the just-materialized draft poll card UP toward the
-  // header — but only as far as the document naturally allows. If we're
-  // already at scroll-bottom and the card is still further down the page,
-  // leave it where it is (the browser clamps to maxScroll automatically).
-  // The DRAFT_TOP_GAP constant is the small breathing-room margin between
-  // the bottom of the fixed header and the top of the card, applied only
-  // when the card actually reaches the top.
+  // Bring the just-materialized draft card up under the fixed header,
+  // capped at the document's natural maxScroll — never push the card
+  // downward or extend the page artificially. The 12px gap leaves a
+  // sliver of breathing room when the card does reach the top.
   const scrollDraftCardUnderHeader = useCallback(() => {
-    const DRAFT_TOP_GAP = 12; // px — small gap so card isn't flush with header
-    const tryScroll = (): boolean => {
-      const card = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
-      if (!card) return false;
-      const header = document.querySelector(`[${THREAD_HEADER_ATTR}]`) as HTMLElement | null;
-      const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
-      const cardTop = card.getBoundingClientRect().top;
-      const target = Math.max(0, window.scrollY + cardTop - headerBottom - DRAFT_TOP_GAP);
-      // No need to scroll if we're already past the target (don't push the
-      // card DOWN; we only want to bring it up).
-      if (target <= window.scrollY) return true;
-      window.scrollTo({ top: target, behavior: 'smooth' });
-      return true;
-    };
+    const DRAFT_TOP_GAP = 12;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (!tryScroll()) {
-          // Portal target wasn't ready yet — try one more time after a tick.
-          setTimeout(tryScroll, 50);
-        }
+        const card = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
+        if (!card) return;
+        const header = document.querySelector(`[${THREAD_HEADER_ATTR}]`) as HTMLElement | null;
+        const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
+        const target = Math.max(0, window.scrollY + card.getBoundingClientRect().top - headerBottom - DRAFT_TOP_GAP);
+        if (target <= window.scrollY) return;
+        window.scrollTo({ top: target, behavior: 'smooth' });
       });
     });
   }, []);
 
-  // Modal checkmark: validate per-question fields, snapshot the form into a
-  // draft, replace at editingDraftIndex (edit flow) or append (new question
-  // flow), then reset form state and close the modal.
-  // Returns true on success, false if validation failed (modal stays open).
   const confirmModal = useCallback((): boolean => {
     const subErr = getCurrentQuestionFormError();
     if (subErr) { setError(subErr); return false; }
     setError(null);
     const draft = readCurrentDraft();
-    // Capture the transition we're about to cause — the draft card only
-    // materializes when drafts goes 0 → 1. Subsequent additions don't shift
-    // the card position much, so we don't need to scroll then.
+    // Only the 0 → 1 transition materializes the card; subsequent
+    // additions don't shift its position enough to warrant scrolling.
     const draftCardJustMaterialized = drafts.length === 0 && editingDraftIndex === null;
     if (editingDraftIndex !== null) {
       setDrafts(prev => {
@@ -717,12 +695,6 @@ export function CreateQuestionContent() {
     return true;
   }, [drafts.length, editingDraftIndex, readCurrentDraft, applyDraftToState, scrollDraftCardUnderHeader]);
 
-  // Modal dismiss (backdrop / X / Escape): discard the in-progress form and
-  // close the modal without staging. When editingDraftIndex is set, the
-  // original draft remains in the list untouched (we never removed it on
-  // pencil click). When this was a first-question modal (drafts.length === 0
-  // AND no edit), the draft card simply doesn't render so no trace of the
-  // attempted poll remains — matches the user spec exactly.
   const dismissModal = useCallback(() => {
     applyDraftToState(emptyDraft());
     setEditingDraftIndex(null);
@@ -730,37 +702,16 @@ export function CreateQuestionContent() {
     setIsModalOpen(false);
   }, [applyDraftToState]);
 
-  // Tap a category bubble: reset form to a fresh draft preset to that
-  // category and open the modal. The category determines the form layout:
-  //   - "time"  → time question (day/time windows + duration + min availability)
-  //   - "yes_no" → simple title-only yes/no question
-  //   - "restaurant" / "location" → ranked-choice with proximity search + reference location
-  //   - other built-ins (movie, video_game) → ranked-choice with autocomplete
-  //   - "custom" → free-form ranked-choice or yes/no via category dropdown
-  // Every bubble uses `mode: 'question'` (the default) so CategoryForLine
-  // renders the inline `<category> for <context>` line for every type —
-  // including time. The questionFormBody internally branches on
-  // `category === 'time'` to render time-specific fields, and emptyDraft
-  // initializes dayTimeWindows when category is 'time'.
   const openModalFor = useCallback((cat: string) => {
-    const fresh = emptyDraft({ category: cat });
-    // Yes/No questions use the title as the prompt itself, so autotitle
-    // must be off (matches handleCategoryChange's behavior when the user
-    // picks "Yes/No" from the dropdown inside the modal).
-    if (cat === 'yes_no') {
-      fresh.isAutoTitle = false;
-      fresh.title = '';
-    }
-    applyDraftToState(fresh);
+    applyDraftToState(emptyDraft({ category: cat }));
     setEditingDraftIndex(null);
     setError(null);
     setIsModalOpen(true);
   }, [applyDraftToState]);
 
-  // Body-scroll lock + Escape-to-dismiss while the modal is open. We use
-  // `position: fixed` on <body> with the saved scrollY so iOS's native
-  // pull-to-refresh doesn't bypass `overflow: hidden` (mirrors the
-  // pre-existing pattern from the retired slide-up modal).
+  // `position: fixed` on body (vs. `overflow: hidden`) is required to
+  // block iOS pull-to-refresh from bypassing the lock. Mirrors the
+  // pattern in TimeGridModal / DaysSelector / RankableOptions.
   useEffect(() => {
     if (!isModalOpen) return;
     const scrollY = window.scrollY;
@@ -940,10 +891,7 @@ export function CreateQuestionContent() {
           if (duplicateData.show_preliminary_results != null) setShowPreliminaryResults(duplicateData.show_preliminary_results);
           if (duplicateData.allow_pre_ranking != null) setAllowPreRanking(duplicateData.allow_pre_ranking);
 
-          // Surface the prefilled form to the user — without auto-opening,
-          // the draft card wouldn't render (drafts.length === 0) and the
-          // pre-population would be invisible until they happened to tap
-          // a category bubble (which would clobber the prefill).
+          // Auto-open: prefill is invisible until the user opens the modal.
           setIsModalOpen(true);
 
           // Don't clean up the duplicate data yet - keep it until question is created
@@ -984,9 +932,7 @@ export function CreateQuestionContent() {
           setQuestionType('question'); // Set to preference question
           setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
 
-          // Surface the prefilled form via the modal — same rationale as
-          // the duplicate flow above. Without this the draft card stays
-          // hidden (drafts.length === 0) and the prefill is invisible.
+          // Auto-open: prefill is invisible until the user opens the modal.
           setIsModalOpen(true);
 
           // Don't clean up the vote data yet - keep it until question is created
@@ -1616,41 +1562,16 @@ export function CreateQuestionContent() {
     </form>
   );
 
-  // The draft poll card only renders when at least one question has been
-  // staged. Tapping a category bubble at the bottom of the scroll opens the
-  // question-form modal; the checkmark in the modal's upper-right commits
-  // the question to the draft list. Dismissing the first-question modal
-  // (drafts.length === 0) leaves no trace — no draft card appears. The
-  // settings (voting cutoff, prephase cutoff, notes, voter name) and the
-  // staged-questions list live in the draft card; the per-question form
-  // (CategoryForLine + question fields) lives only in the modal.
   const hasDrafts = drafts.length > 0;
-
-  // Categories surfaced by the bubble bar — every BUILT_IN_TYPES entry plus
-  // a "Custom" tile that opens the modal in the free-form ranked-choice
-  // mode (user can switch the category dropdown inside the modal). Order
-  // matches the dropdown so muscle memory carries over.
-  const bubbleEntries: Array<{ value: string; label: string; icon: string }> = [
-    ...BUILT_IN_TYPES,
-    { value: 'custom', label: 'Custom', icon: '✨' },
-  ];
 
   return (
     <div className="question-content">
-      {/* Draft card + bubble bar — portal-rendered into the page's poll
-          list at the bottom (`#draft-poll-portal`). Bubbles always render;
-          the draft card chrome (Submit header + dashed card with staged
-          list + settings) only renders when at least one question has
-          been staged. */}
       {draftPollPortal && createPortal(
         <>
-          {/* Draft poll card — chrome only when drafts exist. */}
           {hasDrafts && (
             <div className="pt-3">
               {/* Submit button is absolute-positioned so adding it doesn't
-                  shift the centered preview-title label off-axis. mt-[3px]
-                  optically centers the cap-height label against the
-                  button's visual midline. */}
+                  shift the centered preview-title label off-axis. */}
               <div className="relative mx-1.5 mb-2 flex items-center justify-center min-h-9">
                 <span className="inline-block text-sm font-medium text-gray-500 dark:text-gray-400 select-none mt-[3px] truncate max-w-[calc(100%-4rem)]">
                   {projectedDrafts.length > 0 && !validationError
@@ -1826,17 +1747,10 @@ export function CreateQuestionContent() {
             </div>
           )}
 
-          {/* Category bubble bar — wraps and centers; tap any bubble to
-              open the question-form modal preset to that category. The
-              `pt-*` here is the gap above the bubbles (between draft card
-              and bubbles, or between thread polls and bubbles when no
-              drafts). The gap below the bubbles comes from the page's
-              outer paddingBottom (template.tsx). */}
-          <div
-            className={`px-3 ${hasDrafts ? 'pt-4' : 'pt-3'} flex flex-wrap justify-center gap-2`}
-            data-category-bubbles
-          >
-            {bubbleEntries.map((entry) => (
+          {/* Category bubble bar — pt-* is the gap above; the gap below
+              comes from the page's outer paddingBottom (template.tsx). */}
+          <div className={`px-3 ${hasDrafts ? 'pt-4' : 'pt-3'} flex flex-wrap justify-center gap-2`}>
+            {BUBBLE_ENTRIES.map((entry) => (
               <button
                 key={entry.value}
                 type="button"

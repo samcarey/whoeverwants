@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import RespondentCircles from "@/components/RespondentCircles";
 import { navigateWithTransition } from "@/lib/viewTransitions";
-import { THREAD_HEADER_ATTR } from "@/lib/threadDomMarkers";
 
 export interface ThreadHeaderProps {
   headerRef: React.Ref<HTMLDivElement>;
@@ -58,7 +57,7 @@ export default function ThreadHeader({
   );
   return (
     <div
-      {...{ [THREAD_HEADER_ATTR]: '' }}
+      data-thread-header=""
       className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
     >

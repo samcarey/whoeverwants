@@ -45,15 +45,17 @@ export interface QuestionDraft {
  *  so CategoryForLine renders the inline context field, while the
  *  questionFormBody picks up time fields via `category === 'time'`. The
  *  legacy `mode: 'time'` path remains for any caller that hasn't migrated.
+ *  Yes/No drafts force `isAutoTitle: false` since the title IS the prompt.
  */
 export function emptyDraft(opts: { mode?: 'question' | 'time'; category?: string } = {}): QuestionDraft {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const isTime = opts.mode === 'time' || opts.category === 'time';
+  const isYesNo = opts.category === 'yes_no';
   return {
     questionType: opts.mode === 'time' ? 'time' : 'question',
     title: '',
-    isAutoTitle: true,
+    isAutoTitle: !isYesNo,
     category: opts.category ?? 'custom',
     forField: '',
     options: [''],
