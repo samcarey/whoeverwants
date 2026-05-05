@@ -703,6 +703,13 @@ export function CreateQuestionContent() {
       mode: cat === 'time' ? 'time' : 'question',
       category: cat,
     });
+    // Yes/No questions use the title as the prompt itself, so autotitle
+    // must be off (matches handleCategoryChange's behavior when the user
+    // picks "Yes/No" from the dropdown inside the modal).
+    if (cat === 'yes_no') {
+      fresh.isAutoTitle = false;
+      fresh.title = '';
+    }
     applyDraftToState(fresh);
     setEditingDraftIndex(null);
     setError(null);
