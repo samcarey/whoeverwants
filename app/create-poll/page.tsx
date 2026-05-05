@@ -654,24 +654,25 @@ export function CreateQuestionContent() {
     setIsModalOpen(true);
   }, [drafts, applyDraftToState]);
 
-  // Smoothly scroll the just-materialized draft poll card so its top sits
-  // flush with the bottom of the fixed thread header. We use requestAnimationFrame
-  // twice: the first frame lets React commit the new drafts state (causing
-  // the card to mount via the portal); the second lets the body-scroll-lock
-  // cleanup's instant scrollTo run before our smooth scroll, so we animate
-  // from the post-modal scroll position rather than having both compete.
-  // The trailing spacer below the bubbles (rendered in the portal when
-  // drafts exist) guarantees enough scroll room for the card to actually
-  // reach the top — without it, short threads + a tall card hit max-scroll
-  // before the card clears the polls above.
+  // Smoothly scroll the just-materialized draft poll card UP toward the
+  // header — but only as far as the document naturally allows. If we're
+  // already at scroll-bottom and the card is still further down the page,
+  // leave it where it is (the browser clamps to maxScroll automatically).
+  // The DRAFT_TOP_GAP constant is the small breathing-room margin between
+  // the bottom of the fixed header and the top of the card, applied only
+  // when the card actually reaches the top.
   const scrollDraftCardUnderHeader = useCallback(() => {
+    const DRAFT_TOP_GAP = 12; // px — small gap so card isn't flush with header
     const tryScroll = (): boolean => {
       const card = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
       if (!card) return false;
       const header = document.querySelector(`[${THREAD_HEADER_ATTR}]`) as HTMLElement | null;
       const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
       const cardTop = card.getBoundingClientRect().top;
-      const target = Math.max(0, window.scrollY + cardTop - headerBottom);
+      const target = Math.max(0, window.scrollY + cardTop - headerBottom - DRAFT_TOP_GAP);
+      // No need to scroll if we're already past the target (don't push the
+      // card DOWN; we only want to bring it up).
+      if (target <= window.scrollY) return true;
       window.scrollTo({ top: target, behavior: 'smooth' });
       return true;
     };
@@ -1850,15 +1851,6 @@ export function CreateQuestionContent() {
             ))}
           </div>
 
-          {/* Trailing scroll spacer — only when drafts exist. Guarantees
-              the document has enough room below the card+bubbles for
-              scrollDraftCardUnderHeader to actually bring the card top
-              flush with the header bottom. Without this, short threads
-              with a tall card hit max-scroll before the card clears the
-              polls above. The spacer sits BELOW the bubbles so the user
-              never sees its empty area unless they scroll past the
-              bubbles, which they have no reason to. */}
-          {hasDrafts && <div aria-hidden style={{ height: '70vh' }} />}
         </>,
         draftPollPortal
       )}
