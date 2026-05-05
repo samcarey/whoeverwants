@@ -39,7 +39,7 @@ import {
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, THREAD_HEADER_ATTR, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
 import {
   pollLookup,
   shortenOption,
@@ -654,6 +654,33 @@ export function CreateQuestionContent() {
     setIsModalOpen(true);
   }, [drafts, applyDraftToState]);
 
+  // Smoothly scroll the just-materialized draft poll card so its top sits
+  // flush with the bottom of the fixed thread header. We use requestAnimationFrame
+  // twice: the first frame lets React commit the new drafts state (causing
+  // the card to mount via the portal); the second lets the body-scroll-lock
+  // cleanup's instant scrollTo run before our smooth scroll, so we animate
+  // from the post-modal scroll position rather than having both compete.
+  const scrollDraftCardUnderHeader = useCallback(() => {
+    const tryScroll = (): boolean => {
+      const card = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
+      if (!card) return false;
+      const header = document.querySelector(`[${THREAD_HEADER_ATTR}]`) as HTMLElement | null;
+      const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
+      const cardTop = card.getBoundingClientRect().top;
+      const target = Math.max(0, window.scrollY + cardTop - headerBottom);
+      window.scrollTo({ top: target, behavior: 'smooth' });
+      return true;
+    };
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!tryScroll()) {
+          // Portal target wasn't ready yet — try one more time after a tick.
+          setTimeout(tryScroll, 50);
+        }
+      });
+    });
+  }, []);
+
   // Modal checkmark: validate per-question fields, snapshot the form into a
   // draft, replace at editingDraftIndex (edit flow) or append (new question
   // flow), then reset form state and close the modal.
@@ -663,6 +690,10 @@ export function CreateQuestionContent() {
     if (subErr) { setError(subErr); return false; }
     setError(null);
     const draft = readCurrentDraft();
+    // Capture the transition we're about to cause — the draft card only
+    // materializes when drafts goes 0 → 1. Subsequent additions don't shift
+    // the card position much, so we don't need to scroll then.
+    const draftCardJustMaterialized = drafts.length === 0 && editingDraftIndex === null;
     if (editingDraftIndex !== null) {
       setDrafts(prev => {
         const next = [...prev];
@@ -675,8 +706,11 @@ export function CreateQuestionContent() {
     applyDraftToState(emptyDraft());
     setEditingDraftIndex(null);
     setIsModalOpen(false);
+    if (draftCardJustMaterialized) {
+      scrollDraftCardUnderHeader();
+    }
     return true;
-  }, [editingDraftIndex, readCurrentDraft, applyDraftToState]);
+  }, [drafts.length, editingDraftIndex, readCurrentDraft, applyDraftToState, scrollDraftCardUnderHeader]);
 
   // Modal dismiss (backdrop / X / Escape): discard the in-progress form and
   // close the modal without staging. When editingDraftIndex is set, the
