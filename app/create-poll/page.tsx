@@ -30,7 +30,7 @@ import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { findThreadRootRouteId } from "@/lib/threadUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
-import { cachePoll, cacheAccessiblePolls, getCachedAccessiblePolls, getCachedQuestionById, invalidatePoll } from "@/lib/questionCache";
+import { cachePoll, getCachedAccessiblePolls, getCachedQuestionById, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
@@ -1220,17 +1220,11 @@ export function CreateQuestionContent() {
         : { x: 0, y: 0, width: 0, height: 0 };
 
       // Cache the placeholder so destination thread render can find it.
-      // Only update the accessible-polls list cache when it's FRESH; merging
-      // into a stale `?? []` overwrites the cache to just `[placeholderPoll]`,
-      // dropping every other poll. The thread page's POLL_PENDING handler
-      // now falls back to prev.polls so this isn't strictly required for the
-      // thread view, but other consumers (e.g. the home page on remount)
-      // would briefly see only the placeholder otherwise.
       cachePoll(placeholderPoll);
-      const cachedAccessible = getCachedAccessiblePolls();
-      if (cachedAccessible) {
-        cacheAccessiblePolls([...cachedAccessible.filter(p => p.id !== placeholderPoll.id), placeholderPoll]);
-      }
+      updateAccessiblePollsIfFresh(existing => [
+        ...existing.filter(p => p.id !== placeholderPoll.id),
+        placeholderPoll,
+      ]);
 
       // Dispatch BEFORE we clear the draft state so listeners can read the
       // bbox in time.
@@ -1281,10 +1275,7 @@ export function CreateQuestionContent() {
         // from thread state; here we evict it from cache and restore the
         // staged drafts so the user can edit and resubmit.
         invalidatePoll(placeholderPoll.id);
-        const cachedAfter = getCachedAccessiblePolls();
-        if (cachedAfter) {
-          cacheAccessiblePolls(cachedAfter.filter(p => p.id !== placeholderPoll.id));
-        }
+        updateAccessiblePollsIfFresh(existing => existing.filter(p => p.id !== placeholderPoll.id));
         window.dispatchEvent(
           new CustomEvent<PollFailedDetail>(POLL_FAILED_EVENT, {
             detail: { placeholderId: placeholderPoll.id },
@@ -1320,15 +1311,11 @@ export function CreateQuestionContent() {
 
       // Cache the real poll, then notify thread state so it swaps placeholder
       // fields for real ones in place (same DOM node — no remount mid-FLIP).
-      // Same caveat as the placeholder-cache write: only merge into the
-      // accessible cache when it's fresh (60s TTL); a `?? []` merge would
-      // wipe every other poll out of the cache when the user idled past TTL
-      // before submitting.
       cachePoll(createdPoll);
-      const cached2 = getCachedAccessiblePolls();
-      if (cached2) {
-        cacheAccessiblePolls([...cached2.filter(p => p.id !== placeholderPoll.id && p.id !== createdPoll.id), createdPoll]);
-      }
+      updateAccessiblePollsIfFresh(existing => [
+        ...existing.filter(p => p.id !== placeholderPoll.id && p.id !== createdPoll.id),
+        createdPoll,
+      ]);
       window.dispatchEvent(
         new CustomEvent<PollHydratedDetail>(POLL_HYDRATED_EVENT, {
           detail: { placeholderId: placeholderPoll.id, poll: createdPoll },

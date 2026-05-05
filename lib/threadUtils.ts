@@ -26,6 +26,14 @@ import { isUuidLike } from './questionId';
  *  the linked poll is voted+closed already. */
 export const THREAD_QUERY_PARAM = 'thread';
 
+/** True when `id` is a placeholder poll id synthesized by
+ *  `synthesizePlaceholderPoll` (e.g. `pending-mosw8mkj-pp6476`). Their question
+ *  ids (`<pollId>-q0`) aren't valid UUIDs, so per-question API calls 500 if
+ *  fired against them — gate fetch sites with this check. */
+export function isPendingPollId(id: string | null | undefined): boolean {
+  return !!id && id.startsWith('pending-');
+}
+
 /** Build a poll_id → Poll lookup Map. The first occurrence per
  *  poll wins, so callers can prepend a known-current wrapper to override
  *  an entry already in the cache. */
