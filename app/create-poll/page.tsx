@@ -1870,8 +1870,12 @@ export function CreateQuestionContent() {
                 </button>
               </div>
 
-              {/* Form body — scrollable when content overflows. */}
-              <div className="flex-1 overflow-y-auto px-4 pb-4">
+              {/* Form body — scrollable when content overflows. The bottom
+                  padding here matches the thread-like page's outer
+                  `paddingBottom: '4.5rem'` (template.tsx) so elements
+                  inside the sheet have the same breathing room above the
+                  modal edge that the bubbles have above the screen edge. */}
+              <div className="flex-1 overflow-y-auto px-4 pb-[4.5rem]">
                 <div className="mb-3">
                   {questionType === 'question' ? (
                     <CategoryForLine
