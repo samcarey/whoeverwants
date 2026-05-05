@@ -510,6 +510,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       flushSync(() => {
         setPendingPollFirstQuestionId(newPoll.questions[0]?.id ?? null);
         setThread((prev) => prev ? rebuildThreadFromCacheOrPrev(prev, { add: newPoll }) : prev);
+        // Mount the new card eagerly. Without this, the validation effect
+        // resets mountedGroupKeys to (prev ∩ validKeys + anchor), which
+        // doesn't include this freshly-added group key. The card would
+        // render as a gray placeholder div until progressive fill walked
+        // the queue to it (~270ms on a long thread, since the new card
+        // sits at the chronological end far from the URL anchor).
+        setMountedGroupKeys((prev) => {
+          if (prev.has(newPoll.id)) return prev;
+          const next = new Set(prev);
+          next.add(newPoll.id);
+          return next;
+        });
       });
     };
     window.addEventListener(POLL_PENDING_EVENT, handler);
@@ -551,6 +563,17 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         return rebuildThreadFromCacheOrPrev(prev, { add: realPoll, remove: placeholderId });
       });
       setPendingPollFirstQuestionId(null);
+      // Mount the real card eagerly (same reason as POLL_PENDING — see
+      // comment there). Drop the placeholder's key in the same setState so
+      // mountedGroupKeys stays consistent with thread state.
+      setMountedGroupKeys((prev) => {
+        const placeholderPollId = placeholderId; // pending-... poll id
+        if (!prev.has(placeholderPollId) && prev.has(realPoll.id)) return prev;
+        const next = new Set(prev);
+        next.delete(placeholderPollId);
+        next.add(realPoll.id);
+        return next;
+      });
 
       // Optimistic-rebuild fallback: when the new poll's parent isn't in
       // prev.polls (e.g. the parent was discovered AFTER thread state was
@@ -587,6 +610,14 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         return rebuildThreadFromCacheOrPrev(prev, placeholderId ? { remove: placeholderId } : undefined);
       });
       setPendingPollFirstQuestionId(null);
+      if (placeholderId) {
+        setMountedGroupKeys((prev) => {
+          if (!prev.has(placeholderId)) return prev;
+          const next = new Set(prev);
+          next.delete(placeholderId);
+          return next;
+        });
+      }
     };
     window.addEventListener(POLL_FAILED_EVENT, handler);
     return () => window.removeEventListener(POLL_FAILED_EVENT, handler);
