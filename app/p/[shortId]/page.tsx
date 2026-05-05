@@ -1746,29 +1746,43 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       />
       )}
 
-      {/* Yes/No vote-change confirmation — triggered by tapping a non-chosen
-          option (or the Abstain link) on the external YesNoResults card.
-          Only fires for non-multi-group cards; all-yes_no multi-groups stage
-          instead and confirm via the wrapper-level modal below. */}
-      <ConfirmationModal
-        isOpen={!!pendingVoteChange}
-        title="Change vote?"
-        message={
-          pendingVoteChange
-            ? (() => {
-                const current = userVoteMap.get(pendingVoteChange.questionId)?.choice;
-                const label = (c: 'yes' | 'no' | 'abstain' | null | undefined) =>
-                  c === 'abstain' ? 'Abstain' : c === 'yes' ? 'Yes' : c === 'no' ? 'No' : '';
-                return `Change your vote from ${label(current)} to ${label(pendingVoteChange.newChoice)}?`;
-              })()
-            : ''
-        }
-        confirmText={voteChangeSubmitting ? 'Saving…' : 'Change vote'}
-        cancelText="Cancel"
-        confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
-        onConfirm={confirmVoteChange}
-        onCancel={() => setPendingVoteChange(null)}
-      />
+      {/* Yes/No vote confirmation — triggered by tapping an option (or
+          the Abstain link) on the external YesNoResults card. Handles both
+          first-time submits (no prior vote) and vote-changes. Only fires
+          for non-multi-group cards; all-yes_no multi-groups stage instead
+          and confirm via the wrapper-level modal below. */}
+      {(() => {
+        const current = pendingVoteChange
+          ? userVoteMap.get(pendingVoteChange.questionId)?.choice
+          : undefined;
+        const label = (c: 'yes' | 'no' | 'abstain' | null | undefined) =>
+          c === 'abstain' ? 'Abstain' : c === 'yes' ? 'Yes' : c === 'no' ? 'No' : '';
+        const isChange = !!current;
+        return (
+          <ConfirmationModal
+            isOpen={!!pendingVoteChange}
+            title={isChange ? 'Change vote?' : 'Submit vote?'}
+            message={
+              pendingVoteChange
+                ? isChange
+                  ? `Change your vote from ${label(current)} to ${label(pendingVoteChange.newChoice)}?`
+                  : `Submit your vote: ${label(pendingVoteChange.newChoice)}?`
+                : ''
+            }
+            confirmText={
+              voteChangeSubmitting
+                ? 'Saving…'
+                : isChange
+                  ? 'Change vote'
+                  : 'Submit vote'
+            }
+            cancelText="Cancel"
+            confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
+            onConfirm={confirmVoteChange}
+            onCancel={() => setPendingVoteChange(null)}
+          />
+        );
+      })()}
 
       {/* Wrapper-level Submit confirmation. subQuestions + stagedCount are
           snapshotted at button-tap time so the modal stays consistent if
