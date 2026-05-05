@@ -69,9 +69,9 @@ export const dynamic = 'force-dynamic';
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
 // Order matches the dropdown inside the modal so muscle memory carries over.
-const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon: string }> = [
+const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
-  { value: 'custom', label: 'Other', icon: '' },
+  { value: 'custom', label: 'Other' },
 ];
 
 export function CreateQuestionContent() {
