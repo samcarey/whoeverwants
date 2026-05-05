@@ -534,14 +534,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const placeholderId = detail?.placeholderId;
       const realPoll = detail?.poll;
       if (!placeholderId || !realPoll) return;
+
+      // Optimistic in-place rebuild from prev.polls + cache + realPoll.
+      // prev.polls is the resilience fallback for stale `accessiblePollsCache`
+      // (60s TTL) — the submit handler's `cacheAccessiblePolls([...getCached()
+      // ?? [], realPoll])` writes only [realPoll] when the cache was stale,
+      // and without prev.polls in the merge `buildThreadFromPollDown` can't
+      // find rootPollId and bails.
       setThread((prev) => {
         if (!prev) return prev;
-        // Rebuild from prev.polls + cache + realPoll, dropping the placeholder.
-        // prev.polls is the resilience fallback for stale `accessiblePollsCache`
-        // (60s TTL) — the submit handler's `cacheAccessiblePolls([...getCached()
-        // ?? [], realPoll])` writes only [realPoll] when the cache was stale,
-        // and without prev.polls in the merge `buildThreadFromPollDown` can't
-        // find rootPollId and bails.
         const threadPollIds = new Set(prev.polls.map(p => p.id));
         const isFollowUp = realPoll.follow_up_to && threadPollIds.has(realPoll.follow_up_to);
         const isOwnRoot = realPoll.id === prev.rootPollId;
@@ -550,6 +551,23 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         return rebuildThreadFromCacheOrPrev(prev, { add: realPoll, remove: placeholderId });
       });
       setPendingPollFirstQuestionId(null);
+
+      // Optimistic-rebuild fallback: when the new poll's parent isn't in
+      // prev.polls (e.g. the parent was discovered AFTER thread state was
+      // built — accessiblePollsCache got invalidated, so the cache fallback
+      // can't fill it in either), the in-place rebuild leaves the new poll
+      // out of the chain. Re-fetch the accessible-polls list (which respects
+      // localStorage's full set, including any newly-discovered ancestors)
+      // and rebuild from a fresh source. Cheap to always run; the rebuild's
+      // identity-equality short-circuit makes it a no-op when nothing changed.
+      void (async () => {
+        try {
+          await getAccessiblePolls();
+          setThread((prev) => prev ? rebuildThreadFromCacheOrPrev(prev, { add: realPoll, remove: placeholderId }) : prev);
+        } catch {
+          // Optimistic rebuild has already fired; nothing else to do.
+        }
+      })();
     };
     window.addEventListener(POLL_HYDRATED_EVENT, handler);
     return () => window.removeEventListener(POLL_HYDRATED_EVENT, handler);
