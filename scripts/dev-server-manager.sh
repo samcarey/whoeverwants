@@ -486,12 +486,14 @@ cmd_upsert() {
     old_pyproject_hash=$(md5sum server/pyproject.toml | cut -d' ' -f1)
   fi
 
-  # Fetch and checkout the branch
+  # Reset + clean before checkout so leftover local mods / untracked files
+  # can't block it. NOT `clean -x` — that would wipe ignored build/runtime
+  # state (.next/, node_modules/, .api.pid, *.log).
   log "--- Fetching and checking out $branch ---"
   git fetch origin "$branch" --depth 50
-  git checkout "$branch" 2>/dev/null \
-    || git checkout -b "$branch" FETCH_HEAD 2>/dev/null \
-    || git checkout "$branch"
+  git reset --hard HEAD
+  git clean -fd
+  git checkout -B "$branch" FETCH_HEAD
   git reset --hard FETCH_HEAD
 
   # Check if JS dependencies changed

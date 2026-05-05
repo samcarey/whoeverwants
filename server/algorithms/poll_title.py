@@ -28,6 +28,7 @@ _CATEGORY_LABELS: dict[str, str] = {
     "location": "Place",
     "time": "Time",
     "movie": "Movie",
+    "video_game": "Video Game",
     "videogame": "Video Game",
     "petname": "Pet Name",
     "custom": "Custom",
@@ -46,7 +47,7 @@ def _label_for(category: str) -> str:
     key = category.strip().lower()
     if key in _CATEGORY_LABELS:
         return _CATEGORY_LABELS[key]
-    return " ".join(word.capitalize() for word in category.strip().split())
+    return " ".join(word.capitalize() for word in category.strip().replace("_", " ").split())
 
 
 def _single_question_default_title(category: str) -> str:

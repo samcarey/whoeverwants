@@ -69,9 +69,9 @@ export const dynamic = 'force-dynamic';
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
 // Order matches the dropdown inside the modal so muscle memory carries over.
-const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon: string }> = [
+const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
-  { value: 'custom', label: 'Custom', icon: '✨' },
+  { value: 'custom', label: 'Other' },
 ];
 
 export function CreateQuestionContent() {
@@ -1778,7 +1778,9 @@ export function CreateQuestionContent() {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
                 aria-label={`Add ${entry.label} question`}
               >
-                <span className="text-base leading-none" aria-hidden>{entry.icon}</span>
+                {entry.icon && (
+                  <span className="text-base leading-none" aria-hidden>{entry.icon}</span>
+                )}
                 <span>{entry.label}</span>
               </button>
             ))}
