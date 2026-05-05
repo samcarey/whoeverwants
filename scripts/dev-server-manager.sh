@@ -486,12 +486,28 @@ cmd_upsert() {
     old_pyproject_hash=$(md5sum server/pyproject.toml | cut -d' ' -f1)
   fi
 
-  # Fetch and checkout the branch
+  # Fetch and checkout the branch.
+  #
+  # The working tree may have local modifications or untracked files left
+  # over from previous sessions (or hand-edits from CI test scripts). Those
+  # block `git checkout <branch>` with "would be overwritten by checkout"
+  # — and the previous fallback chain `checkout || checkout -b FETCH_HEAD ||
+  # checkout` swallowed all three errors with `2>/dev/null`, so the only
+  # visible symptom was the final "pathspec did not match" line in the
+  # webhook log, which masked the real cause. Reset + clean before the
+  # checkout so it can't be blocked. We `reset --hard FETCH_HEAD` after
+  # anyway, so any local mods are forfeit; wiping them up front is just
+  # honest.
   log "--- Fetching and checking out $branch ---"
   git fetch origin "$branch" --depth 50
-  git checkout "$branch" 2>/dev/null \
-    || git checkout -b "$branch" FETCH_HEAD 2>/dev/null \
-    || git checkout "$branch"
+  git reset --hard HEAD >/dev/null
+  # -fd cleans untracked tracked-eligible files + dirs (e.g. stray test
+  # scripts at the repo root). NOT -x: that would also wipe ignored paths
+  # like .next/, node_modules/, .api.pid, .nextjs.pid, *.log — losing
+  # build cache and runtime state we need. Anything ignored is by
+  # definition outside the branch's content.
+  git clean -fd >/dev/null
+  git checkout -B "$branch" FETCH_HEAD
   git reset --hard FETCH_HEAD
 
   # Check if JS dependencies changed
