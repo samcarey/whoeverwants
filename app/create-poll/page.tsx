@@ -660,18 +660,18 @@ export function CreateQuestionContent() {
   // the card to mount via the portal); the second lets the body-scroll-lock
   // cleanup's instant scrollTo run before our smooth scroll, so we animate
   // from the post-modal scroll position rather than having both compete.
+  // The trailing spacer below the bubbles (rendered in the portal when
+  // drafts exist) guarantees enough scroll room for the card to actually
+  // reach the top — without it, short threads + a tall card hit max-scroll
+  // before the card clears the polls above.
   const scrollDraftCardUnderHeader = useCallback(() => {
     const tryScroll = (): boolean => {
       const card = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
-      if (!card) {
-        console.log('[draft-scroll] card not in DOM yet');
-        return false;
-      }
+      if (!card) return false;
       const header = document.querySelector(`[${THREAD_HEADER_ATTR}]`) as HTMLElement | null;
       const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
       const cardTop = card.getBoundingClientRect().top;
       const target = Math.max(0, window.scrollY + cardTop - headerBottom);
-      console.log('[draft-scroll] scrollY:', window.scrollY, 'cardTop:', cardTop, 'headerBottom:', headerBottom, 'target:', target);
       window.scrollTo({ top: target, behavior: 'smooth' });
       return true;
     };
@@ -1849,6 +1849,16 @@ export function CreateQuestionContent() {
               </button>
             ))}
           </div>
+
+          {/* Trailing scroll spacer — only when drafts exist. Guarantees
+              the document has enough room below the card+bubbles for
+              scrollDraftCardUnderHeader to actually bring the card top
+              flush with the header bottom. Without this, short threads
+              with a tall card hit max-scroll before the card clears the
+              polls above. The spacer sits BELOW the bubbles so the user
+              never sees its empty area unless they scroll past the
+              bubbles, which they have no reason to. */}
+          {hasDrafts && <div aria-hidden style={{ height: '70vh' }} />}
         </>,
         draftPollPortal
       )}
