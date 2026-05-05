@@ -47,7 +47,9 @@ export interface QuestionDraft {
  *  legacy `mode: 'time'` path remains for any caller that hasn't migrated.
  *  Yes/No drafts force `isAutoTitle: false` since the title IS the prompt.
  */
-export function emptyDraft(opts: { mode?: 'question' | 'time'; category?: string } = {}): QuestionDraft {
+export function emptyDraft(
+  opts: { mode?: 'question' | 'time'; category?: string; forField?: string } = {},
+): QuestionDraft {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const isTime = opts.mode === 'time' || opts.category === 'time';
@@ -57,7 +59,7 @@ export function emptyDraft(opts: { mode?: 'question' | 'time'; category?: string
     title: '',
     isAutoTitle: !isYesNo,
     category: opts.category ?? 'custom',
-    forField: '',
+    forField: opts.forField ?? '',
     options: [''],
     optionsMetadata: {},
     refLatitude: undefined,
@@ -335,6 +337,9 @@ const _CATEGORY_LABELS: Record<string, string> = {
   custom: 'Custom',
 };
 
+// Match server _TITLE_CHAR_LIMIT in algorithms/poll_title.py.
+const POLL_TITLE_CHAR_LIMIT = 40;
+
 function _labelForCategory(category: string): string {
   if (!category) return '';
   const key = category.trim().toLowerCase();
@@ -346,10 +351,8 @@ function _labelForCategory(category: string): string {
     .join(' ');
 }
 
-function _joinCategories(labels: string[]): string {
-  if (labels.length === 1) return labels[0];
-  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
-  return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
+function _commaJoin(parts: string[]): string {
+  return parts.join(', ');
 }
 
 function _singleQuestionDefaultTitle(category: string): string {
@@ -369,11 +372,59 @@ function _draftCategory(d: QuestionDraft): string {
   return d.category || 'custom';
 }
 
+/** Returns the single shared per-question context, or null when one is
+ *  missing or contexts diverge. Case-insensitive comparison; returns the
+ *  first occurrence's casing.
+ *  Exported so the create-poll page can inherit a shared context onto a
+ *  newly-opened question form. */
+export function sharedDraftContext(drafts: QuestionDraft[]): string | null {
+  if (drafts.length === 0) return null;
+  const normalized = drafts.map(d => d.forField.trim());
+  if (normalized.some(c => !c)) return null;
+  const lowered = new Set(normalized.map(c => c.toLowerCase()));
+  if (lowered.size !== 1) return null;
+  return normalized[0];
+}
+
+/** Greedy "Cat1 for Ctx1, Cat2 for Ctx2, etc." builder for multi-question
+ *  polls whose questions have distinct per-question contexts. Mirrors
+ *  _build_distinct_contexts_title in server/algorithms/poll_title.py. */
+function _buildDistinctContextsTitle(
+  cats: string[],
+  contexts: string[],
+  charLimit: number,
+): string {
+  const parts: string[] = cats.map((cat, i) => {
+    const label = _labelForCategory(cat);
+    const ctx = (contexts[i] || '').trim();
+    return ctx ? `${label} for ${ctx}` : label;
+  });
+
+  const accumulated: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    const isLast = i === parts.length - 1;
+    const candidateFull = _commaJoin([...accumulated, part]);
+    const candidateWithEtc = isLast ? candidateFull : `${candidateFull}, etc.`;
+    if (accumulated.length > 0 && candidateWithEtc.length > charLimit) {
+      return `${_commaJoin(accumulated)}, etc.`;
+    }
+    accumulated.push(part);
+  }
+  if (accumulated.length === 0) return 'Questions';
+  return _commaJoin(accumulated);
+}
+
 /**
  * Preview values for the in-progress "Draft Poll" card in the create-poll
  * panel. Drives a `ThreadListItem` rendered in draft mode so the card
  * looks like the live poll will when submitted (just with a DRAFT pill +
  * dashed border that morph away on submit).
+ *
+ * Title generation mirrors server/algorithms/poll_title.py:generate_poll_title
+ * — when adding a rule, update both sides. Per-question contexts come from
+ * each draft's `forField`; the poll-level context is the explicit
+ * `pollContext` argument (today: the inline form's `details` field).
  */
 export function draftPollPreview(
   drafts: QuestionDraft[],
@@ -384,18 +435,36 @@ export function draftPollPreview(
     return { title: trimmedContext || 'New Poll', latestQuestionTitle: '', questionCount: 0 };
   }
 
-  // Wrapper title: when exactly 1 draft AND the user typed an explicit
-  // title (yes_no with !isAutoTitle), use it — that's what the server
-  // will use too. Otherwise mirror generate_poll_title().
   let title: string;
   if (drafts.length === 1 && !drafts[0].isAutoTitle && drafts[0].title.trim()) {
+    // Wrapper title: when exactly 1 draft AND the user typed an explicit
+    // title (yes_no with !isAutoTitle), use it — that's what the server
+    // will use too.
     title = drafts[0].title.trim();
   } else if (drafts.length === 1) {
-    if (trimmedContext) title = `${_labelForCategory(_draftCategory(drafts[0]))} for ${trimmedContext}`;
-    else title = _singleQuestionDefaultTitle(_draftCategory(drafts[0]));
+    // 1-question poll: title = the question's own auto-title (category
+    // + its own context, falling back to poll-level context).
+    const ctx = trimmedContext || drafts[0].forField.trim();
+    title = ctx
+      ? `${_labelForCategory(_draftCategory(drafts[0]))} for ${ctx}`
+      : _singleQuestionDefaultTitle(_draftCategory(drafts[0]));
   } else {
-    const joined = _joinCategories(drafts.map(d => _labelForCategory(_draftCategory(d))));
-    title = trimmedContext ? `${joined} for ${trimmedContext}` : joined;
+    const cats = drafts.map(d => _draftCategory(d));
+    const contexts = drafts.map(d => d.forField.trim());
+    const sharedFromDrafts = sharedDraftContext(drafts);
+    const shared = trimmedContext || sharedFromDrafts;
+
+    if (shared) {
+      const joined = _commaJoin(cats.map(c => _labelForCategory(c)));
+      const candidate = `${joined} for ${shared}`;
+      title = candidate.length <= POLL_TITLE_CHAR_LIMIT
+        ? candidate
+        : `Questions for ${shared}`;
+    } else if (contexts.some(c => c !== '')) {
+      title = _buildDistinctContextsTitle(cats, contexts, POLL_TITLE_CHAR_LIMIT);
+    } else {
+      title = _commaJoin(cats.map(c => _labelForCategory(c)));
+    }
   }
 
   // Preview line — same role as `latestQuestion.title` on a live thread

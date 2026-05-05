@@ -59,6 +59,7 @@ import {
   deriveDraftTitle,
   draftCardLabels,
   draftPollPreview,
+  sharedDraftContext,
   synthesizePlaceholderPoll,
 } from "./createPollHelpers";
 export const dynamic = 'force-dynamic';
@@ -703,11 +704,16 @@ export function CreateQuestionContent() {
   }, [applyDraftToState]);
 
   const openModalFor = useCallback((cat: string) => {
-    applyDraftToState(emptyDraft({ category: cat }));
+    // When the poll already has staged drafts AND they share a context,
+    // inherit it as the new question's forField so the auto-title can
+    // collapse to "Cat1, Cat2 for SharedContext" without the user retyping.
+    // Still editable — they can clear or change it freely.
+    const inheritedForField = sharedDraftContext(drafts) ?? '';
+    applyDraftToState(emptyDraft({ category: cat, forField: inheritedForField }));
     setEditingDraftIndex(null);
     setError(null);
     setIsModalOpen(true);
-  }, [applyDraftToState]);
+  }, [applyDraftToState, drafts]);
 
   // `position: fixed` on body (vs. `overflow: hidden`) is required to
   // block iOS pull-to-refresh from bypassing the lock. Mirrors the
