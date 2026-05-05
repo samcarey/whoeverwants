@@ -96,6 +96,16 @@ class TestMultipleQuestions:
             == "Video Game, Time"
         )
 
+    def test_video_game_label_underscore(self):
+        # The FE BUILT_IN_TYPES uses "video_game" (with underscore) as the
+        # category value. Server map must agree, or the fallback produces
+        # "Video_game".
+        assert generate_poll_title(["video_game"], None) == "Video Game?"
+        assert (
+            generate_poll_title(["video_game", "time"], None)
+            == "Video Game, Time"
+        )
+
     def test_petname_label(self):
         assert (
             generate_poll_title(["petname"], "Cat")
