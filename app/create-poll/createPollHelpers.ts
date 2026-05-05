@@ -39,10 +39,17 @@ export interface QuestionDraft {
   minimumParticipation: number;
 }
 
-/** Default empty draft, optionally preselected by the What/When/Where bubble. */
+/** Default empty draft, optionally preselected by the bubble that opened
+ *  the modal. `category: 'time'` (with the default mode) is the canonical
+ *  way to start a time-question draft now — questionType stays 'question'
+ *  so CategoryForLine renders the inline context field, while the
+ *  questionFormBody picks up time fields via `category === 'time'`. The
+ *  legacy `mode: 'time'` path remains for any caller that hasn't migrated.
+ */
 export function emptyDraft(opts: { mode?: 'question' | 'time'; category?: string } = {}): QuestionDraft {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const isTime = opts.mode === 'time' || opts.category === 'time';
   return {
     questionType: opts.mode === 'time' ? 'time' : 'question',
     title: '',
@@ -59,7 +66,7 @@ export function emptyDraft(opts: { mode?: 'question' | 'time'; category?: string
     durationMaxValue: 2,
     durationMinEnabled: true,
     durationMaxEnabled: true,
-    dayTimeWindows: opts.mode === 'time' ? [{ day: todayStr, windows: [] }] : [],
+    dayTimeWindows: isTime ? [{ day: todayStr, windows: [] }] : [],
     minimumParticipation: 95,
   };
 }

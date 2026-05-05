@@ -698,11 +698,13 @@ export function CreateQuestionContent() {
   //   - "restaurant" / "location" → ranked-choice with proximity search + reference location
   //   - other built-ins (movie, video_game) → ranked-choice with autocomplete
   //   - "custom" → free-form ranked-choice or yes/no via category dropdown
+  // Every bubble uses `mode: 'question'` (the default) so CategoryForLine
+  // renders the inline `<category> for <context>` line for every type —
+  // including time. The questionFormBody internally branches on
+  // `category === 'time'` to render time-specific fields, and emptyDraft
+  // initializes dayTimeWindows when category is 'time'.
   const openModalFor = useCallback((cat: string) => {
-    const fresh = emptyDraft({
-      mode: cat === 'time' ? 'time' : 'question',
-      category: cat,
-    });
+    const fresh = emptyDraft({ category: cat });
     // Yes/No questions use the title as the prompt itself, so autotitle
     // must be off (matches handleCategoryChange's behavior when the user
     // picks "Yes/No" from the dropdown inside the modal).
