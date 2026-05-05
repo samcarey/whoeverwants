@@ -87,6 +87,17 @@ export function cacheAccessiblePolls(polls: Poll[]): void {
   for (const mp of polls) cachePoll(mp);
 }
 
+/** Update the accessible-polls cache only when it's already fresh.
+ *  Skipping the write on a stale/null cache prevents callers like the
+ *  create-poll submit handler from inadvertently overwriting the cache to
+ *  contain only their just-cached poll — `[...getCached() ?? [], newPoll]`
+ *  collapses to `[newPoll]` when the cache has expired, dropping every other
+ *  poll from the accessible list. */
+export function updateAccessiblePollsIfFresh(merge: (existing: Poll[]) => Poll[]): void {
+  const cached = getCachedAccessiblePolls();
+  if (cached) cacheAccessiblePolls(merge(cached));
+}
+
 /** Get a question by ID if cached and fresh. */
 export function getCachedQuestionById(id: string): Question | null {
   const entry = cacheById.get(id);

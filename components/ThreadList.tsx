@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Poll } from "@/lib/types";
-import { buildThreads, getThreadRouteId, THREAD_QUERY_PARAM, Thread } from "@/lib/threadUtils";
+import { buildThreads, getThreadRouteId, isPendingPollId, THREAD_QUERY_PARAM, Thread } from "@/lib/threadUtils";
 import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
 import ThreadListItem from "@/components/ThreadListItem";
 import { usePrefetch } from "@/lib/prefetch";
@@ -69,6 +69,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
         const thread = threadsByRootId.get(rootQuestionId);
         if (!thread) continue;
         for (const question of thread.questions) {
+          if (isPendingPollId(question.id)) continue;
           void apiGetVotes(question.id).catch(() => null);
           if (!question.results) void apiGetQuestionResults(question.id).catch(() => null);
         }

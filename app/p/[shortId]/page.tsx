@@ -6,7 +6,7 @@ import { useRouter, useParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
 import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId } from "@/lib/threadUtils";
+import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId, isPendingPollId } from "@/lib/threadUtils";
 import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
@@ -19,6 +19,7 @@ import {
   POLL_FAILED_EVENT,
   type PollPendingDetail,
   type PollHydratedDetail,
+  type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
 import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
@@ -79,14 +80,37 @@ function ScrollHelperButton({
 // with the heavy-content expand clip below. The pill sits directly at the
 // top of the overflow-hidden child so its text center aligns with the
 // sibling status text via the parent flex row's items-center.
-// Shared cache-driven Thread rebuild for POLL_HYDRATED / POLL_FAILED setThread
-// updaters. Returns prev when the rebuild would produce the same poll-id
-// sequence (no placeholder swap) so identity-based memos stay stable.
-function rebuildThreadFromCacheOrPrev(prev: Thread): Thread {
+// Shared cache-driven Thread rebuild for POLL_PENDING / POLL_HYDRATED /
+// POLL_FAILED setThread updaters. Returns prev when the rebuild would produce
+// the same poll-id sequence (no placeholder swap) so identity-based memos stay
+// stable.
+//
+// `mutate` lets callers add a just-arrived poll (placeholder or real) and/or
+// drop a placeholder being replaced. Without explicit add/remove, leaving the
+// placeholder AND the real poll both in scope would yield a thread containing
+// both as children of the parent.
+//
+// `prev.polls` is always merged into the rebuild source. This is the
+// resilience fallback for stale `accessiblePollsCache`: the cache has a 60s
+// TTL, and the submit handler's `cacheAccessiblePolls([...getCached() ?? [],
+// new])` pattern wipes every other poll out of the cache when the cache
+// happened to be stale (idle >60s). Without prev.polls in the merge, the
+// `buildThreadFromPollDown(rootPollId, ...)` call fails to find rootPollId and
+// the new poll never lands in the thread.
+function rebuildThreadFromCacheOrPrev(
+  prev: Thread,
+  mutate?: { add?: Poll; remove?: string },
+): Thread {
   if (!prev.rootPollId) return prev;
-  const allPolls = getCachedAccessiblePolls() ?? [];
+  const cached = getCachedAccessiblePolls() ?? [];
+  const byId = new Map<string, Poll>();
+  for (const p of prev.polls) byId.set(p.id, p);
+  for (const p of cached) byId.set(p.id, p);
+  if (mutate?.remove) byId.delete(mutate.remove);
+  if (mutate?.add) byId.set(mutate.add.id, mutate.add);
+  const polls = Array.from(byId.values());
   const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-  const rebuilt = buildThreadFromPollDown(prev.rootPollId, allPolls, voted, abstained);
+  const rebuilt = buildThreadFromPollDown(prev.rootPollId, polls, voted, abstained);
   if (!rebuilt) return prev;
   if (
     rebuilt.polls.length === prev.polls.length &&
@@ -471,25 +495,34 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const newPoll = detail?.poll;
       if (!newPoll) return;
 
-      const polls = getCachedAccessiblePolls();
-      if (!polls) return;
-
       const t = threadRef.current;
-      const threadPollIds = new Set(t?.polls.map((p) => p.id) ?? []);
+      if (!t) return;
+
+      // Recognize the placeholder as belonging to this thread either by its
+      // resolved follow_up_to (parent poll id) or by being the thread's own
+      // root. The follow_up_to may be null when create-poll's lookup hit a
+      // stale `accessiblePollsCache` — the rebuild's prev.polls fallback
+      // covers that, so we don't need to bail here.
+      const threadPollIds = new Set(t.polls.map((p) => p.id));
       const isFollowUp = newPoll.follow_up_to && threadPollIds.has(newPoll.follow_up_to);
-      const isOwnRoot = t && newPoll.id === t.rootPollId;
+      const isOwnRoot = newPoll.id === t.rootPollId;
       if (!isFollowUp && !isOwnRoot) return;
 
-      const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-      const rebuilt = t?.rootPollId
-        ? buildThreadFromPollDown(t.rootPollId, polls, voted, abstained)
-        : null;
-      if (!rebuilt) return;
-
-      const firstQuestionId = newPoll.questions[0]?.id ?? null;
       flushSync(() => {
-        setPendingPollFirstQuestionId(firstQuestionId);
-        setThread(rebuilt);
+        setPendingPollFirstQuestionId(newPoll.questions[0]?.id ?? null);
+        setThread((prev) => prev ? rebuildThreadFromCacheOrPrev(prev, { add: newPoll }) : prev);
+        // Mount the new card eagerly. Without this, the validation effect
+        // resets mountedGroupKeys to (prev ∩ validKeys + anchor), which
+        // doesn't include this freshly-added group key. The card would
+        // render as a gray placeholder div until progressive fill walked
+        // the queue to it (~270ms on a long thread, since the new card
+        // sits at the chronological end far from the URL anchor).
+        setMountedGroupKeys((prev) => {
+          if (prev.has(newPoll.id)) return prev;
+          const next = new Set(prev);
+          next.add(newPoll.id);
+          return next;
+        });
       });
     };
     window.addEventListener(POLL_PENDING_EVENT, handler);
@@ -514,19 +547,69 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const placeholderId = detail?.placeholderId;
       const realPoll = detail?.poll;
       if (!placeholderId || !realPoll) return;
+
+      // Optimistic in-place rebuild from prev.polls + cache + realPoll.
+      // prev.polls is the resilience fallback for stale `accessiblePollsCache`
+      // (60s TTL) — the submit handler's `cacheAccessiblePolls([...getCached()
+      // ?? [], realPoll])` writes only [realPoll] when the cache was stale,
+      // and without prev.polls in the merge `buildThreadFromPollDown` can't
+      // find rootPollId and bails.
+      //
+      // `optimisticWillAdd` mirrors the bail check inside the updater: when
+      // the placeholder is in thread state OR realPoll's parent is recognized
+      // OR realPoll IS the root, the rebuild succeeds and lands realPoll.
+      // When false the optimistic bails to prev and the async refresh below
+      // is the only path that brings the new poll in. Computed from
+      // threadRef.current (kept in sync via a [thread] useEffect) instead of
+      // inside the updater because setState is async — reading the flag
+      // synchronously after setThread would see the pre-write value.
+      const t = threadRef.current;
+      const threadPollIds = new Set(t?.polls.map(p => p.id) ?? []);
+      const optimisticWillAdd =
+        !!t && (
+          (!!realPoll.follow_up_to && threadPollIds.has(realPoll.follow_up_to)) ||
+          realPoll.id === t.rootPollId ||
+          t.polls.some(p => p.id === placeholderId)
+        );
       setThread((prev) => {
         if (!prev) return prev;
-        // Rebuild from the cache (which submit handler has already
-        // updated). Hand-mapping prev.polls leaves the new poll invisible
-        // when POLL_PENDING bailed (Firefox iOS listener race).
-        const threadPollIds = new Set(prev.polls.map(p => p.id));
-        const isFollowUp = realPoll.follow_up_to && threadPollIds.has(realPoll.follow_up_to);
+        const prevPollIds = new Set(prev.polls.map(p => p.id));
+        const isFollowUp = realPoll.follow_up_to && prevPollIds.has(realPoll.follow_up_to);
         const isOwnRoot = realPoll.id === prev.rootPollId;
         const hasPlaceholder = prev.polls.some(p => p.id === placeholderId);
         if (!hasPlaceholder && !isFollowUp && !isOwnRoot) return prev;
-        return rebuildThreadFromCacheOrPrev(prev);
+        return rebuildThreadFromCacheOrPrev(prev, { add: realPoll, remove: placeholderId });
       });
       setPendingPollFirstQuestionId(null);
+      // Mount the real card eagerly (same reason as POLL_PENDING — see
+      // comment there). Drop the placeholder's key in the same setState so
+      // mountedGroupKeys stays consistent with thread state.
+      setMountedGroupKeys((prev) => {
+        if (!prev.has(placeholderId) && prev.has(realPoll.id)) return prev;
+        const next = new Set(prev);
+        next.delete(placeholderId);
+        next.add(realPoll.id);
+        return next;
+      });
+
+      // Optimistic-rebuild fallback: when the new poll's parent isn't in
+      // prev.polls (e.g. the parent was discovered AFTER thread state was
+      // built — accessiblePollsCache got invalidated, so the cache fallback
+      // can't fill it in either), the in-place rebuild leaves the new poll
+      // out of the chain. Re-fetch the accessible-polls list (which respects
+      // localStorage's full set, including any newly-discovered ancestors)
+      // and rebuild from a fresh source. Skip when the optimistic rebuild
+      // already landed the realPoll — saves a cache-fetch + redundant
+      // setState per submit on the happy path.
+      if (optimisticWillAdd) return;
+      void (async () => {
+        try {
+          await getAccessiblePolls();
+          setThread((prev) => prev ? rebuildThreadFromCacheOrPrev(prev, { add: realPoll, remove: placeholderId }) : prev);
+        } catch {
+          // Optimistic rebuild has already fired; nothing else to do.
+        }
+      })();
     };
     window.addEventListener(POLL_HYDRATED_EVENT, handler);
     return () => window.removeEventListener(POLL_HYDRATED_EVENT, handler);
@@ -535,15 +618,25 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // POLL_FAILED_EVENT: apiCreatePoll rejected. Rebuild from cache (the
   // submit handler has already evicted the placeholder before dispatching).
   useEffect(() => {
-    const handler = () => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<PollFailedDetail>).detail;
+      const placeholderId = detail?.placeholderId;
       setThread((prev) => {
         if (!prev) return prev;
         // Skip rebuild when no placeholder is present — POLL_FAILED on a
         // brand-new-thread submit fires while we're on a different thread.
-        if (!prev.polls.some(p => p.id.startsWith('pending-'))) return prev;
-        return rebuildThreadFromCacheOrPrev(prev);
+        if (!prev.polls.some(p => isPendingPollId(p.id))) return prev;
+        return rebuildThreadFromCacheOrPrev(prev, placeholderId ? { remove: placeholderId } : undefined);
       });
       setPendingPollFirstQuestionId(null);
+      if (placeholderId) {
+        setMountedGroupKeys((prev) => {
+          if (!prev.has(placeholderId)) return prev;
+          const next = new Set(prev);
+          next.delete(placeholderId);
+          return next;
+        });
+      }
     };
     window.addEventListener(POLL_FAILED_EVENT, handler);
     return () => window.removeEventListener(POLL_FAILED_EVENT, handler);
@@ -610,6 +703,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     let cancelled = false;
 
     const maybeFetch = async (questionId: string, questionType: string) => {
+      if (isPendingPollId(questionId)) return;
       // Fetch results for every type that has a compact preview (yes_no,
       // ranked_choice, time). For ranked_choice the "suggestion phase"
       // variant reuses the same results (suggestion_counts field populated
@@ -1436,7 +1530,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             // for the real Poll, this flag clears and the card paints
             // normally.
             const isPlaceholder = pendingPollFirstQuestionId === question.id
-              || (question.poll_id?.startsWith('pending-') ?? false);
+              || isPendingPollId(question.poll_id);
             const isVisible = visibleQuestionIds.has(question.id);
             const isSwipeThresholdActive = swipeThresholdQuestionId === question.id;
             const isTooltipActive = tooltipQuestionId === question.id;
