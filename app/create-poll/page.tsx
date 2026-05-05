@@ -11,7 +11,8 @@ import {
 } from "@/lib/api";
 import type { Poll, OptionsMetadata, Question } from "@/lib/types";
 import CompactNameField from "@/components/CompactNameField";
-import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
+import { BUILT_IN_TYPES, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
+import ModalPortal from "@/components/ModalPortal";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
 import { triggerDiscoveryIfNeeded } from "@/lib/questionDiscovery";
@@ -38,7 +39,7 @@ import {
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, THREAD_HEADER_ATTR, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
 import {
   pollLookup,
   shortenOption,
@@ -65,6 +66,12 @@ export const dynamic = 'force-dynamic';
 // Matches the rendered height of a single-line <input> with py-2 padding.
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
+
+// Order matches the dropdown inside the modal so muscle memory carries over.
+const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon: string }> = [
+  ...BUILT_IN_TYPES,
+  { value: 'custom', label: 'Custom', icon: '✨' },
+];
 
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
@@ -126,13 +133,12 @@ export function CreateQuestionContent() {
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
 
-  // Drafts list — every question committed via the "+ Question" button
-  // becomes a draft. The poll is built from this list at submit time.
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
-  // When non-null, the in-progress form is editing a previously-committed
-  // draft and tapping "+ Question" re-inserts at this index (preserving
-  // display order). null when adding a new question.
+  // When non-null, the modal is editing this draft index; confirm
+  // replaces in place, dismiss leaves the list untouched (the draft
+  // is never popped on edit-pencil click).
   const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
@@ -635,32 +641,46 @@ export function CreateQuestionContent() {
     setMinimumParticipation(d.minimumParticipation);
   }, []);
 
-  // Pencil on a staged question: pop the draft from the list and load it
-  // back into the inline form for editing. Pressing "+ Question" re-inserts
-  // at the original index to preserve display order.
   const handleEditDraft = useCallback((index: number) => {
     const target = drafts[index];
     if (!target) return;
     setError(null);
     setEditingDraftIndex(index);
-    setDrafts(prev => prev.filter((_, i) => i !== index));
     applyDraftToState(target);
+    setIsModalOpen(true);
   }, [drafts, applyDraftToState]);
 
-  // "+ Question" (or auto-stage on Submit): validate per-question fields,
-  // snapshot the inline form into a draft, insert at the original index when
-  // editing or append otherwise, then reset the form for the next question.
-  // Returns true on success, false if validation failed.
-  const stageCurrentQuestion = useCallback((): boolean => {
+  // Bring the just-materialized draft card up under the fixed header,
+  // capped at the document's natural maxScroll — never push the card
+  // downward or extend the page artificially. The 12px gap leaves a
+  // sliver of breathing room when the card does reach the top.
+  const scrollDraftCardUnderHeader = useCallback(() => {
+    const DRAFT_TOP_GAP = 12;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const card = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
+        if (!card) return;
+        const header = document.querySelector(`[${THREAD_HEADER_ATTR}]`) as HTMLElement | null;
+        const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
+        const target = Math.max(0, window.scrollY + card.getBoundingClientRect().top - headerBottom - DRAFT_TOP_GAP);
+        if (target <= window.scrollY) return;
+        window.scrollTo({ top: target, behavior: 'smooth' });
+      });
+    });
+  }, []);
+
+  const confirmModal = useCallback((): boolean => {
     const subErr = getCurrentQuestionFormError();
     if (subErr) { setError(subErr); return false; }
     setError(null);
     const draft = readCurrentDraft();
+    // Only the 0 → 1 transition materializes the card; subsequent
+    // additions don't shift its position enough to warrant scrolling.
+    const draftCardJustMaterialized = drafts.length === 0 && editingDraftIndex === null;
     if (editingDraftIndex !== null) {
       setDrafts(prev => {
         const next = [...prev];
-        const at = Math.min(editingDraftIndex, next.length);
-        next.splice(at, 0, draft);
+        next[editingDraftIndex] = draft;
         return next;
       });
     } else {
@@ -668,8 +688,51 @@ export function CreateQuestionContent() {
     }
     applyDraftToState(emptyDraft());
     setEditingDraftIndex(null);
+    setIsModalOpen(false);
+    if (draftCardJustMaterialized) {
+      scrollDraftCardUnderHeader();
+    }
     return true;
-  }, [editingDraftIndex, readCurrentDraft, applyDraftToState]);
+  }, [drafts.length, editingDraftIndex, readCurrentDraft, applyDraftToState, scrollDraftCardUnderHeader]);
+
+  const dismissModal = useCallback(() => {
+    applyDraftToState(emptyDraft());
+    setEditingDraftIndex(null);
+    setError(null);
+    setIsModalOpen(false);
+  }, [applyDraftToState]);
+
+  const openModalFor = useCallback((cat: string) => {
+    applyDraftToState(emptyDraft({ category: cat }));
+    setEditingDraftIndex(null);
+    setError(null);
+    setIsModalOpen(true);
+  }, [applyDraftToState]);
+
+  // `position: fixed` on body (vs. `overflow: hidden`) is required to
+  // block iOS pull-to-refresh from bypassing the lock. Mirrors the
+  // pattern in TimeGridModal / DaysSelector / RankableOptions.
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const scrollY = window.scrollY;
+    const prevPosition = document.body.style.position;
+    const prevTop = document.body.style.top;
+    const prevWidth = document.body.style.width;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') dismissModal();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.body.style.position = prevPosition;
+      document.body.style.top = prevTop;
+      document.body.style.width = prevWidth;
+      window.scrollTo(0, scrollY);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [isModalOpen, dismissModal]);
 
   // Portal target for the in-progress draft poll card, rendered in the page
   // body by the thread / empty-thread routes. Re-queried via a
@@ -828,6 +891,9 @@ export function CreateQuestionContent() {
           if (duplicateData.show_preliminary_results != null) setShowPreliminaryResults(duplicateData.show_preliminary_results);
           if (duplicateData.allow_pre_ranking != null) setAllowPreRanking(duplicateData.allow_pre_ranking);
 
+          // Auto-open: prefill is invisible until the user opens the modal.
+          setIsModalOpen(true);
+
           // Don't clean up the duplicate data yet - keep it until question is created
           // so that refresh doesn't lose the data
           // Keep the duplicate URL parameter so refresh works correctly
@@ -865,6 +931,9 @@ export function CreateQuestionContent() {
           }
           setQuestionType('question'); // Set to preference question
           setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
+
+          // Auto-open: prefill is invisible until the user opens the modal.
+          setIsModalOpen(true);
 
           // Don't clean up the vote data yet - keep it until question is created
           // so that refresh doesn't lose the data
@@ -1493,104 +1562,277 @@ export function CreateQuestionContent() {
     </form>
   );
 
-  // The draft poll card is always rendered on thread-like pages so the
-  // user always has a place to drop a new question. The inline question
-  // form (CategoryForLine + question fields) renders below the staged-
-  // questions list at the bottom of the list — pressing "+ Question"
-  // commits the in-progress form to the staged list and resets the form
-  // for the next question. Submit creates the poll from the staged list,
-  // auto-staging the in-progress form first when it has content.
   const hasDrafts = drafts.length > 0;
 
   return (
     <div className="question-content">
-      {/* Draft poll card — portal-rendered into the page's poll list at the
-          bottom (`#draft-poll-portal`). Always present so the user always
-          has a place to drop a new question. */}
       {draftPollPortal && createPortal(
-        <div className="pt-3">
-          {/* Submit button is absolute-positioned so adding it doesn't shift
-              the centered "Create Poll" label off-axis. */}
-          <div className="relative mx-1.5 mb-2 flex items-center justify-center min-h-9">
-            {/* mt-[3px] optically centers the cap-height label against the
-                button's visual midline. */}
-            <span className="inline-block text-sm font-medium text-gray-500 dark:text-gray-400 select-none mt-[3px] truncate max-w-[calc(100%-4rem)]">
-              {projectedDrafts.length > 0 && !validationError
-                ? draftPollPreview(projectedDrafts, details).title
-                : 'Create Poll'}
-            </span>
-            <button
-              type="button"
-              onClick={handleSubmitClick}
-              disabled={submitDisabled}
-              aria-label="Submit poll"
-              className="absolute right-3 top-1/2 -translate-y-1/2 flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {isSubmitted || isLoading ? (
-                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
-                </svg>
-              )}
-            </button>
-          </div>
-          <div
-            data-draft-poll-card
-            className="mx-1.5 rounded-3xl border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10"
-          >
-            {/* Staged questions list — sits at the top of the card with the
-                inline form appearing right below it (as if the form is the
-                next item being added to the list). */}
-            {hasDrafts && (
-              <div className="px-3 pt-3 pb-1">
-                <ul className="space-y-1.5">
-                  {drafts.map((d, i) => {
-                    const { icon, label } = draftCardLabels(d);
-                    const derivedTitle = deriveDraftTitle(d);
-                    return (
-                      <li
-                        key={i}
-                        className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
-                      >
-                        <span className="text-lg leading-none" aria-hidden>{icon}</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex-1 min-w-0">
-                          {derivedTitle}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleEditDraft(i)}
-                          disabled={isLoading}
-                          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50"
-                          aria-label={`Edit ${label} section`}
+        <>
+          {hasDrafts && (
+            <div className="pt-3">
+              {/* Submit button is absolute-positioned so adding it doesn't
+                  shift the centered preview-title label off-axis. */}
+              <div className="relative mx-1.5 mb-2 flex items-center justify-center min-h-9">
+                <span className="inline-block text-sm font-medium text-gray-500 dark:text-gray-400 select-none mt-[3px] truncate max-w-[calc(100%-4rem)]">
+                  {projectedDrafts.length > 0 && !validationError
+                    ? draftPollPreview(projectedDrafts, details).title
+                    : 'Create Poll'}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSubmitClick}
+                  disabled={submitDisabled}
+                  aria-label="Submit poll"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isSubmitted || isLoading ? (
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <div
+                data-draft-poll-card
+                className="mx-1.5 rounded-3xl border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10"
+              >
+                {/* Staged questions list. */}
+                <div className="px-3 pt-3 pb-1">
+                  <ul className="space-y-1.5">
+                    {drafts.map((d, i) => {
+                      const { icon, label } = draftCardLabels(d);
+                      const derivedTitle = deriveDraftTitle(d);
+                      return (
+                        <li
+                          key={i}
+                          className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
                         >
-                          <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M14.166 2.5a1.65 1.65 0 012.334 2.334L6.667 14.667 3 15.5l.833-3.667L14.166 2.5z" />
-                          </svg>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
+                          <span className="text-lg leading-none" aria-hidden>{icon}</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex-1 min-w-0">
+                            {derivedTitle}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleEditDraft(i)}
+                            disabled={isLoading}
+                            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50"
+                            aria-label={`Edit ${label} section`}
+                          >
+                            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M14.166 2.5a1.65 1.65 0 012.334 2.334L6.667 14.667 3 15.5l.833-3.667L14.166 2.5z" />
+                            </svg>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
 
-            {/* Inline question form — sits right below the staged list (or
-                at the top of the card when no questions are staged yet),
-                acting as the next item to be added. The form is flush with
-                the surrounding dashed card (no inner white-card wrapper);
-                the save check-button on the right of the title row stages
-                it. A horizontal divider below the form separates the per-
-                question fields from the poll-level settings. */}
-            <div className={`px-3 ${hasDrafts ? 'pt-1.5' : 'pt-2'} pb-2`}>
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5 select-none">
-                Add Question
+                {/* Settings — voting cutoff, suggestion/availability cutoff,
+                    notes, voter name. */}
+                <div className="pb-3">
+                  <div className="px-3 pt-2">
+                    <form
+                      onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      className="space-y-3"
+                    >
+                      <VotingCutoffField
+                        deadlineOption={deadlineOption}
+                        setDeadlineOption={setDeadlineOption}
+                        customDate={customDate}
+                        setCustomDate={setCustomDate}
+                        customTime={customTime}
+                        setCustomTime={setCustomTime}
+                        isLoading={isLoading}
+                        isClient={isClient}
+                      />
+
+                      {pollHasPrephase && suggestionCutoffField}
+
+                      {pollHasRankedChoice && (
+                        <CompactMinResponsesField
+                          value={minResponses}
+                          setValue={(val) => {
+                            setMinResponses(val);
+                            saveUserMinResponses(val);
+                          }}
+                          showPreliminary={showPreliminaryResults}
+                          setShowPreliminary={setShowPreliminaryResults}
+                          disabled={isLoading}
+                        />
+                      )}
+
+                      {pollHasSuggestionMode && (
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={allowPreRanking}
+                            onChange={(e) => setAllowPreRanking(e.target.checked)}
+                            disabled={isLoading}
+                            className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
+                          <span className="text-sm text-gray-600 dark:text-gray-400">
+                            allow pre-rank during suggestion phase
+                          </span>
+                        </label>
+                      )}
+
+                      <div>
+                        {detailsOpen ? (
+                          <>
+                            <label htmlFor="details" className="block text-sm font-medium mb-1">
+                              Notes
+                            </label>
+                            <textarea
+                              ref={detailsRef}
+                              id="details"
+                              value={details}
+                              onChange={(e) => {
+                                setDetails(e.target.value);
+                                const el = e.target;
+                                el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
+                                const maxH = 5 * 20 + 16;
+                                el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                                el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+                              }}
+                              onBlur={() => {
+                                const trimmed = details.trim();
+                                if (!trimmed) {
+                                  setDetailsOpen(false);
+                                  setDetails('');
+                                } else if (trimmed !== details) {
+                                  setDetails(trimmed);
+                                }
+                              }}
+                              disabled={isLoading}
+                              style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
+                              className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
+                              placeholder="Add more context or instructions..."
+                            />
+                          </>
+                        ) : (
+                          <div className="text-sm font-medium">
+                            Notes:{' '}
+                            <button
+                              type="button"
+                              onClick={() => setDetailsOpen(true)}
+                              className="font-normal text-blue-600 dark:text-blue-400"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <CompactNameField
+                        name={creatorName}
+                        setName={setCreatorName}
+                        disabled={isLoading}
+                      />
+                    </form>
+
+                    {(error || (validationError && drafts.length > 0)) && (
+                      <div className="mt-3 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
+                        {error ?? validationError}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="relative">
-                <div className="pr-12">
+            </div>
+          )}
+
+          {/* Category bubble bar — pt-* is the gap above; the gap below
+              comes from the page's outer paddingBottom (template.tsx). */}
+          <div className={`px-3 ${hasDrafts ? 'pt-4' : 'pt-3'} flex flex-wrap justify-center gap-2`}>
+            {BUBBLE_ENTRIES.map((entry) => (
+              <button
+                key={entry.value}
+                type="button"
+                onClick={() => openModalFor(entry.value)}
+                disabled={isLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
+                aria-label={`Add ${entry.label} question`}
+              >
+                <span className="text-base leading-none" aria-hidden>{entry.icon}</span>
+                <span>{entry.label}</span>
+              </button>
+            ))}
+          </div>
+
+        </>,
+        draftPollPortal
+      )}
+
+      {/* Question-form modal — backdrop + rounded-corner card with the
+          checkmark in the upper-right. Tap the checkmark to commit the
+          in-progress question to the staged-list draft; tap the backdrop /
+          X / Escape to discard. Edit flow: pencil on a staged draft loads
+          it into the modal — confirm replaces at the original index,
+          dismiss leaves the original draft untouched. */}
+      {isModalOpen && (
+        <ModalPortal>
+          <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
+            {/* Backdrop — tap to dismiss. */}
+            <div
+              className="absolute inset-0 bg-black/40 dark:bg-black/60"
+              onClick={dismissModal}
+              aria-hidden="true"
+            />
+            {/* Modal panel — rounded corners, capped height, scrollable
+                inner body. On mobile we anchor to the bottom (sheet-like);
+                on sm+ screens we center it. The sheet still has rounded
+                corners on every edge so it reads as a card. */}
+            <div
+              className="relative w-full sm:max-w-md bg-white dark:bg-gray-900 rounded-3xl shadow-2xl mx-2 mb-2 sm:mb-0 flex flex-col"
+              style={{ maxHeight: 'min(calc(100dvh - 5rem), 44rem)' }}
+              role="dialog"
+              aria-modal="true"
+              aria-label={editingDraftIndex !== null ? 'Edit question' : 'New question'}
+            >
+              {/* Header bar — left X dismisses, right ✓ confirms. The
+                  centered title gives the user a hint of what the modal is
+                  for; we don't repeat the category here (the form body's
+                  CategoryForLine already shows it). */}
+              <div className="relative flex items-center justify-center px-4 pt-3 pb-2">
+                <button
+                  type="button"
+                  onClick={dismissModal}
+                  aria-label="Discard"
+                  className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                <span className="text-sm font-medium text-gray-500 dark:text-gray-400 select-none">
+                  {editingDraftIndex !== null ? 'Edit Question' : 'New Question'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => confirmModal()}
+                  disabled={isLoading || !inlineFormHasDraftableContent}
+                  aria-label={editingDraftIndex !== null ? 'Save question edits' : 'Save question'}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Form body — scrollable when content overflows. The bottom
+                  padding here matches the thread-like page's outer
+                  `paddingBottom: '4.5rem'` (template.tsx) so elements
+                  inside the sheet have the same breathing room above the
+                  modal edge that the bubbles have above the screen edge. */}
+              <div className="flex-1 overflow-y-auto px-4 pb-[4.5rem]">
+                <div className="mb-3">
                   {questionType === 'question' ? (
                     <CategoryForLine
                       category={category}
@@ -1604,147 +1846,16 @@ export function CreateQuestionContent() {
                     <AnimatedTitle title={title} initialDelay={0} />
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => stageCurrentQuestion()}
-                  disabled={isLoading || !inlineFormHasDraftableContent}
-                  aria-label={editingDraftIndex !== null ? 'Save question edits' : 'Save question as draft'}
-                  className="absolute right-0 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-blue-600 dark:text-blue-400 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                </button>
-              </div>
-              <div className="mt-3">
                 {questionFormBody}
-              </div>
-            </div>
-
-            {/* Divider — separates the per-question form (above) from the
-                poll-level settings (below). */}
-            <hr className="mx-3 mt-2 border-t border-gray-200 dark:border-gray-700" />
-
-            {/* Settings — voting cutoff, suggestion/availability cutoff,
-                notes, voter name. Always visible so the user can configure
-                poll-level options before or while committing questions. */}
-            <div className="pb-3">
-              <div className="px-3 pt-1">
-                <form
-                  onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                  className="space-y-3"
-                >
-                  <VotingCutoffField
-                    deadlineOption={deadlineOption}
-                    setDeadlineOption={setDeadlineOption}
-                    customDate={customDate}
-                    setCustomDate={setCustomDate}
-                    customTime={customTime}
-                    setCustomTime={setCustomTime}
-                    isLoading={isLoading}
-                    isClient={isClient}
-                  />
-
-                  {pollHasPrephase && suggestionCutoffField}
-
-                  {/* Migration 098: poll-level results-display settings.
-                      Min responses + "then show results" apply to every
-                      ranked_choice question of the poll. The "allow pre-
-                      rank during suggestion phase" toggle is shown only when
-                      at least one question is in suggestion mode. */}
-                  {pollHasRankedChoice && (
-                    <CompactMinResponsesField
-                      value={minResponses}
-                      setValue={(val) => {
-                        setMinResponses(val);
-                        saveUserMinResponses(val);
-                      }}
-                      showPreliminary={showPreliminaryResults}
-                      setShowPreliminary={setShowPreliminaryResults}
-                      disabled={isLoading}
-                    />
-                  )}
-
-                  {pollHasSuggestionMode && (
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={allowPreRanking}
-                        onChange={(e) => setAllowPreRanking(e.target.checked)}
-                        disabled={isLoading}
-                        className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                      <span className="text-sm text-gray-600 dark:text-gray-400">
-                        allow pre-rank during suggestion phase
-                      </span>
-                    </label>
-                  )}
-
-                  {/* Notes — multi-line longer description. */}
-                  <div>
-                    {detailsOpen ? (
-                      <>
-                        <label htmlFor="details" className="block text-sm font-medium mb-1">
-                          Notes
-                        </label>
-                        <textarea
-                          ref={detailsRef}
-                          id="details"
-                          value={details}
-                          onChange={(e) => {
-                            setDetails(e.target.value);
-                            const el = e.target;
-                            el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
-                            const maxH = 5 * 20 + 16;
-                            el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
-                            el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
-                          }}
-                          onBlur={() => {
-                            const trimmed = details.trim();
-                            if (!trimmed) {
-                              setDetailsOpen(false);
-                              setDetails('');
-                            } else if (trimmed !== details) {
-                              setDetails(trimmed);
-                            }
-                          }}
-                          disabled={isLoading}
-                          style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
-                          className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
-                          placeholder="Add more context or instructions..."
-                        />
-                      </>
-                    ) : (
-                      <div className="text-sm font-medium">
-                        Notes:{' '}
-                        <button
-                          type="button"
-                          onClick={() => setDetailsOpen(true)}
-                          className="font-normal text-blue-600 dark:text-blue-400"
-                        >
-                          Add
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <CompactNameField
-                    name={creatorName}
-                    setName={setCreatorName}
-                    disabled={isLoading}
-                  />
-                </form>
-
-                {(error || (validationError && drafts.length > 0)) && (
+                {error && (
                   <div className="mt-3 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
-                    {error ?? validationError}
+                    {error}
                   </div>
                 )}
               </div>
             </div>
           </div>
-        </div>,
-        draftPollPortal
+        </ModalPortal>
       )}
 
       <MinimumParticipationModal

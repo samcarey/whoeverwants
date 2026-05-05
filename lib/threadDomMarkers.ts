@@ -15,3 +15,9 @@ export const THREAD_LATEST_QUESTION_ID_ATTR = 'data-thread-latest-question-id';
  *  placeholder) where CreateQuestionContent portals the always-on
  *  draft poll card. */
 export const DRAFT_POLL_PORTAL_ID = 'draft-poll-portal';
+
+/** Marker attribute on the fixed-position thread header. Used by code
+ *  that needs to scroll to a position just below the header (e.g.
+ *  scrolling a newly-inserted draft card to the top of the visible area)
+ *  without re-implementing the header-height measurement here. */
+export const THREAD_HEADER_ATTR = 'data-thread-header';

@@ -57,6 +57,7 @@ export default function ThreadHeader({
   );
   return (
     <div
+      data-thread-header=""
       className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
     >
