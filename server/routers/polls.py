@@ -40,6 +40,10 @@ def _categories_for_title(questions: list[CreateQuestionRequest]) -> list[str]:
     return [sp.category or sp.question_type.value for sp in questions]
 
 
+def _contexts_for_title(questions: list[CreateQuestionRequest]) -> list[str | None]:
+    return [sp.context for sp in questions]
+
+
 def _iso_or_none(value) -> str | None:
     if value is None:
         return None
@@ -234,7 +238,11 @@ def _compute_display_title(row: dict, question_rows: list[dict]) -> str:
     if override:
         return override
     categories = [sp.get("category") or sp.get("question_type") or "" for sp in question_rows]
-    return generate_poll_title(categories, row.get("context"))
+    # Per-question context lives in `questions.details` (see _insert_question
+    # below). Pass it through so the auto-title can reflect a shared context
+    # like "Restaurant, Movie for Tonight" when none is set on the wrapper.
+    contexts = [sp.get("details") for sp in question_rows]
+    return generate_poll_title(categories, row.get("context"), contexts)
 
 
 def _row_to_poll(
@@ -336,7 +344,11 @@ def create_poll(req: CreatePollRequest):
     question_title = (
         req.title
         or req.thread_title
-        or generate_poll_title(_categories_for_title(req.questions), req.context)
+        or generate_poll_title(
+            _categories_for_title(req.questions),
+            req.context,
+            _contexts_for_title(req.questions),
+        )
     )
 
     now = datetime.now(timezone.utc)
