@@ -203,6 +203,9 @@ export function deriveDraftTitle(d: QuestionDraft): string {
   return appendForSuffix(buildOrList(filled), d.forField);
 }
 
+// "Fits on one line" cap for both question-level (`buildOrList`) and
+// poll-level titles. Mirrors `_TITLE_CHAR_LIMIT` in
+// server/algorithms/poll_title.py — keep in lockstep.
 const TITLE_LIMIT = 40;
 
 function joinWithOr(items: string[]): string {
@@ -337,9 +340,6 @@ const _CATEGORY_LABELS: Record<string, string> = {
   custom: 'Custom',
 };
 
-// Match server _TITLE_CHAR_LIMIT in algorithms/poll_title.py.
-const POLL_TITLE_CHAR_LIMIT = 40;
-
 function _labelForCategory(category: string): string {
   if (!category) return '';
   const key = category.trim().toLowerCase();
@@ -349,10 +349,6 @@ function _labelForCategory(category: string): string {
     .split(/\s+/)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
-}
-
-function _commaJoin(parts: string[]): string {
-  return parts.join(', ');
 }
 
 function _singleQuestionDefaultTitle(category: string): string {
@@ -404,15 +400,15 @@ function _buildDistinctContextsTitle(
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
     const isLast = i === parts.length - 1;
-    const candidateFull = _commaJoin([...accumulated, part]);
+    const candidateFull = [...accumulated, part].join(', ');
     const candidateWithEtc = isLast ? candidateFull : `${candidateFull}, etc.`;
     if (accumulated.length > 0 && candidateWithEtc.length > charLimit) {
-      return `${_commaJoin(accumulated)}, etc.`;
+      return `${accumulated.join(', ')}, etc.`;
     }
     accumulated.push(part);
   }
   if (accumulated.length === 0) return 'Questions';
-  return _commaJoin(accumulated);
+  return accumulated.join(', ');
 }
 
 /**
@@ -455,15 +451,15 @@ export function draftPollPreview(
     const shared = trimmedContext || sharedFromDrafts;
 
     if (shared) {
-      const joined = _commaJoin(cats.map(c => _labelForCategory(c)));
+      const joined = cats.map(_labelForCategory).join(', ');
       const candidate = `${joined} for ${shared}`;
-      title = candidate.length <= POLL_TITLE_CHAR_LIMIT
+      title = candidate.length <= TITLE_LIMIT
         ? candidate
         : `Questions for ${shared}`;
     } else if (contexts.some(c => c !== '')) {
-      title = _buildDistinctContextsTitle(cats, contexts, POLL_TITLE_CHAR_LIMIT);
+      title = _buildDistinctContextsTitle(cats, contexts, TITLE_LIMIT);
     } else {
-      title = _commaJoin(cats.map(c => _labelForCategory(c)));
+      title = cats.map(_labelForCategory).join(', ');
     }
   }
 

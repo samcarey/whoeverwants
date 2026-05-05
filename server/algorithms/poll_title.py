@@ -75,10 +75,6 @@ def _shared_context(contexts: list[str | None]) -> str | None:
     return normalized[0]
 
 
-def _comma_join(parts: list[str]) -> str:
-    return ", ".join(parts)
-
-
 def _build_distinct_contexts_title(
     cats: list[str],
     contexts: list[str | None],
@@ -102,15 +98,15 @@ def _build_distinct_contexts_title(
         is_last = i == len(parts) - 1
         # "candidate" = full title if we stop after appending part. When part
         # isn't the last item we'd need to append ", etc." too.
-        candidate_full = _comma_join(accumulated + [part])
+        candidate_full = ", ".join(accumulated + [part])
         candidate_with_etc = candidate_full if is_last else candidate_full + ", etc."
         if accumulated and len(candidate_with_etc) > char_limit:
-            return _comma_join(accumulated) + ", etc."
+            return ", ".join(accumulated) + ", etc."
         accumulated.append(part)
 
     if not accumulated:
         return "Questions"
-    return _comma_join(accumulated)
+    return ", ".join(accumulated)
 
 
 def generate_poll_title(
@@ -143,7 +139,7 @@ def generate_poll_title(
     shared = poll_ctx or _shared_context(raw_contexts)
 
     if shared:
-        joined = _comma_join([_label_for(c) for c in cats])
+        joined = ", ".join(_label_for(c) for c in cats)
         candidate = f"{joined} for {shared}"
         if len(candidate) <= _TITLE_CHAR_LIMIT:
             return candidate
@@ -153,5 +149,4 @@ def generate_poll_title(
     if has_any_context:
         return _build_distinct_contexts_title(cats, raw_contexts, _TITLE_CHAR_LIMIT)
 
-    # No context anywhere — just comma-join category labels.
-    return _comma_join([_label_for(c) for c in cats])
+    return ", ".join(_label_for(c) for c in cats)
