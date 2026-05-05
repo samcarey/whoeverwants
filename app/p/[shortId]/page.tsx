@@ -635,6 +635,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     let cancelled = false;
 
     const maybeFetch = async (questionId: string, questionType: string) => {
+      // Skip placeholder polls — their question ids (`pending-...-q0`) aren't
+      // valid UUIDs, so the API rejects /results and /votes with a 500.
+      // POLL_HYDRATED swaps the placeholder for the real poll within ~1s and
+      // re-runs this effect, so the real id gets fetched then.
+      if (questionId.startsWith('pending-')) return;
       // Fetch results for every type that has a compact preview (yes_no,
       // ranked_choice, time). For ranked_choice the "suggestion phase"
       // variant reuses the same results (suggestion_counts field populated

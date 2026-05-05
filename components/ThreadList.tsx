@@ -69,6 +69,10 @@ export default function ThreadList({ polls }: ThreadListProps) {
         const thread = threadsByRootId.get(rootQuestionId);
         if (!thread) continue;
         for (const question of thread.questions) {
+          // Skip placeholder polls — their question ids (`pending-...-q0`) aren't
+          // valid UUIDs and would 500 server-side. They're swapped for the real
+          // poll within ~1s by POLL_HYDRATED.
+          if (question.id.startsWith('pending-')) continue;
           void apiGetVotes(question.id).catch(() => null);
           if (!question.results) void apiGetQuestionResults(question.id).catch(() => null);
         }

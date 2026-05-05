@@ -748,7 +748,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
               expansion. Animates height via grid-template-rows 0fr ↔ 1fr
               with overflow hidden on the child, so the natural expanded
               height is used without JS measurement. */}
-          {(isVisible || isExpanded) && (
+          {!isPlaceholder && (isVisible || isExpanded) && (
             <div
               data-question-expand-grid=""
               className={`grid transition-[grid-template-rows] duration-300 ease-out ${
