@@ -280,12 +280,9 @@ export function useThreadVoting({
     }
   }).current;
 
-  // Core yes/no submit. Used both by `confirmVoteChange` (modal-driven) and
-  // by the no-confirmation fast path in ThreadCardItem when a single-question
-  // poll gets a first-time tap. Always routes through the unified poll
-  // endpoint as a single-item batch — matches the architectural "vote
-  // submission is always atomic across the poll" rule (see CLAUDE.md → Poll
-  // System), even when the poll has only one question.
+  // Always routes through the unified poll endpoint as a single-item batch,
+  // matching the "vote submission is always atomic across the poll" rule
+  // even for single-question polls.
   const submitYesNoChoice = async (
     questionId: string,
     newChoice: YesNoChoice,

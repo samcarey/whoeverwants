@@ -76,9 +76,7 @@ const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   { value: 'custom', label: 'Other' },
 ];
 
-// Staged draft row in the draft poll card. Tapping the row opens it for
-// editing; long-pressing it opens a delete confirmation. Extracted so it
-// can use the useLongPress hook (one timer per row).
+// Extracted so each row owns its own useLongPress hook (one timer per row).
 function DraftRow({
   draft,
   index,
@@ -188,11 +186,9 @@ export function CreateQuestionContent() {
   // is never popped on edit-pencil click).
   const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  // Long-press on a staged draft row opens this delete-confirmation modal.
-  // The synthetic click after touch-release lands on the modal backdrop (the
-  // touch coords are now under it), so `deleteOpenedAtRef` gates onCancel for
-  // 400ms — same pattern as FollowUpModal's open-time guard.
   const [pendingDeleteIndex, setPendingDeleteIndex] = useState<number | null>(null);
+  // Synthetic click after touch-release lands on the just-mounted modal
+  // backdrop; gate onCancel for 400ms (same as FollowUpModal's guard).
   const deleteOpenedAtRef = useRef(0);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
@@ -712,8 +708,6 @@ export function CreateQuestionContent() {
   }, [drafts.length]);
 
   const cancelDeleteDraft = useCallback(() => {
-    // Suppress the synthetic backdrop-click that fires immediately after
-    // the long-press touch is released.
     if (Date.now() - deleteOpenedAtRef.current < 400) return;
     setPendingDeleteIndex(null);
   }, []);
@@ -1874,9 +1868,6 @@ export function CreateQuestionContent() {
               aria-modal="true"
               aria-label={editingDraftIndex !== null ? 'Edit question' : 'New question'}
             >
-              {/* Header bar — right ✓ confirms; tapping the backdrop or
-                  pressing Escape dismisses (and discards). No explicit X
-                  button — clicking out is the dismiss affordance. */}
               <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.25rem]">
                 <span className="text-sm font-medium text-gray-500 dark:text-gray-400 select-none">
                   {editingDraftIndex !== null ? 'Edit Question' : 'New Question'}

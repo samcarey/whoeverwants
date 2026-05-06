@@ -176,9 +176,6 @@ export interface ThreadCardItemProps {
   setPendingVoteChange: Dispatch<
     SetStateAction<{ questionId: string; newChoice: YesNoChoice } | null>
   >;
-  // Direct submit path that bypasses the confirmation modal. Used for the
-  // first-time vote on a single-question poll, where the modal would just
-  // be one redundant tap.
   submitYesNoChoice: (questionId: string, newChoice: YesNoChoice) => void;
   setPollVoterName: (id: string, name: string) => void;
   setPendingPollChoices: Dispatch<SetStateAction<Map<string, YesNoChoice>>>;
@@ -239,20 +236,14 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
   const isMultiGroup = group.subQuestions.length > 1;
   const wrapper = group.poll;
 
-  // Tap-to-vote dispatcher for yes_no questions on a single-question poll.
-  // First-time votes skip the confirmation modal (per UX feedback — the
-  // modal is redundant friction when there's nothing to "change from"),
-  // while vote-edits still go through the modal so a stray tap can't silently
-  // overwrite an existing vote.
-  const dispatchYesNoTap = (
-    sp: Question,
-    newChoice: YesNoChoice,
-  ) => {
-    if (!isMultiGroup && !userVoteMap.get(sp.id)) {
-      submitYesNoChoice(sp.id, newChoice);
+  // First-time votes on single-question polls submit directly so a stray
+  // tap on a vote-change still hits the confirmation modal.
+  const dispatchYesNoTap = (questionId: string, newChoice: YesNoChoice) => {
+    if (!isMultiGroup && !userVoteMap.get(questionId)) {
+      submitYesNoChoice(questionId, newChoice);
       return;
     }
-    setPendingVoteChange({ questionId: sp.id, newChoice });
+    setPendingVoteChange({ questionId, newChoice });
   };
 
   // Wrapper-level reads (Phase 5b). Hoisted so every callsite below can use
@@ -559,7 +550,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
             onVoteChange={
               isClosed
                 ? undefined
-                : (newChoice) => dispatchYesNoTap(sp, newChoice)
+                : (newChoice) => dispatchYesNoTap(sp.id, newChoice)
             }
           />
         </div>
@@ -864,7 +855,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                                               return next;
                                             });
                                           } else {
-                                            dispatchYesNoTap(sp, newChoice);
+                                            dispatchYesNoTap(sp.id, newChoice);
                                           }
                                         }
                                   }

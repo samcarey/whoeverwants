@@ -1748,11 +1748,9 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       />
       )}
 
-      {/* Yes/No vote confirmation — triggered by tapping an option (or
-          the Abstain link) on the external YesNoResults card. Handles both
-          first-time submits (no prior vote) and vote-changes. Only fires
-          for non-multi-group cards; all-yes_no multi-groups stage instead
-          and confirm via the wrapper-level modal below. */}
+      {/* First-time votes on single-question polls bypass this modal entirely
+          (see ThreadCardItem.dispatchYesNoTap); multi-group cards stage into
+          pendingPollChoices and confirm via the wrapper-level modal below. */}
       {(() => {
         const current = pendingVoteChange
           ? userVoteMap.get(pendingVoteChange.questionId)?.choice
