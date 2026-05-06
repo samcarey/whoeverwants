@@ -55,6 +55,11 @@ interface RankingSectionProps {
   // Live results — the 2-option branch reads first-round counts + winner
   // to color the winner card and show the % + count row below the cards.
   questionResults?: QuestionResults | null;
+  // Tap-to-submit handler for the binary 2-option card pair. When provided,
+  // overrides the inline onChoose so a single tap stages + auto-submits
+  // (matches yes/no tap UX). Called only on the BinaryRankedChoiceBallot
+  // path; the multi-option drag-to-rank list keeps the explicit Submit flow.
+  onBinaryRankedChoiceTap?: (option: string) => void;
 }
 
 const rankingsVoterFilter = (v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0);
@@ -92,6 +97,7 @@ export default function RankingSection({
   newOptions,
   wrapperHandlesSubmit = false,
   questionResults,
+  onBinaryRankedChoiceTap,
 }: RankingSectionProps) {
   const hasSubmittedRankings = hasVoted && userVoteData?.ranked_choices?.length > 0;
   // For suggestion questions, is_abstain means "abstained from suggestions" not "abstained from ranking".
@@ -211,8 +217,12 @@ export default function RankingSection({
                 onChoose={(option) => {
                   // Two-option questions: a single tap picks one. Pass
                   // the flat list and a singleton tier (no ties).
-                  handleRankingChange([option], [[option]]);
-                  setIsAbstaining(false);
+                  if (onBinaryRankedChoiceTap) {
+                    onBinaryRankedChoiceTap(option);
+                  } else {
+                    handleRankingChange([option], [[option]]);
+                    setIsAbstaining(false);
+                  }
                 }}
                 onAbstain={handleAbstain}
                 disabled={isSubmitting}

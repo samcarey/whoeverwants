@@ -87,6 +87,13 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const isNewQuestion = searchParams.get("new") === "true";
   const [questionUrl, setQuestionUrl] = useState("");
   const [rankedChoices, setRankedChoices] = useState<string[]>([]);
+  // Tap-to-submit on the binary ranked-choice card pair (matches yes/no's
+  // tap-to-submit UX). When the user taps a card, we set rankedChoices +
+  // optionally enter edit mode synchronously, then a useEffect picks up the
+  // updated state on the next render and fires submitVote — so the closure
+  // inside submitVote reads the freshly-committed value (rather than the
+  // stale empty array from the tap-event closure).
+  const [pendingBinarySubmit, setPendingBinarySubmit] = useState(false);
   // Tiered ballot (equal-ranking groups). Each inner array is a tier of
   // options tied for the same rank. When it has no ties, every inner array
   // is a singleton and this is equivalent to rankedChoices.
@@ -968,6 +975,34 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const handleVoteClickRef = useRef(handleVoteClick);
   handleVoteClickRef.current = handleVoteClick;
 
+  // Same pattern for submitVote — the binary-RC tap-to-submit useEffect below
+  // calls into the latest version after a state-update render.
+  const submitVoteRef = useRef(submitVote);
+  submitVoteRef.current = submitVote;
+
+  // Tap on a binary 2-option ranked-choice card → auto-submit (matches yes/no
+  // tap-to-submit UX). Sets rankedChoices + optionally flips into edit mode,
+  // then arms `pendingBinarySubmit` so the useEffect below fires submitVote
+  // after React commits the state update.
+  const handleBinaryChoiceTap = (option: string) => {
+    if (isSubmitting || isQuestionClosed) return;
+    setRankedChoices([option]);
+    setRankedChoiceTiers([[option]]);
+    setIsAbstaining(false);
+    if (justCancelledAbstain) setJustCancelledAbstain(false);
+    if (hasVoted && !isEditingRanking && !isEditingVote) {
+      setIsEditingRanking(true);
+    }
+    setPendingBinarySubmit(true);
+  };
+
+  useEffect(() => {
+    if (!pendingBinarySubmit) return;
+    if (rankedChoices.length === 0) return;
+    setPendingBinarySubmit(false);
+    void submitVoteRef.current();
+  }, [pendingBinarySubmit, rankedChoices, isEditingRanking]);
+
   // Validation + voteData/PollVoteItem construction is shared with
   // submitVote via voteDataBuilders. The two callers diverge only on the
   // POST-build side effects: submitVote calls the API itself; this returns
@@ -1422,6 +1457,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                     newOptions={newOptions}
                     wrapperHandlesSubmit={wrapperHandlesSubmit}
                     questionResults={questionResults}
+                    onBinaryRankedChoiceTap={handleBinaryChoiceTap}
                   />
 
                 </>
