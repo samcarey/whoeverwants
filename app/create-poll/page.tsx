@@ -13,6 +13,8 @@ import type { Poll, OptionsMetadata, Question } from "@/lib/types";
 import CompactNameField from "@/components/CompactNameField";
 import { BUILT_IN_TYPES, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
+import ConfirmationModal from "@/components/ConfirmationModal";
+import { useLongPress } from "@/lib/useLongPress";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
 import { triggerDiscoveryIfNeeded } from "@/lib/questionDiscovery";
@@ -73,6 +75,50 @@ const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
   { value: 'custom', label: 'Other' },
 ];
+
+// Extracted so each row owns its own useLongPress hook (one timer per row).
+function DraftRow({
+  draft,
+  index,
+  isLoading,
+  onEdit,
+  onRequestDelete,
+}: {
+  draft: QuestionDraft;
+  index: number;
+  isLoading: boolean;
+  onEdit: (index: number) => void;
+  onRequestDelete: (index: number) => void;
+}) {
+  const { props: longPressProps, isPressed } = useLongPress(
+    isLoading ? null : () => onRequestDelete(index)
+  );
+  const { icon, label } = draftCardLabels(draft);
+  const derivedTitle = deriveDraftTitle(draft);
+  return (
+    <li
+      role="button"
+      tabIndex={isLoading ? -1 : 0}
+      aria-label={`Edit ${label} section. Long-press to delete.`}
+      aria-disabled={isLoading || undefined}
+      onClick={() => { if (!isLoading) onEdit(index); }}
+      onKeyDown={(e) => {
+        if (isLoading) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onEdit(index);
+        }
+      }}
+      {...longPressProps}
+      className={`flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 select-none transition-transform ${isPressed ? 'scale-[0.98]' : ''} ${isLoading ? 'opacity-50 pointer-events-none' : 'cursor-pointer hover:border-blue-300 dark:hover:border-blue-700'}`}
+    >
+      <span className="text-lg leading-none" aria-hidden>{icon}</span>
+      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex-1 min-w-0">
+        {derivedTitle}
+      </span>
+    </li>
+  );
+}
 
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
@@ -140,6 +186,10 @@ export function CreateQuestionContent() {
   // is never popped on edit-pencil click).
   const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [pendingDeleteIndex, setPendingDeleteIndex] = useState<number | null>(null);
+  // Synthetic click after touch-release lands on the just-mounted modal
+  // backdrop; gate onCancel for 400ms (same as FollowUpModal's guard).
+  const deleteOpenedAtRef = useRef(0);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
@@ -650,6 +700,24 @@ export function CreateQuestionContent() {
     applyDraftToState(target);
     setIsModalOpen(true);
   }, [drafts, applyDraftToState]);
+
+  const requestDeleteDraft = useCallback((index: number) => {
+    if (index < 0 || index >= drafts.length) return;
+    deleteOpenedAtRef.current = Date.now();
+    setPendingDeleteIndex(index);
+  }, [drafts.length]);
+
+  const cancelDeleteDraft = useCallback(() => {
+    if (Date.now() - deleteOpenedAtRef.current < 400) return;
+    setPendingDeleteIndex(null);
+  }, []);
+
+  const confirmDeleteDraft = useCallback(() => {
+    if (pendingDeleteIndex === null) return;
+    const idx = pendingDeleteIndex;
+    setDrafts((prev) => prev.filter((_, i) => i !== idx));
+    setPendingDeleteIndex(null);
+  }, [pendingDeleteIndex]);
 
   // Bring the just-materialized draft card up under the fixed header,
   // capped at the document's natural maxScroll — never push the card
@@ -1620,35 +1688,19 @@ export function CreateQuestionContent() {
                 data-draft-poll-card
                 className="mx-1.5 rounded-3xl border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10"
               >
-                {/* Staged questions list. */}
+                {/* Staged questions list — tap to edit, long-press to delete. */}
                 <div className="px-3 pt-3 pb-1">
                   <ul className="space-y-1.5">
-                    {drafts.map((d, i) => {
-                      const { icon, label } = draftCardLabels(d);
-                      const derivedTitle = deriveDraftTitle(d);
-                      return (
-                        <li
-                          key={i}
-                          className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
-                        >
-                          <span className="text-lg leading-none" aria-hidden>{icon}</span>
-                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex-1 min-w-0">
-                            {derivedTitle}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleEditDraft(i)}
-                            disabled={isLoading}
-                            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50"
-                            aria-label={`Edit ${label} section`}
-                          >
-                            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M14.166 2.5a1.65 1.65 0 012.334 2.334L6.667 14.667 3 15.5l.833-3.667L14.166 2.5z" />
-                            </svg>
-                          </button>
-                        </li>
-                      );
-                    })}
+                    {drafts.map((d, i) => (
+                      <DraftRow
+                        key={i}
+                        draft={d}
+                        index={i}
+                        isLoading={isLoading}
+                        onEdit={handleEditDraft}
+                        onRequestDelete={requestDeleteDraft}
+                      />
+                    ))}
                   </ul>
                 </div>
 
@@ -1816,21 +1868,7 @@ export function CreateQuestionContent() {
               aria-modal="true"
               aria-label={editingDraftIndex !== null ? 'Edit question' : 'New question'}
             >
-              {/* Header bar — left X dismisses, right ✓ confirms. The
-                  centered title gives the user a hint of what the modal is
-                  for; we don't repeat the category here (the form body's
-                  CategoryForLine already shows it). */}
               <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.25rem]">
-                <button
-                  type="button"
-                  onClick={dismissModal}
-                  aria-label="Discard"
-                  className="absolute left-2 top-2 w-9 h-9 flex items-center justify-center rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
                 <span className="text-sm font-medium text-gray-500 dark:text-gray-400 select-none">
                   {editingDraftIndex !== null ? 'Edit Question' : 'New Question'}
                 </span>
@@ -1885,6 +1923,20 @@ export function CreateQuestionContent() {
         value={minimumParticipation}
         onChange={setMinimumParticipation}
         disabled={isLoading}
+      />
+
+      <ConfirmationModal
+        isOpen={pendingDeleteIndex !== null}
+        onConfirm={confirmDeleteDraft}
+        onCancel={cancelDeleteDraft}
+        title="Delete question?"
+        message={
+          pendingDeleteIndex !== null && drafts[pendingDeleteIndex]
+            ? `Remove "${deriveDraftTitle(drafts[pendingDeleteIndex])}" from this draft poll?`
+            : 'Remove this question from this draft poll?'
+        }
+        confirmText="Delete"
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
     </div>
   );

@@ -176,6 +176,7 @@ export interface ThreadCardItemProps {
   setPendingVoteChange: Dispatch<
     SetStateAction<{ questionId: string; newChoice: YesNoChoice } | null>
   >;
+  submitYesNoChoice: (questionId: string, newChoice: YesNoChoice) => void;
   setPollVoterName: (id: string, name: string) => void;
   setPendingPollChoices: Dispatch<SetStateAction<Map<string, YesNoChoice>>>;
   setPendingPollSubmit: Dispatch<SetStateAction<PendingPollSubmit | null>>;
@@ -224,6 +225,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
     setModalQuestion,
     setShowModal,
     setPendingVoteChange,
+    submitYesNoChoice,
     setPollVoterName,
     setPendingPollChoices,
     setPendingPollSubmit,
@@ -233,6 +235,16 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
   const question = group.anchor;
   const isMultiGroup = group.subQuestions.length > 1;
   const wrapper = group.poll;
+
+  // First-time votes on single-question polls submit directly so a stray
+  // tap on a vote-change still hits the confirmation modal.
+  const dispatchYesNoTap = (questionId: string, newChoice: YesNoChoice) => {
+    if (!isMultiGroup && !userVoteMap.get(questionId)) {
+      submitYesNoChoice(questionId, newChoice);
+      return;
+    }
+    setPendingVoteChange({ questionId, newChoice });
+  };
 
   // Wrapper-level reads (Phase 5b). Hoisted so every callsite below can use
   // them without re-deriving.
@@ -538,8 +550,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
             onVoteChange={
               isClosed
                 ? undefined
-                : (newChoice) =>
-                    setPendingVoteChange({ questionId: sp.id, newChoice })
+                : (newChoice) => dispatchYesNoTap(sp.id, newChoice)
             }
           />
         </div>
@@ -844,10 +855,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                                               return next;
                                             });
                                           } else {
-                                            setPendingVoteChange({
-                                              questionId: sp.id,
-                                              newChoice,
-                                            });
+                                            dispatchYesNoTap(sp.id, newChoice);
                                           }
                                         }
                                   }
