@@ -369,12 +369,23 @@ export function getThreadRouteId(thread: Thread): string {
   return rootPoll?.short_id || thread.rootQuestionId;
 }
 
-/** Route id of the targeted poll (oldest open poll with an unresponded
- *  question, falling back to the newest). Returned independently of the
- *  thread route id so callers can build `/t/<root>?p=<target>` URLs. */
-export function getTargetedPollRouteId(thread: Thread): string {
-  const target = thread.targetedPoll;
-  return target.short_id || target.questions[0]?.id || thread.rootQuestionId;
+/** Walk up `poll.follow_up_to` via the in-memory accessible-polls cache to
+ *  find the thread root and return its route id. Falls back to `poll` itself
+ *  when no ancestors are cached — degraded but always returns a usable id.
+ *  Short-circuits the cache walk when `poll` already IS the root. */
+export function resolveThreadRootRouteId(poll: Poll): string {
+  if (!poll.follow_up_to) return poll.short_id || poll.questions[0]?.id || poll.id;
+  const accessible = getCachedAccessiblePolls() ?? [];
+  const byPoll = buildPollMap([poll, ...accessible]);
+  return findThreadRootRouteId(poll, (mid) => byPoll.get(mid) ?? null);
+}
+
+/** Build `/t/<root>?p=<pollShort>` for `poll` inside its thread — the
+ *  canonical "navigate to this poll's thread with this poll expanded" URL. */
+export function getThreadHrefForPoll(poll: Poll): string {
+  const pollShortId = poll.short_id || poll.questions[0]?.id || poll.id;
+  const rootRouteId = resolveThreadRootRouteId(poll);
+  return `/t/${rootRouteId}?${POLL_QUERY_PARAM}=${pollShortId}`;
 }
 
 /** Build the URL for a thread.
@@ -390,7 +401,8 @@ export function getThreadHref(thread: Thread): string {
   if (thread.unvotedCount === 0) {
     return `/t/${rootRouteId}`;
   }
-  const targetRouteId = getTargetedPollRouteId(thread);
+  const target = thread.targetedPoll;
+  const targetRouteId = target.short_id || target.questions[0]?.id || thread.rootQuestionId;
   return `/t/${rootRouteId}?${POLL_QUERY_PARAM}=${targetRouteId}`;
 }
 

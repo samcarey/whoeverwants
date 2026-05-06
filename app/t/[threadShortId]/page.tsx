@@ -6,7 +6,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
 import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, isPendingPollId } from "@/lib/threadUtils";
+import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
 import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
@@ -197,9 +197,8 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   const [initialScrollApplied, setInitialScrollApplied] = useState(false);
   usePageReady(!!thread && !loading && initialScrollApplied);
 
-  // Prefetch question page routes for all questions in this thread. Phase 5b:
-  // short_id lives on the poll wrapper, so the friendly URL uses the
-  // poll's short_id when available.
+  // Prefetch `/t/<root>?p=<poll>` for every poll in the thread so taps land
+  // on a warm cache. The path stays constant (thread root); only `?p=` varies.
   useEffect(() => {
     if (!thread) return;
     const wrapperByQuestionId = new Map<string, string>();
@@ -207,15 +206,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (!mp.short_id) continue;
       for (const sp of mp.questions) wrapperByQuestionId.set(sp.id, mp.short_id);
     }
-    // Prefetch `/t/<threadRoot>?p=<poll>` for each poll in the thread so the
-    // destination renders from cache when the user taps a card. The path is
-    // the same for all polls (the thread root); only ?p= varies.
     const hrefs = thread.questions.map(p => {
       const pollShort = wrapperByQuestionId.get(p.id);
-      return pollShort ? `/t/${threadId}?p=${pollShort}` : `/t/${threadId}`;
+      return pollShort ? `/t/${threadId}?${POLL_QUERY_PARAM}=${pollShort}` : `/t/${threadId}`;
     });
     prefetchBatch(hrefs, { priority: "low" });
-  }, [thread, prefetchBatch]);
+  }, [thread, prefetchBatch, threadId]);
 
   // Expanded card state — only one card can be expanded at a time.
   // Initialized from the prop so the `/t/<root>?p=<id>` route can open a card on first render.
@@ -1333,25 +1329,19 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     return () => window.removeEventListener(QUESTION_VOTES_CHANGED_EVENT, handler);
   }, [thread, patchThreadPolls]);
 
-  // Sync the URL `?p=` query param to reflect which card is expanded, using
-  // shallow history.replaceState so Next.js doesn't unmount/remount on URL
-  // change. Sharing the URL reopens the same expanded card. Collapsing leaves
-  // `?p=` on the just-collapsed poll — the user's mental model is "I'm viewing
-  // this poll". The path stays at `/t/<threadRoot>` throughout.
+  // Sync `?p=` to the expanded card via shallow replaceState — sharing the
+  // URL reopens the same card. Collapse leaves `?p=` on the just-collapsed
+  // poll so refresh doesn't surprise-collapse what the user was viewing.
   useEffect(() => {
     if (typeof window === 'undefined' || !thread || !expandedQuestionId) return;
-    const expandedQuestion = thread.questions.find((p) => p.id === expandedQuestionId);
-    const wrapper = expandedQuestion ? wrapperFor(expandedQuestion) : null;
+    const wrapper = pollByQuestionId.get(expandedQuestionId) ?? null;
     const routeId = wrapper?.short_id || expandedQuestionId;
-    const url = new URL(window.location.href);
-    if (url.searchParams.get('p') !== routeId) {
-      url.searchParams.set('p', routeId);
-      window.history.replaceState(window.history.state, '', url.toString());
-    }
-  // wrapperFor reads pollByQuestionId/pollWrapperMap which both derive
-  // from `thread`, so the existing thread dep covers wrapper lookups too.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expandedQuestionId, thread]);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(POLL_QUERY_PARAM) === routeId) return;
+    params.set(POLL_QUERY_PARAM, routeId);
+    const next = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
+    window.history.replaceState(window.history.state, '', next);
+  }, [expandedQuestionId, pollByQuestionId]);
 
   // ===================================================================
   // Scroll-helper arrow visibility (path 3 — see strategy block above).
@@ -1847,29 +1837,17 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   );
 }
 
-// Resolves the URL `/t/<threadShortId>?p=<pollShortId>` to the thread root + the
-// (optional) poll to expand, then renders ThreadContent.
-//
-// Path semantics: `threadShortId` is unambiguously a poll short_id — the
-// thread root. No more "could be a poll uuid or a question uuid" cascade
-// (legacy /p/<id> URLs that arrived with an ambiguous id are handled by the
-// /p/[shortId] redirect, which resolves and 302s into this route's canonical
-// form before this component ever mounts).
-//
-// Query semantics: `?p=<pollShortId>` (optional) names which poll to
-// auto-expand and scroll-to. Absent → no expand, page scrolls to bottom (the
-// draft-form area). Replaces the old `?thread=1` flag + `suppressExpand`
-// heuristic — the URL itself encodes the intent.
+// Resolves `/t/<threadShortId>?p=<pollShortId>` to the thread root + the
+// optional poll to expand. The path id is unambiguously a poll short_id /
+// poll uuid (the thread root); legacy `/p/<id>` URLs with arbitrary ids
+// resolve via the `/p/[shortId]` redirect before reaching this component.
 function ThreadPageInner() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
   const threadShortId = params.threadShortId as string;
-  const pollParam = searchParams.get('p');
+  const pollParam = searchParams.get(POLL_QUERY_PARAM);
 
-  // Resolve `threadShortId` to the root poll (synchronous from cache when
-  // possible, async fallback). The path id is ALWAYS a poll short_id /
-  // poll uuid identifying the thread root — not a question id.
   const rootInitial = useMemo<Poll | null>(() => {
     if (typeof window === "undefined" || !threadShortId) return null;
     return isUuidLike(threadShortId)
@@ -1886,7 +1864,8 @@ function ThreadPageInner() {
       return;
     }
     if (rootInitial) {
-      addAccessibleQuestionId(rootInitial.questions[0]?.id ?? rootInitial.id);
+      const firstQ = rootInitial.questions[0]?.id;
+      if (firstQ) addAccessibleQuestionId(firstQ);
       return;
     }
 
@@ -1908,8 +1887,8 @@ function ThreadPageInner() {
         const firstQ = poll.questions[0]?.id;
         if (firstQ) addAccessibleQuestionId(firstQ);
         try { await discoverRelatedQuestions(); } catch {}
-        // Warm the accessible-polls cache so the thread builder sees the
-        // full chain (ancestors + siblings) when we hand off to ThreadContent.
+        // Warm the accessible-polls cache so ThreadContent's thread builder
+        // sees the full chain (ancestors + siblings) on first paint.
         await getAccessiblePolls().catch(() => null);
         if (!cancelled) setRootPoll(poll);
       } catch {
@@ -1919,17 +1898,14 @@ function ThreadPageInner() {
     return () => { cancelled = true; };
   }, [threadShortId, router, rootInitial]);
 
-  // Resolve `?p=<pollShortId>` to a question id we can pass as
-  // `initialExpandedQuestionId`. Look up the poll in the accessible cache
-  // (it should be a sibling/descendant of rootPoll). If not found or absent,
-  // pass null → page renders without auto-expand and scrolls to bottom.
+  // `?p=<id>` → first question of that poll. Missing poll falls through to
+  // null; page renders without auto-expand and scrolls to bottom.
   const initialExpandedQuestionId = useMemo<string | null>(() => {
     if (typeof window === "undefined" || !pollParam || !rootPoll) return null;
     const targetPoll = isUuidLike(pollParam)
       ? getCachedPollById(pollParam)
       : getCachedPollByShortId(pollParam);
-    if (!targetPoll) return null;
-    return targetPoll.questions[0]?.id ?? null;
+    return targetPoll?.questions[0]?.id ?? null;
   }, [pollParam, rootPoll]);
 
   if (error) {
@@ -1963,11 +1939,6 @@ function ThreadPageInner() {
     );
   }
 
-  // The thread route id passed to ThreadContent is whatever the URL used
-  // (short_id when present, otherwise the poll uuid that the loader
-  // resolved). buildThreadSyncFromCache and the /info / /edit-title
-  // sub-routes all key off the same value, so it must be stable across
-  // renders for the same URL.
   const threadRouteId = rootPoll.short_id || threadShortId;
 
   return (

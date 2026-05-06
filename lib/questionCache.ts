@@ -24,6 +24,7 @@
 
 import type { Poll, Question, QuestionResults } from './types';
 import type { ApiVote, ApiRankedChoiceRound } from './api';
+import { isUuidLike } from './questionId';
 
 const CACHE_TTL_MS = 60_000;
 const RESULTS_TTL_MS = 15_000; // Results change more often — shorter TTL.
@@ -190,6 +191,20 @@ export function getCachedPollById(id: string): Poll | null {
 export function getCachedPollByShortId(shortId: string): Poll | null {
   const entry = pollByShortId.get(shortId);
   return entry && isValid(entry) ? entry.value : null;
+}
+
+/** Resolve an ambiguous id (poll uuid, poll short_id, OR question uuid) to
+ *  a cached Poll. Used by legacy `/p/<id>` redirects and the legacy
+ *  `?id=<question-uuid>` deep-link to translate any old URL form into a
+ *  concrete poll without an API round-trip. Returns null on miss. */
+export function getCachedPollForShortId(id: string): Poll | null {
+  if (isUuidLike(id)) {
+    const byPollId = getCachedPollById(id);
+    if (byPollId) return byPollId;
+    const cachedQuestion = getCachedQuestionById(id);
+    return cachedQuestion?.poll_id ? getCachedPollById(cachedQuestion.poll_id) : null;
+  }
+  return getCachedPollByShortId(id);
 }
 
 /** Invalidate a poll wrapper plus all its questions. */

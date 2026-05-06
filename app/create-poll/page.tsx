@@ -30,7 +30,7 @@ import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
-import { findThreadRootRouteId } from "@/lib/threadUtils";
+import { getThreadHrefForPoll, resolveThreadRootRouteId } from "@/lib/threadUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
 import { cachePoll, getCachedAccessiblePolls, getCachedQuestionById, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
@@ -1224,15 +1224,12 @@ export function CreateQuestionContent() {
         try {
           const existing = await apiFindDuplicateQuestion(dedupTitle, effectiveFollowUpTo);
           if (existing) {
-            const lookup = pollLookup();
-            const wrapper = existing.poll_id ? lookup(existing.poll_id) : null;
+            const wrapper = existing.poll_id ? pollLookup()(existing.poll_id) : null;
             const shortId = wrapper?.short_id || existing.id;
-            const rootRouteId = wrapper
-              ? findThreadRootRouteId(wrapper, lookup)
-              : shortId;
+            const rootRouteId = wrapper ? resolveThreadRootRouteId(wrapper) : shortId;
             questionBackTarget.set(shortId, rootRouteId);
-            const sep = shortId === rootRouteId ? '' : `?p=${shortId}`;
-            router.replace(`/t/${rootRouteId}${sep}`);
+            const href = wrapper ? getThreadHrefForPoll(wrapper) : `/t/${shortId}`;
+            router.replace(href);
             return;
           }
         } catch {
@@ -1392,15 +1389,11 @@ export function CreateQuestionContent() {
       );
 
       if (onEmptyThread) {
-        // Land on the real thread URL. ThreadContent's threadId will change,
-        // but the cache is hot so re-mount renders instantly.
+        // Land on the real thread URL with the new poll expanded. The cache is
+        // hot from the just-completed POLL_HYDRATED so re-mount is instant.
         const redirectId = createdPoll.short_id ?? createdPoll.id;
-        const rootRouteId = findThreadRootRouteId(createdPoll, pollLookup());
-        questionBackTarget.set(redirectId, rootRouteId);
-        // The brand-new poll IS the latest thing in its thread; pin `?p=` so
-        // the page expands it. (When this is the first poll in a new thread,
-        // redirectId === rootRouteId so the URL is `/t/<id>?p=<id>` — fine.)
-        router.replace(`/t/${rootRouteId}?p=${redirectId}`);
+        questionBackTarget.set(redirectId, resolveThreadRootRouteId(createdPoll));
+        router.replace(getThreadHrefForPoll(createdPoll));
       }
     } catch (error) {
       console.error("Unexpected error:", error);

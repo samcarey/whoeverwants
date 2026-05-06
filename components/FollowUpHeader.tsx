@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiGetPollById } from "@/lib/api";
-import { getCachedAccessiblePolls } from "@/lib/questionCache";
-import { buildPollMap, findThreadRootRouteId } from "@/lib/threadUtils";
+import { getThreadHrefForPoll } from "@/lib/threadUtils";
 import { usePrefetch } from "@/lib/prefetch";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { useLongPress } from "@/lib/useLongPress";
@@ -39,14 +38,7 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
         const data = await apiGetPollById(followUpToPollId);
         setOriginalTitle(data.title);
         if (data.short_id) {
-          // Walk up follow_up_to via the cache to find the thread root, so
-          // tapping the chip lands the user on the actual thread (not on the
-          // parent poll viewed in isolation). Falls back to the parent itself
-          // when ancestors aren't cached — degraded but functional.
-          const accessible = getCachedAccessiblePolls() ?? [];
-          const byPoll = buildPollMap([data, ...accessible]);
-          const rootRouteId = findThreadRootRouteId(data, (mid) => byPoll.get(mid) ?? null);
-          const href = `/t/${rootRouteId}?p=${data.short_id}`;
+          const href = getThreadHrefForPoll(data);
           setParentHref(href);
           prefetch(href, { priority: "low" });
         }

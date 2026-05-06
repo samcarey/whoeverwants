@@ -3,8 +3,7 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, Suspense } from "react";
 import { apiGetQuestionById, apiGetPollById } from "@/lib/api";
-import { getCachedAccessiblePolls } from "@/lib/questionCache";
-import { buildPollMap, findThreadRootRouteId } from "@/lib/threadUtils";
+import { getThreadHrefForPoll } from "@/lib/threadUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import ThreadHeader from "@/components/ThreadHeader";
@@ -35,14 +34,7 @@ function ThreadRoot() {
           router.replace('/');
           return;
         }
-        // Walk up follow_up_to via the in-memory accessible-polls cache to
-        // find the thread root. Falls back to the wrapper itself when no
-        // cached ancestors are reachable — degraded but functional.
-        const accessible = getCachedAccessiblePolls() ?? [];
-        const byPoll = buildPollMap([wrapper, ...accessible]);
-        const rootRouteId = findThreadRootRouteId(wrapper, (mid) => byPoll.get(mid) ?? null);
-        const pollShortId = wrapper.short_id || (pollId ?? id);
-        router.replace(`/t/${rootRouteId}?p=${pollShortId}`);
+        router.replace(getThreadHrefForPoll(wrapper));
       } catch {
         router.replace('/');
       }
