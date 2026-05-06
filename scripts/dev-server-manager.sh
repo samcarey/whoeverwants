@@ -172,6 +172,11 @@ reap_orphans_for_slug() {
   local resolved
   resolved=$(readlink -f "$dir")
   local victims=()
+  # Skip our own PID and our parent's: cmd_upsert cd's into "$dir" before
+  # calling this, so /proc/$$/cwd resolves into the slug dir and we'd reap
+  # ourselves (exit 137, looking like an OOM kill).
+  local self_pid=$$
+  local parent_pid=$PPID
   for cwd_link in /proc/[0-9]*/cwd; do
     local target
     target=$(readlink "$cwd_link" 2>/dev/null) || continue
@@ -179,6 +184,8 @@ reap_orphans_for_slug() {
       "$resolved"|"$resolved"/*)
         local pid="${cwd_link#/proc/}"
         pid="${pid%/cwd}"
+        [ "$pid" = "$self_pid" ] && continue
+        [ "$pid" = "$parent_pid" ] && continue
         victims+=("$pid")
         ;;
     esac
