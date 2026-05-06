@@ -1268,6 +1268,7 @@ export function CreateQuestionContent() {
           return cached.find(mp => mp.questions.some(q => q.id === effectiveFollowUpTo))?.id ?? null;
         })(),
         creatorName: creatorName.trim() || null,
+        details: details.trim() || null,
       });
 
       // For new-root submissions on /t/ (the empty placeholder), the
@@ -1651,7 +1652,7 @@ export function CreateQuestionContent() {
               <div className="relative mx-1.5 mb-2 flex items-center justify-center min-h-9">
                 <span className="inline-block text-sm font-medium text-gray-500 dark:text-gray-400 select-none mt-[3px] truncate max-w-[calc(100%-4rem)]">
                   {projectedDrafts.length > 0 && !validationError
-                    ? draftPollPreview(projectedDrafts, details).title
+                    ? draftPollPreview(projectedDrafts, '').title
                     : 'Create Poll'}
                 </span>
                 <button
