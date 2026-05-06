@@ -748,24 +748,37 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Poll System
 
-> **Phase B.1 of the thread-routing redesign shipped (this branch).** Migration
-> 099 introduces `threads(id, short_id, created_at)` and adds
-> `polls.thread_id uuid REFERENCES threads(id)`. Backfill: thread.id ==
-> root_poll.id (set deterministically via a recursive CTE on `follow_up_to`),
-> `threads.short_id` copied from the root poll's `short_id` (so the Phase A
-> route id continues to resolve once Phase B.4 starts using it). The column
-> is **nullable** in B.1 to avoid a deploy race; tightened to NOT NULL in B.2.
-> Server `_insert_poll` calls `_resolve_or_create_thread_id(parent_poll_id)`:
+> **Phase B.2 of the thread-routing redesign shipped (this branch).**
+> `algorithms/related_polls.py` no longer walks `polls.follow_up_to`
+> chains — it groups by `polls.thread_id`. The SQL in
+> `routers/questions.py:get_related_questions` is now a single indexed
+> `WHERE mp.thread_id IN (...)` lookup; the Python algorithm just dedupes
+> the result. `QuestionRelation` carries a single `thread_id` field
+> (replacing `poll_id` + `poll_follow_up_to`); `max_depth` is gone.
+> Migration `100_tighten_polls_thread_id_not_null` tightens
+> `polls.thread_id` to NOT NULL after a final backfill pass — any rows
+> still NULL at that point (orphans whose `follow_up_to` chain root was
+> deleted) get a freshly-minted `threads` row with `id = poll.id`.
+> `_resolve_parent_poll_id` is unchanged: it's a single `WHERE id = $1`
+> lookup translating a question_id (the public `follow_up_to` request
+> contract) into a poll_id, not a chain walk. No API contract changes —
+> see `docs/thread-routing-redesign.md`.
+>
+> **Phase B.1 (#261) is the previous step.** Migration 099 introduced
+> `threads(id, short_id, created_at)` and added `polls.thread_id uuid
+> REFERENCES threads(id)` (nullable). Backfill: thread.id == root_poll.id
+> set deterministically via a recursive CTE on `follow_up_to`;
+> `threads.short_id` copied from the root poll's `short_id` so the Phase A
+> route id continues to resolve once Phase B.4 starts using it. Server
+> `_insert_poll` calls `_resolve_or_create_thread_id(parent_poll_id)`:
 > follow-ups inherit `parent.thread_id`; root polls (no parent or missing
-> parent thread) get a fresh `threads` row via `INSERT INTO threads DEFAULT
-> VALUES RETURNING id`. New threads created post-migration have
-> `short_id = NULL` until Phase B.4 mints them. Nothing reads `polls.thread_id`
-> yet — Phase B.2 swaps server-side chain walking
-> (`_resolve_parent_poll_id`, `algorithms/related_polls.py`) for `WHERE
-> thread_id = $1` lookups. The integrity invariant "every poll's thread_id
-> matches its chain root" is enforced by application code in `_insert_poll`,
-> not by a CHECK constraint (subquery CHECKs aren't allowed; doable via a
-> trigger but skipped for B.1). See `docs/thread-routing-redesign.md`.
+> parent thread) get a fresh `threads` row via `INSERT INTO threads
+> DEFAULT VALUES RETURNING id`. New threads created post-migration have
+> `short_id = NULL` until Phase B.4 mints them. The integrity invariant
+> "every poll's thread_id matches its chain root" is enforced by application
+> code in `_insert_poll`, not by a CHECK constraint (subquery CHECKs aren't
+> allowed; doable via a trigger but skipped for B.1). See
+> `docs/thread-routing-redesign.md`.
 
 > **Phase 5 + 5b shipped.** Migration 096 dropped the wrapper-level columns
 > from `questions` (short_id, creator_secret, creator_name, response_deadline,

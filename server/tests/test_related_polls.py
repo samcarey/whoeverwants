@@ -1,9 +1,10 @@
 """Tests for related questions discovery algorithm.
 
-Phase 3.5: discovery walks poll-level chains. A `QuestionRelation` carries the
-question's `poll_id` and `poll_follow_up_to` (its wrapper's follow_up
-chain pointer). `_p()` wraps each test question in its own 1-question poll by
-default so the chain semantics mirror production after the Phase 4 backfill.
+Phase B.2: discovery groups by `polls.thread_id`. A `QuestionRelation` carries
+the question's `thread_id` (its poll wrapper's thread). The chain-walking
+that the algorithm used to do in Python now lives in SQL — the caller fetches
+every question whose poll shares a thread with any input, and the algorithm
+just dedupes.
 """
 
 import pytest
@@ -11,179 +12,93 @@ import pytest
 from algorithms.related_polls import QuestionRelation, get_all_related_question_ids
 
 
-def _p(
-    id: str,
-    *,
-    poll_id: str | None = None,
-    follow_up_to: str | None = None,
-) -> QuestionRelation:
-    """Build a QuestionRelation. By default each question lives in its own 1-question
-    poll whose id mirrors the question id (so single-question thread semantics are
-    expressed without test scaffolding noise). Pass `poll_id=...` to put
-    multiple questions in one wrapper. `follow_up_to` is a poll_id (the
-    wrapper's parent poll), matching `polls.follow_up_to` semantics.
+def _q(id: str, *, thread_id: str | None = None) -> QuestionRelation:
+    """Build a QuestionRelation. By default each question is in its own
+    single-question thread (thread_id mirrors id) — the trivial case.
+    Pass `thread_id=...` to put multiple questions in one thread.
     """
     return QuestionRelation(
         id=id,
-        poll_id=poll_id or id,
-        poll_follow_up_to=follow_up_to,
+        thread_id=thread_id or id,
     )
 
 
 class TestGetAllRelatedQuestionIds:
-    """Tests for bidirectional question relationship traversal at the poll level."""
+    """Tests for thread-grouped question discovery."""
 
     def test_empty_input(self):
         assert get_all_related_question_ids([], []) == []
 
     def test_single_question_no_relations(self):
-        questions = [_p("a")]
+        questions = [_q("a")]
         result = get_all_related_question_ids(["a"], questions)
         assert set(result) == {"a"}
 
-    def test_single_follow_up_descendant(self):
-        questions = [_p("a"), _p("b", follow_up_to="a")]
-        result = get_all_related_question_ids(["a"], questions)
-        assert set(result) == {"a", "b"}
+    def test_two_questions_in_one_thread(self):
+        """Two questions sharing a thread should both be returned, regardless
+        of which one is the input (membership is symmetric)."""
+        questions = [_q("a", thread_id="t1"), _q("b", thread_id="t1")]
+        assert set(get_all_related_question_ids(["a"], questions)) == {"a", "b"}
+        assert set(get_all_related_question_ids(["b"], questions)) == {"a", "b"}
 
-    def test_single_follow_up_ancestor(self):
-        """Starting from a follow-up should discover parent."""
-        questions = [_p("a"), _p("b", follow_up_to="a")]
-        result = get_all_related_question_ids(["b"], questions)
-        assert set(result) == {"a", "b"}
-
-    def test_chain_of_follow_ups(self):
-        """a -> b -> c -> d: starting from any should find all."""
+    def test_long_thread(self):
+        """All questions in one thread are discovered together."""
         questions = [
-            _p("a"),
-            _p("b", follow_up_to="a"),
-            _p("c", follow_up_to="b"),
-            _p("d", follow_up_to="c"),
+            _q("a", thread_id="t1"),
+            _q("b", thread_id="t1"),
+            _q("c", thread_id="t1"),
+            _q("d", thread_id="t1"),
         ]
         result = get_all_related_question_ids(["a"], questions)
         assert set(result) == {"a", "b", "c", "d"}
 
-    def test_chain_from_middle(self):
+    def test_multiple_input_questions_unrelated_threads(self):
+        """Two unrelated threads, querying from both."""
         questions = [
-            _p("a"),
-            _p("b", follow_up_to="a"),
-            _p("c", follow_up_to="b"),
-        ]
-        result = get_all_related_question_ids(["b"], questions)
-        assert set(result) == {"a", "b", "c"}
-
-    def test_branching_tree(self):
-        """a -> b, a -> c, b -> d"""
-        questions = [
-            _p("a"),
-            _p("b", follow_up_to="a"),
-            _p("c", follow_up_to="a"),
-            _p("d", follow_up_to="b"),
-        ]
-        result = get_all_related_question_ids(["a"], questions)
-        assert set(result) == {"a", "b", "c", "d"}
-
-    def test_branching_tree_from_leaf(self):
-        """Starting from d should find entire tree."""
-        questions = [
-            _p("a"),
-            _p("b", follow_up_to="a"),
-            _p("c", follow_up_to="a"),
-            _p("d", follow_up_to="b"),
-        ]
-        result = get_all_related_question_ids(["d"], questions)
-        assert set(result) == {"a", "b", "c", "d"}
-
-    def test_multiple_input_questions(self):
-        """Two unrelated trees, querying from both roots."""
-        questions = [
-            _p("a"),
-            _p("b", follow_up_to="a"),
-            _p("x"),
-            _p("y", follow_up_to="x"),
+            _q("a", thread_id="t1"),
+            _q("b", thread_id="t1"),
+            _q("x", thread_id="t2"),
+            _q("y", thread_id="t2"),
         ]
         result = get_all_related_question_ids(["a", "x"], questions)
         assert set(result) == {"a", "b", "x", "y"}
 
     def test_input_question_not_in_all_questions(self):
-        """Input question ID not in the all_questions list — still returned."""
-        questions = [_p("a")]
+        """Input ID missing from `all_questions` is still returned as-is."""
+        questions = [_q("a")]
         result = get_all_related_question_ids(["z"], questions)
         assert set(result) == {"z"}
 
-    def test_disconnected_questions_not_included(self):
-        """Questions not related to input should not appear."""
+    def test_disconnected_thread_not_included(self):
         questions = [
-            _p("a"),
-            _p("b", follow_up_to="a"),
-            _p("unrelated"),
+            _q("a", thread_id="t1"),
+            _q("b", thread_id="t1"),
+            _q("unrelated", thread_id="t2"),
         ]
         result = get_all_related_question_ids(["a"], questions)
         assert set(result) == {"a", "b"}
         assert "unrelated" not in result
 
-    def test_max_depth_limits_traversal(self):
-        """With max_depth=2, should only traverse 2 levels."""
-        questions = [
-            _p("a"),
-            _p("b", follow_up_to="a"),
-            _p("c", follow_up_to="b"),
-            _p("d", follow_up_to="c"),  # depth 3 from a
-        ]
-        result = get_all_related_question_ids(["a"], questions, max_depth=2)
-        assert set(result) == {"a", "b", "c"}
-        assert "d" not in result
-
     def test_duplicate_input_ids(self):
-        questions = [_p("a"), _p("b", follow_up_to="a")]
+        questions = [_q("a", thread_id="t1"), _q("b", thread_id="t1")]
         result = get_all_related_question_ids(["a", "a"], questions)
         assert set(result) == {"a", "b"}
-        # No duplicates in output
-        assert len(result) == len(set(result))
+        assert len(result) == len(set(result))  # no duplicates in output
 
     def test_empty_all_questions(self):
         result = get_all_related_question_ids(["a"], [])
         assert set(result) == {"a"}
 
-    # --- Poll-level semantics ---
-
-    def test_poll_siblings_grouped(self):
-        """Two questions in one wrapper are always discovered together."""
+    def test_mixed_threaded_and_unthreaded(self):
+        """An input with a thread_id discovers its thread mates; an input
+        without one still appears in the output as a no-op pass-through.
+        Post-migration 100, `thread_id` is NOT NULL — this test guards the
+        algorithm against a transient deploy state where a stale/unbackfilled
+        row sneaks through."""
         questions = [
-            _p("a", poll_id="m1"),
-            _p("b", poll_id="m1"),
+            _q("a", thread_id="t1"),
+            _q("b", thread_id="t1"),
+            QuestionRelation(id="c", thread_id=None),
         ]
-        result = get_all_related_question_ids(["a"], questions)
-        assert set(result) == {"a", "b"}
-
-    def test_followup_pulls_all_siblings_of_parent(self):
-        """A follow-up poll discovers every sibling question of its parent."""
-        questions = [
-            _p("a1", poll_id="m1"),
-            _p("a2", poll_id="m1"),
-            _p("b1", poll_id="m2", follow_up_to="m1"),
-        ]
-        result = get_all_related_question_ids(["b1"], questions)
-        assert set(result) == {"a1", "a2", "b1"}
-
-    def test_followup_pulls_all_siblings_of_child(self):
-        """Starting from a parent question discovers every sibling of the child."""
-        questions = [
-            _p("a1", poll_id="m1"),
-            _p("b1", poll_id="m2", follow_up_to="m1"),
-            _p("b2", poll_id="m2"),
-        ]
-        result = get_all_related_question_ids(["a1"], questions)
-        assert set(result) == {"a1", "b1", "b2"}
-
-    def test_chain_of_multi_question_wrappers(self):
-        """m1 -> m2 -> m3 with multiple questions in each: all discovered from any input."""
-        questions = [
-            _p("a1", poll_id="m1"),
-            _p("a2", poll_id="m1"),
-            _p("b1", poll_id="m2", follow_up_to="m1"),
-            _p("b2", poll_id="m2"),
-            _p("c1", poll_id="m3", follow_up_to="m2"),
-        ]
-        result = get_all_related_question_ids(["b2"], questions)
-        assert set(result) == {"a1", "a2", "b1", "b2", "c1"}
+        result = get_all_related_question_ids(["a", "c"], questions)
+        assert set(result) == {"a", "b", "c"}
