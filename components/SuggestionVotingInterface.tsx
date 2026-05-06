@@ -322,6 +322,7 @@ export default function SuggestionVotingInterface({
             referenceLatitude={question.reference_latitude}
             referenceLongitude={question.reference_longitude}
             searchRadius={searchRadius}
+            hideReferenceLocationWarning
           />
         </div>
 

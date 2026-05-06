@@ -20,6 +20,7 @@ interface OptionsInputProps {
   referenceLatitude?: number;
   referenceLongitude?: number;
   searchRadius?: number;
+  hideReferenceLocationWarning?: boolean;
 }
 
 export default function OptionsInput({
@@ -34,6 +35,7 @@ export default function OptionsInput({
   referenceLatitude,
   referenceLongitude,
   searchRadius,
+  hideReferenceLocationWarning = false,
 }: OptionsInputProps) {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -176,7 +178,7 @@ export default function OptionsInput({
           {label}
         </label>
       )}
-      {needsReferenceLocation && (
+      {needsReferenceLocation && !hideReferenceLocationWarning && (
         <p className="mb-2 text-sm text-orange-600 dark:text-orange-400">
           Choose a reference location above to enable search.
         </p>
