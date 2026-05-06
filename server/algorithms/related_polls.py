@@ -1,12 +1,10 @@
-"""Discover all related question IDs via the poll-level follow_up chain.
+"""Discover all related question IDs by grouping on `thread_id`.
 
-Phase 3.5: thread chains live at the poll level. Two questions are related
-when their polls form a follow_up chain (in either direction) or when
-they share a poll wrapper (sibling questions).
-
-The original SQL discovery walked `questions.follow_up_to` per-row. Forks were
-removed in migration 095; sibling-question grouping was added when the
-poll system shipped.
+Phase B.2: thread membership is materialized as `polls.thread_id`. Two
+questions are related when their polls share a `thread_id`. The previous
+algorithm walked `polls.follow_up_to` chains in Python; that's now a single
+SQL `WHERE thread_id IN (...)` lookup, and this module just dedupes the
+result.
 """
 
 from __future__ import annotations
@@ -16,95 +14,43 @@ from dataclasses import dataclass
 
 @dataclass
 class QuestionRelation:
-    """A question's relationship fields used by the discovery algorithm.
+    """A question's thread membership.
 
-    `poll_id` groups sibling questions. `poll_follow_up_to` is the
-    question's wrapper's follow_up chain pointer (a poll_id, or None for
-    thread roots).
+    `thread_id` is `polls.thread_id` of the question's poll wrapper. Phase B.1
+    backfilled this for every existing poll and Phase B.2 tightens the column
+    to NOT NULL, so in practice it should always be set; we still tolerate
+    None on input rows so the caller doesn't have to filter.
     """
 
     id: str
-    poll_id: str | None = None
-    poll_follow_up_to: str | None = None
+    thread_id: str | None = None
 
 
 def get_all_related_question_ids(
     input_question_ids: list[str],
     all_questions: list[QuestionRelation],
-    max_depth: int = 10,
 ) -> list[str]:
-    """Find all question IDs related to the input set via poll-level
-    follow_up chains and poll-sibling grouping.
-
-    Searches bidirectionally at the poll level:
-    - Descendants: polls whose `follow_up_to` points to a known poll
-    - Ancestors: a known poll's `follow_up_to` target
-    - Siblings: every question of a visited poll
+    """Find every question sharing a thread with any input question.
 
     Args:
         input_question_ids: Starting set of question IDs.
-        all_questions: All questions with their poll-level relationship fields.
-        max_depth: Maximum traversal iterations (prevents infinite loops).
+        all_questions: Questions in the candidate pool, each with its
+            `thread_id`. Typically every question whose `thread_id` matches
+            an input's `thread_id`, fetched in one SQL hop by the caller.
 
     Returns:
-        Deduplicated list of all related question IDs (includes input IDs).
+        Deduplicated list of related question IDs (includes inputs even
+        when they're missing from `all_questions`).
     """
-    if not input_question_ids or not all_questions:
-        return list(set(input_question_ids)) if input_question_ids else []
+    if not input_question_ids:
+        return []
 
-    question_by_id: dict[str, QuestionRelation] = {p.id: p for p in all_questions}
-
-    # poll_id -> [question_id, ...] (every question of a wrapper).
-    questions_by_poll: dict[str, list[str]] = {}
-    # parent_poll_id -> [child_poll_id, ...] from mp.follow_up_to.
-    children_by_parent_poll: dict[str, list[str]] = {}
-    # poll_id -> parent_poll_id (mp.follow_up_to). Sub-questions of one
-    # wrapper share the same value; recorded once.
-    parent_of_poll: dict[str, str | None] = {}
-
-    for p in all_questions:
-        if not p.poll_id:
-            continue
-        questions_by_poll.setdefault(p.poll_id, []).append(p.id)
-        if p.poll_id not in parent_of_poll:
-            parent_of_poll[p.poll_id] = p.poll_follow_up_to
-        if p.poll_follow_up_to:
-            children_by_parent_poll.setdefault(p.poll_follow_up_to, []).append(
-                p.poll_id
-            )
-
-    # Dedupe child poll lists (one entry per child poll, not per
-    # sibling question of that child).
-    for parent_id, children in children_by_parent_poll.items():
-        children_by_parent_poll[parent_id] = list(dict.fromkeys(children))
-
-    discovered: set[str] = set(input_question_ids)
-    discovered_polls: set[str] = {
-        question_by_id[pid].poll_id
-        for pid in input_question_ids
-        if pid in question_by_id and question_by_id[pid].poll_id
+    input_set = set(input_question_ids)
+    input_threads = {
+        q.thread_id for q in all_questions if q.id in input_set and q.thread_id
     }
-    poll_frontier: set[str] = set(discovered_polls)
 
-    for _ in range(max_depth):
-        new_polls: set[str] = set()
-        for mid in poll_frontier:
-            # Descendants: child polls whose follow_up_to == mid.
-            for child_id in children_by_parent_poll.get(mid, []):
-                if child_id not in discovered_polls:
-                    new_polls.add(child_id)
-            # Ancestor: this poll's follow_up_to target.
-            parent_id = parent_of_poll.get(mid)
-            if parent_id and parent_id not in discovered_polls:
-                new_polls.add(parent_id)
-        if not new_polls:
-            break
-        discovered_polls |= new_polls
-        poll_frontier = new_polls
-
-    # Expand each discovered poll to its questions.
-    for mid in discovered_polls:
-        for pid in questions_by_poll.get(mid, []):
-            discovered.add(pid)
-
-    return list(discovered)
+    related = set(input_question_ids)
+    if input_threads:
+        related.update(q.id for q in all_questions if q.thread_id in input_threads)
+    return list(related)

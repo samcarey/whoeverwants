@@ -1,7 +1,7 @@
 # Thread Routing Redesign
 
-> Status: Phase A shipped (#260). Phase B.1 in progress (this branch). Phases
-> B.2 / B.3 / B.4 / C are deferred.
+> Status: Phase A shipped (#260), Phase B.1 shipped (#261), Phase B.2 in
+> progress (this branch). Phases B.3 / B.4 / C are deferred.
 
 ## Vision
 
@@ -124,11 +124,22 @@ Broken into four sub-phases so each is independently shippable.
 Phase B.1 leaves `main` shippable: no API/FE changes, no behavior change. The
 schema is in place for Phases B.2 / B.4 to consume.
 
-#### Phase B.2 — Use `thread_id` server-side (deferred)
+#### Phase B.2 — Use `thread_id` server-side (this branch)
 
-- Replace server-side chain walking (e.g. `_resolve_parent_poll_id`,
-  `algorithms/related_polls.py`) with `WHERE thread_id = $1` lookups.
-- Tighten `polls.thread_id` to `NOT NULL` once the new code is fully rolled out.
+- `algorithms/related_polls.py` is reduced to a thread-id-grouped dedup
+  helper. The chain-walking logic is gone; the SQL in
+  `routers/questions.py:get_related_questions` does an indexed
+  `WHERE thread_id IN (...)` lookup in a single round-trip instead of
+  fetching every threaded question and walking in Python.
+- `_resolve_parent_poll_id` is unchanged — it's a single `WHERE id = $1`
+  lookup that translates a question_id (the public `follow_up_to`
+  contract on requests) into a poll_id, not a chain walk.
+- Migration `100_tighten_polls_thread_id_not_null` makes the column
+  NOT NULL after a final backfill pass. By the time this migration
+  runs, the Phase B.1 code has been writing thread_id on every insert
+  for at least one deploy cycle, so any remaining NULLs are
+  pre-deploy stragglers (handled by the same recursive CTE migration
+  099 used).
 - No API contract changes.
 
 #### Phase B.3 — `browser_id` cookie + new endpoints (deferred)

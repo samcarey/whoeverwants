@@ -375,17 +375,20 @@ def get_related_questions(req: RelatedQuestionsRequest):
             all_related_ids=[], original_count=0, discovered_count=0
         )
     with get_db() as conn:
-        # Fetch every question plus its poll's follow_up_to (Phase 3.5 source
-        # of truth for thread chains). The discovery walks poll-level
-        # chains via mp.follow_up_to + poll-sibling grouping; per-question
-        # follow_up_to is no longer consulted for chain traversal.
+        # Phase B.2: thread membership is materialized as `polls.thread_id`.
+        # Fetch every question whose thread matches any input's thread —
+        # one indexed lookup, no chain walking.
         rows = conn.execute(
-            """SELECT p.id, p.poll_id,
-                      mp.follow_up_to AS poll_follow_up_to
+            """SELECT p.id, mp.thread_id
                  FROM questions p
-                 LEFT JOIN polls mp ON p.poll_id = mp.id
-                WHERE mp.follow_up_to IS NOT NULL
-                   OR p.poll_id IS NOT NULL
+                 JOIN polls mp ON p.poll_id = mp.id
+                WHERE mp.thread_id IN (
+                          SELECT mp2.thread_id
+                            FROM questions p2
+                            JOIN polls mp2 ON p2.poll_id = mp2.id
+                           WHERE p2.id = ANY(%(question_ids)s)
+                             AND mp2.thread_id IS NOT NULL
+                      )
                    OR p.id = ANY(%(question_ids)s)""",
             {"question_ids": req.question_ids},
         ).fetchall()
@@ -393,12 +396,7 @@ def get_related_questions(req: RelatedQuestionsRequest):
     all_questions = [
         QuestionRelation(
             id=str(r["id"]),
-            poll_id=str(r["poll_id"]) if r.get("poll_id") else None,
-            poll_follow_up_to=(
-                str(r["poll_follow_up_to"])
-                if r.get("poll_follow_up_to")
-                else None
-            ),
+            thread_id=str(r["thread_id"]) if r.get("thread_id") else None,
         )
         for r in rows
     ]
