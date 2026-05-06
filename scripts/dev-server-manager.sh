@@ -171,7 +171,7 @@ reap_orphans_for_slug() {
   [ -d "$dir" ] || return 0
   local resolved
   resolved=$(readlink -f "$dir")
-  local victims=""
+  local victims=()
   for cwd_link in /proc/[0-9]*/cwd; do
     local target
     target=$(readlink "$cwd_link" 2>/dev/null) || continue
@@ -179,14 +179,13 @@ reap_orphans_for_slug() {
       "$resolved"|"$resolved"/*)
         local pid="${cwd_link#/proc/}"
         pid="${pid%/cwd}"
-        victims+="$pid "
+        victims+=("$pid")
         ;;
     esac
   done
-  if [ -n "$victims" ]; then
-    log "Reaping orphan processes for $slug: $victims"
-    # shellcheck disable=SC2086
-    kill -9 $victims 2>/dev/null || true
+  if [ "${#victims[@]}" -gt 0 ]; then
+    log "Reaping orphan processes for $slug: ${victims[*]}"
+    kill -9 "${victims[@]}" 2>/dev/null || true
     sleep 1
   fi
 }
