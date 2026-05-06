@@ -12,7 +12,6 @@ export {
   apiGetQuestionByShortId,
   apiGetQuestionById,
   apiFindDuplicateQuestion,
-  apiGetRelatedQuestions,
   apiGetAccessibleQuestions,
   apiGetAllQuestionIds,
 } from "./questions";

@@ -35,7 +35,7 @@ export function getAccessibleQuestionIds(): string[] {
 // *explicit* access grants (visiting a question/thread URL, creating a question) —
 // doing so clears any prior "forgotten" marker since the user is opting in.
 // Automatic discovery must go through the forgotten-list-aware path in
-// `discoverRelatedQuestions` instead.
+// `getMyThreads` (lib/simpleQuestionQueries.ts) instead.
 export function addAccessibleQuestionId(questionId: string): void {
   if (typeof window === 'undefined' || !questionId) {
     return;

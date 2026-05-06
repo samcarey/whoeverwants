@@ -17,7 +17,6 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import { useLongPress } from "@/lib/useLongPress";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
-import { triggerDiscoveryIfNeeded } from "@/lib/questionDiscovery";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
@@ -1357,14 +1356,6 @@ export function CreateQuestionContent() {
       // locally per question id (used by FollowUp/Close/Reopen actions).
       for (const sp of createdPoll.questions) {
         recordQuestionCreation(sp.id, creatorSecret);
-      }
-
-      if (effectiveFollowUpTo) {
-        try {
-          await triggerDiscoveryIfNeeded();
-        } catch {
-          // Don't fail the question creation if discovery fails
-        }
       }
 
       if (creatorName.trim()) {
