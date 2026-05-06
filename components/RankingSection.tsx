@@ -1,6 +1,7 @@
 "use client";
 
 import Countdown from "@/components/Countdown";
+import SimpleCountdown from "@/components/SimpleCountdown";
 import RankableOptions from "@/components/RankableOptions";
 import AbstainButton from "@/components/AbstainButton";
 import CompactNameField from "@/components/CompactNameField";
@@ -125,7 +126,7 @@ export default function RankingSection({
       return (
         <div className="text-center text-sm text-gray-600 dark:text-gray-400">
           {suggestionDeadline ? (
-            <>Ranking will open after suggestions cutoff in{' '}<Countdown deadline={suggestionDeadline} /></>
+            <>Ranking will open after suggestions cutoff in{' '}<SimpleCountdown deadline={suggestionDeadline} colorClass="text-gray-600 dark:text-gray-400" /></>
           ) : (
             <>Ranking will open after suggestions cutoff</>
           )}
