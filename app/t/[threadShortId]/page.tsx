@@ -6,12 +6,12 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyThreads } from "@/lib/simpleQuestionQueries";
 import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
-import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
 import type { QuestionResults } from "@/lib/types";
 import { addAccessibleQuestionId, getCreatorSecret } from "@/lib/browserQuestionAccess";
-import { getCachedQuestionById, getCachedQuestionByShortId, getCachedAccessiblePolls, getCachedPollById, getCachedPollByShortId, getCachedPollForShortId } from "@/lib/questionCache";
+import { getCachedAccessiblePolls, getCachedPollById, getCachedPollByShortId, getCachedPollForShortId } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
@@ -389,26 +389,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         if (!initialThread) setLoading(true);
         setError(false);
 
-        // Step 1: Fetch the question referenced in the URL and register access.
-        // Check the in-memory cache first — the home page already fetched all accessible questions.
-        let anchorQuestion: Question;
-        try {
-          const cached = isUuidLike(threadId)
-            ? getCachedQuestionById(threadId)
-            : getCachedQuestionByShortId(threadId);
-          if (cached) {
-            anchorQuestion = cached;
-          } else if (isUuidLike(threadId)) {
-            anchorQuestion = await apiGetQuestionById(threadId);
-          } else {
-            anchorQuestion = await apiGetQuestionByShortId(threadId);
-          }
-          addAccessibleQuestionId(anchorQuestion.id);
-        } catch {
-          setError(true);
-          return;
-        }
-
         // Phase B.3: one round-trip — apiGetThreadByRouteId resolves the
         // route id to a thread_id and returns every poll in that thread,
         // with full inline-results / voter aggregates. The legacy
@@ -427,6 +407,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
           if (err instanceof ApiError && err.status === 404) { setError(true); return; }
           throw err;
         }
+        if (polls.length === 0) { setError(true); return; }
         // Persist any newly-discovered question_ids to localStorage so a
         // forget-and-re-discover cycle still works on direct navigation.
         for (const mp of polls) {
@@ -438,9 +419,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
         // Re-read voted state — discovery or the user voting elsewhere may have changed it.
         const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-        const anchorPollId = anchorQuestion.poll_id;
-        if (!anchorPollId) { setError(true); return; }
-        const foundThread = buildThreadFromPollDown(anchorPollId, polls, voted, abstained);
+        // Find the chain root among the polls the API returned. With Phase
+        // C.3 visibility filtering, ancestor polls can be hidden — fall
+        // back to the earliest visible poll so a partial-visibility thread
+        // still renders rather than 404'ing.
+        const anchorPoll = polls.find(mp => !mp.follow_up_to) ?? polls[0];
+        const foundThread = buildThreadFromPollDown(anchorPoll.id, polls, voted, abstained);
 
         if (!foundThread) {
           setError(true);
