@@ -25,6 +25,7 @@ export {
   apiReopenPoll,
   apiCutoffPollSuggestions,
   apiCutoffPollAvailability,
+  apiGrantPollAccess,
   apiUpdatePollThreadTitle,
 } from "./polls";
 export type { QuestionType, CreateQuestionParams, CreatePollParams } from "./polls";

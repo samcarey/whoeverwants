@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+import psycopg.errors
+from fastapi import APIRouter, HTTPException, Request
 
 from algorithms.poll_title import generate_poll_title
 from database import get_db
@@ -23,6 +24,7 @@ from models import (
     UpdateThreadTitleRequest,
     VoteResponse,
 )
+from services.memberships import join_thread, join_thread_for_poll
 from services.questions import (
     _edit_vote_on_question,
     _finalize_suggestion_options,
@@ -62,6 +64,12 @@ def _iso_or_none(value) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
+
+
+def _browser_id(request: Request) -> str | None:
+    """Phase C.2: read the browser_id captured by `BrowserIdMiddleware`.
+    Helper exists because Phase C handlers will all reach for this."""
+    return getattr(request.state, "browser_id", None)
 
 
 def _validate_request(req: CreatePollRequest) -> None:
@@ -393,7 +401,7 @@ def _compute_poll_voter_data(conn, poll_id: str) -> tuple[list[str], int]:
 
 
 @router.post("", response_model=PollResponse, status_code=201)
-def create_poll(req: CreatePollRequest):
+def create_poll(req: CreatePollRequest, request: Request):
     _validate_request(req)
 
     # questions.title is NOT NULL, so each question row needs a value even though
@@ -416,6 +424,13 @@ def create_poll(req: CreatePollRequest):
             _insert_question(conn, poll_row, req, sub, index, question_title, now)
             for index, sub in enumerate(req.questions)
         ]
+
+    # Phase C.2: creator auto-joins the thread. Runs after the create
+    # commits — root polls' thread_id only exists post-`_insert_poll`.
+    join_thread(
+        str(poll_row["thread_id"]) if poll_row.get("thread_id") else None,
+        _browser_id(request),
+    )
 
     # Newly-created poll has no votes yet — skip the voter aggregation.
     return _row_to_poll(poll_row, question_rows)
@@ -447,6 +462,32 @@ def get_poll(short_id: str):
         question_rows = _fetch_questions(conn, str(row["id"]))
         voter_names, anonymous_count = _compute_poll_voter_data(conn, str(row["id"]))
     return _row_to_poll(row, question_rows, voter_names, anonymous_count)
+
+
+@router.post("/{poll_id}/access", status_code=204)
+def grant_poll_access_endpoint(poll_id: str, request: Request):
+    """Phase C.2: record direct-link access to one poll. Called when a user
+    lands on `/t/<thread>?p=<poll>` so non-thread-members can still see the
+    poll they followed a link to. Phase C.3 will read these rows."""
+    browser_id = _browser_id(request)
+    if not browser_id:
+        return
+    # The FK on poll_access.poll_id IS the existence check — a missing poll
+    # surfaces as `ForeignKeyViolation`, which we translate to 404 without
+    # the second SELECT (and without the TOCTOU window between SELECT and
+    # INSERT).
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """
+                INSERT INTO poll_access (poll_id, browser_id)
+                VALUES (%(poll_id)s, %(browser_id)s)
+                ON CONFLICT (poll_id, browser_id) DO NOTHING
+                """,
+                {"poll_id": poll_id, "browser_id": browser_id},
+            )
+    except psycopg.errors.ForeignKeyViolation:
+        raise HTTPException(status_code=404, detail="Poll not found")
 
 
 # ---------------------------------------------------------------------------
@@ -644,7 +685,7 @@ def _vote_item_to_edit_req(item: PollVoteItem, voter_name: str | None) -> EditVo
     response_model=list[VoteResponse],
     status_code=201,
 )
-def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest):
+def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Request):
     """Atomic batch vote across multiple questions of one poll.
 
     Each `items[i]` either inserts a new vote (vote_id null) or updates an
@@ -657,6 +698,11 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest):
     voter_name is poll-level: one voter, many question ballots.
     """
     now = datetime.now(timezone.utc)
+
+    # Phase C.2: thread join runs BEFORE the vote in its own transaction so
+    # "attempted to participate" is the membership trigger — a vote that
+    # fails validation still leaves the user as a thread member.
+    join_thread_for_poll(poll_id, _browser_id(request))
 
     question_ids = [item.question_id for item in req.items]
     if len(set(question_ids)) != len(question_ids):
