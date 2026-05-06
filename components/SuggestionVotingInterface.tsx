@@ -183,7 +183,7 @@ export default function SuggestionVotingInterface({
 
   if (hasVoted && !isEditingVote) {
     return (
-      <div className="text-center py-3">
+      <div className="text-center pb-3">
         <div className="text-left">
           {isLoadingVoteData ? (
             <div className="space-y-2">
@@ -227,7 +227,7 @@ export default function SuggestionVotingInterface({
 
   return (
     <>
-      <div className="mt-4 mb-2">
+      <div className="mb-2">
         {/* Existing suggestions - all can be toggled in edit mode */}
         {filteredExistingSuggestions.length > 0 && (
           <div className="mb-3">
