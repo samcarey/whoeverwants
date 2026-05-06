@@ -160,6 +160,36 @@ stop_nextjs() {
   fi
 }
 
+# Reap any process whose CWD is anywhere under this slug's dev-server dir.
+# Catches orphans left by previous failed upserts that started processes but
+# crashed before writing meta / PID files — without this, those orphans hold
+# ports 8001-8005 invisibly to the manager and the next upsert bails with
+# "No available ports". Must run BEFORE port allocation.
+reap_orphans_for_slug() {
+  local slug="$1"
+  local dir="${DEV_DIR}/${slug}"
+  [ -d "$dir" ] || return 0
+  local resolved
+  resolved=$(readlink -f "$dir")
+  local victims=()
+  for cwd_link in /proc/[0-9]*/cwd; do
+    local target
+    target=$(readlink "$cwd_link" 2>/dev/null) || continue
+    case "$target" in
+      "$resolved"|"$resolved"/*)
+        local pid="${cwd_link#/proc/}"
+        pid="${pid%/cwd}"
+        victims+=("$pid")
+        ;;
+    esac
+  done
+  if [ "${#victims[@]}" -gt 0 ]; then
+    log "Reaping orphan processes for $slug: ${victims[*]}"
+    kill -9 "${victims[@]}" 2>/dev/null || true
+    sleep 1
+  fi
+}
+
 # Stop the FastAPI process for a dev server
 stop_api() {
   local slug="$1"
@@ -531,6 +561,15 @@ cmd_upsert() {
     cd "$dir"
   fi
 
+  # --- Stop existing processes BEFORE port allocation ---
+  # Order matters: stop_api/stop_nextjs free this slug's known ports first,
+  # then reap_orphans catches anything stop_* missed (no meta, no pid file,
+  # left over from a failed prior upsert). Without this, find_available_port
+  # below sees every port held by orphans and bails with "No available ports".
+  stop_api "$slug"
+  stop_nextjs "$slug"
+  reap_orphans_for_slug "$slug"
+
   # --- Determine ports (reuse existing or find new) ---
   local frontend_port api_port
   frontend_port=$(get_dev_port "$slug")
@@ -541,10 +580,6 @@ cmd_upsert() {
   if [ -z "$api_port" ]; then
     api_port=$(find_available_port_in_range "$API_PORT_START" "$API_PORT_MAX")
   fi
-
-  # --- Stop existing processes ---
-  stop_api "$slug"
-  stop_nextjs "$slug"
 
   # --- Install JS deps if needed ---
   if [ "$needs_npm_install" = true ]; then

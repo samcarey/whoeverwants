@@ -1049,17 +1049,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   const isAwaitingResponse = (question: Question) =>
     isQuestionOpen(question) && !votedQuestionIds.has(question.id) && !abstainedQuestionIds.has(question.id);
 
-  // Defined above the early returns so the hook call order is stable.
+  // Strict chronological order (oldest → newest, newest at bottom). No
+  // awaiting/closed grouping — voting on a card never reshuffles the list,
+  // so the sort can read live state directly. Defined above the early
+  // returns so the hook call order is stable.
   const threadQuestions = useMemo(() => {
     if (!thread) return [] as Question[];
-    const awaitingAtLoad = new Set(thread.questions.filter(isAwaitingResponse).map((p) => p.id));
-    return [...thread.questions].sort((a, b) => {
-      const aAwaiting = awaitingAtLoad.has(a.id);
-      const bAwaiting = awaitingAtLoad.has(b.id);
-      if (aAwaiting !== bAwaiting) return aAwaiting ? 1 : -1;
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return [...thread.questions].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    );
   }, [thread]);
 
   // Phase 5b: poll wrappers ride along on the thread state directly
@@ -1379,10 +1377,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       let anyInView = false;
       let anyFullyVisible = false;
       let anyAbove = false; // wholly above OR top-clipped (partially above)
-      // threadQuestions sorts awaiting cards last by created_at ASC, so the
-      // FIRST wholly-above match is the oldest above-the-fold awaiting card,
-      // and the FIRST below-the-fold match is the closest one beneath the
-      // viewport (oldest among those still to be reached).
+      // threadQuestions is in strict chronological order (created_at ASC),
+      // so iterating in order: the FIRST wholly-above awaiting match is
+      // the oldest above-the-fold awaiting card, and the FIRST
+      // below-the-fold match is the closest one beneath the viewport
+      // (oldest among those still to be reached).
       for (const group of groupedThreadQuestions) {
         const question = group.anchor;
         if (!isAwaitingResponse(question)) continue;
