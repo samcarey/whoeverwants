@@ -110,6 +110,12 @@ def polls_for_poll_ids(
         if show_prelim and (min_resp is None or response_counts.get(pid, 0) >= min_resp):
             preliminary_question_ids.append(pid)
     if preliminary_question_ids:
+        # Pre-seed empty vote lists for every prelim-eligible question so the
+        # results-attachment loop below picks them up even when 0 votes have
+        # been cast — `_compute_results` is well-defined on an empty list and
+        # returns the "no votes yet" shape that the FE expects.
+        for pid in preliminary_question_ids:
+            votes_by_question.setdefault(pid, [])
         prelim_vote_rows = conn.execute(
             "SELECT * FROM votes WHERE question_id = ANY(%(question_ids)s)",
             {"question_ids": preliminary_question_ids},
