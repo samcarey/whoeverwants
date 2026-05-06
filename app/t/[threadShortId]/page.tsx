@@ -1864,9 +1864,16 @@ function ThreadPageInner() {
 
   const rootInitial = useMemo<Poll | null>(() => {
     if (typeof window === "undefined" || !threadShortId) return null;
-    return isUuidLike(threadShortId)
-      ? getCachedPollById(threadShortId)
-      : getCachedPollByShortId(threadShortId);
+    if (isUuidLike(threadShortId)) return getCachedPollById(threadShortId);
+    // Phase B.4: thread route id can be `threads.short_id` (preferred) OR
+    // `polls.short_id` (legacy /t/<root-poll-short-id> fallback). Look up
+    // both forms before falling back to the async fetch.
+    const accessible = getCachedAccessiblePolls() ?? [];
+    const matches = accessible.filter(mp => mp.thread_short_id === threadShortId);
+    if (matches.length > 0) {
+      return matches.find(mp => !mp.follow_up_to) ?? matches[0];
+    }
+    return getCachedPollByShortId(threadShortId);
   }, [threadShortId]);
 
   const [rootPoll, setRootPoll] = useState<Poll | null>(rootInitial);
@@ -1886,6 +1893,25 @@ function ThreadPageInner() {
     let cancelled = false;
     (async () => {
       try {
+        // Phase B.4: prefer the thread endpoint which resolves any route id
+        // form (threads.short_id, threads.id, polls.short_id, polls.id) in
+        // one call. Fall back to the per-poll endpoint when the thread
+        // endpoint 404s (older deploys, network glitches) so we don't lose
+        // resolution on partially-rolled-out backends.
+        const polls = await apiGetThreadByRouteId(threadShortId).catch((err: unknown) => {
+          if (err instanceof ApiError && err.status === 404) return null;
+          throw err;
+        });
+        if (polls && polls.length > 0) {
+          const root = polls.find(mp => !mp.follow_up_to) ?? polls[0];
+          for (const mp of polls) {
+            for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
+          }
+          if (!cancelled) setRootPoll(root);
+          return;
+        }
+        // Last-ditch fallback: per-poll lookup for very old URL forms whose
+        // resolution path didn't survive the threads-endpoint cutover.
         const isUuid = isUuidLike(threadShortId);
         const poll = await (isUuid
           ? apiGetPollById(threadShortId)
@@ -1900,16 +1926,6 @@ function ThreadPageInner() {
         }
         const firstQ = poll.questions[0]?.id;
         if (firstQ) addAccessibleQuestionId(firstQ);
-        // Phase B.3: one round-trip warms every poll in the thread so
-        // ThreadContent's buildThreadFromPollDown sees the full chain
-        // (ancestors + siblings) on first paint. Replaces the legacy
-        // discoverRelatedQuestions + getAccessiblePolls pair.
-        try {
-          const polls = await apiGetThreadByRouteId(threadShortId);
-          for (const mp of polls) {
-            for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
-          }
-        } catch {}
         if (!cancelled) setRootPoll(poll);
       } catch {
         if (!cancelled) setError(true);
@@ -1959,7 +1975,11 @@ function ThreadPageInner() {
     );
   }
 
-  const threadRouteId = rootPoll.short_id || threadShortId;
+  // Phase B.4: prefer threads.short_id (the canonical /t/<id> form) so any
+  // FE-built URL based on the resolved Poll matches the route id the user
+  // landed with. Falls back to the URL's threadShortId for placeholder
+  // polls and pre-B.4 cached polls without thread_short_id.
+  const threadRouteId = rootPoll.thread_short_id || rootPoll.short_id || threadShortId;
 
   return (
     <ThreadContent

@@ -41,10 +41,16 @@ def polls_for_poll_ids(
 
     now = datetime.now(timezone.utc)
 
+    # Phase B.4: surface threads.short_id alongside polls.* so _row_to_poll can
+    # populate `thread_short_id` on every PollResponse without a per-row lookup.
+    # Mirrors `_SELECT_POLLS_WITH_THREAD` in routers/polls.py — extending one
+    # without the other will silently drop the field on whichever path gets
+    # missed.
     poll_rows = conn.execute(
-        """SELECT * FROM polls
-            WHERE id = ANY(%(ids)s)
-            ORDER BY created_at DESC""",
+        """SELECT polls.*, t.short_id AS thread_short_id
+             FROM polls LEFT JOIN threads t ON polls.thread_id = t.id
+            WHERE polls.id = ANY(%(ids)s)
+            ORDER BY polls.created_at DESC""",
         {"ids": poll_ids},
     ).fetchall()
     if not poll_rows:
@@ -104,6 +110,12 @@ def polls_for_poll_ids(
         if show_prelim and (min_resp is None or response_counts.get(pid, 0) >= min_resp):
             preliminary_question_ids.append(pid)
     if preliminary_question_ids:
+        # Pre-seed empty vote lists for every prelim-eligible question so the
+        # results-attachment loop below picks them up even when 0 votes have
+        # been cast — `_compute_results` is well-defined on an empty list and
+        # returns the "no votes yet" shape that the FE expects.
+        for pid in preliminary_question_ids:
+            votes_by_question.setdefault(pid, [])
         prelim_vote_rows = conn.execute(
             "SELECT * FROM votes WHERE question_id = ANY(%(question_ids)s)",
             {"question_ids": preliminary_question_ids},

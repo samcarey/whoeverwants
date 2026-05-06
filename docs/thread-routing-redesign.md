@@ -1,8 +1,8 @@
 # Thread Routing Redesign
 
 > Status: Phase A shipped (#260), Phase B.1 shipped (#261), Phase B.2
-> shipped (#262), Phase B.3 in progress (this branch). Phase B.4 / C are
-> deferred.
+> shipped (#262), Phase B.3 shipped (#263), Phase B.4 in progress (this
+> branch). Phase C is deferred.
 
 ## Vision
 
@@ -200,14 +200,44 @@ header. The legacy endpoints (`/api/questions/accessible`, `/api/questions/relat
 remain in place so any client running the previous JS bundle keeps working
 through the rollout window.
 
-#### Phase B.4 — Decouple `threads.short_id` keyspace (deferred)
+#### Phase B.4 — Decouple `threads.short_id` keyspace (this branch)
 
-- `threadShortId` becomes `threads.short_id` rather than the root poll's short_id.
-- Mint fresh `threads.short_id`s from a separate sequence (avoiding collision with
-  the existing root-poll-short-id values copied during B.1 backfill).
-- Old `/p/<shortId>` redirects continue to work via server-side resolution; old
-  `/t/<root-poll-short-id>` URLs continue to work because B.1 backfilled
-  `threads.short_id` to match.
+- `threadShortId` is now `threads.short_id` rather than the root poll's
+  short_id. Every `PollResponse` carries `thread_id` (uuid) and
+  `thread_short_id` so the FE can build `/t/<thread.short_id>?p=<poll.short_id>`
+  URLs in a single field read — no follow-up-chain walking, no extra
+  round-trips.
+- Fresh `threads.short_id`s are minted from a separate `~`-prefixed
+  keyspace via the trigger `generate_thread_short_id` introduced by
+  migration 101. The `~` is URL-safe (RFC 3986 unreserved) and not in the
+  base62 alphabet, so it guarantees zero collision with existing
+  `polls.short_id` values — including the values B.1 backfilled into
+  `threads.short_id` for legacy chain roots.
+- Migration 101 also adds `threads.sequential_id BIGSERIAL UNIQUE` (the
+  number-space the trigger encodes) and backfills `~`-prefixed short_ids
+  for any threads created in the B.1→B.4 window that left
+  `threads.short_id = NULL`.
+- Old `/p/<shortId>` redirects continue to work via server-side resolution
+  (`resolve_thread_id_from_route_id` in `services/threads.py`); old
+  `/t/<root-poll-short-id>` URLs continue to work because the same
+  resolver looks up `threads.short_id` first, and B.1 backfilled exactly
+  those values into the column.
+- FE rewiring:
+  - `lib/types.ts: Poll` gains `thread_id` + `thread_short_id` (both
+    `string | null` for resilience against synthesized placeholder polls
+    and pre-B.4 cached polls).
+  - `lib/threadUtils.ts: getThreadRouteId`, `resolveThreadRootRouteId`,
+    `findThreadRootRouteId`, `buildThreadSyncFromCache` all prefer
+    `thread_short_id` and fall back to the legacy walk.
+  - `lib/useThread.ts` skips the question-anchor lookup entirely — it
+    just calls `apiGetThreadByRouteId(threadId)` (which handles every
+    route id form server-side) and finds the chain root in the returned
+    list.
+  - `app/t/[threadShortId]/page.tsx: ThreadPageInner` does the same:
+    one thread-endpoint call resolves the route, finds the root poll,
+    and warms the accessible-questions list — replacing the prior
+    per-poll `apiGetPollByShortId` call which couldn't resolve
+    `~`-prefixed thread route ids.
 
 ### Phase C — Membership with join-time visibility (deferred)
 

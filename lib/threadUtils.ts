@@ -360,20 +360,24 @@ export function findThreadByQuestionId(threads: Thread[], questionId: string): T
   return threads.find(t => t.questions.some(p => p.id === questionId));
 }
 
-/** Route id for a thread — the root poll's short_id (or the root question id
- *  when the root poll has no short_id). Used as the path param in
- *  `/t/<threadRouteId>`. Phase A: thread short_id is derived from the root
- *  poll; Phase B will mint a real `threads.short_id`. */
+/** Route id for a thread — preferred form is `threads.short_id` (Phase B.4),
+ *  with fallbacks to the root poll's short_id (legacy /t/<root-poll-short-id>
+ *  URLs) and finally the root question id (synthesized placeholder polls
+ *  before the API responds). Used as the path param in `/t/<threadRouteId>`. */
 export function getThreadRouteId(thread: Thread): string {
   const rootPoll = thread.polls.find(p => p.id === thread.rootPollId) ?? thread.polls[0];
-  return rootPoll?.short_id || thread.rootQuestionId;
+  return rootPoll?.thread_short_id || rootPoll?.short_id || thread.rootQuestionId;
 }
 
-/** Walk up `poll.follow_up_to` via the in-memory accessible-polls cache to
- *  find the thread root and return its route id. Falls back to `poll` itself
- *  when no ancestors are cached — degraded but always returns a usable id.
- *  Short-circuits the cache walk when `poll` already IS the root. */
+/** Resolve a poll's thread route id (the path param of `/t/<routeId>`).
+ *
+ *  Phase B.4: every poll returned by the API carries `thread_short_id`, so the
+ *  preferred path is a single field read with no cache traversal. The legacy
+ *  walk-up-via-`follow_up_to` fallback exists only for synthesized placeholder
+ *  polls (created optimistically on submit, pre-API-roundtrip) and any
+ *  pre-Phase-B.4 cached poll left in memory across a deploy. */
 export function resolveThreadRootRouteId(poll: Poll): string {
+  if (poll.thread_short_id) return poll.thread_short_id;
   if (!poll.follow_up_to) return poll.short_id || poll.questions[0]?.id || poll.id;
   const accessible = getCachedAccessiblePolls() ?? [];
   const byPoll = buildPollMap([poll, ...accessible]);
@@ -408,9 +412,13 @@ export function getThreadHref(thread: Thread): string {
 
 /**
  * Walk up the poll-level follow_up chain starting from `poll` and
- * return the route ID (short_id or id) of the furthest ancestor reachable.
- * The chain is poll-to-poll — at each step we follow `follow_up_to`
- * to a parent poll.
+ * return the route ID of the furthest ancestor reachable. The chain is
+ * poll-to-poll — at each step we follow `follow_up_to` to a parent poll.
+ *
+ * Phase B.4: a poll's `thread_short_id` (when present) short-circuits the
+ * walk entirely — every poll in a thread shares the same thread_short_id,
+ * so we don't need to find the root to construct a URL. The walk is kept
+ * for placeholder/legacy polls without `thread_short_id`.
  *
  * `pollById` defaults to scanning `getCachedAccessiblePolls()`.
  * Pass a custom resolver when you have a faster lookup at hand.
@@ -419,6 +427,7 @@ export function findThreadRootRouteId(
   poll: Poll,
   pollById?: (id: string) => Poll | null | undefined,
 ): string {
+  if (poll.thread_short_id) return poll.thread_short_id;
   const resolve = pollById ?? defaultPollById;
   let root: Poll = poll;
   while (root.follow_up_to) {
@@ -426,7 +435,7 @@ export function findThreadRootRouteId(
     if (!parent) break;
     root = parent;
   }
-  return root.short_id || root.questions[0]?.id || root.id;
+  return root.thread_short_id || root.short_id || root.questions[0]?.id || root.id;
 }
 
 function defaultPollById(id: string): Poll | null {
@@ -459,19 +468,28 @@ export function buildThreadFromPollDown(
   return buildThreadFromPolls(collected, votedQuestionIds, abstainedQuestionIds);
 }
 
-/** Build the thread for a route id (UUID or short_id) synchronously from
- *  in-memory caches. Returns null if any required piece is missing — callers
- *  fall through to their async fetch path. */
+/** Build the thread for a route id synchronously from in-memory caches.
+ *  Returns null if any required piece is missing — callers fall through to
+ *  their async fetch path.
+ *
+ *  Phase B.4: routeId can be a `threads.short_id` (preferred form, prefixed
+ *  with `~` for fresh threads, or a backfilled root-poll-short-id for
+ *  pre-B.4 threads), a polls.short_id (legacy /t/<root-poll-short-id>
+ *  fallback), or a UUID (poll/question). The accessible polls cache is
+ *  walked once for thread_short_id matches before falling back to the
+ *  short-id-keyed cache.
+ */
 export function buildThreadSyncFromCache(
   threadId: string,
   voted: Set<string>,
   abstained: Set<string>,
 ): Thread | null {
   if (typeof window === 'undefined') return null;
+  const polls = getCachedAccessiblePolls();
+  if (!polls) return null;
   let anchorPollId: string | null = null;
   if (isUuidLike(threadId)) {
     // threadId may be a question uuid OR a poll uuid. Try both.
-    const polls = getCachedAccessiblePolls() ?? [];
     const direct = polls.find(mp => mp.id === threadId);
     if (direct) {
       anchorPollId = direct.id;
@@ -480,11 +498,19 @@ export function buildThreadSyncFromCache(
       anchorPollId = question?.poll_id ?? null;
     }
   } else {
-    const mp = getCachedPollByShortId(threadId);
-    anchorPollId = mp?.id ?? null;
+    // Phase B.4 preferred path: routeId is a threads.short_id. Threads can
+    // contain multiple polls all sharing the same thread_short_id; the
+    // chain root is the one with `follow_up_to == null`. Find it directly
+    // so buildThreadFromPollDown collects every descendant.
+    const matches = polls.filter(mp => mp.thread_short_id === threadId);
+    const root = matches.find(mp => !mp.follow_up_to) ?? matches[0];
+    if (root) {
+      anchorPollId = root.id;
+    } else {
+      const mp = getCachedPollByShortId(threadId);
+      anchorPollId = mp?.id ?? null;
+    }
   }
   if (!anchorPollId) return null;
-  const polls = getCachedAccessiblePolls();
-  if (!polls) return null;
   return buildThreadFromPollDown(anchorPollId, polls, voted, abstained);
 }
