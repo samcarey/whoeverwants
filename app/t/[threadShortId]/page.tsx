@@ -1701,24 +1701,25 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
             } catch (err) {
               console.error('Failed to close question:', err);
             }
-          } else if (action.kind === 'cutoff-suggestions') {
+          } else if (action.kind === 'cutoff-suggestions' || action.kind === 'cutoff-availability') {
+            const apiFn = action.kind === 'cutoff-suggestions'
+              ? apiCutoffPollSuggestions
+              : apiCutoffPollAvailability;
             try {
               const secret = getCreatorSecret(action.question.id);
               if (!secret) {
-                console.error('Missing creator secret for cutoff-suggestions');
+                console.error(`Missing creator secret for ${action.kind}`);
                 return;
               }
               const pollId = action.question.poll_id;
               if (!pollId) {
-                console.error('Cannot cutoff suggestions without poll_id');
+                console.error(`Cannot ${action.kind} without poll_id`);
                 return;
               }
-              const wrapper = await apiCutoffPollSuggestions(pollId, secret);
+              const wrapper = await apiFn(pollId, secret);
               patchThreadPolls(
                 (mp) => mp.id === pollId,
-                () => ({
-                  prephase_deadline: wrapper.prephase_deadline ?? null,
-                }),
+                () => ({ prephase_deadline: wrapper.prephase_deadline ?? null }),
               );
               for (const sp of wrapper.questions) {
                 if (sp.options) {
@@ -1727,68 +1728,37 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
                     () => ({ options: sp.options ?? null }),
                   );
                 }
-                const refreshed = await apiGetQuestionResults(sp.id).catch(() => null);
-                if (refreshed) {
-                  setQuestionResultsMap((prev) => {
-                    const next = new Map(prev);
-                    next.set(sp.id, refreshed);
-                    return next;
-                  });
-                }
               }
-            } catch (err) {
-              console.error('Failed to cutoff suggestions:', err);
-            }
-          } else if (action.kind === 'cutoff-availability') {
-            try {
-              const secret = getCreatorSecret(action.question.id);
-              if (!secret) {
-                console.error('Missing creator secret for cutoff-availability');
-                return;
-              }
-              const pollId = action.question.poll_id;
-              if (!pollId) {
-                console.error('Cannot cutoff availability without poll_id');
-                return;
-              }
-              const wrapper = await apiCutoffPollAvailability(pollId, secret);
-              const updated = wrapper.questions.find((sp) => sp.id === action.question.id) ?? null;
-              // Wrapper-level prephase_deadline + per-question options.
-              patchThreadPolls(
-                (mp) => mp.id === pollId,
-                () => ({
-                  prephase_deadline: wrapper.prephase_deadline ?? null,
-                }),
+              // Refresh per-question compact preview results in parallel —
+              // cutoff-suggestions can fan out across N sibling questions of
+              // a multi-question poll.
+              const refreshes = await Promise.all(
+                wrapper.questions.map((sp) =>
+                  apiGetQuestionResults(sp.id)
+                    .then((r) => ({ id: sp.id, results: r }))
+                    .catch(() => null),
+                ),
               );
-              if (updated) {
-                patchThreadQuestions(
-                  (p) => p.id === action.question.id,
-                  (p) => ({ options: updated.options ?? p.options }),
-                );
-              }
-              // Refresh the compact preview — the availability phase just ended so
-              // time-slot results are now meaningful.
-              const refreshed = await apiGetQuestionResults(action.question.id).catch(() => null);
-              if (refreshed) {
-                setQuestionResultsMap((prev) => {
-                  const existing = prev.get(action.question.id);
+              setQuestionResultsMap((prev) => {
+                let next = prev;
+                for (const r of refreshes) {
+                  if (!r) continue;
+                  const existing = prev.get(r.id);
                   if (
                     existing &&
-                    existing.total_votes === refreshed.total_votes &&
-                    existing.yes_count === refreshed.yes_count &&
-                    existing.no_count === refreshed.no_count &&
-                    existing.winner === refreshed.winner &&
-                    (existing.suggestion_counts?.length ?? 0) === (refreshed.suggestion_counts?.length ?? 0)
-                  ) {
-                    return prev;
-                  }
-                  const next = new Map(prev);
-                  next.set(action.question.id, refreshed);
-                  return next;
-                });
-              }
+                    existing.total_votes === r.results.total_votes &&
+                    existing.yes_count === r.results.yes_count &&
+                    existing.no_count === r.results.no_count &&
+                    existing.winner === r.results.winner &&
+                    (existing.suggestion_counts?.length ?? 0) === (r.results.suggestion_counts?.length ?? 0)
+                  ) continue;
+                  if (next === prev) next = new Map(prev);
+                  next.set(r.id, r.results);
+                }
+                return next;
+              });
             } catch (err) {
-              console.error('Failed to end availability phase:', err);
+              console.error(`Failed to ${action.kind}:`, err);
             }
           }
         }}

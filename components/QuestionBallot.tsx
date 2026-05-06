@@ -772,21 +772,20 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     userVoteData,
   });
 
-  const handleVoteClick = async () => {
-    // Either suggestion editing or ranking editing counts as "editing"
-    const isAnyEditing = isEditingVote || isEditingRanking;
+  // User has voted but still has work they can finish (submit rankings after
+  // suggestions, react to time slots after availability, etc.). Both
+  // handleVoteClick (auto-enter edit mode) and wrapperShouldShowSubmit
+  // (keep Submit visible) read this — keep them in sync via one computation.
+  const hasNotRankedYet = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_ranking_abstain;
+  const hasNotReactedYet = question.question_type === 'time' && !inAvailabilityPhase && hasVoted
+    && userVoteData?.liked_slots === null && userVoteData?.disliked_slots === null && !userVoteData?.is_abstain;
+  const canImplicitlyEdit = hasVoted && (
+    (canSubmitSuggestions && canSubmitRankings) || hasNotRankedYet || hasNotReactedYet
+  );
 
-    // During suggestion phase with pre-ranking, submitting rankings after the initial
-    // suggestion vote is an implicit edit (updating the existing vote with rankings).
-    // Also applies after suggestion cutoff: user submitted suggestions but hasn't ranked yet.
-    // Includes users who abstained from suggestions (is_abstain) — they should still be able to rank.
-    const hasNotRankedYet = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_ranking_abstain;
-    // For time questions in preferences phase: not yet reacted if liked_slots is still null
-    const hasNotReactedYet = question.question_type === 'time' && !inAvailabilityPhase && hasVoted
-      && userVoteData?.liked_slots === null && userVoteData?.disliked_slots === null && !userVoteData?.is_abstain;
-    const isImplicitEdit = hasVoted && !isAnyEditing && (
-      (canSubmitSuggestions && canSubmitRankings) || hasNotRankedYet || hasNotReactedYet
-    );
+  const handleVoteClick = async () => {
+    const isAnyEditing = isEditingVote || isEditingRanking;
+    const isImplicitEdit = !isAnyEditing && canImplicitlyEdit;
     if (isImplicitEdit) {
       setIsEditingVote(true);
     }
@@ -1109,22 +1108,9 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     if (!wrapperHandlesSubmit) return false;
     if (isQuestionClosed) return false;
     if (question.question_type === 'yes_no') return false; // external rendering uses tap-to-change
-    if (hasVoted && !isEditingVote && !isEditingRanking) {
-      // Implicit-edit cases: user has submitted SOMETHING but still has work
-      // they can finish without explicitly entering edit mode. Mirrors
-      // handleVoteClick's `isImplicitEdit` so the wrapper Submit stays visible
-      // for that flow. Without this the early-voting (suggestion phase, allow
-      // pre-ranking) case hides Submit after suggestions are submitted, even
-      // though the user can still rank. Same for time questions transitioning
-      // from availability → preferences.
-      const hasNotRankedYet = hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_ranking_abstain;
-      const hasNotReactedYet = question.question_type === 'time' && !inAvailabilityPhase
-        && userVoteData?.liked_slots === null && userVoteData?.disliked_slots === null && !userVoteData?.is_abstain;
-      const isImplicitEdit = (canSubmitSuggestions && canSubmitRankings) || hasNotRankedYet || hasNotReactedYet;
-      if (!isImplicitEdit) return false;
-    }
+    if (hasVoted && !isEditingVote && !isEditingRanking && !canImplicitlyEdit) return false;
     return true;
-  }, [wrapperHandlesSubmit, isQuestionClosed, question.question_type, hasVoted, isEditingVote, isEditingRanking, hasSuggestionPhase, userVoteData, canSubmitSuggestions, canSubmitRankings, inAvailabilityPhase]);
+  }, [wrapperHandlesSubmit, isQuestionClosed, question.question_type, hasVoted, isEditingVote, isEditingRanking, canImplicitlyEdit]);
 
   const wrapperSubmitLabel = useMemo(() => {
     if (question.question_type === 'time') {

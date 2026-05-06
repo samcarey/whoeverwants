@@ -127,7 +127,6 @@ export default function RankingSection({
 
   if (!canSubmitRankings || questionOptions.length === 0) {
     if (canSubmitSuggestions && hasVoted && !isEditingSuggestions) {
-      // Plain centered text at the bottom of the card — no sub-card chrome.
       return (
         <div className="text-center text-sm text-gray-600 dark:text-gray-400">
           {suggestionDeadline ? (
@@ -214,8 +213,6 @@ export default function RankingSection({
                 currentChoice={isAbstaining ? "abstain" : rankedChoices[0] ?? null}
                 results={questionResults}
                 onChoose={(option) => {
-                  // Two-option questions: a single tap picks one. Pass
-                  // the flat list and a singleton tier (no ties).
                   if (onBinaryRankedChoiceTap) {
                     onBinaryRankedChoiceTap(option);
                   } else {
