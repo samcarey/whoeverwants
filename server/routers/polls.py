@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import psycopg.errors
 from fastapi import APIRouter, HTTPException, Request
 
 from algorithms.poll_title import generate_poll_title
@@ -23,7 +24,7 @@ from models import (
     UpdateThreadTitleRequest,
     VoteResponse,
 )
-from services.memberships import grant_poll_access, join_thread, join_thread_for_poll
+from services.memberships import join_thread, join_thread_for_poll
 from services.questions import (
     _edit_vote_on_question,
     _finalize_suggestion_options,
@@ -63,6 +64,12 @@ def _iso_or_none(value) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
+
+
+def _browser_id(request: Request) -> str | None:
+    """Phase C.2: read the browser_id captured by `BrowserIdMiddleware`.
+    Helper exists because Phase C handlers will all reach for this."""
+    return getattr(request.state, "browser_id", None)
 
 
 def _validate_request(req: CreatePollRequest) -> None:
@@ -418,15 +425,11 @@ def create_poll(req: CreatePollRequest, request: Request):
             for index, sub in enumerate(req.questions)
         ]
 
-    # Phase C.2: record creator membership in the (just-minted or inherited)
-    # thread. Runs in its own transaction AFTER the poll is committed —
-    # follow-up creates can't predict the parent's thread_id without a
-    # lookup, root creates literally don't have one until `_insert_poll`
-    # mints it. Failure here is logged + swallowed; the create succeeds
-    # regardless.
+    # Phase C.2: creator auto-joins the thread. Runs after the create
+    # commits — root polls' thread_id only exists post-`_insert_poll`.
     join_thread(
         str(poll_row["thread_id"]) if poll_row.get("thread_id") else None,
-        getattr(request.state, "browser_id", None),
+        _browser_id(request),
     )
 
     # Newly-created poll has no votes yet — skip the voter aggregation.
@@ -463,32 +466,28 @@ def get_poll(short_id: str):
 
 @router.post("/{poll_id}/access", status_code=204)
 def grant_poll_access_endpoint(poll_id: str, request: Request):
-    """Phase C.2: record direct-link access to a single poll.
-
-    Called by the FE when a user lands on a thread URL with the `?p=<poll>`
-    query param (and as part of the legacy `/p/<id>` redirect resolution
-    flow once that lands on `/t/<root>?p=<short>`). Direct-link access lets
-    a non-member of the thread see this one poll without joining the thread
-    — Phase C.3 will gate visibility on the union of `thread_members` and
-    `poll_access`.
-
-    Verifies the poll exists (404 otherwise) so a hostile or stale client
-    can't pollute `poll_access` with rows pointing at non-existent polls.
-    The actual write happens in its own transaction inside
-    `grant_poll_access` so a failure there cannot affect the response shape.
-    Returns 204 — there's nothing useful to send back; the FE just needs to
-    know the request was accepted (and the middleware echoes the
-    `X-Browser-Id` header on every response anyway).
-    """
-    with get_db() as conn:
-        exists = conn.execute(
-            "SELECT 1 FROM polls WHERE id = %(id)s",
-            {"id": poll_id},
-        ).fetchone()
-    if not exists:
+    """Phase C.2: record direct-link access to one poll. Called when a user
+    lands on `/t/<thread>?p=<poll>` so non-thread-members can still see the
+    poll they followed a link to. Phase C.3 will read these rows."""
+    browser_id = _browser_id(request)
+    if not browser_id:
+        return
+    # The FK on poll_access.poll_id IS the existence check — a missing poll
+    # surfaces as `ForeignKeyViolation`, which we translate to 404 without
+    # the second SELECT (and without the TOCTOU window between SELECT and
+    # INSERT).
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """
+                INSERT INTO poll_access (poll_id, browser_id)
+                VALUES (%(poll_id)s, %(browser_id)s)
+                ON CONFLICT (poll_id, browser_id) DO NOTHING
+                """,
+                {"poll_id": poll_id, "browser_id": browser_id},
+            )
+    except psycopg.errors.ForeignKeyViolation:
         raise HTTPException(status_code=404, detail="Poll not found")
-
-    grant_poll_access(poll_id, getattr(request.state, "browser_id", None))
 
 
 # ---------------------------------------------------------------------------
@@ -700,12 +699,10 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
     """
     now = datetime.now(timezone.utc)
 
-    # Phase C.2: record thread membership BEFORE the vote runs, in its own
-    # transaction. "Attempted to participate" is the membership trigger, so
-    # a vote that fails validation still leaves the user as a member of the
-    # thread for Phase C.3 visibility purposes. One write per batch — the
-    # composite PK on (thread_id, browser_id) makes any extra writes no-ops.
-    join_thread_for_poll(poll_id, getattr(request.state, "browser_id", None))
+    # Phase C.2: thread join runs BEFORE the vote in its own transaction so
+    # "attempted to participate" is the membership trigger — a vote that
+    # fails validation still leaves the user as a thread member.
+    join_thread_for_poll(poll_id, _browser_id(request))
 
     question_ids = [item.question_id for item in req.items]
     if len(set(question_ids)) != len(question_ids):

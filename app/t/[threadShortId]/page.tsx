@@ -11,7 +11,7 @@ import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
 import type { QuestionResults } from "@/lib/types";
 import { addAccessibleQuestionId, getCreatorSecret } from "@/lib/browserQuestionAccess";
-import { getCachedQuestionById, getCachedQuestionByShortId, getCachedAccessiblePolls, getCachedPollById, getCachedPollByShortId } from "@/lib/questionCache";
+import { getCachedQuestionById, getCachedQuestionByShortId, getCachedAccessiblePolls, getCachedPollById, getCachedPollByShortId, getCachedPollForShortId } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
@@ -1934,30 +1934,26 @@ function ThreadPageInner() {
     return () => { cancelled = true; };
   }, [threadShortId, router, rootInitial]);
 
-  // `?p=<id>` → first question of that poll. Missing poll falls through to
-  // null; page renders without auto-expand and scrolls to bottom.
-  const initialExpandedQuestionId = useMemo<string | null>(() => {
+  // `?p=<id>` → resolve to the cached Poll once, drive both the
+  // initial-expand target AND the Phase C.2 access grant from it.
+  const targetPoll = useMemo<Poll | null>(() => {
     if (typeof window === "undefined" || !pollParam || !rootPoll) return null;
-    const targetPoll = isUuidLike(pollParam)
-      ? getCachedPollById(pollParam)
-      : getCachedPollByShortId(pollParam);
-    return targetPoll?.questions[0]?.id ?? null;
+    return getCachedPollForShortId(pollParam);
   }, [pollParam, rootPoll]);
 
-  // Phase C.2: when the user lands with `?p=<poll>`, record direct-link
-  // access to that poll. Resolves the param to a poll uuid via the cache
-  // (warmed by the rootPoll fetch above) and POSTs to /api/polls/<id>/access.
-  // Idempotent server-side, fire-and-forget client-side. Skipped when the
-  // param is missing or the cache lookup misses — the next thread load
-  // will retry once the cache warms.
+  const initialExpandedQuestionId = targetPoll?.questions[0]?.id ?? null;
+
+  // Phase C.2: idempotent server-side via ON CONFLICT, but the useRef
+  // guard avoids the duplicate POST that fires when `rootPoll` churns
+  // post-mount (e.g. cache-hit initial paint then async refresh resets
+  // the same value).
+  const grantedPollIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (typeof window === "undefined" || !pollParam || !rootPoll) return;
-    const targetPoll = isUuidLike(pollParam)
-      ? getCachedPollById(pollParam)
-      : getCachedPollByShortId(pollParam);
     if (!targetPoll) return;
+    if (grantedPollIdsRef.current.has(targetPoll.id)) return;
+    grantedPollIdsRef.current.add(targetPoll.id);
     void apiGrantPollAccess(targetPoll.id);
-  }, [pollParam, rootPoll]);
+  }, [targetPoll]);
 
   if (error) {
     return (
