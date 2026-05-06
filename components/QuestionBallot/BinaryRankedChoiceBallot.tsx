@@ -131,18 +131,18 @@ export default function BinaryRankedChoiceBallot({
     );
   };
 
-  const abstainContent = userAbstained ? (
-    <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-      You abstained
-    </span>
-  ) : !disabled ? (
+  const abstainContent = !disabled ? (
     <button
       type="button"
       onClick={onAbstain}
       className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70"
     >
-      Abstain
+      {userAbstained ? 'You abstained' : 'Abstain'}
     </button>
+  ) : userAbstained ? (
+    <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+      You abstained
+    </span>
   ) : null;
 
   return (

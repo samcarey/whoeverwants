@@ -980,18 +980,21 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const submitVoteRef = useRef(submitVote);
   submitVoteRef.current = submitVote;
 
-  // Tap on a binary 2-option ranked-choice card → auto-submit (matches yes/no
-  // tap-to-submit UX). Sets rankedChoices + optionally flips into edit mode,
-  // then arms `pendingBinarySubmit` so the useEffect below fires submitVote
-  // after React commits the state update.
+  // Tap on a binary 2-option ranked-choice card. For first-time votes, this
+  // auto-submits to match yes/no's tap-to-submit UX. For EDITS (user has
+  // already voted), we only stage the choice + flip into edit mode so the
+  // wrapper Submit button appears — the user must press Submit to actually
+  // change their vote, mirroring yes/no's edit-mode confirmation flow.
   const handleBinaryChoiceTap = (option: string) => {
     if (isSubmitting || isQuestionClosed) return;
     setRankedChoices([option]);
     setRankedChoiceTiers([[option]]);
     setIsAbstaining(false);
     if (justCancelledAbstain) setJustCancelledAbstain(false);
-    if (hasVoted && !isEditingRanking && !isEditingVote) {
-      setIsEditingRanking(true);
+    if (hasVoted) {
+      // Edit case: stage the change but require an explicit Submit press.
+      if (!isEditingRanking && !isEditingVote) setIsEditingRanking(true);
+      return;
     }
     setPendingBinarySubmit(true);
   };

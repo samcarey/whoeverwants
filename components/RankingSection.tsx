@@ -246,20 +246,14 @@ export default function RankingSection({
                   />
                 )}
                 <div className="mt-3 text-center">
-                  {isAbstaining ? (
-                    <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-                      You abstained
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleAbstain}
-                      disabled={isSubmitting}
-                      className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
-                    >
-                      Abstain
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleAbstain}
+                    disabled={isSubmitting}
+                    className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
+                  >
+                    {isAbstaining ? 'You abstained' : 'Abstain'}
+                  </button>
                 </div>
               </>
             )}
