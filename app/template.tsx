@@ -100,12 +100,12 @@ function TemplateInner({ children }: AppTemplateProps) {
     }
   }, []);
   
-  // Initialize questionPageTitle synchronously from the question cache on question pages,
+  // Initialize questionPageTitle synchronously from the question cache on thread pages,
   // so the header shows the title on the very first paint after navigation
   // (avoids the h1 being empty during a view transition slide).
   const [questionPageTitle, setQuestionPageTitle] = useState(() => {
     if (typeof window === 'undefined') return '';
-    const match = pathname.match(/^\/p\/([^/]+)\/?$/);
+    const match = pathname.match(/^\/t\/([^/]+)\/?$/);
     if (!match) return '';
     const id = match[1];
     const question = isUuidLike(id) ? getCachedQuestionById(id) : getCachedQuestionByShortId(id);
@@ -118,7 +118,7 @@ function TemplateInner({ children }: AppTemplateProps) {
 
   const pageTitle =
     pathname === '/create-poll' || pathname === '/create-poll/' ? 'Create Poll' :
-    pathname.startsWith('/p/') ? questionPageTitle :
+    pathname.startsWith('/t/') ? questionPageTitle :
     '';
 
   // Listen for title changes from question pages
@@ -134,11 +134,17 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, []);
 
-  const isPollPage = pathname === '/p' || pathname === '/p/' || pathname.startsWith('/p/');
-  // /p/<id> renders the thread view with a card expanded; the bare /p/ route is
+  // True for any page under `/t/...` (the canonical thread route family) AND
+  // legacy `/p/...` URLs (which are now thin client-side redirects to /t/).
+  // Used by the fallback header gate so neither /t/ nor /p/ pages get the
+  // template's centered title bar (they render their own fixed headers).
+  const isThreadFamilyPage =
+    pathname === '/t' || pathname === '/t/' || pathname.startsWith('/t/') ||
+    pathname === '/p' || pathname === '/p/' || pathname.startsWith('/p/');
+  // /t/<id> renders the thread view with a card expanded; the bare /t/ route is
   // the empty placeholder. Both share the thread-like layout (fixed header +
   // scroll list, bottom-padding for the floating FAB). Sub-routes
-  // (/p/<id>/info, .../edit-title) render their own fixed header but opt out
+  // (/t/<id>/info, .../edit-title) render their own fixed header but opt out
   // of the thread-like FAB + padding treatment via isThreadRootView.
   const isThreadLikePage = isThreadRootView(pathname);
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
@@ -152,8 +158,8 @@ function TemplateInner({ children }: AppTemplateProps) {
 
   return (
     <>
-      {/* Fallback header for pages without a page-specific header (not question, thread, settings, home, or create-modal). */}
-      {!isPollPage && !isSettingsPage && pathname !== '/' && (
+      {/* Fallback header for pages without a page-specific header (not thread, settings, home, or create-modal). */}
+      {!isThreadFamilyPage && !isSettingsPage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -255,7 +261,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         </Suspense>
       )}
 
-      {/* Floating "+" FAB — home page only. Navigates to /p/ (the empty
+      {/* Floating "+" FAB — home page only. Navigates to /t/ (the empty
            placeholder) where the user picks a What/When/Where bubble for what
            they want to create. Rendered via portal outside the scaling
            container so it positions against the viewport. Slides with the
@@ -263,7 +269,7 @@ function TemplateInner({ children }: AppTemplateProps) {
            with the thread bubble bar). */}
       {isMounted && pathname === '/' && createPortal(
         <button
-          onClick={() => navigateWithTransition(router, '/p', 'forward')}
+          onClick={() => navigateWithTransition(router, '/t', 'forward')}
           className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',

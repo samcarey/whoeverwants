@@ -33,6 +33,8 @@ import {
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { getUserInitials, getUserName } from "@/lib/userProfile";
+import { getCachedAccessiblePolls } from "@/lib/questionCache";
+import { buildPollMap, findThreadRootRouteId } from "@/lib/threadUtils";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
 import { ANONYMOUS_FALLBACK_COLOR, nameToColor } from "@/components/RespondentCircles";
@@ -725,9 +727,20 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                 <FloatingCopyLinkButton
                   url={(() => {
                     if (typeof window === "undefined") return "";
-                    // Phase 5b: short_id lives on the poll wrapper.
-                    const shortId = wrapper?.short_id || question.id;
-                    return `${window.location.origin}/p/${shortId}/`;
+                    // Canonical share URL is `/t/<root>?p=<pollShort>` so the
+                    // recipient lands on the thread with this poll expanded.
+                    // Walk up follow_up_to via the cache to find the root;
+                    // falls back to this poll itself as the root when the
+                    // wrapper is missing or its ancestors aren't cached
+                    // (degraded but functional).
+                    const pollShortId = wrapper?.short_id || question.id;
+                    let rootRouteId = pollShortId;
+                    if (wrapper) {
+                      const accessible = getCachedAccessiblePolls() ?? [];
+                      const byPoll = buildPollMap([wrapper, ...accessible]);
+                      rootRouteId = findThreadRootRouteId(wrapper, (mid) => byPoll.get(mid) ?? null);
+                    }
+                    return `${window.location.origin}/t/${rootRouteId}?p=${pollShortId}`;
                   })()}
                 />
               </div>

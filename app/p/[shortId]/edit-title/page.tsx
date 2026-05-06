@@ -1,100 +1,64 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { apiUpdatePollThreadTitle } from "@/lib/api";
-import { invalidateQuestion } from "@/lib/questionCache";
-import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
-import { useThread } from "@/lib/useThread";
-import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
-import type { Thread } from "@/lib/threadUtils";
-import ThreadHeader from "@/components/ThreadHeader";
-import { ThreadLoading, ThreadNotFound } from "@/components/ThreadLoadState";
+import {
+  apiGetPollById,
+  apiGetPollByShortId,
+  ApiError,
+} from "@/lib/api";
+import { getCachedAccessiblePolls, getCachedPollById, getCachedPollByShortId } from "@/lib/questionCache";
+import { buildPollMap, findThreadRootRouteId } from "@/lib/threadUtils";
+import { isUuidLike } from "@/lib/questionId";
 
-function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
+export const dynamic = 'force-dynamic';
+
+// Legacy `/p/<shortId>/edit-title` → `/t/<rootShortId>/edit-title` redirect.
+function EditTitleRedirect() {
   const router = useRouter();
-  // Phase 5b: thread_title lives on the poll wrapper.
-  const latestPoll = thread.latestPoll;
-  const latestQuestion = thread.latestQuestion;
-  const [value, setValue] = useState<string>(latestPoll.thread_title ?? '');
-  const [saving, setSaving] = useState(false);
+  const params = useParams();
+  const shortId = params.shortId as string;
 
-  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
-
-  const goBack = () => {
-    if (hasAppHistory()) navigateBackWithTransition();
-    else navigateWithTransition(router, `/p/${threadId}/info`, 'back');
-  };
-
-  const save = async () => {
-    if (saving) return;
-    if (!latestQuestion.poll_id) {
-      console.error('Cannot edit thread title without poll_id');
-      setSaving(false);
+  useEffect(() => {
+    if (!shortId) {
+      router.replace('/');
       return;
     }
-    setSaving(true);
-    try {
-      await apiUpdatePollThreadTitle(latestQuestion.poll_id, value.trim() || null);
-      invalidateQuestion(latestQuestion.id);
-      goBack();
-    } catch (err) {
-      console.error('Failed to update thread title:', err);
-      setSaving(false);
-    }
-  };
-
-  return (
-    <>
-      <ThreadHeader
-        headerRef={headerRef}
-        title="Edit Title"
-        onBack={goBack}
-        rightSlot={
-          <button
-            onClick={save}
-            disabled={saving}
-            className="w-14 h-10 flex items-center justify-center shrink-0 text-blue-600 dark:text-blue-400 text-sm font-semibold disabled:opacity-50"
-            aria-label="Save thread title"
-          >
-            {saving ? '...' : 'Save'}
-          </button>
+    let cancelled = false;
+    (async () => {
+      const isUuid = isUuidLike(shortId);
+      let poll = isUuid ? getCachedPollById(shortId) : getCachedPollByShortId(shortId);
+      if (!poll) {
+        try {
+          poll = await (isUuid ? apiGetPollById(shortId) : apiGetPollByShortId(shortId))
+            .catch((err: unknown) => {
+              if (err instanceof ApiError && err.status === 404) return null;
+              throw err;
+            });
+        } catch {
+          poll = null;
         }
-      />
+      }
+      if (cancelled) return;
+      if (!poll) {
+        router.replace('/');
+        return;
+      }
+      const accessible = getCachedAccessiblePolls() ?? [];
+      const byPoll = buildPollMap([poll, ...accessible]);
+      const rootRouteId = findThreadRootRouteId(poll, (mid) => byPoll.get(mid) ?? null);
+      router.replace(`/t/${rootRouteId}/edit-title`);
+    })();
+    return () => { cancelled = true; };
+  }, [shortId, router]);
 
-      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 1rem)` }}>
-        <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Thread title</label>
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={(e) => setValue(e.target.value.trim())}
-          placeholder={thread.defaultTitle}
-          autoFocus
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Leave blank to use the default: <span className="italic">{thread.defaultTitle}</span>
-        </p>
-      </div>
-    </>
-  );
+  return <div className="min-h-screen flex items-center justify-center">Redirecting...</div>;
 }
 
-function EditThreadTitleInner() {
-  const params = useParams();
-  const threadId = params.shortId as string;
-  const { thread, loading, error } = useThread(threadId);
-
-  if (loading) return <ThreadLoading />;
-  if (error || !thread) return <ThreadNotFound />;
-  return <Editor thread={thread} threadId={threadId} />;
-}
-
-export default function EditThreadTitlePage() {
+export default function EditTitleRedirectPage() {
   return (
-    <Suspense fallback={<ThreadLoading />}>
-      <EditThreadTitleInner />
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <EditTitleRedirect />
     </Suspense>
   );
 }

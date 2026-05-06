@@ -11,7 +11,7 @@
  *  new question as a follow-up. */
 export const THREAD_LATEST_QUESTION_ID_ATTR = 'data-thread-latest-question-id';
 
-/** Portal target rendered by the thread page (and the empty `/p/`
+/** Portal target rendered by the thread page (and the empty `/t/`
  *  placeholder) where CreateQuestionContent portals the always-on
  *  draft poll card. */
 export const DRAFT_POLL_PORTAL_ID = 'draft-poll-portal';

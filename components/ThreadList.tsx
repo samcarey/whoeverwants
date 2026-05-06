@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Poll } from "@/lib/types";
-import { buildThreads, getThreadRouteId, isPendingPollId, THREAD_QUERY_PARAM, Thread } from "@/lib/threadUtils";
+import { buildThreads, getThreadHref, isPendingPollId, Thread } from "@/lib/threadUtils";
 import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
 import ThreadListItem from "@/components/ThreadListItem";
 import { usePrefetch } from "@/lib/prefetch";
@@ -41,10 +41,13 @@ export default function ThreadList({ polls }: ThreadListProps) {
     return buildThreads(polls, votedQuestionIds, abstainedQuestionIds);
   }, [polls, votedQuestionIds, abstainedQuestionIds]);
 
-  // Prefetch thread page routes for all visible threads on mount
+  // Prefetch thread page routes for all visible threads on mount.
+  // `getThreadHref` returns `/t/<root>?p=<target>` (with the targeted poll
+  // expanded) when the user has awaiting work, or `/t/<root>` (no expand,
+  // scroll to bottom) when nothing's awaiting.
   useEffect(() => {
     if (threads.length === 0) return;
-    const hrefs = threads.map(t => `/p/${getThreadRouteId(t)}?${THREAD_QUERY_PARAM}=1`);
+    const hrefs = threads.map(t => getThreadHref(t));
     prefetchBatch(hrefs, { priority: "low" });
   }, [threads, prefetchBatch]);
 
@@ -87,16 +90,16 @@ export default function ThreadList({ polls }: ThreadListProps) {
   return (
     <div>
       {threads.map((thread, index) => {
-        const routeId = getThreadRouteId(thread);
+        const href = getThreadHref(thread);
         const latestQuestion = thread.latestQuestion;
         const hasUnvoted = thread.unvotedCount > 0;
 
         const goToThread = () => {
-          // The `thread=1` flag tells PollPageInner that this URL came from
-          // the home thread-list pick (not a direct deep-link), so it can
-          // suppress auto-expanding the linked poll when nothing about it is
-          // actionable (voted on AND closed).
-          navigateWithTransition(router, `/p/${routeId}?${THREAD_QUERY_PARAM}=1`, 'forward');
+          // `getThreadHref` returns `/t/<root>?p=<target>` when the thread has
+          // awaiting work, else `/t/<root>` — the URL itself encodes whether
+          // to auto-expand a poll, replacing the old `?thread=1` +
+          // `suppressExpand` heuristic.
+          navigateWithTransition(router, href, 'forward');
         };
 
         const handleTouchStart = (e: React.TouchEvent) => {
