@@ -141,6 +141,28 @@ export async function apiCutoffPollAvailability(
   return pollOperation(pollId, 'cutoff-availability', { creator_secret: creatorSecret });
 }
 
+/**
+ * Phase C.2: record direct-link access to a poll. Called when the user
+ * lands on `/t/<thread>?p=<poll>` (or via the legacy `/p/<id>` redirect
+ * once it resolves to that form). Idempotent — server uses
+ * ON CONFLICT DO NOTHING on (poll_id, browser_id), so callers don't need
+ * to dedupe. Fails silently in the FE: a missing access row degrades to
+ * "Phase C.3 visibility falls back to thread membership" rather than
+ * blocking the user from seeing the poll they just clicked through to.
+ *
+ * The browser_id ride-along happens in `_internal.ts: fetchWithBase`;
+ * callers don't need to attach it.
+ */
+export async function apiGrantPollAccess(pollId: string): Promise<void> {
+  try {
+    await pollFetch(`/${encodeURIComponent(pollId)}/access`, { method: 'POST' });
+  } catch {
+    // Phase C.2: no read enforcement yet, so a transient failure here is
+    // never user-visible. Phase C.3 may want to surface a stronger signal
+    // (retry, telemetry) but for now log-and-move-on is correct.
+  }
+}
+
 /** Update (or clear) a poll's thread_title override. Empty string clears it. */
 export async function apiUpdatePollThreadTitle(pollId: string, threadTitle: string | null): Promise<Poll> {
   const data = await pollFetch<any>(`/${encodeURIComponent(pollId)}/thread-title`, {

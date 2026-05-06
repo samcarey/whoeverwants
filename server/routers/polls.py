@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from algorithms.poll_title import generate_poll_title
 from database import get_db
@@ -23,6 +23,7 @@ from models import (
     UpdateThreadTitleRequest,
     VoteResponse,
 )
+from services.memberships import grant_poll_access, join_thread, join_thread_for_poll
 from services.questions import (
     _edit_vote_on_question,
     _finalize_suggestion_options,
@@ -393,7 +394,7 @@ def _compute_poll_voter_data(conn, poll_id: str) -> tuple[list[str], int]:
 
 
 @router.post("", response_model=PollResponse, status_code=201)
-def create_poll(req: CreatePollRequest):
+def create_poll(req: CreatePollRequest, request: Request):
     _validate_request(req)
 
     # questions.title is NOT NULL, so each question row needs a value even though
@@ -416,6 +417,17 @@ def create_poll(req: CreatePollRequest):
             _insert_question(conn, poll_row, req, sub, index, question_title, now)
             for index, sub in enumerate(req.questions)
         ]
+
+    # Phase C.2: record creator membership in the (just-minted or inherited)
+    # thread. Runs in its own transaction AFTER the poll is committed —
+    # follow-up creates can't predict the parent's thread_id without a
+    # lookup, root creates literally don't have one until `_insert_poll`
+    # mints it. Failure here is logged + swallowed; the create succeeds
+    # regardless.
+    join_thread(
+        str(poll_row["thread_id"]) if poll_row.get("thread_id") else None,
+        getattr(request.state, "browser_id", None),
+    )
 
     # Newly-created poll has no votes yet — skip the voter aggregation.
     return _row_to_poll(poll_row, question_rows)
@@ -447,6 +459,36 @@ def get_poll(short_id: str):
         question_rows = _fetch_questions(conn, str(row["id"]))
         voter_names, anonymous_count = _compute_poll_voter_data(conn, str(row["id"]))
     return _row_to_poll(row, question_rows, voter_names, anonymous_count)
+
+
+@router.post("/{poll_id}/access", status_code=204)
+def grant_poll_access_endpoint(poll_id: str, request: Request):
+    """Phase C.2: record direct-link access to a single poll.
+
+    Called by the FE when a user lands on a thread URL with the `?p=<poll>`
+    query param (and as part of the legacy `/p/<id>` redirect resolution
+    flow once that lands on `/t/<root>?p=<short>`). Direct-link access lets
+    a non-member of the thread see this one poll without joining the thread
+    — Phase C.3 will gate visibility on the union of `thread_members` and
+    `poll_access`.
+
+    Verifies the poll exists (404 otherwise) so a hostile or stale client
+    can't pollute `poll_access` with rows pointing at non-existent polls.
+    The actual write happens in its own transaction inside
+    `grant_poll_access` so a failure there cannot affect the response shape.
+    Returns 204 — there's nothing useful to send back; the FE just needs to
+    know the request was accepted (and the middleware echoes the
+    `X-Browser-Id` header on every response anyway).
+    """
+    with get_db() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM polls WHERE id = %(id)s",
+            {"id": poll_id},
+        ).fetchone()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Poll not found")
+
+    grant_poll_access(poll_id, getattr(request.state, "browser_id", None))
 
 
 # ---------------------------------------------------------------------------
@@ -644,7 +686,7 @@ def _vote_item_to_edit_req(item: PollVoteItem, voter_name: str | None) -> EditVo
     response_model=list[VoteResponse],
     status_code=201,
 )
-def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest):
+def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Request):
     """Atomic batch vote across multiple questions of one poll.
 
     Each `items[i]` either inserts a new vote (vote_id null) or updates an
@@ -657,6 +699,13 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest):
     voter_name is poll-level: one voter, many question ballots.
     """
     now = datetime.now(timezone.utc)
+
+    # Phase C.2: record thread membership BEFORE the vote runs, in its own
+    # transaction. "Attempted to participate" is the membership trigger, so
+    # a vote that fails validation still leaves the user as a member of the
+    # thread for Phase C.3 visibility purposes. One write per batch — the
+    # composite PK on (thread_id, browser_id) makes any extra writes no-ops.
+    join_thread_for_poll(poll_id, getattr(request.state, "browser_id", None))
 
     question_ids = [item.question_id for item in req.items]
     if len(set(question_ids)) != len(question_ids):

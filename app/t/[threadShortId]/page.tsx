@@ -6,7 +6,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyThreads } from "@/lib/simpleQuestionQueries";
 import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
-import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
 import type { QuestionResults } from "@/lib/types";
@@ -1942,6 +1942,21 @@ function ThreadPageInner() {
       ? getCachedPollById(pollParam)
       : getCachedPollByShortId(pollParam);
     return targetPoll?.questions[0]?.id ?? null;
+  }, [pollParam, rootPoll]);
+
+  // Phase C.2: when the user lands with `?p=<poll>`, record direct-link
+  // access to that poll. Resolves the param to a poll uuid via the cache
+  // (warmed by the rootPoll fetch above) and POSTs to /api/polls/<id>/access.
+  // Idempotent server-side, fire-and-forget client-side. Skipped when the
+  // param is missing or the cache lookup misses — the next thread load
+  // will retry once the cache warms.
+  useEffect(() => {
+    if (typeof window === "undefined" || !pollParam || !rootPoll) return;
+    const targetPoll = isUuidLike(pollParam)
+      ? getCachedPollById(pollParam)
+      : getCachedPollByShortId(pollParam);
+    if (!targetPoll) return;
+    void apiGrantPollAccess(targetPoll.id);
   }, [pollParam, rootPoll]);
 
   if (error) {
