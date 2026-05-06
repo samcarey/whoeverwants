@@ -112,6 +112,25 @@ def _resolve_parent_poll_id(conn, parent_question_id: str | None) -> str | None:
     return str(row["poll_id"])
 
 
+def _resolve_or_create_thread_id(conn, parent_poll_id: str | None) -> str:
+    """Phase B.1: every poll has a thread_id. Follow-up polls inherit their
+    parent's thread; root polls (no parent) get a fresh thread row. The
+    parent's thread_id is read defensively — if for any reason the parent
+    is missing one (e.g. mid-deploy backfill race), we mint a new thread
+    so the new poll never lands without one."""
+    if parent_poll_id:
+        row = conn.execute(
+            "SELECT thread_id FROM polls WHERE id = %(id)s",
+            {"id": parent_poll_id},
+        ).fetchone()
+        if row and row.get("thread_id"):
+            return str(row["thread_id"])
+    row = conn.execute(
+        "INSERT INTO threads DEFAULT VALUES RETURNING id"
+    ).fetchone()
+    return str(row["id"])
+
+
 def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
     # follow_up_to in the request is a *question id* (matching the legacy
     # single-question create API). Resolve to the parent's poll_id for the
@@ -119,6 +138,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
     # question has a poll wrapper — so the questions.thread_title fallback was
     # removed.
     parent_followup_poll_id = _resolve_parent_poll_id(conn, req.follow_up_to)
+    thread_id = _resolve_or_create_thread_id(conn, parent_followup_poll_id)
     explicit_title = req.title if req.title is not None else req.thread_title
     return conn.execute(
         """
@@ -128,6 +148,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
             follow_up_to, context, details,
             thread_title,
             min_responses, show_preliminary_results, allow_pre_ranking,
+            thread_id,
             created_at, updated_at
         )
         VALUES (
@@ -139,6 +160,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
                 (SELECT thread_title FROM polls WHERE id = %(follow_up_poll_id)s)
             ),
             %(min_responses)s, %(show_preliminary_results)s, %(allow_pre_ranking)s,
+            %(thread_id)s,
             %(now)s, %(now)s
         )
         RETURNING *
@@ -161,6 +183,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
             "min_responses": req.min_responses,
             "show_preliminary_results": req.show_preliminary_results,
             "allow_pre_ranking": req.allow_pre_ranking,
+            "thread_id": thread_id,
             "now": now,
         },
     ).fetchone()
