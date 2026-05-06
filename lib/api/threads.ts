@@ -66,10 +66,17 @@ export async function apiGetMyThreads(
 
 export async function apiGetThreadByRouteId(
   routeId: string,
-  options: { include_results?: boolean } = {},
+  options: { include_results?: boolean; pollShortId?: string | null } = {},
 ): Promise<Poll[]> {
   const params = new URLSearchParams();
   if (options.include_results === false) params.set('include_results', 'false');
+  // Phase C.3: when the URL is /t/<thread>?p=<poll>, forward the poll
+  // short_id so the server inline-grants poll_access BEFORE applying the
+  // visibility filter. Without it, a stranger landing on the direct link
+  // 404s on this first call (the fire-and-forget apiGrantPollAccess
+  // effect can't run until rootPoll resolves, but rootPoll requires this
+  // call to succeed — chicken-and-egg).
+  if (options.pollShortId) params.set('p', options.pollShortId);
   const qs = params.toString();
   const path = `/by-route-id/${encodeURIComponent(routeId)}${qs ? `?${qs}` : ''}`;
   const data: any[] = await threadFetch(path);

@@ -122,10 +122,14 @@ function rebuildThreadFromCacheOrPrev(
 
 interface ThreadContentProps {
   threadId: string;
+  /** Poll short_id from `?p=<id>`. Forwarded to apiGetThreadByRouteId so
+   *  the server inline-grants poll_access for cold-load direct links —
+   *  same Phase C.3 race fix as ThreadPageInner's first call. */
+  initialPollShortId?: string | null;
   initialExpandedQuestionId?: string | null;
 }
 
-export function ThreadContent({ threadId, initialExpandedQuestionId = null }: ThreadContentProps) {
+export function ThreadContent({ threadId, initialExpandedQuestionId = null, initialPollShortId = null }: ThreadContentProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
 
@@ -402,7 +406,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         // coalesced, so the later per-card fetch hits the warm cache.
         let polls: Poll[];
         try {
-          polls = await apiGetThreadByRouteId(threadId);
+          polls = await apiGetThreadByRouteId(threadId, { pollShortId: initialPollShortId });
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) { setError(true); return; }
           throw err;
@@ -1882,7 +1886,7 @@ function ThreadPageInner() {
         // one call. Fall back to the per-poll endpoint when the thread
         // endpoint 404s (older deploys, network glitches) so we don't lose
         // resolution on partially-rolled-out backends.
-        const polls = await apiGetThreadByRouteId(threadShortId).catch((err: unknown) => {
+        const polls = await apiGetThreadByRouteId(threadShortId, { pollShortId: pollParam }).catch((err: unknown) => {
           if (err instanceof ApiError && err.status === 404) return null;
           throw err;
         });
@@ -1980,6 +1984,7 @@ function ThreadPageInner() {
     <ThreadContent
       threadId={threadRouteId}
       initialExpandedQuestionId={initialExpandedQuestionId}
+      initialPollShortId={pollParam}
     />
   );
 }
