@@ -3,7 +3,6 @@
 import Countdown from "@/components/Countdown";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import RankableOptions from "@/components/RankableOptions";
-import AbstainButton from "@/components/AbstainButton";
 import CompactNameField from "@/components/CompactNameField";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import VoterList from "@/components/VoterList";
@@ -246,10 +245,22 @@ export default function RankingSection({
                     newOptions={newOptions}
                   />
                 )}
-                <AbstainButton
-                  isAbstaining={isAbstaining}
-                  onClick={handleAbstain}
-                />
+                <div className="mt-3 text-center">
+                  {isAbstaining ? (
+                    <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                      You abstained
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleAbstain}
+                      disabled={isSubmitting}
+                      className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
+                    >
+                      Abstain
+                    </button>
+                  )}
+                </div>
               </>
             )}
 

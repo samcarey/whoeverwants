@@ -1106,9 +1106,22 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     if (!wrapperHandlesSubmit) return false;
     if (isQuestionClosed) return false;
     if (question.question_type === 'yes_no') return false; // external rendering uses tap-to-change
-    if (hasVoted && !isEditingVote && !isEditingRanking) return false;
+    if (hasVoted && !isEditingVote && !isEditingRanking) {
+      // Implicit-edit cases: user has submitted SOMETHING but still has work
+      // they can finish without explicitly entering edit mode. Mirrors
+      // handleVoteClick's `isImplicitEdit` so the wrapper Submit stays visible
+      // for that flow. Without this the early-voting (suggestion phase, allow
+      // pre-ranking) case hides Submit after suggestions are submitted, even
+      // though the user can still rank. Same for time questions transitioning
+      // from availability → preferences.
+      const hasNotRankedYet = hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_ranking_abstain;
+      const hasNotReactedYet = question.question_type === 'time' && !inAvailabilityPhase
+        && userVoteData?.liked_slots === null && userVoteData?.disliked_slots === null && !userVoteData?.is_abstain;
+      const isImplicitEdit = (canSubmitSuggestions && canSubmitRankings) || hasNotRankedYet || hasNotReactedYet;
+      if (!isImplicitEdit) return false;
+    }
     return true;
-  }, [wrapperHandlesSubmit, isQuestionClosed, question.question_type, hasVoted, isEditingVote, isEditingRanking]);
+  }, [wrapperHandlesSubmit, isQuestionClosed, question.question_type, hasVoted, isEditingVote, isEditingRanking, hasSuggestionPhase, userVoteData, canSubmitSuggestions, canSubmitRankings, inAvailabilityPhase]);
 
   const wrapperSubmitLabel = useMemo(() => {
     if (question.question_type === 'time') {
