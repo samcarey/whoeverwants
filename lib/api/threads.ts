@@ -25,6 +25,7 @@
 
 import type { Poll } from "@/lib/types";
 import { cachePoll, cacheQuestionResults } from "@/lib/questionCache";
+import { POLL_QUERY_PARAM } from "@/lib/threadUtils";
 import { threadFetch, toPoll, toQuestionResults } from "./_internal";
 
 function hydrateAndCache(data: any[]): Poll[] {
@@ -76,7 +77,7 @@ export async function apiGetThreadByRouteId(
   // 404s on this first call (the fire-and-forget apiGrantPollAccess
   // effect can't run until rootPoll resolves, but rootPoll requires this
   // call to succeed — chicken-and-egg).
-  if (options.pollShortId) params.set('p', options.pollShortId);
+  if (options.pollShortId) params.set(POLL_QUERY_PARAM, options.pollShortId);
   const qs = params.toString();
   const path = `/by-route-id/${encodeURIComponent(routeId)}${qs ? `?${qs}` : ''}`;
   const data: any[] = await threadFetch(path);

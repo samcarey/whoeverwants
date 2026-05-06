@@ -46,6 +46,15 @@ export function buildPollMap(polls: Iterable<Poll>): Map<string, Poll> {
   return map;
 }
 
+/** Pick the chain root of a thread from a list of its polls. Prefers the
+ *  poll with no `follow_up_to`; falls back to the first poll when the
+ *  true root is hidden by Phase C.3 visibility filtering. Returns null
+ *  for empty input. */
+export function findChainRoot(polls: Poll[]): Poll | null {
+  if (polls.length === 0) return null;
+  return polls.find(mp => !mp.follow_up_to) ?? polls[0];
+}
+
 export interface Thread {
   /** ID of the root question (first question of the chain's earliest poll). */
   rootQuestionId: string;
@@ -503,7 +512,7 @@ export function buildThreadSyncFromCache(
     // chain root is the one with `follow_up_to == null`. Find it directly
     // so buildThreadFromPollDown collects every descendant.
     const matches = polls.filter(mp => mp.thread_short_id === threadId);
-    const root = matches.find(mp => !mp.follow_up_to) ?? matches[0];
+    const root = findChainRoot(matches);
     if (root) {
       anchorPollId = root.id;
     } else {

@@ -5,7 +5,7 @@ import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyThreads } from "@/lib/simpleQuestionQueries";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
+import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
 import { apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
@@ -411,7 +411,8 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
           if (err instanceof ApiError && err.status === 404) { setError(true); return; }
           throw err;
         }
-        if (polls.length === 0) { setError(true); return; }
+        const anchorPoll = findChainRoot(polls);
+        if (!anchorPoll) { setError(true); return; }
         // Persist any newly-discovered question_ids to localStorage so a
         // forget-and-re-discover cycle still works on direct navigation.
         for (const mp of polls) {
@@ -423,11 +424,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
 
         // Re-read voted state — discovery or the user voting elsewhere may have changed it.
         const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-        // Find the chain root among the polls the API returned. With Phase
-        // C.3 visibility filtering, ancestor polls can be hidden — fall
-        // back to the earliest visible poll so a partial-visibility thread
-        // still renders rather than 404'ing.
-        const anchorPoll = polls.find(mp => !mp.follow_up_to) ?? polls[0];
         const foundThread = buildThreadFromPollDown(anchorPoll.id, polls, voted, abstained);
 
         if (!foundThread) {
@@ -1858,10 +1854,7 @@ function ThreadPageInner() {
     // both forms before falling back to the async fetch.
     const accessible = getCachedAccessiblePolls() ?? [];
     const matches = accessible.filter(mp => mp.thread_short_id === threadShortId);
-    if (matches.length > 0) {
-      return matches.find(mp => !mp.follow_up_to) ?? matches[0];
-    }
-    return getCachedPollByShortId(threadShortId);
+    return findChainRoot(matches) ?? getCachedPollByShortId(threadShortId);
   }, [threadShortId]);
 
   const [rootPoll, setRootPoll] = useState<Poll | null>(rootInitial);
@@ -1890,8 +1883,8 @@ function ThreadPageInner() {
           if (err instanceof ApiError && err.status === 404) return null;
           throw err;
         });
-        if (polls && polls.length > 0) {
-          const root = polls.find(mp => !mp.follow_up_to) ?? polls[0];
+        const root = polls ? findChainRoot(polls) : null;
+        if (root && polls) {
           for (const mp of polls) {
             for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
           }
