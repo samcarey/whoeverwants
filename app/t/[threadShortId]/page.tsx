@@ -1723,9 +1723,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
               );
               for (const sp of wrapper.questions) {
                 if (sp.options) {
+                  const newOptions = sp.options;
                   patchThreadQuestions(
                     (p) => p.id === sp.id,
-                    () => ({ options: sp.options ?? null }),
+                    () => ({ options: newOptions }),
                   );
                 }
               }
