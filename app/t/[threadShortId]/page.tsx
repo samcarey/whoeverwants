@@ -1300,9 +1300,14 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
   }, []);
 
   // Refetch on vote-change events: when any question's votes change, the
-  // wrapper's voter_names may have shifted. Refresh affected poll
-  // wrappers — cheap because the request is small and cached. Updates flow
-  // through patchThreadPolls so the derived map stays in sync.
+  // wrapper's voter_names may have shifted, AND `prephase_deadline` may
+  // have flipped from null → real timestamp (the deferred suggestion /
+  // availability timer starts on the first qualifying vote). Refresh
+  // affected poll wrappers — cheap because the request is small and
+  // cached. Updates flow through patchThreadPolls so the derived map stays
+  // in sync. Without `prephase_deadline` in the patch, the thread card's
+  // status row stays stuck on "Taking Suggestions" / "Collecting
+  // Availability" until a manual refresh.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { questionId?: string } | undefined;
@@ -1317,6 +1322,8 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
             voter_names: wrapper.voter_names,
             anonymous_count: wrapper.anonymous_count,
             questions: wrapper.questions,
+            prephase_deadline: wrapper.prephase_deadline ?? null,
+            updated_at: wrapper.updated_at,
           }),
         );
       }).catch(() => null);
