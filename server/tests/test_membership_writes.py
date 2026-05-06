@@ -12,63 +12,18 @@ Covers:
     thread_members in place
 
 Phase C.2 doesn't enforce visibility yet; these tests verify the writes
-happen, not that any read path filters on them.
+happen, not that any read path filters on them. Phase C.3 read-side
+filtering tests live in test_threads_visibility.py.
+
+Shared fixtures (`client`, `creator_secret`, `browser_id`) and helpers
+(`create_poll`) live in `conftest.py`.
 """
 
-import os
-import re
 import uuid
 
-import pytest
-
-TEST_DB_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://whoeverwants:whoeverwants@localhost:5432/whoeverwants",
-)
-os.environ["DATABASE_URL"] = TEST_DB_URL
-
 import psycopg
-from fastapi.testclient import TestClient
 
-from main import app
-
-
-UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
-
-
-@pytest.fixture
-def client():
-    return TestClient(app)
-
-
-@pytest.fixture
-def creator_secret():
-    return f"test-secret-{uuid.uuid4().hex[:8]}"
-
-
-@pytest.fixture
-def browser_id():
-    return str(uuid.uuid4())
-
-
-def _yes_no_question(**overrides) -> dict:
-    base = {"question_type": "yes_no", "category": "yes_no"}
-    base.update(overrides)
-    return base
-
-
-def _create_poll(client, creator_secret, *, browser_id=None, **kwargs):
-    payload = {
-        "creator_secret": creator_secret,
-        "questions": [_yes_no_question()],
-    }
-    payload.update(kwargs)
-    headers = {"X-Browser-Id": browser_id} if browser_id else {}
-    resp = client.post("/api/polls", json=payload, headers=headers)
-    assert resp.status_code == 201, resp.text
-    return resp.json()
+from tests.conftest import TEST_DB_URL, create_poll
 
 
 def _thread_members(thread_id):
@@ -92,7 +47,7 @@ def _poll_access(poll_id):
 
 class TestCreatePollMembership:
     def test_creator_auto_joins_thread(self, client, creator_secret, browser_id):
-        poll = _create_poll(client, creator_secret, browser_id=browser_id)
+        poll = create_poll(client, creator_secret, browser_id=browser_id)
         thread_id = poll["thread_id"]
         rows = _thread_members(thread_id)
         assert len(rows) == 1
@@ -101,11 +56,11 @@ class TestCreatePollMembership:
     def test_followup_creator_joins_parent_thread(
         self, client, creator_secret, browser_id
     ):
-        root = _create_poll(client, creator_secret, browser_id=browser_id)
+        root = create_poll(client, creator_secret, browser_id=browser_id)
         parent_qid = root["questions"][0]["id"]
         # Same browser creates a follow-up — already a member; ON CONFLICT
         # keeps the thread_members row count at 1.
-        followup = _create_poll(
+        followup = create_poll(
             client,
             creator_secret,
             browser_id=browser_id,
@@ -119,10 +74,10 @@ class TestCreatePollMembership:
     def test_followup_creator_from_different_browser_adds_row(
         self, client, creator_secret, browser_id
     ):
-        root = _create_poll(client, creator_secret, browser_id=browser_id)
+        root = create_poll(client, creator_secret, browser_id=browser_id)
         parent_qid = root["questions"][0]["id"]
         other = str(uuid.uuid4())
-        _create_poll(
+        create_poll(
             client, creator_secret, browser_id=other, follow_up_to=parent_qid
         )
         rows = _thread_members(root["thread_id"])
@@ -134,7 +89,7 @@ class TestVoteMembership:
     def test_voter_auto_joins_thread(self, client, creator_secret, browser_id):
         # Creator on browser A; voter on browser B.
         creator_browser = browser_id
-        poll = _create_poll(client, creator_secret, browser_id=creator_browser)
+        poll = create_poll(client, creator_secret, browser_id=creator_browser)
         sub = poll["questions"][0]
 
         voter_browser = str(uuid.uuid4())
@@ -159,7 +114,7 @@ class TestVoteMembership:
         assert bids == {creator_browser, voter_browser}
 
     def test_idempotent_on_repeat_votes(self, client, creator_secret, browser_id):
-        poll = _create_poll(client, creator_secret, browser_id=browser_id)
+        poll = create_poll(client, creator_secret, browser_id=browser_id)
         sub = poll["questions"][0]
 
         # First vote — creates thread_members row for this browser.
@@ -219,7 +174,7 @@ class TestVoteMembership:
         A vote that the validator rejects still leaves the user as a thread
         member — they 'attempted to participate' which is the trigger
         regardless of whether the ballot was well-formed."""
-        poll = _create_poll(client, creator_secret, browser_id=browser_id)
+        poll = create_poll(client, creator_secret, browser_id=browser_id)
         sub = poll["questions"][0]
 
         voter_browser = str(uuid.uuid4())
@@ -258,7 +213,7 @@ class TestVoteMembership:
 
 class TestPollAccessEndpoint:
     def test_grant_writes_row(self, client, creator_secret):
-        poll = _create_poll(client, creator_secret)
+        poll = create_poll(client, creator_secret)
         visitor_browser = str(uuid.uuid4())
         resp = client.post(
             f"/api/polls/{poll['id']}/access",
@@ -271,7 +226,7 @@ class TestPollAccessEndpoint:
         assert visitor_browser in bids
 
     def test_grant_is_idempotent(self, client, creator_secret):
-        poll = _create_poll(client, creator_secret)
+        poll = create_poll(client, creator_secret)
         visitor_browser = str(uuid.uuid4())
         for _ in range(3):
             resp = client.post(
@@ -286,7 +241,7 @@ class TestPollAccessEndpoint:
         assert len(bids) == 1
 
     def test_grant_preserves_original_granted_at(self, client, creator_secret):
-        poll = _create_poll(client, creator_secret)
+        poll = create_poll(client, creator_secret)
         visitor_browser = str(uuid.uuid4())
         client.post(
             f"/api/polls/{poll['id']}/access",
@@ -318,7 +273,7 @@ class TestPollAccessEndpoint:
         Phase C.3 will resolve visibility as the union of `thread_members`
         and `poll_access`; verifying the boundary here keeps that semantics
         intact."""
-        poll = _create_poll(client, creator_secret)
+        poll = create_poll(client, creator_secret)
         visitor_browser = str(uuid.uuid4())
         resp = client.post(
             f"/api/polls/{poll['id']}/access",

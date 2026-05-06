@@ -1,8 +1,9 @@
 # Thread Routing Redesign
 
 > Status: Phase A shipped (#260), Phase B.1 shipped (#261), Phase B.2
-> shipped (#262), Phase B.3 shipped (#263), Phase B.4 shipped (#264).
-> Phase C.1 in progress (this branch); C.2 and C.3 deferred.
+> shipped (#262), Phase B.3 shipped (#263), Phase B.4 shipped (#264),
+> Phase C.1 shipped (#265), Phase C.2 shipped (#266), Phase C.3 in
+> progress (this branch).
 
 ## Vision
 
@@ -287,17 +288,80 @@ backfill answer is a follow-up — see CLAUDE.md →
   `thread_members` / `poll_access` get populated by live traffic, but
   nothing yet filters reads by them.
 
-#### Phase C.3 — Visibility enforcement (deferred)
+#### Phase C.3 — Visibility enforcement (this branch)
 
-- Apply the visibility rule (see "Visibility rule" above) in the read
-  endpoints `POST /api/threads/mine` and `GET /api/threads/by-route-id/{routeId}`.
-- Resolve the open semantic questions before shipping:
-  - **Join trigger:** vote/create/abstain only (the C.2 default), or
-    also auto-join on direct `/t/<id>` visit, or explicit join button?
-  - **Non-member visiting `/t/<id>` (no `?p`):** 404? "Join this thread"
-    prompt? Read-only stub of the most recent open polls?
-  - **Forget vs leave:** does forget-of-last-accessible-poll auto-drop
-    `thread_members`, or do we add an explicit "leave thread" action?
+The visibility rule is enforced in the two read endpoints. A poll P in
+thread T is visible to browser B iff ANY of:
+
+1. B has a `thread_members` row for T AND
+   (`P.is_closed = false` OR `P.closed_at >= members.joined_at`), OR
+2. B has a `poll_access` row for P, OR
+3. (transitional bridge) The legacy `accessible_question_ids` list
+   passed by the FE contains a question_id whose poll lives in T.
+   Treated as **thread-level** access — every poll in T visible, no
+   closed_at filter — so pre-B.3 callers passing one question_id keep
+   seeing the whole thread (the Phase B.3 contract). Per-poll bridging
+   would silently shrink threads on first refresh post-rollout. Applies
+   to `/api/threads/mine` only.
+
+`closed_at` proxy: `polls.updated_at`, refreshed by the close trigger.
+Subsequent edits to a closed poll bump `updated_at` forward, so the
+filter fails open (a closed poll touched after the user joins becomes
+visible). A dedicated column would be marginally tighter; deferred.
+
+##### Decisions on the three previously-open semantic questions
+
+- **Join trigger**: vote/create only — the Phase C.2 defaults are
+  preserved. The `/access` endpoint and the `?p=` auto-grant on
+  by-route-id grant `poll_access` (per-poll, not thread membership), so
+  `thread_members` is exclusively driven by acts of participation.
+- **Non-member visiting `/t/<id>` with no `?p`**: 404. We treat "no
+  visibility into any poll of this thread" the same as "no such thread"
+  for both UX simplicity and consistent FE error handling. The FE's
+  existing "Thread Not Found" UI handles both cases uniformly.
+- **Forget vs leave**: forget stays localStorage-only. We do NOT delete
+  `thread_members` on forget; instead, when the FE passes
+  `accessible_question_ids` we narrow `/api/threads/mine` to threads the
+  user still has at least one non-membership signal in (poll_access OR
+  legacy bridge). This preserves the "thread disappears from the home
+  list" UX during the rollout. An explicit `DELETE
+  /api/threads/{id}/membership` is a follow-up so the bridge can
+  eventually be retired.
+
+##### `?p=` inline auto-grant on by-route-id
+
+`GET /api/threads/by-route-id/{route_id}` accepts an optional
+`?p=<pollShortId>`. When present, a `poll_access` row is written inline
+for that poll BEFORE visibility filtering. This race-safely surfaces a
+direct-link landing — without it, a stranger hitting
+`/t/<thread>?p=<poll>` on a fresh browser would see by-route-id 404
+because the FE's parallel `apiGrantPollAccess` call hadn't yet landed.
+The lookup is scoped to the resolved thread, so a `?p` referencing a
+poll in a different thread is silently ignored — no cross-thread
+access leak.
+
+##### Migration cost
+
+Pre-B.3 voters who haven't re-voted have no `thread_members` row. They
+keep working via the legacy bridge so long as their FE passes
+`accessible_question_ids`. Once they vote again, Phase C.2's auto-join
+writes restore membership and they no longer rely on the bridge. The
+bridge will be retired (and the home page narrowed to membership-only)
+in a follow-up phase after enough rollout time has passed for inactive
+browsers to cycle.
+
+##### Out of scope for C.3
+
+- Backfill of pre-B.3 votes into `thread_members` (deferred — see
+  "FOLLOW-UP — Decide backfill strategy ..." in CLAUDE.md).
+- Explicit `DELETE /api/threads/{id}/membership` ("leave thread")
+  endpoint. Not strictly required during the rollout window because
+  the forget bridge handles the equivalent UX for the legacy localStorage
+  list.
+- Visibility enforcement on the legacy `POST /api/questions/accessible`
+  endpoint. The FE migrated to `/api/threads/*` in B.3 so it's a
+  compatibility surface for older client bundles only; gating it
+  retroactively would risk breaking those clients during the rollout.
 
 ## Open questions
 
@@ -308,8 +372,20 @@ root-poll-short_id values kept on the existing `threads` rows so old
 lookup as the new ones.
 
 The Phase C semantic questions (join trigger, non-member /t visit,
-forget vs leave) are now tracked under "Phase C.3 — Visibility
-enforcement (deferred)" above and need to be settled before C.3 ships.
+forget vs leave) were resolved in Phase C.3 — see decisions inline
+under "Phase C.3 — Visibility enforcement" above.
+
+Two follow-up items remain, neither blocking the redesign:
+
+- **Backfill of pre-B.3 votes** into `thread_members`. Currently
+  handled implicitly by the legacy `accessible_question_ids` bridge in
+  `/api/threads/mine`, plus the natural re-establishment on next vote
+  via Phase C.2's auto-join writes. A one-time backfill would let us
+  retire the bridge faster but isn't required for correctness.
+- **Explicit `DELETE /api/threads/{id}/membership`** ("leave thread")
+  endpoint. The forget bridge replicates the UX during the rollout
+  window. Adding the explicit action lets us retire the bridge — gates
+  on the bridge becoming dead code first.
 
 ## Phase A simplifications worth keeping in mind
 

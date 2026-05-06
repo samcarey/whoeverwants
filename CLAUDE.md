@@ -748,8 +748,78 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Poll System
 
-> **Phase C.2 of the thread-routing redesign in progress (this branch).**
-> The membership tables (added schema-only in C.1) are now wired to live
+> **Phase C.3 of the thread-routing redesign in progress (this branch).**
+> The visibility rule is now enforced on `POST /api/threads/mine` and
+> `GET /api/threads/by-route-id/{route_id}`. A poll P in thread T is
+> visible to browser B iff ANY of:
+>
+>   1. B has a `thread_members` row for T AND
+>      (`P.is_closed = false` OR `P.closed_at >= members.joined_at`),
+>   2. B has a `poll_access` row for P,
+>   3. (transitional) The legacy `accessible_question_ids` list passed
+>      by the FE contains a question_id whose poll lives in T — treated
+>      as **thread-level** access (every poll in T visible, no
+>      closed_at filter) so pre-B.3 callers passing one question_id
+>      keep seeing the whole thread (the Phase B.3 contract). Per-poll
+>      bridging would silently shrink threads on first refresh
+>      post-rollout. Applies to `/api/threads/mine` only — by-route-id
+>      relies on `?p=` inline grant.
+>
+> Decisions on the previously-open semantic questions:
+>
+>   * **Join trigger**: vote/create only — Phase C.2 defaults
+>     preserved. The /access endpoint and the `?p=` auto-grant on
+>     by-route-id grant `poll_access` (per-poll, not thread membership).
+>   * **Non-member visiting `/t/<id>` with no `?p`**: 404. "No
+>     visibility into any poll" is treated identically to "no such
+>     thread" — same FE error path.
+>   * **Forget vs leave**: forget stays localStorage-only. When the FE
+>     passes `accessible_question_ids`, `/api/threads/mine` narrows to
+>     threads with a non-membership signal (poll_access OR legacy
+>     bridge) so forget keeps its "thread disappears from home"
+>     semantics. An explicit `DELETE /api/threads/{id}/membership`
+>     ("leave thread") is a follow-up to retire the bridge.
+>
+> `closed_at` proxy: `polls.updated_at`, refreshed by the close
+> trigger. Subsequent edits bump it forward — the filter fails open (a
+> closed poll touched after the user joins becomes visible). Adding a
+> dedicated `closed_at` column would be marginally tighter; deferred.
+>
+> **`?p=` inline auto-grant on by-route-id.** The endpoint accepts an
+> optional `?p=<pollShortId>`; when present, a `poll_access` row is
+> written inline BEFORE filtering. This race-safely surfaces a direct-
+> link landing — without it, a stranger hitting
+> `/t/<thread>?p=<poll>` on a fresh browser would see by-route-id 404
+> because the FE's parallel `apiGrantPollAccess` call hadn't yet
+> landed. The lookup is **scoped to the resolved thread**, so a `?p`
+> referencing a poll in a different thread is silently ignored — no
+> cross-thread access leak.
+>
+> **Visibility helpers in `services/threads.py`:**
+>
+>   * `UserVisibility` dataclass: a snapshot of one browser's
+>     `joined_by_thread` / `access_poll_ids` / `bridged_thread_ids`.
+>   * `load_user_visibility(conn, browser_id, *, legacy_question_ids)`:
+>     reads every signal in one place. Both endpoints call this once
+>     per request.
+>   * `filter_visible_polls(conn, candidate_poll_ids, visibility)`:
+>     applies the rule. Returns the visible subset.
+>   * `grant_poll_access_inline(conn, poll_id, browser_id)`: writes
+>     `poll_access` in the SAME transaction as the read. Used only by
+>     the `?p=` auto-grant.
+>
+> **Migration cost.** Pre-B.3 voters who haven't re-voted have no
+> `thread_members` row. They keep working via the legacy bridge so
+> long as their FE passes `accessible_question_ids`. Once they vote
+> again, Phase C.2's auto-join writes restore membership and the
+> bridge becomes redundant. The bridge will be retired in a follow-up
+> phase after enough rollout time. Visibility enforcement on the
+> legacy `POST /api/questions/accessible` is intentionally NOT added —
+> the FE migrated to /api/threads/* in B.3, and gating the legacy
+> endpoint retroactively risks breaking older client bundles.
+>
+> **Phase C.2 (#266) is the previous step.**
+> The membership tables (added schema-only in C.1) are wired to live
 > traffic. Three trigger points, all decoupled from the action that
 > triggers them — each membership write opens its OWN `get_db()`
 > transaction, logs+swallows failures, and uses `ON CONFLICT DO NOTHING`
@@ -785,13 +855,11 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 > `request.state.browser_id` so every Phase C handler reaches for the
 > same one-liner.
 >
-> Three semantic questions still open for Phase C.3 (visibility
-> enforcement): join trigger finality (vote/create only vs. auto on /t
-> visit vs. explicit join), what a non-member sees at `/t/<id>` with no
-> `?p`, and forget-vs-leave. Backfill of pre-B.3 votes is still deferred
-> — current plan is to lean on C.2's auto-join writes for any returning
-> browser. See `docs/thread-routing-redesign.md` → "Phase C — Membership
-> with join-time visibility".
+> Backfill of pre-B.3 votes is still deferred — covered by C.2's
+> auto-join writes for any returning browser plus the C.3 legacy
+> bridge for users who haven't re-voted. See
+> `docs/thread-routing-redesign.md` → "Phase C — Membership with
+> join-time visibility".
 >
 > **Phase C.1 (#265) is the previous step.** Migration 102 added the two
 > membership tables (`thread_members` and `poll_access`) with composite
@@ -1033,6 +1101,12 @@ Frontend conventions for the poll plumbing:
 - **Fuse poll → thread_id lookups with the audit-write SQL.** `join_thread_for_poll(poll_id, browser_id)` does `INSERT INTO thread_members SELECT thread_id, %(browser_id)s FROM polls WHERE id=%(poll_id)s ON CONFLICT DO NOTHING` — one statement, one round-trip. Don't re-introduce a separate `SELECT thread_id FROM polls` followed by an INSERT; that doubles the hot-path RTT.
 - **Use FK violation as the existence check.** The `POST /api/polls/{id}/access` handler in `routers/polls.py` does `try: INSERT … catch psycopg.errors.ForeignKeyViolation → 404`. Prefer this to a `SELECT 1 FROM polls` pre-check: it's one connection instead of two, removes the TOCTOU window between SELECT and INSERT, and surfaces deletes-during-grant as the same 404. Same pattern applies to any "write a row whose FK doubles as the existence check" endpoint (Phase C.3 may add more).
 - **`useEffect` that fires a side-effect API call from a derived value needs a `useRef<Set>` dedupe.** The Phase C.2 access grant in `app/t/[threadShortId]/page.tsx` is keyed on a memoized `targetPoll`, but the parent's `rootPoll` churns post-mount when an async refresh resets the same value — re-firing the effect with an identical `targetPoll`. The server-side `ON CONFLICT DO NOTHING` makes the duplicate POST harmless, but a network round-trip per render is wasteful. Pattern: `const grantedPollIdsRef = useRef<Set<string>>(new Set()); useEffect(() => { if (grantedPollIdsRef.current.has(id)) return; grantedPollIdsRef.current.add(id); void apiCall(id); }, [target]);`. Reuse this idiom for any future fire-and-forget grant/audit endpoint.
+- **Phase C.3 visibility helpers live in `services/threads.py`** (`UserVisibility`, `load_user_visibility`, `filter_visible_polls`, `grant_poll_access_inline`). Both threads endpoints share them — adding visibility enforcement to a third endpoint would just call `load_user_visibility(conn, browser_id, legacy_question_ids=...)` once and pass the result to `filter_visible_polls(conn, candidate_pids, visibility)`. Don't reinvent the rule inline; the helper is the single source of truth so changes (e.g. a dedicated `closed_at` column, retiring the legacy bridge) ripple through every read path.
+- **The legacy `accessible_question_ids` bridge is THREAD-level, not poll-level.** The Phase B.3 contract is "any question_id grants access to its whole thread" (the FE always passed one question_id and got every poll in the thread back). Phase C.3 preserves this for backwards-compat: `bridged_thread_ids` resolves question_ids → thread_ids, and the visibility filter shows every poll in those threads with no closed_at filter. A per-poll bridge would silently shrink threads on first refresh post-rollout (a user with 1 question_id in a 5-poll thread would lose 4 polls). The cost is minor: a stranger with a single direct-link question_id sees the whole thread instead of just the one poll. That's "Phase B.3 behavior" — the security tightening (strict per-poll access for true direct-link strangers) lives on `poll_access` rows from the `?p=` auto-grant or the standalone /access endpoint.
+- **Forget bridge in `/api/threads/mine`.** When `accessible_question_ids` is non-empty, member-threads are narrowed to those with a NON-membership signal (poll_access OR legacy bridge). Without this, a thread_members row would keep a thread alive on the home list even after the user forgot every question in it. Membership-only callers (empty list) skip the narrowing — the bridge is opt-in. Dropped once an explicit `DELETE /api/threads/{id}/membership` lands.
+- **`?p=` auto-grant on by-route-id.** `GET /api/threads/by-route-id/{route_id}` accepts an optional `?p=<pollShortId>` and writes `poll_access` inline BEFORE filtering. Without this, a stranger landing on `/t/<thread>?p=<poll>` on a fresh browser would see by-route-id 404 because the FE's parallel `apiGrantPollAccess(targetPoll.id)` call hasn't yet landed on the server. The lookup is **scoped to the resolved thread** (`WHERE short_id = %(s)s AND thread_id = %(t)s::uuid`) — a `?p` outside the thread is silently ignored, no cross-thread access leak. The grant is via `services.threads.grant_poll_access_inline(conn, poll_id, browser_id)` which runs in the SAME transaction as the read, eliminating the race that the standalone `/access` endpoint can't (since /access opens its own connection).
+- **Visibility uses `polls.updated_at` as the `closed_at` proxy.** The close trigger refreshes `updated_at` on every `is_closed` flip, so it tracks closure timing accurately for the initial close. Subsequent edits to a closed poll bump `updated_at` forward — that makes the visibility filter slightly more permissive (a closed poll touched after the user joins becomes visible) but never less. A dedicated `closed_at` column would be marginally tighter; not worth the migration cost in C.3.
+- **Updating tests when the visibility contract changes.** `test_threads_api.py` was originally written for Phase B.3's "no enforcement" behavior and called the read endpoints with no X-Browser-Id header (TestClient mints fresh browser_ids per request, so the read had no membership). Phase C.3 added a `browser_id` fixture and a `_bid_headers` helper so tests pin the same browser through create + read calls — making the creator a thread member that the read endpoints can see. When adding new tests for endpoints under visibility enforcement, follow this pattern: don't trust auto-minted ids to maintain identity across requests.
 
 This section captures the design decisions from the original conversation so future sessions can reference them without re-asking.
 
