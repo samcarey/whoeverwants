@@ -85,9 +85,12 @@ export function cleanupOldQuestions(): void {
 // `poll` is optional so callsites that build a snapshot for a question
 // whose wrapper isn't loaded (e.g. an old localStorage entry) can still
 // pass just the question — the resulting snapshot just omits the wrapper bits.
+//
+// Titles (and the is_auto_title flag) are intentionally NOT copied: the new
+// form regenerates its title fresh from the new input fields, and a
+// user-typed yes_no prompt should be retyped rather than carried verbatim.
 export function buildQuestionSnapshot(question: Question, poll?: Poll | null) {
   return {
-    title: question.title,
     question_type: question.question_type,
     options: question.options,
     response_deadline: poll?.response_deadline ?? null,
@@ -96,7 +99,6 @@ export function buildQuestionSnapshot(question: Question, poll?: Poll | null) {
     details: question.details,
     category: question.category,
     options_metadata: question.options_metadata,
-    is_auto_title: question.is_auto_title,
     // Migration 098: these fields live on the poll wrapper now.
     min_responses: poll?.min_responses ?? null,
     show_preliminary_results: poll?.show_preliminary_results ?? true,
