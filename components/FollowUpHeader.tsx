@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiGetPollById } from "@/lib/api";
+import { getThreadHrefForPoll } from "@/lib/threadUtils";
 import { usePrefetch } from "@/lib/prefetch";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { useLongPress } from "@/lib/useLongPress";
@@ -17,7 +18,8 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
   const router = useRouter();
   const { prefetch } = usePrefetch();
   const [originalTitle, setOriginalTitle] = useState<string | null>(null);
-  const [originalShortId, setOriginalShortId] = useState<string | null>(null);
+  // The thread containing the parent poll — `/t/<rootRouteId>?p=<parentShort>`.
+  const [parentHref, setParentHref] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
@@ -36,8 +38,9 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
         const data = await apiGetPollById(followUpToPollId);
         setOriginalTitle(data.title);
         if (data.short_id) {
-          setOriginalShortId(data.short_id);
-          prefetch(`/p/${data.short_id}`, { priority: "low" });
+          const href = getThreadHrefForPoll(data);
+          setParentHref(href);
+          prefetch(href, { priority: "low" });
         }
       } catch (err) {
         console.error('Error fetching parent poll:', err);
@@ -105,8 +108,8 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
         <div className="text-sm text-blue-900 dark:text-blue-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
           <span>Follow up to</span>
           <button
-            onClick={() => originalShortId && router.push(`/p/${originalShortId}`)}
-            disabled={!originalShortId}
+            onClick={() => parentHref && router.push(parentHref)}
+            disabled={!parentHref}
             className="inline-flex items-center px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800/70 rounded text-sm font-medium text-blue-800 dark:text-blue-200 transition-colors relative overflow-hidden whitespace-nowrap min-w-0 max-w-[180px]"
             title={originalTitle}
           >

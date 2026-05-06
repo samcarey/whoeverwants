@@ -33,6 +33,7 @@ import {
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { getUserInitials, getUserName } from "@/lib/userProfile";
+import { getThreadHrefForPoll } from "@/lib/threadUtils";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
 import { ANONYMOUS_FALLBACK_COLOR, nameToColor } from "@/components/RespondentCircles";
@@ -725,9 +726,12 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                 <FloatingCopyLinkButton
                   url={(() => {
                     if (typeof window === "undefined") return "";
-                    // Phase 5b: short_id lives on the poll wrapper.
-                    const shortId = wrapper?.short_id || question.id;
-                    return `${window.location.origin}/p/${shortId}/`;
+                    // Canonical share URL — walks `follow_up_to` via cache to
+                    // root; falls back to this poll as root when uncached.
+                    const href = wrapper
+                      ? getThreadHrefForPoll(wrapper)
+                      : `/t/${question.id}?p=${question.id}`;
+                    return `${window.location.origin}${href}`;
                   })()}
                 />
               </div>

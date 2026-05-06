@@ -20,11 +20,12 @@ import {
 } from './questionCache';
 import { isUuidLike } from './questionId';
 
-/** Query-param key set by the home `ThreadList` on its `/p/<id>` links to
- *  flag that the URL was picked by the thread-level rule (not a direct
- *  share). `PollPageInner` reads this and may skip the auto-expand when
- *  the linked poll is voted+closed already. */
-export const THREAD_QUERY_PARAM = 'thread';
+/** Query-param key on `/t/<thread>` URLs that names a specific poll the page
+ *  should expand and scroll to. Absent → no auto-expand, page scrolls to
+ *  bottom (the draft form area). Replaced the old `?thread=1` /
+ *  `suppressExpand` heuristic — the URL itself now encodes whether to expand
+ *  any poll, with no client-side guessing. */
+export const POLL_QUERY_PARAM = 'p';
 
 /** True when `id` is a placeholder poll id synthesized by
  *  `synthesizePlaceholderPoll` (e.g. `pending-mosw8mkj-pp6476`). Their question
@@ -359,12 +360,50 @@ export function findThreadByQuestionId(threads: Thread[], questionId: string): T
   return threads.find(t => t.questions.some(p => p.id === questionId));
 }
 
-/** Get the route id for a thread. Targets the oldest open poll with at least
- *  one not-yet-responded question (matches the per-question gold-outline
- *  rule); falls back to the newest poll when nothing is awaiting. */
+/** Route id for a thread — the root poll's short_id (or the root question id
+ *  when the root poll has no short_id). Used as the path param in
+ *  `/t/<threadRouteId>`. Phase A: thread short_id is derived from the root
+ *  poll; Phase B will mint a real `threads.short_id`. */
 export function getThreadRouteId(thread: Thread): string {
+  const rootPoll = thread.polls.find(p => p.id === thread.rootPollId) ?? thread.polls[0];
+  return rootPoll?.short_id || thread.rootQuestionId;
+}
+
+/** Walk up `poll.follow_up_to` via the in-memory accessible-polls cache to
+ *  find the thread root and return its route id. Falls back to `poll` itself
+ *  when no ancestors are cached — degraded but always returns a usable id.
+ *  Short-circuits the cache walk when `poll` already IS the root. */
+export function resolveThreadRootRouteId(poll: Poll): string {
+  if (!poll.follow_up_to) return poll.short_id || poll.questions[0]?.id || poll.id;
+  const accessible = getCachedAccessiblePolls() ?? [];
+  const byPoll = buildPollMap([poll, ...accessible]);
+  return findThreadRootRouteId(poll, (mid) => byPoll.get(mid) ?? null);
+}
+
+/** Build `/t/<root>?p=<pollShort>` for `poll` inside its thread — the
+ *  canonical "navigate to this poll's thread with this poll expanded" URL. */
+export function getThreadHrefForPoll(poll: Poll): string {
+  const pollShortId = poll.short_id || poll.questions[0]?.id || poll.id;
+  const rootRouteId = resolveThreadRootRouteId(poll);
+  return `/t/${rootRouteId}?${POLL_QUERY_PARAM}=${pollShortId}`;
+}
+
+/** Build the URL for a thread.
+ *
+ * - `/t/<root>?p=<target>` when the user has awaiting work — the poll is
+ *   auto-expanded and scrolled-to on landing.
+ * - `/t/<root>` when nothing is awaiting — the page scrolls to bottom (draft
+ *   form area), inviting the user to start a new poll.
+ *
+ * Replaces the old `/p/<target>?thread=1` URL form. */
+export function getThreadHref(thread: Thread): string {
+  const rootRouteId = getThreadRouteId(thread);
+  if (thread.unvotedCount === 0) {
+    return `/t/${rootRouteId}`;
+  }
   const target = thread.targetedPoll;
-  return target.short_id || target.questions[0]?.id || thread.rootQuestionId;
+  const targetRouteId = target.short_id || target.questions[0]?.id || thread.rootQuestionId;
+  return `/t/${rootRouteId}?${POLL_QUERY_PARAM}=${targetRouteId}`;
 }
 
 /**

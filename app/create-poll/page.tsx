@@ -30,7 +30,7 @@ import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
-import { findThreadRootRouteId } from "@/lib/threadUtils";
+import { getThreadHrefForPoll, resolveThreadRootRouteId } from "@/lib/threadUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
 import { cachePoll, getCachedAccessiblePolls, getCachedQuestionById, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
@@ -1187,11 +1187,11 @@ export function CreateQuestionContent() {
       const creatorSecret = generateCreatorSecret();
 
       // Implicit follow-up: pick up the thread's latest question id from
-      // <body> when submitting from a thread page. Skip when on /p (empty
+      // <body> when submitting from a thread page. Skip when on /t (empty
       // placeholder) — by construction the user is starting a new thread,
       // and the body attribute can be stale (the thread route's cleanup
       // is a useEffect return that React/HMR/view-transitions can delay).
-      const onEmptyThreadPath = typeof window !== 'undefined' && /^\/p\/?$/.test(window.location.pathname);
+      const onEmptyThreadPath = typeof window !== 'undefined' && /^\/t\/?$/.test(window.location.pathname);
       const effectiveFollowUpTo = followUpTo
         ?? (!onEmptyThreadPath && typeof document !== 'undefined'
           ? document.body.getAttribute(THREAD_LATEST_QUESTION_ID_ATTR)
@@ -1211,7 +1211,7 @@ export function CreateQuestionContent() {
       // title), use that as the wrapper title. Otherwise send null and let
       // the server auto-generate from question categories + poll context.
       // The standalone wrapper-title input was removed when the form moved
-      // inline; users can override the title later via /p/<id>/edit-title.
+      // inline; users can override the title later via /t/<id>/edit-title.
       const onlyDraft = effectiveDrafts.length === 1 ? effectiveDrafts[0] : null;
       const wrapperTitle = onlyDraft && !onlyDraft.isAutoTitle ? onlyDraft.title.trim() : null;
 
@@ -1224,14 +1224,12 @@ export function CreateQuestionContent() {
         try {
           const existing = await apiFindDuplicateQuestion(dedupTitle, effectiveFollowUpTo);
           if (existing) {
-            const lookup = pollLookup();
-            const wrapper = existing.poll_id ? lookup(existing.poll_id) : null;
+            const wrapper = existing.poll_id ? pollLookup()(existing.poll_id) : null;
             const shortId = wrapper?.short_id || existing.id;
-            const rootRouteId = wrapper
-              ? findThreadRootRouteId(wrapper, lookup)
-              : shortId;
+            const rootRouteId = wrapper ? resolveThreadRootRouteId(wrapper) : shortId;
             questionBackTarget.set(shortId, rootRouteId);
-            router.replace(`/p/${shortId}`);
+            const href = wrapper ? getThreadHrefForPoll(wrapper) : `/t/${shortId}`;
+            router.replace(href);
             return;
           }
         } catch {
@@ -1239,7 +1237,7 @@ export function CreateQuestionContent() {
         }
       }
 
-      const onEmptyThread = typeof window !== 'undefined' && /^\/p\/?$/.test(window.location.pathname);
+      const onEmptyThread = typeof window !== 'undefined' && /^\/t\/?$/.test(window.location.pathname);
 
       // Build a placeholder Poll from the draft data so the thread can render
       // a real card in the destination position immediately, before the API
@@ -1273,7 +1271,7 @@ export function CreateQuestionContent() {
         creatorName: creatorName.trim() || null,
       });
 
-      // For new-root submissions on /p/ (the empty placeholder), the
+      // For new-root submissions on /t/ (the empty placeholder), the
       // placeholder card needs to be visible. The placeholder route doesn't
       // render a poll list, so we still navigate first; the destination
       // ThreadContent mounts with the placeholder in cache and FLIP-animates.
@@ -1308,9 +1306,9 @@ export function CreateQuestionContent() {
         setDrafts([]);
       });
 
-      // Stay on /p until the API resolves on empty-thread submits — the
+      // Stay on /t until the API resolves on empty-thread submits — the
       // placeholder id (`pending-...`) doesn't resolve as a UUID/short_id,
-      // so redirecting eagerly would render "Poll Not Found" and lose the
+      // so redirecting eagerly would render "Thread Not Found" and lose the
       // draft-poll-portal that hosts restored drafts + error on failure.
       // Success redirects to the real short_id below.
       let createdPoll: Poll;
@@ -1391,11 +1389,11 @@ export function CreateQuestionContent() {
       );
 
       if (onEmptyThread) {
-        // Land on the real thread URL. ThreadContent's threadId will change,
-        // but the cache is hot so re-mount renders instantly.
+        // Land on the real thread URL with the new poll expanded. The cache is
+        // hot from the just-completed POLL_HYDRATED so re-mount is instant.
         const redirectId = createdPoll.short_id ?? createdPoll.id;
-        questionBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollLookup()));
-        router.replace(`/p/${redirectId}`);
+        questionBackTarget.set(redirectId, resolveThreadRootRouteId(createdPoll));
+        router.replace(getThreadHrefForPoll(createdPoll));
       }
     } catch (error) {
       console.error("Unexpected error:", error);
@@ -1942,14 +1940,14 @@ export function CreateQuestionContent() {
   );
 }
 
-// Redirect /create-poll to /p/ where the always-visible draft card lives.
+// Redirect /create-poll to /t/ where the always-visible draft card lives.
 // Forwards any duplicate / followUpTo / voteFromSuggestion params so the
 // inline form can pre-fill from the original entry-point.
 export default function CreateQuestionRedirect() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const qs = params.toString();
-    window.location.replace(`/p/${qs ? `?${qs}` : ''}`);
+    window.location.replace(`/t/${qs ? `?${qs}` : ''}`);
   }, []);
 
   return null;

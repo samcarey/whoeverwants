@@ -70,7 +70,10 @@ export default function VoteOnItModal({ isOpen, questionId, questionTitle, sugge
 
       const subQuestion = poll.questions[0];
       recordQuestionCreation(subQuestion.id, creatorSecret);
-      // Phase 5b: short_id lives on the poll wrapper.
+      // The new poll is a follow-up to questionId — its thread root may
+      // differ. The /p/ legacy redirect resolves the chain server-side, so
+      // navigating through it lands the user on the right thread without
+      // duplicating the chain-walk here.
       const shortId = poll.short_id || subQuestion.id;
       router.push(`/p/${shortId}`);
       onClose();
