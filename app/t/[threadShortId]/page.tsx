@@ -1154,11 +1154,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // surrounding content fill in first. Batches of N groups per idle tick keep
   // each setState's re-render bounded; once all are mounted, no more setState
   // fires, so subsequent scroll is steady. For very long threads this still
-  // loads everything (memory grows linearly with thread size) — a real
-  // bounded-memory window would need each card extracted into a
-  // React.memo'd component (TODO when threads hit ~hundreds of polls;
-  // see CLAUDE.md "Thread-Page Layout Stability"). The progressive fill
-  // matches the "polls get loaded in around it" UX from the spec.
+  // loads everything (memory grows linearly with thread size); cards are
+  // already extracted into a React.memo'd ThreadCardItem, so a future
+  // bounded-memory scroll-window can swap this fill for IO-driven
+  // mount/unmount when threads hit hundreds of polls. See CLAUDE.md
+  // "Thread-Page Layout Stability".
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (groupedThreadQuestions.length === 0) return;
