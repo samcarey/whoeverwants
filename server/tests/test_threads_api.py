@@ -239,3 +239,64 @@ class TestBrowserIdMiddleware:
         assert resp.status_code == 404
         echoed = resp.headers.get("X-Browser-Id") or resp.headers.get("x-browser-id")
         assert echoed and UUID_RE.match(echoed)
+
+
+class TestThreadShortIdKeyspace:
+    """Phase B.4: every PollResponse carries thread_id + thread_short_id, and
+    fresh threads.short_ids are minted from a separate `~`-prefixed keyspace
+    that's collision-free with polls.short_id."""
+
+    def test_create_poll_returns_thread_id_and_thread_short_id(
+        self, client, creator_secret,
+    ):
+        poll = _create_poll(client, creator_secret)
+        assert poll.get("thread_id") is not None
+        assert UUID_RE.match(poll["thread_id"])
+        # Fresh threads minted post-migration-101 are prefixed with `~`,
+        # which guarantees no collision with the base62-encoded poll
+        # short_ids (`0-9 A-Z a-z`).
+        assert poll.get("thread_short_id") is not None
+        assert poll["thread_short_id"].startswith("~")
+
+    def test_followup_inherits_parent_thread_short_id(
+        self, client, creator_secret,
+    ):
+        root = _create_poll(client, creator_secret)
+        child = _create_followup(client, creator_secret, root["questions"][0]["id"])
+        assert root["thread_id"] == child["thread_id"]
+        assert root["thread_short_id"] == child["thread_short_id"]
+
+    def test_get_poll_returns_thread_short_id(self, client, creator_secret):
+        poll = _create_poll(client, creator_secret)
+        resp = client.get(f"/api/polls/{poll['short_id']}")
+        assert resp.status_code == 200
+        assert resp.json().get("thread_short_id") == poll["thread_short_id"]
+
+    def test_resolves_by_thread_short_id(self, client, creator_secret):
+        """Phase B.4: /t/<routeId> with the new `~`-prefixed thread short_id
+        resolves the same way as the legacy root-poll-short-id form."""
+        root = _create_poll(client, creator_secret)
+        child = _create_followup(client, creator_secret, root["questions"][0]["id"])
+        thread_short_id = root["thread_short_id"]
+        resp = client.get(f"/api/threads/by-route-id/{thread_short_id}")
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        assert ids == {root["id"], child["id"]}
+
+    def test_resolves_by_thread_id_uuid(self, client, creator_secret):
+        root = _create_poll(client, creator_secret)
+        resp = client.get(f"/api/threads/by-route-id/{root['thread_id']}")
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        assert root["id"] in ids
+
+    def test_my_threads_carries_thread_short_id(self, client, creator_secret):
+        poll = _create_poll(client, creator_secret)
+        resp = client.post(
+            "/api/threads/mine",
+            json={"accessible_question_ids": [poll["questions"][0]["id"]]},
+        )
+        assert resp.status_code == 200
+        polls = resp.json()
+        assert polls[0]["thread_short_id"] == poll["thread_short_id"]
+        assert polls[0]["thread_id"] == poll["thread_id"]

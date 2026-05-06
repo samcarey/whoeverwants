@@ -10,12 +10,9 @@
  */
 
 import { useEffect, useState } from "react";
-import type { Question } from "./types";
 import { buildThreadFromPollDown, buildThreadSyncFromCache, type Thread } from "./threadUtils";
-import { apiGetQuestionById, apiGetQuestionByShortId, apiGetThreadByRouteId } from "./api";
+import { apiGetThreadByRouteId } from "./api";
 import { addAccessibleQuestionId } from "./browserQuestionAccess";
-import { getCachedQuestionById, getCachedQuestionByShortId } from "./questionCache";
-import { isUuidLike } from "./questionId";
 import { loadVotedQuestions } from "./votedQuestionsStorage";
 import { usePageReady } from "./usePageReady";
 
@@ -51,35 +48,20 @@ export function useThread(threadId: string): UseThreadResult {
         setLoading(true);
         setError(false);
 
-        let anchorQuestion: Question;
-        try {
-          const cached = isUuidLike(threadId)
-            ? getCachedQuestionById(threadId)
-            : getCachedQuestionByShortId(threadId);
-          if (cached) {
-            anchorQuestion = cached;
-          } else if (isUuidLike(threadId)) {
-            anchorQuestion = await apiGetQuestionById(threadId);
-          } else {
-            anchorQuestion = await apiGetQuestionByShortId(threadId);
-          }
-          addAccessibleQuestionId(anchorQuestion.id);
-        } catch {
-          if (!cancelled) setError(true);
-          return;
-        }
-
-        // Phase B.3: one round-trip — server walks polls.thread_id and
-        // returns every poll in this thread.
+        // Phase B.3+: a single thread endpoint resolves any route id form
+        // (threads.short_id, threads.id, polls.short_id, polls.id) to the
+        // full poll list. The chain root is the poll with `follow_up_to ==
+        // null`. No separate anchor-question lookup needed.
         const polls = await apiGetThreadByRouteId(threadId);
+        if (cancelled) return;
+        if (polls.length === 0) { setError(true); return; }
         for (const mp of polls) {
           for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
         }
 
+        const root = polls.find(mp => !mp.follow_up_to) ?? polls[0];
         const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
-        const anchorPollId = anchorQuestion.poll_id;
-        if (!anchorPollId) { if (!cancelled) setError(true); return; }
-        const found = buildThreadFromPollDown(anchorPollId, polls, votedQuestionIds, abstainedQuestionIds);
+        const found = buildThreadFromPollDown(root.id, polls, votedQuestionIds, abstainedQuestionIds);
         if (cancelled) return;
         if (!found) { setError(true); return; }
         setThread(found);

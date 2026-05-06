@@ -308,6 +308,14 @@ class PollResponse(BaseModel):
     title: str
     created_at: str
     updated_at: str
+    # Phase B.4: every poll exposes its thread's id and short_id so the FE
+    # can build /t/<thread.short_id>?p=<poll.short_id> URLs without walking
+    # follow_up_to chains client-side. `thread_id` is NOT NULL post-migration
+    # 100; `thread_short_id` is NOT NULL post-migration 101 (trigger mints
+    # one on every insert) but typed as Optional for resilience against
+    # mid-deploy races where a thread row briefly exists without a short_id.
+    thread_id: str | None = None
+    thread_short_id: str | None = None
     # Poll-level results-display + ranked-choice settings (migration 098).
     min_responses: int | None = None
     show_preliminary_results: bool = True

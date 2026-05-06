@@ -194,6 +194,12 @@ export function toPoll(data: any): Poll {
   return {
     id: data.id,
     short_id: data.short_id ?? null,
+    // Phase B.4: every poll carries its thread's id + short_id so the FE can
+    // build /t/<thread.short_id>?p=<poll.short_id> URLs without walking
+    // follow_up_to chains. Tolerates absence (synthesized placeholder polls
+    // and pre-Phase-B.4 cached polls don't have these fields).
+    thread_id: data.thread_id ?? null,
+    thread_short_id: data.thread_short_id ?? null,
     creator_secret: data.creator_secret ?? null,
     creator_name: data.creator_name ?? null,
     response_deadline: data.response_deadline ?? null,

@@ -128,6 +128,15 @@ export interface RankedChoiceRound {
 export interface Poll {
   id: string;
   short_id?: string | null;
+  // Phase B.4: every poll carries its thread's id + short_id so the FE can
+  // build /t/<thread.short_id>?p=<poll.short_id> URLs without walking
+  // follow_up_to chains. Both are nullable for resilience: synthesized
+  // placeholder polls don't have them, and pre-Phase-B.4 cached polls
+  // (still in-memory across a deploy) won't either. Use them when present
+  // and fall through to the legacy walk otherwise — see
+  // resolveThreadRootRouteId in lib/threadUtils.ts.
+  thread_id?: string | null;
+  thread_short_id?: string | null;
   creator_secret?: string | null;
   creator_name?: string | null;
   response_deadline?: string | null;

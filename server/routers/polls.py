@@ -36,6 +36,18 @@ from services.questions import (
 router = APIRouter(prefix="/api/polls", tags=["polls"])
 
 
+# Phase B.4: every SELECT that feeds `_row_to_poll` must surface
+# `threads.short_id` as `thread_short_id` so the FE can build
+# `/t/<thread.short_id>` URLs without a second round-trip. Centralizing the
+# JOIN here keeps the SELECTs in routers/polls.py and services/threads.py
+# in lockstep — adding another field from the threads table only requires
+# extending this string.
+_SELECT_POLLS_WITH_THREAD = (
+    "SELECT polls.*, t.short_id AS thread_short_id "
+    "FROM polls LEFT JOIN threads t ON polls.thread_id = t.id"
+)
+
+
 def _categories_for_title(questions: list[CreateQuestionRequest]) -> list[str]:
     return [sp.category or sp.question_type.value for sp in questions]
 
@@ -131,6 +143,25 @@ def _resolve_or_create_thread_id(conn, parent_poll_id: str | None) -> str:
     return str(row["id"])
 
 
+def _attach_thread_short_id(conn, row) -> dict:
+    """Enrich a polls row dict with `thread_short_id` (Phase B.4).
+
+    INSERT/UPDATE `RETURNING *` paths only see polls.* columns, not the
+    joined threads.short_id surfaced by `_SELECT_POLLS_WITH_THREAD`. After a
+    write, look up threads.short_id by thread_id so the resulting row dict
+    matches the SELECT shape `_row_to_poll` expects.
+    """
+    out = dict(row)
+    if out.get("thread_id") and not out.get("thread_short_id"):
+        t = conn.execute(
+            "SELECT short_id FROM threads WHERE id = %(id)s",
+            {"id": out["thread_id"]},
+        ).fetchone()
+        if t:
+            out["thread_short_id"] = t.get("short_id")
+    return out
+
+
 def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
     # follow_up_to in the request is a *question id* (matching the legacy
     # single-question create API). Resolve to the parent's poll_id for the
@@ -140,7 +171,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
     parent_followup_poll_id = _resolve_parent_poll_id(conn, req.follow_up_to)
     thread_id = _resolve_or_create_thread_id(conn, parent_followup_poll_id)
     explicit_title = req.title if req.title is not None else req.thread_title
-    return conn.execute(
+    row = conn.execute(
         """
         INSERT INTO polls (
             creator_secret, creator_name, response_deadline,
@@ -187,6 +218,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
             "now": now,
         },
     ).fetchone()
+    return _attach_thread_short_id(conn, row)
 
 
 def _insert_question(
@@ -289,6 +321,8 @@ def _row_to_poll(
     return PollResponse(
         id=str(row["id"]),
         short_id=row.get("short_id"),
+        thread_id=str(row["thread_id"]) if row.get("thread_id") else None,
+        thread_short_id=row.get("thread_short_id"),
         creator_secret=row.get("creator_secret"),
         creator_name=row.get("creator_name"),
         response_deadline=_iso_or_none(row.get("response_deadline")),
@@ -391,7 +425,7 @@ def create_poll(req: CreatePollRequest):
 def get_poll_by_id(poll_id: str):
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM polls WHERE id = %(id)s",
+            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         if not row:
@@ -405,7 +439,7 @@ def get_poll_by_id(poll_id: str):
 def get_poll(short_id: str):
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM polls WHERE short_id = %(short_id)s",
+            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.short_id = %(short_id)s",
             {"short_id": short_id},
         ).fetchone()
         if not row:
@@ -477,7 +511,7 @@ def close_poll(poll_id: str, req: CloseQuestionRequest):
                 _finalize_suggestion_options(conn, str(sp["id"]), now)
 
         poll_row = conn.execute(
-            "SELECT * FROM polls WHERE id = %(id)s",
+            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
@@ -504,7 +538,7 @@ def reopen_poll(poll_id: str, req: ReopenQuestionRequest):
             {"poll_id": poll_id, "now": now},
         )
         poll_row = conn.execute(
-            "SELECT * FROM polls WHERE id = %(id)s",
+            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
@@ -560,7 +594,7 @@ def cutoff_poll_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
             _finalize_suggestion_options(conn, str(row["id"]), now)
 
         poll_row = conn.execute(
-            "SELECT * FROM polls WHERE id = %(id)s",
+            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
@@ -715,7 +749,7 @@ def cutoff_poll_availability(poll_id: str, req: CutoffSuggestionsRequest):
             _finalize_time_slots(conn, str(row["id"]), now)
 
         poll_row = conn.execute(
-            "SELECT * FROM polls WHERE id = %(id)s",
+            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
@@ -749,6 +783,7 @@ def update_poll_thread_title(poll_id: str, req: UpdateThreadTitleRequest):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Poll not found")
+        row = _attach_thread_short_id(conn, row)
         question_rows = _fetch_questions(conn, poll_id)
         voter_names, anonymous_count = _compute_poll_voter_data(conn, poll_id)
     return _row_to_poll(row, question_rows, voter_names, anonymous_count)

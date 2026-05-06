@@ -748,7 +748,49 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Poll System
 
-> **Phase B.3 of the thread-routing redesign shipped (this branch).**
+> **Phase B.4 of the thread-routing redesign shipped (this branch).**
+> Every `PollResponse` now carries `thread_id` (uuid) and `thread_short_id`
+> so the FE builds `/t/<thread.short_id>?p=<poll.short_id>` URLs in a
+> single field read — no follow_up_to chain walking, no extra round-trips.
+> Migration 101 mints fresh `threads.short_id`s from a separate
+> `~`-prefixed keyspace via the `generate_thread_short_id` trigger; the
+> `~` is URL-safe (RFC 3986 unreserved) and not in the base62 alphabet,
+> so it's collision-free with every existing `polls.short_id` (including
+> the values B.1 backfilled into `threads.short_id` for legacy chain
+> roots). Threads created in the B.1→B.4 window with `short_id = NULL`
+> are backfilled with `~`-prefixed values by the same migration.
+>
+> FE rewiring: `lib/types.ts: Poll` gains `thread_id` + `thread_short_id`
+> (both `string | null` for resilience against synthesized placeholder
+> polls and pre-B.4 cached polls left in memory across a deploy);
+> `lib/threadUtils.ts` (`getThreadRouteId`, `resolveThreadRootRouteId`,
+> `findThreadRootRouteId`, `buildThreadSyncFromCache`) all prefer
+> `thread_short_id` and fall through to the legacy walk when it's
+> absent. `lib/useThread.ts` and `app/t/[threadShortId]/page.tsx:
+> ThreadPageInner` skip the per-question and per-poll resolution paths
+> entirely — they call `apiGetThreadByRouteId(threadId)` (which the
+> server resolves against `threads.short_id` first), find the chain root
+> in the returned poll list, and warm the accessible-questions cache
+> from there. The per-poll `apiGetPollByShortId` fallback in the thread
+> page remains as a last-ditch safety net for very old URL forms during
+> a partial rollout.
+>
+> Server side: `_SELECT_POLLS_WITH_THREAD` in `routers/polls.py` and the
+> mirrored JOIN in `services/threads.py: polls_for_poll_ids` are the
+> single source of truth for "every polls SELECT must surface
+> `thread_short_id`". `_attach_thread_short_id(conn, row)` enriches
+> `RETURNING *` rows from INSERT/UPDATE paths with the same field.
+> Adding another threads-table field to `PollResponse` requires
+> extending only those two SELECT-prefix strings + the helper — every
+> read path picks it up automatically.
+>
+> Pitfall: `BIGSERIAL` populates existing rows on `ALTER TABLE ADD
+> COLUMN` (Postgres 10+) so the migration's backfill UPDATE works. If
+> the threads table is renamed/dropped/recreated in a future migration,
+> manually preserve `sequential_id` so the `~`-encoded short_ids stay
+> stable — the URL is the public ID for an entire thread.
+>
+> **Phase B.3 (#263) is the previous step.**
 > Two new endpoints — `POST /api/threads/mine` and
 > `GET /api/threads/by-route-id/{routeId}` — collapse the legacy three-step
 > bootstrap (`discoverRelatedQuestions` + `apiGetAccessibleQuestions` +
@@ -1603,7 +1645,7 @@ Submitting a draft used to navigate to `/p/<newPollShortId>`. The user described
 ### API Development Pitfalls
 
 - **`server/services/questions.py` is the home for non-route helpers.** Anything that's a free function operating on a DB connection (`_fetch_question_full`, `_finalize_*`, `_submit_vote_to_question`, `_edit_vote_on_question`, `_row_to_question`, `_compute_results`, etc.) lives in `services/questions.py` and is imported by both `routers/questions.py` and `routers/polls.py`. Don't reach across routers (`from routers.questions import _foo` from a sibling router) — that pattern was retired when `services/` was introduced. Underscore-prefixed names are kept as a "low-stability internal API during poll Phase X churn" signal; OK to drop the underscore once the surface stabilizes.
-- **`server/services/threads.py` is the equivalent home for thread-aggregation helpers (Phase B.3).** `polls_for_poll_ids(conn, poll_ids, *, include_results)` builds the `PollResponse[]` payload (with inline results, voter aggregates, response counts) from a list of poll_ids. Both `/api/questions/accessible` and `/api/threads/*` use it. `thread_ids_for_question_ids` and `poll_ids_for_thread_ids` are thin SQL wrappers; `resolve_thread_id_from_route_id(conn, route_id)` does the four-form lookup (threads.short_id → threads.id → polls.short_id → polls.id) — extend it when Phase B.4 starts minting fresh `threads.short_id`s.
+- **`server/services/threads.py` is the equivalent home for thread-aggregation helpers (Phase B.3).** `polls_for_poll_ids(conn, poll_ids, *, include_results)` builds the `PollResponse[]` payload (with inline results, voter aggregates, response counts) from a list of poll_ids. Both `/api/questions/accessible` and `/api/threads/*` use it. `thread_ids_for_question_ids` and `poll_ids_for_thread_ids` are thin SQL wrappers; `resolve_thread_id_from_route_id(conn, route_id)` does the four-form lookup (threads.short_id → threads.id → polls.short_id → polls.id). Phase B.4 introduced `~`-prefixed thread short_ids that resolve via the first lookup; the legacy `/t/<root-poll-short-id>` form still resolves via the same first lookup because B.1 backfilled `threads.short_id` from the root poll's short_id. The polls.short_id / polls.id fallbacks remain only for redirects from legacy URL paths.
 - **`BrowserIdMiddleware` reads/mints a `X-Browser-Id` header per request (Phase B.3).** A header (not cookie) because the FE talks same-origin to the API in prod (Next.js rewrite) and direct in dev/CI; cookies would require credentialed CORS which doesn't compose with `allow_origins=["*"]`. The id is always echoed on the response (even on 4xx/5xx) so the FE can adopt server-issued ids on the very first request. `request.state.browser_id` is populated for every request; **Phase B.3 only captures, doesn't enforce** — Phase C will add `thread_members` and start gating visibility on this id. Reading/setting from a router: `getattr(request.state, "browser_id", None)`.
 - **FE `lib/browserIdentity.ts` is the canonical browser-id storage.** `getBrowserId()` returns the localStorage value or null. `adoptServerBrowserId(value)` is called by `_internal.ts: fetchWithBase` after every fetch — it's a first-write-wins merger so a compromised middlebox can't rewrite the id mid-session (mismatch logs a warning and keeps the existing id). Don't roll your own UUID — let the server mint and adopt the response.
 - **`apiGetMyThreads(accessibleQuestionIds)` and `apiGetThreadByRouteId(routeId)` (in `lib/api/threads.ts`) replace the legacy `discoverRelatedQuestions + apiGetAccessibleQuestions` pair.** Both warm `cachePoll` and the per-question results cache so subsequent `apiGetQuestionById`/`apiGetQuestionResults` calls hit warm cache. Use these for any new "give me this thread" flow; don't reach for `apiGetAccessibleQuestions` in new code (it's preserved for the legacy compatibility layer). The drop-in `getMyThreads()` wrapper in `lib/simpleQuestionQueries.ts` is what `app/page.tsx`, `app/t/[threadShortId]/page.tsx`, and `lib/useThread.ts` consume — it adds in-flight coalescing (StrictMode-safe), accessible-id persistence (the server-discovered question_ids get added to localStorage subject to the forgotten-list filter), and accessible-cache invalidation when the set grew.
