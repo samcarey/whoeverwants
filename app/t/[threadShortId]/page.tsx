@@ -1322,7 +1322,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
             voter_names: wrapper.voter_names,
             anonymous_count: wrapper.anonymous_count,
             questions: wrapper.questions,
-            prephase_deadline: wrapper.prephase_deadline ?? null,
+            prephase_deadline: wrapper.prephase_deadline,
             updated_at: wrapper.updated_at,
           }),
         );
