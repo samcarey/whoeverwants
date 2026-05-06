@@ -249,7 +249,7 @@ function appendForSuffix(base: string, forField: string): string {
  */
 export function synthesizePlaceholderPoll(
   drafts: QuestionDraft[],
-  args: { wrapperTitle: string | null; responseDeadline: string | null; followUpTo: string | null; creatorName: string | null },
+  args: { wrapperTitle: string | null; responseDeadline: string | null; followUpTo: string | null; creatorName: string | null; details?: string | null },
 ): Poll {
   const now = new Date().toISOString();
   const pollId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -292,7 +292,7 @@ export function synthesizePlaceholderPoll(
     follow_up_to: args.followUpTo,
     thread_title: null,
     context: null,
-    details: null,
+    details: args.details ?? null,
     title: titleForAllQuestions,
     created_at: now,
     updated_at: now,
