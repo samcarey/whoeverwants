@@ -28,6 +28,7 @@ from services.questions import (
     _row_to_question,
     _row_to_vote,
 )
+from services.threads import polls_for_poll_ids
 
 router = APIRouter(prefix="/api/questions", tags=["questions"])
 
@@ -206,19 +207,14 @@ def get_accessible_questions(req: AccessibleQuestionsRequest):
     populated on each question using the same gating as the per-question /results
     endpoint (closed questions always; open questions when show_preliminary_results
     is true and min_responses is unset-or-met).
-    """
-    # Local import keeps this file from growing a circular dep with polls.py.
-    from routers.polls import (
-        _compute_poll_voter_data,
-        _row_to_poll,
-    )
 
+    Phase B.3: aggregation logic moved to `services.threads.polls_for_poll_ids`
+    so `/api/threads/*` can build identical payloads from a thread-id-driven
+    poll set. This endpoint stays as a same-shape compatibility surface.
+    """
     if not req.question_ids:
         return []
-    now = datetime.now(timezone.utc)
     with get_db() as conn:
-        # Resolve requested question_ids → unique poll_ids. Questions without a
-        # poll_id are skipped (post-Phase-4 there shouldn't be any).
         mp_id_rows = conn.execute(
             """SELECT DISTINCT poll_id
                  FROM questions
@@ -226,145 +222,7 @@ def get_accessible_questions(req: AccessibleQuestionsRequest):
             {"ids": req.question_ids},
         ).fetchall()
         poll_ids = [str(r["poll_id"]) for r in mp_id_rows]
-        if not poll_ids:
-            return []
-
-        # Fetch every poll wrapper.
-        poll_rows = conn.execute(
-            """SELECT * FROM polls
-                WHERE id = ANY(%(ids)s)
-                ORDER BY created_at DESC""",
-            {"ids": poll_ids},
-        ).fetchall()
-
-        # Fetch every question of these polls in one query, preserving
-        # creator-intended order.
-        question_rows = conn.execute(
-            """SELECT * FROM questions
-                WHERE poll_id = ANY(%(ids)s)
-                ORDER BY poll_id, question_index NULLS LAST, created_at""",
-            {"ids": poll_ids},
-        ).fetchall()
-        questions_by_mp: dict[str, list] = {}
-        for sp in question_rows:
-            questions_by_mp.setdefault(str(sp["poll_id"]), []).append(sp)
-        all_question_ids = [str(sp["id"]) for sp in question_rows]
-
-        # Inline-results gating mirrors the previous per-question behavior. A
-        # question's `is_closed` / `response_deadline` come from its wrapper.
-        wrappers_by_id = {str(mp["id"]): mp for mp in poll_rows}
-        closed_question_ids: list[str] = []
-        open_question_ids: list[str] = []
-        for sp in question_rows:
-            mp = wrappers_by_id.get(str(sp["poll_id"]))
-            is_closed = bool(mp and mp.get("is_closed"))
-            deadline = mp.get("response_deadline") if mp else None
-            deadline_passed = bool(deadline and deadline <= now)
-            (closed_question_ids if (is_closed or deadline_passed) else open_question_ids).append(str(sp["id"]))
-
-        votes_by_question: dict[str, list] = {pid: [] for pid in closed_question_ids}
-        if closed_question_ids:
-            vote_rows = conn.execute(
-                "SELECT * FROM votes WHERE question_id = ANY(%(question_ids)s)",
-                {"question_ids": closed_question_ids},
-            ).fetchall()
-            for v in vote_rows:
-                pid = str(v["question_id"])
-                if pid in votes_by_question:
-                    votes_by_question[pid].append(v)
-
-        response_counts: dict[str, int] = {}
-        if open_question_ids:
-            count_rows = conn.execute(
-                "SELECT question_id, COUNT(*) as cnt FROM votes WHERE question_id = ANY(%(question_ids)s) GROUP BY question_id",
-                {"question_ids": open_question_ids},
-            ).fetchall()
-            for cr in count_rows:
-                response_counts[str(cr["question_id"])] = cr["cnt"]
-
-        question_rows_by_id = {str(sp["id"]): sp for sp in question_rows}
-        preliminary_question_ids: list[str] = []
-        for pid in open_question_ids:
-            sp = question_rows_by_id[pid]
-            mp = wrappers_by_id.get(str(sp["poll_id"]))
-            # Migration 098: these settings live on the poll wrapper now.
-            min_resp = mp.get("min_responses") if mp else None
-            show_prelim = mp.get("show_preliminary_results", True) if mp else True
-            if show_prelim and (min_resp is None or response_counts.get(pid, 0) >= min_resp):
-                preliminary_question_ids.append(pid)
-        if preliminary_question_ids:
-            prelim_vote_rows = conn.execute(
-                "SELECT * FROM votes WHERE question_id = ANY(%(question_ids)s)",
-                {"question_ids": preliminary_question_ids},
-            ).fetchall()
-            for v in prelim_vote_rows:
-                pid = str(v["question_id"])
-                votes_by_question.setdefault(pid, []).append(v)
-
-        # Per-question voter_names (kept on QuestionResponse for per-card respondent
-        # rows). Reuse vote rows we already fetched to avoid a second pass.
-        voter_names_by_question: dict[str, list[str]] = {}
-        for pid, votes in votes_by_question.items():
-            names = sorted({
-                v["voter_name"] for v in votes
-                if v.get("voter_name") and v["voter_name"] != ""
-            })
-            if names:
-                voter_names_by_question[pid] = names
-        remaining_question_ids = [pid for pid in all_question_ids if pid not in votes_by_question]
-        if remaining_question_ids:
-            vn_rows = conn.execute(
-                """SELECT question_id, array_agg(DISTINCT voter_name ORDER BY voter_name) as names
-                     FROM votes
-                    WHERE question_id = ANY(%(question_ids)s)
-                      AND voter_name IS NOT NULL AND voter_name != ''
-                    GROUP BY question_id""",
-                {"question_ids": remaining_question_ids},
-            ).fetchall()
-            for vn in vn_rows:
-                voter_names_by_question[str(vn["question_id"])] = vn["names"]
-
-        # Poll-level voter aggregates. _compute_poll_voter_data
-        # issues one query per poll; for the typical user with <100
-        # accessible polls this is fine, and matching the existing
-        # /api/polls/by-id/{id} behavior keeps the aggregation logic
-        # in one place.
-        voter_data_by_mp: dict[str, tuple[list[str], int]] = {}
-        for mp_id in poll_ids:
-            voter_data_by_mp[mp_id] = _compute_poll_voter_data(conn, mp_id)
-
-    # Build the response. Inline results / response_count / per-question
-    # voter_names are attached to each QuestionResponse after _row_to_poll
-    # builds it.
-    responses: list[PollResponse] = []
-    for mp_row in poll_rows:
-        mp_id = str(mp_row["id"])
-        sp_rows = questions_by_mp.get(mp_id, [])
-        voter_names, anon_count = voter_data_by_mp.get(mp_id, ([], 0))
-        mp_resp = _row_to_poll(mp_row, sp_rows, voter_names, anon_count)
-        if req.include_results:
-            for sp_resp in mp_resp.questions:
-                pid = sp_resp.id
-                if pid in votes_by_question:
-                    sp_row = question_rows_by_id[pid]
-                    # _compute_results reads wrapper-level fields off the row
-                    # (response_deadline, close_reason, suggestion_deadline)
-                    # so splice them in from the wrapper.
-                    enriched = dict(sp_row)
-                    enriched["response_deadline"] = mp_row.get("response_deadline")
-                    enriched["close_reason"] = mp_row.get("close_reason")
-                    enriched["is_closed"] = mp_row.get("is_closed", False)
-                    enriched["suggestion_deadline"] = mp_row.get("prephase_deadline")
-                    try:
-                        sp_resp.results = _compute_results(enriched, votes_by_question[pid])
-                    except Exception:
-                        logger.warning("Failed to compute results for question %s", pid, exc_info=True)
-                if pid in response_counts:
-                    sp_resp.response_count = response_counts[pid]
-                if pid in voter_names_by_question:
-                    sp_resp.voter_names = voter_names_by_question[pid]
-        responses.append(mp_resp)
-    return responses
+        return polls_for_poll_ids(conn, poll_ids, include_results=req.include_results)
 
 
 @router.post("/related", response_model=RelatedQuestionsResponse)

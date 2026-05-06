@@ -12,9 +12,7 @@
 import { useEffect, useState } from "react";
 import type { Question } from "./types";
 import { buildThreadFromPollDown, buildThreadSyncFromCache, type Thread } from "./threadUtils";
-import { getAccessiblePolls } from "./simpleQuestionQueries";
-import { discoverRelatedQuestions } from "./questionDiscovery";
-import { apiGetQuestionById, apiGetQuestionByShortId } from "./api";
+import { apiGetQuestionById, apiGetQuestionByShortId, apiGetThreadByRouteId } from "./api";
 import { addAccessibleQuestionId } from "./browserQuestionAccess";
 import { getCachedQuestionById, getCachedQuestionByShortId } from "./questionCache";
 import { isUuidLike } from "./questionId";
@@ -71,9 +69,12 @@ export function useThread(threadId: string): UseThreadResult {
           return;
         }
 
-        try { await discoverRelatedQuestions(); } catch {}
-        const polls = await getAccessiblePolls();
-        if (!polls) { if (!cancelled) setError(true); return; }
+        // Phase B.3: one round-trip — server walks polls.thread_id and
+        // returns every poll in this thread.
+        const polls = await apiGetThreadByRouteId(threadId);
+        for (const mp of polls) {
+          for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
+        }
 
         const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
         const anchorPollId = anchorQuestion.poll_id;

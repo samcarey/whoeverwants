@@ -8,6 +8,7 @@
 
 import type { Poll, Question, QuestionResults } from "@/lib/types";
 import { branchToSlug } from "@/lib/slug";
+import { adoptServerBrowserId, getBrowserId } from "@/lib/browserIdentity";
 
 // API URL resolution:
 // - NEXT_PUBLIC_API_URL overrides everything
@@ -34,7 +35,10 @@ export function getApiEndpoint(endpoint: string): string {
 
 export const API_BASE = getApiEndpoint('questions');
 export const POLL_BASE = getApiEndpoint('polls');
+export const THREAD_BASE = getApiEndpoint('threads');
 export const SEARCH_BASE = getApiEndpoint('search');
+
+const BROWSER_ID_HEADER = 'X-Browser-Id';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -45,13 +49,25 @@ export class ApiError extends Error {
 
 async function fetchWithBase<T>(base: string, path: string, options?: RequestInit): Promise<T> {
   const url = `${base}${path}`;
+  // Phase B.3: attach the browser_id (if known) on the way out, and adopt
+  // whatever value the server returns. The header round-trip is the FE↔BE
+  // identity handshake that Phase C will hang membership off of.
+  const browserId = getBrowserId();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string> | undefined),
+  };
+  if (browserId) headers[BROWSER_ID_HEADER] = browserId;
+
   const res = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   });
+
+  // Adopt the server-issued id BEFORE error-throwing — even 4xx/5xx
+  // responses carry the header, and capturing it on the very first request
+  // means subsequent retries already have an id.
+  adoptServerBrowserId(res.headers.get(BROWSER_ID_HEADER));
 
   if (!res.ok) {
     let detail = res.statusText;
@@ -73,6 +89,10 @@ export function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function pollFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return fetchWithBase<T>(POLL_BASE, path, options);
+}
+
+export function threadFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  return fetchWithBase<T>(THREAD_BASE, path, options);
 }
 
 /**

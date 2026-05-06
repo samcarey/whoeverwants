@@ -39,6 +39,11 @@ export type { ApiVote, PollVoteItem } from "./votes";
 export { apiGetQuestionResults } from "./results";
 
 export {
+  apiGetMyThreads,
+  apiGetThreadByRouteId,
+} from "./threads";
+
+export {
   apiSearchLocations,
   apiSearchRestaurants,
   apiGeocode,

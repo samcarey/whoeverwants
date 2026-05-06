@@ -2,16 +2,27 @@
 // No fingerprinting, no complex RLS - just localStorage question lists
 
 import type { Poll, Question } from '@/lib/types';
-import { apiGetAccessibleQuestions, apiGetQuestionById } from '@/lib/api';
-import { getAccessibleQuestionIds, addAccessibleQuestionId } from '@/lib/browserQuestionAccess';
+import {
+  apiGetAccessibleQuestions,
+  apiGetMyThreads,
+  apiGetQuestionById,
+} from '@/lib/api';
+import {
+  addAccessibleQuestionId,
+  getAccessibleQuestionIds,
+  getForgottenQuestionIds,
+} from '@/lib/browserQuestionAccess';
 import {
   cacheAccessiblePolls,
   getCachedAccessiblePolls,
   cacheQuestion,
+  invalidateAccessibleQuestions,
 } from '@/lib/questionCache';
 
-// Coalesce concurrent getAccessiblePolls calls (e.g., StrictMode double-mount)
+// Coalesce concurrent getAccessiblePolls / getMyThreads calls
+// (e.g., StrictMode double-mount).
 let inFlight: Promise<Poll[]> | null = null;
+let myThreadsInFlight: Promise<Poll[]> | null = null;
 
 /** Get the poll wrappers this browser has access to. Phase 5b: returns
  *  Poll[] (the wrappers covering the user's accessible questions).
@@ -65,6 +76,69 @@ export async function getAccessibleQuestions(): Promise<Question[]> {
   const questions: Question[] = [];
   for (const mp of polls) for (const sp of mp.questions) questions.push(sp);
   return questions;
+}
+
+/** Phase B.3: drop-in replacement for `getAccessiblePolls() +
+ *  discoverRelatedQuestions()`. Returns every poll in any thread that
+ *  contains one of this browser's accessible questions — the server walks
+ *  `polls.thread_id` once instead of the FE doing follow_up_to chain
+ *  expansion across two round-trips.
+ *
+ *  Side-effect: any newly-discovered question_ids are added to the browser's
+ *  accessible list (subject to the forgotten-list filter) so they survive a
+ *  cache flush. The cache is then cleared so the next call sees the
+ *  expanded set in subsequent freshness checks.
+ */
+export async function getMyThreads(): Promise<Poll[]> {
+  if (typeof window === 'undefined') return [];
+  try {
+    const accessibleIds = getAccessibleQuestionIds();
+    if (accessibleIds.length === 0) {
+      cacheAccessiblePolls([]);
+      return [];
+    }
+
+    const cached = getCachedAccessiblePolls();
+    if (cached) {
+      const cachedQuestionIds = new Set<string>();
+      for (const mp of cached) for (const sp of mp.questions) cachedQuestionIds.add(sp.id);
+      const allPresent = accessibleIds.every(id => cachedQuestionIds.has(id));
+      if (allPresent) return cached;
+    }
+
+    if (myThreadsInFlight) return myThreadsInFlight;
+
+    myThreadsInFlight = (async () => {
+      try {
+        const polls = await apiGetMyThreads(accessibleIds);
+        const forgotten = new Set(getForgottenQuestionIds());
+        const knownIds = new Set(accessibleIds);
+        let discovered = 0;
+        for (const mp of polls) {
+          for (const sp of mp.questions) {
+            if (!knownIds.has(sp.id) && !forgotten.has(sp.id)) {
+              addAccessibleQuestionId(sp.id);
+              discovered++;
+            }
+          }
+        }
+        if (discovered > 0) {
+          // The accessible list grew — invalidate so subsequent freshness
+          // checks see the expanded set.
+          invalidateAccessibleQuestions();
+        }
+        cacheAccessiblePolls(polls);
+        return polls;
+      } finally {
+        myThreadsInFlight = null;
+      }
+    })();
+
+    return myThreadsInFlight;
+  } catch (error) {
+    console.error('Error in getMyThreads:', error);
+    return [];
+  }
 }
 
 // Get a specific question by ID and grant access if found

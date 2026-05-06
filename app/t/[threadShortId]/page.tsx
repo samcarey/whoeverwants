@@ -4,14 +4,13 @@ import { useCallback, useEffect, useLayoutEffect, useState, useRef, useMemo, Sus
 import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
-import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
-import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
+import { getMyThreads } from "@/lib/simpleQuestionQueries";
 import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
-import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
 import type { QuestionResults } from "@/lib/types";
-import { addAccessibleQuestionId, getAccessibleQuestionIds, getCreatorSecret } from "@/lib/browserQuestionAccess";
+import { addAccessibleQuestionId, getCreatorSecret } from "@/lib/browserQuestionAccess";
 import { getCachedQuestionById, getCachedQuestionByShortId, getCachedAccessiblePolls, getCachedPollById, getCachedPollByShortId } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
@@ -410,17 +409,32 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
           return;
         }
 
-        // Discover children (may add new question IDs), then fetch the updated set.
-        // Votes prefetch fires in parallel with getAccessibleQuestions so the votes
-        // cache is warm by the time VoterList mounts — bubbles render alongside
-        // the cards instead of ~100ms after. apiGetVotes is cache + in-flight
+        // Phase B.3: one round-trip — apiGetThreadByRouteId resolves the
+        // route id to a thread_id and returns every poll in that thread,
+        // with full inline-results / voter aggregates. The legacy
+        // discoverRelatedQuestions + getAccessiblePolls pair walked the
+        // follow_up_to chain client-side; the server walks polls.thread_id
+        // directly now.
+        //
+        // Votes prefetch fires in parallel so the votes cache is warm by
+        // the time VoterList mounts — bubbles render alongside the cards
+        // instead of ~100ms after. apiGetVotes is cache + in-flight
         // coalesced, so the later per-card fetch hits the warm cache.
-        try { await discoverRelatedQuestions(); } catch {}
-        for (const id of getAccessibleQuestionIds()) {
-          void apiGetVotes(id).catch(() => null);
+        let polls: Poll[];
+        try {
+          polls = await apiGetThreadByRouteId(threadId);
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 404) { setError(true); return; }
+          throw err;
         }
-        const polls = await getAccessiblePolls();
-        if (!polls) { setError(true); return; }
+        // Persist any newly-discovered question_ids to localStorage so a
+        // forget-and-re-discover cycle still works on direct navigation.
+        for (const mp of polls) {
+          for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
+        }
+        for (const mp of polls) {
+          for (const sp of mp.questions) void apiGetVotes(sp.id).catch(() => null);
+        }
 
         // Re-read voted state — discovery or the user voting elsewhere may have changed it.
         const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
@@ -607,7 +621,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (optimisticWillAdd) return;
       void (async () => {
         try {
-          await getAccessiblePolls();
+          await getMyThreads();
           setThread((prev) => prev ? rebuildThreadFromCacheOrPrev(prev, { add: realPoll, remove: placeholderId }) : prev);
         } catch {
           // Optimistic rebuild has already fired; nothing else to do.
@@ -1886,10 +1900,16 @@ function ThreadPageInner() {
         }
         const firstQ = poll.questions[0]?.id;
         if (firstQ) addAccessibleQuestionId(firstQ);
-        try { await discoverRelatedQuestions(); } catch {}
-        // Warm the accessible-polls cache so ThreadContent's thread builder
-        // sees the full chain (ancestors + siblings) on first paint.
-        await getAccessiblePolls().catch(() => null);
+        // Phase B.3: one round-trip warms every poll in the thread so
+        // ThreadContent's buildThreadFromPollDown sees the full chain
+        // (ancestors + siblings) on first paint. Replaces the legacy
+        // discoverRelatedQuestions + getAccessiblePolls pair.
+        try {
+          const polls = await apiGetThreadByRouteId(threadShortId);
+          for (const mp of polls) {
+            for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
+          }
+        } catch {}
         if (!cancelled) setRootPoll(poll);
       } catch {
         if (!cancelled) setError(true);

@@ -1,7 +1,9 @@
-"""Rate limiting middleware for FastAPI."""
+"""Middleware for FastAPI: rate limiting + Phase B.3 browser_id capture."""
 
 import os
+import re
 import time
+import uuid
 from collections import defaultdict
 from threading import Lock
 
@@ -76,3 +78,55 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
         return await call_next(request)
+
+
+# uuid4 form, lowercase hex; rejects anything else so a hostile client can't
+# inject a free-form value through the header.
+_BROWSER_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+
+
+class BrowserIdMiddleware(BaseHTTPMiddleware):
+    """Phase B.3: capture or mint a `browser_id` for the request.
+
+    Reads the `X-Browser-Id` header (which the FE attaches from
+    `lib/browserIdentity.ts`). When absent or malformed, the server mints a
+    fresh uuid and returns it in the `X-Browser-Id` response header — first
+    visit, the FE captures the response value and persists it to localStorage
+    so future requests carry the same id.
+
+    A header (rather than a cookie) is used because the FE talks to the API
+    same-origin via Next.js rewrites in prod and via direct host in dev/CI;
+    cookies under either setup would require flipping CORS to credentialed
+    mode which doesn't compose with `allow_origins=["*"]`. The header avoids
+    the entire CORS minefield while giving Phase C the same identity
+    guarantee.
+
+    Phase B.3 only captures; nothing on the read path enforces yet. Phase C
+    will add the membership table and start gating visibility on this id.
+    """
+
+    def __init__(self, app, header_name: str = "X-Browser-Id"):
+        super().__init__(app)
+        self._header = header_name
+
+    @staticmethod
+    def _normalize(value: str | None) -> str | None:
+        if not value:
+            return None
+        v = value.strip().lower()
+        return v if _BROWSER_ID_RE.match(v) else None
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        incoming = self._normalize(request.headers.get(self._header))
+        browser_id = incoming or str(uuid.uuid4())
+        request.state.browser_id = browser_id
+
+        response = await call_next(request)
+        # Always echo the (possibly newly-minted) browser_id so the FE can
+        # adopt server-assigned ids on first visit. A subsequent request
+        # already carrying the id sees the same value echoed back, which is
+        # cheap and keeps the response shape stable.
+        response.headers[self._header] = browser_id
+        return response
