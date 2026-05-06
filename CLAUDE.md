@@ -748,7 +748,23 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Poll System
 
-> **Phase B.4 of the thread-routing redesign shipped (this branch).**
+> **Phase C.1 of the thread-routing redesign in progress (this branch).**
+> Migration 102 adds two empty membership tables — `thread_members(thread_id,
+> browser_id, joined_at)` and `poll_access(poll_id, browser_id, granted_at)`,
+> both with composite PKs and a secondary index on `browser_id`. No
+> application code reads or writes either table yet; Phase C.2 will start
+> writing them on vote/create/abstain (auto-join) and on the `?p=`
+> direct-link grant path, and Phase C.3 will gate visibility in
+> `/api/threads/*` on the union of the two. Three semantic questions stay
+> open until C.3: join trigger (vote/create only? auto on /t visit?), what
+> a non-member sees at `/t/<id>` with no `?p`, and forget-vs-leave. Backfill
+> of legacy votes/creates is deferred — `browser_id` was only captured
+> starting in Phase B.3, so pre-B.3 rows have no browser_id to attach a
+> membership row to; the current plan is to lean on C.2's auto-join writes
+> for any returning browser. See `docs/thread-routing-redesign.md` →
+> "Phase C — Membership with join-time visibility".
+>
+> **Phase B.4 of the thread-routing redesign shipped (#264).**
 > Every `PollResponse` now carries `thread_id` (uuid) and `thread_short_id`
 > so the FE builds `/t/<thread.short_id>?p=<poll.short_id>` URLs in a
 > single field read — no follow_up_to chain walking, no extra round-trips.
