@@ -72,3 +72,21 @@ def join_thread_for_poll(poll_id: str | None, browser_id: str | None) -> None:
         )
 
 
+def leave_thread(conn, thread_id: str | None, browser_id: str | None) -> None:
+    """Delete the caller's `thread_members` row. Counterpart to
+    `join_thread` — used by the explicit "leave thread" endpoint.
+
+    Unlike the join helpers, this runs on the caller's connection (the
+    leave endpoint already holds one to do route_id resolution, so reusing
+    it saves a round-trip). No-op when either id is missing; the DELETE
+    silently affects 0 rows when no membership row exists, which is the
+    intended idempotent semantics."""
+    if not thread_id or not browser_id:
+        return
+    conn.execute(
+        "DELETE FROM thread_members "
+        "WHERE thread_id = %(thread_id)s::uuid AND browser_id = %(browser_id)s",
+        {"thread_id": thread_id, "browser_id": browser_id},
+    )
+
+

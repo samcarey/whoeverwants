@@ -1,14 +1,16 @@
 """Shared pytest fixtures + helpers for the Phase B.3 / C.x test suite.
 
-`test_threads_api.py`, `test_threads_visibility.py`, and
-`test_membership_writes.py` all need the same TestClient setup, the same
-yes/no question shape, and the same `_create_poll` / `_bid_headers`
-helpers. Centralizing keeps the per-test files focused on assertions.
+`test_threads_api.py`, `test_threads_visibility.py`,
+`test_membership_writes.py`, and `test_leave_thread.py` all need the
+same TestClient setup, yes/no question shape, and `create_poll` /
+`bid_headers` / `thread_members_for` helpers. Centralizing keeps the
+per-test files focused on assertions.
 """
 
 import os
 import uuid
 
+import psycopg
 import pytest
 
 TEST_DB_URL = os.environ.get(
@@ -77,3 +79,15 @@ def create_followup(
 
 def bid_headers(browser_id):
     return {"X-Browser-Id": browser_id} if browser_id else {}
+
+
+def thread_members_for(thread_id) -> list[str]:
+    """Return the browser_id list (as strings) for a thread. Used by tests
+    that need to assert membership state directly against the DB rather
+    than going through `/api/threads/mine`."""
+    with psycopg.connect(TEST_DB_URL) as conn:
+        rows = conn.execute(
+            "SELECT browser_id FROM thread_members WHERE thread_id = %s",
+            (thread_id,),
+        ).fetchall()
+    return [str(r[0]) for r in rows]

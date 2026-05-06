@@ -2,8 +2,9 @@
 
 > Status: Phase A shipped (#260), Phase B.1 shipped (#261), Phase B.2
 > shipped (#262), Phase B.3 shipped (#263), Phase B.4 shipped (#264),
-> Phase C.1 shipped (#265), Phase C.2 shipped (#266), Phase C.3 in
-> progress (this branch).
+> Phase C.1 shipped (#265), Phase C.2 shipped (#266), Phase C.3 shipped
+> (#267). Follow-up "leave thread" endpoint
+> (`DELETE /api/threads/{id}/membership`) in progress on this branch.
 
 ## Vision
 

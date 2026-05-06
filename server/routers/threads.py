@@ -1,6 +1,6 @@
 """Thread API endpoints (Phase B.3 / C.3 of the thread routing redesign).
 
-Two endpoints — `POST /api/threads/mine` and
+Two read endpoints — `POST /api/threads/mine` and
 `GET /api/threads/by-route-id/{route_id}` — collapse the legacy three-step
 home / thread page bootstrap (discoverRelatedQuestions + getAccessiblePolls
 + client-side `buildThreads`) into a single server round-trip driven by
@@ -10,7 +10,15 @@ Both return `list[PollResponse]` — same shape as
 `POST /api/questions/accessible` — so the FE consumer is a drop-in for
 the existing flow.
 
-Phase C.3: both endpoints now enforce the visibility rule documented in
+A third endpoint — `DELETE /api/threads/{route_id}/membership` — is the
+explicit "leave thread" action. It removes the caller's `thread_members`
+row, taking the user out of membership-driven visibility. This is the
+follow-up to Phase C.3 that gates retirement of the legacy
+`accessible_question_ids` bridge: once the FE wires forget-of-last-poll
+(or an explicit "leave thread" UX) to call this, the bridge can be
+dropped from `/api/threads/mine`.
+
+Phase C.3: both read endpoints enforce the visibility rule documented in
 `services/threads.py` against the browser_id captured by
 `BrowserIdMiddleware`. The membership tables (Phase C.1) and auto-join
 writes (Phase C.2) feed this filter.
@@ -24,12 +32,12 @@ Phase C.3 decisions on the previously-open semantic questions:
     visibility into any poll of this thread" the same as "no such
     thread" for both UX simplicity and consistent FE error handling.
   * **Forget vs leave**: forget stays localStorage-only. We do NOT
-    delete `thread_members` on forget; instead, `/api/threads/mine`
-    intersects member-thread visibility with the FE's
-    `accessible_question_ids` legacy list during the rollout window so
-    forget keeps its expected "thread disappears from the home list"
-    semantics. An explicit `DELETE /api/threads/{id}/membership`
-    endpoint is a follow-up (track in CLAUDE.md).
+    delete `thread_members` on forget by default; the home view uses
+    the legacy `accessible_question_ids` bridge to narrow membership-
+    thread visibility during the rollout. The DELETE membership
+    endpoint is the explicit "leave thread" action that tears down
+    membership directly — it lets the FE retire the bridge once
+    wired up.
 """
 
 from __future__ import annotations
@@ -40,6 +48,7 @@ from pydantic import BaseModel, Field
 
 from database import get_db
 from models import PollResponse
+from services.memberships import leave_thread as _leave_thread_row
 from services.threads import (
     filter_visible_polls,
     grant_poll_access_inline,
@@ -201,3 +210,34 @@ def get_thread_by_route_id(
         return polls_for_poll_ids(
             conn, visible_pids, include_results=include_results
         )
+
+
+@router.delete("/{route_id}/membership", status_code=204)
+def leave_thread(route_id: str, request: Request):
+    """Explicit "leave thread" action — remove the caller's
+    `thread_members` row for the resolved thread.
+
+    Idempotent: returns 204 whether or not a row existed. Strangers
+    (no membership row) get 204 too, since the operation is "ensure no
+    membership exists" and that's already true.
+
+    `route_id` accepts the same four forms as `/by-route-id/{route_id}`:
+    threads.short_id, threads.id, polls.short_id, polls.id. Resolution
+    fails (404) when none of those produce a thread — distinguishing
+    "thread doesn't exist" from "no membership to remove".
+
+    `poll_access` rows are NOT touched. A user who joined a thread,
+    accessed a specific poll directly, then left the thread keeps the
+    poll-level access — that direct-link relationship is independent of
+    thread membership. To revoke poll access, drop poll_access rows on
+    the FE side (no endpoint yet — out of scope for this follow-up).
+
+    No-op when `browser_id` is missing (no middleware id, no row to
+    remove). Returns 204 either way.
+    """
+    browser_id = _browser_id(request)
+    with get_db() as conn:
+        thread_id = resolve_thread_id_from_route_id(conn, route_id)
+        if not thread_id:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        _leave_thread_row(conn, thread_id, browser_id)
