@@ -12,6 +12,19 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$NTFY_TOPIC\" ] && curl -fsS --max-time 5 -d \"Claude is ready for your input\" -H \"Title: Claude Code\" \"https://ntfy.sh/$NTFY_TOPIC\" >/dev/null 2>&1 || true",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }
