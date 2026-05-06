@@ -314,7 +314,7 @@ These are intentionally deferred to Phase 3.
 ### Cross-cutting concerns for Phase 2
 
 - **Cache invalidation**: every poll mutation (create, vote propagation, close — Phase 3) needs to call `invalidatePoll()` and `invalidateAccessibleQuestions()`. Phase 2 only has create, but lay the helper down in 2.1.
-- **`questionDiscovery.ts`**: walks `follow_up_to` chains on questions. Once 2.2 propagates `follow_up_to` to the questions row for questions, discovery keeps working. If we later switch the source of truth to polls.follow_up_to, discovery needs an update.
+- **Discovery**: was historically `lib/questionDiscovery.ts` walking `follow_up_to` chains client-side. Phase B.3 of the thread-routing redesign moved discovery server-side via `polls.thread_id` aggregation in `apiGetMyThreads`; the old helper was deleted once all FE callers were retired. See `docs/thread-routing-redesign.md` → Phase B.3.
 - **PWA cache**: snapshot helpers (`buildQuestionSnapshot` in `lib/questionCreator.ts`) used for fork/duplicate/follow-up are unchanged through Phase 2 — they still operate on a single `Question`. Phase 2.4's draft persistence is a separate localStorage store.
 
 ### Open questions for Phase 2 (revisit during sub-phase implementation)

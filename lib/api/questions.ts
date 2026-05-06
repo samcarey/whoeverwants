@@ -53,23 +53,6 @@ export async function apiFindDuplicateQuestion(title: string, followUpTo: string
   }
 }
 
-export async function apiGetRelatedQuestions(questionIds: string[]): Promise<{
-  allRelatedIds: string[];
-  originalCount: number;
-  discoveredCount: number;
-}> {
-  if (questionIds.length === 0) return { allRelatedIds: [], originalCount: 0, discoveredCount: 0 };
-  const data = await apiFetch<{ all_related_ids: string[]; original_count: number; discovered_count: number }>('/related', {
-    method: 'POST',
-    body: JSON.stringify({ question_ids: questionIds }),
-  });
-  return {
-    allRelatedIds: data.all_related_ids,
-    originalCount: data.original_count,
-    discoveredCount: data.discovered_count,
-  };
-}
-
 // Phase 5b: returns Poll[] instead of Question[]. The poll is the unit
 // of identity (per the addressability paradigm), so the FE consumes
 // wrapper-level fields (response_deadline, is_closed, etc.) from each
