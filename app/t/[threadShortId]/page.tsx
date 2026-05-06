@@ -5,13 +5,13 @@ import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyThreads } from "@/lib/simpleQuestionQueries";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
-import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
+import { apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
 import type { QuestionResults } from "@/lib/types";
 import { addAccessibleQuestionId, getCreatorSecret } from "@/lib/browserQuestionAccess";
-import { getCachedQuestionById, getCachedQuestionByShortId, getCachedAccessiblePolls, getCachedPollById, getCachedPollByShortId, getCachedPollForShortId } from "@/lib/questionCache";
+import { getCachedAccessiblePolls, getCachedPollById, getCachedPollByShortId, getCachedPollForShortId } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
@@ -122,10 +122,14 @@ function rebuildThreadFromCacheOrPrev(
 
 interface ThreadContentProps {
   threadId: string;
+  /** Poll short_id from `?p=<id>`. Forwarded to apiGetThreadByRouteId so
+   *  the server inline-grants poll_access for cold-load direct links —
+   *  same Phase C.3 race fix as ThreadPageInner's first call. */
+  initialPollShortId?: string | null;
   initialExpandedQuestionId?: string | null;
 }
 
-export function ThreadContent({ threadId, initialExpandedQuestionId = null }: ThreadContentProps) {
+export function ThreadContent({ threadId, initialExpandedQuestionId = null, initialPollShortId = null }: ThreadContentProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
 
@@ -389,26 +393,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         if (!initialThread) setLoading(true);
         setError(false);
 
-        // Step 1: Fetch the question referenced in the URL and register access.
-        // Check the in-memory cache first — the home page already fetched all accessible questions.
-        let anchorQuestion: Question;
-        try {
-          const cached = isUuidLike(threadId)
-            ? getCachedQuestionById(threadId)
-            : getCachedQuestionByShortId(threadId);
-          if (cached) {
-            anchorQuestion = cached;
-          } else if (isUuidLike(threadId)) {
-            anchorQuestion = await apiGetQuestionById(threadId);
-          } else {
-            anchorQuestion = await apiGetQuestionByShortId(threadId);
-          }
-          addAccessibleQuestionId(anchorQuestion.id);
-        } catch {
-          setError(true);
-          return;
-        }
-
         // Phase B.3: one round-trip — apiGetThreadByRouteId resolves the
         // route id to a thread_id and returns every poll in that thread,
         // with full inline-results / voter aggregates. The legacy
@@ -422,11 +406,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         // coalesced, so the later per-card fetch hits the warm cache.
         let polls: Poll[];
         try {
-          polls = await apiGetThreadByRouteId(threadId);
+          polls = await apiGetThreadByRouteId(threadId, { pollShortId: initialPollShortId });
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) { setError(true); return; }
           throw err;
         }
+        const anchorPoll = findChainRoot(polls);
+        if (!anchorPoll) { setError(true); return; }
         // Persist any newly-discovered question_ids to localStorage so a
         // forget-and-re-discover cycle still works on direct navigation.
         for (const mp of polls) {
@@ -438,9 +424,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
         // Re-read voted state — discovery or the user voting elsewhere may have changed it.
         const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-        const anchorPollId = anchorQuestion.poll_id;
-        if (!anchorPollId) { setError(true); return; }
-        const foundThread = buildThreadFromPollDown(anchorPollId, polls, voted, abstained);
+        const foundThread = buildThreadFromPollDown(anchorPoll.id, polls, voted, abstained);
 
         if (!foundThread) {
           setError(true);
@@ -1870,10 +1854,7 @@ function ThreadPageInner() {
     // both forms before falling back to the async fetch.
     const accessible = getCachedAccessiblePolls() ?? [];
     const matches = accessible.filter(mp => mp.thread_short_id === threadShortId);
-    if (matches.length > 0) {
-      return matches.find(mp => !mp.follow_up_to) ?? matches[0];
-    }
-    return getCachedPollByShortId(threadShortId);
+    return findChainRoot(matches) ?? getCachedPollByShortId(threadShortId);
   }, [threadShortId]);
 
   const [rootPoll, setRootPoll] = useState<Poll | null>(rootInitial);
@@ -1898,12 +1879,12 @@ function ThreadPageInner() {
         // one call. Fall back to the per-poll endpoint when the thread
         // endpoint 404s (older deploys, network glitches) so we don't lose
         // resolution on partially-rolled-out backends.
-        const polls = await apiGetThreadByRouteId(threadShortId).catch((err: unknown) => {
+        const polls = await apiGetThreadByRouteId(threadShortId, { pollShortId: pollParam }).catch((err: unknown) => {
           if (err instanceof ApiError && err.status === 404) return null;
           throw err;
         });
-        if (polls && polls.length > 0) {
-          const root = polls.find(mp => !mp.follow_up_to) ?? polls[0];
+        const root = polls ? findChainRoot(polls) : null;
+        if (root && polls) {
           for (const mp of polls) {
             for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
           }
@@ -1996,6 +1977,7 @@ function ThreadPageInner() {
     <ThreadContent
       threadId={threadRouteId}
       initialExpandedQuestionId={initialExpandedQuestionId}
+      initialPollShortId={pollParam}
     />
   );
 }

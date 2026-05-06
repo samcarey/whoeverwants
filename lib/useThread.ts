@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, type Thread } from "./threadUtils";
+import { buildThreadFromPollDown, buildThreadSyncFromCache, findChainRoot, type Thread } from "./threadUtils";
 import { apiGetThreadByRouteId } from "./api";
 import { addAccessibleQuestionId } from "./browserQuestionAccess";
 import { loadVotedQuestions } from "./votedQuestionsStorage";
@@ -54,12 +54,12 @@ export function useThread(threadId: string): UseThreadResult {
         // null`. No separate anchor-question lookup needed.
         const polls = await apiGetThreadByRouteId(threadId);
         if (cancelled) return;
-        if (polls.length === 0) { setError(true); return; }
+        const root = findChainRoot(polls);
+        if (!root) { setError(true); return; }
         for (const mp of polls) {
           for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
         }
 
-        const root = polls.find(mp => !mp.follow_up_to) ?? polls[0];
         const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
         const found = buildThreadFromPollDown(root.id, polls, votedQuestionIds, abstainedQuestionIds);
         if (cancelled) return;
