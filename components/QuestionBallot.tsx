@@ -87,6 +87,13 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const isNewQuestion = searchParams.get("new") === "true";
   const [questionUrl, setQuestionUrl] = useState("");
   const [rankedChoices, setRankedChoices] = useState<string[]>([]);
+  // Tap-to-submit on the binary ranked-choice card pair (matches yes/no's
+  // tap-to-submit UX). When the user taps a card, we set rankedChoices +
+  // optionally enter edit mode synchronously, then a useEffect picks up the
+  // updated state on the next render and fires submitVote — so the closure
+  // inside submitVote reads the freshly-committed value (rather than the
+  // stale empty array from the tap-event closure).
+  const [pendingBinarySubmit, setPendingBinarySubmit] = useState(false);
   // Tiered ballot (equal-ranking groups). Each inner array is a tier of
   // options tied for the same rank. When it has no ties, every inner array
   // is a singleton and this is equivalent to rankedChoices.
@@ -765,21 +772,20 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     userVoteData,
   });
 
-  const handleVoteClick = async () => {
-    // Either suggestion editing or ranking editing counts as "editing"
-    const isAnyEditing = isEditingVote || isEditingRanking;
+  // User has voted but still has work they can finish (submit rankings after
+  // suggestions, react to time slots after availability, etc.). Both
+  // handleVoteClick (auto-enter edit mode) and wrapperShouldShowSubmit
+  // (keep Submit visible) read this — keep them in sync via one computation.
+  const hasNotRankedYet = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_ranking_abstain;
+  const hasNotReactedYet = question.question_type === 'time' && !inAvailabilityPhase && hasVoted
+    && userVoteData?.liked_slots === null && userVoteData?.disliked_slots === null && !userVoteData?.is_abstain;
+  const canImplicitlyEdit = hasVoted && (
+    (canSubmitSuggestions && canSubmitRankings) || hasNotRankedYet || hasNotReactedYet
+  );
 
-    // During suggestion phase with pre-ranking, submitting rankings after the initial
-    // suggestion vote is an implicit edit (updating the existing vote with rankings).
-    // Also applies after suggestion cutoff: user submitted suggestions but hasn't ranked yet.
-    // Includes users who abstained from suggestions (is_abstain) — they should still be able to rank.
-    const hasNotRankedYet = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_ranking_abstain;
-    // For time questions in preferences phase: not yet reacted if liked_slots is still null
-    const hasNotReactedYet = question.question_type === 'time' && !inAvailabilityPhase && hasVoted
-      && userVoteData?.liked_slots === null && userVoteData?.disliked_slots === null && !userVoteData?.is_abstain;
-    const isImplicitEdit = hasVoted && !isAnyEditing && (
-      (canSubmitSuggestions && canSubmitRankings) || hasNotRankedYet || hasNotReactedYet
-    );
+  const handleVoteClick = async () => {
+    const isAnyEditing = isEditingVote || isEditingRanking;
+    const isImplicitEdit = !isAnyEditing && canImplicitlyEdit;
     if (isImplicitEdit) {
       setIsEditingVote(true);
     }
@@ -968,6 +974,37 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const handleVoteClickRef = useRef(handleVoteClick);
   handleVoteClickRef.current = handleVoteClick;
 
+  // Same pattern for submitVote — the binary-RC tap-to-submit useEffect below
+  // calls into the latest version after a state-update render.
+  const submitVoteRef = useRef(submitVote);
+  submitVoteRef.current = submitVote;
+
+  // Tap on a binary 2-option ranked-choice card. For first-time votes, this
+  // auto-submits to match yes/no's tap-to-submit UX. For EDITS (user has
+  // already voted), we only stage the choice + flip into edit mode so the
+  // wrapper Submit button appears — the user must press Submit to actually
+  // change their vote, mirroring yes/no's edit-mode confirmation flow.
+  const handleBinaryChoiceTap = (option: string) => {
+    if (isSubmitting || isQuestionClosed) return;
+    setRankedChoices([option]);
+    setRankedChoiceTiers([[option]]);
+    setIsAbstaining(false);
+    if (justCancelledAbstain) setJustCancelledAbstain(false);
+    if (hasVoted) {
+      // Edit case: stage the change but require an explicit Submit press.
+      if (!isEditingRanking && !isEditingVote) setIsEditingRanking(true);
+      return;
+    }
+    setPendingBinarySubmit(true);
+  };
+
+  useEffect(() => {
+    if (!pendingBinarySubmit) return;
+    if (rankedChoices.length === 0) return;
+    setPendingBinarySubmit(false);
+    void submitVoteRef.current();
+  }, [pendingBinarySubmit, rankedChoices, isEditingRanking]);
+
   // Validation + voteData/PollVoteItem construction is shared with
   // submitVote via voteDataBuilders. The two callers diverge only on the
   // POST-build side effects: submitVote calls the API itself; this returns
@@ -1071,9 +1108,9 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     if (!wrapperHandlesSubmit) return false;
     if (isQuestionClosed) return false;
     if (question.question_type === 'yes_no') return false; // external rendering uses tap-to-change
-    if (hasVoted && !isEditingVote && !isEditingRanking) return false;
+    if (hasVoted && !isEditingVote && !isEditingRanking && !canImplicitlyEdit) return false;
     return true;
-  }, [wrapperHandlesSubmit, isQuestionClosed, question.question_type, hasVoted, isEditingVote, isEditingRanking]);
+  }, [wrapperHandlesSubmit, isQuestionClosed, question.question_type, hasVoted, isEditingVote, isEditingRanking, canImplicitlyEdit]);
 
   const wrapperSubmitLabel = useMemo(() => {
     if (question.question_type === 'time') {
@@ -1140,7 +1177,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
         {question.details && !partOfPollGroup && <QuestionDetails details={question.details} />}
 
         {showReferenceLocation && (
-          <div className="mb-3 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+          <div className="mb-1.5 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <div className="flex items-center gap-1.5">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -1383,9 +1420,6 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                       suggestionMetadata={suggestionMetadata}
                       onSuggestionMetadataChange={setSuggestionMetadata}
                       optionsMetadata={optionsMetadataLocal}
-                      showCutoffButton={!isQuestionClosed && isCreator && canSubmitSuggestions && existingSuggestions.length > 0}
-                      onCutoffClick={handleCutoffSuggestionsClick}
-                      isCuttingOff={isCuttingOffSuggestions}
                       searchRadius={searchRadius}
                       wrapperHandlesSubmit={wrapperHandlesSubmit}
                     />
@@ -1425,6 +1459,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                     newOptions={newOptions}
                     wrapperHandlesSubmit={wrapperHandlesSubmit}
                     questionResults={questionResults}
+                    onBinaryRankedChoiceTap={handleBinaryChoiceTap}
                   />
 
                 </>

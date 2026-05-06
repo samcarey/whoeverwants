@@ -1,8 +1,8 @@
 "use client";
 
 import Countdown from "@/components/Countdown";
+import SimpleCountdown from "@/components/SimpleCountdown";
 import RankableOptions from "@/components/RankableOptions";
-import AbstainButton from "@/components/AbstainButton";
 import CompactNameField from "@/components/CompactNameField";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import VoterList from "@/components/VoterList";
@@ -54,6 +54,11 @@ interface RankingSectionProps {
   // Live results — the 2-option branch reads first-round counts + winner
   // to color the winner card and show the % + count row below the cards.
   questionResults?: QuestionResults | null;
+  // Tap-to-submit handler for the binary 2-option card pair. When provided,
+  // overrides the inline onChoose so a single tap stages + auto-submits
+  // (matches yes/no tap UX). Called only on the BinaryRankedChoiceBallot
+  // path; the multi-option drag-to-rank list keeps the explicit Submit flow.
+  onBinaryRankedChoiceTap?: (option: string) => void;
 }
 
 const rankingsVoterFilter = (v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0);
@@ -91,6 +96,7 @@ export default function RankingSection({
   newOptions,
   wrapperHandlesSubmit = false,
   questionResults,
+  onBinaryRankedChoiceTap,
 }: RankingSectionProps) {
   const hasSubmittedRankings = hasVoted && userVoteData?.ranked_choices?.length > 0;
   // For suggestion questions, is_abstain means "abstained from suggestions" not "abstained from ranking".
@@ -122,14 +128,12 @@ export default function RankingSection({
   if (!canSubmitRankings || questionOptions.length === 0) {
     if (canSubmitSuggestions && hasVoted && !isEditingSuggestions) {
       return (
-        <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg text-center">
-          <div className="text-blue-800 dark:text-blue-200 text-sm">
-            {suggestionDeadline ? (
-              <>Ranking will open after suggestions cutoff in{' '}<Countdown deadline={suggestionDeadline} /></>
-            ) : (
-              <>Ranking will open after suggestions cutoff</>
-            )}
-          </div>
+        <div className="text-center text-sm text-gray-600 dark:text-gray-400">
+          {suggestionDeadline ? (
+            <>Ranking will open after suggestions cutoff in{' '}<SimpleCountdown deadline={suggestionDeadline} colorClass="text-gray-600 dark:text-gray-400" /></>
+          ) : (
+            <>Ranking will open after suggestions cutoff</>
+          )}
         </div>
       );
     }
@@ -209,10 +213,12 @@ export default function RankingSection({
                 currentChoice={isAbstaining ? "abstain" : rankedChoices[0] ?? null}
                 results={questionResults}
                 onChoose={(option) => {
-                  // Two-option questions: a single tap picks one. Pass
-                  // the flat list and a singleton tier (no ties).
-                  handleRankingChange([option], [[option]]);
-                  setIsAbstaining(false);
+                  if (onBinaryRankedChoiceTap) {
+                    onBinaryRankedChoiceTap(option);
+                  } else {
+                    handleRankingChange([option], [[option]]);
+                    setIsAbstaining(false);
+                  }
                 }}
                 onAbstain={handleAbstain}
                 disabled={isSubmitting}
@@ -236,10 +242,16 @@ export default function RankingSection({
                     newOptions={newOptions}
                   />
                 )}
-                <AbstainButton
-                  isAbstaining={isAbstaining}
-                  onClick={handleAbstain}
-                />
+                <div className="mt-3 text-center">
+                  <button
+                    type="button"
+                    onClick={handleAbstain}
+                    disabled={isSubmitting}
+                    className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
+                  >
+                    {isAbstaining ? 'You abstained' : 'Abstain'}
+                  </button>
+                </div>
               </>
             )}
 

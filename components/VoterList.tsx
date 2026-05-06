@@ -31,6 +31,10 @@ interface VoterListProps {
    *  per-question voteId to disambiguate by here. */
   staticVoterNames?: string[];
   staticAnonymousCount?: number;
+  /** When true, the current user is NOT excluded from the singleLine row.
+   *  Used by the suggestion-phase below-card row so the suggester sees their
+   *  own bubble there even when they're the only respondent. */
+  includeSelf?: boolean;
 }
 
 // Shared derivation so the synchronous cache-seed and the async fetcher both
@@ -54,7 +58,7 @@ function EmptyPlaceholder({ text, className }: { text: string; className: string
   );
 }
 
-export default function VoterList({ questionId, className = "", label, filter, singleLine = false, emptyText, staticVoterNames, staticAnonymousCount }: VoterListProps) {
+export default function VoterList({ questionId, className = "", label, filter, singleLine = false, emptyText, staticVoterNames, staticAnonymousCount, includeSelf = false }: VoterListProps) {
   const isStatic = !!staticVoterNames;
 
   // Seed from the shared votes cache (or from static props) so warm
@@ -184,20 +188,24 @@ export default function VoterList({ questionId, className = "", label, filter, s
   const currentUserVoteId = isStatic ? null : getUserVoteId();
 
   // Exclude the current user from the respondents list — their question card
-  // signals their vote state (golden border if they haven't voted).
+  // signals their vote state (golden border if they haven't voted). Callers
+  // can opt into including self via `includeSelf` (e.g. the suggestion-phase
+  // below-card row, where the user wants to see their own bubble).
   const allNamedVoters = voters
     .filter(vote => vote.voter_name && vote.voter_name.trim() !== '')
     .sort((a, b) => (a.voter_name || '').toLowerCase().localeCompare((b.voter_name || '').toLowerCase()));
 
-  let namedVoters = currentUserVoteId
+  let namedVoters = !includeSelf && currentUserVoteId
     ? allNamedVoters.filter(v => v.id !== currentUserVoteId)
     : allNamedVoters;
 
   let currentUserIsAnonymous = false;
   if (isStatic) {
-    const savedName = (getUserName() || '').trim().toLowerCase();
-    if (savedName) {
-      namedVoters = namedVoters.filter(v => (v.voter_name || '').trim().toLowerCase() !== savedName);
+    if (!includeSelf) {
+      const savedName = (getUserName() || '').trim().toLowerCase();
+      if (savedName) {
+        namedVoters = namedVoters.filter(v => (v.voter_name || '').trim().toLowerCase() !== savedName);
+      }
     }
   } else {
     const currentUserVote = currentUserVoteId
@@ -207,7 +215,7 @@ export default function VoterList({ questionId, className = "", label, filter, s
       currentUserVote && (!currentUserVote.voter_name || currentUserVote.voter_name.trim() === '')
     );
   }
-  const adjustedAnonymousCount = currentUserIsAnonymous ? anonymousCount - 1 : anonymousCount;
+  const adjustedAnonymousCount = !includeSelf && currentUserIsAnonymous ? anonymousCount - 1 : anonymousCount;
 
   const getVoterColor = (index: number) => {
     const colors = [

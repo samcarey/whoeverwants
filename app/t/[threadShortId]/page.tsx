@@ -6,7 +6,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyThreads } from "@/lib/simpleQuestionQueries";
 import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
-import { apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
 import type { QuestionResults } from "@/lib/types";
@@ -24,7 +24,7 @@ import { isUuidLike } from "@/lib/questionId";
 import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
-import { isInTimeAvailabilityPhase } from "@/lib/questionListUtils";
+import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition } from "@/lib/viewTransitions";
@@ -1624,6 +1624,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
                 ? () => setPendingAction({ kind: 'cutoff-availability', question: modalQuestion })
                 : undefined
             }
+            onCutoffSuggestions={
+              !isModalClosed &&
+              isInSuggestionPhase(modalQuestion, modalWrapper.prephase_deadline ?? null) &&
+              (!!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === 'development')
+                ? () => setPendingAction({ kind: 'cutoff-suggestions', question: modalQuestion })
+                : undefined
+            }
           />
         );
       })()}
@@ -1694,56 +1701,65 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
             } catch (err) {
               console.error('Failed to close question:', err);
             }
-          } else if (action.kind === 'cutoff-availability') {
+          } else if (action.kind === 'cutoff-suggestions' || action.kind === 'cutoff-availability') {
+            const apiFn = action.kind === 'cutoff-suggestions'
+              ? apiCutoffPollSuggestions
+              : apiCutoffPollAvailability;
             try {
               const secret = getCreatorSecret(action.question.id);
               if (!secret) {
-                console.error('Missing creator secret for cutoff-availability');
+                console.error(`Missing creator secret for ${action.kind}`);
                 return;
               }
               const pollId = action.question.poll_id;
               if (!pollId) {
-                console.error('Cannot cutoff availability without poll_id');
+                console.error(`Cannot ${action.kind} without poll_id`);
                 return;
               }
-              const wrapper = await apiCutoffPollAvailability(pollId, secret);
-              const updated = wrapper.questions.find((sp) => sp.id === action.question.id) ?? null;
-              // Wrapper-level prephase_deadline + per-question options.
+              const wrapper = await apiFn(pollId, secret);
               patchThreadPolls(
                 (mp) => mp.id === pollId,
-                () => ({
-                  prephase_deadline: wrapper.prephase_deadline ?? null,
-                }),
+                () => ({ prephase_deadline: wrapper.prephase_deadline ?? null }),
               );
-              if (updated) {
-                patchThreadQuestions(
-                  (p) => p.id === action.question.id,
-                  (p) => ({ options: updated.options ?? p.options }),
-                );
+              for (const sp of wrapper.questions) {
+                if (sp.options) {
+                  const newOptions = sp.options;
+                  patchThreadQuestions(
+                    (p) => p.id === sp.id,
+                    () => ({ options: newOptions }),
+                  );
+                }
               }
-              // Refresh the compact preview — the availability phase just ended so
-              // time-slot results are now meaningful.
-              const refreshed = await apiGetQuestionResults(action.question.id).catch(() => null);
-              if (refreshed) {
-                setQuestionResultsMap((prev) => {
-                  const existing = prev.get(action.question.id);
+              // Refresh per-question compact preview results in parallel —
+              // cutoff-suggestions can fan out across N sibling questions of
+              // a multi-question poll.
+              const refreshes = await Promise.all(
+                wrapper.questions.map((sp) =>
+                  apiGetQuestionResults(sp.id)
+                    .then((r) => ({ id: sp.id, results: r }))
+                    .catch(() => null),
+                ),
+              );
+              setQuestionResultsMap((prev) => {
+                let next = prev;
+                for (const r of refreshes) {
+                  if (!r) continue;
+                  const existing = prev.get(r.id);
                   if (
                     existing &&
-                    existing.total_votes === refreshed.total_votes &&
-                    existing.yes_count === refreshed.yes_count &&
-                    existing.no_count === refreshed.no_count &&
-                    existing.winner === refreshed.winner &&
-                    (existing.suggestion_counts?.length ?? 0) === (refreshed.suggestion_counts?.length ?? 0)
-                  ) {
-                    return prev;
-                  }
-                  const next = new Map(prev);
-                  next.set(action.question.id, refreshed);
-                  return next;
-                });
-              }
+                    existing.total_votes === r.results.total_votes &&
+                    existing.yes_count === r.results.yes_count &&
+                    existing.no_count === r.results.no_count &&
+                    existing.winner === r.results.winner &&
+                    (existing.suggestion_counts?.length ?? 0) === (r.results.suggestion_counts?.length ?? 0)
+                  ) continue;
+                  if (next === prev) next = new Map(prev);
+                  next.set(r.id, r.results);
+                }
+                return next;
+              });
             } catch (err) {
-              console.error('Failed to end availability phase:', err);
+              console.error(`Failed to ${action.kind}:`, err);
             }
           }
         }}
