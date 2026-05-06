@@ -914,12 +914,9 @@ export function CreateQuestionContent() {
           const duplicateData = JSON.parse(savedDuplicateData);
           debugLog.logObject('Parsed duplicate data', duplicateData, 'CreateQuestion');
 
-          // Auto-fill form with duplicate data
-          setTitle(duplicateData.title || "");
-          if (!duplicateData.is_auto_title && duplicateData.title) {
-            setIsAutoTitle(false);
-            loadedTitleRef.current = duplicateData.title;
-          }
+          // Auto-fill form with duplicate data. Title is intentionally NOT
+          // copied — it regenerates fresh from the new input fields (or stays
+          // empty for user-typed yes_no prompts). See buildQuestionSnapshot.
           setDetails(duplicateData.details || "");
           if (duplicateData.details) setDetailsOpen(true);
 
