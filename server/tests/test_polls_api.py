@@ -336,6 +336,93 @@ class TestChainPropagation:
         assert child.json()["thread_title"] == "New Title"
 
 
+class TestThreadId:
+    """Phase B.1: every new poll has a thread_id. Root polls get a fresh
+    thread row; follow-up polls inherit their parent's thread_id."""
+
+    def _thread_id_for(self, poll_id: str) -> str | None:
+        import psycopg
+
+        with psycopg.connect(TEST_DB_URL) as conn:
+            row = conn.execute(
+                "SELECT thread_id FROM polls WHERE id = %s",
+                (poll_id,),
+            ).fetchone()
+            assert row is not None
+            return str(row[0]) if row[0] is not None else None
+
+    def test_root_poll_gets_fresh_thread(self, client, creator_secret):
+        resp = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "questions": [_yes_no_question()],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        thread_id = self._thread_id_for(resp.json()["id"])
+        assert thread_id is not None
+        assert uuid.UUID(thread_id)  # valid uuid
+
+    def test_two_root_polls_get_distinct_threads(self, client, creator_secret):
+        a = client.post(
+            "/api/polls",
+            json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
+        )
+        b = client.post(
+            "/api/polls",
+            json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
+        )
+        assert self._thread_id_for(a.json()["id"]) != self._thread_id_for(b.json()["id"])
+
+    def test_followup_inherits_parent_thread(self, client, creator_secret):
+        parent = client.post(
+            "/api/polls",
+            json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
+        )
+        parent_question_id = parent.json()["questions"][0]["id"]
+        parent_thread_id = self._thread_id_for(parent.json()["id"])
+
+        child = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "follow_up_to": parent_question_id,
+                "questions": [_yes_no_question()],
+            },
+        )
+        assert child.status_code == 201, child.text
+        assert self._thread_id_for(child.json()["id"]) == parent_thread_id
+
+    def test_grandchild_inherits_root_thread(self, client, creator_secret):
+        root = client.post(
+            "/api/polls",
+            json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
+        )
+        root_thread = self._thread_id_for(root.json()["id"])
+        root_q = root.json()["questions"][0]["id"]
+
+        child = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "follow_up_to": root_q,
+                "questions": [_yes_no_question()],
+            },
+        )
+        child_q = child.json()["questions"][0]["id"]
+
+        grandchild = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "follow_up_to": child_q,
+                "questions": [_yes_no_question()],
+            },
+        )
+        assert self._thread_id_for(grandchild.json()["id"]) == root_thread
+
+
 class TestPollOperations:
     """Poll-level close/reopen/cutoff endpoints (Phase 3)."""
 
