@@ -1,97 +1,26 @@
-"""Integration tests for the threads API (Phase B.3).
+"""Integration tests for the threads API (Phase B.3 / C.3).
 
 Covers:
   - POST /api/threads/mine  — discovery + accessibility in one call
   - GET  /api/threads/by-route-id/{route_id} — by short_id and uuid
   - BrowserIdMiddleware — header echo + auto-mint
 
+Visibility-enforcement tests live in test_threads_visibility.py.
+Shared fixtures (`client`, `creator_secret`, `browser_id`) and helpers
+(`create_poll`, `create_followup`, `bid_headers`) live in `conftest.py`.
+
 Like test_polls_api.py these need a real Postgres reachable via DATABASE_URL.
 """
 
-import os
 import re
 import uuid
 
-import pytest
-
-TEST_DB_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://whoeverwants:whoeverwants@localhost:5432/whoeverwants",
-)
-os.environ["DATABASE_URL"] = TEST_DB_URL
-
-from fastapi.testclient import TestClient
-
-from main import app
+from tests.conftest import bid_headers, create_followup, create_poll
 
 
 UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
-
-
-@pytest.fixture
-def client():
-    return TestClient(app)
-
-
-@pytest.fixture
-def creator_secret():
-    return f"test-secret-{uuid.uuid4().hex[:8]}"
-
-
-@pytest.fixture
-def browser_id():
-    """Single browser_id used across create + read calls in a test, so the
-    creator's auto-join (Phase C.2) makes them a thread member visible to
-    the read endpoints (Phase C.3). Without this fixture, TestClient mints
-    a fresh browser_id per request and reads can't see the polls they
-    just created."""
-    return str(uuid.uuid4())
-
-
-def _yes_no_question(**overrides) -> dict:
-    base = {"question_type": "yes_no", "category": "yes_no"}
-    base.update(overrides)
-    return base
-
-
-def _create_poll(
-    client,
-    creator_secret: str,
-    *,
-    browser_id: str | None = None,
-    **kwargs,
-) -> dict:
-    payload = {
-        "creator_secret": creator_secret,
-        "questions": [_yes_no_question()],
-    }
-    payload.update(kwargs)
-    headers = {"X-Browser-Id": browser_id} if browser_id else {}
-    resp = client.post("/api/polls", json=payload, headers=headers)
-    assert resp.status_code == 201, resp.text
-    return resp.json()
-
-
-def _create_followup(
-    client,
-    creator_secret: str,
-    parent_question_id: str,
-    *,
-    browser_id: str | None = None,
-) -> dict:
-    """Create a poll wrapped in a follow-up to `parent_question_id`."""
-    return _create_poll(
-        client,
-        creator_secret,
-        browser_id=browser_id,
-        follow_up_to=parent_question_id,
-    )
-
-
-def _bid_headers(browser_id: str | None) -> dict:
-    return {"X-Browser-Id": browser_id} if browser_id else {}
 
 
 class TestMyThreads:
@@ -101,7 +30,7 @@ class TestMyThreads:
         assert resp.json() == []
 
     def test_single_question_returns_its_poll(self, client, creator_secret):
-        poll = _create_poll(client, creator_secret)
+        poll = create_poll(client, creator_secret)
         question_id = poll["questions"][0]["id"]
 
         resp = client.post(
@@ -116,9 +45,9 @@ class TestMyThreads:
     def test_followup_chain_returns_every_poll_in_thread(self, client, creator_secret):
         """Asking for ONE question in a multi-poll thread should return EVERY
         poll in that thread — that's the discovery + accessibility merge."""
-        root = _create_poll(client, creator_secret)
-        child1 = _create_followup(client, creator_secret, root["questions"][0]["id"])
-        child2 = _create_followup(client, creator_secret, child1["questions"][0]["id"])
+        root = create_poll(client, creator_secret)
+        child1 = create_followup(client, creator_secret, root["questions"][0]["id"])
+        child2 = create_followup(client, creator_secret, child1["questions"][0]["id"])
 
         # Pass only the deepest question; discovery walks via thread_id back to
         # the root and returns every poll.
@@ -132,8 +61,8 @@ class TestMyThreads:
         assert ids == {root["id"], child1["id"], child2["id"]}
 
     def test_two_unrelated_threads_both_returned(self, client, creator_secret):
-        a = _create_poll(client, creator_secret)
-        b = _create_poll(client, creator_secret)
+        a = create_poll(client, creator_secret)
+        b = create_poll(client, creator_secret)
         resp = client.post(
             "/api/threads/mine",
             json={
@@ -156,7 +85,7 @@ class TestMyThreads:
         assert resp.json() == []
 
     def test_inline_results_default_on(self, client, creator_secret):
-        poll = _create_poll(client, creator_secret)
+        poll = create_poll(client, creator_secret)
         question_id = poll["questions"][0]["id"]
         resp = client.post(
             "/api/threads/mine",
@@ -169,7 +98,7 @@ class TestMyThreads:
         assert polls[0]["questions"][0].get("results") is not None
 
     def test_inline_results_off_when_requested(self, client, creator_secret):
-        poll = _create_poll(client, creator_secret)
+        poll = create_poll(client, creator_secret)
         question_id = poll["questions"][0]["id"]
         resp = client.post(
             "/api/threads/mine",
@@ -192,8 +121,8 @@ class TestThreadByRouteId:
     def test_resolves_by_root_poll_short_id(
         self, client, creator_secret, browser_id,
     ):
-        root = _create_poll(client, creator_secret, browser_id=browser_id)
-        child = _create_followup(
+        root = create_poll(client, creator_secret, browser_id=browser_id)
+        child = create_followup(
             client, creator_secret, root["questions"][0]["id"],
             browser_id=browser_id,
         )
@@ -201,7 +130,7 @@ class TestThreadByRouteId:
         # threadShortId is the root poll's short_id today.
         resp = client.get(
             f"/api/threads/by-route-id/{root['short_id']}",
-            headers=_bid_headers(browser_id),
+            headers=bid_headers(browser_id),
         )
         assert resp.status_code == 200
         polls = resp.json()
@@ -211,15 +140,15 @@ class TestThreadByRouteId:
     def test_resolves_by_root_poll_uuid(
         self, client, creator_secret, browser_id,
     ):
-        root = _create_poll(client, creator_secret, browser_id=browser_id)
-        _create_followup(
+        root = create_poll(client, creator_secret, browser_id=browser_id)
+        create_followup(
             client, creator_secret, root["questions"][0]["id"],
             browser_id=browser_id,
         )
 
         resp = client.get(
             f"/api/threads/by-route-id/{root['id']}",
-            headers=_bid_headers(browser_id),
+            headers=bid_headers(browser_id),
         )
         assert resp.status_code == 200
         ids = {p["id"] for p in resp.json()}
@@ -231,15 +160,15 @@ class TestThreadByRouteId:
         """Even if the user types a child poll's short_id into the route id
         slot, we still return the WHOLE thread — that's the only sensible
         definition of `/t/<routeId>`."""
-        root = _create_poll(client, creator_secret, browser_id=browser_id)
-        child = _create_followup(
+        root = create_poll(client, creator_secret, browser_id=browser_id)
+        child = create_followup(
             client, creator_secret, root["questions"][0]["id"],
             browser_id=browser_id,
         )
 
         resp = client.get(
             f"/api/threads/by-route-id/{child['short_id']}",
-            headers=_bid_headers(browser_id),
+            headers=bid_headers(browser_id),
         )
         assert resp.status_code == 200
         ids = {p["id"] for p in resp.json()}
@@ -252,10 +181,10 @@ class TestThreadByRouteId:
     def test_include_results_query_param(
         self, client, creator_secret, browser_id,
     ):
-        root = _create_poll(client, creator_secret, browser_id=browser_id)
+        root = create_poll(client, creator_secret, browser_id=browser_id)
         resp = client.get(
             f"/api/threads/by-route-id/{root['short_id']}?include_results=false",
-            headers=_bid_headers(browser_id),
+            headers=bid_headers(browser_id),
         )
         assert resp.status_code == 200
         polls = resp.json()
@@ -310,7 +239,7 @@ class TestThreadShortIdKeyspace:
     def test_create_poll_returns_thread_id_and_thread_short_id(
         self, client, creator_secret,
     ):
-        poll = _create_poll(client, creator_secret)
+        poll = create_poll(client, creator_secret)
         assert poll.get("thread_id") is not None
         assert UUID_RE.match(poll["thread_id"])
         # Fresh threads minted post-migration-101 are prefixed with `~`,
@@ -322,13 +251,13 @@ class TestThreadShortIdKeyspace:
     def test_followup_inherits_parent_thread_short_id(
         self, client, creator_secret,
     ):
-        root = _create_poll(client, creator_secret)
-        child = _create_followup(client, creator_secret, root["questions"][0]["id"])
+        root = create_poll(client, creator_secret)
+        child = create_followup(client, creator_secret, root["questions"][0]["id"])
         assert root["thread_id"] == child["thread_id"]
         assert root["thread_short_id"] == child["thread_short_id"]
 
     def test_get_poll_returns_thread_short_id(self, client, creator_secret):
-        poll = _create_poll(client, creator_secret)
+        poll = create_poll(client, creator_secret)
         resp = client.get(f"/api/polls/{poll['short_id']}")
         assert resp.status_code == 200
         assert resp.json().get("thread_short_id") == poll["thread_short_id"]
@@ -338,15 +267,15 @@ class TestThreadShortIdKeyspace:
     ):
         """Phase B.4: /t/<routeId> with the new `~`-prefixed thread short_id
         resolves the same way as the legacy root-poll-short-id form."""
-        root = _create_poll(client, creator_secret, browser_id=browser_id)
-        child = _create_followup(
+        root = create_poll(client, creator_secret, browser_id=browser_id)
+        child = create_followup(
             client, creator_secret, root["questions"][0]["id"],
             browser_id=browser_id,
         )
         thread_short_id = root["thread_short_id"]
         resp = client.get(
             f"/api/threads/by-route-id/{thread_short_id}",
-            headers=_bid_headers(browser_id),
+            headers=bid_headers(browser_id),
         )
         assert resp.status_code == 200
         ids = {p["id"] for p in resp.json()}
@@ -355,17 +284,17 @@ class TestThreadShortIdKeyspace:
     def test_resolves_by_thread_id_uuid(
         self, client, creator_secret, browser_id,
     ):
-        root = _create_poll(client, creator_secret, browser_id=browser_id)
+        root = create_poll(client, creator_secret, browser_id=browser_id)
         resp = client.get(
             f"/api/threads/by-route-id/{root['thread_id']}",
-            headers=_bid_headers(browser_id),
+            headers=bid_headers(browser_id),
         )
         assert resp.status_code == 200
         ids = {p["id"] for p in resp.json()}
         assert root["id"] in ids
 
     def test_my_threads_carries_thread_short_id(self, client, creator_secret):
-        poll = _create_poll(client, creator_secret)
+        poll = create_poll(client, creator_secret)
         resp = client.post(
             "/api/threads/mine",
             json={"accessible_question_ids": [poll["questions"][0]["id"]]},

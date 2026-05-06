@@ -47,6 +47,7 @@ from services.threads import (
     poll_ids_for_thread_ids,
     polls_for_poll_ids,
     resolve_thread_id_from_route_id,
+    thread_ids_for_poll_ids,
 )
 
 router = APIRouter(prefix="/api/threads", tags=["threads"])
@@ -108,14 +109,9 @@ def get_my_threads(req: MyThreadsRequest, request: Request):
         # Threads the user has a non-membership signal in. Used both as
         # the bridged-visibility input (already in `visibility`) and as
         # the forget bridge's "interesting" set.
-        access_threads_rows = []
-        if visibility.access_poll_ids:
-            access_threads_rows = conn.execute(
-                "SELECT DISTINCT thread_id FROM polls "
-                "WHERE id = ANY(%(ids)s) AND thread_id IS NOT NULL",
-                {"ids": list(visibility.access_poll_ids)},
-            ).fetchall()
-        access_thread_ids = {str(r["thread_id"]) for r in access_threads_rows}
+        access_thread_ids = set(
+            thread_ids_for_poll_ids(conn, visibility.access_poll_ids)
+        )
         signal_thread_ids = visibility.bridged_thread_ids | access_thread_ids
 
         member_thread_ids = set(visibility.joined_by_thread.keys())

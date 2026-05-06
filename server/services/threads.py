@@ -105,13 +105,9 @@ def load_user_visibility(
 
     bridged_thread_ids: set[str] = set()
     if legacy_question_ids:
-        rows = conn.execute(
-            "SELECT DISTINCT mp.thread_id "
-            "FROM questions p JOIN polls mp ON p.poll_id = mp.id "
-            "WHERE p.id = ANY(%(ids)s) AND mp.thread_id IS NOT NULL",
-            {"ids": legacy_question_ids},
-        ).fetchall()
-        bridged_thread_ids = {str(r["thread_id"]) for r in rows}
+        bridged_thread_ids = set(
+            thread_ids_for_question_ids(conn, legacy_question_ids)
+        )
 
     return UserVisibility(
         browser_id=browser_id,
@@ -372,6 +368,21 @@ def poll_ids_for_thread_ids(conn, thread_ids: list[str]) -> list[str]:
         {"ids": thread_ids},
     ).fetchall()
     return [str(r["id"]) for r in rows]
+
+
+def thread_ids_for_poll_ids(conn, poll_ids) -> list[str]:
+    """Resolve a list (or set) of poll_ids to the distinct set of
+    thread_ids that own them. The inverse of `poll_ids_for_thread_ids`,
+    used by the visibility filter to fan poll-level signals (poll_access)
+    up to the thread granularity needed by the forget bridge."""
+    if not poll_ids:
+        return []
+    rows = conn.execute(
+        """SELECT DISTINCT thread_id FROM polls
+            WHERE id = ANY(%(ids)s) AND thread_id IS NOT NULL""",
+        {"ids": list(poll_ids)},
+    ).fetchall()
+    return [str(r["thread_id"]) for r in rows]
 
 
 def resolve_thread_id_from_route_id(conn, route_id: str) -> str | None:
