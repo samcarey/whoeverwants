@@ -1,6 +1,7 @@
 # Thread Routing Redesign
 
-> Status: Phase A in progress (this branch). Phases B and C are deferred.
+> Status: Phase A shipped (#260). Phase B.1 in progress (this branch). Phases
+> B.2 / B.3 / B.4 / C are deferred.
 
 ## Vision
 
@@ -103,18 +104,48 @@ Updated to construct/match `/t/...?p=...` URLs:
 - `app/create-poll/page.tsx` (post-submit redirects, duplicate redirect, body-attribute reads).
 - `app/poll/page.tsx` (legacy `?id=` redirect).
 
-### Phase B — Materialize threads server-side (deferred)
+### Phase B — Materialize threads server-side
 
-- Add the `threads` table and `polls.thread_id` FK column.
-- Backfill: walk every existing `polls.follow_up_to` chain, create a `threads` row per
-  chain root, populate `thread_id` on every poll in the chain.
+Broken into four sub-phases so each is independently shippable.
+
+#### Phase B.1 — Schema only (this branch)
+
+- Add the `threads` table (`id uuid PK, short_id text UNIQUE, created_at`).
+- Add `polls.thread_id uuid` FK (nullable in this phase to avoid a deploy race).
+- Backfill: thread.id == root_poll.id; recursive CTE on `follow_up_to` populates
+  `thread_id` on every poll in every chain. `threads.short_id` is copied from the
+  root poll's short_id so URLs would resolve once Phase B.4 starts using it.
+- Server `_insert_poll` now sets `thread_id` on every new poll: follow-ups inherit
+  `parent.thread_id`; roots create a fresh `threads` row.
+- New threads created post-migration have `short_id = NULL` until Phase B.4 mints
+  them from a fresh keyspace. Nothing reads `threads.short_id` yet, so this is fine.
+- Migration: `099_create_threads_{up,down}.sql`.
+
+Phase B.1 leaves `main` shippable: no API/FE changes, no behavior change. The
+schema is in place for Phases B.2 / B.4 to consume.
+
+#### Phase B.2 — Use `thread_id` server-side (deferred)
+
+- Replace server-side chain walking (e.g. `_resolve_parent_poll_id`,
+  `algorithms/related_polls.py`) with `WHERE thread_id = $1` lookups.
+- Tighten `polls.thread_id` to `NOT NULL` once the new code is fully rolled out.
+- No API contract changes.
+
+#### Phase B.3 — `browser_id` cookie + new endpoints (deferred)
+
 - Introduce `browser_id` cookie. Server hands one out on first visit; client mirrors
   into localStorage. New endpoints `getMyThreads()` and `getThread(id)` use it.
 - Replace `getAccessiblePolls()` + client-side `buildThreads()` + `discoverRelatedQuestions`
   with the new server endpoints.
-- `threadShortId` becomes `threads.short_id`. To preserve existing URLs, backfill
-  `threads.short_id` from the root poll's short_id; new threads get a fresh value.
-- Old `/p/<shortId>` redirects continue to work via server-side resolution.
+
+#### Phase B.4 — Decouple `threads.short_id` keyspace (deferred)
+
+- `threadShortId` becomes `threads.short_id` rather than the root poll's short_id.
+- Mint fresh `threads.short_id`s from a separate sequence (avoiding collision with
+  the existing root-poll-short-id values copied during B.1 backfill).
+- Old `/p/<shortId>` redirects continue to work via server-side resolution; old
+  `/t/<root-poll-short-id>` URLs continue to work because B.1 backfilled
+  `threads.short_id` to match.
 
 ### Phase C — Membership with join-time visibility (deferred)
 
