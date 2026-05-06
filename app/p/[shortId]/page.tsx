@@ -262,6 +262,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     handleWrapperSubmitStateChange,
     confirmPollSubmit,
     confirmVoteChange,
+    submitYesNoChoice,
     submitSwipeAbstain,
   } = useThreadVoting({ thread, setVotedQuestionIds, setAbstainedQuestionIds });
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
@@ -1574,6 +1575,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                 setModalQuestion={setModalQuestion}
                 setShowModal={setShowModal}
                 setPendingVoteChange={setPendingVoteChange}
+                submitYesNoChoice={submitYesNoChoice}
                 setPollVoterName={setPollVoterName}
                 setPendingPollChoices={setPendingPollChoices}
                 setPendingPollSubmit={setPendingPollSubmit}

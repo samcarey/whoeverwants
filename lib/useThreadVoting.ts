@@ -280,24 +280,27 @@ export function useThreadVoting({
     }
   }).current;
 
-  const confirmVoteChange = async () => {
-    if (!pendingVoteChange) return;
-    const { questionId, newChoice } = pendingVoteChange;
+  // Core yes/no submit. Used both by `confirmVoteChange` (modal-driven) and
+  // by the no-confirmation fast path in ThreadCardItem when a single-question
+  // poll gets a first-time tap. Always routes through the unified poll
+  // endpoint as a single-item batch — matches the architectural "vote
+  // submission is always atomic across the poll" rule (see CLAUDE.md → Poll
+  // System), even when the poll has only one question.
+  const submitYesNoChoice = async (
+    questionId: string,
+    newChoice: YesNoChoice,
+  ) => {
     const current = userVoteMap.get(questionId);
     const subQuestion = thread?.questions.find((p) => p.id === questionId);
     const pollId = subQuestion?.poll_id ?? null;
     if (!pollId) {
       // Phase 5: every question has a poll wrapper, so this branch is dead.
       // Surface as a runtime error rather than silently dropping the vote.
-      console.error("confirmVoteChange called for question without poll_id");
+      console.error("submitYesNoChoice called for question without poll_id");
       return;
     }
     setVoteChangeSubmitting(true);
     try {
-      // Route every yes_no tap-to-change through the unified poll endpoint
-      // as a single-item batch. Matches the architectural "vote submission is
-      // always atomic across the poll" rule (see CLAUDE.md → Poll
-      // System), even when the poll has only one question.
       const voter_name = current
         ? current.voterName
         : (getUserName()?.trim() || null);
@@ -346,6 +349,11 @@ export function useThreadVoting({
     }
   };
 
+  const confirmVoteChange = async () => {
+    if (!pendingVoteChange) return;
+    await submitYesNoChoice(pendingVoteChange.questionId, pendingVoteChange.newChoice);
+  };
+
   return {
     userVoteMap,
     setUserVoteMap,
@@ -364,6 +372,7 @@ export function useThreadVoting({
     handleWrapperSubmitStateChange,
     confirmPollSubmit,
     confirmVoteChange,
+    submitYesNoChoice,
     submitSwipeAbstain,
   };
 }
