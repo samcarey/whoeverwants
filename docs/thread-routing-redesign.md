@@ -1,8 +1,8 @@
 # Thread Routing Redesign
 
 > Status: Phase A shipped (#260), Phase B.1 shipped (#261), Phase B.2
-> shipped (#262), Phase B.3 shipped (#263), Phase B.4 in progress (this
-> branch). Phase C is deferred.
+> shipped (#262), Phase B.3 shipped (#263), Phase B.4 shipped (#264).
+> Phase C.1 in progress (this branch); C.2 and C.3 deferred.
 
 ## Vision
 
@@ -239,33 +239,77 @@ through the rollout window.
     per-poll `apiGetPollByShortId` call which couldn't resolve
     `~`-prefixed thread route ids.
 
-### Phase C — Membership with join-time visibility (deferred)
+### Phase C — Membership with join-time visibility
 
-- Add `thread_members(thread_id, browser_id, joined_at)` and
-  `poll_access(poll_id, browser_id, granted_at)`.
-- Visibility filter applies in the new server endpoints.
-- "Join" trigger: voting / abstaining / creating in any poll in the thread auto-joins
-  the user. (Reading via direct poll link does not.) Open question: should visiting
-  `/t/<id>` directly join you, or show a "join thread" prompt?
-- Migration:
-  - Existing creators → `thread_members(thread_id, browser_id, joined_at = poll.created_at)`
-    for every thread containing one of their creations.
-  - Existing voters → `thread_members(thread_id, browser_id, joined_at = first_vote_timestamp)`.
-  - Existing `accessible_question_ids` localStorage entries → grant `poll_access` rows.
+Broken into three sub-phases mirroring Phase B's pattern, so each is
+independently shippable and behavior changes only land once the schema +
+writes are in place.
+
+#### Phase C.1 — Schema only (this branch)
+
+- Add `thread_members(thread_id, browser_id, joined_at)` with composite
+  PK `(thread_id, browser_id)` and `joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`.
+- Add `poll_access(poll_id, browser_id, granted_at)` with composite PK
+  `(poll_id, browser_id)` and `granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`.
+- Both tables FK to `threads(id)` / `polls(id)` with `ON DELETE CASCADE`
+  so dropping a thread/poll cleans up its membership/access rows.
+- Both tables get a secondary index on `browser_id` for the "all
+  threads/polls this browser belongs to" lookup that C.3's read endpoints
+  will use.
+- RLS enabled with public select/insert/delete policies, mirroring the
+  pattern used by `threads`. The actual visibility / write authorization
+  lives in application code (Phase C.3), not in RLS, since `browser_id`
+  is captured by middleware and not exposed to Postgres roles.
+- No application code reads or writes either table yet. Phase C.1 leaves
+  `main` shippable: pure additive schema, no behavior change.
+- Migration: `102_create_membership_tables_{up,down}.sql`.
+
+Backfill of legacy votes/creates is **not** part of C.1. `browser_id`
+was only captured starting in Phase B.3 (#263), so pre-B.3 votes/creates
+have no `browser_id` to attach a membership row to. The current plan is
+to lean on C.2's auto-join writes for any returning browser (they
+re-establish membership the next time they vote in the thread), backed
+by the existing localStorage `accessible_question_ids` list which the FE
+will continue to consult during the transition. Settling on a final
+backfill answer is a follow-up — see CLAUDE.md →
+"FOLLOW-UP — Decide backfill strategy ...".
+
+#### Phase C.2 — Auto-join writes (deferred)
+
+- Insert `thread_members(thread_id, browser_id, joined_at = NOW())` on
+  vote / abstain / poll-create. Idempotent via `ON CONFLICT DO NOTHING`
+  on the composite PK.
+- Insert `poll_access(poll_id, browser_id, granted_at = NOW())` on the
+  redirect resolution path for legacy `/p/<id>` URLs and on the `?p=`
+  query-param expansion in `/t/<thread>?p=<poll>` — i.e. anywhere a
+  user lands on a *specific* poll without already being a thread member.
+- No reads gated yet. C.2 is purely additive at the storage layer:
+  `thread_members` / `poll_access` get populated by live traffic, but
+  nothing yet filters reads by them.
+
+#### Phase C.3 — Visibility enforcement (deferred)
+
+- Apply the visibility rule (see "Visibility rule" above) in the read
+  endpoints `POST /api/threads/mine` and `GET /api/threads/by-route-id/{routeId}`.
+- Resolve the open semantic questions before shipping:
+  - **Join trigger:** vote/create/abstain only (the C.2 default), or
+    also auto-join on direct `/t/<id>` visit, or explicit join button?
+  - **Non-member visiting `/t/<id>` (no `?p`):** 404? "Join this thread"
+    prompt? Read-only stub of the most recent open polls?
+  - **Forget vs leave:** does forget-of-last-accessible-poll auto-drop
+    `thread_members`, or do we add an explicit "leave thread" action?
 
 ## Open questions
 
-- **Join trigger:** voting/creating only (proposed default), explicit join button, or
-  also auto-join on direct `/t/<id>` visit?
-- **Non-member visiting `/t/<id>` (no `?p`):** 404? "Join this thread" prompt? Render
-  a read-only stub of the most recent open polls?
-- **Forget vs leave:** today "forget" removes a poll from the browser's accessible list.
-  Does Phase C add an explicit "leave thread" action that drops `thread_members`, or do
-  we treat forget-of-the-last-accessible-poll as the leave signal?
-- **Thread short_id keyspace:** in Phase B, do we keep root-poll-short_id as the thread
-  short_id forever, or mint fresh thread short_ids and add a redirect for the old form?
-  (Keeping the same form simplifies Phase A → Phase B; minting fresh decouples the two
-  entities.)
+The thread-short_id-keyspace question was resolved in Phase B.4: fresh
+thread short_ids minted from a `~`-prefixed namespace, with the legacy
+root-poll-short_id values kept on the existing `threads` rows so old
+`/t/<root>` URLs still resolve through the same `threads.short_id`
+lookup as the new ones.
+
+The Phase C semantic questions (join trigger, non-member /t visit,
+forget vs leave) are now tracked under "Phase C.3 — Visibility
+enforcement (deferred)" above and need to be settled before C.3 ships.
 
 ## Phase A simplifications worth keeping in mind
 
