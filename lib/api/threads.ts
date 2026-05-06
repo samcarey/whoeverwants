@@ -14,6 +14,13 @@
  * Both helpers piggyback on the existing per-poll cache: `cachePoll` is
  * called for each returned poll so subsequent `apiGetPollById` calls hit
  * warm cache.
+ *
+ * `apiLeaveThread(routeId)` is the explicit "leave thread" action — fire-
+ * and-forget DELETE to `/api/threads/{routeId}/membership`. Mirrors
+ * `apiGrantPollAccess`'s shape so callers can wire it up the same way
+ * (try/catch swallow on the call site if needed). Used to retire the
+ * legacy `accessible_question_ids` bridge in `/api/threads/mine` once
+ * forget-of-last-poll calls land.
  */
 
 import type { Poll } from "@/lib/types";
@@ -67,4 +74,25 @@ export async function apiGetThreadByRouteId(
   const path = `/by-route-id/${encodeURIComponent(routeId)}${qs ? `?${qs}` : ''}`;
   const data: any[] = await threadFetch(path);
   return hydrateAndCache(data);
+}
+
+/**
+ * Explicit "leave thread" action — DELETE the caller's `thread_members`
+ * row for the resolved thread. Idempotent server-side and fire-and-forget
+ * client-side: the server returns 204 whether or not a row existed (and
+ * even for strangers), so a transient failure is never user-visible. Errors
+ * are swallowed for the same reason `apiGrantPollAccess` does: the
+ * post-condition is verifiable on the next `/api/threads/mine` call.
+ *
+ * `routeId` accepts `threads.short_id`, `threads.id`, `polls.short_id`, or
+ * `polls.id` — same as `apiGetThreadByRouteId`.
+ */
+export async function apiLeaveThread(routeId: string): Promise<void> {
+  try {
+    await threadFetch(`/${encodeURIComponent(routeId)}/membership`, {
+      method: 'DELETE',
+    });
+  } catch {
+    // intentional: see jsdoc
+  }
 }

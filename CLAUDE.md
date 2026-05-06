@@ -748,7 +748,21 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Poll System
 
-> **Phase C.3 of the thread-routing redesign in progress (this branch).**
+> **`DELETE /api/threads/{route_id}/membership` ("leave thread") shipped
+> on this branch** as the explicit teardown counterpart to Phase C.2's
+> auto-join writes. The endpoint removes the caller's `thread_members`
+> row for the resolved thread (idempotent — strangers and
+> already-left-and-leaving-again both 204; only an unresolvable
+> `route_id` 404s). `poll_access` rows are NOT touched, so direct-link
+> access survives the leave. Resolves all four route_id forms
+> (`threads.short_id`, `threads.id`, `polls.short_id`, `polls.id`).
+> FE helper: `apiLeaveThread(routeId)` in `lib/api/threads.ts`,
+> fire-and-forget like `apiGrantPollAccess`. Wiring it up to the FE's
+> forget flow (or an explicit "leave thread" UX) is the next step
+> required to retire the legacy `accessible_question_ids` bridge in
+> `/api/threads/mine`.
+>
+> **Phase C.3 of the thread-routing redesign shipped (#267).**
 > The visibility rule is now enforced on `POST /api/threads/mine` and
 > `GET /api/threads/by-route-id/{route_id}`. A poll P in thread T is
 > visible to browser B iff ANY of:

@@ -42,6 +42,7 @@ export { apiGetQuestionResults } from "./results";
 export {
   apiGetMyThreads,
   apiGetThreadByRouteId,
+  apiLeaveThread,
 } from "./threads";
 
 export {
