@@ -39,20 +39,17 @@ if [[ -z "$(git remote)" ]]; then
   exit 0
 fi
 
-# Uncommitted changes (staged or unstaged).
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "There are uncommitted changes in the repository. Please commit and push these changes to the remote branch." >&2
   exit 2
 fi
 
-# Untracked files (excluding gitignored).
 untracked_files=$(git ls-files --others --exclude-standard)
 if [[ -n "$untracked_files" ]]; then
   echo "There are untracked files in the repository. Please commit and push these changes to the remote branch." >&2
   exit 2
 fi
 
-# Unpushed commits on the current branch.
 current_branch=$(git branch --show-current)
 if [[ -n "$current_branch" ]]; then
   if git rev-parse "origin/$current_branch" >/dev/null 2>&1; then

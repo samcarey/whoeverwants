@@ -176,8 +176,7 @@ reap_orphans_for_slug() {
   # calling this, so /proc/$$/cwd resolves into the slug dir and we'd reap
   # ourselves (exit 137, looking like an OOM kill).
   local self_pid=$$
-  local parent_pid
-  parent_pid=$(awk '{print $4}' /proc/$$/stat 2>/dev/null)
+  local parent_pid=$PPID
   for cwd_link in /proc/[0-9]*/cwd; do
     local target
     target=$(readlink "$cwd_link" 2>/dev/null) || continue
@@ -186,7 +185,7 @@ reap_orphans_for_slug() {
         local pid="${cwd_link#/proc/}"
         pid="${pid%/cwd}"
         [ "$pid" = "$self_pid" ] && continue
-        [ -n "$parent_pid" ] && [ "$pid" = "$parent_pid" ] && continue
+        [ "$pid" = "$parent_pid" ] && continue
         victims+=("$pid")
         ;;
     esac
