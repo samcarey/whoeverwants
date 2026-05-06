@@ -6,7 +6,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyThreads } from "@/lib/simpleQuestionQueries";
 import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
-import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
 import type { QuestionResults } from "@/lib/types";
@@ -1658,15 +1658,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             // If the forgotten question was expanded, collapse it so the URL `?p=`
             // doesn't still point at the deleted poll.
             setExpandedQuestionId((curr) => (curr === action.question.id ? null : curr));
-            setThread((prev) => {
-              if (!prev) return prev;
-              const remaining = prev.questions.filter((p) => p.id !== action.question.id);
-              if (remaining.length === 0) {
-                router.push('/');
-                return prev;
-              }
-              return { ...prev, questions: remaining };
-            });
+            const remaining = thread ? thread.questions.filter((p) => p.id !== action.question.id) : [];
+            if (thread && remaining.length === 0) {
+              // Drop the server-side `thread_members` row so the thread
+              // doesn't reappear via Phase C.3 membership-based visibility
+              // on the next /api/threads/mine call. Fire-and-forget.
+              void apiLeaveThread(threadId);
+              router.push('/');
+            } else {
+              setThread((prev) => (prev ? { ...prev, questions: prev.questions.filter((p) => p.id !== action.question.id) } : prev));
+            }
           } else if (action.kind === 'reopen') {
             try {
               const secret = getCreatorSecret(action.question.id) || 'dev-override';

@@ -749,7 +749,7 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 ## Poll System
 
 > **`DELETE /api/threads/{route_id}/membership` ("leave thread") shipped
-> on this branch** as the explicit teardown counterpart to Phase C.2's
+> in #268** as the explicit teardown counterpart to Phase C.2's
 > auto-join writes. The endpoint removes the caller's `thread_members`
 > row for the resolved thread (idempotent — strangers and
 > already-left-and-leaving-again both 204; only an unresolvable
@@ -757,10 +757,22 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 > access survives the leave. Resolves all four route_id forms
 > (`threads.short_id`, `threads.id`, `polls.short_id`, `polls.id`).
 > FE helper: `apiLeaveThread(routeId)` in `lib/api/threads.ts`,
-> fire-and-forget like `apiGrantPollAccess`. Wiring it up to the FE's
-> forget flow (or an explicit "leave thread" UX) is the next step
-> required to retire the legacy `accessible_question_ids` bridge in
-> `/api/threads/mine`.
+> fire-and-forget like `apiGrantPollAccess`.
+>
+> **Wired into the thread-page forget flow on this branch.** When the
+> user forgets their last remaining question in the thread (the
+> existing `remaining.length === 0` branch in
+> `app/t/[threadShortId]/page.tsx`'s `pendingAction.kind === 'forget'`
+> handler — i.e. the same condition that already triggers
+> `router.push('/')`), we additionally call `apiLeaveThread(threadId)`
+> before navigating home. This is the unambiguous "no FE-visible
+> questions left in this thread for this browser" case. Forgetting one
+> question of a multi-question/multi-poll thread does NOT fire leave —
+> the user is still consuming the thread via the remaining questions.
+> Once enough rollout time has passed for active browsers to exercise
+> this path, the legacy `accessible_question_ids` bridge in
+> `/api/threads/mine` becomes retirable (membership + poll_access
+> become the sole sources of truth).
 >
 > **Phase C.3 of the thread-routing redesign shipped (#267).**
 > The visibility rule is now enforced on `POST /api/threads/mine` and
