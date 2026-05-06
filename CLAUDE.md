@@ -748,21 +748,54 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Poll System
 
-> **Phase C.1 of the thread-routing redesign in progress (this branch).**
-> Migration 102 adds two empty membership tables — `thread_members(thread_id,
-> browser_id, joined_at)` and `poll_access(poll_id, browser_id, granted_at)`,
-> both with composite PKs and a secondary index on `browser_id`. No
-> application code reads or writes either table yet; Phase C.2 will start
-> writing them on vote/create/abstain (auto-join) and on the `?p=`
-> direct-link grant path, and Phase C.3 will gate visibility in
-> `/api/threads/*` on the union of the two. Three semantic questions stay
-> open until C.3: join trigger (vote/create only? auto on /t visit?), what
-> a non-member sees at `/t/<id>` with no `?p`, and forget-vs-leave. Backfill
-> of legacy votes/creates is deferred — `browser_id` was only captured
-> starting in Phase B.3, so pre-B.3 rows have no browser_id to attach a
-> membership row to; the current plan is to lean on C.2's auto-join writes
-> for any returning browser. See `docs/thread-routing-redesign.md` →
-> "Phase C — Membership with join-time visibility".
+> **Phase C.2 of the thread-routing redesign in progress (this branch).**
+> The membership tables (added schema-only in C.1) are now wired to live
+> traffic. Three trigger points, all decoupled from the action that
+> triggers them — each membership write opens its OWN `get_db()`
+> transaction, logs+swallows failures, and uses `ON CONFLICT DO NOTHING`
+> on the composite PK so re-votes/re-grants preserve the original
+> `joined_at`/`granted_at` watermark (the Phase C.3 visibility filter
+> compares poll closure timestamps against it):
+>
+>   * **Creator auto-join** — `POST /api/polls` writes `thread_members`
+>     AFTER the create commits (root polls' `thread_id` only exists
+>     post-`_insert_poll`).
+>   * **Voter auto-join** — `POST /api/polls/{id}/votes` writes
+>     `thread_members` BEFORE the vote runs, so a vote rejected by
+>     validation still records "attempted to participate" as the trigger.
+>     `services.memberships.join_thread_for_poll` fuses the
+>     `polls.thread_id` lookup with the insert via `INSERT … SELECT
+>     thread_id FROM polls WHERE id=… ON CONFLICT DO NOTHING` — single
+>     round-trip on the vote hot path.
+>   * **Direct-link grant** — new `POST /api/polls/{id}/access` endpoint
+>     called by the FE when the user lands on `/t/<thread>?p=<poll>` (and
+>     transitively from legacy `/p/<id>` redirects, which funnel through
+>     the same canonical URL once they resolve). The endpoint inlines the
+>     INSERT and uses the FK violation as the existence check:
+>     `psycopg.errors.ForeignKeyViolation` → 404 — single connection, no
+>     TOCTOU window. Returns 204 on success.
+>
+> FE: `apiGrantPollAccess(pollId)` in `lib/api/polls.ts` is fire-and-forget
+> (catches and discards). The thread page (`app/t/[threadShortId]/page.tsx`)
+> fires it from a `useEffect` keyed on a memoized `targetPoll` (resolved
+> from `?p=` via `getCachedPollForShortId`); a `useRef<Set<string>>`
+> dedupes the call so `rootPoll` churn (cache-hit initial paint then
+> async refresh resets the same value) doesn't fire duplicate POSTs.
+> `_browser_id(request)` helper in `routers/polls.py` reads
+> `request.state.browser_id` so every Phase C handler reaches for the
+> same one-liner.
+>
+> Three semantic questions still open for Phase C.3 (visibility
+> enforcement): join trigger finality (vote/create only vs. auto on /t
+> visit vs. explicit join), what a non-member sees at `/t/<id>` with no
+> `?p`, and forget-vs-leave. Backfill of pre-B.3 votes is still deferred
+> — current plan is to lean on C.2's auto-join writes for any returning
+> browser. See `docs/thread-routing-redesign.md` → "Phase C — Membership
+> with join-time visibility".
+>
+> **Phase C.1 (#265) is the previous step.** Migration 102 added the two
+> membership tables (`thread_members` and `poll_access`) with composite
+> PKs and a secondary index on `browser_id`, schema-only. C.2 wires them.
 >
 > **Phase B.4 of the thread-routing redesign shipped (#264).**
 > Every `PollResponse` now carries `thread_id` (uuid) and `thread_short_id`
@@ -995,6 +1028,11 @@ Frontend conventions for the poll plumbing:
 - **`dev_sam_at_samcarey_com` lacks the `questions.short_id` INSERT trigger.** Migration 093 self-heals the `questions.short_id` and `questions.sequential_id` columns on dev DBs but doesn't recreate the `trigger_generate_short_id` BEFORE-INSERT trigger that prod has. Result: legacy `POST /api/questions` tests (`tests/test_questions_api.py::TestCreateQuestion`, `TestGetQuestion::test_get_question_by_short_id`) fail on dev_sam with `short_id IS NULL` in the response. They pass against the prod-shape `whoeverwants` DB. If you need the legacy create endpoint to work on dev_sam, add the trigger via a one-shot psql command (don't bake it into a migration — prod already has it).
 - **Surfacing a poll-level field on every `Question` response means updating *every* questions SELECT that feeds `_row_to_question`.** Phase 3.5 added `poll_follow_up_to` (the wrapper's chain pointer). The pattern: a `_SELECT_QUESTION_WITH_POLL_PREFIX` helper that does `SELECT p.*, mp.follow_up_to AS poll_follow_up_to FROM questions p LEFT JOIN polls mp ON p.poll_id = mp.id` (callers append `WHERE p.<column> = ...`), plus an `_attach_poll_chain_fields(conn, row)` helper for `RETURNING *` paths (UPDATE/INSERT) that does a separate lookup. `_row_to_question` reads `row.get("poll_follow_up_to")` and gracefully returns None when the field is absent — so SELECTs that don't go through the prefix simply produce a None field on the FE rather than an error. The legacy `POST /api/questions` create path skips `_attach_poll_chain_fields` entirely because it always inserts `poll_id IS NULL`. When adding a similar wrapper-level field in the future (Phase 5 will add more), follow this pattern and don't forget the `PollResponse` questions list — `_row_to_poll` enriches each question row inline since it already has the wrapper's value in scope (no extra DB lookup).
 - **Don't reinvent the `poll_id → Question` Map lookup.** `lib/threadUtils.ts` exports `buildQuestionByPollMap(questions)` — every callsite that needs to resolve a question for a poll_id (e.g. for `findThreadRootRouteId`'s chain walk) should use it, prepending the current question if it isn't yet in the cached accessible list (`buildQuestionByPollMap([question, ...accessible])`). The first occurrence per poll wins, so the prepend ensures the live question wins over a stale cache entry. Earlier Phase 3.5 code had this pattern duplicated inline in three places; consolidate any new callsite onto the helper.
+- **Phase C.2 audit-write rule: decoupled transactions for membership writes.** Anything triggered by a vote/create/abstain that needs to write to `thread_members` / `poll_access` MUST run in its own `get_db()` transaction, NOT share the action's transaction. Pattern: helper functions in `services/memberships.py` that open their own connection, run `INSERT … ON CONFLICT DO NOTHING`, and `try/except Exception: log+continue` so audit failures don't block the action and action failures don't strand audit rows. The composite-PK `ON CONFLICT` is also load-bearing: re-voting / re-grant must NOT advance `joined_at`/`granted_at`, since Phase C.3 visibility compares poll closure timestamps against that watermark. Order in the handler: vote/abstain endpoint writes membership BEFORE the vote (so a rejected vote still records "attempted to participate"); poll-create endpoint writes membership AFTER the create (the root-poll's `thread_id` only exists post-`_insert_poll`).
+- **Use `_browser_id(request)` in `routers/polls.py` rather than `getattr(request.state, "browser_id", None)`.** `BrowserIdMiddleware` always sets the field, but the `getattr` fallback is the safe form for the rare path that doesn't go through middleware (direct `TestClient` instantiation, internal call sites). The helper exists because Phase C handlers will all reach for it; don't re-inline the `getattr`.
+- **Fuse poll → thread_id lookups with the audit-write SQL.** `join_thread_for_poll(poll_id, browser_id)` does `INSERT INTO thread_members SELECT thread_id, %(browser_id)s FROM polls WHERE id=%(poll_id)s ON CONFLICT DO NOTHING` — one statement, one round-trip. Don't re-introduce a separate `SELECT thread_id FROM polls` followed by an INSERT; that doubles the hot-path RTT.
+- **Use FK violation as the existence check.** The `POST /api/polls/{id}/access` handler in `routers/polls.py` does `try: INSERT … catch psycopg.errors.ForeignKeyViolation → 404`. Prefer this to a `SELECT 1 FROM polls` pre-check: it's one connection instead of two, removes the TOCTOU window between SELECT and INSERT, and surfaces deletes-during-grant as the same 404. Same pattern applies to any "write a row whose FK doubles as the existence check" endpoint (Phase C.3 may add more).
+- **`useEffect` that fires a side-effect API call from a derived value needs a `useRef<Set>` dedupe.** The Phase C.2 access grant in `app/t/[threadShortId]/page.tsx` is keyed on a memoized `targetPoll`, but the parent's `rootPoll` churns post-mount when an async refresh resets the same value — re-firing the effect with an identical `targetPoll`. The server-side `ON CONFLICT DO NOTHING` makes the duplicate POST harmless, but a network round-trip per render is wasteful. Pattern: `const grantedPollIdsRef = useRef<Set<string>>(new Set()); useEffect(() => { if (grantedPollIdsRef.current.has(id)) return; grantedPollIdsRef.current.add(id); void apiCall(id); }, [target]);`. Reuse this idiom for any future fire-and-forget grant/audit endpoint.
 
 This section captures the design decisions from the original conversation so future sessions can reference them without re-asking.
 
