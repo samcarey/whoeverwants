@@ -121,9 +121,16 @@ export default function RankingSection({
 
   if (!canSubmitRankings || questionOptions.length === 0) {
     if (canSubmitSuggestions && hasVoted && !isEditingSuggestions) {
-      // The card status row already surfaces the suggestion countdown — no
-      // need to repeat it here.
-      return null;
+      // Plain centered text at the bottom of the card — no sub-card chrome.
+      return (
+        <div className="text-center text-sm text-gray-600 dark:text-gray-400">
+          {suggestionDeadline ? (
+            <>Ranking will open after suggestions cutoff in{' '}<Countdown deadline={suggestionDeadline} /></>
+          ) : (
+            <>Ranking will open after suggestions cutoff</>
+          )}
+        </div>
+      );
     }
     if (hasSuggestionPhase && !canSubmitSuggestions && questionOptions.length === 0) {
       return (
