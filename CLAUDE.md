@@ -748,7 +748,46 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Poll System
 
-> **Phase B.2 of the thread-routing redesign shipped (this branch).**
+> **Phase B.3 of the thread-routing redesign shipped (this branch).**
+> Two new endpoints — `POST /api/threads/mine` and
+> `GET /api/threads/by-route-id/{routeId}` — collapse the legacy three-step
+> bootstrap (`discoverRelatedQuestions` + `apiGetAccessibleQuestions` +
+> client-side `buildThreads`) into one server round-trip driven by
+> `polls.thread_id`. Both return `list[PollResponse]` — the same shape as
+> `/api/questions/accessible` — so the FE consumer is a drop-in. The
+> aggregation body of `/api/questions/accessible` was extracted to
+> `services/threads.py: polls_for_poll_ids(conn, poll_ids, *, include_results)`
+> and is shared by both routers.
+>
+> A new `BrowserIdMiddleware` mints a uuid4 on first visit and echoes it
+> via the `X-Browser-Id` response header. `lib/browserIdentity.ts` captures
+> the value and persists to localStorage so subsequent requests carry the
+> same id via the matching request header. **Header, not cookie** — the
+> FE talks to the API same-origin in prod (Next.js rewrite) and direct in
+> dev/CI; cookies require credentialed CORS which doesn't compose with
+> `allow_origins=["*"]`. The header avoids that minefield while giving
+> Phase C the same identity guarantee. Phase B.3 captures the id on
+> `request.state.browser_id` but doesn't gate visibility on it yet — that's
+> Phase C's job.
+>
+> FE rewiring: `lib/api/threads.ts` adds `apiGetMyThreads` /
+> `apiGetThreadByRouteId` (both warm `cachePoll` + the per-question
+> results cache); `lib/simpleQuestionQueries.ts: getMyThreads()` is the
+> drop-in replacement for `getAccessiblePolls() + discoverRelatedQuestions()`
+> that home/thread/`useThread` all consume. Newly-discovered question_ids
+> are persisted to localStorage (subject to the forgotten-list filter)
+> and the accessible cache is invalidated when the set grows so subsequent
+> freshness checks pick up the expanded list.
+> `discoverRelatedQuestions` is no longer called from any navigation path;
+> the function still exists for `triggerDiscoveryIfNeeded` callers but is
+> dead code in production. `next.config.ts` adds the `/api/threads`
+> rewrites alongside the existing `/api/questions` and `/api/polls` ones.
+>
+> Phase B.3 leaves `main` shippable: no schema changes, no contract changes
+> for existing endpoints. The legacy endpoints stay in place so any client
+> running the previous JS bundle keeps working through the rollout window.
+>
+> **Phase B.2 (#262) is the previous step.**
 > `algorithms/related_polls.py` no longer walks `polls.follow_up_to`
 > chains — it groups by `polls.thread_id`. The SQL in
 > `routers/questions.py:get_related_questions` is now a single indexed
@@ -1564,6 +1603,10 @@ Submitting a draft used to navigate to `/p/<newPollShortId>`. The user described
 ### API Development Pitfalls
 
 - **`server/services/questions.py` is the home for non-route helpers.** Anything that's a free function operating on a DB connection (`_fetch_question_full`, `_finalize_*`, `_submit_vote_to_question`, `_edit_vote_on_question`, `_row_to_question`, `_compute_results`, etc.) lives in `services/questions.py` and is imported by both `routers/questions.py` and `routers/polls.py`. Don't reach across routers (`from routers.questions import _foo` from a sibling router) — that pattern was retired when `services/` was introduced. Underscore-prefixed names are kept as a "low-stability internal API during poll Phase X churn" signal; OK to drop the underscore once the surface stabilizes.
+- **`server/services/threads.py` is the equivalent home for thread-aggregation helpers (Phase B.3).** `polls_for_poll_ids(conn, poll_ids, *, include_results)` builds the `PollResponse[]` payload (with inline results, voter aggregates, response counts) from a list of poll_ids. Both `/api/questions/accessible` and `/api/threads/*` use it. `thread_ids_for_question_ids` and `poll_ids_for_thread_ids` are thin SQL wrappers; `resolve_thread_id_from_route_id(conn, route_id)` does the four-form lookup (threads.short_id → threads.id → polls.short_id → polls.id) — extend it when Phase B.4 starts minting fresh `threads.short_id`s.
+- **`BrowserIdMiddleware` reads/mints a `X-Browser-Id` header per request (Phase B.3).** A header (not cookie) because the FE talks same-origin to the API in prod (Next.js rewrite) and direct in dev/CI; cookies would require credentialed CORS which doesn't compose with `allow_origins=["*"]`. The id is always echoed on the response (even on 4xx/5xx) so the FE can adopt server-issued ids on the very first request. `request.state.browser_id` is populated for every request; **Phase B.3 only captures, doesn't enforce** — Phase C will add `thread_members` and start gating visibility on this id. Reading/setting from a router: `getattr(request.state, "browser_id", None)`.
+- **FE `lib/browserIdentity.ts` is the canonical browser-id storage.** `getBrowserId()` returns the localStorage value or null. `adoptServerBrowserId(value)` is called by `_internal.ts: fetchWithBase` after every fetch — it's a first-write-wins merger so a compromised middlebox can't rewrite the id mid-session (mismatch logs a warning and keeps the existing id). Don't roll your own UUID — let the server mint and adopt the response.
+- **`apiGetMyThreads(accessibleQuestionIds)` and `apiGetThreadByRouteId(routeId)` (in `lib/api/threads.ts`) replace the legacy `discoverRelatedQuestions + apiGetAccessibleQuestions` pair.** Both warm `cachePoll` and the per-question results cache so subsequent `apiGetQuestionById`/`apiGetQuestionResults` calls hit warm cache. Use these for any new "give me this thread" flow; don't reach for `apiGetAccessibleQuestions` in new code (it's preserved for the legacy compatibility layer). The drop-in `getMyThreads()` wrapper in `lib/simpleQuestionQueries.ts` is what `app/page.tsx`, `app/t/[threadShortId]/page.tsx`, and `lib/useThread.ts` consume — it adds in-flight coalescing (StrictMode-safe), accessible-id persistence (the server-discovered question_ids get added to localStorage subject to the forgotten-list filter), and accessible-cache invalidation when the set grew.
 - **Catch-all fallthrough in `_compute_results()`**: When adding new question types, `server/services/questions.py: _compute_results()` has a catch-all return at the bottom returning `yes_count=None`. Any question type without an explicit handler silently falls through and the frontend interprets `None` as `0`. Always add an explicit handler for each question type.
 - **Frontend TODO stubs cause silent failures**: If the backend adds a new endpoint, check whether the frontend has TODO stubs (e.g., `setParticipants([])`) that need to be connected. Stubs cause incorrect UI without errors.
 - **`toQuestionResults()` in `lib/api.ts` is a manual field mapper** — when adding new fields to `QuestionResultsResponse` on the backend, you MUST also add them to `toQuestionResults()` or they'll be silently dropped. The function explicitly maps each field; unmapped fields from the API response are discarded.

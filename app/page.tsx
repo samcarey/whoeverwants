@@ -2,8 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import type { Poll } from "@/lib/types";
-import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
-import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
+import { getMyThreads } from "@/lib/simpleQuestionQueries";
 import { apiGetAllQuestionIds } from "@/lib/api";
 import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
@@ -152,18 +151,13 @@ export default function Home() {
           }
         }
 
-        // First, discover any new follow-up questions
-        try {
-          const discoveryResult = await discoverRelatedQuestions();
-          if (discoveryResult.newQuestionIds.length > 0) {
-          }
-        } catch (discoveryError) {
-        }
-
-        // Get polls this browser has access to
-        const data = await getAccessiblePolls();
+        // Phase B.3: one round-trip — server walks polls.thread_id and
+        // returns every poll in any thread containing one of our
+        // accessible questions, with results inline. Replaces the legacy
+        // discoverRelatedQuestions + getAccessiblePolls pair.
+        const data = await getMyThreads();
         if (!data) {
-          console.error("Error fetching accessible questions");
+          console.error("Error fetching threads");
           setError("Failed to load polls");
           return;
         }
@@ -188,7 +182,7 @@ export default function Home() {
   useEffect(() => {
     const handler = async () => {
       try {
-        const data = await getAccessiblePolls();
+        const data = await getMyThreads();
         if (!data) return;
         setPolls((prev) =>
           prev.length === data.length && prev.every((p, i) => p.id === data[i].id)
@@ -206,19 +200,13 @@ export default function Home() {
     try {
       setLoading(true);
       setError(null);
-      
-      // First, discover any new follow-up questions
-      try {
-        const discoveryResult = await discoverRelatedQuestions();
-        if (discoveryResult.newQuestionIds.length > 0) {
-        }
-      } catch (discoveryError) {
-      }
 
-      // Get polls this browser has access to
-      const data = await getAccessiblePolls();
+      // Phase B.3: server walks polls.thread_id and returns every poll
+      // in any thread containing one of our accessible questions —
+      // discovery + accessibility are one round-trip now.
+      const data = await getMyThreads();
       if (!data) {
-        console.error("Error fetching accessible questions");
+        console.error("Error fetching threads");
         setError("Failed to load polls");
         return;
       }

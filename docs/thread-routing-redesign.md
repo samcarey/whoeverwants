@@ -1,7 +1,8 @@
 # Thread Routing Redesign
 
-> Status: Phase A shipped (#260), Phase B.1 shipped (#261), Phase B.2 in
-> progress (this branch). Phases B.3 / B.4 / C are deferred.
+> Status: Phase A shipped (#260), Phase B.1 shipped (#261), Phase B.2
+> shipped (#262), Phase B.3 in progress (this branch). Phase B.4 / C are
+> deferred.
 
 ## Vision
 
@@ -142,12 +143,62 @@ schema is in place for Phases B.2 / B.4 to consume.
   099 used).
 - No API contract changes.
 
-#### Phase B.3 — `browser_id` cookie + new endpoints (deferred)
+#### Phase B.3 — `browser_id` header + thread endpoints (this branch)
 
-- Introduce `browser_id` cookie. Server hands one out on first visit; client mirrors
-  into localStorage. New endpoints `getMyThreads()` and `getThread(id)` use it.
-- Replace `getAccessiblePolls()` + client-side `buildThreads()` + `discoverRelatedQuestions`
-  with the new server endpoints.
+- `BrowserIdMiddleware` mints a uuid4 on first visit and echoes it via the
+  `X-Browser-Id` response header. The FE captures the value
+  (`lib/browserIdentity.ts`) and persists to localStorage; subsequent
+  requests carry the same id via the matching request header.
+  - **Header, not cookie.** The FE talks to the API same-origin via
+    Next.js rewrites in prod and direct host in dev/CI; cookies under
+    either setup would require flipping CORS to credentialed mode which
+    doesn't compose with `allow_origins=["*"]`. The header avoids the
+    CORS minefield while giving Phase C the same identity guarantee.
+  - **Captured but not enforced yet.** `request.state.browser_id` is
+    populated for every request; the new endpoints don't gate on it.
+    Phase C will add the membership table and start filtering visibility.
+- New endpoints — `routers/threads.py`:
+  - `POST /api/threads/mine` — body
+    `{accessible_question_ids: list[str], include_results?: bool}`,
+    returns `list[PollResponse]` (every poll in any thread containing one of
+    the requested questions). Collapses the legacy
+    `discoverRelatedQuestions + apiGetAccessibleQuestions` pair into one
+    server round-trip — the server walks `polls.thread_id` once instead of
+    the FE walking `follow_up_to` chains across two calls.
+  - `GET /api/threads/by-route-id/{routeId}?include_results=...` — same
+    shape for one thread, resolved by `routeId`. The resolver checks
+    `threads.short_id` → `threads.id` → `polls.short_id` → `polls.id`
+    in order. Phase B.4 will start writing fresh `threads.short_id`s
+    that take priority over the root-poll-short_id fallback.
+- The aggregation body of `POST /api/questions/accessible` was extracted to
+  `services/threads.py: polls_for_poll_ids(conn, poll_ids, *, include_results)`
+  so both the legacy endpoint and the new threads router build identical
+  payloads from a list of poll_ids. The legacy endpoint is now a thin
+  question_id → poll_id resolver wrapping the same helper.
+- FE rewiring:
+  - `lib/api/threads.ts`: `apiGetMyThreads(ids)`, `apiGetThreadByRouteId(routeId)`.
+    Both return `Poll[]` and warm `cachePoll` + the per-question results
+    cache like `apiGetAccessibleQuestions` does.
+  - `lib/simpleQuestionQueries.ts: getMyThreads()` — drop-in replacement
+    for `getAccessiblePolls() + discoverRelatedQuestions()`. Reads the
+    accessible_question_ids from localStorage, calls `apiGetMyThreads`,
+    persists newly-discovered question_ids back to localStorage (subject
+    to the forgotten-list filter), invalidates the accessible cache when
+    the set grew, and caches the result.
+  - `app/page.tsx`, `app/t/[threadShortId]/page.tsx`, `lib/useThread.ts`:
+    home page + thread page + cache-first hook all switched to the new
+    endpoints. `discoverRelatedQuestions` is no longer called from any of
+    them; the function still exists for the test stub but is dead code on
+    the navigation path.
+- `next.config.ts` rewrites `/api/threads`, `/api/threads/`, and
+  `/api/threads/:path*` to the backend so client-side requests stay
+  same-origin.
+
+Phase B.3 leaves `main` shippable as well: no schema changes, no API
+contract changes for existing endpoints, just new endpoints + a request
+header. The legacy endpoints (`/api/questions/accessible`, `/api/questions/related`)
+remain in place so any client running the previous JS bundle keeps working
+through the rollout window.
 
 #### Phase B.4 — Decouple `threads.short_id` keyspace (deferred)
 
