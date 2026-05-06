@@ -48,6 +48,7 @@ from pydantic import BaseModel, Field
 
 from database import get_db
 from models import PollResponse
+from services.memberships import leave_thread as _leave_thread_row
 from services.threads import (
     filter_visible_polls,
     grant_poll_access_inline,
@@ -239,10 +240,4 @@ def leave_thread(route_id: str, request: Request):
         thread_id = resolve_thread_id_from_route_id(conn, route_id)
         if not thread_id:
             raise HTTPException(status_code=404, detail="Thread not found")
-        if not browser_id:
-            return
-        conn.execute(
-            "DELETE FROM thread_members "
-            "WHERE thread_id = %(t)s::uuid AND browser_id = %(b)s",
-            {"t": thread_id, "b": browser_id},
-        )
+        _leave_thread_row(conn, thread_id, browser_id)

@@ -7,39 +7,22 @@ calls DELETE on forget-of-last-poll (or via an explicit "leave thread"
 UX), `thread_members` becomes the sole source of truth for "is this
 thread on my home list" and the bridge is dead code.
 
-Covers:
-  * Member can leave their own thread (row removed, subsequent /mine
-    excludes the thread).
-  * Idempotent: leaving twice still returns 204 even though the second
-    call has nothing to remove.
-  * Strangers (no membership row) get 204 — operation is "ensure no
-    membership exists".
-  * 404 on unknown route_id — distinguishes "thread doesn't exist"
-    from "no membership to remove".
-  * `poll_access` rows are NOT touched by leaving — direct-link access
-    persists across leaves.
-  * Resolves all four route_id forms (threads.short_id, threads.id,
-    polls.short_id, polls.id).
-  * Leaving doesn't affect OTHER browsers' membership in the thread.
-
 Shared fixtures (`client`, `creator_secret`, `browser_id`) and helpers
-(`create_poll`) live in `conftest.py`.
+(`create_poll`, `bid_headers`, `thread_members_for`) live in
+`conftest.py`.
 """
 
 import uuid
 
 import psycopg
+import pytest
 
-from tests.conftest import TEST_DB_URL, bid_headers, create_poll
-
-
-def _thread_members(thread_id):
-    with psycopg.connect(TEST_DB_URL) as conn:
-        rows = conn.execute(
-            "SELECT browser_id FROM thread_members WHERE thread_id = %s",
-            (thread_id,),
-        ).fetchall()
-    return [str(r[0]) for r in rows]
+from tests.conftest import (
+    TEST_DB_URL,
+    bid_headers,
+    create_poll,
+    thread_members_for,
+)
 
 
 def _poll_access(poll_id, browser_id):
@@ -55,15 +38,14 @@ class TestLeaveThread:
     def test_member_can_leave(self, client, creator_secret, browser_id):
         poll = create_poll(client, creator_secret, browser_id=browser_id)
         thread_id = poll["thread_id"]
-        # Sanity: creator auto-joined.
-        assert browser_id in _thread_members(thread_id)
+        assert browser_id in thread_members_for(thread_id)
 
         resp = client.delete(
             f"/api/threads/{poll['short_id']}/membership",
             headers=bid_headers(browser_id),
         )
         assert resp.status_code == 204
-        assert browser_id not in _thread_members(thread_id)
+        assert browser_id not in thread_members_for(thread_id)
 
     def test_after_leave_thread_disappears_from_mine(
         self, client, creator_secret, browser_id,
@@ -79,7 +61,6 @@ class TestLeaveThread:
         ids = {p["id"] for p in resp.json()}
         assert ids == {kept["id"], leaving["id"]}
 
-        # Leave one.
         resp = client.delete(
             f"/api/threads/{leaving['short_id']}/membership",
             headers=bid_headers(browser_id),
@@ -108,7 +89,7 @@ class TestLeaveThread:
             headers=bid_headers(browser_id),
         )
         assert second.status_code == 204
-        assert browser_id not in _thread_members(poll["thread_id"])
+        assert browser_id not in thread_members_for(poll["thread_id"])
 
     def test_stranger_leave_is_noop_204(
         self, client, creator_secret, browser_id,
@@ -124,8 +105,7 @@ class TestLeaveThread:
             headers=bid_headers(stranger),
         )
         assert resp.status_code == 204
-        # Creator still a member.
-        assert browser_id in _thread_members(poll["thread_id"])
+        assert browser_id in thread_members_for(poll["thread_id"])
 
     def test_unknown_route_id_404s(self, client, browser_id):
         resp = client.delete(
@@ -141,9 +121,6 @@ class TestLeaveThread:
         access (poll_access rows) survives the leave — direct-link
         relationships are independent of thread membership."""
         poll = create_poll(client, creator_secret, browser_id=browser_id)
-        # Stranger grants themselves direct access AND happens to hold
-        # membership through some other path. Simulate by using the
-        # creator (who's both a member AND we'll grant per-poll access).
         grant = client.post(
             f"/api/polls/{poll['id']}/access",
             headers=bid_headers(browser_id),
@@ -156,46 +133,29 @@ class TestLeaveThread:
             headers=bid_headers(browser_id),
         )
         assert resp.status_code == 204
-        # Membership gone.
-        assert browser_id not in _thread_members(poll["thread_id"])
-        # Poll access preserved.
+        assert browser_id not in thread_members_for(poll["thread_id"])
         assert _poll_access(poll["id"], browser_id) is True
 
-    def test_resolves_thread_short_id(
-        self, client, creator_secret, browser_id,
+    @pytest.mark.parametrize(
+        "route_id_field",
+        # Each form is a key on the `create_poll` response; the test picks
+        # that field as the route_id and confirms `resolve_thread_id_from_route_id`
+        # walks all four lookup paths.
+        ["short_id", "thread_id", "thread_short_id", "id"],
+    )
+    def test_resolves_each_route_id_form(
+        self, client, creator_secret, browser_id, route_id_field,
     ):
-        """Route id = threads.short_id (the canonical post-B.4 form,
-        starting with `~`)."""
         poll = create_poll(client, creator_secret, browser_id=browser_id)
-        thread_short_id = poll["thread_short_id"]
-        assert thread_short_id  # Phase B.4 mints one for every new thread
+        route_id = poll[route_id_field]
+        assert route_id, f"Expected create_poll response to carry {route_id_field}"
 
         resp = client.delete(
-            f"/api/threads/{thread_short_id}/membership",
+            f"/api/threads/{route_id}/membership",
             headers=bid_headers(browser_id),
         )
         assert resp.status_code == 204
-        assert browser_id not in _thread_members(poll["thread_id"])
-
-    def test_resolves_thread_uuid(self, client, creator_secret, browser_id):
-        poll = create_poll(client, creator_secret, browser_id=browser_id)
-        resp = client.delete(
-            f"/api/threads/{poll['thread_id']}/membership",
-            headers=bid_headers(browser_id),
-        )
-        assert resp.status_code == 204
-        assert browser_id not in _thread_members(poll["thread_id"])
-
-    def test_resolves_poll_uuid(self, client, creator_secret, browser_id):
-        """Legacy form: route id = polls.id resolves via the polls.id
-        fallback in resolve_thread_id_from_route_id."""
-        poll = create_poll(client, creator_secret, browser_id=browser_id)
-        resp = client.delete(
-            f"/api/threads/{poll['id']}/membership",
-            headers=bid_headers(browser_id),
-        )
-        assert resp.status_code == 204
-        assert browser_id not in _thread_members(poll["thread_id"])
+        assert browser_id not in thread_members_for(poll["thread_id"])
 
     def test_leave_is_per_browser(
         self, client, creator_secret, browser_id,
@@ -204,22 +164,20 @@ class TestLeaveThread:
         in the same thread."""
         root = create_poll(client, creator_secret, browser_id=browser_id)
         other = str(uuid.uuid4())
-        # `other` joins by creating a follow-up.
         create_poll(
             client, creator_secret, browser_id=other,
             follow_up_to=root["questions"][0]["id"],
         )
-        members = set(_thread_members(root["thread_id"]))
+        members = set(thread_members_for(root["thread_id"]))
         assert browser_id in members and other in members
 
-        # `browser_id` leaves.
         resp = client.delete(
             f"/api/threads/{root['short_id']}/membership",
             headers=bid_headers(browser_id),
         )
         assert resp.status_code == 204
 
-        members = set(_thread_members(root["thread_id"]))
+        members = set(thread_members_for(root["thread_id"]))
         assert browser_id not in members
         assert other in members
 
@@ -227,15 +185,11 @@ class TestLeaveThread:
         self, client, creator_secret, browser_id,
     ):
         """A request with no X-Browser-Id header for a real thread is a
-        no-op (no row to remove) but still 204. Unknown threads still
-        404 — resolution fails before the no-op check."""
+        no-op (no row to remove) but still 204. Note: TestClient's
+        BrowserIdMiddleware mints a fresh browser_id when none is
+        provided, so this is "fresh browser_id with no membership" —
+        same contract from the endpoint's perspective."""
         poll = create_poll(client, creator_secret, browser_id=browser_id)
-        # Note: TestClient's BrowserIdMiddleware mints a fresh browser_id
-        # when no X-Browser-Id header is provided, so this isn't truly
-        # "no browser_id" — it's "a fresh browser_id that has no
-        # membership row anywhere". Either way the endpoint is a no-op
-        # with 204, which is the contract.
         resp = client.delete(f"/api/threads/{poll['short_id']}/membership")
         assert resp.status_code == 204
-        # Creator's membership row is untouched.
-        assert browser_id in _thread_members(poll["thread_id"])
+        assert browser_id in thread_members_for(poll["thread_id"])
