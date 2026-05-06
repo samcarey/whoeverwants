@@ -6,7 +6,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyThreads } from "@/lib/simpleQuestionQueries";
 import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
-import { apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
 import type { QuestionResults } from "@/lib/types";
@@ -24,7 +24,7 @@ import { isUuidLike } from "@/lib/questionId";
 import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
-import { isInTimeAvailabilityPhase } from "@/lib/questionListUtils";
+import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition } from "@/lib/viewTransitions";
@@ -1624,6 +1624,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
                 ? () => setPendingAction({ kind: 'cutoff-availability', question: modalQuestion })
                 : undefined
             }
+            onCutoffSuggestions={
+              !isModalClosed &&
+              isInSuggestionPhase(modalQuestion, modalWrapper.prephase_deadline ?? null) &&
+              (!!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === 'development')
+                ? () => setPendingAction({ kind: 'cutoff-suggestions', question: modalQuestion })
+                : undefined
+            }
           />
         );
       })()}
@@ -1693,6 +1700,44 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
               );
             } catch (err) {
               console.error('Failed to close question:', err);
+            }
+          } else if (action.kind === 'cutoff-suggestions') {
+            try {
+              const secret = getCreatorSecret(action.question.id);
+              if (!secret) {
+                console.error('Missing creator secret for cutoff-suggestions');
+                return;
+              }
+              const pollId = action.question.poll_id;
+              if (!pollId) {
+                console.error('Cannot cutoff suggestions without poll_id');
+                return;
+              }
+              const wrapper = await apiCutoffPollSuggestions(pollId, secret);
+              patchThreadPolls(
+                (mp) => mp.id === pollId,
+                () => ({
+                  prephase_deadline: wrapper.prephase_deadline ?? null,
+                }),
+              );
+              for (const sp of wrapper.questions) {
+                if (sp.options) {
+                  patchThreadQuestions(
+                    (p) => p.id === sp.id,
+                    () => ({ options: sp.options ?? null }),
+                  );
+                }
+                const refreshed = await apiGetQuestionResults(sp.id).catch(() => null);
+                if (refreshed) {
+                  setQuestionResultsMap((prev) => {
+                    const next = new Map(prev);
+                    next.set(sp.id, refreshed);
+                    return next;
+                  });
+                }
+              }
+            } catch (err) {
+              console.error('Failed to cutoff suggestions:', err);
             }
           } else if (action.kind === 'cutoff-availability') {
             try {

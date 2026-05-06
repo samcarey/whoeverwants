@@ -1,15 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect, Dispatch, SetStateAction } from "react";
-import QuestionResultsDisplay from "@/components/QuestionResults";
+import { useState, useEffect, Dispatch, SetStateAction } from "react";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
-import type { ApiVote } from "@/lib/api";
 import SuggestionsList from "@/components/SuggestionsList";
 import CompactNameField from "@/components/CompactNameField";
 import OptionLabel from "@/components/OptionLabel";
-import VoterList from "@/components/VoterList";
-
-const hasSuggestions = (v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0);
 
 interface SuggestionVotingInterfaceProps {
   question: any;
@@ -36,9 +31,6 @@ interface SuggestionVotingInterfaceProps {
   suggestionMetadata?: OptionsMetadata;
   onSuggestionMetadataChange?: (metadata: OptionsMetadata) => void;
   optionsMetadata?: OptionsMetadata | null;
-  showCutoffButton?: boolean;
-  onCutoffClick?: () => void;
-  isCuttingOff?: boolean;
   searchRadius?: number;
   // Phase 3.4 follow-up B: when the parent poll wrapper renders the
   // Submit button + voter name input externally, suppress the per-question
@@ -71,9 +63,6 @@ export default function SuggestionVotingInterface({
   suggestionMetadata,
   onSuggestionMetadataChange,
   optionsMetadata,
-  showCutoffButton = false,
-  onCutoffClick,
-  isCuttingOff = false,
   searchRadius = 25,
   wrapperHandlesSubmit = false,
 }: SuggestionVotingInterfaceProps) {
@@ -232,35 +221,6 @@ export default function SuggestionVotingInterface({
           )}
         </div>
 
-        {/* Suggestion respondents */}
-        {!isQuestionClosed && !isLoadingVoteData && (
-          <div className="mt-5">
-            <VoterList questionId={question.id} label="Suggested" filter={hasSuggestions} />
-          </div>
-        )}
-
-        {/* Cutoff suggestions button - shown to creator after suggestions exist */}
-        {showCutoffButton && onCutoffClick && (
-          <div className="mt-4 flex justify-center">
-            <button
-              onClick={onCutoffClick}
-              disabled={isCuttingOff}
-              className="inline-flex items-center px-4 py-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 active:scale-95 disabled:bg-amber-300 text-white text-sm font-medium rounded-lg transition-all disabled:cursor-not-allowed"
-            >
-              {isCuttingOff ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Cutting off...
-                </>
-              ) : (
-                'Cutoff Suggestions Now'
-              )}
-            </button>
-          </div>
-        )}
       </div>
     );
   }

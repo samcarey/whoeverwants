@@ -1129,6 +1129,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                     ? "No suggestions yet"
                     : "No voters"
                 }
+                includeSelf={isInSuggestionPhase(question, wrapperPrephaseDeadline)}
               />
             )}
           </ClientOnly>

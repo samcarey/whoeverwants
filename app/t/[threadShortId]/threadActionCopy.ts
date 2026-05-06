@@ -4,7 +4,7 @@
  * driven by the `kind` selector — keeping the messages here makes the
  * thread page render leaner and the strings easier to find.
  */
-export type PendingActionKind = 'forget' | 'reopen' | 'close' | 'cutoff-availability';
+export type PendingActionKind = 'forget' | 'reopen' | 'close' | 'cutoff-availability' | 'cutoff-suggestions';
 
 export const PENDING_ACTION_COPY: Record<PendingActionKind, {
   title: string;
@@ -34,6 +34,12 @@ export const PENDING_ACTION_COPY: Record<PendingActionKind, {
     title: 'End Availability Phase',
     message: 'Are you sure you want to end the availability phase now? Time slots will be generated and preference ranking will begin immediately.',
     confirmText: 'End Now',
+    confirmButtonClass: 'bg-amber-500 hover:bg-amber-600 text-white',
+  },
+  'cutoff-suggestions': {
+    title: 'Cutoff Suggestions',
+    message: 'Are you sure you want to end the suggestion phase now? No more suggestions will be accepted and ranking will begin immediately.',
+    confirmText: 'Cutoff Now',
     confirmButtonClass: 'bg-amber-500 hover:bg-amber-600 text-white',
   },
 };
