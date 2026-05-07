@@ -255,6 +255,7 @@ def get_thread_preview(route_id: str, p: str | None = None):
     # Local import: routers/polls.py imports services/threads, so an
     # eager import would cycle.
     from algorithms.poll_title import generate_poll_title
+    from routers.polls import _category_for_title
 
     with get_db() as conn:
         thread_id = resolve_thread_id_from_route_id(conn, route_id)
@@ -291,10 +292,10 @@ def get_thread_preview(route_id: str, p: str | None = None):
             {"pid": str(target["id"])},
         ).fetchall()
 
-        categories = [
-            (q.get("category") or q.get("question_type") or "")
-            for q in question_rows
-        ]
+        # Use the shared `_category_for_title` helper so this matches the
+        # in-app auto-title (and the time-question quirk where
+        # `category="custom"` should be treated as `"time"` for labeling).
+        categories = [_category_for_title(dict(q)) for q in question_rows]
         contexts = [q.get("details") for q in question_rows]
         title = (
             generate_poll_title(categories, target.get("context"), contexts)
