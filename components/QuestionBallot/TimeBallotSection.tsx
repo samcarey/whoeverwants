@@ -116,7 +116,16 @@ export default function TimeBallotSection({
     );
   }
 
-  if (hasVoted && !isEditingVote) {
+  // In the preferences phase, a voter who already submitted availability but
+  // hasn't reacted yet has hasVoted=true with both liked/disliked still null.
+  // The post-submit summary has nothing to render in that case, so skip it
+  // and fall through to the active preferences form.
+  const hasNotReactedYet = !inAvailabilityPhase && hasVoted
+    && userVoteData?.liked_slots === null
+    && userVoteData?.disliked_slots === null
+    && !userVoteData?.is_abstain;
+
+  if (hasVoted && !isEditingVote && !hasNotReactedYet) {
     return (
       <div>
         <div className="py-3">
