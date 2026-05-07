@@ -96,7 +96,12 @@ class TestCreatePoll:
             "movie",
         ]
 
-    def test_explicit_title_persisted_in_thread_title(self, client, creator_secret):
+    def test_explicit_title_does_not_pollute_thread_title(self, client, creator_secret):
+        # `req.title` is the poll's DISPLAY title (e.g. a user-typed yes_no
+        # prompt). It must NOT be written to `polls.thread_title`, which is
+        # the thread-name override consulted by the FE when computing
+        # Thread.title. Conflating the two caused the user-reported "thread
+        # name silently becomes a poll's title" bug.
         resp = client.post(
             "/api/polls",
             json={
@@ -108,7 +113,24 @@ class TestCreatePoll:
         assert resp.status_code == 201, resp.text
         data = resp.json()
         assert data["title"] == "What should we do tonight?"
-        assert data["thread_title"] == "What should we do tonight?"
+        assert data["thread_title"] is None
+
+    def test_explicit_thread_title_persisted(self, client, creator_secret):
+        # The dedicated `thread_title` field is the only path that should
+        # write to `polls.thread_title` on poll creation.
+        resp = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "thread_title": "Friday Night Plans",
+                "questions": [_yes_no_question()],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["thread_title"] == "Friday Night Plans"
+        # The override flows through to the computed display title too.
+        assert data["title"] == "Friday Night Plans"
 
     def test_rejects_zero_questions(self, client, creator_secret):
         resp = client.post(
@@ -294,7 +316,7 @@ class TestChainPropagation:
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "title": "Friday Night",
+                "thread_title": "Friday Night",
                 "questions": [_yes_no_question()],
             },
         )
@@ -310,15 +332,17 @@ class TestChainPropagation:
             },
         )
         assert child.status_code == 201
-        # No explicit title on the child; should inherit from the parent.
+        # No explicit thread_title on the child; should inherit from the parent.
         assert child.json()["thread_title"] == "Friday Night"
 
-    def test_explicit_title_wins_over_parent_inheritance(self, client, creator_secret):
+    def test_explicit_thread_title_wins_over_parent_inheritance(
+        self, client, creator_secret
+    ):
         parent = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "title": "Old Title",
+                "thread_title": "Old Title",
                 "questions": [_yes_no_question()],
             },
         )
@@ -329,11 +353,40 @@ class TestChainPropagation:
             json={
                 "creator_secret": creator_secret,
                 "follow_up_to": parent_question_id,
-                "title": "New Title",
+                "thread_title": "New Title",
                 "questions": [_yes_no_question()],
             },
         )
         assert child.json()["thread_title"] == "New Title"
+
+    def test_poll_title_does_not_propagate_to_child_thread_title(
+        self, client, creator_secret
+    ):
+        # Regression: previously, `req.title` on the parent leaked into
+        # `polls.thread_title` and the COALESCE inheritance then propagated
+        # it to every follow-up poll, so the thread name silently mirrored
+        # the parent's question prompt. The fix decouples the two: a parent
+        # with only `req.title` set must leave child.thread_title as NULL.
+        parent = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "title": "Should we order pizza?",
+                "questions": [_yes_no_question()],
+            },
+        )
+        parent_question_id = parent.json()["questions"][0]["id"]
+        assert parent.json()["thread_title"] is None
+
+        child = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "follow_up_to": parent_question_id,
+                "questions": [_yes_no_question()],
+            },
+        )
+        assert child.json()["thread_title"] is None
 
 
 class TestThreadId:

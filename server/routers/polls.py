@@ -178,7 +178,14 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
     # removed.
     parent_followup_poll_id = _resolve_parent_poll_id(conn, req.follow_up_to)
     thread_id = _resolve_or_create_thread_id(conn, parent_followup_poll_id)
-    explicit_title = req.title if req.title is not None else req.thread_title
+    # `polls.thread_title` is the THREAD-name override (default is the
+    # participant-names string built FE-side). It is NOT a storage location
+    # for the poll's display title — that's computed by `_compute_display_title`
+    # from `questions[0].title` (which captures the user's typed yes_no prompt
+    # or the auto-generated wrapper title). Conflating the two caused the
+    # thread name to silently change to a poll's title (the user-reported
+    # "thread name becomes a poll title" bug).
+    explicit_title = req.thread_title
     row = conn.execute(
         """
         INSERT INTO polls (
@@ -313,6 +320,15 @@ def _compute_display_title(row: dict, question_rows: list[dict]) -> str:
     override = row.get("thread_title")
     if override:
         return override
+    # Every question shares the wrapper-level `question_title` resolved by
+    # `create_poll` (user-typed yes_no prompt OR `req.thread_title` OR the
+    # auto-generated multi-question title), so reading questions[0].title
+    # gives us the user's intended poll title without conflating with the
+    # `thread_title` thread-name override.
+    if question_rows:
+        primary = (question_rows[0].get("title") or "").strip()
+        if primary:
+            return primary
     categories = [_category_for_title(sp) for sp in question_rows]
     # Per-question context lives in `questions.details` (see _insert_question
     # below). Pass it through so the auto-title can reflect a shared context
