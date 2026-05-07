@@ -6,14 +6,7 @@ import AbstainButton from "@/components/AbstainButton";
 import CompactNameField from "@/components/CompactNameField";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
 import TimeSlotBubbles from "@/components/TimeSlotBubbles";
-import { formatDayLabel, formatTimeSlot } from "@/lib/timeUtils";
-
-function formatHourMin(t: string): string {
-  const [h, m] = t.split(':').map(Number);
-  const ampm = h < 12 ? 'AM' : 'PM';
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
-}
+import { formatTimeSlot } from "@/lib/timeUtils";
 
 export interface TimeBallotSectionProps {
   question: Question;
@@ -144,26 +137,23 @@ export default function TimeBallotSection({
               <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
             </div>
           ) : inAvailabilityPhase && userVoteData?.voter_day_time_windows ? (
-            <div className="p-3 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg space-y-2 text-sm text-green-800 dark:text-green-200">
-              {userVoteData.voter_day_time_windows.length === 0 ? (
-                <p>Availability submitted.</p>
-              ) : (
-                userVoteData.voter_day_time_windows.map((dtw: { day: string; windows?: { min: string; max: string }[] }) => (
-                  <div key={dtw.day}>
-                    <p className="font-medium">{formatDayLabel(dtw.day)}</p>
-                    {!dtw.windows || dtw.windows.length === 0 ? (
-                      <p className="ml-3">All day</p>
-                    ) : (
-                      <ul className="ml-3 list-disc list-inside">
-                        {dtw.windows.map((w, i) => (
-                          <li key={i}>{formatHourMin(w.min)} – {formatHourMin(w.max)}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
+            <TimeQuestionFields
+              disabled={true}
+              dayTimeWindows={userVoteData.voter_day_time_windows}
+              onDayTimeWindowsChange={() => {}}
+              questionDayTimeWindows={question.day_time_windows || undefined}
+              questionDurationWindow={question.duration_window || undefined}
+              {...(userVoteData.voter_duration ? {
+                durationMinValue: userVoteData.voter_duration.minValue,
+                durationMaxValue: userVoteData.voter_duration.maxValue,
+                durationMinEnabled: userVoteData.voter_duration.minEnabled,
+                durationMaxEnabled: userVoteData.voter_duration.maxEnabled,
+                onDurationMinChange: () => {},
+                onDurationMaxChange: () => {},
+                onDurationMinEnabledChange: () => {},
+                onDurationMaxEnabledChange: () => {},
+              } : {})}
+            />
           ) : !inAvailabilityPhase && (userVoteData?.liked_slots !== null || userVoteData?.disliked_slots !== null) ? (
             <div className="p-3 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-800 dark:text-green-200">
               {(userVoteData?.liked_slots?.length ?? 0) > 0 && (
