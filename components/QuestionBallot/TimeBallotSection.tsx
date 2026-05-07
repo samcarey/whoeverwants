@@ -11,7 +11,6 @@ import { formatTimeSlot } from "@/lib/timeUtils";
 export interface TimeBallotSectionProps {
   question: Question;
   isQuestionClosed: boolean;
-  loadingResults: boolean;
   questionResults: QuestionResults | null;
   userVoteData: any;
   isLoadingVoteData: boolean;
@@ -53,7 +52,6 @@ export interface TimeBallotSectionProps {
 export default function TimeBallotSection({
   question,
   isQuestionClosed,
-  loadingResults,
   questionResults,
   userVoteData,
   isLoadingVoteData,
@@ -85,32 +83,15 @@ export default function TimeBallotSection({
   wrapperHandlesSubmit,
   handleVoteClick,
 }: TimeBallotSectionProps) {
+  // Loading + results + "unable to load" are rendered by the parent's
+  // closed-state block (QuestionBallot.tsx). The only thing left for
+  // TimeBallotSection to add when closed is the "You Abstained" badge.
   if (isQuestionClosed) {
+    if (!questionResults || !userVoteData?.is_abstain) return null;
     return (
-      <div>
-        <div className="py-6">
-          {loadingResults ? (
-            <div className="flex justify-center items-center py-8">
-              <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            </div>
-          ) : questionResults ? (
-            <>
-              {userVoteData?.is_abstain && (
-                <div className="mt-4 flex justify-center">
-                  <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
-                    <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">You Abstained</span>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="text-center py-4">
-              <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
-            </div>
-          )}
+      <div className="mt-4 flex justify-center">
+        <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
+          <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">You Abstained</span>
         </div>
       </div>
     );
