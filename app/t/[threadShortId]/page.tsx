@@ -1,26 +1,23 @@
 import type { Metadata } from "next";
-import { getServerApiBaseUrl } from "@/lib/serverApi";
+import { getApiEndpoint } from "@/lib/api/_internal";
 import ThreadPage from "./ThreadPage";
 
 const SITE_NAME = "WhoeverWants";
 
-/**
- * Server-component shell for the canonical thread route. The actual UI
- * (and its `"use client"` directive) lives in `./ThreadPage.tsx`. The
- * shell exists so we can export `generateMetadata`, which a Client
- * Component can't do.
- *
- * The whole reason this file is a server component is to access
- * `searchParams.p` — `/t/<thread>?p=<pollShortId>` is the canonical
- * share URL for a specific poll in a thread, and the OG/Twitter
- * preview MUST surface that exact poll's title (not the thread's
- * latest poll). Layout-level `generateMetadata` doesn't see
- * `searchParams`; only page-level `generateMetadata` does.
- *
- * No og:image / twitter:image: deliberate. The user wants the title
- * to take all the space in messaging-app previews — a logo thumbnail
- * crowds it out for no informational gain.
- */
+// Server-component shell. The client UI lives in `./ThreadPage.tsx`;
+// this file exists only so `generateMetadata` can read `searchParams.p`
+// (page-level form sees them, layout-level doesn't), letting the
+// link-preview surface the linked poll instead of the thread's latest.
+// No og:image / twitter:image: titles dominate messaging previews.
+function buildMetadata(title: string, description?: string): Metadata {
+  return {
+    title,
+    description,
+    openGraph: { title, description, type: "website" },
+    twitter: { card: "summary", title, description },
+  };
+}
+
 export async function generateMetadata({
   params,
   searchParams,
@@ -34,17 +31,12 @@ export async function generateMetadata({
   const pollShortId =
     typeof rawP === "string" ? rawP : Array.isArray(rawP) ? rawP[0] : undefined;
 
-  const fallback: Metadata = {
-    title: SITE_NAME,
-    openGraph: { title: SITE_NAME, type: "website" },
-  };
-
+  const fallback = buildMetadata(SITE_NAME);
   if (!threadShortId) return fallback;
 
   try {
-    const apiBase = getServerApiBaseUrl();
     const qs = pollShortId ? `?p=${encodeURIComponent(pollShortId)}` : "";
-    const url = `${apiBase}/api/threads/by-route-id/${encodeURIComponent(
+    const url = `${getApiEndpoint("threads")}/by-route-id/${encodeURIComponent(
       threadShortId,
     )}/preview${qs}`;
     const res = await fetch(url, { next: { revalidate: 60 } });
@@ -56,21 +48,7 @@ export async function generateMetadata({
     };
     const title = (data.title || "").trim() || SITE_NAME;
     const description = (data.description || "").trim() || undefined;
-
-    return {
-      title,
-      description,
-      openGraph: {
-        title,
-        description,
-        type: "website",
-      },
-      twitter: {
-        card: "summary",
-        title,
-        description,
-      },
-    };
+    return buildMetadata(title, description);
   } catch {
     return fallback;
   }

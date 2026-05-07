@@ -230,29 +230,19 @@ def get_thread_by_route_id(
 def get_thread_preview(route_id: str, p: str | None = None):
     """Public link-preview metadata for Open Graph / Twitter Card crawlers.
 
-    Returns ONLY title + description so this endpoint can safely run
-    without visibility filtering or `poll_access` writes. Crawlers
-    (Slack, iMessage, Twitter, etc.) hit URLs without any browser
-    identity; gating on the visibility filter would 404 them and our
-    shared links would render as bare URLs.
+    Visibility-free + no `poll_access` writes: crawlers (Slack, iMessage,
+    Twitter, etc.) hit URLs without any browser identity, and gating
+    them on visibility would 404 every share. Returning only title +
+    description (no votes, no question contents) keeps this safe.
 
-    Resolution:
-      - When `?p=<pollShortId>` matches a poll in the resolved thread,
-        that poll's title + options are used (canonical share form).
-      - Else falls back to the thread's most recent poll.
+    Title is the poll's auto-generated title; the `thread_title`
+    override is deliberately ignored so a custom thread name (often a
+    participant-name string) doesn't replace the poll's actual subject.
 
-    Title is the poll's auto-generated title (e.g. "Restaurant for
-    Friday Night") — the `thread_title` override is intentionally
-    ignored, since the override is typically a participant-name string
-    ("Alice, Bob") that's useless in a link preview.
-
-    Description: comma-joined options across the chosen poll's
-    questions if any are set; else the poll's `details` (Notes) field;
-    else null. Capped at 200 chars.
-
-    Returns 404 when the route id doesn't resolve to any thread.
+    Description: comma-joined options across the poll's questions; else
+    the `details` (Notes) field; else null. Capped at 200 chars.
     """
-    # Local import: routers/polls.py imports services/threads, so an
+    # Local imports: routers/polls.py imports services/threads, so an
     # eager import would cycle.
     from algorithms.poll_title import generate_poll_title
     from routers.polls import _category_for_title
@@ -265,14 +255,14 @@ def get_thread_preview(route_id: str, p: str | None = None):
         target = None
         if p:
             target = conn.execute(
-                """SELECT * FROM polls
+                """SELECT id, context, details FROM polls
                     WHERE short_id = %(s)s AND thread_id = %(t)s::uuid""",
                 {"s": p, "t": thread_id},
             ).fetchone()
 
         if target is None:
             target = conn.execute(
-                """SELECT * FROM polls
+                """SELECT id, context, details FROM polls
                     WHERE thread_id = %(t)s::uuid
                     ORDER BY created_at DESC
                     LIMIT 1""",
@@ -282,8 +272,6 @@ def get_thread_preview(route_id: str, p: str | None = None):
         if target is None:
             raise HTTPException(status_code=404, detail="Thread not found")
 
-        # Pull each question's category/type/details/options to compute
-        # both the auto-title and the options-derived description.
         question_rows = conn.execute(
             """SELECT category, question_type, details, options
                  FROM questions
@@ -292,9 +280,6 @@ def get_thread_preview(route_id: str, p: str | None = None):
             {"pid": str(target["id"])},
         ).fetchall()
 
-        # Use the shared `_category_for_title` helper so this matches the
-        # in-app auto-title (and the time-question quirk where
-        # `category="custom"` should be treated as `"time"` for labeling).
         categories = [_category_for_title(dict(q)) for q in question_rows]
         contexts = [q.get("details") for q in question_rows]
         title = (
@@ -302,28 +287,19 @@ def get_thread_preview(route_id: str, p: str | None = None):
             or "WhoeverWants"
         )
 
-        # Description: prefer concrete options (more informative for a
-        # preview than a category label); fall back to creator notes.
         option_strs: list[str] = []
         seen: set[str] = set()
         for q in question_rows:
-            opts = q.get("options") or []
-            for opt in opts:
-                if not opt:
-                    continue
-                stripped = opt.strip()
-                if not stripped or stripped in seen:
-                    continue
-                seen.add(stripped)
-                option_strs.append(stripped)
+            for opt in q.get("options") or []:
+                stripped = (opt or "").strip()
+                if stripped and stripped not in seen:
+                    seen.add(stripped)
+                    option_strs.append(stripped)
 
-        description: str | None = None
         if option_strs:
             description = ", ".join(option_strs)
         else:
-            notes = (target.get("details") or "").strip()
-            if notes:
-                description = notes
+            description = (target.get("details") or "").strip() or None
 
         if description and len(description) > 200:
             description = description[:197].rstrip() + "…"
