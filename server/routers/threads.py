@@ -238,19 +238,23 @@ def get_thread_preview(route_id: str, p: str | None = None):
 
     Resolution:
       - When `?p=<pollShortId>` matches a poll in the resolved thread,
-        that poll's title is preferred (so a `/t/<thread>?p=<poll>`
-        share targets that specific poll).
-      - Else uses the thread's most recent poll's `thread_title`
-        override or auto-title.
+        that poll's title + options are used (canonical share form).
+      - Else falls back to the thread's most recent poll.
 
-    Description (optional): the chosen poll's `details` (Notes), trimmed
-    + capped, or null.
+    Title is the poll's auto-generated title (e.g. "Restaurant for
+    Friday Night") — the `thread_title` override is intentionally
+    ignored, since the override is typically a participant-name string
+    ("Alice, Bob") that's useless in a link preview.
+
+    Description: comma-joined options across the chosen poll's
+    questions if any are set; else the poll's `details` (Notes) field;
+    else null. Capped at 200 chars.
 
     Returns 404 when the route id doesn't resolve to any thread.
     """
     # Local import: routers/polls.py imports services/threads, so an
     # eager import would cycle.
-    from routers.polls import _compute_display_title
+    from algorithms.poll_title import generate_poll_title
 
     with get_db() as conn:
         thread_id = resolve_thread_id_from_route_id(conn, route_id)
@@ -277,25 +281,53 @@ def get_thread_preview(route_id: str, p: str | None = None):
         if target is None:
             raise HTTPException(status_code=404, detail="Thread not found")
 
-        # `polls.title` is a computed value (see `_compute_display_title`
-        # in routers/polls.py): thread_title override, else
-        # `generate_poll_title(categories, context, per-question contexts)`.
-        # Pull the question rows for the chosen poll so the helper has
-        # everything it needs.
+        # Pull each question's category/type/details/options to compute
+        # both the auto-title and the options-derived description.
         question_rows = conn.execute(
-            """SELECT category, question_type, details
+            """SELECT category, question_type, details, options
                  FROM questions
                 WHERE poll_id = %(pid)s
                 ORDER BY question_index NULLS LAST, created_at""",
             {"pid": str(target["id"])},
         ).fetchall()
-        title = _compute_display_title(dict(target), [dict(r) for r in question_rows])
 
-        details = (target.get("details") or "").strip() or None
-        if details and len(details) > 200:
-            details = details[:197].rstrip() + "…"
+        categories = [
+            (q.get("category") or q.get("question_type") or "")
+            for q in question_rows
+        ]
+        contexts = [q.get("details") for q in question_rows]
+        title = (
+            generate_poll_title(categories, target.get("context"), contexts)
+            or "WhoeverWants"
+        )
 
-        return ThreadPreviewResponse(title=title, description=details)
+        # Description: prefer concrete options (more informative for a
+        # preview than a category label); fall back to creator notes.
+        option_strs: list[str] = []
+        seen: set[str] = set()
+        for q in question_rows:
+            opts = q.get("options") or []
+            for opt in opts:
+                if not opt:
+                    continue
+                stripped = opt.strip()
+                if not stripped or stripped in seen:
+                    continue
+                seen.add(stripped)
+                option_strs.append(stripped)
+
+        description: str | None = None
+        if option_strs:
+            description = ", ".join(option_strs)
+        else:
+            notes = (target.get("details") or "").strip()
+            if notes:
+                description = notes
+
+        if description and len(description) > 200:
+            description = description[:197].rstrip() + "…"
+
+        return ThreadPreviewResponse(title=title, description=description)
 
 
 @router.delete("/{route_id}/membership", status_code=204)
