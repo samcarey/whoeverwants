@@ -1139,14 +1139,12 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   // yes_no questions in that context.
   const suppressYesNoHere = !!externalYesNoResults && question.question_type === 'yes_no';
   // The binary 2-option ballot bakes in winner color + percentages + counts,
-  // so the rounds list would duplicate them. Skip suppression post-vote — the
-  // "Your Ballot" amber-link path hides the cards, leaving rounds as the only
-  // result surface.
+  // so the rounds list would duplicate them. Cards stay visible post-vote
+  // (tap-to-edit), so suppress unconditionally for this shape.
   const suppressBinaryRcHere =
     question.question_type === 'ranked_choice' &&
     questionOptions.length === 2 &&
-    !canSubmitSuggestions &&
-    (!hasVoted || isEditingVote);
+    !canSubmitSuggestions;
 
   const preliminaryResultsBlock = (className: string) => (
     showPrelimResults && !isQuestionClosed && !suppressYesNoHere && !suppressBinaryRcHere ? (
@@ -1380,7 +1378,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                     </div>
                   )}
                 </div>
-              ) : hasVoted && !isEditingVote && !canSubmitSuggestions && hasCompletedRanking ? (
+              ) : hasVoted && !isEditingVote && !canSubmitSuggestions && hasCompletedRanking && questionOptions.length !== 2 ? (
                 <div className="text-center">
                   <button
                     type="button"
