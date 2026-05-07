@@ -116,7 +116,7 @@ function CompactPreviewClip({
 }) {
   return (
     <div
-      className={`grid min-w-0 transition-[grid-template-rows] duration-300 ease-out ${
+      className={`grid w-full min-w-0 transition-[grid-template-rows] duration-300 ease-out ${
         isExpanded ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
       }`}
       aria-hidden={isExpanded}
@@ -603,13 +603,20 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
       .map((sp) => {
         const node = pillForQuestion(sp);
         if (!node) return null;
-        return <div key={sp.id}>{node}</div>;
+        // w-full + min-w-0 forces each row to fill the column track width,
+        // so the inner flex's `justify-end` right-aligns the pill within the
+        // available space — without it the row sizes to its pill's
+        // max-content, allowing the column to grow beyond its parent's
+        // bounds and overlap the status label on the left.
+        return <div key={sp.id} className="w-full min-w-0">{node}</div>;
       })
       .filter((n): n is React.ReactElement => n !== null);
     if (subPills.length > 0) {
       pillEl = (
         <CompactPreviewClip isExpanded={isExpanded}>
-          <div className="flex flex-col items-end gap-1">{subPills}</div>
+          <div className="flex flex-col items-stretch gap-1 w-full min-w-0">
+            {subPills}
+          </div>
         </CompactPreviewClip>
       );
     }
