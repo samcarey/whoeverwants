@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { QuestionResults, OptionsMetadata } from "@/lib/types";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 import {
@@ -277,23 +277,7 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
       )}
 
       {options.length > 1 && (
-        <div>
-          <div className="flex items-baseline justify-between gap-3 mb-3">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Candidate Slots ({options.length})
-            </h3>
-            <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 flex-shrink-0">
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> liked
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /> disliked
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" /> unavail.
-              </span>
-            </div>
-          </div>
+        <CollapsibleStartOptions>
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
             {slotsByDay.map(([dateStr, slots]) => {
               const { weekday, monthDay } = formatStackedDayLabel(dateStr);
@@ -350,7 +334,77 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
               );
             })}
           </div>
+        </CollapsibleStartOptions>
+      )}
+    </div>
+  );
+}
+
+const COLLAPSED_SLOTS_HEIGHT = 80;
+const COLLAPSED_FADE_PX = 28;
+
+function CollapsibleStartOptions({ children }: { children: React.ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  const [needsTruncation, setNeedsTruncation] = useState(false);
+  const innerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (innerRef.current) {
+      setNeedsTruncation(innerRef.current.scrollHeight > COLLAPSED_SLOTS_HEIGHT + 2);
+    }
+  }, [children]);
+
+  const fadeMask = `linear-gradient(to bottom, black ${COLLAPSED_SLOTS_HEIGHT - COLLAPSED_FADE_PX}px, transparent ${COLLAPSED_SLOTS_HEIGHT}px)`;
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          Start Options
+        </h3>
+        <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 flex-shrink-0">
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> liked
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /> disliked
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" /> unavail.
+          </span>
         </div>
+      </div>
+      <div
+        ref={innerRef}
+        className="overflow-hidden pt-1.5"
+        style={{
+          maxHeight: expanded ? undefined : COLLAPSED_SLOTS_HEIGHT,
+          ...(needsTruncation && !expanded ? {
+            maskImage: fadeMask,
+            WebkitMaskImage: fadeMask,
+          } : {}),
+        }}
+      >
+        {children}
+      </div>
+      {needsTruncation && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full flex justify-center py-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          aria-label={expanded ? "Collapse start options" : "Expand start options"}
+        >
+          <svg
+            className={`w-6 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            viewBox="0 0 24 12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M4 2 L12 10 L20 2" />
+          </svg>
+        </button>
       )}
     </div>
   );
