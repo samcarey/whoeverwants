@@ -116,12 +116,12 @@ function CompactPreviewClip({
 }) {
   return (
     <div
-      className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+      className={`grid min-w-0 transition-[grid-template-rows] duration-300 ease-out ${
         isExpanded ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
       }`}
       aria-hidden={isExpanded}
     >
-      <div className="overflow-hidden">{children}</div>
+      <div className="overflow-hidden min-w-0">{children}</div>
     </div>
   );
 }
@@ -746,11 +746,14 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                 it's not rendered, so the gap doesn't appear. */}
             {!isPlaceholder && (statusEl || pillEl) && (
               // min-h-7 pins the row to the compact pill's natural height
-              // (~26px) so items-center keeps the status text at the same
-              // Y whether the pill is showing or clipped to 0 by
-              // CompactPreviewClip when the card expands.
-              <div className="min-h-7 flex items-center gap-2 min-w-0">
-                <div className="shrink-0 pl-1 text-sm text-gray-500 dark:text-gray-400">
+              // (~26px) so the status text stays at a stable Y whether the
+              // pill is showing or clipped to 0 by CompactPreviewClip on
+              // expand. items-end aligns the status text with the BOTTOM of
+              // the pill column — so when multiple pills stack vertically the
+              // status reads alongside the bottom-most pill instead of being
+              // centered with the whole stack.
+              <div className="min-h-7 flex items-end gap-2 min-w-0">
+                <div className="shrink-0 pl-1 text-sm leading-7 text-gray-500 dark:text-gray-400">
                   <ClientOnly fallback={null}>{statusEl}</ClientOnly>
                 </div>
                 <div className="flex-1 min-w-0 flex justify-end">{pillEl}</div>
