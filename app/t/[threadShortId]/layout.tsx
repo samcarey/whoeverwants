@@ -3,6 +3,17 @@ import { getServerApiBaseUrl } from "@/lib/serverApi";
 
 const SITE_NAME = "WhoeverWants";
 const DEFAULT_DESCRIPTION = "Anonymous polling for group decisions.";
+// Next.js merges metadata field-by-field but REPLACES nested objects
+// like `openGraph` / `twitter` when a child route redefines them, so
+// child layouts must restate any fields they want to inherit (in
+// particular the og/twitter image). Keep this in sync with
+// `app/layout.tsx`.
+const PREVIEW_IMAGE = {
+  url: "/icon-512x512.png",
+  width: 512,
+  height: 512,
+  alt: SITE_NAME,
+};
 
 /**
  * Server-side `generateMetadata` for the canonical thread route.
@@ -39,11 +50,13 @@ export async function generateMetadata({
       description: DEFAULT_DESCRIPTION,
       siteName: SITE_NAME,
       type: "website",
+      images: [PREVIEW_IMAGE],
     },
     twitter: {
       card: "summary",
       title: SITE_NAME,
       description: DEFAULT_DESCRIPTION,
+      images: [PREVIEW_IMAGE.url],
     },
   };
 
@@ -73,11 +86,13 @@ export async function generateMetadata({
         description,
         siteName: SITE_NAME,
         type: "website",
+        images: [PREVIEW_IMAGE],
       },
       twitter: {
         card: "summary",
         title,
         description,
+        images: [PREVIEW_IMAGE.url],
       },
     };
   } catch {
