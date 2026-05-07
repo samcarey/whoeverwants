@@ -296,11 +296,24 @@ def _insert_question(
     ).fetchone()
 
 
+def _category_for_title(question_row: dict) -> str:
+    """The "category" string to feed into `generate_poll_title` for one
+    question row. Time questions always resolve to `"time"` regardless of
+    the stored `category` column, since picking the "When" bubble in the
+    create-poll UI sets `question_type=time` but leaves `category="custom"`
+    (the form's default). The user model treats time AS the category, so
+    a time question titled "Time for Movie" must not become
+    "Custom for Movie" when the poll-level title is regenerated."""
+    if question_row.get("question_type") == "time":
+        return "time"
+    return question_row.get("category") or question_row.get("question_type") or ""
+
+
 def _compute_display_title(row: dict, question_rows: list[dict]) -> str:
     override = row.get("thread_title")
     if override:
         return override
-    categories = [sp.get("category") or sp.get("question_type") or "" for sp in question_rows]
+    categories = [_category_for_title(sp) for sp in question_rows]
     # Per-question context lives in `questions.details` (see _insert_question
     # below). Pass it through so the auto-title can reflect a shared context
     # like "Restaurant, Movie for Tonight" when none is set on the wrapper.

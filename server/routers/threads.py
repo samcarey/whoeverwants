@@ -59,6 +59,17 @@ from services.threads import (
     thread_ids_for_poll_ids,
 )
 
+
+class ThreadPreviewResponse(BaseModel):
+    """Public-readable thread metadata for link-preview (Open Graph)
+    crawlers. Returns ONLY title + description — no question contents,
+    no votes, no creator names, no per-poll details — so it's safe to
+    serve without visibility checks. The URL itself is the share token;
+    if you can hit this endpoint you've been handed the link."""
+
+    title: str
+    description: str | None = None
+
 router = APIRouter(prefix="/api/threads", tags=["threads"])
 
 
@@ -210,6 +221,90 @@ def get_thread_by_route_id(
         return polls_for_poll_ids(
             conn, visible_pids, include_results=include_results
         )
+
+
+@router.get(
+    "/by-route-id/{route_id}/preview",
+    response_model=ThreadPreviewResponse,
+)
+def get_thread_preview(route_id: str, p: str | None = None):
+    """Public link-preview metadata for Open Graph / Twitter Card crawlers.
+
+    Visibility-free + no `poll_access` writes: crawlers (Slack, iMessage,
+    Twitter, etc.) hit URLs without any browser identity, and gating
+    them on visibility would 404 every share. Returning only title +
+    description (no votes, no question contents) keeps this safe.
+
+    Title is the poll's auto-generated title; the `thread_title`
+    override is deliberately ignored so a custom thread name (often a
+    participant-name string) doesn't replace the poll's actual subject.
+
+    Description: comma-joined options across the poll's questions; else
+    the `details` (Notes) field; else null. Capped at 200 chars.
+    """
+    # Local imports: routers/polls.py imports services/threads, so an
+    # eager import would cycle.
+    from algorithms.poll_title import generate_poll_title
+    from routers.polls import _category_for_title
+
+    with get_db() as conn:
+        thread_id = resolve_thread_id_from_route_id(conn, route_id)
+        if not thread_id:
+            raise HTTPException(status_code=404, detail="Thread not found")
+
+        target = None
+        if p:
+            target = conn.execute(
+                """SELECT id, context, details FROM polls
+                    WHERE short_id = %(s)s AND thread_id = %(t)s::uuid""",
+                {"s": p, "t": thread_id},
+            ).fetchone()
+
+        if target is None:
+            target = conn.execute(
+                """SELECT id, context, details FROM polls
+                    WHERE thread_id = %(t)s::uuid
+                    ORDER BY created_at DESC
+                    LIMIT 1""",
+                {"t": thread_id},
+            ).fetchone()
+
+        if target is None:
+            raise HTTPException(status_code=404, detail="Thread not found")
+
+        question_rows = conn.execute(
+            """SELECT category, question_type, details, options
+                 FROM questions
+                WHERE poll_id = %(pid)s
+                ORDER BY question_index NULLS LAST, created_at""",
+            {"pid": str(target["id"])},
+        ).fetchall()
+
+        categories = [_category_for_title(dict(q)) for q in question_rows]
+        contexts = [q.get("details") for q in question_rows]
+        title = (
+            generate_poll_title(categories, target.get("context"), contexts)
+            or "WhoeverWants"
+        )
+
+        option_strs: list[str] = []
+        seen: set[str] = set()
+        for q in question_rows:
+            for opt in q.get("options") or []:
+                stripped = (opt or "").strip()
+                if stripped and stripped not in seen:
+                    seen.add(stripped)
+                    option_strs.append(stripped)
+
+        if option_strs:
+            description = ", ".join(option_strs)
+        else:
+            description = (target.get("details") or "").strip() or None
+
+        if description and len(description) > 200:
+            description = description[:197].rstrip() + "…"
+
+        return ThreadPreviewResponse(title=title, description=description)
 
 
 @router.delete("/{route_id}/membership", status_code=204)
