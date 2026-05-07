@@ -1739,7 +1739,7 @@ export function CreateQuestionContent() {
                             className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                           />
                           <span className="text-sm text-gray-600 dark:text-gray-400">
-                            allow voting before options finalized
+                            allow voting before options are finalized
                           </span>
                         </label>
                       )}
