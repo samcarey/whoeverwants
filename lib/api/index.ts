@@ -25,7 +25,6 @@ export {
   apiCutoffPollSuggestions,
   apiCutoffPollAvailability,
   apiGrantPollAccess,
-  apiUpdatePollThreadTitle,
 } from "./polls";
 export type { QuestionType, CreateQuestionParams, CreatePollParams } from "./polls";
 
@@ -42,6 +41,7 @@ export {
   apiGetMyThreads,
   apiGetThreadByRouteId,
   apiLeaveThread,
+  apiUpdateThreadTitle,
 } from "./threads";
 
 export {

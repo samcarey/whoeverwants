@@ -168,9 +168,6 @@ class QuestionResponse(BaseModel):
     # question type entirely, so this is effectively NOT NULL on every row.
     poll_id: str | None = None
     question_index: int | None = None
-    # Phase 3.5: the wrapper's `follow_up_to` (a poll_id, or None for
-    # thread roots). The FE walks this for thread chains.
-    poll_follow_up_to: str | None = None
     results: "QuestionResultsResponse | None" = None
     voter_names: list[str] | None = None
 
@@ -238,7 +235,7 @@ class RankedChoiceRoundResponse(BaseModel):
 
 class CreateQuestionRequest(BaseModel):
     """A question inside a poll create request. Wrapper-level fields
-    (response_deadline, creator_secret, follow_up_to, etc.) live on the
+    (response_deadline, creator_secret, thread_id, etc.) live on the
     poll, not here. `context` disambiguates same-kind questions and is
     stored on questions.details."""
 
@@ -265,12 +262,15 @@ class CreatePollRequest(BaseModel):
     response_deadline: str | None = None
     prephase_deadline: str | None = None
     prephase_deadline_minutes: int | None = None
-    # follow_up_to is a QUESTION id (matching the legacy single-question create API).
-    # The server resolves it to the parent's poll_id for
-    # polls.follow_up_to, and writes the original question_id onto each
-    # question's questions.follow_up_to so the existing thread-walking aggregation
-    # keeps working until Phase 5.
-    follow_up_to: str | None = None
+    # `thread_id` adds the new poll to an existing thread. None / omitted →
+    # the server creates a fresh thread. Migration 105 retired the legacy
+    # `follow_up_to` chain pointer along with `polls.follow_up_to`; threads
+    # are flat lists of polls (sorted by `created_at`) under one
+    # `thread_id`, not parent/child trees.
+    thread_id: str | None = None
+    # Sets the thread's title override at creation time (only meaningful
+    # when the new thread is being minted — for existing threads, use
+    # `POST /api/threads/{route_id}/title`). Stored on `threads.title`.
     thread_title: str | None = None
     # Short single-line poll-level context — drives the auto-title's "for X"
     # suffix. Stored on polls.context.
@@ -301,7 +301,10 @@ class PollResponse(BaseModel):
     prephase_deadline_minutes: int | None = None
     is_closed: bool = False
     close_reason: str | None = None
-    follow_up_to: str | None = None
+    # Migration 105 retired `polls.follow_up_to` and moved `thread_title`
+    # to `threads.title`. The wrapper still surfaces `thread_title` for FE
+    # compat, but it's now sourced from the joined threads row (one value
+    # per thread, no per-poll divergence).
     thread_title: str | None = None
     context: str | None = None
     details: str | None = None

@@ -31,8 +31,12 @@ from algorithms.yes_no import count_yes_no_votes
 # (vote submission, results computation, finalization) still needs to read
 # these from the wrapper, so the JOIN here aliases the same names — callers
 # operate on the joined dict in-memory and the response shape is filtered by
-# `_row_to_question`. The FE-only `poll_follow_up_to` is the chain pointer
-# used for thread building.
+# `_row_to_question`.
+#
+# Migration 105 moved `thread_title` off `polls` and onto `threads.title`,
+# and dropped `polls.follow_up_to` entirely (threads are flat — no chain
+# pointers). `thread_title` now joins from the threads row; the legacy
+# `poll_follow_up_to` field is gone along with every consumer.
 _SELECT_QUESTION_FULL = """
     SELECT p.*,
            mp.short_id AS short_id,
@@ -41,14 +45,15 @@ _SELECT_QUESTION_FULL = """
            mp.response_deadline AS response_deadline,
            mp.is_closed AS is_closed,
            mp.close_reason AS close_reason,
-           mp.thread_title AS thread_title,
+           mp.thread_id AS thread_id,
+           t.title AS thread_title,
            mp.prephase_deadline AS suggestion_deadline,
-           mp.follow_up_to AS poll_follow_up_to,
            mp.min_responses AS min_responses,
            mp.show_preliminary_results AS show_preliminary_results,
            mp.allow_pre_ranking AS allow_pre_ranking
       FROM questions p
       LEFT JOIN polls mp ON p.poll_id = mp.id
+      LEFT JOIN threads t ON mp.thread_id = t.id
 """
 
 
@@ -64,11 +69,15 @@ def _fetch_question_full(conn, question_id: str) -> dict | None:
 
 def _attach_wrapper_fields(conn, row) -> dict | None:
     """Annotate a RETURNING * row from questions with wrapper-level fields fetched
-    from the parent poll. Use after UPDATE/INSERT on the questions table when
-    the response goes back through `_row_to_question`. Phase 5b: only
-    `poll_follow_up_to` is surfaced on QuestionResponse, but the other fields
-    are still attached here so internal post-write logic that reads
-    `row["is_closed"]` etc. keeps working."""
+    from the parent poll (and its thread). Use after UPDATE/INSERT on the
+    questions table when the response goes back through `_row_to_question`.
+
+    Phase 5b: none of these fields are surfaced on QuestionResponse, but
+    they're still attached here so internal post-write logic that reads
+    `row["is_closed"]` etc. keeps working. Migration 105 moves
+    `thread_title` off `polls` to `threads.title` and removes
+    `polls.follow_up_to`, so the join now reaches all the way to threads.
+    """
     if row is None:
         return None
     row = dict(row)
@@ -81,9 +90,9 @@ def _attach_wrapper_fields(conn, row) -> dict | None:
             "response_deadline",
             "is_closed",
             "close_reason",
+            "thread_id",
             "thread_title",
             "suggestion_deadline",
-            "poll_follow_up_to",
             "min_responses",
             "show_preliminary_results",
             "allow_pre_ranking",
@@ -92,11 +101,13 @@ def _attach_wrapper_fields(conn, row) -> dict | None:
         return row
     mp_row = conn.execute(
         """
-        SELECT short_id, creator_secret, creator_name, response_deadline,
-               is_closed, close_reason, thread_title, prephase_deadline,
-               follow_up_to, min_responses, show_preliminary_results,
-               allow_pre_ranking
-          FROM polls WHERE id = %(id)s
+        SELECT mp.short_id, mp.creator_secret, mp.creator_name, mp.response_deadline,
+               mp.is_closed, mp.close_reason, mp.thread_id, t.title AS thread_title,
+               mp.prephase_deadline, mp.min_responses, mp.show_preliminary_results,
+               mp.allow_pre_ranking
+          FROM polls mp
+          LEFT JOIN threads t ON mp.thread_id = t.id
+         WHERE mp.id = %(id)s
         """,
         {"id": str(poll_id)},
     ).fetchone()
@@ -107,11 +118,9 @@ def _attach_wrapper_fields(conn, row) -> dict | None:
         row["response_deadline"] = mp_row["response_deadline"]
         row["is_closed"] = mp_row["is_closed"]
         row["close_reason"] = mp_row["close_reason"]
+        row["thread_id"] = mp_row["thread_id"]
         row["thread_title"] = mp_row["thread_title"]
         row["suggestion_deadline"] = mp_row["prephase_deadline"]
-        row["poll_follow_up_to"] = (
-            str(mp_row["follow_up_to"]) if mp_row.get("follow_up_to") else None
-        )
         row["min_responses"] = mp_row["min_responses"]
         row["show_preliminary_results"] = mp_row["show_preliminary_results"]
         row["allow_pre_ranking"] = mp_row["allow_pre_ranking"]
@@ -232,10 +241,8 @@ def _row_to_question(row: dict) -> QuestionResponse:
     Phase 5b: wrapper-level fields (response_deadline, creator_secret,
     creator_name, is_closed, close_reason, short_id, thread_title,
     suggestion_deadline) are no longer surfaced on QuestionResponse — the FE
-    sources them from the parent Poll. Use `_SELECT_QUESTION_FULL` (or
-    `_attach_wrapper_fields` for RETURNING * paths) to populate
-    `poll_follow_up_to` on the row dict before calling here, since
-    that's the only wrapper field we still expose."""
+    sources them from the parent Poll. Migration 105 also removed the
+    `poll_follow_up_to` chain pointer along with `polls.follow_up_to`."""
     return QuestionResponse(
         id=str(row["id"]),
         title=row["title"],
@@ -257,11 +264,6 @@ def _row_to_question(row: dict) -> QuestionResponse:
         min_availability_percent=row.get("min_availability_percent"),
         poll_id=str(row["poll_id"]) if row.get("poll_id") else None,
         question_index=row.get("question_index"),
-        poll_follow_up_to=(
-            str(row["poll_follow_up_to"])
-            if row.get("poll_follow_up_to")
-            else None
-        ),
     )
 
 

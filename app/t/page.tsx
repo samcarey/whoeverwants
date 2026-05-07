@@ -7,7 +7,7 @@ import { getThreadHrefForPoll } from "@/lib/threadUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import ThreadHeader from "@/components/ThreadHeader";
-import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, THREAD_ID_ATTR } from "@/lib/threadDomMarkers";
 
 export const dynamic = 'force-dynamic';
 
@@ -51,12 +51,12 @@ function EmptyPlaceholder() {
   usePageReady(true);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
-  // Defense against stale `<body data-thread-latest-question-id>` from a
-  // prior thread page — the create-poll submit handler reads it as the
-  // implicit follow-up target, so a missed cleanup binds new threads as
-  // follow-ups to whatever was previously viewed.
+  // Defense against stale `<body data-thread-id>` from a prior thread
+  // page — the create-poll submit handler reads it as the thread to
+  // attach the new poll to, so a missed cleanup would bind new threads
+  // to whichever was previously viewed.
   useEffect(() => {
-    document.body.removeAttribute(THREAD_LATEST_QUESTION_ID_ATTR);
+    document.body.removeAttribute(THREAD_ID_ATTR);
   }, []);
 
   return (

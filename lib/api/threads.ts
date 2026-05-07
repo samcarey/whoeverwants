@@ -104,3 +104,30 @@ export async function apiLeaveThread(routeId: string): Promise<void> {
     // intentional: see jsdoc
   }
 }
+
+/** Update (or clear) a thread's title override.
+ *
+ *  Migration 105 moved the override from `polls.thread_title` to
+ *  `threads.title`. The endpoint takes a `route_id` (the same four forms
+ *  as `apiGetThreadByRouteId`) and updates `threads.title` directly —
+ *  one row per thread, no per-poll divergence.
+ *
+ *  Empty string or null clears the override (stored as NULL).
+ */
+export async function apiUpdateThreadTitle(
+  routeId: string,
+  title: string | null,
+): Promise<{ thread_id: string; thread_short_id: string | null; title: string | null }> {
+  const data = await threadFetch<any>(
+    `/${encodeURIComponent(routeId)}/title`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ thread_title: title }),
+    },
+  );
+  return {
+    thread_id: data.thread_id,
+    thread_short_id: data.thread_short_id ?? null,
+    title: data.title ?? null,
+  };
+}

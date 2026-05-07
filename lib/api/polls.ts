@@ -36,7 +36,12 @@ export interface CreatePollParams {
   response_deadline?: string | null;
   prephase_deadline?: string | null;
   prephase_deadline_minutes?: number | null;
-  follow_up_to?: string | null;
+  /** Adds the new poll to an existing thread. None / omitted → server
+   *  mints a fresh thread. Migration 105 retired the legacy `follow_up_to`
+   *  chain pointer; threads are flat lists keyed by `thread_id`. */
+  thread_id?: string | null;
+  /** Sets the thread's title override at creation time. For existing
+   *  threads, prefer `apiUpdateThreadTitle` instead. */
   thread_title?: string | null;
   /** Short single-line — drives the auto-title's "for X" suffix. Maps to polls.context. */
   context?: string | null;
@@ -152,14 +157,3 @@ export async function apiGrantPollAccess(pollId: string): Promise<void> {
   }
 }
 
-/** Update (or clear) a poll's thread_title override. Empty string clears it. */
-export async function apiUpdatePollThreadTitle(pollId: string, threadTitle: string | null): Promise<Poll> {
-  const data = await pollFetch<any>(`/${encodeURIComponent(pollId)}/thread-title`, {
-    method: 'POST',
-    body: JSON.stringify({ thread_title: threadTitle }),
-  });
-  const poll = toPoll(data);
-  invalidatePoll(pollId);
-  cachePoll(poll);
-  return poll;
-}

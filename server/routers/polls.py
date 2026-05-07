@@ -21,7 +21,6 @@ from models import (
     ReopenQuestionRequest,
     SubmitPollVotesRequest,
     SubmitVoteRequest,
-    UpdateThreadTitleRequest,
     VoteResponse,
 )
 from services.memberships import join_thread, join_thread_for_poll
@@ -40,12 +39,16 @@ router = APIRouter(prefix="/api/polls", tags=["polls"])
 
 # Phase B.4: every SELECT that feeds `_row_to_poll` must surface
 # `threads.short_id` as `thread_short_id` so the FE can build
-# `/t/<thread.short_id>` URLs without a second round-trip. Centralizing the
-# JOIN here keeps the SELECTs in routers/polls.py and services/threads.py
-# in lockstep — adding another field from the threads table only requires
+# `/t/<thread.short_id>` URLs without a second round-trip. Migration 105
+# moved `thread_title` to `threads.title`, so the same JOIN is the source
+# of truth for the thread-name override too. Centralizing the JOIN here
+# keeps the SELECTs in routers/polls.py and services/threads.py in
+# lockstep — adding another field from the threads table only requires
 # extending this string.
 _SELECT_POLLS_WITH_THREAD = (
-    "SELECT polls.*, t.short_id AS thread_short_id "
+    "SELECT polls.*, "
+    "t.short_id AS thread_short_id, "
+    "t.title AS thread_title "
     "FROM polls LEFT JOIN threads t ON polls.thread_id = t.id"
 )
 
@@ -117,82 +120,87 @@ def _validate_request(req: CreatePollRequest) -> None:
             )
 
 
-def _resolve_parent_poll_id(conn, parent_question_id: str | None) -> str | None:
-    """Look up a parent question_id and return its poll_id, or None if the
-    parent is a legacy (pre-Phase-4) question with no wrapper. Returns None when
-    the parent doesn't exist or has no poll_id."""
-    if not parent_question_id:
-        return None
-    row = conn.execute(
-        "SELECT poll_id FROM questions WHERE id = %(id)s",
-        {"id": parent_question_id},
-    ).fetchone()
-    if not row or not row.get("poll_id"):
-        return None
-    return str(row["poll_id"])
+def _resolve_or_create_thread(
+    conn,
+    requested_thread_id: str | None,
+    initial_title: str | None,
+) -> str:
+    """Resolve `req.thread_id` to an existing thread, or mint a fresh one.
 
+    Migration 105 retired `polls.follow_up_to` so the new-poll path no
+    longer walks parent → child relationships. A thread is just a uuid
+    that polls share via `polls.thread_id`. When `requested_thread_id`
+    points at a real thread, return it; otherwise create a new thread
+    (optionally with `title` set on creation so first-poll-with-name
+    flows are a single transaction).
 
-def _resolve_or_create_thread_id(conn, parent_poll_id: str | None) -> str:
-    """Phase B.1: every poll has a thread_id. Follow-up polls inherit their
-    parent's thread; root polls (no parent) get a fresh thread row. The
-    parent's thread_id is read defensively — if for any reason the parent
-    is missing one (e.g. mid-deploy backfill race), we mint a new thread
-    so the new poll never lands without one."""
-    if parent_poll_id:
-        row = conn.execute(
-            "SELECT thread_id FROM polls WHERE id = %(id)s",
-            {"id": parent_poll_id},
+    Unknown / malformed thread ids fall through to "mint a fresh thread"
+    rather than 404 — the request still succeeds, it just lands in a new
+    thread instead of the one the caller named. That's the same fallback
+    `_resolve_or_create_thread_id` had for missing parents.
+    """
+    if requested_thread_id:
+        existing = conn.execute(
+            "SELECT id FROM threads WHERE id = %(id)s",
+            {"id": requested_thread_id},
         ).fetchone()
-        if row and row.get("thread_id"):
-            return str(row["thread_id"])
+        if existing:
+            if initial_title is not None:
+                conn.execute(
+                    "UPDATE threads SET title = %(title)s WHERE id = %(id)s",
+                    {"id": requested_thread_id, "title": initial_title},
+                )
+            return str(existing["id"])
     row = conn.execute(
-        "INSERT INTO threads DEFAULT VALUES RETURNING id"
+        "INSERT INTO threads (title) VALUES (%(title)s) RETURNING id",
+        {"title": initial_title},
     ).fetchone()
     return str(row["id"])
 
 
-def _attach_thread_short_id(conn, row) -> dict:
-    """Enrich a polls row dict with `thread_short_id` (Phase B.4).
+def _attach_thread_fields(conn, row) -> dict:
+    """Enrich a polls row dict with `thread_short_id` and `thread_title`.
 
     INSERT/UPDATE `RETURNING *` paths only see polls.* columns, not the
-    joined threads.short_id surfaced by `_SELECT_POLLS_WITH_THREAD`. After a
-    write, look up threads.short_id by thread_id so the resulting row dict
-    matches the SELECT shape `_row_to_poll` expects.
+    joined threads fields surfaced by `_SELECT_POLLS_WITH_THREAD`. After
+    a write, look up the thread row by `thread_id` so the resulting row
+    dict matches the SELECT shape `_row_to_poll` expects.
     """
     out = dict(row)
-    if out.get("thread_id") and not out.get("thread_short_id"):
+    if out.get("thread_id") and not (
+        out.get("thread_short_id") and "thread_title" in out
+    ):
         t = conn.execute(
-            "SELECT short_id FROM threads WHERE id = %(id)s",
+            "SELECT short_id, title FROM threads WHERE id = %(id)s",
             {"id": out["thread_id"]},
         ).fetchone()
         if t:
-            out["thread_short_id"] = t.get("short_id")
+            out.setdefault("thread_short_id", t.get("short_id"))
+            out.setdefault("thread_title", t.get("title"))
     return out
 
 
 def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
-    # follow_up_to in the request is a *question id* (matching the legacy
-    # single-question create API). Resolve to the parent's poll_id for the
-    # polls row. Phase 5: legacy single-question parents are gone — every
-    # question has a poll wrapper — so the questions.thread_title fallback was
-    # removed.
-    parent_followup_poll_id = _resolve_parent_poll_id(conn, req.follow_up_to)
-    thread_id = _resolve_or_create_thread_id(conn, parent_followup_poll_id)
-    # `polls.thread_title` is the THREAD-name override (default is the
-    # participant-names string built FE-side). It is NOT a storage location
-    # for the poll's display title — that's computed by `_compute_display_title`
-    # from `questions[0].title` (which captures the user's typed yes_no prompt
-    # or the auto-generated wrapper title). Conflating the two caused the
-    # thread name to silently change to a poll's title (the user-reported
-    # "thread name becomes a poll title" bug).
-    explicit_title = req.thread_title
+    """Insert a new poll under the requested (or freshly-minted) thread.
+
+    Migration 105 dropped `polls.follow_up_to` and `polls.thread_title`:
+    threads are first-class entities (one row in `threads`), and the
+    thread name override lives on `threads.title` rather than being
+    duplicated across every poll.
+    """
+    # `req.thread_title` only seeds the title when minting a fresh thread.
+    # For existing threads, it overwrites the title — kept for API symmetry
+    # but the FE create flow doesn't pass it; thread renames go through
+    # `POST /api/threads/{route_id}/title` instead.
+    thread_id = _resolve_or_create_thread(
+        conn, req.thread_id, req.thread_title
+    )
     row = conn.execute(
         """
         INSERT INTO polls (
             creator_secret, creator_name, response_deadline,
             prephase_deadline, prephase_deadline_minutes,
-            follow_up_to, context, details,
-            thread_title,
+            context, details,
             min_responses, show_preliminary_results, allow_pre_ranking,
             thread_id,
             created_at, updated_at
@@ -200,11 +208,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
         VALUES (
             %(creator_secret)s, %(creator_name)s, %(response_deadline)s,
             %(prephase_deadline)s, %(prephase_deadline_minutes)s,
-            %(follow_up_poll_id)s, %(context)s, %(details)s,
-            COALESCE(
-                %(explicit_title)s,
-                (SELECT thread_title FROM polls WHERE id = %(follow_up_poll_id)s)
-            ),
+            %(context)s, %(details)s,
             %(min_responses)s, %(show_preliminary_results)s, %(allow_pre_ranking)s,
             %(thread_id)s,
             %(now)s, %(now)s
@@ -222,10 +226,8 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
                 None if req.prephase_deadline_minutes else req.prephase_deadline
             ),
             "prephase_deadline_minutes": req.prephase_deadline_minutes,
-            "follow_up_poll_id": parent_followup_poll_id,
             "context": req.context,
             "details": req.details,
-            "explicit_title": explicit_title,
             "min_responses": req.min_responses,
             "show_preliminary_results": req.show_preliminary_results,
             "allow_pre_ranking": req.allow_pre_ranking,
@@ -233,7 +235,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
             "now": now,
         },
     ).fetchone()
-    return _attach_thread_short_id(conn, row)
+    return _attach_thread_fields(conn, row)
 
 
 def _insert_question(
@@ -343,18 +345,6 @@ def _row_to_poll(
     voter_names: list[str] | None = None,
     anonymous_count: int = 0,
 ) -> PollResponse:
-    # Phase 5b: QuestionResponse no longer carries wrapper-level fields, so we
-    # only need to splice the wrapper's follow_up_to (the FE chain pointer)
-    # onto each question row. The poll's own fields are surfaced on
-    # PollResponse below.
-    poll_follow_up_to = (
-        str(row["follow_up_to"]) if row.get("follow_up_to") else None
-    )
-    enriched = []
-    for sp in question_rows:
-        enriched_sp = dict(sp)
-        enriched_sp["poll_follow_up_to"] = poll_follow_up_to
-        enriched.append(enriched_sp)
     return PollResponse(
         id=str(row["id"]),
         short_id=row.get("short_id"),
@@ -367,7 +357,6 @@ def _row_to_poll(
         prephase_deadline_minutes=row.get("prephase_deadline_minutes"),
         is_closed=row.get("is_closed", False),
         close_reason=row.get("close_reason"),
-        follow_up_to=poll_follow_up_to,
         thread_title=row.get("thread_title"),
         context=row.get("context"),
         details=row.get("details"),
@@ -377,7 +366,7 @@ def _row_to_poll(
         min_responses=row.get("min_responses"),
         show_preliminary_results=row.get("show_preliminary_results", True),
         allow_pre_ranking=row.get("allow_pre_ranking", True),
-        questions=[_row_to_question(sp) for sp in enriched],
+        questions=[_row_to_question(sp) for sp in question_rows],
         voter_names=voter_names or [],
         anonymous_count=anonymous_count,
     )
@@ -833,32 +822,3 @@ def cutoff_poll_availability(poll_id: str, req: CutoffSuggestionsRequest):
     return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count)
 
 
-@router.post("/{poll_id}/thread-title", response_model=PollResponse)
-def update_poll_thread_title(poll_id: str, req: UpdateThreadTitleRequest):
-    """Update (or clear) a poll's thread_title override. No auth required —
-    anyone with the poll's link can rename the thread. An empty or
-    whitespace-only value clears the override (stored as NULL)."""
-    normalized = (req.thread_title or "").strip()
-    value: str | None = normalized if normalized else None
-    now = datetime.now(timezone.utc)
-    with get_db() as conn:
-        row = conn.execute(
-            """
-            UPDATE polls
-            SET thread_title = %(thread_title)s,
-                updated_at = %(now)s
-            WHERE id = %(poll_id)s
-            RETURNING *
-            """,
-            {
-                "poll_id": poll_id,
-                "thread_title": value,
-                "now": now,
-            },
-        ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Poll not found")
-        row = _attach_thread_short_id(conn, row)
-        question_rows = _fetch_questions(conn, poll_id)
-        voter_names, anonymous_count = _compute_poll_voter_data(conn, poll_id)
-    return _row_to_poll(row, question_rows, voter_names, anonymous_count)

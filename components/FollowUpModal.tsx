@@ -3,7 +3,6 @@
 import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
-import FollowUpHeader from "@/components/FollowUpHeader";
 import { Question, Poll } from "@/lib/types";
 import { buildQuestionSnapshot } from "@/lib/questionCreator";
 import { formatShortDateTime } from "@/lib/timeUtils";
@@ -205,15 +204,6 @@ export default function FollowUpModal({ isOpen, question, poll, onClose, totalVo
             <AmberCutoffButton label="Cutoff Suggestions" onClick={onCutoffSuggestions} onClose={onClose} />
           )}
 
-          {/* Follow-up link — shown at the bottom of the modal when this question
-               follows up on another. Tapping the parent name navigates to that
-               poll (which opens the containing thread with that card
-               expanded). Phase 5: chain pointers are poll-level. */}
-          {question.poll_follow_up_to && (
-            <div className="mt-4">
-              <FollowUpHeader followUpToPollId={question.poll_follow_up_to} />
-            </div>
-          )}
         </div>
       </div>
     </ModalPortal>

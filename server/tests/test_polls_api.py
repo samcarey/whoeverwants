@@ -269,129 +269,170 @@ class TestQuestionLinkage:
                 assert row[1] == index
 
 
-class TestChainPropagation:
-    """Phase 2.2 + 3.5: follow_up_to is a QUESTION id in the request. The server
-    resolves it to the parent's poll_id for the polls row.
+class TestThreadAddition:
+    """Migration 105 retired the `follow_up_to` chain pointer. Polls join an
+    existing thread by passing `req.thread_id`; threads.title is the single
+    source of truth for the thread-name override (no per-poll copies)."""
 
-    Phase 5: the per-question questions.follow_up_to column was dropped — chain
-    walking is poll-level only. Legacy single-question parents no longer
-    exist (every question has a poll wrapper)."""
-
-    def _create_poll_parent(self, client, creator_secret):
+    def _create_root(self, client, creator_secret, **kwargs):
         resp = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
                 "questions": [_yes_no_question()],
+                **kwargs,
             },
         )
         assert resp.status_code == 201, resp.text
         return resp.json()
 
-    def test_followup_to_poll_parent(self, client, creator_secret):
-        parent = self._create_poll_parent(client, creator_secret)
-        parent_question_id = parent["questions"][0]["id"]
-        parent_poll_id = parent["id"]
+    def test_poll_added_to_thread_inherits_thread_id(self, client, creator_secret):
+        parent = self._create_root(client, creator_secret)
+        thread_id = parent["thread_id"]
+        assert thread_id is not None
 
         child = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "follow_up_to": parent_question_id,
+                "thread_id": thread_id,
                 "questions": [_yes_no_question()],
             },
         )
         assert child.status_code == 201, child.text
-        child_data = child.json()
-        # polls.follow_up_to resolved to the parent's poll_id
-        assert child_data["follow_up_to"] == parent_poll_id
+        assert child.json()["thread_id"] == thread_id
 
-        # The child question's QuestionResponse exposes the wrapper's chain via
-        # poll_follow_up_to.
-        child_question = child_data["questions"][0]
-        assert child_question["poll_follow_up_to"] == parent_poll_id
-
-    def test_thread_title_inherits_from_poll_parent(self, client, creator_secret):
-        parent = client.post(
-            "/api/polls",
-            json={
-                "creator_secret": creator_secret,
-                "thread_title": "Friday Night",
-                "questions": [_yes_no_question()],
-            },
-        )
-        assert parent.status_code == 201
-        parent_question_id = parent.json()["questions"][0]["id"]
-
-        child = client.post(
-            "/api/polls",
-            json={
-                "creator_secret": creator_secret,
-                "follow_up_to": parent_question_id,
-                "questions": [_yes_no_question()],
-            },
-        )
-        assert child.status_code == 201
-        # No explicit thread_title on the child; should inherit from the parent.
-        assert child.json()["thread_title"] == "Friday Night"
-
-    def test_explicit_thread_title_wins_over_parent_inheritance(
+    def test_unknown_thread_id_falls_through_to_fresh_thread(
         self, client, creator_secret
     ):
-        parent = client.post(
+        # Unknown thread_id is silently ignored; the new poll lands in a
+        # freshly-minted thread instead of 404'ing the request.
+        bogus = str(uuid.uuid4())
+        resp = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "thread_title": "Old Title",
+                "thread_id": bogus,
                 "questions": [_yes_no_question()],
             },
         )
-        parent_question_id = parent.json()["questions"][0]["id"]
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["thread_id"] != bogus
+
+    def test_thread_title_lives_at_thread_level(self, client, creator_secret):
+        # Setting `thread_title` on a root-poll create writes to threads.title;
+        # subsequent polls in the same thread see the SAME thread_title.
+        parent = self._create_root(
+            client, creator_secret, thread_title="Friday Night"
+        )
+        thread_id = parent["thread_id"]
+        assert parent["thread_title"] == "Friday Night"
 
         child = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "follow_up_to": parent_question_id,
+                "thread_id": thread_id,
+                "questions": [_yes_no_question()],
+            },
+        )
+        assert child.json()["thread_title"] == "Friday Night"
+
+    def test_explicit_thread_title_overwrites_existing(
+        self, client, creator_secret
+    ):
+        # `thread_title` on a poll-create is symmetric with the dedicated
+        # thread-title endpoint: passing it always sets `threads.title`,
+        # both for fresh threads and additions to existing threads.
+        parent = self._create_root(
+            client, creator_secret, thread_title="Old Title"
+        )
+        thread_id = parent["thread_id"]
+
+        child = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "thread_id": thread_id,
                 "thread_title": "New Title",
                 "questions": [_yes_no_question()],
             },
         )
         assert child.json()["thread_title"] == "New Title"
+        # Parent re-read picks up the same updated title.
+        refetched = client.get(f"/api/polls/by-id/{parent['id']}")
+        assert refetched.json()["thread_title"] == "New Title"
 
-    def test_poll_title_does_not_propagate_to_child_thread_title(
+    def test_poll_title_does_not_pollute_thread_title(
         self, client, creator_secret
     ):
-        # Regression: previously, `req.title` on the parent leaked into
-        # `polls.thread_title` and the COALESCE inheritance then propagated
-        # it to every follow-up poll, so the thread name silently mirrored
-        # the parent's question prompt. The fix decouples the two: a parent
-        # with only `req.title` set must leave child.thread_title as NULL.
-        parent = client.post(
-            "/api/polls",
-            json={
-                "creator_secret": creator_secret,
-                "title": "Should we order pizza?",
-                "questions": [_yes_no_question()],
-            },
+        # Regression for the original "thread name silently becomes a
+        # poll's title" bug: `req.title` (poll display title) must never
+        # leak into `threads.title` (thread name override).
+        parent = self._create_root(
+            client, creator_secret, title="Should we order pizza?"
         )
-        parent_question_id = parent.json()["questions"][0]["id"]
-        assert parent.json()["thread_title"] is None
+        assert parent["thread_title"] is None
+        assert parent["title"] == "Should we order pizza?"
 
+        # A poll added to the same thread also picks up no thread_title.
         child = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "follow_up_to": parent_question_id,
+                "thread_id": parent["thread_id"],
                 "questions": [_yes_no_question()],
             },
         )
         assert child.json()["thread_title"] is None
 
+    def test_update_thread_title_endpoint(self, client, creator_secret):
+        parent = self._create_root(client, creator_secret)
+        thread_id = parent["thread_id"]
+
+        # Set
+        resp = client.post(
+            f"/api/threads/{thread_id}/title",
+            json={"thread_title": "Renamed"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["title"] == "Renamed"
+        assert body["thread_id"] == thread_id
+
+        # Subsequent poll reads see the new title.
+        refetched = client.get(f"/api/polls/by-id/{parent['id']}")
+        assert refetched.json()["thread_title"] == "Renamed"
+
+        # Clear
+        cleared = client.post(
+            f"/api/threads/{thread_id}/title",
+            json={"thread_title": ""},
+        )
+        assert cleared.json()["title"] is None
+        assert client.get(
+            f"/api/polls/by-id/{parent['id']}"
+        ).json()["thread_title"] is None
+
+    def test_update_thread_title_resolves_route_id_forms(
+        self, client, creator_secret
+    ):
+        parent = self._create_root(client, creator_secret)
+        # threads.short_id is the canonical FE-facing form
+        for route_id in (parent["thread_id"], parent["thread_short_id"]):
+            r = client.post(
+                f"/api/threads/{route_id}/title",
+                json={"thread_title": f"name-{route_id[:6]}"},
+            )
+            assert r.status_code == 200, r.text
+
 
 class TestThreadId:
     """Phase B.1: every new poll has a thread_id. Root polls get a fresh
-    thread row; follow-up polls inherit their parent's thread_id."""
+    thread row; polls added to an existing thread (`req.thread_id`) reuse
+    it. Migration 105 retired `polls.follow_up_to` so chain-walking is
+    gone — these tests now assert the flat thread_id semantics directly.
+    """
 
     def _thread_id_for(self, poll_id: str) -> str | None:
         import psycopg
@@ -428,52 +469,45 @@ class TestThreadId:
         )
         assert self._thread_id_for(a.json()["id"]) != self._thread_id_for(b.json()["id"])
 
-    def test_followup_inherits_parent_thread(self, client, creator_secret):
+    def test_thread_id_param_reuses_thread(self, client, creator_secret):
         parent = client.post(
             "/api/polls",
             json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
         )
-        parent_question_id = parent.json()["questions"][0]["id"]
         parent_thread_id = self._thread_id_for(parent.json()["id"])
 
         child = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "follow_up_to": parent_question_id,
+                "thread_id": parent_thread_id,
                 "questions": [_yes_no_question()],
             },
         )
         assert child.status_code == 201, child.text
         assert self._thread_id_for(child.json()["id"]) == parent_thread_id
 
-    def test_grandchild_inherits_root_thread(self, client, creator_secret):
+    def test_chain_of_additions_share_thread(self, client, creator_secret):
+        # Multiple polls added to the same thread all share the same
+        # thread_id — analog of the old "grandchild inherits root thread"
+        # assertion now that there's no chain walk.
         root = client.post(
             "/api/polls",
             json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
         )
         root_thread = self._thread_id_for(root.json()["id"])
-        root_q = root.json()["questions"][0]["id"]
 
-        child = client.post(
-            "/api/polls",
-            json={
-                "creator_secret": creator_secret,
-                "follow_up_to": root_q,
-                "questions": [_yes_no_question()],
-            },
-        )
-        child_q = child.json()["questions"][0]["id"]
-
-        grandchild = client.post(
-            "/api/polls",
-            json={
-                "creator_secret": creator_secret,
-                "follow_up_to": child_q,
-                "questions": [_yes_no_question()],
-            },
-        )
-        assert self._thread_id_for(grandchild.json()["id"]) == root_thread
+        for _ in range(2):
+            resp = client.post(
+                "/api/polls",
+                json={
+                    "creator_secret": creator_secret,
+                    "thread_id": root_thread,
+                    "questions": [_yes_no_question()],
+                },
+            )
+            assert resp.status_code == 201, resp.text
+            assert self._thread_id_for(resp.json()["id"]) == root_thread
 
 
 class TestPollOperations:

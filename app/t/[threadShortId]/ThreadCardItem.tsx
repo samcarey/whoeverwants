@@ -745,8 +745,9 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                 <FloatingCopyLinkButton
                   url={(() => {
                     if (typeof window === "undefined") return "";
-                    // Canonical share URL — walks `follow_up_to` via cache to
-                    // root; falls back to this poll as root when uncached.
+                    // Canonical share URL — uses `thread_short_id` from the
+                    // poll directly (Migration 105: no chain walk needed);
+                    // falls back to this poll as root for placeholders.
                     const href = wrapper
                       ? getThreadHrefForPoll(wrapper)
                       : `/t/${question.id}?p=${question.id}`;

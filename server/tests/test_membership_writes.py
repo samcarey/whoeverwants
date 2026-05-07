@@ -57,28 +57,27 @@ class TestCreatePollMembership:
         self, client, creator_secret, browser_id
     ):
         root = create_poll(client, creator_secret, browser_id=browser_id)
-        parent_qid = root["questions"][0]["id"]
-        # Same browser creates a follow-up — already a member; ON CONFLICT
-        # keeps the thread_members row count at 1.
+        thread_id = root["thread_id"]
+        # Same browser adds a poll to the same thread — already a member;
+        # ON CONFLICT keeps the thread_members row count at 1.
         followup = create_poll(
             client,
             creator_secret,
             browser_id=browser_id,
-            follow_up_to=parent_qid,
+            thread_id=thread_id,
         )
-        # Both polls share the same thread_id.
-        assert followup["thread_id"] == root["thread_id"]
-        rows = _thread_members(root["thread_id"])
+        assert followup["thread_id"] == thread_id
+        rows = _thread_members(thread_id)
         assert len(rows) == 1
 
     def test_followup_creator_from_different_browser_adds_row(
         self, client, creator_secret, browser_id
     ):
         root = create_poll(client, creator_secret, browser_id=browser_id)
-        parent_qid = root["questions"][0]["id"]
+        thread_id = root["thread_id"]
         other = str(uuid.uuid4())
         create_poll(
-            client, creator_secret, browser_id=other, follow_up_to=parent_qid
+            client, creator_secret, browser_id=other, thread_id=thread_id
         )
         rows = _thread_members(root["thread_id"])
         bids = {str(r[0]) for r in rows}

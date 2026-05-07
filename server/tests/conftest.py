@@ -68,12 +68,24 @@ def create_followup(
     *,
     browser_id=None,
 ) -> dict:
-    """Create a poll wrapped in a follow-up to `parent_question_id`."""
+    """Create another poll in the same thread as `parent_question_id`.
+
+    Migration 105 retired `polls.follow_up_to`; threads are flat lists
+    of polls under one `thread_id`. Tests still pass a parent_question_id
+    here for ergonomics — the helper resolves it to the parent's
+    `thread_id` and forwards that as `req.thread_id`.
+    """
+    parent = client.get(f"/api/questions/{parent_question_id}")
+    assert parent.status_code == 200, parent.text
+    poll_id = parent.json()["poll_id"]
+    poll = client.get(f"/api/polls/by-id/{poll_id}")
+    assert poll.status_code == 200, poll.text
+    thread_id = poll.json()["thread_id"]
     return create_poll(
         client,
         creator_secret,
         browser_id=browser_id,
-        follow_up_to=parent_question_id,
+        thread_id=thread_id,
     )
 
 
