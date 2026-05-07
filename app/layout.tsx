@@ -8,13 +8,38 @@ import ResponsiveScaling from "@/components/ResponsiveScaling";
 
 
 export const metadata: Metadata = {
+  // `metadataBase` makes Next.js resolve relative URLs (e.g. og:image
+  // pointing at `/icon-512x512.png`) into absolute URLs that crawlers
+  // can fetch. Without it, link-preview unfurlers see a relative path
+  // they can't resolve and skip the thumbnail.
+  metadataBase: new URL("https://whoeverwants.com"),
   title: "WhoeverWants",
-  description: "Coordinate with friends!",
+  description: "Anonymous polling for group decisions.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "WhoeverWants",
+  },
+  openGraph: {
+    title: "WhoeverWants",
+    description: "Anonymous polling for group decisions.",
+    siteName: "WhoeverWants",
+    type: "website",
+    images: [
+      {
+        url: "/icon-512x512.png",
+        width: 512,
+        height: 512,
+        alt: "WhoeverWants",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary",
+    title: "WhoeverWants",
+    description: "Anonymous polling for group decisions.",
+    images: ["/icon-512x512.png"],
   },
 };
 

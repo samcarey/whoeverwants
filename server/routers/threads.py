@@ -59,6 +59,17 @@ from services.threads import (
     thread_ids_for_poll_ids,
 )
 
+
+class ThreadPreviewResponse(BaseModel):
+    """Public-readable thread metadata for link-preview (Open Graph)
+    crawlers. Returns ONLY title + description — no question contents,
+    no votes, no creator names, no per-poll details — so it's safe to
+    serve without visibility checks. The URL itself is the share token;
+    if you can hit this endpoint you've been handed the link."""
+
+    title: str
+    description: str | None = None
+
 router = APIRouter(prefix="/api/threads", tags=["threads"])
 
 
@@ -210,6 +221,69 @@ def get_thread_by_route_id(
         return polls_for_poll_ids(
             conn, visible_pids, include_results=include_results
         )
+
+
+@router.get(
+    "/by-route-id/{route_id}/preview",
+    response_model=ThreadPreviewResponse,
+)
+def get_thread_preview(route_id: str, p: str | None = None):
+    """Public link-preview metadata for Open Graph / Twitter Card crawlers.
+
+    Returns ONLY title + description so this endpoint can safely run
+    without visibility filtering or `poll_access` writes. Crawlers
+    (Slack, iMessage, Twitter, etc.) hit URLs without any browser
+    identity; gating on the visibility filter would 404 them and our
+    shared links would render as bare URLs.
+
+    Resolution:
+      - When `?p=<pollShortId>` matches a poll in the resolved thread,
+        that poll's title is preferred (so a `/t/<thread>?p=<poll>`
+        share targets that specific poll).
+      - Else uses the thread's most recent poll's `thread_title`
+        override or auto-title.
+
+    Description (optional): the chosen poll's `details` (Notes), trimmed
+    + capped, or null.
+
+    Returns 404 when the route id doesn't resolve to any thread.
+    """
+    with get_db() as conn:
+        thread_id = resolve_thread_id_from_route_id(conn, route_id)
+        if not thread_id:
+            raise HTTPException(status_code=404, detail="Thread not found")
+
+        target = None
+        if p:
+            target = conn.execute(
+                """SELECT title, thread_title, details
+                     FROM polls
+                    WHERE short_id = %(s)s AND thread_id = %(t)s::uuid""",
+                {"s": p, "t": thread_id},
+            ).fetchone()
+
+        if target is None:
+            target = conn.execute(
+                """SELECT title, thread_title, details
+                     FROM polls
+                    WHERE thread_id = %(t)s::uuid
+                    ORDER BY created_at DESC
+                    LIMIT 1""",
+                {"t": thread_id},
+            ).fetchone()
+
+        if target is None:
+            raise HTTPException(status_code=404, detail="Thread not found")
+
+        thread_title = (target.get("thread_title") or "").strip()
+        poll_title = (target.get("title") or "").strip()
+        title = thread_title or poll_title or "WhoeverWants"
+
+        details = (target.get("details") or "").strip() or None
+        if details and len(details) > 200:
+            details = details[:197].rstrip() + "…"
+
+        return ThreadPreviewResponse(title=title, description=details)
 
 
 @router.delete("/{route_id}/membership", status_code=204)
