@@ -56,7 +56,6 @@ import {
   draftToQuestionParams,
   anyDraftUsesPrephase,
   anyDraftIsRankedChoice,
-  anyDraftIsSuggestionMode,
   deriveDraftTitle,
   draftCardLabels,
   draftPollPreview,
@@ -502,23 +501,28 @@ export function CreateQuestionContent() {
 
 
 
-  // Whether any staged draft (or the in-progress inline form, when filled)
-  // uses the poll-level prephase cutoff (suggestion mode or time question).
-  // Drives whether the suggestion-cutoff field is rendered in Settings.
-  const inlineFormUsesPrephase = isSuggestionMode
-    || questionType === 'time'
-    || category === 'time';
+  // Whether any staged draft (or the in-progress inline form, when the
+  // modal is open) uses the poll-level prephase cutoff (suggestion mode
+  // or time question). Drives whether the suggestion/availability-cutoff
+  // field and the "allow pre-vote" toggle are rendered in Settings.
+  // The inline form is gated on isModalOpen because confirm/dismiss
+  // reset it to empty defaults (questionType='question',
+  // category='custom', no options) which would otherwise look like
+  // "suggestion mode" and wrongly surface the prephase fields after
+  // every staged draft.
+  const inlineFormUsesPrephase = isModalOpen && (
+    isSuggestionMode || questionType === 'time' || category === 'time'
+  );
   const pollHasPrephase = anyDraftUsesPrephase(drafts) || inlineFormUsesPrephase;
 
   // Migration 098: poll-level results-display + ranked-choice settings.
   // The min-responses + show-results pair is meaningful iff the poll
-  // contains at least one ranked_choice question. The "allow pre-rank"
-  // toggle further requires at least one suggestion-mode question.
-  const inlineFormIsRankedChoice = questionType === 'question'
+  // contains at least one ranked_choice question.
+  const inlineFormIsRankedChoice = isModalOpen
+    && questionType === 'question'
     && category !== 'yes_no'
     && category !== 'time';
   const pollHasRankedChoice = anyDraftIsRankedChoice(drafts) || inlineFormIsRankedChoice;
-  const pollHasSuggestionMode = anyDraftIsSuggestionMode(drafts) || isSuggestionMode;
 
   // Validates the whole poll at submit time: drafts exist + poll-level
   // cutoffs are sane. Per-question fields are validated when each draft is
@@ -1463,7 +1467,7 @@ export function CreateQuestionContent() {
     <div>
       <div className="flex items-center justify-between">
         <label className="block text-sm font-medium cursor-pointer">
-          <span>{drafts.some(d => draftDbQuestionType(d) === 'time') ? 'Availability Cutoff: ' : 'Suggestions Cutoff: '}</span>
+          <span>Suggestion/Availability Cutoff: </span>
           <span className="relative inline-flex">
             <span className="font-normal text-blue-600 dark:text-blue-400">
               {(() => {
@@ -1725,7 +1729,7 @@ export function CreateQuestionContent() {
                         />
                       )}
 
-                      {pollHasSuggestionMode && (
+                      {pollHasPrephase && (
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -1735,7 +1739,7 @@ export function CreateQuestionContent() {
                             className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                           />
                           <span className="text-sm text-gray-600 dark:text-gray-400">
-                            allow pre-rank during suggestion phase
+                            allow voting before options are finalized
                           </span>
                         </label>
                       )}
