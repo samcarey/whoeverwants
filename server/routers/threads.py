@@ -248,6 +248,10 @@ def get_thread_preview(route_id: str, p: str | None = None):
 
     Returns 404 when the route id doesn't resolve to any thread.
     """
+    # Local import: routers/polls.py imports services/threads, so an
+    # eager import would cycle.
+    from routers.polls import _compute_display_title
+
     with get_db() as conn:
         thread_id = resolve_thread_id_from_route_id(conn, route_id)
         if not thread_id:
@@ -256,16 +260,14 @@ def get_thread_preview(route_id: str, p: str | None = None):
         target = None
         if p:
             target = conn.execute(
-                """SELECT title, thread_title, details
-                     FROM polls
+                """SELECT * FROM polls
                     WHERE short_id = %(s)s AND thread_id = %(t)s::uuid""",
                 {"s": p, "t": thread_id},
             ).fetchone()
 
         if target is None:
             target = conn.execute(
-                """SELECT title, thread_title, details
-                     FROM polls
+                """SELECT * FROM polls
                     WHERE thread_id = %(t)s::uuid
                     ORDER BY created_at DESC
                     LIMIT 1""",
@@ -275,9 +277,19 @@ def get_thread_preview(route_id: str, p: str | None = None):
         if target is None:
             raise HTTPException(status_code=404, detail="Thread not found")
 
-        thread_title = (target.get("thread_title") or "").strip()
-        poll_title = (target.get("title") or "").strip()
-        title = thread_title or poll_title or "WhoeverWants"
+        # `polls.title` is a computed value (see `_compute_display_title`
+        # in routers/polls.py): thread_title override, else
+        # `generate_poll_title(categories, context, per-question contexts)`.
+        # Pull the question rows for the chosen poll so the helper has
+        # everything it needs.
+        question_rows = conn.execute(
+            """SELECT category, question_type, details
+                 FROM questions
+                WHERE poll_id = %(pid)s
+                ORDER BY question_index NULLS LAST, created_at""",
+            {"pid": str(target["id"])},
+        ).fetchall()
+        title = _compute_display_title(dict(target), [dict(r) for r in question_rows])
 
         details = (target.get("details") or "").strip() or None
         if details and len(details) > 200:
