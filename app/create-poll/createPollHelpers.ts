@@ -104,12 +104,6 @@ export function anyDraftIsRankedChoice(drafts: QuestionDraft[]): boolean {
   return drafts.some(d => draftDbQuestionType(d) === 'ranked_choice');
 }
 
-/** True when at least one draft is in suggestion mode — the only case where
- *  "allow pre-ranking during the suggestion phase" is meaningful. */
-export function anyDraftIsSuggestionMode(drafts: QuestionDraft[]): boolean {
-  return drafts.some(d => draftIsSuggestionMode(d));
-}
-
 /**
  * Convert a draft into the `CreateQuestionParams` shape the server expects.
  * `prephaseMinutes` is the poll-level prephase cutoff resolved at submit time
