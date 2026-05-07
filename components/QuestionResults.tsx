@@ -383,9 +383,14 @@ function formatSlotCompact(slot: string): string {
 export function CompactRankedChoicePreview({
   results,
   isQuestionClosed,
+  categoryIcon,
 }: {
   results: QuestionResults;
   isQuestionClosed?: boolean;
+  // When the question's category has its own emoji (restaurant, movie,
+  // location, etc.), pass it here. Omit for `custom` / no-category — we
+  // intentionally don't fall back to a generic trophy.
+  categoryIcon?: string;
 }) {
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
@@ -394,7 +399,9 @@ export function CompactRankedChoicePreview({
   }
   return (
     <div className="flex items-center justify-end gap-2 min-w-0">
-      <span className="text-xs shrink-0">🏆</span>
+      {categoryIcon && (
+        <span className="text-xs shrink-0">{categoryIcon}</span>
+      )}
       <span
         className={`${PILL_CLASS} ${isQuestionClosed ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}
         title={winner}
@@ -426,9 +433,11 @@ export function CompactSuggestionPreview({
 export function CompactTimePreview({
   results,
   isQuestionClosed,
+  categoryIcon,
 }: {
   results: QuestionResults;
   isQuestionClosed?: boolean;
+  categoryIcon?: string;
 }) {
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
@@ -437,7 +446,9 @@ export function CompactTimePreview({
   }
   return (
     <div className="flex items-center justify-end gap-2 min-w-0">
-      <span className="text-xs shrink-0">📅</span>
+      {categoryIcon && (
+        <span className="text-xs shrink-0">{categoryIcon}</span>
+      )}
       <span
         className={`${PILL_CLASS} ${isQuestionClosed ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}
         title={formatTimeSlot(winner)}

@@ -26,6 +26,7 @@ import type {
 } from "@/lib/useThreadVoting";
 import {
   getCategoryIcon,
+  getBuiltInCategoryIcon,
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
   compactDurationSince,
@@ -566,13 +567,23 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
       return inSuggestions ? (
         <CompactSuggestionPreview results={r} />
       ) : (
-        <CompactRankedChoicePreview results={r} isQuestionClosed={isClosed} />
+        <CompactRankedChoicePreview
+          results={r}
+          isQuestionClosed={isClosed}
+          categoryIcon={getBuiltInCategoryIcon(sp.category)}
+        />
       );
     }
     if (sp.question_type === "time" && r && !inTimeAvailability) {
       const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
       if (!hasPreview) return null;
-      return <CompactTimePreview results={r} isQuestionClosed={isClosed} />;
+      return (
+        <CompactTimePreview
+          results={r}
+          isQuestionClosed={isClosed}
+          categoryIcon={getBuiltInCategoryIcon(sp.category)}
+        />
+      );
     }
     return null;
   };
