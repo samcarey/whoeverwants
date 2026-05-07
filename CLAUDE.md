@@ -1304,10 +1304,10 @@ All five `public/icon-*.svg` files (and `app/icon.svg`) share the same body:
 
 ```svg
 <rect width="100" height="100" fill="#000000" rx="15"/>
-<text x="52" y="80" font-size="86" text-anchor="middle" fill="white">👋</text>
+<text x="52" y="75" font-size="74" text-anchor="middle" fill="white">👋</text>
 ```
 
-Tuned so that the visible glyph (hand + motion lines) leaves ~5% gap on each side of the frame. The `x=52` (rather than 50) and `y=80` (rather than the line-box-centered ~85) compensate for Noto Color Emoji's 👋 glyph being slightly off-centered within its em-square.
+Tuned so that the visible glyph (hand + motion lines) leaves ~12% gap on each side of the frame. The `x=52` (rather than 50) and `y=75` (rather than the line-box-centered ~88) compensate for Noto Color Emoji's 👋 glyph being slightly off-centered within its em-square.
 
 ### Regenerating PNGs
 
