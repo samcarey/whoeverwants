@@ -26,6 +26,7 @@ import type {
 } from "@/lib/useThreadVoting";
 import {
   getCategoryIcon,
+  getBuiltInCategoryIcon,
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
   compactDurationSince,
@@ -116,12 +117,12 @@ function CompactPreviewClip({
 }) {
   return (
     <div
-      className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+      className={`grid w-full min-w-0 transition-[grid-template-rows] duration-300 ease-out ${
         isExpanded ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
       }`}
       aria-hidden={isExpanded}
     >
-      <div className="overflow-hidden">{children}</div>
+      <div className="overflow-hidden min-w-0">{children}</div>
     </div>
   );
 }
@@ -566,13 +567,23 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
       return inSuggestions ? (
         <CompactSuggestionPreview results={r} />
       ) : (
-        <CompactRankedChoicePreview results={r} isQuestionClosed={isClosed} />
+        <CompactRankedChoicePreview
+          results={r}
+          isQuestionClosed={isClosed}
+          categoryIcon={getBuiltInCategoryIcon(sp.category)}
+        />
       );
     }
     if (sp.question_type === "time" && r && !inTimeAvailability) {
       const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
       if (!hasPreview) return null;
-      return <CompactTimePreview results={r} isQuestionClosed={isClosed} />;
+      return (
+        <CompactTimePreview
+          results={r}
+          isQuestionClosed={isClosed}
+          categoryIcon={getBuiltInCategoryIcon(sp.category)}
+        />
+      );
     }
     return null;
   };
@@ -603,13 +614,20 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
       .map((sp) => {
         const node = pillForQuestion(sp);
         if (!node) return null;
-        return <div key={sp.id}>{node}</div>;
+        // w-full + min-w-0 forces each row to fill the column track width,
+        // so the inner flex's `justify-end` right-aligns the pill within the
+        // available space — without it the row sizes to its pill's
+        // max-content, allowing the column to grow beyond its parent's
+        // bounds and overlap the status label on the left.
+        return <div key={sp.id} className="w-full min-w-0">{node}</div>;
       })
       .filter((n): n is React.ReactElement => n !== null);
     if (subPills.length > 0) {
       pillEl = (
         <CompactPreviewClip isExpanded={isExpanded}>
-          <div className="flex flex-col items-end gap-1">{subPills}</div>
+          <div className="flex flex-col items-stretch gap-1 w-full min-w-0">
+            {subPills}
+          </div>
         </CompactPreviewClip>
       );
     }
@@ -746,11 +764,14 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                 it's not rendered, so the gap doesn't appear. */}
             {!isPlaceholder && (statusEl || pillEl) && (
               // min-h-7 pins the row to the compact pill's natural height
-              // (~26px) so items-center keeps the status text at the same
-              // Y whether the pill is showing or clipped to 0 by
-              // CompactPreviewClip when the card expands.
-              <div className="min-h-7 flex items-center gap-2 min-w-0">
-                <div className="shrink-0 pl-1 text-sm text-gray-500 dark:text-gray-400">
+              // (~26px) so the status text stays at a stable Y whether the
+              // pill is showing or clipped to 0 by CompactPreviewClip on
+              // expand. items-end aligns the status text with the BOTTOM of
+              // the pill column — so when multiple pills stack vertically the
+              // status reads alongside the bottom-most pill instead of being
+              // centered with the whole stack.
+              <div className="min-h-7 flex items-end gap-2 min-w-0">
+                <div className="shrink-0 pl-1 text-sm leading-7 text-gray-500 dark:text-gray-400">
                   <ClientOnly fallback={null}>{statusEl}</ClientOnly>
                 </div>
                 <div className="flex-1 min-w-0 flex justify-end">{pillEl}</div>

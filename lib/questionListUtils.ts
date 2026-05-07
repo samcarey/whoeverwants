@@ -17,13 +17,20 @@ export function getQuestionSymbol(questionType: string, isClosed: boolean): stri
 /** Phase 5b: takes `isClosed` as a separate arg since `is_closed` is a
  *  wrapper-level field. Callers source it from the parent poll. */
 export function getCategoryIcon(question: Question, isClosed: boolean = false): string {
-  const category = question.category;
-  if (category && category !== 'custom') {
-    const builtIn = getBuiltInType(category);
-    if (builtIn?.icon) return builtIn.icon;
-  }
+  const builtInIcon = getBuiltInCategoryIcon(question.category);
+  if (builtInIcon) return builtInIcon;
   // Custom or no category — use question type symbol
   return getQuestionSymbol(question.question_type, isClosed);
+}
+
+/** Returns the built-in category's emoji, or undefined for `custom` /
+ *  unrecognized / missing categories. Use this when the call site WANTS
+ *  to omit the icon entirely rather than fall back to a generic question-type
+ *  symbol — e.g. compact result pills, where a generic 🏆 was previously
+ *  shown for custom categories and felt redundant. */
+export function getBuiltInCategoryIcon(category: string | null | undefined): string | undefined {
+  if (!category || category === 'custom') return undefined;
+  return getBuiltInType(category)?.icon;
 }
 
 export function relativeTime(dateStr: string): string {
