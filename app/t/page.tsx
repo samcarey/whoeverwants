@@ -63,10 +63,10 @@ function EmptyPlaceholder() {
     <>
       <ThreadHeader headerRef={headerRef} title="New Thread" />
       <div
-        className="px-4 text-center"
+        className="px-4"
         style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}
       >
-        <p className="text-base text-gray-700 dark:text-gray-300">
+        <p className="text-base text-gray-700 dark:text-gray-300 text-center">
           Create a question and then share the link!
         </p>
         {/* Render target for the in-progress draft poll card while the
