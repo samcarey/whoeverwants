@@ -1317,7 +1317,6 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
             <TimeBallotSection
               question={question}
               isQuestionClosed={!!isQuestionClosed}
-              loadingResults={loadingResults}
               questionResults={questionResults}
               userVoteData={userVoteData}
               isLoadingVoteData={isLoadingVoteData}
