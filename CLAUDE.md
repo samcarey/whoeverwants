@@ -1282,6 +1282,46 @@ See `docs/ios-setup.md` for the full one-time setup walkthrough.
 
 ---
 
+## App Icons
+
+The 👋 waving-hand emoji is the canonical app icon, rendered on a black rounded-rect background. Every icon file in the project is a render of the same SVG template — keep them in sync when changing the artwork.
+
+### Inventory
+
+| File | Size | Used by |
+|---|---|---|
+| `app/icon.svg` | viewBox 100×100 | Next.js metadata convention — auto-served at `/icon` as the browser favicon. |
+| `public/icon-180x180.png` | 180×180 | `<link rel="apple-touch-icon">` in `app/layout.tsx` (iOS Safari "Add to Home Screen"). No SVG source — rendered from `public/icon-512x512.svg`. |
+| `public/icon-192x192.svg` + `.png` | 192×192 | `<link rel="icon">` in `app/layout.tsx` + PWA manifest (`public/manifest.json`). |
+| `public/icon-256x256.svg` + `.png` | 256×256 | PWA manifest only. |
+| `public/icon-384x384.svg` + `.png` | 384×384 | PWA manifest only. |
+| `public/icon-512x512.svg` + `.png` | 512×512 | `<link rel="icon">` in `app/layout.tsx` + PWA manifest. Also the source for the 180×180 PNG and the iOS app icon. |
+| `ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png` | 1024×1024 | iOS Capacitor app icon (loaded by Xcode build into the bundle). Must be **opaque RGB** — no alpha channel — or TestFlight rejects with `Missing required icon file`. The rounded corners on the source SVG are composited onto a white background to fill them. |
+
+### SVG template
+
+All five `public/icon-*.svg` files (and `app/icon.svg`) share the same body:
+
+```svg
+<rect width="100" height="100" fill="#000000" rx="15"/>
+<text x="52" y="75" font-size="74" text-anchor="middle" fill="white">👋</text>
+```
+
+Tuned so that the visible glyph (hand + motion lines) leaves ~12% gap on each side of the frame. The `x=52` (rather than 50) and `y=75` (rather than the line-box-centered ~88) compensate for Noto Color Emoji's 👋 glyph being slightly off-centered within its em-square.
+
+### Regenerating PNGs
+
+The PNGs are rendered via headless Chromium so they pick up Noto Color Emoji (Apt: `fonts-noto-color-emoji`) — that font ships on both the dev droplet and in the GitHub Actions runners, so renders are reproducible. The one-shot script lives in conversation history (search for `regen-icons.mjs`); rerun it whenever the SVG template changes:
+
+1. For each `public/icon-NxN.png` (and the iOS 1024×1024), load the matching SVG into a Chromium page with viewport=N×N.
+2. `page.screenshot({ omitBackground: true })` for the public PNGs (preserves rounded-rect transparency).
+3. For the iOS PNG, render with white page background and `omitBackground: false` so the corners outside the rounded rect are filled white (then PIL converts RGBA→RGB).
+4. The `public/icon-180x180.png` is rendered from `icon-512x512.svg` at viewport 180×180 (no dedicated 180-size SVG).
+
+Don't render with `librsvg2-bin`'s `rsvg-convert` — it doesn't support color emoji and falls back to monochrome glyphs.
+
+---
+
 ## Custom Claude Commands
 
 ### /publish
