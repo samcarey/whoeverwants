@@ -369,8 +369,8 @@ whoeverwants/
 
 ### Threaded Messaging UI
 
-- **Main page shows threads**, not individual questions. A thread is a chain of polls linked by `polls.follow_up_to` (Phase 3.5 source of truth). Sub-questions of one poll are siblings inside the chain. `lib/threadUtils.ts` groups questions into threads client-side via `Question.poll_follow_up_to`; legacy `questions.follow_up_to` is still populated for compatibility but no longer consulted by the FE chain logic.
-- **Thread title** defaults to the deduplicated list of participant names (`creator_name` + `voter_names` from the API). Users can override it via `/t/<id>/edit-title` → `POST /api/questions/<latest_id>/thread-title`. The override is stored in the `thread_title` column on the thread's latest question; `Thread.title` prefers this override and falls back to `Thread.defaultTitle` (the names string) when NULL. Follow-up questions inherit the parent's `thread_title` on creation via a `COALESCE` subquery in the INSERT — no extra round-trip.
+- **Main page shows threads**, not individual questions. A thread is a flat list of polls sharing a `polls.thread_id` (Migration 105 retired the `polls.follow_up_to` chain pointer). `lib/threadUtils.ts: buildThreads` groups polls by `thread_id` and sorts by `created_at` — no chain walking. Sub-questions of one poll are siblings inside the same poll wrapper.
+- **Thread title** defaults to the deduplicated list of participant names (`creator_name` + `voter_names` from the API). Users can override it via `/t/<id>/edit-title` → `POST /api/threads/<route_id>/title`. The override is stored in `threads.title` (one row per thread, single source of truth — Migration 105 moved it off `polls.thread_title`). `Thread.title` reads `latestPoll.thread_title` (server surfaces `threads.title` on every poll in the thread via JOIN) and falls back to `Thread.defaultTitle` (the names string) when NULL. `apiUpdateThreadTitle(routeId, title)` invalidates every poll in the thread automatically — callers don't have to re-implement the cache cleanup ritual.
 - **Thread sorting**: threads with unvoted open questions first (by soonest deadline), then threads with no unvoted questions (by most recent activity).
 - **Thread URLs split path + query.** Canonical form is `/t/<threadShortId>?p=<pollShortId>`: path is the thread root's short_id (or root question id when no short_id), query names the poll to auto-expand and scroll to. Empty placeholder is bare `/t/`. Sub-routes `/t/<threadShortId>/info` and `/t/<threadShortId>/edit-title`. Legacy `/p/<id>` URLs (and `/p/<id>/info`, `/p/<id>/edit-title`) live as redirect stubs that resolve the ambiguous id (poll short_id / poll uuid / question uuid) once and `router.replace` into the canonical `/t/...` form — see `app/p/[shortId]/_legacyRedirect.tsx`. Three URL-builder helpers in `lib/threadUtils.ts`: `getThreadHref(thread)` for the home list (auto-expand only when there's awaiting work), `getThreadHrefForPoll(poll)` for "navigate to this poll's thread with this poll expanded" (used by FollowUpHeader, ThreadCardItem copy-link, /t/ ?id= handler, and the legacy /p/ redirects), and `resolveThreadRootRouteId(poll)` for just the thread-root part. The `POLL_QUERY_PARAM` constant in `lib/threadUtils.ts` names the `?p` key.
 - **Auto-expand is encoded by the URL itself, not heuristics.** `?p=<id>` present → expand that poll; absent → no expand, page scrolls to bottom (the draft-form area). The old `?thread=1` flag and the `suppressExpand` "user has responded to every question" heuristic are gone — the URL is the source of truth. URL sync on expand swaps `?p=` via shallow `history.replaceState`, never touching the path; sharing the URL reopens the same expanded card.
@@ -753,6 +753,79 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 ---
 
 ## Poll System
+
+> **Migration 105 retired `polls.follow_up_to` and moved `polls.thread_title` to `threads.title`.**
+> Threads are flat lists of polls keyed by `polls.thread_id` — no more chain-pointer walks.
+>
+> **API contract:**
+>   * `CreatePollRequest.follow_up_to` (a question id) → `thread_id` (a uuid).
+>     Optional; null/omitted → server mints a fresh thread. Unknown thread_ids
+>     fall through to "mint a fresh thread" rather than 404.
+>   * `PollResponse.follow_up_to` removed. `Poll.thread_id` + `Poll.thread_short_id`
+>     (already on every poll since Phase B.4) are the canonical pointers.
+>   * `QuestionResponse.poll_follow_up_to` removed. The FE-only chain-pointer
+>     mirror is gone.
+>   * `POST /api/polls/<id>/thread-title` retired in favor of
+>     `POST /api/threads/<route_id>/title` (route_id resolves the same four
+>     forms as the other thread endpoints: threads.short_id, threads.id,
+>     polls.short_id, polls.id).
+>   * `GET /api/questions/find-duplicate?follow_up_to=<qid>` →
+>     `?thread_id=<uuid>` (flat thread-scoped lookup).
+>
+> **Server:**
+>   * `_insert_poll` no longer walks parent → child; uses `_resolve_or_create_thread`
+>     with `req.thread_id` (or mints a new thread row).
+>   * `_compute_display_title` falls through to `questions[0].title` when no
+>     `thread_title` override is set — preserves user-typed yes_no prompts
+>     (the regression that triggered this whole effort: the original bug
+>     was that `req.title` was being written into `polls.thread_title`,
+>     which the FE then displayed as the thread name).
+>   * `_attach_thread_fields` (renamed from `_attach_thread_short_id`) enriches
+>     INSERT/UPDATE `RETURNING *` rows with both `thread_short_id` and
+>     `thread_title` from the joined threads row. SELECT paths use
+>     `_SELECT_POLLS_WITH_THREAD` which includes `t.title AS thread_title`.
+>   * `_resolve_parent_poll_id` deleted entirely (chain walking is gone).
+>
+> **FE:**
+>   * `Poll.thread_title` is sourced from `threads.title` via JOIN — same
+>     FE field name preserved, but it's now a single source of truth.
+>     Every poll in the same thread carries the same value.
+>   * `Poll.follow_up_to` and `Question.poll_follow_up_to` removed.
+>   * `lib/threadUtils.ts` collapses chain-walking infrastructure:
+>     `collectDescendants`, parent→children maps, multi-step discovery
+>     are gone. Threads are now `groupBy(thread_id)` via `groupPollsByThread`.
+>     `findChainRoot(polls)` now means "oldest poll by `created_at`" (the
+>     natural anchor for a flat thread); kept as a helper for callsites
+>     that need to pick the chain root from a list.
+>   * `<body data-thread-latest-question-id>` → `<body data-thread-id>`:
+>     the create-poll form attaches new polls to the thread directly,
+>     instead of translating a question_id through the cache. Constant:
+>     `THREAD_ID_ATTR` in `lib/threadDomMarkers.ts`.
+>   * `apiUpdateThreadTitle(routeId, title)` (replaces `apiUpdatePollThreadTitle`).
+>     Returns `{thread_id, thread_short_id, title}`. **Invalidates every poll
+>     in the thread automatically** — callers don't need to re-implement
+>     the cache cleanup. Use this whenever the thread name changes.
+>   * `apiFindDuplicateQuestion(title, threadId)`: thread-scoped lookup.
+>   * `<FollowUpHeader>` (the "this is a follow-up to X" link inside the
+>     long-press modal) is removed — the chain-pointer source is gone, and
+>     the same poll is reachable via the thread URL.
+>   * `getCachedThreadIdForQuestion(questionId)` in `lib/questionCache.ts`
+>     resolves a question id to its thread_id from in-memory caches. Used
+>     by the create-poll duplicate / vote-on-it flows that receive a
+>     question id but need to attach the new poll to the right thread.
+>     Don't reinvent the lookup at call sites — both `app/create-poll/page.tsx`
+>     and `components/VoteOnItModal.tsx` consume this helper.
+>
+> **Pitfall the bug fix surfaced:** `req.title` (the poll's display title,
+> e.g. a user-typed yes_no prompt) is NOT the same as the thread name
+> override. Conflating them caused the "thread name silently becomes a
+> poll's title" symptom. The architectural fix moved the thread-name
+> override out of `polls` entirely so they're physically separate
+> columns now and the conflation can't recur. If you ever need to add
+> another wrapper-vs-thread field, default to keeping it on the
+> `threads` row — duplicating data across every poll in a thread is the
+> shape that goes stale and the COALESCE-on-create inheritance is the
+> shape that propagates bugs.
 
 > **`DELETE /api/threads/{route_id}/membership` ("leave thread") shipped
 > in #268** as the explicit teardown counterpart to Phase C.2's
