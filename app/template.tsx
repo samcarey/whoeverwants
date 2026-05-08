@@ -294,6 +294,18 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.getElementById('floating-fab-portal')!
       )}
 
+      {/* DIAGNOSTIC: ladder of bars to find the real screen bottom in iOS PWA. The previous diagnostic with red at bottom:0 looked flush with the screen in the screenshot but the user reports it's "way too high". Add bars stepping below 0 to see how far iOS PWA pushes content above the physical screen edge. */}
+      {isMounted && createPortal(
+        <>
+          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'env(safe-area-inset-bottom, 0px)', height: '3px', background: '#00cc44', zIndex: 999 }} />
+          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, height: '3px', background: '#ff0066', zIndex: 999 }} />
+          <div style={{ position: 'fixed', left: 0, right: 0, bottom: '-20px', height: '3px', background: '#3366ff', zIndex: 999 }} />
+          <div style={{ position: 'fixed', left: 0, right: 0, bottom: '-50px', height: '3px', background: '#ffaa00', zIndex: 999 }} />
+          <div style={{ position: 'fixed', left: 0, right: 0, bottom: '-100px', height: '3px', background: '#9900cc', zIndex: 999 }} />
+        </>,
+        document.body
+      )}
+
       {/* Header elements rendered outside scaling container */}
       <HeaderPortal>
         {/* Back arrow in upper left — settings page only, when there's in-app history. */}
