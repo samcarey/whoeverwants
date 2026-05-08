@@ -249,6 +249,9 @@ export default function Home() {
         <ThreadList polls={polls} />
       )}
 
+      {/* DIAGNOSTIC: red bar at end of home page scrollable content */}
+      <div style={{ height: 6, background: '#ff0000', marginTop: 0 }} />
+
     </>
   );
 }
