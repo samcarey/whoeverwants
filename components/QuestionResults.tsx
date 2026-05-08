@@ -394,7 +394,7 @@ function formatSlotCompact(slot: string): string {
     const ampm = h < 12 ? "AM" : "PM";
     const h12 = h % 12 === 0 ? 12 : h % 12;
     const minSuffix = m === 0 ? "" : `:${String(m).padStart(2, "0")}`;
-    return `${formatDayLabel(parseSlotDate(slot))} ${h12}${minSuffix} ${ampm}`;
+    return `${formatDayLabel(parseSlotDate(slot))}, ${h12}${minSuffix} ${ampm}`;
   } catch {
     return slot;
   }
