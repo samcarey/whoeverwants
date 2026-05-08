@@ -243,7 +243,7 @@ function appendForSuffix(base: string, forField: string): string {
  */
 export function synthesizePlaceholderPoll(
   drafts: QuestionDraft[],
-  args: { wrapperTitle: string | null; responseDeadline: string | null; followUpTo: string | null; creatorName: string | null; details?: string | null },
+  args: { wrapperTitle: string | null; responseDeadline: string | null; threadId: string | null; creatorName: string | null; details?: string | null },
 ): Poll {
   const now = new Date().toISOString();
   const pollId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -263,7 +263,6 @@ export function synthesizePlaceholderPoll(
       options: filledOptions.length > 0 ? filledOptions : undefined,
       created_at: now,
       updated_at: now,
-      poll_follow_up_to: args.followUpTo,
       category: dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : null,
       is_auto_title: d.isAutoTitle,
       poll_id: pollId,
@@ -276,6 +275,11 @@ export function synthesizePlaceholderPoll(
   return {
     id: pollId,
     short_id: null,
+    // Migration 105: thread_id placeholders use the parent thread when
+    // adding a poll; new threads get null and the real thread_id is
+    // filled in on POLL_HYDRATED_EVENT.
+    thread_id: args.threadId,
+    thread_short_id: null,
     creator_secret: null,
     creator_name: args.creatorName,
     response_deadline: args.responseDeadline,
@@ -283,7 +287,6 @@ export function synthesizePlaceholderPoll(
     prephase_deadline_minutes: null,
     is_closed: false,
     close_reason: null,
-    follow_up_to: args.followUpTo,
     thread_title: null,
     context: null,
     details: args.details ?? null,
@@ -488,13 +491,13 @@ export function pollLookup() {
 /**
  * Translate the existing flat questionData object into a CreatePollRequest
  * with one question. Wrapper-level fields (creator_secret, response_deadline,
- * follow_up_to, title, voting cutoff, prephase deadlines) live on the
- * poll; everything ballot-shaped stays on the question. follow_up_to is
- * a QUESTION id — the server resolves it to the parent's poll_id
- * automatically. Wrapper-level `context` carries today's `details` field;
- * per-question `context` is unused for 1-question polls and Phase 2.4
- * will start populating it for disambiguation. Pydantic supplies defaults
- * for omitted fields.
+ * thread_id, title, voting cutoff, prephase deadlines) live on the
+ * poll; everything ballot-shaped stays on the question. Migration 105:
+ * `thread_id` directly identifies the thread to add this poll to (null
+ * for new threads). Wrapper-level `context` carries today's `details`
+ * field; per-question `context` is unused for 1-question polls and
+ * Phase 2.4 will start populating it for disambiguation. Pydantic
+ * supplies defaults for omitted fields.
  *
  * Phase 2.4: `additionalQuestions` are prepended to the questions array so
  * staged drafts come first (display order) and the current form's question
@@ -511,7 +514,7 @@ export function questionDataToPollRequest(
     response_deadline: questionData.response_deadline,
     prephase_deadline: questionData.suggestion_deadline,
     prephase_deadline_minutes: questionData.suggestion_deadline_minutes,
-    follow_up_to: questionData.follow_up_to,
+    thread_id: questionData.thread_id,
     title: questionData.title,
     context: questionData.details,
     // Migration 098: poll-level results-display + ranked-choice settings.

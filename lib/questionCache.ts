@@ -139,6 +139,22 @@ export function getPollForQuestion(question: Question): Poll | null {
   return getCachedPollById(question.poll_id);
 }
 
+/** Resolve a question id to its thread_id via the in-memory caches.
+ *  Returns null if the question or its poll isn't cached. Used by flows
+ *  that receive a question id as input but need to reference the thread
+ *  (e.g. the create-poll duplicate / vote-on-it / FollowUpButton paths
+ *  post Migration 105). */
+export function getCachedThreadIdForQuestion(questionId: string): string | null {
+  const accessible = getCachedAccessiblePolls() ?? [];
+  const cachedQuestion = getCachedQuestionById(questionId);
+  if (cachedQuestion?.poll_id) {
+    const mp = accessible.find(p => p.id === cachedQuestion.poll_id);
+    if (mp?.thread_id) return mp.thread_id;
+  }
+  const mp = accessible.find(p => p.questions.some(q => q.id === questionId));
+  return mp?.thread_id ?? null;
+}
+
 /** Cache question results. */
 export function cacheQuestionResults(questionId: string, results: ResultsValue): void {
   setLru(resultsCache, questionId, results);

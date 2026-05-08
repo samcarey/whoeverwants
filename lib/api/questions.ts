@@ -40,9 +40,12 @@ export async function apiGetQuestionById(questionId: string): Promise<Question> 
   });
 }
 
-export async function apiFindDuplicateQuestion(title: string, followUpTo: string): Promise<Question | null> {
+/** Find an existing question with the same title in the given thread.
+ *  Migration 105 retired `follow_up_to` chain walking — duplicates are
+ *  resolved by `thread_id` lookup. */
+export async function apiFindDuplicateQuestion(title: string, threadId: string): Promise<Question | null> {
   try {
-    const params = new URLSearchParams({ title, follow_up_to: followUpTo });
+    const params = new URLSearchParams({ title, thread_id: threadId });
     const data = await apiFetch(`/find-duplicate?${params}`);
     return toQuestion(data);
   } catch (err) {

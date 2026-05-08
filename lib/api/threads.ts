@@ -24,7 +24,13 @@
  */
 
 import type { Poll } from "@/lib/types";
-import { cachePoll, cacheQuestionResults } from "@/lib/questionCache";
+import {
+  cachePoll,
+  cacheQuestionResults,
+  getCachedAccessiblePolls,
+  invalidateAccessibleQuestions,
+  invalidatePoll,
+} from "@/lib/questionCache";
 import { POLL_QUERY_PARAM } from "@/lib/threadUtils";
 import { threadFetch, toPoll, toQuestionResults } from "./_internal";
 
@@ -103,4 +109,42 @@ export async function apiLeaveThread(routeId: string): Promise<void> {
   } catch {
     // intentional: see jsdoc
   }
+}
+
+/** Update (or clear) a thread's title override.
+ *
+ *  Migration 105 moved the override from `polls.thread_title` to
+ *  `threads.title`. The endpoint takes a `route_id` (the same four forms
+ *  as `apiGetThreadByRouteId`) and updates `threads.title` directly —
+ *  one row per thread, no per-poll divergence.
+ *
+ *  Empty string or null clears the override (stored as NULL).
+ *
+ *  Cache invalidation: every poll in the thread carries `thread_title`
+ *  in its cached payload, so we evict each one (cascades to per-question
+ *  caches via `invalidatePoll`) plus the accessible-polls cache. Done
+ *  here so callers don't have to remember the cleanup ritual.
+ */
+export async function apiUpdateThreadTitle(
+  routeId: string,
+  title: string | null,
+): Promise<{ thread_id: string; thread_short_id: string | null; title: string | null }> {
+  const data = await threadFetch<any>(
+    `/${encodeURIComponent(routeId)}/title`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ thread_title: title }),
+    },
+  );
+  const result = {
+    thread_id: data.thread_id as string,
+    thread_short_id: (data.thread_short_id ?? null) as string | null,
+    title: (data.title ?? null) as string | null,
+  };
+  const accessible = getCachedAccessiblePolls() ?? [];
+  for (const mp of accessible) {
+    if (mp.thread_id === result.thread_id) invalidatePoll(mp.id);
+  }
+  invalidateAccessibleQuestions();
+  return result;
 }

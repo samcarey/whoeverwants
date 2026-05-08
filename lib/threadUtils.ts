@@ -1,15 +1,15 @@
 /**
  * Thread grouping utilities for the messaging-style UI.
  *
- * A "thread" is a chain of polls linked by `polls.follow_up_to`.
- * Sub-questions of one poll are siblings inside the chain. Single-poll
- * threads (one wrapper, no parent or children) render as one card group.
+ * A "thread" is a flat list of polls sharing the same `thread_id`,
+ * ordered by `created_at` (oldest first). Migration 105 retired
+ * `polls.follow_up_to`, so chain walking is gone — every poll directly
+ * carries its `thread_id` and `thread_short_id`.
  *
- * Phase 5b: this module consumes `Poll[]` as the primary input —
- * wrapper-level fields (response_deadline, is_closed, creator_name, ...) live
- * on each Poll. Sub-question-level fields (question_type, voter_names, ...)
- * still live on each `Question` inside `poll.questions`. Chain walking uses
- * `Poll.follow_up_to` (a poll_id, or null for thread roots).
+ * Phase 5b: this module consumes `Poll[]` as the primary input.
+ * Wrapper-level fields (response_deadline, is_closed, creator_name, ...)
+ * live on each Poll. Sub-question-level fields (question_type,
+ * voter_names, ...) still live on each `Question` inside `poll.questions`.
  */
 
 import type { Poll, Question } from './types';
@@ -22,9 +22,7 @@ import { isUuidLike } from './questionId';
 
 /** Query-param key on `/t/<thread>` URLs that names a specific poll the page
  *  should expand and scroll to. Absent → no auto-expand, page scrolls to
- *  bottom (the draft form area). Replaced the old `?thread=1` /
- *  `suppressExpand` heuristic — the URL itself now encodes whether to expand
- *  any poll, with no client-side guessing. */
+ *  bottom (the draft form area). */
 export const POLL_QUERY_PARAM = 'p';
 
 /** True when `id` is a placeholder poll id synthesized by
@@ -46,20 +44,33 @@ export function buildPollMap(polls: Iterable<Poll>): Map<string, Poll> {
   return map;
 }
 
-/** Pick the chain root of a thread from a list of its polls. Prefers the
- *  poll with no `follow_up_to`; falls back to the first poll when the
- *  true root is hidden by Phase C.3 visibility filtering. Returns null
- *  for empty input. */
+/** Pick the chronological "root" of a thread from a list of its polls —
+ *  the oldest by `created_at`, or `polls[0]` if dates are missing/identical.
+ *  Migration 105 retired the chain-pointer-based root; "root" now just
+ *  means "oldest poll in the thread", which is the natural anchor for the
+ *  thread URL and for buildThreadFromPollDown. Returns null on empty
+ *  input. */
 export function findChainRoot(polls: Poll[]): Poll | null {
   if (polls.length === 0) return null;
-  return polls.find(mp => !mp.follow_up_to) ?? polls[0];
+  let root = polls[0];
+  let rootMs = new Date(root.created_at).getTime();
+  for (let i = 1; i < polls.length; i++) {
+    const ms = new Date(polls[i].created_at).getTime();
+    if (ms < rootMs) {
+      rootMs = ms;
+      root = polls[i];
+    }
+  }
+  return root;
 }
 
 export interface Thread {
   /** ID of the root question (first question of the chain's earliest poll). */
   rootQuestionId: string;
-  /** ID of the root poll (chain's earliest wrapper). */
+  /** ID of the root poll (oldest poll in the thread). */
   rootPollId: string;
+  /** The thread's id (uuid). All polls in `polls` share this. */
+  threadId: string | null;
   /** Polls in the thread, sorted chronologically (oldest first). */
   polls: Poll[];
   /** Flat questions list in chronological + question_index order — kept for
@@ -67,8 +78,8 @@ export interface Thread {
   questions: Question[];
   /** Deduplicated participant names across the thread (creator + voters). */
   participantNames: string[];
-  /** Display title: latestPoll.thread_title override if set, otherwise
-   *  the comma-separated participant-names default. */
+  /** Display title: thread_title override if set, otherwise the
+   *  comma-separated participant-names default. */
   title: string;
   /** The participant-names default (no thread_title override applied). */
   defaultTitle: string;
@@ -149,102 +160,45 @@ function pickTargetedPoll(
   return oldestAwaiting ?? newest;
 }
 
-/**
- * Build index maps and collect descendants via BFS from a set of start
- * poll ids. Shared by buildThreads (multiple roots) and
- * buildThreadFromPollDown (single anchor).
- *
- * Chain edges are poll-to-poll. Walking visits both directions:
- * every poll listed in any visited poll's `follow_up_to` chain
- * (ancestors) AND every child whose `follow_up_to` points at the current.
- */
-function collectDescendants(
-  startIds: string[],
-  pollById: Map<string, Poll>,
-  childrenByParentPoll: Map<string, string[]>,
-  visited: Set<string>,
-): Poll[] {
-  const collected: Poll[] = [];
-  const queue = [...startIds];
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    if (visited.has(current)) continue;
-    visited.add(current);
-    const mp = pollById.get(current);
-    if (!mp) continue;
-    collected.push(mp);
-
-    // Children: any poll whose follow_up_to == current.
-    for (const childId of childrenByParentPoll.get(mp.id) ?? []) {
-      if (!visited.has(childId)) queue.push(childId);
-    }
-    // Ancestor: this poll's follow_up_to.
-    if (mp.follow_up_to && !visited.has(mp.follow_up_to)) {
-      queue.push(mp.follow_up_to);
-    }
-  }
-  // Sort purely by creation date, oldest first (newest at the bottom).
-  collected.sort(
+function sortByCreatedAt(polls: Poll[]): Poll[] {
+  return [...polls].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
   );
-  return collected;
 }
 
-/** Build poll_id → Poll + parent → children maps from a flat list. */
-function buildPollMaps(polls: Poll[]): {
-  pollById: Map<string, Poll>;
-  childrenByParentPoll: Map<string, string[]>;
-} {
-  const pollById = new Map<string, Poll>();
-  for (const mp of polls) pollById.set(mp.id, mp);
-
-  const childrenByParentPoll = new Map<string, string[]>();
+/** Group a flat list of polls by `thread_id`. Polls without a `thread_id`
+ *  (synthesized placeholders, very old cached polls) become their own
+ *  one-element thread keyed by the poll's own id — they degrade to
+ *  single-poll threads rather than disappearing. */
+function groupPollsByThread(polls: Poll[]): Map<string, Poll[]> {
+  const groups = new Map<string, Poll[]>();
   for (const mp of polls) {
-    if (!mp.follow_up_to) continue;
-    const list = childrenByParentPoll.get(mp.follow_up_to) ?? [];
-    list.push(mp.id);
-    childrenByParentPoll.set(mp.follow_up_to, list);
+    const key = mp.thread_id ?? `solo:${mp.id}`;
+    const list = groups.get(key) ?? [];
+    list.push(mp);
+    groups.set(key, list);
   }
-  return { pollById, childrenByParentPoll };
+  return groups;
 }
 
 /**
- * Build threads from a flat list of polls. Each thread is a chain of
- * polls connected via `follow_up_to`.
+ * Build threads from a flat list of polls. Each thread groups every poll
+ * with the same `thread_id`, sorted by `created_at` (oldest first).
  */
 export function buildThreads(
   polls: Poll[],
   votedQuestionIds: Set<string>,
   abstainedQuestionIds: Set<string>,
 ): Thread[] {
-  const { pollById, childrenByParentPoll } = buildPollMaps(polls);
-
-  // Find root polls: those with no follow_up_to OR whose follow_up_to
-  // target is a poll we don't have access to.
-  const roots = polls.filter(mp => !mp.follow_up_to || !pollById.has(mp.follow_up_to));
-
-  const visited = new Set<string>();
+  const groups = groupPollsByThread(polls);
   const threads: Thread[] = [];
-
-  for (const root of roots) {
-    if (visited.has(root.id)) continue;
-    const threadPolls = collectDescendants(
-      [root.id],
-      pollById,
-      childrenByParentPoll,
-      visited,
-    );
-    threads.push(buildThreadFromPolls(threadPolls, votedQuestionIds, abstainedQuestionIds));
+  for (const group of groups.values()) {
+    threads.push(buildThreadFromPolls(
+      sortByCreatedAt(group),
+      votedQuestionIds,
+      abstainedQuestionIds,
+    ));
   }
-
-  // Safety net for orphaned polls (e.g. a child whose parent fell out of
-  // the accessible set).
-  for (const mp of polls) {
-    if (!visited.has(mp.id)) {
-      threads.push(buildThreadFromPolls([mp], votedQuestionIds, abstainedQuestionIds));
-    }
-  }
-
   return sortThreads(threads);
 }
 
@@ -271,19 +225,19 @@ function buildThreadFromPolls(
   }
   const participantNames = Array.from(nameSet).sort();
 
-  // Default title uses participant names; override comes from the latest
-  // poll's thread_title.
+  // Default title uses participant names; override comes from threads.title
+  // (surfaced on every poll as `thread_title`).
   const defaultTitle = participantNames.length > 0
     ? participantNames.join(', ')
     : 'New Thread';
+  // Migration 105 makes thread_title a single source of truth at the
+  // thread level — every poll in this thread carries the same value.
+  // Read off the latest poll for compat with placeholder/legacy polls
+  // that may not have it set yet.
   const latestPoll = polls[polls.length - 1];
-  const latestThreadTitle = latestPoll.thread_title?.trim() ?? null;
-  const title = latestThreadTitle || defaultTitle;
+  const threadTitle = latestPoll.thread_title?.trim() ?? null;
+  const title = threadTitle || defaultTitle;
 
-  // A poll is "open" iff !is_closed AND (response_deadline absent or in
-  // future). Every question inherits this — close/reopen is poll-atomic.
-  // We count an unvoted POLL as one toward unvotedCount when the
-  // wrapper is open AND the user hasn't responded to ANY of its questions.
   const now = new Date();
   let unvotedCount = 0;
   let soonestUnvotedDeadline: string | undefined;
@@ -312,10 +266,6 @@ function buildThreadFromPolls(
     0,
   );
 
-  // latestActivityMs measures cross-thread "most recent activity" for the
-  // home page sort. With pure chronological in-thread ordering this matches
-  // polls[polls.length - 1].created_at, but we compute the true max
-  // explicitly to stay robust if the in-thread sort ever changes.
   const latestActivityMs = polls.reduce(
     (max, p) => Math.max(max, new Date(p.created_at).getTime()),
     0,
@@ -326,6 +276,7 @@ function buildThreadFromPolls(
   return {
     rootQuestionId: questions[0].id,
     rootPollId: polls[0].id,
+    threadId: polls[0].thread_id ?? null,
     polls,
     questions,
     participantNames,
@@ -369,28 +320,21 @@ export function findThreadByQuestionId(threads: Thread[], questionId: string): T
   return threads.find(t => t.questions.some(p => p.id === questionId));
 }
 
-/** Route id for a thread — preferred form is `threads.short_id` (Phase B.4),
- *  with fallbacks to the root poll's short_id (legacy /t/<root-poll-short-id>
- *  URLs) and finally the root question id (synthesized placeholder polls
- *  before the API responds). Used as the path param in `/t/<threadRouteId>`. */
+/** Route id for a thread URL. Migration 105 ties this to `threads.short_id`
+ *  via `Poll.thread_short_id`; the legacy fallbacks (root poll short_id,
+ *  root question id) are kept for synthesized placeholder polls that
+ *  haven't been persisted yet. */
 export function getThreadRouteId(thread: Thread): string {
   const rootPoll = thread.polls.find(p => p.id === thread.rootPollId) ?? thread.polls[0];
   return rootPoll?.thread_short_id || rootPoll?.short_id || thread.rootQuestionId;
 }
 
 /** Resolve a poll's thread route id (the path param of `/t/<routeId>`).
- *
- *  Phase B.4: every poll returned by the API carries `thread_short_id`, so the
- *  preferred path is a single field read with no cache traversal. The legacy
- *  walk-up-via-`follow_up_to` fallback exists only for synthesized placeholder
- *  polls (created optimistically on submit, pre-API-roundtrip) and any
- *  pre-Phase-B.4 cached poll left in memory across a deploy. */
+ *  Migration 105: every poll directly carries `thread_short_id`. The
+ *  fallbacks below cover placeholder polls (pre-API roundtrip) and very
+ *  old cached polls left in memory across a deploy. */
 export function resolveThreadRootRouteId(poll: Poll): string {
-  if (poll.thread_short_id) return poll.thread_short_id;
-  if (!poll.follow_up_to) return poll.short_id || poll.questions[0]?.id || poll.id;
-  const accessible = getCachedAccessiblePolls() ?? [];
-  const byPoll = buildPollMap([poll, ...accessible]);
-  return findThreadRootRouteId(poll, (mid) => byPoll.get(mid) ?? null);
+  return poll.thread_short_id || poll.short_id || poll.questions[0]?.id || poll.id;
 }
 
 /** Build `/t/<root>?p=<pollShort>` for `poll` inside its thread — the
@@ -407,8 +351,7 @@ export function getThreadHrefForPoll(poll: Poll): string {
  *   auto-expanded and scrolled-to on landing.
  * - `/t/<root>` when nothing is awaiting — the page scrolls to bottom (draft
  *   form area), inviting the user to start a new poll.
- *
- * Replaces the old `/p/<target>?thread=1` URL form. */
+ */
 export function getThreadHref(thread: Thread): string {
   const rootRouteId = getThreadRouteId(thread);
   if (thread.unvotedCount === 0) {
@@ -420,44 +363,9 @@ export function getThreadHref(thread: Thread): string {
 }
 
 /**
- * Walk up the poll-level follow_up chain starting from `poll` and
- * return the route ID of the furthest ancestor reachable. The chain is
- * poll-to-poll — at each step we follow `follow_up_to` to a parent poll.
- *
- * Phase B.4: a poll's `thread_short_id` (when present) short-circuits the
- * walk entirely — every poll in a thread shares the same thread_short_id,
- * so we don't need to find the root to construct a URL. The walk is kept
- * for placeholder/legacy polls without `thread_short_id`.
- *
- * `pollById` defaults to scanning `getCachedAccessiblePolls()`.
- * Pass a custom resolver when you have a faster lookup at hand.
- */
-export function findThreadRootRouteId(
-  poll: Poll,
-  pollById?: (id: string) => Poll | null | undefined,
-): string {
-  if (poll.thread_short_id) return poll.thread_short_id;
-  const resolve = pollById ?? defaultPollById;
-  let root: Poll = poll;
-  while (root.follow_up_to) {
-    const parent = resolve(root.follow_up_to);
-    if (!parent) break;
-    root = parent;
-  }
-  return root.thread_short_id || root.short_id || root.questions[0]?.id || root.id;
-}
-
-function defaultPollById(id: string): Poll | null {
-  if (typeof window === 'undefined') return null;
-  const cached = getCachedAccessiblePolls();
-  if (!cached) return null;
-  return buildPollMap(cached).get(id) ?? null;
-}
-
-/**
- * Build a thread starting from a specific poll (anchor) and collecting
- * all descendants. Used by the thread page to show "this poll + its
- * children" rather than the full ancestor chain.
+ * Build a thread from any poll belonging to it — collects every poll in
+ * `allPolls` sharing the anchor's `thread_id`. Used by the thread page
+ * to materialize the chain when a user lands on an arbitrary poll.
  */
 export function buildThreadFromPollDown(
   anchorPollId: string,
@@ -465,28 +373,30 @@ export function buildThreadFromPollDown(
   votedQuestionIds: Set<string>,
   abstainedQuestionIds: Set<string>,
 ): Thread | null {
-  const { pollById, childrenByParentPoll } = buildPollMaps(allPolls);
-  if (!pollById.has(anchorPollId)) return null;
-
-  const collected = collectDescendants(
-    [anchorPollId],
-    pollById,
-    childrenByParentPoll,
-    new Set(),
+  const anchor = allPolls.find(mp => mp.id === anchorPollId);
+  if (!anchor) return null;
+  const threadId = anchor.thread_id;
+  // Polls without thread_id (placeholders, legacy) form a one-element
+  // thread for themselves.
+  const polls = threadId
+    ? allPolls.filter(mp => mp.thread_id === threadId)
+    : [anchor];
+  return buildThreadFromPolls(
+    sortByCreatedAt(polls),
+    votedQuestionIds,
+    abstainedQuestionIds,
   );
-  return buildThreadFromPolls(collected, votedQuestionIds, abstainedQuestionIds);
 }
 
 /** Build the thread for a route id synchronously from in-memory caches.
  *  Returns null if any required piece is missing — callers fall through to
  *  their async fetch path.
  *
- *  Phase B.4: routeId can be a `threads.short_id` (preferred form, prefixed
- *  with `~` for fresh threads, or a backfilled root-poll-short-id for
- *  pre-B.4 threads), a polls.short_id (legacy /t/<root-poll-short-id>
- *  fallback), or a UUID (poll/question). The accessible polls cache is
- *  walked once for thread_short_id matches before falling back to the
- *  short-id-keyed cache.
+ *  Migration 105: routeId can be a `threads.short_id` (preferred form,
+ *  prefixed with `~` for fresh threads or a backfilled root-poll-short-id
+ *  for pre-B.4 threads), a `polls.short_id` (legacy /t/<root-poll-short-id>
+ *  fallback), or a UUID (poll/question/thread). The accessible polls cache
+ *  is grouped by `thread_id` for an O(N) lookup.
  */
 export function buildThreadSyncFromCache(
   threadId: string,
@@ -498,23 +408,26 @@ export function buildThreadSyncFromCache(
   if (!polls) return null;
   let anchorPollId: string | null = null;
   if (isUuidLike(threadId)) {
-    // threadId may be a question uuid OR a poll uuid. Try both.
-    const direct = polls.find(mp => mp.id === threadId);
-    if (direct) {
-      anchorPollId = direct.id;
+    // threadId may be a thread uuid, a poll uuid, or a question uuid.
+    const byThread = polls.find(mp => mp.thread_id === threadId);
+    if (byThread) {
+      anchorPollId = byThread.id;
     } else {
-      const question = getCachedQuestionById(threadId);
-      anchorPollId = question?.poll_id ?? null;
+      const direct = polls.find(mp => mp.id === threadId);
+      if (direct) {
+        anchorPollId = direct.id;
+      } else {
+        const question = getCachedQuestionById(threadId);
+        anchorPollId = question?.poll_id ?? null;
+      }
     }
   } else {
-    // Phase B.4 preferred path: routeId is a threads.short_id. Threads can
-    // contain multiple polls all sharing the same thread_short_id; the
-    // chain root is the one with `follow_up_to == null`. Find it directly
-    // so buildThreadFromPollDown collects every descendant.
+    // Phase B.4 preferred path: routeId is a threads.short_id. Any poll
+    // matching gives us the thread; pick the oldest as the anchor so
+    // buildThreadFromPollDown collects every sibling.
     const matches = polls.filter(mp => mp.thread_short_id === threadId);
-    const root = findChainRoot(matches);
-    if (root) {
-      anchorPollId = root.id;
+    if (matches.length > 0) {
+      anchorPollId = sortByCreatedAt(matches)[0].id;
     } else {
       const mp = getCachedPollByShortId(threadId);
       anchorPollId = mp?.id ?? null;

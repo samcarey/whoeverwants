@@ -137,8 +137,8 @@ export type Results = QuestionResults & { ranked_choice_rounds?: ApiRankedChoice
 export function toQuestion(data: any): Question {
   // Phase 5b: wrapper-level fields (response_deadline, creator_secret,
   // creator_name, is_closed, close_reason, short_id, thread_title,
-  // suggestion_deadline) are sourced from the parent Poll. The FE
-  // consumes them via getPollForQuestion() / Poll-typed props.
+  // suggestion_deadline) are sourced from the parent Poll. Migration 105
+  // also dropped the FE-only `poll_follow_up_to` chain pointer.
   return {
     id: data.id,
     title: data.title,
@@ -146,7 +146,6 @@ export function toQuestion(data: any): Question {
     options: data.options ?? undefined,
     created_at: data.created_at,
     updated_at: data.updated_at,
-    poll_follow_up_to: data.poll_follow_up_to ?? null,
     suggestion_deadline_minutes: data.suggestion_deadline_minutes ?? undefined,
     details: data.details ?? undefined,
     day_time_windows: data.day_time_windows ?? undefined,
@@ -194,10 +193,11 @@ export function toPoll(data: any): Poll {
   return {
     id: data.id,
     short_id: data.short_id ?? null,
-    // Phase B.4: every poll carries its thread's id + short_id so the FE can
-    // build /t/<thread.short_id>?p=<poll.short_id> URLs without walking
-    // follow_up_to chains. Tolerates absence (synthesized placeholder polls
-    // and pre-Phase-B.4 cached polls don't have these fields).
+    // Phase B.4 + Migration 105: every poll carries its thread's id +
+    // short_id and the thread-level title override (sourced from
+    // threads.title server-side). Tolerates absence (synthesized
+    // placeholder polls and pre-Phase-B.4 cached polls don't have these
+    // fields).
     thread_id: data.thread_id ?? null,
     thread_short_id: data.thread_short_id ?? null,
     creator_secret: data.creator_secret ?? null,
@@ -207,7 +207,6 @@ export function toPoll(data: any): Poll {
     prephase_deadline_minutes: data.prephase_deadline_minutes ?? null,
     is_closed: data.is_closed ?? false,
     close_reason: data.close_reason ?? null,
-    follow_up_to: data.follow_up_to ?? null,
     thread_title: data.thread_title ?? null,
     context: data.context ?? null,
     details: data.details ?? null,

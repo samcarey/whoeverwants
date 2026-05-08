@@ -21,7 +21,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
-import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, THREAD_ID_ATTR } from "@/lib/threadDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
@@ -181,12 +181,14 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
     },
   ).current;
 
-  // Set data attribute on body so the bottom bar "+" button can auto-follow-up
+  // Set data attribute on body so the create-poll form attaches new
+  // polls to this thread (Migration 105: thread_id is the addressable
+  // unit; the legacy follow_up_to chain pointer is gone).
   useEffect(() => {
-    if (thread) {
-      document.body.setAttribute(THREAD_LATEST_QUESTION_ID_ATTR, thread.latestQuestion.id);
+    if (thread?.threadId) {
+      document.body.setAttribute(THREAD_ID_ATTR, thread.threadId);
     }
-    return () => { document.body.removeAttribute(THREAD_LATEST_QUESTION_ID_ATTR); };
+    return () => { document.body.removeAttribute(THREAD_ID_ATTR); };
   }, [thread]);
 
   // Signal to the view transition helper that this page's content is
@@ -499,15 +501,14 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
       const t = threadRef.current;
       if (!t) return;
 
-      // Recognize the placeholder as belonging to this thread either by its
-      // resolved follow_up_to (parent poll id) or by being the thread's own
-      // root. The follow_up_to may be null when create-poll's lookup hit a
-      // stale `accessiblePollsCache` — the rebuild's prev.polls fallback
-      // covers that, so we don't need to bail here.
-      const threadPollIds = new Set(t.polls.map((p) => p.id));
-      const isFollowUp = newPoll.follow_up_to && threadPollIds.has(newPoll.follow_up_to);
+      // Migration 105: a placeholder belongs to this thread when its
+      // `thread_id` matches. (Pre-105 we walked `follow_up_to` to a
+      // parent poll; that's gone.) Solo placeholders without a thread_id
+      // are root polls of a fresh thread and only land here if they
+      // happen to match `t.rootPollId`.
+      const sameThread = newPoll.thread_id && t.threadId && newPoll.thread_id === t.threadId;
       const isOwnRoot = newPoll.id === t.rootPollId;
-      if (!isFollowUp && !isOwnRoot) return;
+      if (!sameThread && !isOwnRoot) return;
 
       flushSync(() => {
         setPendingPollFirstQuestionId(newPoll.questions[0]?.id ?? null);
@@ -565,20 +566,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
       // inside the updater because setState is async — reading the flag
       // synchronously after setThread would see the pre-write value.
       const t = threadRef.current;
-      const threadPollIds = new Set(t?.polls.map(p => p.id) ?? []);
       const optimisticWillAdd =
         !!t && (
-          (!!realPoll.follow_up_to && threadPollIds.has(realPoll.follow_up_to)) ||
+          (!!realPoll.thread_id && realPoll.thread_id === t.threadId) ||
           realPoll.id === t.rootPollId ||
           t.polls.some(p => p.id === placeholderId)
         );
       setThread((prev) => {
         if (!prev) return prev;
-        const prevPollIds = new Set(prev.polls.map(p => p.id));
-        const isFollowUp = realPoll.follow_up_to && prevPollIds.has(realPoll.follow_up_to);
+        const sameThread = realPoll.thread_id && prev.threadId && realPoll.thread_id === prev.threadId;
         const isOwnRoot = realPoll.id === prev.rootPollId;
         const hasPlaceholder = prev.polls.some(p => p.id === placeholderId);
-        if (!hasPlaceholder && !isFollowUp && !isOwnRoot) return prev;
+        if (!hasPlaceholder && !sameThread && !isOwnRoot) return prev;
         return rebuildThreadFromCacheOrPrev(prev, { add: realPoll, remove: placeholderId });
       });
       setPendingPollFirstQuestionId(null);

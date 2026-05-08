@@ -26,14 +26,13 @@ export interface Question {
   options?: string[];
   created_at: string;
   updated_at: string;
-  // Phase 3.5: the wrapper's follow_up_to (a poll_id) is the source of
-  // truth for thread chains. The legacy per-question `follow_up_to` column was
-  // dropped in Phase 5.
-  poll_follow_up_to?: string | null;
   // Phase 5b: wrapper-level fields (response_deadline, is_closed,
   // close_reason, creator_secret, creator_name, short_id, thread_title,
   // suggestion_deadline) live on the parent Poll. Resolve via
-  // questionCache.getPollForQuestion() or accept a Poll prop.
+  // questionCache.getPollForQuestion() or accept a Poll prop. Migration
+  // 105 retired `polls.follow_up_to` (and the FE-only mirror
+  // `poll_follow_up_to` along with it); threads are flat lists of polls
+  // under one `Poll.thread_id`.
   suggestion_deadline_minutes?: number | null;
   auto_close_after?: number;
   details?: string;
@@ -128,13 +127,11 @@ export interface RankedChoiceRound {
 export interface Poll {
   id: string;
   short_id?: string | null;
-  // Phase B.4: every poll carries its thread's id + short_id so the FE can
-  // build /t/<thread.short_id>?p=<poll.short_id> URLs without walking
-  // follow_up_to chains. Both are nullable for resilience: synthesized
-  // placeholder polls don't have them, and pre-Phase-B.4 cached polls
-  // (still in-memory across a deploy) won't either. Use them when present
-  // and fall through to the legacy walk otherwise — see
-  // resolveThreadRootRouteId in lib/threadUtils.ts.
+  // Phase B.4 + Migration 105: every poll carries its thread's id +
+  // short_id. The FE builds /t/<thread.short_id>?p=<poll.short_id> URLs
+  // straight from these fields — no chain walks. Both are nullable for
+  // resilience: synthesized placeholder polls don't have them yet, and
+  // pre-Phase-B.4 cached polls (in-memory across a deploy) won't either.
   thread_id?: string | null;
   thread_short_id?: string | null;
   creator_secret?: string | null;
@@ -144,7 +141,9 @@ export interface Poll {
   prephase_deadline_minutes?: number | null;
   is_closed: boolean;
   close_reason?: string | null;
-  follow_up_to?: string | null;
+  // Migration 105: thread name override. Surfaced from `threads.title`
+  // (single source of truth, one row per thread). Every poll in the same
+  // thread receives the same value.
   thread_title?: string | null;
   context?: string | null;
   details?: string | null;

@@ -47,7 +47,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from database import get_db
-from models import PollResponse
+from models import PollResponse, UpdateThreadTitleRequest
 from services.memberships import leave_thread as _leave_thread_row
 from services.threads import (
     filter_visible_polls,
@@ -69,6 +69,17 @@ class ThreadPreviewResponse(BaseModel):
 
     title: str
     description: str | None = None
+
+
+class ThreadTitleResponse(BaseModel):
+    """Returned by `POST /api/threads/{route_id}/title`. Surfaces the
+    fields the FE needs to patch its in-memory thread cache without a
+    refetch: the resolved thread id, its short_id (so the route id is
+    canonical going forward), and the new title (or null on clear)."""
+
+    thread_id: str
+    thread_short_id: str | None = None
+    title: str | None = None
 
 router = APIRouter(prefix="/api/threads", tags=["threads"])
 
@@ -305,6 +316,44 @@ def get_thread_preview(route_id: str, p: str | None = None):
             description = description[:197].rstrip() + "…"
 
         return ThreadPreviewResponse(title=title, description=description)
+
+
+@router.post("/{route_id}/title", response_model=ThreadTitleResponse)
+def update_thread_title(route_id: str, req: UpdateThreadTitleRequest):
+    """Set or clear a thread's title override.
+
+    Migration 105 moved the override from `polls.thread_title` (per-poll)
+    to `threads.title` (one row per thread). Anyone with the URL can
+    rename the thread — there's no creator-secret check today, matching
+    the prior `/api/polls/<id>/thread-title` semantics.
+
+    Empty / whitespace-only `thread_title` clears the override (NULL).
+
+    `route_id` accepts the same four forms as `/by-route-id/{route_id}`:
+    `threads.short_id`, `threads.id`, `polls.short_id`, `polls.id`.
+    """
+    normalized = (req.thread_title or "").strip()
+    value: str | None = normalized if normalized else None
+    with get_db() as conn:
+        thread_id = resolve_thread_id_from_route_id(conn, route_id)
+        if not thread_id:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        row = conn.execute(
+            """
+            UPDATE threads
+               SET title = %(title)s
+             WHERE id = %(id)s
+            RETURNING id, short_id, title
+            """,
+            {"id": thread_id, "title": value},
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Thread not found")
+    return ThreadTitleResponse(
+        thread_id=str(row["id"]),
+        thread_short_id=row.get("short_id"),
+        title=row.get("title"),
+    )
 
 
 @router.delete("/{route_id}/membership", status_code=204)

@@ -50,8 +50,8 @@ export function useThread(threadId: string): UseThreadResult {
 
         // Phase B.3+: a single thread endpoint resolves any route id form
         // (threads.short_id, threads.id, polls.short_id, polls.id) to the
-        // full poll list. The chain root is the poll with `follow_up_to ==
-        // null`. No separate anchor-question lookup needed.
+        // full poll list. Migration 105 retired the chain pointer — the
+        // "root" is now just the chronologically-oldest poll in the list.
         const polls = await apiGetThreadByRouteId(threadId);
         if (cancelled) return;
         const root = findChainRoot(polls);

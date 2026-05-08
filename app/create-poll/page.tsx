@@ -31,7 +31,7 @@ import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { getThreadHrefForPoll, resolveThreadRootRouteId } from "@/lib/threadUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
-import { cachePoll, getCachedAccessiblePolls, getCachedQuestionById, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
+import { cachePoll, getCachedThreadIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
@@ -40,7 +40,7 @@ import {
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID, THREAD_HEADER_ATTR, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, THREAD_HEADER_ATTR, THREAD_ID_ATTR } from "@/lib/threadDomMarkers";
 import {
   pollLookup,
   shortenOption,
@@ -1187,15 +1187,20 @@ export function CreateQuestionContent() {
       const creatorSecret = generateCreatorSecret();
 
       // Implicit follow-up: pick up the thread's latest question id from
-      // <body> when submitting from a thread page. Skip when on /t (empty
-      // placeholder) — by construction the user is starting a new thread,
-      // and the body attribute can be stale (the thread route's cleanup
-      // is a useEffect return that React/HMR/view-transitions can delay).
+      // The thread the new poll attaches to: either the body marker (set
+      // by the thread page on mount) or, for the legacy duplicate /
+      // vote-on-it / FollowUpButton flows, the thread of the question id
+      // the caller passed. Skip the body marker on /t (empty placeholder)
+      // — by construction the user is starting a new thread, and the
+      // attribute can be stale (the thread route's cleanup is a useEffect
+      // return that React/HMR/view-transitions can delay).
       const onEmptyThreadPath = typeof window !== 'undefined' && /^\/t\/?$/.test(window.location.pathname);
-      const effectiveFollowUpTo = followUpTo
-        ?? (!onEmptyThreadPath && typeof document !== 'undefined'
-          ? document.body.getAttribute(THREAD_LATEST_QUESTION_ID_ATTR)
-          : null);
+      const bodyThreadId = !onEmptyThreadPath && typeof document !== 'undefined'
+        ? document.body.getAttribute(THREAD_ID_ATTR)
+        : null;
+      const effectiveThreadId = followUpTo
+        ? getCachedThreadIdForQuestion(followUpTo)
+        : bodyThreadId;
 
       // Resolve the poll-level prephase cutoff once. Used both for the wrapper
       // field and for each draft that has a prephase (suggestion mode + time).
@@ -1218,11 +1223,11 @@ export function CreateQuestionContent() {
       const questionsForRequest: CreateQuestionParams[] =
         effectiveDrafts.map(d => draftToQuestionParams(d, prephaseMinutes));
 
-      // Find duplicate when this is a follow-up to an existing question.
+      // Find duplicate when adding a poll to an existing thread.
       const dedupTitle = wrapperTitle || onlyDraft?.title || '';
-      if (effectiveFollowUpTo && dedupTitle.trim()) {
+      if (effectiveThreadId && dedupTitle.trim()) {
         try {
-          const existing = await apiFindDuplicateQuestion(dedupTitle, effectiveFollowUpTo);
+          const existing = await apiFindDuplicateQuestion(dedupTitle, effectiveThreadId);
           if (existing) {
             const wrapper = existing.poll_id ? pollLookup()(existing.poll_id) : null;
             const shortId = wrapper?.short_id || existing.id;
@@ -1249,25 +1254,7 @@ export function CreateQuestionContent() {
       const placeholderPoll = synthesizePlaceholderPoll(effectiveDrafts, {
         wrapperTitle,
         responseDeadline,
-        followUpTo: (() => {
-          // For the placeholder, follow_up_to should be the parent POLL id
-          // (so thread state recognizes it as part of the current thread).
-          // The CreatePollRequest accepts a question id and the server
-          // resolves it; here we resolve client-side via the cache.
-          //
-          // Try the per-question cache FIRST: it persists each question's
-          // poll_id and is keyed by question id, so a single hit gives us
-          // the answer without scanning all polls. The accessible polls
-          // cache is the fallback — note that BOTH caches share the same
-          // 60s TTL, so an idle session past that point loses both. The
-          // POLL_PENDING handler's prev.polls fallback is the ultimate
-          // safety net for that case.
-          if (!effectiveFollowUpTo) return null;
-          const cachedQuestion = getCachedQuestionById(effectiveFollowUpTo);
-          if (cachedQuestion?.poll_id) return cachedQuestion.poll_id;
-          const cached = getCachedAccessiblePolls() ?? [];
-          return cached.find(mp => mp.questions.some(q => q.id === effectiveFollowUpTo))?.id ?? null;
-        })(),
+        threadId: effectiveThreadId ?? null,
         creatorName: creatorName.trim() || null,
         details: details.trim() || null,
       });
@@ -1312,6 +1299,15 @@ export function CreateQuestionContent() {
       // so redirecting eagerly would render "Thread Not Found" and lose the
       // draft-poll-portal that hosts restored drafts + error on failure.
       // Success redirects to the real short_id below.
+      // duplicateOf carries a question id from the "duplicate this poll"
+      // flow; resolve it to its thread_id (we want the duplicate to land
+      // in the original's thread) and prefer that when no thread context
+      // is set via the body marker / props.
+      const duplicateThreadId = duplicateOf
+        ? getCachedThreadIdForQuestion(duplicateOf)
+        : null;
+      const requestThreadId = effectiveThreadId ?? duplicateThreadId ?? null;
+
       let createdPoll: Poll;
       try {
         createdPoll = await apiCreatePoll({
@@ -1320,7 +1316,7 @@ export function CreateQuestionContent() {
           response_deadline: responseDeadline,
           prephase_deadline: prephaseDeadlineIso,
           prephase_deadline_minutes: prephaseDeadlineIso ? null : prephaseMinutes != null ? Math.round(prephaseMinutes) : null,
-          follow_up_to: effectiveFollowUpTo || duplicateOf || null,
+          thread_id: requestThreadId,
           title: wrapperTitle,
           context: null,
           details: details.trim() || null,

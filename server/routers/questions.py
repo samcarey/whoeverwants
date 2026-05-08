@@ -52,27 +52,26 @@ def get_all_question_ids():
 
 
 @router.get("/find-duplicate", response_model=QuestionResponse)
-def find_duplicate_question(title: str, follow_up_to: str):
-    """Find an existing question under the same poll-level chain as
-    `follow_up_to` (a question id) with the same title (case-insensitive).
+def find_duplicate_question(title: str, thread_id: str):
+    """Find an existing question under the same thread as `thread_id` with
+    the same title (case-insensitive). Used by the create-poll flow to
+    short-circuit accidental duplicates when the user types a title that
+    already exists in the thread they're posting into.
 
-    Phase 5: walks poll-level chains. The candidate question's wrapper
-    must have `follow_up_to` equal to the input question's wrapper id. (The
-    legacy implementation queried `questions.follow_up_to` directly; that column
-    no longer exists.)
+    Migration 105 retired `polls.follow_up_to` so the legacy "walk the
+    parent question's chain" approach is gone — this is now a flat
+    `WHERE mp.thread_id = ?` lookup.
     """
     with get_db() as conn:
         row = conn.execute(
             _SELECT_QUESTION_FULL
             + """
             WHERE LOWER(p.title) = LOWER(%(title)s)
-              AND mp.follow_up_to = (
-                SELECT poll_id FROM questions WHERE id = %(follow_up_to)s
-              )
+              AND mp.thread_id = %(thread_id)s::uuid
             ORDER BY p.created_at ASC
             LIMIT 1
             """,
-            {"title": title, "follow_up_to": follow_up_to},
+            {"title": title, "thread_id": thread_id},
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="No duplicate question found")

@@ -166,7 +166,7 @@ class TestLeaveThread:
         other = str(uuid.uuid4())
         create_poll(
             client, creator_secret, browser_id=other,
-            follow_up_to=root["questions"][0]["id"],
+            thread_id=root["thread_id"],
         )
         members = set(thread_members_for(root["thread_id"]))
         assert browser_id in members and other in members

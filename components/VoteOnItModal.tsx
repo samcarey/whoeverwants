@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
 import { apiCreatePoll } from "@/lib/api";
+import { getCachedThreadIdForQuestion } from "@/lib/questionCache";
 import { generateCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
 import { getUserName } from "@/lib/userProfile";
 
@@ -53,11 +54,16 @@ export default function VoteOnItModal({ isOpen, questionId, questionTitle, sugge
       const creatorSecret = generateCreatorSecret();
       const creatorName = getUserName() || undefined;
 
+      // Migration 105: resolve the source question's thread_id from cache.
+      // Falls back to null (new thread) on cache miss — graceful
+      // degradation rather than a failed create.
+      const threadId = getCachedThreadIdForQuestion(questionId);
+
       const poll = await apiCreatePoll({
         creator_secret: creatorSecret,
         creator_name: creatorName,
         response_deadline: deadline.toISOString(),
-        follow_up_to: questionId,
+        thread_id: threadId,
         questions: [
           {
             question_type: "ranked_choice",
@@ -70,10 +76,6 @@ export default function VoteOnItModal({ isOpen, questionId, questionTitle, sugge
 
       const subQuestion = poll.questions[0];
       recordQuestionCreation(subQuestion.id, creatorSecret);
-      // The new poll is a follow-up to questionId — its thread root may
-      // differ. The /p/ legacy redirect resolves the chain server-side, so
-      // navigating through it lands the user on the right thread without
-      // duplicating the chain-walk here.
       const shortId = poll.short_id || subQuestion.id;
       router.push(`/p/${shortId}`);
       onClose();

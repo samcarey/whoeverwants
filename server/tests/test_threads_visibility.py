@@ -104,7 +104,7 @@ class TestMyThreadsVisibility:
         root = create_poll(client, creator_secret, browser_id=creator_browser)
         child = create_poll(
             client, creator_secret, browser_id=creator_browser,
-            follow_up_to=root["questions"][0]["id"],
+            thread_id=root["thread_id"],
         )
         # Stranger passes ONE question id; bridge fans out to its whole
         # thread (every poll, no closed_at filter).
@@ -174,7 +174,7 @@ class TestMyThreadsVisibility:
         # poll's closed_at (year 2000) is < joined_at, so it's filtered out.
         followup = create_poll(
             client, creator_secret, browser_id=stranger_browser,
-            follow_up_to=poll["questions"][0]["id"],
+            thread_id=poll["thread_id"],
         )
 
         resp = client.post(
@@ -218,7 +218,7 @@ class TestMyThreadsVisibility:
         root = create_poll(client, creator_secret, browser_id=creator_browser)
         child = create_poll(
             client, creator_secret, browser_id=creator_browser,
-            follow_up_to=root["questions"][0]["id"],
+            thread_id=root["thread_id"],
         )
 
         # Stranger grants themselves poll_access on the child only.
@@ -273,7 +273,7 @@ class TestByRouteIdVisibility:
         root = create_poll(client, creator_secret, browser_id=creator_browser)
         child = create_poll(
             client, creator_secret, browser_id=creator_browser,
-            follow_up_to=root["questions"][0]["id"],
+            thread_id=root["thread_id"],
         )
         resp = _stranger_get_thread(
             client, root["short_id"], stranger_browser, p=child["short_id"],

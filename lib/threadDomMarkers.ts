@@ -5,11 +5,12 @@
  * keep them centralized.
  */
 
-/** `<body data-thread-latest-question-id="...">` is set by the thread
- *  page on mount with the id of the latest question. The in-card
- *  bubble bar in CreateQuestionContent reads it to auto-attach the
- *  new question as a follow-up. */
-export const THREAD_LATEST_QUESTION_ID_ATTR = 'data-thread-latest-question-id';
+/** `<body data-thread-id="...">` is set by the thread page on mount
+ *  with the current thread's uuid. The in-card form in CreateQuestionContent
+ *  reads it to attach a new poll to the thread (passes through as
+ *  `req.thread_id` to `apiCreatePoll`). Migration 105 retired the
+ *  per-question follow-up chain; the thread is now the addressable unit. */
+export const THREAD_ID_ATTR = 'data-thread-id';
 
 /** Portal target rendered by the thread page (and the empty `/t/`
  *  placeholder) where CreateQuestionContent portals the always-on
