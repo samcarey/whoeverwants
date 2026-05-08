@@ -273,7 +273,17 @@ function TemplateInner({ children }: AppTemplateProps) {
           className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
-            bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
+            // Don't add env(safe-area-inset-bottom) — on some iOS PWA
+            // configurations it reports values much larger than the
+            // home indicator zone (~70-100px vs the typical ~34px),
+            // pushing the FAB visibly far from the screen edge while a
+            // wide white strip of page bg sits beneath it. Flat 1rem
+            // keeps the FAB at the same 16px-from-screen-edge position
+            // in both PWA and browser. The home indicator gesture pill
+            // is centered at the bottom and doesn't reach the right
+            // corner, so the FAB rendering inside iOS's reserved zone
+            // there is fine.
+            bottom: '1rem',
           }}
           aria-label="Create new question"
         >
