@@ -37,114 +37,6 @@ const LazyCreateQuestionContent = React.lazy(() =>
   importCreateQuestion().then(m => ({ default: m.CreateQuestionContent }))
 );
 
-// Diagnostic overlay measuring iOS PWA viewport boundaries in JS.
-// Renders four colored bars and a text readout pinned to the right edge.
-function DiagnosticOverlay() {
-  const [m, setM] = React.useState<{
-    iH: number;          // window.innerHeight (visual viewport)
-    dH: number;          // document.documentElement.clientHeight (layout viewport)
-    sH: number;          // document scrollHeight
-    safeBottom: number;  // computed env(safe-area-inset-bottom)
-    visualBottom: number;// window.visualViewport.height (if available)
-    bodyHeight: number;  // body.getBoundingClientRect().height
-    bottomMarkerY: number; // y-coord on screen of an element with style {position: fixed; bottom: 0}
-    screenH: number;     // window.screen.height
-    screenAvailH: number;// window.screen.availHeight
-    devicePR: number;    // window.devicePixelRatio
-  } | null>(null);
-  const [copiedAt, setCopiedAt] = React.useState<number | null>(null);
-  React.useEffect(() => {
-    if (copiedAt === null) return;
-    const id = setTimeout(() => setCopiedAt(null), 1500);
-    return () => clearTimeout(id);
-  }, [copiedAt]);
-
-  React.useEffect(() => {
-    const probe = document.createElement('div');
-    probe.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:1px;visibility:hidden;padding-bottom:env(safe-area-inset-bottom,0px);';
-    document.body.appendChild(probe);
-
-    const measure = () => {
-      const cs = window.getComputedStyle(probe);
-      const safeBottom = parseFloat(cs.paddingBottom) || 0;
-      const rect = probe.getBoundingClientRect();
-      setM({
-        iH: window.innerHeight,
-        dH: document.documentElement.clientHeight,
-        sH: document.documentElement.scrollHeight,
-        safeBottom,
-        visualBottom: window.visualViewport?.height ?? -1,
-        bodyHeight: document.body.getBoundingClientRect().height,
-        bottomMarkerY: rect.top, // Where bottom:0 actually lands (relative to visual viewport top).
-        screenH: window.screen.height,
-        screenAvailH: window.screen.availHeight,
-        devicePR: window.devicePixelRatio,
-      });
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    window.visualViewport?.addEventListener('resize', measure);
-    return () => {
-      window.removeEventListener('resize', measure);
-      window.visualViewport?.removeEventListener('resize', measure);
-      document.body.removeChild(probe);
-    };
-  }, []);
-
-  return (
-    <>
-      {/* Green: position fixed bottom: 0 — bottom of layout viewport */}
-      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, height: 6, background: '#00cc44', zIndex: 9999, pointerEvents: 'none' }} />
-      {/* Cyan: position fixed bottom: -<safeBottom px> — should land at the bottom of the home indicator zone if env reports it */}
-      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(0px - env(safe-area-inset-bottom, 0px))', height: 6, background: '#00aaff', zIndex: 9998, pointerEvents: 'none' }} />
-      {/* Magenta: top: 100vh - 6px (using vh units) — should land at the bottom of the visual viewport */}
-      <div style={{ position: 'fixed', left: 0, right: 0, top: 'calc(100vh - 6px)', height: 6, background: '#ff00ff', zIndex: 9997, pointerEvents: 'none' }} />
-      {/* Black: top: 100dvh - 6px (dvh = dynamic viewport height) — should land at bottom of dynamic visual viewport */}
-      <div style={{ position: 'fixed', left: 0, right: 0, top: 'calc(100dvh - 6px)', height: 6, background: '#000000', zIndex: 9996, pointerEvents: 'none' }} />
-      {/* JS-positioned markers BELOW innerHeight: if these are visible, the physical screen IS taller than the layout viewport. */}
-      {m && (
-        <>
-          {/* Brown bar at top: innerH + 0 (immediately below layout viewport bottom) */}
-          <div style={{ position: 'fixed', left: 0, right: 0, top: m.iH, height: 6, background: '#8b4513', zIndex: 9995, pointerEvents: 'none' }} />
-          {/* Pink bar at top: innerH + 20 */}
-          <div style={{ position: 'fixed', left: 0, right: 0, top: m.iH + 20, height: 6, background: '#ff66cc', zIndex: 9995, pointerEvents: 'none' }} />
-          {/* Yellow bar at top: innerH + 40 */}
-          <div style={{ position: 'fixed', left: 0, right: 0, top: m.iH + 40, height: 6, background: '#ffd700', zIndex: 9995, pointerEvents: 'none' }} />
-          {/* Lime bar at top: innerH + 60 */}
-          <div style={{ position: 'fixed', left: 0, right: 0, top: m.iH + 60, height: 6, background: '#aaff00', zIndex: 9995, pointerEvents: 'none' }} />
-          {/* Teal bar at top: innerH + 100 */}
-          <div style={{ position: 'fixed', left: 0, right: 0, top: m.iH + 100, height: 6, background: '#00aaaa', zIndex: 9995, pointerEvents: 'none' }} />
-        </>
-      )}
-      {/* Text readout — tap to copy values to clipboard */}
-      {m && (
-        <button
-          onClick={() => {
-            const txt = `innerH=${m.iH}\ndocH=${m.dH}\nscrH=${m.sH}\nvisualH=${m.visualBottom}\nbodyH=${Math.round(m.bodyHeight)}\nsafeBot=${m.safeBottom}\nfixed-bot-Y=${Math.round(m.bottomMarkerY)}\nscreenH=${m.screenH}\nscreenAvailH=${m.screenAvailH}\ndevicePR=${m.devicePR}\nUA=${navigator.userAgent}`;
-            navigator.clipboard?.writeText(txt).then(
-              () => { setCopiedAt(Date.now()); },
-              () => {},
-            );
-          }}
-          style={{ position: 'fixed', right: 4, bottom: 12, padding: '6px 8px', background: copiedAt ? 'rgba(0,180,0,0.95)' : 'rgba(0,0,0,0.85)', color: '#fff', fontFamily: 'monospace', fontSize: 10, lineHeight: 1.3, zIndex: 10000, textAlign: 'right', borderRadius: 4, border: 'none', cursor: 'pointer' }}
-        >
-          <div>innerH={m.iH}</div>
-          <div>docH={m.dH}</div>
-          <div>scrH={m.sH}</div>
-          <div>visualH={m.visualBottom}</div>
-          <div>bodyH={Math.round(m.bodyHeight)}</div>
-          <div>safeBot={m.safeBottom}</div>
-          <div>fixed-bot-Y={Math.round(m.bottomMarkerY)}</div>
-          <div>screenH={m.screenH}</div>
-          <div>screenAvailH={m.screenAvailH}</div>
-          <div>devicePR={m.devicePR}</div>
-          {copiedAt && <div style={{ marginTop: 2, fontWeight: 'bold' }}>copied!</div>}
-        </button>
-      )}
-    </>
-  );
-}
-
 interface AppTemplateProps {
   children: React.ReactNode;
 }
@@ -390,12 +282,6 @@ function TemplateInner({ children }: AppTemplateProps) {
           </svg>
         </button>,
         document.getElementById('floating-fab-portal')!
-      )}
-
-      {/* DIAGNOSTICS: layout viewport markers + measured-value readout. */}
-      {isMounted && createPortal(
-        <DiagnosticOverlay />,
-        document.body
       )}
 
       {/* Header elements rendered outside scaling container */}
