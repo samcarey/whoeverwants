@@ -689,9 +689,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       try {
         const polls = await apiGetThreadByRouteId(threadId);
         if (cancelled) return;
-        const root = findChainRoot(polls);
-        if (!root) return;
-        const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
 
         // Update inline-results map first so any card that re-renders via
         // the thread-state replace below sees the fresh results in the
@@ -708,6 +705,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
           // handle the (rare) case where the previous root was deleted.
           const mergedRoot = findChainRoot(merge.polls);
           if (!mergedRoot) return prev;
+          // Defer loadVotedQuestions to the changed-content branch so
+          // no-op ticks (the steady-state majority) don't pay the
+          // localStorage parse + Set allocation.
+          const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
           const rebuilt = buildThreadFromPollDown(mergedRoot.id, merge.polls, voted, abstained);
           if (!rebuilt) return prev;
           return rebuilt;

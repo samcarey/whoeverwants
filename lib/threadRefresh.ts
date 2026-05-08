@@ -58,7 +58,7 @@ function isSuggestionCountsEqual(
   return true;
 }
 
-export function isResultsContentEqual(
+function isResultsContentEqual(
   a: QuestionResults | null | undefined,
   b: QuestionResults | null | undefined,
 ): boolean {
@@ -128,10 +128,6 @@ export interface PollMergeResult {
   polls: Poll[];
   /** Whether `polls` differs from `prev` (membership, order, or content). */
   changed: boolean;
-  /** IDs of polls present in `fresh` but NOT in `prev` (new arrivals). */
-  added: Set<string>;
-  /** IDs of polls present in `prev` but NOT in `fresh` (deleted/forgotten). */
-  removed: Set<string>;
 }
 
 /** Merge a freshly-fetched poll list with the previous in-state list,
@@ -144,15 +140,11 @@ export function mergePollListPreservingIdentity(
 ): PollMergeResult {
   const prevById = new Map<string, Poll>();
   for (const p of prev) prevById.set(p.id, p);
-  const freshIds = new Set<string>();
-  const added = new Set<string>();
   const merged: Poll[] = [];
   let anyContentChanged = false;
   for (const fp of fresh) {
-    freshIds.add(fp.id);
     const pp = prevById.get(fp.id);
     if (!pp) {
-      added.add(fp.id);
       merged.push(fp);
       anyContentChanged = true;
       continue;
@@ -164,18 +156,16 @@ export function mergePollListPreservingIdentity(
       anyContentChanged = true;
     }
   }
-  const removed = new Set<string>();
-  for (const pp of prev) if (!freshIds.has(pp.id)) removed.add(pp.id);
-  if (!anyContentChanged && removed.size === 0 && merged.length === prev.length) {
+  if (!anyContentChanged && merged.length === prev.length) {
     let identical = true;
     for (let i = 0; i < merged.length; i++) {
       if (merged[i] !== prev[i]) { identical = false; break; }
     }
     if (identical) {
-      return { polls: prev as Poll[], changed: false, added, removed };
+      return { polls: prev as Poll[], changed: false };
     }
   }
-  return { polls: merged, changed: true, added, removed };
+  return { polls: merged, changed: true };
 }
 
 /** Merge inline `question.results` from `polls` into the thread page's
