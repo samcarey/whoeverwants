@@ -30,18 +30,21 @@ should_skip_notify_due_to_webhook() {
   [[ ! -r "$transcript_path" ]] && return 1
   python3 - "$transcript_path" <<'PY' 2>/dev/null
 import json, re, sys
+from collections import deque
 
 path = sys.argv[1]
+# The last direct user prompt is virtually always within the most recent few
+# transcript entries; a bounded tail keeps memory flat for multi-MB sessions.
 try:
     with open(path) as f:
-        lines = f.readlines()
+        recent_lines = deque(f, maxlen=50)
 except Exception:
     sys.exit(1)
 
 # Walk backward to the most recent direct user message (skip tool_result
 # entries, which are also type=user but represent tool output, not prompts).
 last_user_text = None
-for line in reversed(lines):
+for line in reversed(recent_lines):
     try:
         obj = json.loads(line)
     except Exception:
@@ -98,17 +101,29 @@ pr_merge_re = re.compile(
     r"|pull\s+request\s+#?\d+\s+(?:was\s+)?merged",
     re.IGNORECASE,
 )
-branch_delete_re = re.compile(
-    r'"ref_type"\s*:\s*"branch"'
-    r"|deleted\s+(?:the\s+)?branch"
+ref_type_branch_re = re.compile(r'"ref_type"\s*:\s*"branch"')
+delete_signal_re = re.compile(
+    r'"event"\s*:\s*"delete"|"action"\s*:\s*"deleted"', re.IGNORECASE
+)
+branch_delete_text_re = re.compile(
+    r"deleted\s+(?:the\s+)?branch"
     r"|branch\s+\S+\s+(?:was\s+)?deleted",
     re.IGNORECASE,
 )
 
+
+def is_branch_delete(body: str) -> bool:
+    # Require a delete signal alongside ref_type=branch so we don't suppress
+    # create events (which also carry ref_type=branch).
+    if ref_type_branch_re.search(body) and delete_signal_re.search(body):
+        return True
+    return bool(branch_delete_text_re.search(body))
+
+
 for body in matches:
     if pr_merge_re.search(body):
         continue
-    if branch_delete_re.search(body):
+    if is_branch_delete(body):
         continue
     # Any other webhook event (review comment, CI status, push, etc.) — notify.
     sys.exit(1)
