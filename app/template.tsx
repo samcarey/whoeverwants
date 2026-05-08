@@ -294,6 +294,12 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.getElementById('floating-fab-portal')!
       )}
 
+      {/* DIAGNOSTIC: green bar at the layout viewport's bottom (position:fixed; bottom:0). Pair with the red bar at end-of-content in app/page.tsx — gap between them = empty page bg below the document scroll area. */}
+      {isMounted && createPortal(
+        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, height: 6, background: '#00cc44', zIndex: 9999, pointerEvents: 'none' }} />,
+        document.body
+      )}
+
       {/* Header elements rendered outside scaling container */}
       <HeaderPortal>
         {/* Back arrow in upper left — settings page only, when there's in-app history. */}
