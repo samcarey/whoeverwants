@@ -3,7 +3,6 @@
 import { useState, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { apiUpdateThreadTitle } from "@/lib/api";
-import { invalidatePoll, invalidateAccessibleQuestions } from "@/lib/questionCache";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import { useThread } from "@/lib/useThread";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
@@ -29,17 +28,11 @@ function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
     if (saving) return;
     setSaving(true);
     try {
-      // The route id of /t/<id> is the canonical thread route — the
-      // server resolves any of `threads.short_id`, `threads.id`,
-      // `polls.short_id`, or `polls.id` to the same thread. Pass it
-      // straight through.
+      // `threadId` is the route param — the server resolves any of
+      // `threads.short_id`, `threads.id`, `polls.short_id`, or
+      // `polls.id` to the same thread. apiUpdateThreadTitle handles
+      // cache invalidation for every poll in the thread.
       await apiUpdateThreadTitle(threadId, value.trim() || null);
-      // Drop every poll in this thread from cache so the next read
-      // re-fetches with the updated thread_title. invalidatePoll on the
-      // root id cascades to the per-question caches (see questionCache.ts);
-      // also drop the accessible-questions cache so the home list refreshes.
-      for (const mp of thread.polls) invalidatePoll(mp.id);
-      invalidateAccessibleQuestions();
       goBack();
     } catch (err) {
       console.error('Failed to update thread title:', err);

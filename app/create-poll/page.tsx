@@ -31,7 +31,7 @@ import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { getThreadHrefForPoll, resolveThreadRootRouteId } from "@/lib/threadUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
-import { cachePoll, getCachedAccessiblePolls, getCachedQuestionById, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
+import { cachePoll, getCachedThreadIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
@@ -1187,33 +1187,19 @@ export function CreateQuestionContent() {
       const creatorSecret = generateCreatorSecret();
 
       // Implicit follow-up: pick up the thread's latest question id from
-      // <body data-thread-id> set by the thread page on mount. Skip when
-      // on /t (empty placeholder) — by construction the user is starting a
-      // new thread, and the body attribute can be stale (the thread route's
-      // cleanup is a useEffect return that React/HMR/view-transitions can
-      // delay).
-      //
-      // The `followUpTo` prop is the legacy path: it carries a question_id
-      // from the duplicate / vote-on-it / FollowUpButton flows. We resolve
-      // it to its thread_id via the accessible polls cache. (Migration 105
-      // dropped the chain pointer; everything goes through thread_id now.)
+      // The thread the new poll attaches to: either the body marker (set
+      // by the thread page on mount) or, for the legacy duplicate /
+      // vote-on-it / FollowUpButton flows, the thread of the question id
+      // the caller passed. Skip the body marker on /t (empty placeholder)
+      // — by construction the user is starting a new thread, and the
+      // attribute can be stale (the thread route's cleanup is a useEffect
+      // return that React/HMR/view-transitions can delay).
       const onEmptyThreadPath = typeof window !== 'undefined' && /^\/t\/?$/.test(window.location.pathname);
       const bodyThreadId = !onEmptyThreadPath && typeof document !== 'undefined'
         ? document.body.getAttribute(THREAD_ID_ATTR)
         : null;
-      const resolveThreadIdFromQuestionId = (questionId: string): string | null => {
-        const cachedQuestion = getCachedQuestionById(questionId);
-        if (cachedQuestion?.poll_id) {
-          const cached = getCachedAccessiblePolls() ?? [];
-          const mp = cached.find(p => p.id === cachedQuestion.poll_id);
-          if (mp?.thread_id) return mp.thread_id;
-        }
-        const cached = getCachedAccessiblePolls() ?? [];
-        const mp = cached.find(p => p.questions.some(q => q.id === questionId));
-        return mp?.thread_id ?? null;
-      };
       const effectiveThreadId = followUpTo
-        ? resolveThreadIdFromQuestionId(followUpTo)
+        ? getCachedThreadIdForQuestion(followUpTo)
         : bodyThreadId;
 
       // Resolve the poll-level prephase cutoff once. Used both for the wrapper
@@ -1318,7 +1304,7 @@ export function CreateQuestionContent() {
       // in the original's thread) and prefer that when no thread context
       // is set via the body marker / props.
       const duplicateThreadId = duplicateOf
-        ? resolveThreadIdFromQuestionId(duplicateOf)
+        ? getCachedThreadIdForQuestion(duplicateOf)
         : null;
       const requestThreadId = effectiveThreadId ?? duplicateThreadId ?? null;
 
