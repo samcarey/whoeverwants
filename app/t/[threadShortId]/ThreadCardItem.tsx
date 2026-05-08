@@ -810,7 +810,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
               <div className="overflow-y-clip overflow-x-visible min-h-0" ref={setExpandedWrapperEl}>
                 <div className={allYesNo && !usePollSubmit ? "" : "mt-1.5"}>
                   {wrapper?.details && (
-                    <QuestionDetails details={wrapper.details} />
+                    <QuestionDetails details={wrapper.details} label="Notes: " />
                   )}
                   {group.subQuestions.map((sp, idx) => {
                     // Phase 3.3: every yes_no question uses external
