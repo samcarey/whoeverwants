@@ -57,7 +57,7 @@ export default function ThreadShareButton({ routeId, title }: ThreadShareButtonP
         aria-label="Share thread"
       >
         <svg
-          className="w-6 h-6 text-gray-600 dark:text-gray-400"
+          className="w-[1.125rem] h-[1.125rem] text-gray-600 dark:text-gray-400"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
