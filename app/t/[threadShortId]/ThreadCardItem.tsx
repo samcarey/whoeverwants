@@ -582,7 +582,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
         <CompactTimePreview
           results={r}
           isQuestionClosed={isClosed}
-          categoryIcon={getBuiltInCategoryIcon(sp.category)}
+          categoryIcon={getBuiltInCategoryIcon("time")}
         />
       );
     }
