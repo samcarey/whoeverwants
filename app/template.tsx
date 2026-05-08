@@ -37,6 +37,74 @@ const LazyCreateQuestionContent = React.lazy(() =>
   importCreateQuestion().then(m => ({ default: m.CreateQuestionContent }))
 );
 
+// Diagnostic overlay measuring iOS PWA viewport boundaries in JS.
+// Renders four colored bars and a text readout pinned to the right edge.
+function DiagnosticOverlay() {
+  const [m, setM] = React.useState<{
+    iH: number;          // window.innerHeight (visual viewport)
+    dH: number;          // document.documentElement.clientHeight (layout viewport)
+    sH: number;          // document scrollHeight
+    safeBottom: number;  // computed env(safe-area-inset-bottom)
+    visualBottom: number;// window.visualViewport.height (if available)
+    bodyHeight: number;  // body.getBoundingClientRect().height
+    bottomMarkerY: number; // y-coord on screen of an element with style {position: fixed; bottom: 0}
+  } | null>(null);
+
+  React.useEffect(() => {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:1px;visibility:hidden;padding-bottom:env(safe-area-inset-bottom,0px);';
+    document.body.appendChild(probe);
+
+    const measure = () => {
+      const cs = window.getComputedStyle(probe);
+      const safeBottom = parseFloat(cs.paddingBottom) || 0;
+      const rect = probe.getBoundingClientRect();
+      setM({
+        iH: window.innerHeight,
+        dH: document.documentElement.clientHeight,
+        sH: document.documentElement.scrollHeight,
+        safeBottom,
+        visualBottom: window.visualViewport?.height ?? -1,
+        bodyHeight: document.body.getBoundingClientRect().height,
+        bottomMarkerY: rect.top, // Where bottom:0 actually lands (relative to visual viewport top).
+      });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.visualViewport?.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.visualViewport?.removeEventListener('resize', measure);
+      document.body.removeChild(probe);
+    };
+  }, []);
+
+  return (
+    <>
+      {/* Green: position fixed bottom: 0 — bottom of layout viewport */}
+      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, height: 6, background: '#00cc44', zIndex: 9999, pointerEvents: 'none' }} />
+      {/* Cyan: position fixed bottom: -<safeBottom px> — should land at the bottom of the home indicator zone if env reports it */}
+      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(0px - env(safe-area-inset-bottom, 0px))', height: 6, background: '#00aaff', zIndex: 9998, pointerEvents: 'none' }} />
+      {/* Magenta: top: 100vh - 6px (using vh units) — should land at the bottom of the visual viewport */}
+      <div style={{ position: 'fixed', left: 0, right: 0, top: 'calc(100vh - 6px)', height: 6, background: '#ff00ff', zIndex: 9997, pointerEvents: 'none' }} />
+      {/* Black: top: 100dvh - 6px (dvh = dynamic viewport height) — should land at bottom of dynamic visual viewport */}
+      <div style={{ position: 'fixed', left: 0, right: 0, top: 'calc(100dvh - 6px)', height: 6, background: '#000000', zIndex: 9996, pointerEvents: 'none' }} />
+      {/* Text readout */}
+      {m && (
+        <div style={{ position: 'fixed', right: 4, bottom: 12, padding: '6px 8px', background: 'rgba(0,0,0,0.85)', color: '#fff', fontFamily: 'monospace', fontSize: 10, lineHeight: 1.3, zIndex: 10000, pointerEvents: 'none', textAlign: 'right', borderRadius: 4 }}>
+          <div>innerH={m.iH}</div>
+          <div>docH={m.dH}</div>
+          <div>scrH={m.sH}</div>
+          <div>visualH={m.visualBottom}</div>
+          <div>bodyH={Math.round(m.bodyHeight)}</div>
+          <div>safeBot={m.safeBottom}</div>
+          <div>fixed-bot-Y={Math.round(m.bottomMarkerY)}</div>
+        </div>
+      )}
+    </>
+  );
+}
+
 interface AppTemplateProps {
   children: React.ReactNode;
 }
@@ -284,15 +352,9 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.getElementById('floating-fab-portal')!
       )}
 
-      {/* DIAGNOSTIC: green bar at layout-viewport bottom */}
+      {/* DIAGNOSTICS: layout viewport markers + measured-value readout. */}
       {isMounted && createPortal(
-        <>
-          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, height: 6, background: '#00cc44', zIndex: 9999, pointerEvents: 'none' }} />
-          {/* Orange bar inside the home indicator zone — anchored below the layout viewport bottom by env(safe-area-inset-bottom) and as tall as that env value, so it should exactly fill the white bar between the green line and the physical screen edge. If the orange bar matches the white bar perfectly, the white area = the home indicator safe zone. */}
-          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(0px - env(safe-area-inset-bottom, 0px))', height: 'env(safe-area-inset-bottom, 0px)', background: '#ff8800', zIndex: 9998, pointerEvents: 'none' }} />
-          {/* Purple sliver flush with physical-screen bottom: if visible it confirms env(safe-area-inset-bottom) matches the white-bar height. */}
-          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(0px - env(safe-area-inset-bottom, 0px))', height: 3, background: '#9933cc', zIndex: 9999, pointerEvents: 'none', transform: 'translateY(-3px)' }} />
-        </>,
+        <DiagnosticOverlay />,
         document.body
       )}
 
