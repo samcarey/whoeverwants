@@ -19,8 +19,109 @@ if [[ "$stop_hook_active" == "true" ]]; then
   exit 0
 fi
 
+transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // ""' 2>/dev/null || echo "")
+
+# Returns 0 (suppress notify) when the most recent user prompt consists ONLY
+# of github-webhook-activity events that are all PR-merged or branch-deleted —
+# these don't warrant waking the user. Returns 1 (do notify) for direct user
+# input, mixed content, or any other webhook event (review comments, CI, etc.).
+should_skip_notify_due_to_webhook() {
+  [[ -z "$transcript_path" ]] && return 1
+  [[ ! -r "$transcript_path" ]] && return 1
+  python3 - "$transcript_path" <<'PY' 2>/dev/null
+import json, re, sys
+
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        lines = f.readlines()
+except Exception:
+    sys.exit(1)
+
+# Walk backward to the most recent direct user message (skip tool_result
+# entries, which are also type=user but represent tool output, not prompts).
+last_user_text = None
+for line in reversed(lines):
+    try:
+        obj = json.loads(line)
+    except Exception:
+        continue
+    if obj.get("type") != "user":
+        continue
+    msg = obj.get("message") or {}
+    content = msg.get("content")
+    if isinstance(content, list):
+        text_parts = []
+        is_tool_result_only = True
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if btype == "tool_result":
+                continue
+            is_tool_result_only = False
+            if btype in (None, "text"):
+                text_parts.append(block.get("text", "") or "")
+        if is_tool_result_only:
+            continue
+        last_user_text = "".join(text_parts)
+    elif isinstance(content, str):
+        last_user_text = content
+    else:
+        continue
+    break
+
+if not last_user_text:
+    sys.exit(1)
+
+webhook_re = re.compile(
+    r"<github-webhook-activity[^>]*>(.*?)</github-webhook-activity>",
+    re.DOTALL,
+)
+matches = webhook_re.findall(last_user_text)
+
+# What's left after stripping webhook + system-reminder tags should be empty
+# for the suppression to apply — any direct text means a real user prompt.
+remainder = webhook_re.sub("", last_user_text)
+remainder = re.sub(
+    r"<system-reminder>.*?</system-reminder>", "", remainder, flags=re.DOTALL
+)
+if remainder.strip():
+    sys.exit(1)
+
+if not matches:
+    sys.exit(1)
+
+pr_merge_re = re.compile(
+    r'"merged"\s*:\s*true'
+    r"|merged\s+(?:the\s+)?pull\s+request"
+    r"|pull\s+request\s+#?\d+\s+(?:was\s+)?merged",
+    re.IGNORECASE,
+)
+branch_delete_re = re.compile(
+    r'"ref_type"\s*:\s*"branch"'
+    r"|deleted\s+(?:the\s+)?branch"
+    r"|branch\s+\S+\s+(?:was\s+)?deleted",
+    re.IGNORECASE,
+)
+
+for body in matches:
+    if pr_merge_re.search(body):
+        continue
+    if branch_delete_re.search(body):
+        continue
+    # Any other webhook event (review comment, CI status, push, etc.) — notify.
+    sys.exit(1)
+
+sys.exit(0)
+PY
+}
+
 notify() {
   [[ -z "${NTFY_TOPIC:-}" ]] && return 0
+  if should_skip_notify_due_to_webhook; then
+    return 0
+  fi
   curl -fsS --max-time 5 \
     -d "Claude is ready for your input" \
     -H "Title: Claude Code" \
