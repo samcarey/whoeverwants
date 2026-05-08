@@ -193,24 +193,27 @@ def polls_for_poll_ids(
     """Build PollResponse[] (with inline results / voter aggregates) for the
     given poll_ids. Order: most recently created first. Empty list in →
     empty list out (no DB roundtrip)."""
-    # Local import keeps services/* free of router cycles.
-    from routers.polls import _compute_poll_voter_data, _row_to_poll
+    # Local import keeps services/* free of router cycles. Reusing
+    # `_SELECT_POLLS_WITH_THREAD` (rather than re-writing the JOIN) is what
+    # actually keeps this read in lockstep with the rest of the polls reads —
+    # the previous local copy quietly went stale after Migration 105 moved
+    # `thread_title` from polls to threads, returning thread_title=null on
+    # every /api/threads/* read.
+    from routers.polls import (
+        _SELECT_POLLS_WITH_THREAD,
+        _compute_poll_voter_data,
+        _row_to_poll,
+    )
 
     if not poll_ids:
         return []
 
     now = datetime.now(timezone.utc)
 
-    # Phase B.4: surface threads.short_id alongside polls.* so _row_to_poll can
-    # populate `thread_short_id` on every PollResponse without a per-row lookup.
-    # Mirrors `_SELECT_POLLS_WITH_THREAD` in routers/polls.py — extending one
-    # without the other will silently drop the field on whichever path gets
-    # missed.
     poll_rows = conn.execute(
-        """SELECT polls.*, t.short_id AS thread_short_id
-             FROM polls LEFT JOIN threads t ON polls.thread_id = t.id
-            WHERE polls.id = ANY(%(ids)s)
-            ORDER BY polls.created_at DESC""",
+        f"{_SELECT_POLLS_WITH_THREAD} "
+        "WHERE polls.id = ANY(%(ids)s) "
+        "ORDER BY polls.created_at DESC",
         {"ids": poll_ids},
     ).fetchall()
     if not poll_rows:

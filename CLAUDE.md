@@ -1000,14 +1000,18 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 > page remains as a last-ditch safety net for very old URL forms during
 > a partial rollout.
 >
-> Server side: `_SELECT_POLLS_WITH_THREAD` in `routers/polls.py` and the
-> mirrored JOIN in `services/threads.py: polls_for_poll_ids` are the
+> Server side: `_SELECT_POLLS_WITH_THREAD` in `routers/polls.py` is the
 > single source of truth for "every polls SELECT must surface
-> `thread_short_id`". `_attach_thread_short_id(conn, row)` enriches
-> `RETURNING *` rows from INSERT/UPDATE paths with the same field.
-> Adding another threads-table field to `PollResponse` requires
-> extending only those two SELECT-prefix strings + the helper — every
-> read path picks it up automatically.
+> `thread_short_id` + `thread_title`". `services/threads.py:
+> polls_for_poll_ids` imports the constant via the same deferred import
+> as `_row_to_poll` / `_compute_poll_voter_data`, so there is no second
+> SELECT to keep in sync — extending the constant with a new threads-table
+> field reaches every read path automatically. (Earlier this section
+> documented two "mirrored" SELECTs and warned that "extending one
+> without the other will silently drop the field" — Migration 105 hit
+> exactly that failure mode for `thread_title`, which is why the second
+> SELECT was retired in favor of the import.) `_attach_thread_fields(conn, row)`
+> enriches `RETURNING *` rows from INSERT/UPDATE paths with the same fields.
 >
 > Pitfall: `BIGSERIAL` populates existing rows on `ALTER TABLE ADD
 > COLUMN` (Postgres 10+) so the migration's backfill UPDATE works. If
