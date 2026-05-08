@@ -146,14 +146,3 @@ export async function apiCutoffPollAvailability(
   return pollOperation(pollId, 'cutoff-availability', { creator_secret: creatorSecret });
 }
 
-/** Phase C.2: record direct-link access to a poll. Idempotent server-side
- *  (ON CONFLICT DO NOTHING) and fire-and-forget client-side — Phase C.2 has
- *  no read enforcement, so a transient failure is never user-visible. */
-export async function apiGrantPollAccess(pollId: string): Promise<void> {
-  try {
-    await pollFetch(`/${encodeURIComponent(pollId)}/access`, { method: 'POST' });
-  } catch {
-    // intentional: see jsdoc
-  }
-}
-

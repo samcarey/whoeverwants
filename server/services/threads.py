@@ -26,26 +26,29 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Phase C.3 — visibility enforcement
+# Visibility enforcement (post-migration-106)
 # ---------------------------------------------------------------------------
 #
-# Visibility rule (see docs/thread-routing-redesign.md):
+# Visibility rule:
 #
-#   A poll P in thread T is visible to browser B iff ANY of:
+#   A poll P in thread T is visible to browser B iff EITHER:
 #     1. B has a thread_members row for T AND
 #        (P.is_closed = false OR P.closed_at >= members.joined_at), OR
-#     2. B has a poll_access row for P, OR
-#     3. (transitional bridge) The legacy `accessible_question_ids` list
+#     2. (transitional bridge) The legacy `accessible_question_ids` list
 #        passed by the FE contains a question_id whose poll lives in T.
 #        Treated as THREAD-level access (every poll in T visible, no
 #        closed_at filter) — pre-B.3 votes never wrote browser_id, so the
 #        localStorage list is the only access signal those users have
-#        until they re-establish membership by voting. Treating it as
-#        per-poll would silently shrink threads on first refresh
-#        post-rollout (a user with 1 question_id in a 5-poll thread
-#        would lose 4 polls); the thread-level bridge preserves Phase
-#        B.3 behavior for legacy callers. Applies to /api/threads/mine
-#        only — by-route-id relies on `?p=` inline grant instead.
+#        until they re-establish membership by voting. Applies to
+#        /api/threads/mine only.
+#
+# Migration 106 dropped per-poll access (`poll_access`). Visiting any
+# thread URL via `/api/threads/by-route-id/{id}` writes a thread_members
+# row inline (idempotent ON CONFLICT), so direct-link recipients become
+# thread members with `joined_at = NOW()` — they see open polls and any
+# polls closed after they joined, but not polls closed before. The user
+# spec: "if they received a direct link to a poll closed before they
+# joined, just show the thread and don't try to show the old poll."
 #
 # `closed_at` proxy: we use `polls.updated_at`, which the existing close
 # trigger refreshes on every `is_closed` flip. Subsequent edits to a closed
@@ -67,11 +70,6 @@ class UserVisibility:
     # thread_id → joined_at watermark (drives closed_at filter for
     # member-thread polls).
     joined_by_thread: dict[str, datetime] = field(default_factory=dict)
-    # poll_ids the browser has direct-link access to (poll_access rows).
-    # No closed_at filter — direct access shows the poll whether open or
-    # already closed, matching the rule's "explicit per-poll access"
-    # clause.
-    access_poll_ids: set[str] = field(default_factory=set)
     # thread_ids the legacy accessible_question_ids list resolves to.
     # Treated as thread-level access with no closed_at filter for
     # backwards compatibility during the rollout window.
@@ -88,7 +86,6 @@ def load_user_visibility(
     place so callers can construct candidate sets and filter against the
     same data without re-querying."""
     joined_by_thread: dict[str, datetime] = {}
-    access_poll_ids: set[str] = set()
     if browser_id:
         rows = conn.execute(
             "SELECT thread_id, joined_at FROM thread_members "
@@ -97,11 +94,6 @@ def load_user_visibility(
         ).fetchall()
         for r in rows:
             joined_by_thread[str(r["thread_id"])] = r["joined_at"]
-        rows = conn.execute(
-            "SELECT poll_id FROM poll_access WHERE browser_id = %(bid)s",
-            {"bid": browser_id},
-        ).fetchall()
-        access_poll_ids = {str(r["poll_id"]) for r in rows}
 
     bridged_thread_ids: set[str] = set()
     if legacy_question_ids:
@@ -112,7 +104,6 @@ def load_user_visibility(
     return UserVisibility(
         browser_id=browser_id,
         joined_by_thread=joined_by_thread,
-        access_poll_ids=access_poll_ids,
         bridged_thread_ids=bridged_thread_ids,
     )
 
@@ -122,7 +113,7 @@ def filter_visible_polls(
     candidate_poll_ids: list[str],
     visibility: UserVisibility,
 ) -> list[str]:
-    """Apply the Phase C.3 visibility rule. Returns the subset of
+    """Apply the visibility rule. Returns the subset of
     `candidate_poll_ids` visible to `visibility.browser_id` per the rule
     documented above. Empty in → empty out; preserves no specific order."""
     if not candidate_poll_ids:
@@ -135,10 +126,6 @@ def filter_visible_polls(
     visible: list[str] = []
     for r in rows:
         pid = str(r["id"])
-        # Direct per-poll grant: visible regardless of close state.
-        if pid in visibility.access_poll_ids:
-            visible.append(pid)
-            continue
         tid = str(r["thread_id"]) if r.get("thread_id") else None
         # Thread-level legacy bridge: every poll in the thread visible
         # without a closed_at filter (per Phase B.3 backwards-compat).
@@ -158,29 +145,32 @@ def filter_visible_polls(
     return visible
 
 
-def grant_poll_access_inline(
+def grant_thread_membership_inline(
     conn,
-    poll_id: str,
+    thread_id: str,
     browser_id: str | None,
 ) -> None:
-    """Phase C.3: write `poll_access(poll_id, browser_id)` in the same
-    transaction as the read that's about to use it. Used by the
-    `?p=<pollShortId>` auto-grant on `/api/threads/by-route-id` so a
-    direct-link landing race-safely surfaces its poll without an extra
-    round-trip from the FE.
+    """Write `thread_members(thread_id, browser_id)` in the same
+    transaction as the read that's about to use it. Used by
+    `/api/threads/by-route-id/{id}` so any visit to a thread URL
+    establishes membership before the visibility filter runs — no
+    chicken-and-egg with a separate round-trip.
 
     No-op when `browser_id` is missing. ON CONFLICT preserves the original
-    granted_at watermark, mirroring the standalone /access endpoint.
+    `joined_at` watermark across re-visits, which is load-bearing for the
+    closed-before-join filter (a re-visit must NOT advance `joined_at`,
+    or polls closed after the first visit but before the latest one
+    would silently disappear).
     """
     if not browser_id:
         return
     conn.execute(
         """
-        INSERT INTO poll_access (poll_id, browser_id)
-        VALUES (%(p)s, %(b)s)
-        ON CONFLICT (poll_id, browser_id) DO NOTHING
+        INSERT INTO thread_members (thread_id, browser_id)
+        VALUES (%(t)s::uuid, %(b)s)
+        ON CONFLICT (thread_id, browser_id) DO NOTHING
         """,
-        {"p": poll_id, "b": browser_id},
+        {"t": thread_id, "b": browser_id},
     )
 
 
@@ -371,21 +361,6 @@ def poll_ids_for_thread_ids(conn, thread_ids: list[str]) -> list[str]:
         {"ids": thread_ids},
     ).fetchall()
     return [str(r["id"]) for r in rows]
-
-
-def thread_ids_for_poll_ids(conn, poll_ids) -> list[str]:
-    """Resolve a list (or set) of poll_ids to the distinct set of
-    thread_ids that own them. The inverse of `poll_ids_for_thread_ids`,
-    used by the visibility filter to fan poll-level signals (poll_access)
-    up to the thread granularity needed by the forget bridge."""
-    if not poll_ids:
-        return []
-    rows = conn.execute(
-        """SELECT DISTINCT thread_id FROM polls
-            WHERE id = ANY(%(ids)s) AND thread_id IS NOT NULL""",
-        {"ids": list(poll_ids)},
-    ).fetchall()
-    return [str(r["thread_id"]) for r in rows]
 
 
 def resolve_thread_id_from_route_id(conn, route_id: str) -> str | None:

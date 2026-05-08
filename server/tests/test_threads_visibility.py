@@ -1,20 +1,19 @@
-"""Phase C.3 — visibility enforcement on the threads read endpoints.
+"""Visibility enforcement on the threads read endpoints.
 
 Covers:
   * /api/threads/mine returns only polls visible per the visibility rule
-  * /api/threads/by-route-id/{id} 404s on non-members with no `?p` grant
-  * `?p=<pollShortId>` auto-grant on by-route-id surfaces the targeted poll
+  * /api/threads/by-route-id/{id} auto-joins the visitor (any visit grants
+    thread membership inline) and returns the visible polls
   * Closed-poll filter: closed-before-joined_at hidden for members, but
     bridged threads bypass the filter
-  * Direct per-poll grant bypasses the closed_at filter
-  * `?p=` outside the resolved thread is ignored (no cross-thread leak)
   * Forget bridge: member-thread without legacy-list signal disappears
-  * Strangers see neither members' threads nor /by-route-id contents
+  * 404 only when route resolution fails; an empty visible-polls list
+    still returns 200 with [] so the FE can render thread chrome
 
-The companion file `test_membership_writes.py` covers the WRITE side of
-Phase C.2 (auto-join + access-grant). This file covers the READ side that
-C.3 introduces. Both depend on a real Postgres reachable via DATABASE_URL
-and the migration set including 102.
+The companion file `test_membership_writes.py` covers the WRITE side
+(auto-join from create / vote / visit). This file covers the READ side.
+Both depend on a real Postgres reachable via DATABASE_URL and the
+migration set including 106 (drop poll_access).
 
 Shared fixtures (`client`, `creator_secret`) and helpers (`create_poll`)
 live in `conftest.py`.
@@ -210,35 +209,6 @@ class TestMyThreadsVisibility:
         ids = {p["id"] for p in resp.json()}
         assert poll["id"] in ids
 
-    def test_per_poll_grant_visible_outside_thread_membership(
-        self, client, creator_secret, creator_browser, stranger_browser,
-    ):
-        """A user with `poll_access` for one poll in a thread sees just
-        that poll — even with no thread_members row and no legacy bridge."""
-        root = create_poll(client, creator_secret, browser_id=creator_browser)
-        child = create_poll(
-            client, creator_secret, browser_id=creator_browser,
-            thread_id=root["thread_id"],
-        )
-
-        # Stranger grants themselves poll_access on the child only.
-        grant = client.post(
-            f"/api/polls/{child['id']}/access",
-            headers={"X-Browser-Id": stranger_browser},
-        )
-        assert grant.status_code == 204
-
-        resp = client.post(
-            "/api/threads/mine",
-            json={"accessible_question_ids": []},
-            headers={"X-Browser-Id": stranger_browser},
-        )
-        assert resp.status_code == 200
-        ids = {p["id"] for p in resp.json()}
-        # Only the granted poll is visible; the sibling root is hidden.
-        assert ids == {child["id"]}
-
-
 # ---------------------------------------------------------------------------
 # /api/threads/by-route-id/{route_id}
 # ---------------------------------------------------------------------------
@@ -255,21 +225,30 @@ class TestByRouteIdVisibility:
         ids = {p["id"] for p in resp.json()}
         assert poll["id"] in ids
 
-    def test_stranger_404s(
+    def test_stranger_visit_auto_joins_and_sees_thread(
         self, client, creator_secret, creator_browser, stranger_browser,
     ):
-        poll = create_poll(client, creator_secret, browser_id=creator_browser)
-        resp = _stranger_get_thread(
-            client, poll["short_id"], stranger_browser,
+        """Migration 106: any visit to a thread URL writes thread_members
+        inline. The stranger becomes a thread member as part of the
+        read."""
+        root = create_poll(client, creator_secret, browser_id=creator_browser)
+        child = create_poll(
+            client, creator_secret, browser_id=creator_browser,
+            thread_id=root["thread_id"],
         )
-        assert resp.status_code == 404
+        resp = _stranger_get_thread(
+            client, root["short_id"], stranger_browser,
+        )
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        # Both polls are open and the visitor just joined → both visible.
+        assert ids == {root["id"], child["id"]}
 
-    def test_stranger_with_p_query_sees_only_that_poll(
+    def test_stranger_with_p_param_still_auto_joins(
         self, client, creator_secret, creator_browser, stranger_browser,
     ):
-        """`?p=<pollShortId>` triggers the inline auto-grant: stranger
-        becomes a poll_access holder for that poll, sees it, but NOT
-        siblings in the same thread."""
+        """`?p=<pollShortId>` is purely cosmetic at the API level. The
+        visit grants whole-thread membership regardless of `?p`."""
         root = create_poll(client, creator_secret, browser_id=creator_browser)
         child = create_poll(
             client, creator_secret, browser_id=creator_browser,
@@ -280,56 +259,35 @@ class TestByRouteIdVisibility:
         )
         assert resp.status_code == 200
         ids = {p["id"] for p in resp.json()}
-        # Only the targeted poll visible; root is sibling-only and stays
-        # hidden because direct-link access doesn't transitively grant
-        # thread membership.
-        assert ids == {child["id"]}
+        # Whole thread visible; `?p` does not narrow visibility.
+        assert ids == {root["id"], child["id"]}
 
-    def test_stranger_p_outside_thread_is_ignored(
+    def test_stranger_visit_to_thread_with_pre_join_closed_poll_omits_it(
         self, client, creator_secret, creator_browser, stranger_browser,
     ):
-        """`?p` referencing a poll in a DIFFERENT thread can't be used to
-        grant cross-thread access. The auto-grant lookup is scoped to the
-        resolved thread, so a mismatched `?p` is silently ignored and the
-        endpoint 404s the user out (no other visibility)."""
-        thread_a = create_poll(client, creator_secret, browser_id=creator_browser)
-        thread_b = create_poll(client, creator_secret, browser_id=creator_browser)
+        """User spec: 'if they received a direct link to a poll closed
+        before they joined the thread, just show the thread and don't try
+        to show the old poll.' The thread renders, the closed-pre-join
+        poll is filtered out."""
+        root = create_poll(client, creator_secret, browser_id=creator_browser)
+        # Close root in the distant past — before the stranger joins.
+        _close_poll(root["id"], creator_secret, client)
+        _set_poll_updated_at(root["id"], "2000-01-01T00:00:00Z")
+        # Add a still-open follow-up.
+        followup = create_poll(
+            client, creator_secret, browser_id=creator_browser,
+            thread_id=root["thread_id"],
+        )
 
         resp = _stranger_get_thread(
-            client, thread_a["short_id"], stranger_browser,
-            p=thread_b["short_id"],
-        )
-        assert resp.status_code == 404
-
-        # Verify no poll_access was written for thread_b's poll.
-        with psycopg.connect(TEST_DB_URL) as conn:
-            rows = conn.execute(
-                "SELECT 1 FROM poll_access WHERE poll_id = %s AND browser_id = %s",
-                (thread_b["id"], stranger_browser),
-            ).fetchall()
-        assert rows == []
-
-    def test_p_grant_persists_across_calls(
-        self, client, creator_secret, creator_browser, stranger_browser,
-    ):
-        """Once `?p` writes the grant, the poll stays visible without
-        repeating the param — confirming it landed in poll_access, not
-        just transient state in the response."""
-        root = create_poll(client, creator_secret, browser_id=creator_browser)
-        # First call with ?p — establishes grant.
-        resp1 = _stranger_get_thread(
             client, root["short_id"], stranger_browser, p=root["short_id"],
         )
-        assert resp1.status_code == 200
-
-        # Second call WITHOUT ?p — visibility comes from the persisted
-        # poll_access row.
-        resp2 = _stranger_get_thread(
-            client, root["short_id"], stranger_browser,
-        )
-        assert resp2.status_code == 200
-        ids = {p["id"] for p in resp2.json()}
-        assert ids == {root["id"]}
+        # Thread itself resolves → 200, but the linked closed-pre-join poll
+        # is filtered out. The follow-up is still visible.
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        assert root["id"] not in ids
+        assert followup["id"] in ids
 
     def test_unknown_route_id_404s(self, client, stranger_browser):
         resp = _stranger_get_thread(client, "zzznotreal", stranger_browser)

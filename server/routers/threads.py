@@ -1,4 +1,4 @@
-"""Thread API endpoints (Phase B.3 / C.3 of the thread routing redesign).
+"""Thread API endpoints.
 
 Two read endpoints — `POST /api/threads/mine` and
 `GET /api/threads/by-route-id/{route_id}` — collapse the legacy three-step
@@ -12,37 +12,20 @@ the existing flow.
 
 A third endpoint — `DELETE /api/threads/{route_id}/membership` — is the
 explicit "leave thread" action. It removes the caller's `thread_members`
-row, taking the user out of membership-driven visibility. This is the
-follow-up to Phase C.3 that gates retirement of the legacy
-`accessible_question_ids` bridge: once the FE wires forget-of-last-poll
-(or an explicit "leave thread" UX) to call this, the bridge can be
-dropped from `/api/threads/mine`.
+row, taking the user out of membership-driven visibility.
 
-Phase C.3: both read endpoints enforce the visibility rule documented in
+Both read endpoints enforce the visibility rule documented in
 `services/threads.py` against the browser_id captured by
-`BrowserIdMiddleware`. The membership tables (Phase C.1) and auto-join
-writes (Phase C.2) feed this filter.
-
-Phase C.3 decisions on the previously-open semantic questions:
-
-  * **Join trigger**: vote/create only (Phase C.2 default preserved).
-    The /access endpoint still grants poll_access (per-poll, not thread
-    membership) and the `?p=` auto-grant on /by-route-id mirrors that.
-  * **Non-member visiting `/t/<id>` with no `?p`**: 404. We treat "no
-    visibility into any poll of this thread" the same as "no such
-    thread" for both UX simplicity and consistent FE error handling.
-  * **Forget vs leave**: forget stays localStorage-only. We do NOT
-    delete `thread_members` on forget by default; the home view uses
-    the legacy `accessible_question_ids` bridge to narrow membership-
-    thread visibility during the rollout. The DELETE membership
-    endpoint is the explicit "leave thread" action that tears down
-    membership directly — it lets the FE retire the bridge once
-    wired up.
+`BrowserIdMiddleware`. Migration 106 retired per-poll access — visiting
+any thread URL via `/by-route-id/{id}` writes a `thread_members` row
+inline, granting whole-thread visibility (subject to the
+closed-before-join filter). Sharing a thread link with someone is now
+sufficient to bring them into the conversation; they don't need to vote
+first.
 """
 
 from __future__ import annotations
 
-import psycopg.errors
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -51,12 +34,11 @@ from models import PollResponse, UpdateThreadTitleRequest
 from services.memberships import leave_thread as _leave_thread_row
 from services.threads import (
     filter_visible_polls,
-    grant_poll_access_inline,
+    grant_thread_membership_inline,
     load_user_visibility,
     poll_ids_for_thread_ids,
     polls_for_poll_ids,
     resolve_thread_id_from_route_id,
-    thread_ids_for_poll_ids,
 )
 
 
@@ -96,10 +78,11 @@ class MyThreadsRequest(BaseModel):
 
     `accessible_question_ids` is the FE's localStorage list — used as a
     transitional access bridge for users without thread_members rows yet
-    (pre-B.3 voters, etc.). Phase C.3 honors it as poll-level access and
-    intersects membership-thread visibility with it so forget keeps its
-    "thread disappears from home" semantics until an explicit leave
-    action lands.
+    (pre-B.3 voters, etc.). Treated as thread-level access (every poll
+    in the resolved thread visible, no closed_at filter) to preserve
+    Phase B.3 behavior. Also drives the forget bridge: when present, the
+    home list narrows member-threads to those still represented in the
+    list, so forgetting every question in a thread removes it from home.
     """
 
     accessible_question_ids: list[str] = Field(default_factory=list)
@@ -108,25 +91,20 @@ class MyThreadsRequest(BaseModel):
 
 @router.post("/mine", response_model=list[PollResponse])
 def get_my_threads(req: MyThreadsRequest, request: Request):
-    """Return every poll the user has visibility into (per Phase C.3
-    rule).
+    """Return every poll the user has visibility into.
 
     The candidate set is the union of:
       * Polls in any thread the browser is a member of (subject to the
         closed_at filter), AND
-      * Polls explicitly granted via /access (poll_access rows), AND
       * Polls in any thread reached via the legacy `accessible_question_ids`
         bridge (unfiltered — preserves Phase B.3 contract that "any
         question_id grants access to its whole thread").
 
     Forget bridge: when the FE passes `accessible_question_ids`, the home
-    list is narrowed to threads the user still has a NON-membership signal
-    in (poll_access OR legacy bridge). Without this, a thread_members row
-    would keep a thread alive on the home list even after the user
-    forgot every question in it. Membership-only callers (no legacy list
-    passed) skip the narrowing — once an explicit `DELETE
-    /api/threads/{id}/membership` lands, this transitional carve-out goes
-    away.
+    list is narrowed to threads still represented in that list. Without
+    this, a thread_members row would keep a thread alive on the home list
+    even after the user forgot every question in it. Membership-only
+    callers (no legacy list passed) skip the narrowing.
     """
     browser_id = _browser_id(request)
 
@@ -137,34 +115,20 @@ def get_my_threads(req: MyThreadsRequest, request: Request):
             legacy_question_ids=req.accessible_question_ids or None,
         )
 
-        # Threads the user has a non-membership signal in. Used both as
-        # the bridged-visibility input (already in `visibility`) and as
-        # the forget bridge's "interesting" set.
-        access_thread_ids = set(
-            thread_ids_for_poll_ids(conn, visibility.access_poll_ids)
-        )
-        signal_thread_ids = visibility.bridged_thread_ids | access_thread_ids
-
         member_thread_ids = set(visibility.joined_by_thread.keys())
         if req.accessible_question_ids:
-            # Forget bridge: drop member-threads with no concurrent signal.
-            member_thread_ids &= signal_thread_ids
+            # Forget bridge: drop member-threads with no bridge signal.
+            member_thread_ids &= visibility.bridged_thread_ids
 
-        # Candidate threads = signal threads (bridge + access) + filtered
-        # member threads. Bridge threads always show; member threads
-        # contribute only if they survived the forget bridge.
-        candidate_thread_ids = signal_thread_ids | member_thread_ids
-        candidate_pids = set(
-            poll_ids_for_thread_ids(conn, list(candidate_thread_ids))
-        )
-        # Explicit per-poll access (e.g. direct-link visit) survives
-        # even if its thread is otherwise hidden — this is the "direct
-        # link from a stranger" path that doesn't grant thread membership.
-        candidate_pids |= visibility.access_poll_ids
+        # Candidate threads = bridge threads + filtered member threads.
+        # Bridge threads always show; member threads contribute only if
+        # they survived the forget bridge.
+        candidate_thread_ids = visibility.bridged_thread_ids | member_thread_ids
+        candidate_pids = poll_ids_for_thread_ids(conn, list(candidate_thread_ids))
         if not candidate_pids:
             return []
 
-        visible_pids = filter_visible_polls(conn, list(candidate_pids), visibility)
+        visible_pids = filter_visible_polls(conn, candidate_pids, visibility)
         return polls_for_poll_ids(
             conn, visible_pids, include_results=req.include_results
         )
@@ -185,17 +149,27 @@ def get_thread_by_route_id(
       - `polls.short_id` (Phase A → Phase B.3 fallback)
       - `polls.id` (uuid fallback)
 
-    Optional `?p=<pollShortId>`: when present, a `poll_access` row is
-    written inline for that poll (resolved within this thread) BEFORE
-    visibility filtering runs. This race-safely surfaces the targeted
-    poll when a stranger lands on `/t/<thread>?p=<poll>` — without it, a
-    cold-start direct-link landing would hit by-route-id before the FE's
-    parallel `apiGrantPollAccess` call lands on the server, returning an
-    empty thread.
+    The caller is auto-joined to the resolved thread inline (idempotent
+    via ON CONFLICT). Sharing a thread link is the canonical "invite
+    someone" mechanism: visiting any form of the URL (with or without
+    `?p=`) writes thread membership BEFORE the visibility filter runs.
 
-    Phase C.3: 404 when neither the resolved thread nor the optional `?p`
-    grant produces any visible poll — i.e. the user is neither a member
-    nor a direct-link visitor.
+    Closed-before-join filter still applies: a brand-new member sees open
+    polls plus polls closed after `joined_at`, but not polls closed
+    before. If the URL carries `?p=<pollShortId>` referencing one of
+    those closed-pre-join polls, the linked poll is silently absent —
+    the FE shows the rest of the thread (per the user spec: "just show
+    the thread and don't try to show the old poll").
+
+    `?p=` is purely cosmetic at the API level — it doesn't affect
+    visibility or the inline-grant scope. The FE uses it to pick which
+    poll to auto-expand and scroll to, and the `/preview` endpoint uses
+    it to target link-preview metadata.
+
+    Returns 404 only when route resolution itself fails (no such
+    thread). An empty visible-polls list returns 200 with `[]` so the
+    thread page can still render its chrome (header + Share + Create
+    Poll).
     """
     browser_id = _browser_id(request)
 
@@ -204,31 +178,15 @@ def get_thread_by_route_id(
         if not thread_id:
             raise HTTPException(status_code=404, detail="Thread not found")
 
-        # `?p=` auto-grant: best-effort. A bogus poll short_id is silently
-        # ignored (the visibility filter then 404s), and a poll outside
-        # this thread is also ignored — we explicitly scope the lookup to
-        # the resolved thread to prevent ?p from leaking access to polls
-        # in another thread that happens to match the short_id.
-        if p and browser_id:
-            row = conn.execute(
-                "SELECT id FROM polls "
-                "WHERE short_id = %(s)s AND thread_id = %(t)s::uuid",
-                {"s": p, "t": thread_id},
-            ).fetchone()
-            if row:
-                try:
-                    grant_poll_access_inline(conn, str(row["id"]), browser_id)
-                except psycopg.errors.ForeignKeyViolation:
-                    # Poll vanished between the lookup and the insert.
-                    # The visibility filter will surface this as 404 via
-                    # the empty result.
-                    pass
+        # Auto-join: every visit becomes a thread member. Idempotent via
+        # ON CONFLICT, so re-visits don't advance joined_at — the
+        # closed-before-join filter compares against the FIRST visit's
+        # watermark.
+        grant_thread_membership_inline(conn, thread_id, browser_id)
 
         visibility = load_user_visibility(conn, browser_id)
         thread_pids = poll_ids_for_thread_ids(conn, [thread_id])
         visible_pids = filter_visible_polls(conn, thread_pids, visibility)
-        if not visible_pids:
-            raise HTTPException(status_code=404, detail="Thread not found")
         return polls_for_poll_ids(
             conn, visible_pids, include_results=include_results
         )
@@ -241,7 +199,7 @@ def get_thread_by_route_id(
 def get_thread_preview(route_id: str, p: str | None = None):
     """Public link-preview metadata for Open Graph / Twitter Card crawlers.
 
-    Visibility-free + no `poll_access` writes: crawlers (Slack, iMessage,
+    Visibility-free + no membership writes: crawlers (Slack, iMessage,
     Twitter, etc.) hit URLs without any browser identity, and gating
     them on visibility would 404 every share. Returning only title +
     description (no votes, no question contents) keeps this safe.
@@ -370,11 +328,10 @@ def leave_thread(route_id: str, request: Request):
     fails (404) when none of those produce a thread — distinguishing
     "thread doesn't exist" from "no membership to remove".
 
-    `poll_access` rows are NOT touched. A user who joined a thread,
-    accessed a specific poll directly, then left the thread keeps the
-    poll-level access — that direct-link relationship is independent of
-    thread membership. To revoke poll access, drop poll_access rows on
-    the FE side (no endpoint yet — out of scope for this follow-up).
+    Migration 106 retired per-poll access; thread membership is the only
+    access mechanism. Re-visiting any thread URL after leave will write
+    a fresh thread_members row (with a new joined_at watermark), so
+    "leave" is durable only against the user not navigating back.
 
     No-op when `browser_id` is missing (no middleware id, no row to
     remove). Returns 204 either way.

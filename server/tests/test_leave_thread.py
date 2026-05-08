@@ -1,11 +1,16 @@
-"""Phase C.3 follow-up — DELETE /api/threads/{route_id}/membership.
+"""DELETE /api/threads/{route_id}/membership — explicit "leave thread".
 
 The "leave thread" endpoint is the explicit teardown counterpart to the
-auto-join writes in Phase C.2. It exists so the FE can retire the legacy
+auto-join writes (creator on create, voter on vote, visitor on
+by-route-id read). It exists so the FE can retire the legacy
 `accessible_question_ids` bridge in `/api/threads/mine`: once the FE
 calls DELETE on forget-of-last-poll (or via an explicit "leave thread"
 UX), `thread_members` becomes the sole source of truth for "is this
 thread on my home list" and the bridge is dead code.
+
+Migration 106 retired per-poll access; thread membership is the only
+access mechanism. Note that re-visiting a thread URL after leave will
+write a fresh `thread_members` row with a new `joined_at` watermark.
 
 Shared fixtures (`client`, `creator_secret`, `browser_id`) and helpers
 (`create_poll`, `bid_headers`, `thread_members_for`) live in
@@ -14,24 +19,13 @@ Shared fixtures (`client`, `creator_secret`, `browser_id`) and helpers
 
 import uuid
 
-import psycopg
 import pytest
 
 from tests.conftest import (
-    TEST_DB_URL,
     bid_headers,
     create_poll,
     thread_members_for,
 )
-
-
-def _poll_access(poll_id, browser_id):
-    with psycopg.connect(TEST_DB_URL) as conn:
-        rows = conn.execute(
-            "SELECT 1 FROM poll_access WHERE poll_id = %s AND browser_id = %s",
-            (poll_id, browser_id),
-        ).fetchall()
-    return len(rows) == 1
 
 
 class TestLeaveThread:
@@ -113,28 +107,6 @@ class TestLeaveThread:
             headers=bid_headers(browser_id),
         )
         assert resp.status_code == 404
-
-    def test_leave_does_not_revoke_poll_access(
-        self, client, creator_secret, browser_id,
-    ):
-        """Leaving a thread tears down `thread_members` only. Per-poll
-        access (poll_access rows) survives the leave — direct-link
-        relationships are independent of thread membership."""
-        poll = create_poll(client, creator_secret, browser_id=browser_id)
-        grant = client.post(
-            f"/api/polls/{poll['id']}/access",
-            headers=bid_headers(browser_id),
-        )
-        assert grant.status_code == 204
-        assert _poll_access(poll["id"], browser_id) is True
-
-        resp = client.delete(
-            f"/api/threads/{poll['short_id']}/membership",
-            headers=bid_headers(browser_id),
-        )
-        assert resp.status_code == 204
-        assert browser_id not in thread_members_for(poll["thread_id"])
-        assert _poll_access(poll["id"], browser_id) is True
 
     @pytest.mark.parametrize(
         "route_id_field",

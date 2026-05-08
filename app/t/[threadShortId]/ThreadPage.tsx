@@ -6,7 +6,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyThreads } from "@/lib/simpleQuestionQueries";
 import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
-import { apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiGrantPollAccess, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
 import type { QuestionResults } from "@/lib/types";
@@ -32,6 +32,7 @@ import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { type QuestionBallotHandle } from "@/components/QuestionBallot";
 import ThreadHeader from "@/components/ThreadHeader";
+import ThreadShareButton from "@/components/ThreadShareButton";
 import { forgetQuestion } from "@/lib/forgetQuestion";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./threadActionCopy";
 import { ThreadCardItem, type SwipeState, type ThreadCardGroup } from "./ThreadCardItem";
@@ -122,14 +123,10 @@ function rebuildThreadFromCacheOrPrev(
 
 interface ThreadContentProps {
   threadId: string;
-  /** Poll short_id from `?p=<id>`. Forwarded to apiGetThreadByRouteId so
-   *  the server inline-grants poll_access for cold-load direct links —
-   *  same Phase C.3 race fix as ThreadPageInner's first call. */
-  initialPollShortId?: string | null;
   initialExpandedQuestionId?: string | null;
 }
 
-export function ThreadContent({ threadId, initialExpandedQuestionId = null, initialPollShortId = null }: ThreadContentProps) {
+export function ThreadContent({ threadId, initialExpandedQuestionId = null }: ThreadContentProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
 
@@ -408,7 +405,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
         // coalesced, so the later per-card fetch hits the warm cache.
         let polls: Poll[];
         try {
-          polls = await apiGetThreadByRouteId(threadId, { pollShortId: initialPollShortId });
+          polls = await apiGetThreadByRouteId(threadId);
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) { setError(true); return; }
           throw err;
@@ -1498,6 +1495,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null, init
         anonymousCount={thread.anonymousRespondentCount}
         subtitle={`${thread.questions.length} ${thread.questions.length === 1 ? 'question' : 'questions'}`}
         onTitleClick={() => navigateWithTransition(router, `/t/${threadId}/info`, 'forward')}
+        rightSlot={<ThreadShareButton routeId={threadId} title={thread.title} />}
       />
 
       {/* paddingTop reserves space for the fixed header above. */}
@@ -1901,7 +1899,7 @@ function ThreadPageInner() {
         // one call. Fall back to the per-poll endpoint when the thread
         // endpoint 404s (older deploys, network glitches) so we don't lose
         // resolution on partially-rolled-out backends.
-        const polls = await apiGetThreadByRouteId(threadShortId, { pollShortId: pollParam }).catch((err: unknown) => {
+        const polls = await apiGetThreadByRouteId(threadShortId).catch((err: unknown) => {
           if (err instanceof ApiError && err.status === 404) return null;
           throw err;
         });
@@ -1937,26 +1935,16 @@ function ThreadPageInner() {
     return () => { cancelled = true; };
   }, [threadShortId, router, rootInitial]);
 
-  // `?p=<id>` → resolve to the cached Poll once, drive both the
-  // initial-expand target AND the Phase C.2 access grant from it.
+  // `?p=<id>` → resolve to the cached Poll once for the initial-expand
+  // target. Migration 106 retired per-poll access; thread membership is
+  // granted server-side as part of the by-route-id GET, so no separate
+  // grant call is needed here.
   const targetPoll = useMemo<Poll | null>(() => {
     if (typeof window === "undefined" || !pollParam || !rootPoll) return null;
     return getCachedPollForShortId(pollParam);
   }, [pollParam, rootPoll]);
 
   const initialExpandedQuestionId = targetPoll?.questions[0]?.id ?? null;
-
-  // Phase C.2: idempotent server-side via ON CONFLICT, but the useRef
-  // guard avoids the duplicate POST that fires when `rootPoll` churns
-  // post-mount (e.g. cache-hit initial paint then async refresh resets
-  // the same value).
-  const grantedPollIdsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!targetPoll) return;
-    if (grantedPollIdsRef.current.has(targetPoll.id)) return;
-    grantedPollIdsRef.current.add(targetPoll.id);
-    void apiGrantPollAccess(targetPoll.id);
-  }, [targetPoll]);
 
   if (error) {
     return (
@@ -1999,7 +1987,6 @@ function ThreadPageInner() {
     <ThreadContent
       threadId={threadRouteId}
       initialExpandedQuestionId={initialExpandedQuestionId}
-      initialPollShortId={pollParam}
     />
   );
 }

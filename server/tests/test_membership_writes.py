@@ -1,18 +1,19 @@
-"""Phase C.2 — write-only membership tests.
+"""Write-only membership tests.
 
 Covers:
   * thread_members written on POST /api/polls (creator auto-joins)
   * thread_members written on POST /api/polls/{id}/votes (voter auto-joins)
-  * poll_access written on POST /api/polls/{id}/access (direct-link grant)
+  * thread_members written on GET /api/threads/by-route-id/{id} (visit auto-joins)
   * Idempotency: composite PK + ON CONFLICT DO NOTHING preserves the
-    original joined_at / granted_at watermark
+    original joined_at watermark
   * Browser_id isolation: two browsers voting in one thread produce two rows
-  * Decoupling: membership write is in a separate transaction from the
-    triggering action — a vote that fails validation still leaves
-    thread_members in place
+  * Decoupling: vote/create membership write is in a separate transaction
+    from the triggering action — a vote that fails validation still
+    leaves thread_members in place
 
-Phase C.2 doesn't enforce visibility yet; these tests verify the writes
-happen, not that any read path filters on them. Phase C.3 read-side
+Migration 106 retired per-poll access. The visit-path auto-join is
+inline in the by-route-id read transaction, so it can't be observed
+without going through `/api/threads/by-route-id`. Read-side visibility
 filtering tests live in test_threads_visibility.py.
 
 Shared fixtures (`client`, `creator_secret`, `browser_id`) and helpers
@@ -32,15 +33,6 @@ def _thread_members(thread_id):
         rows = conn.execute(
             "SELECT browser_id, joined_at FROM thread_members WHERE thread_id = %s",
             (thread_id,),
-        ).fetchall()
-    return rows
-
-
-def _poll_access(poll_id):
-    with psycopg.connect(TEST_DB_URL) as conn:
-        rows = conn.execute(
-            "SELECT browser_id, granted_at FROM poll_access WHERE poll_id = %s",
-            (poll_id,),
         ).fetchall()
     return rows
 
@@ -210,76 +202,74 @@ class TestVoteMembership:
         assert voter_browser in bids
 
 
-class TestPollAccessEndpoint:
-    def test_grant_writes_row(self, client, creator_secret):
+class TestVisitAutoJoin:
+    """Visiting `/api/threads/by-route-id/{id}` writes thread_members
+    inline. Migration 106 made thread URLs the canonical 'invite' — the
+    bare URL grants whole-thread membership."""
+
+    def test_visit_creates_thread_members_row(self, client, creator_secret):
         poll = create_poll(client, creator_secret)
         visitor_browser = str(uuid.uuid4())
-        resp = client.post(
-            f"/api/polls/{poll['id']}/access",
+        resp = client.get(
+            f"/api/threads/by-route-id/{poll['short_id']}",
             headers={"X-Browser-Id": visitor_browser},
         )
-        assert resp.status_code == 204
-
-        rows = _poll_access(poll["id"])
-        bids = {str(r[0]) for r in rows}
-        assert visitor_browser in bids
-
-    def test_grant_is_idempotent(self, client, creator_secret):
-        poll = create_poll(client, creator_secret)
-        visitor_browser = str(uuid.uuid4())
-        for _ in range(3):
-            resp = client.post(
-                f"/api/polls/{poll['id']}/access",
-                headers={"X-Browser-Id": visitor_browser},
-            )
-            assert resp.status_code == 204
-
-        rows = _poll_access(poll["id"])
-        # Same browser, multiple grants → exactly one row.
-        bids = [str(r[0]) for r in rows if str(r[0]) == visitor_browser]
-        assert len(bids) == 1
-
-    def test_grant_preserves_original_granted_at(self, client, creator_secret):
-        poll = create_poll(client, creator_secret)
-        visitor_browser = str(uuid.uuid4())
-        client.post(
-            f"/api/polls/{poll['id']}/access",
-            headers={"X-Browser-Id": visitor_browser},
-        )
-        first = next(
-            r[1] for r in _poll_access(poll["id"]) if str(r[0]) == visitor_browser
-        )
-        # Re-grant; granted_at watermark must NOT advance.
-        client.post(
-            f"/api/polls/{poll['id']}/access",
-            headers={"X-Browser-Id": visitor_browser},
-        )
-        second = next(
-            r[1] for r in _poll_access(poll["id"]) if str(r[0]) == visitor_browser
-        )
-        assert first == second
-
-    def test_grant_404_for_unknown_poll(self, client):
-        bogus = str(uuid.uuid4())
-        resp = client.post(
-            f"/api/polls/{bogus}/access",
-            headers={"X-Browser-Id": str(uuid.uuid4())},
-        )
-        assert resp.status_code == 404
-
-    def test_grant_does_not_create_thread_members(self, client, creator_secret):
-        """Direct-link access does NOT transitively grant thread membership.
-        Phase C.3 will resolve visibility as the union of `thread_members`
-        and `poll_access`; verifying the boundary here keeps that semantics
-        intact."""
-        poll = create_poll(client, creator_secret)
-        visitor_browser = str(uuid.uuid4())
-        resp = client.post(
-            f"/api/polls/{poll['id']}/access",
-            headers={"X-Browser-Id": visitor_browser},
-        )
-        assert resp.status_code == 204
+        assert resp.status_code == 200
 
         rows = _thread_members(poll["thread_id"])
         bids = {str(r[0]) for r in rows}
-        assert visitor_browser not in bids
+        assert visitor_browser in bids
+
+    def test_visit_is_idempotent(self, client, creator_secret):
+        poll = create_poll(client, creator_secret)
+        visitor_browser = str(uuid.uuid4())
+        for _ in range(3):
+            resp = client.get(
+                f"/api/threads/by-route-id/{poll['short_id']}",
+                headers={"X-Browser-Id": visitor_browser},
+            )
+            assert resp.status_code == 200
+
+        rows = _thread_members(poll["thread_id"])
+        bids = [str(r[0]) for r in rows if str(r[0]) == visitor_browser]
+        assert len(bids) == 1
+
+    def test_visit_preserves_original_joined_at(self, client, creator_secret):
+        """Re-visit must NOT advance `joined_at` — the closed-before-join
+        filter compares against the FIRST visit's watermark, so a churn
+        of revisits would silently un-hide newly-closed polls otherwise."""
+        poll = create_poll(client, creator_secret)
+        visitor_browser = str(uuid.uuid4())
+        client.get(
+            f"/api/threads/by-route-id/{poll['short_id']}",
+            headers={"X-Browser-Id": visitor_browser},
+        )
+        first = next(
+            r[1] for r in _thread_members(poll["thread_id"])
+            if str(r[0]) == visitor_browser
+        )
+        client.get(
+            f"/api/threads/by-route-id/{poll['short_id']}",
+            headers={"X-Browser-Id": visitor_browser},
+        )
+        second = next(
+            r[1] for r in _thread_members(poll["thread_id"])
+            if str(r[0]) == visitor_browser
+        )
+        assert first == second
+
+    def test_visit_404_does_not_create_row(self, client):
+        bogus = "zzznotreal"
+        visitor_browser = str(uuid.uuid4())
+        resp = client.get(
+            f"/api/threads/by-route-id/{bogus}",
+            headers={"X-Browser-Id": visitor_browser},
+        )
+        assert resp.status_code == 404
+        # Sanity: no rows for this browser anywhere.
+        with psycopg.connect(TEST_DB_URL) as conn:
+            rows = conn.execute(
+                "SELECT 1 FROM thread_members WHERE browser_id = %s",
+                (visitor_browser,),
+            ).fetchall()
+        assert rows == []

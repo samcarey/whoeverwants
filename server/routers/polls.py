@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-import psycopg.errors
 from fastapi import APIRouter, HTTPException, Request
 
 from algorithms.poll_title import generate_poll_title
@@ -489,30 +488,11 @@ def get_poll(short_id: str):
     return _row_to_poll(row, question_rows, voter_names, anonymous_count)
 
 
-@router.post("/{poll_id}/access", status_code=204)
-def grant_poll_access_endpoint(poll_id: str, request: Request):
-    """Phase C.2: record direct-link access to one poll. Called when a user
-    lands on `/t/<thread>?p=<poll>` so non-thread-members can still see the
-    poll they followed a link to. Phase C.3 will read these rows."""
-    browser_id = _browser_id(request)
-    if not browser_id:
-        return
-    # The FK on poll_access.poll_id IS the existence check — a missing poll
-    # surfaces as `ForeignKeyViolation`, which we translate to 404 without
-    # the second SELECT (and without the TOCTOU window between SELECT and
-    # INSERT).
-    try:
-        with get_db() as conn:
-            conn.execute(
-                """
-                INSERT INTO poll_access (poll_id, browser_id)
-                VALUES (%(poll_id)s, %(browser_id)s)
-                ON CONFLICT (poll_id, browser_id) DO NOTHING
-                """,
-                {"poll_id": poll_id, "browser_id": browser_id},
-            )
-    except psycopg.errors.ForeignKeyViolation:
-        raise HTTPException(status_code=404, detail="Poll not found")
+# Migration 106 retired per-poll access entirely. The standalone
+# `POST /api/polls/{id}/access` endpoint and the `?p=` auto-grant on
+# `/api/threads/by-route-id/{id}` are gone — sharing a thread URL grants
+# whole-thread membership inline on the read endpoint, so callers no
+# longer need a separate grant request.
 
 
 # ---------------------------------------------------------------------------
