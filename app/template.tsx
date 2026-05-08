@@ -49,6 +49,12 @@ function DiagnosticOverlay() {
     bodyHeight: number;  // body.getBoundingClientRect().height
     bottomMarkerY: number; // y-coord on screen of an element with style {position: fixed; bottom: 0}
   } | null>(null);
+  const [copiedAt, setCopiedAt] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    if (copiedAt === null) return;
+    const id = setTimeout(() => setCopiedAt(null), 1500);
+    return () => clearTimeout(id);
+  }, [copiedAt]);
 
   React.useEffect(() => {
     const probe = document.createElement('div');
@@ -89,9 +95,18 @@ function DiagnosticOverlay() {
       <div style={{ position: 'fixed', left: 0, right: 0, top: 'calc(100vh - 6px)', height: 6, background: '#ff00ff', zIndex: 9997, pointerEvents: 'none' }} />
       {/* Black: top: 100dvh - 6px (dvh = dynamic viewport height) — should land at bottom of dynamic visual viewport */}
       <div style={{ position: 'fixed', left: 0, right: 0, top: 'calc(100dvh - 6px)', height: 6, background: '#000000', zIndex: 9996, pointerEvents: 'none' }} />
-      {/* Text readout */}
+      {/* Text readout — tap to copy values to clipboard */}
       {m && (
-        <div style={{ position: 'fixed', right: 4, bottom: 12, padding: '6px 8px', background: 'rgba(0,0,0,0.85)', color: '#fff', fontFamily: 'monospace', fontSize: 10, lineHeight: 1.3, zIndex: 10000, pointerEvents: 'none', textAlign: 'right', borderRadius: 4 }}>
+        <button
+          onClick={() => {
+            const txt = `innerH=${m.iH}\ndocH=${m.dH}\nscrH=${m.sH}\nvisualH=${m.visualBottom}\nbodyH=${Math.round(m.bodyHeight)}\nsafeBot=${m.safeBottom}\nfixed-bot-Y=${Math.round(m.bottomMarkerY)}`;
+            navigator.clipboard?.writeText(txt).then(
+              () => { setCopiedAt(Date.now()); },
+              () => {},
+            );
+          }}
+          style={{ position: 'fixed', right: 4, bottom: 12, padding: '6px 8px', background: copiedAt ? 'rgba(0,180,0,0.95)' : 'rgba(0,0,0,0.85)', color: '#fff', fontFamily: 'monospace', fontSize: 10, lineHeight: 1.3, zIndex: 10000, textAlign: 'right', borderRadius: 4, border: 'none', cursor: 'pointer' }}
+        >
           <div>innerH={m.iH}</div>
           <div>docH={m.dH}</div>
           <div>scrH={m.sH}</div>
@@ -99,7 +114,8 @@ function DiagnosticOverlay() {
           <div>bodyH={Math.round(m.bodyHeight)}</div>
           <div>safeBot={m.safeBottom}</div>
           <div>fixed-bot-Y={Math.round(m.bottomMarkerY)}</div>
-        </div>
+          {copiedAt && <div style={{ marginTop: 2, fontWeight: 'bold' }}>copied!</div>}
+        </button>
       )}
     </>
   );
