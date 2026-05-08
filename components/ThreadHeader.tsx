@@ -24,8 +24,7 @@ export interface ThreadHeaderProps {
  *
  * onBack defaults to navigating to '/'; sub-routes pass their own handler
  * (e.g. back to the thread root or the info page when in-app history exists).
- * rightSlot renders an action button on the right; when provided, the title
- * becomes centered to balance the layout.
+ * rightSlot renders an action button on the right.
  */
 export default function ThreadHeader({
   headerRef,
@@ -43,11 +42,7 @@ export default function ThreadHeader({
 
   const titleBlock = (
     <>
-      <h1
-        className={`font-semibold text-lg text-gray-900 dark:text-white truncate${
-          hasRightSlot ? ' text-center px-1' : ''
-        }`}
-      >
+      <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
         {title}
       </h1>
       {subtitle && (
