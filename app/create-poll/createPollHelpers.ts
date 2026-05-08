@@ -337,7 +337,7 @@ const _CATEGORY_LABELS: Record<string, string> = {
   custom: 'Custom',
 };
 
-function _labelForCategory(category: string): string {
+export function labelForCategory(category: string): string {
   if (!category) return '';
   const key = category.trim().toLowerCase();
   if (key in _CATEGORY_LABELS) return _CATEGORY_LABELS[key];
@@ -352,7 +352,7 @@ function _singleQuestionDefaultTitle(category: string): string {
   const key = (category || '').trim().toLowerCase();
   if (key === 'yes_no') return 'Yes/No?';
   if (key === 'time') return 'Time?';
-  const label = _labelForCategory(category);
+  const label = labelForCategory(category);
   return label ? `${label}?` : 'Question?';
 }
 
@@ -388,7 +388,7 @@ function _buildDistinctContextsTitle(
   charLimit: number,
 ): string {
   const parts: string[] = cats.map((cat, i) => {
-    const label = _labelForCategory(cat);
+    const label = labelForCategory(cat);
     const ctx = (contexts[i] || '').trim();
     return ctx ? `${label} for ${ctx}` : label;
   });
@@ -439,7 +439,7 @@ export function draftPollPreview(
     // + its own context, falling back to poll-level context).
     const ctx = trimmedContext || drafts[0].forField.trim();
     title = ctx
-      ? `${_labelForCategory(_draftCategory(drafts[0]))} for ${ctx}`
+      ? `${labelForCategory(_draftCategory(drafts[0]))} for ${ctx}`
       : _singleQuestionDefaultTitle(_draftCategory(drafts[0]));
   } else {
     const cats = drafts.map(d => _draftCategory(d));
@@ -448,7 +448,7 @@ export function draftPollPreview(
     const shared = trimmedContext || sharedFromDrafts;
 
     if (shared) {
-      const joined = cats.map(_labelForCategory).join(', ');
+      const joined = cats.map(labelForCategory).join(', ');
       const candidate = `${joined} for ${shared}`;
       title = candidate.length <= TITLE_LIMIT
         ? candidate
@@ -456,7 +456,7 @@ export function draftPollPreview(
     } else if (contexts.some(c => c !== '')) {
       title = _buildDistinctContextsTitle(cats, contexts, TITLE_LIMIT);
     } else {
-      title = cats.map(_labelForCategory).join(', ');
+      title = cats.map(labelForCategory).join(', ');
     }
   }
 

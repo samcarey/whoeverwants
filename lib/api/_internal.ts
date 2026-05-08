@@ -157,6 +157,7 @@ export function toQuestion(data: any): Question {
     reference_location_label: data.reference_location_label ?? undefined,
     response_count: data.response_count ?? undefined,
     min_availability_percent: data.min_availability_percent ?? undefined,
+    is_auto_title: data.is_auto_title ?? undefined,
     poll_id: data.poll_id ?? null,
     question_index: data.question_index ?? null,
     voter_names: data.voter_names ?? undefined,

@@ -1169,10 +1169,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
         {/* Creation info lives on the compact card header (creator name + relative time);
              full timestamp is available via the tooltip on that time. */}
 
-        {/* Question details (expandable). Suppressed in multi-question groups
-             because the thread-page section label already renders
-             question.details (used there as the disambiguating context). */}
-        {question.details && !partOfPollGroup && <QuestionDetails details={question.details} />}
+        {/* Suppress when the thread-page section label already renders
+             question.details (multi-group), or when the auto-title encodes
+             the same context as a "for X" suffix — otherwise the same
+             string shows up twice (once as the title, once as a subtitle). */}
+        {question.details && !partOfPollGroup && question.is_auto_title !== true && <QuestionDetails details={question.details} />}
 
         {showReferenceLocation && (
           <div className="mb-1.5 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
