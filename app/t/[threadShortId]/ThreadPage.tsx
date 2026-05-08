@@ -6,6 +6,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyThreads } from "@/lib/simpleQuestionQueries";
 import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
+import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/threadRefresh";
 import { apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting } from "@/lib/useThreadVoting";
@@ -638,6 +639,117 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     window.addEventListener(POLL_FAILED_EVENT, handler);
     return () => window.removeEventListener(POLL_FAILED_EVENT, handler);
   }, []);
+
+  // ===================================================================
+  // Real-time refresh: periodically re-fetch the thread so other users'
+  // newly-created polls and votes appear without a manual reload.
+  //
+  // Tab-visible only (skipped when document.hidden) — a hidden tab's
+  // refresh would just consume battery and bandwidth; the visibility
+  // listener fires an immediate refresh on re-show so the user always
+  // lands on fresh state.
+  //
+  // No-op when ANY placeholder poll is in thread state (a local create is
+  // mid-flight): POLL_PENDING / POLL_HYDRATED owns that timeline and we
+  // don't want to race it. Same for an in-flight refresh — `inFlight`
+  // gates re-entry.
+  //
+  // Identity-preserving merge: `mergePollListPreservingIdentity` reuses
+  // prev `Poll` references for polls whose content didn't change, so the
+  // ThreadCardItem `arePropsEqual` slice-by-reference check short-circuits
+  // and unchanged cards skip re-render. New polls land at the bottom of
+  // the chronological list (server already sorts ASC by created_at). Vote
+  // updates flow through `voter_names` / `anonymous_count` on the poll
+  // and `results` on each question — the thread page's existing compact-
+  // preview pipeline picks up both via the matching state Maps.
+  //
+  // We pace via recursive setTimeout (5s after the previous response
+  // resolved) rather than setInterval so a slow network doesn't pile up
+  // overlapping fetches.
+  // ===================================================================
+  useEffect(() => {
+    if (!thread || error) return;
+    if (typeof document === 'undefined') return;
+
+    const REFRESH_INTERVAL_MS = 5000;
+    let cancelled = false;
+    let inFlight = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    const refresh = async () => {
+      if (cancelled || inFlight) return;
+      if (document.visibilityState !== 'visible') return;
+      const t = threadRef.current;
+      if (!t) return;
+      // A locally-submitted poll is being hydrated — let POLL_HYDRATED own
+      // the resolution rather than racing with our merge.
+      if (t.polls.some((p) => isPendingPollId(p.id))) return;
+
+      inFlight = true;
+      try {
+        const polls = await apiGetThreadByRouteId(threadId);
+        if (cancelled) return;
+
+        // Update inline-results map first so any card that re-renders via
+        // the thread-state replace below sees the fresh results in the
+        // same render tick.
+        setQuestionResultsMap((prev) => mergeQuestionResultsMap(prev, polls));
+
+        setThread((prev) => {
+          if (!prev) return prev;
+          const merge = mergePollListPreservingIdentity(prev.polls, polls);
+          if (!merge.changed) return prev;
+          // Rebuild the Thread struct using the merged poll list. The
+          // anchor must be a poll that exists in `merge.polls` — pick the
+          // chronological root from the merged set rather than `prev` to
+          // handle the (rare) case where the previous root was deleted.
+          const mergedRoot = findChainRoot(merge.polls);
+          if (!mergedRoot) return prev;
+          // Defer loadVotedQuestions to the changed-content branch so
+          // no-op ticks (the steady-state majority) don't pay the
+          // localStorage parse + Set allocation.
+          const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
+          const rebuilt = buildThreadFromPollDown(mergedRoot.id, merge.polls, voted, abstained);
+          if (!rebuilt) return prev;
+          return rebuilt;
+        });
+      } catch {
+        // Transient errors (network, server) — let the next tick retry.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const scheduleNext = () => {
+      if (cancelled) return;
+      timerId = setTimeout(async () => {
+        if (cancelled) return;
+        await refresh();
+        if (!cancelled) scheduleNext();
+      }, REFRESH_INTERVAL_MS);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !cancelled) {
+        // Refresh immediately on re-show so the user lands on fresh state
+        // rather than waiting for the next interval tick.
+        void refresh();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    scheduleNext();
+
+    return () => {
+      cancelled = true;
+      if (timerId !== null) clearTimeout(timerId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+    // `threadRef` is updated on every `thread` change so we don't need
+    // `thread` in the deps; gating on `!!thread` ensures we don't start
+    // until the initial load lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, !!thread, error]);
 
   // Measure the fixed thread header so we can apply matching padding-top on the scroll list
   // (the header is position:fixed and out of flow, so the list doesn't naturally reserve space).
