@@ -1,17 +1,20 @@
-"""Phase C.2 — fire-and-forget thread_members writes for vote/create paths.
+"""Fire-and-forget thread_members writes for vote/create paths.
 
-The poll_access write (direct-link grant) is inline in the
-`grant_poll_access_endpoint` handler so a missing poll can surface as 404 via
-the FK violation. The helpers here are for the vote/create paths where the
-action's own transaction must NOT be coupled to the audit write:
+These helpers are for vote/create paths where the action's own transaction
+must NOT be coupled to the audit write:
 
   * Each helper opens its OWN `get_db()` transaction. A failure here cannot
     roll back the triggering action, and vice versa.
-  * Failures are logged + swallowed — Phase C.2 doesn't enforce reads, so a
-    missed write degrades into "user re-establishes membership next vote".
+  * Failures are logged + swallowed — a missed write degrades into "user
+    re-establishes membership next vote".
   * `ON CONFLICT DO NOTHING` on the composite PK preserves the original
-    `joined_at` watermark across re-votes — Phase C.3 visibility compares
-    poll closure timestamps against that watermark.
+    `joined_at` watermark across re-votes — visibility compares poll
+    closure timestamps against that watermark.
+
+The thread-membership inline grant (read endpoint auto-join) lives in
+`services.threads.grant_thread_membership_inline` instead — it shares the
+caller's read transaction so the visibility filter sees the new row in
+the same query.
 """
 
 from __future__ import annotations

@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-import psycopg.errors
 from fastapi import APIRouter, HTTPException, Request
 
 from algorithms.poll_title import generate_poll_title
 from database import get_db
+from middleware import browser_id_from_request as _browser_id
 from models import (
     CloseQuestionRequest,
     CreatePollRequest,
@@ -70,12 +70,6 @@ def _iso_or_none(value) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
-
-
-def _browser_id(request: Request) -> str | None:
-    """Phase C.2: read the browser_id captured by `BrowserIdMiddleware`.
-    Helper exists because Phase C handlers will all reach for this."""
-    return getattr(request.state, "browser_id", None)
 
 
 def _validate_request(req: CreatePollRequest) -> None:
@@ -487,32 +481,6 @@ def get_poll(short_id: str):
         question_rows = _fetch_questions(conn, str(row["id"]))
         voter_names, anonymous_count = _compute_poll_voter_data(conn, str(row["id"]))
     return _row_to_poll(row, question_rows, voter_names, anonymous_count)
-
-
-@router.post("/{poll_id}/access", status_code=204)
-def grant_poll_access_endpoint(poll_id: str, request: Request):
-    """Phase C.2: record direct-link access to one poll. Called when a user
-    lands on `/t/<thread>?p=<poll>` so non-thread-members can still see the
-    poll they followed a link to. Phase C.3 will read these rows."""
-    browser_id = _browser_id(request)
-    if not browser_id:
-        return
-    # The FK on poll_access.poll_id IS the existence check — a missing poll
-    # surfaces as `ForeignKeyViolation`, which we translate to 404 without
-    # the second SELECT (and without the TOCTOU window between SELECT and
-    # INSERT).
-    try:
-        with get_db() as conn:
-            conn.execute(
-                """
-                INSERT INTO poll_access (poll_id, browser_id)
-                VALUES (%(poll_id)s, %(browser_id)s)
-                ON CONFLICT (poll_id, browser_id) DO NOTHING
-                """,
-                {"poll_id": poll_id, "browser_id": browser_id},
-            )
-    except psycopg.errors.ForeignKeyViolation:
-        raise HTTPException(status_code=404, detail="Poll not found")
 
 
 # ---------------------------------------------------------------------------

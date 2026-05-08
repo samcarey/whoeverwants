@@ -112,11 +112,11 @@ class TestMyThreads:
 
 
 class TestThreadByRouteId:
-    """Phase C.3: by-route-id enforces strict visibility — caller must be
-    a thread member, hold a `poll_access` row for at least one poll in the
-    thread, or pass `?p=<pollShortId>` for an inline auto-grant. Tests
-    pin the same browser_id through create + read so the creator's
-    auto-join makes them a member."""
+    """by-route-id auto-joins the visitor to the resolved thread inline
+    (idempotent ON CONFLICT) and returns the polls visible per the
+    thread-membership rule. Tests pin the same browser_id through
+    create + read so the creator's auto-join makes them a member from
+    the first call."""
 
     def test_resolves_by_root_poll_short_id(
         self, client, creator_secret, browser_id,

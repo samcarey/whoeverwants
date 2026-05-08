@@ -130,3 +130,12 @@ class BrowserIdMiddleware(BaseHTTPMiddleware):
         # cheap and keeps the response shape stable.
         response.headers[self._header] = browser_id
         return response
+
+
+def browser_id_from_request(request: Request) -> str | None:
+    """Read the browser_id captured by `BrowserIdMiddleware`. The middleware
+    always sets the field for requests routed through the FastAPI app, but
+    the `getattr` fallback covers direct `TestClient` instantiation and any
+    rare path that bypasses middleware.
+    """
+    return getattr(request.state, "browser_id", None)
