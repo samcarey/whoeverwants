@@ -10,23 +10,7 @@
 -- without buying meaningful protection — anyone the URL leaks to was
 -- always going to graduate to thread membership the moment they voted.
 -- Collapsing to thread-only access removes the asymmetry between
--- creator-as-instant-member and direct-link-recipient-as-poll-only and
--- makes a single Share Thread button ergonomic at the UI level.
---
--- Companion app changes (same PR):
---   * services/threads.py drops `access_poll_ids` from UserVisibility
---     and the `poll_access` SELECT in load_user_visibility, and replaces
---     `grant_poll_access_inline` with `grant_thread_membership_inline`.
---   * routers/threads.py: GET /api/threads/by-route-id/{id} writes
---     thread_members inline on every visit (idempotent ON CONFLICT). The
---     `?p=` query param is still accepted by old clients but ignored
---     server-side.
---   * routers/polls.py: POST /api/polls/{id}/access endpoint deleted.
---   * lib/api/polls.ts: apiGrantPollAccess deleted.
---   * lib/api/threads.ts: pollShortId option removed from
---     apiGetThreadByRouteId.
---   * components/ThreadShareButton.tsx: new top-right action in
---     ThreadHeader's rightSlot, uses navigator.share with clipboard fallback.
+-- creator-as-instant-member and direct-link-recipient-as-poll-only.
 
 BEGIN;
 

@@ -30,6 +30,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from database import get_db
+from middleware import browser_id_from_request as _browser_id
 from models import PollResponse, UpdateThreadTitleRequest
 from services.memberships import leave_thread as _leave_thread_row
 from services.threads import (
@@ -66,13 +67,6 @@ class ThreadTitleResponse(BaseModel):
 router = APIRouter(prefix="/api/threads", tags=["threads"])
 
 
-def _browser_id(request: Request) -> str | None:
-    """Read the browser_id captured by `BrowserIdMiddleware`. Mirror of the
-    helper in routers/polls.py — kept inline here so this router has no
-    cross-router import for one trivial getattr."""
-    return getattr(request.state, "browser_id", None)
-
-
 class MyThreadsRequest(BaseModel):
     """Request body for `POST /api/threads/mine`.
 
@@ -91,20 +85,14 @@ class MyThreadsRequest(BaseModel):
 
 @router.post("/mine", response_model=list[PollResponse])
 def get_my_threads(req: MyThreadsRequest, request: Request):
-    """Return every poll the user has visibility into.
-
-    The candidate set is the union of:
-      * Polls in any thread the browser is a member of (subject to the
-        closed_at filter), AND
-      * Polls in any thread reached via the legacy `accessible_question_ids`
-        bridge (unfiltered — preserves Phase B.3 contract that "any
-        question_id grants access to its whole thread").
+    """Return every poll the user has visibility into. See the visibility
+    rule documented in `services/threads.py`.
 
     Forget bridge: when the FE passes `accessible_question_ids`, the home
-    list is narrowed to threads still represented in that list. Without
-    this, a thread_members row would keep a thread alive on the home list
-    even after the user forgot every question in it. Membership-only
-    callers (no legacy list passed) skip the narrowing.
+    list is narrowed to threads still represented in that list, so
+    forgetting every question in a thread removes it from home even
+    while the `thread_members` row persists. Membership-only callers
+    (empty list) skip the narrowing.
     """
     browser_id = _browser_id(request)
 
@@ -139,37 +127,24 @@ def get_thread_by_route_id(
     route_id: str,
     request: Request,
     include_results: bool = True,
-    p: str | None = None,
 ):
     """Return every visible poll in one thread, resolved by route id.
 
-    `route_id` accepts (in order):
-      - `threads.short_id`
-      - `threads.id` (uuid)
-      - `polls.short_id` (Phase A → Phase B.3 fallback)
-      - `polls.id` (uuid fallback)
+    See the visibility rule documented in `services/threads.py`. The
+    caller is auto-joined to the resolved thread inline (idempotent via
+    ON CONFLICT) — sharing a thread link is the canonical "invite
+    someone" mechanism. The closed-before-join filter still applies, so
+    a brand-new member sees open polls plus polls closed after
+    `joined_at`. A linked poll closed before the visitor joined is
+    silently absent (per the user spec: "just show the thread and don't
+    try to show the old poll").
 
-    The caller is auto-joined to the resolved thread inline (idempotent
-    via ON CONFLICT). Sharing a thread link is the canonical "invite
-    someone" mechanism: visiting any form of the URL (with or without
-    `?p=`) writes thread membership BEFORE the visibility filter runs.
+    `route_id` accepts `threads.short_id`, `threads.id`,
+    `polls.short_id`, or `polls.id`.
 
-    Closed-before-join filter still applies: a brand-new member sees open
-    polls plus polls closed after `joined_at`, but not polls closed
-    before. If the URL carries `?p=<pollShortId>` referencing one of
-    those closed-pre-join polls, the linked poll is silently absent —
-    the FE shows the rest of the thread (per the user spec: "just show
-    the thread and don't try to show the old poll").
-
-    `?p=` is purely cosmetic at the API level — it doesn't affect
-    visibility or the inline-grant scope. The FE uses it to pick which
-    poll to auto-expand and scroll to, and the `/preview` endpoint uses
-    it to target link-preview metadata.
-
-    Returns 404 only when route resolution itself fails (no such
-    thread). An empty visible-polls list returns 200 with `[]` so the
-    thread page can still render its chrome (header + Share + Create
-    Poll).
+    Returns 404 only when route resolution itself fails. An empty
+    visible-polls list returns 200 with `[]` so the thread page can
+    still render its chrome (header + Share + Create Poll).
     """
     browser_id = _browser_id(request)
 

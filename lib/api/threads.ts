@@ -74,11 +74,6 @@ export async function apiGetThreadByRouteId(
   routeId: string,
   options: { include_results?: boolean } = {},
 ): Promise<Poll[]> {
-  // Migration 106: visiting this endpoint inline-writes thread membership
-  // on the server, so a fresh browser landing on a thread URL becomes a
-  // member as part of the read. No separate grant request needed; no
-  // chicken-and-egg with `?p=` either since `?p` is now purely a FE
-  // hint for which poll to auto-expand.
   const params = new URLSearchParams();
   if (options.include_results === false) params.set('include_results', 'false');
   const qs = params.toString();

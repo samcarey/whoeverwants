@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
+import { copyTextToClipboard } from "@/lib/clipboard";
 
 interface ThreadShareButtonProps {
   routeId: string;
@@ -8,41 +9,25 @@ interface ThreadShareButtonProps {
 }
 
 /**
- * Top-right action in the thread header. Tapping it surfaces a thread URL
- * via the native share sheet (`navigator.share`) on iOS / Android, or
- * copies the URL to the clipboard on desktop. Migration 106 made thread
- * URLs the canonical "invite" — visiting `/t/<routeId>` writes thread
- * membership inline, so handing someone the bare URL is the way to bring
- * them into the conversation.
+ * Top-right action in the thread header. Tapping invokes the native share
+ * sheet (`navigator.share`) on iOS / Android, or copies the URL to the
+ * clipboard on desktop with a "Link copied" toast. Falls through to a
+ * manual-copy `prompt()` as last resort.
  *
- * The share URL is intentionally `/t/<routeId>` with NO `?p=<poll>`. Per-
- * card copy-link buttons still emit `?p=` URLs (those grant the same
- * membership but additionally auto-expand and scroll to the linked
- * poll); this button is the "share the whole conversation" form.
+ * Shares the BARE thread URL with no `?p=`. Per-card copy-link buttons
+ * still emit `?p=<short>` URLs for "navigate to this poll's view" — both
+ * forms grant the recipient thread membership on visit; the difference is
+ * that `?p=` drives auto-expand and scroll target.
  */
 export default function ThreadShareButton({ routeId, title }: ThreadShareButtonProps) {
   const [feedback, setFeedback] = useState<null | "copied" | "error">(null);
-  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
-    };
-  }, []);
-
-  const showFeedback = useCallback((kind: "copied" | "error") => {
-    if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
-    setFeedback(kind);
-    feedbackTimerRef.current = setTimeout(() => setFeedback(null), 2000);
-  }, []);
 
   const handleShare = useCallback(async () => {
     if (typeof window === "undefined") return;
     const url = `${window.location.origin}/t/${encodeURIComponent(routeId)}`;
-    const shareData: ShareData = { title, url };
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
       try {
-        await navigator.share(shareData);
+        await navigator.share({ title, url });
         return;
       } catch (err) {
         // AbortError = user dismissed the share sheet — silent.
@@ -50,22 +35,18 @@ export default function ThreadShareButton({ routeId, title }: ThreadShareButtonP
         // Fall through to clipboard.
       }
     }
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(url);
-        showFeedback("copied");
-        return;
-      } catch {
-        // Fall through.
-      }
+    if (await copyTextToClipboard(url)) {
+      setFeedback("copied");
+      setTimeout(() => setFeedback(null), 2000);
+      return;
     }
-    // Last-resort: prompt so the user can copy manually.
     try {
       window.prompt("Copy this link", url);
     } catch {
-      showFeedback("error");
+      setFeedback("error");
+      setTimeout(() => setFeedback(null), 2000);
     }
-  }, [routeId, title, showFeedback]);
+  }, [routeId, title]);
 
   return (
     <div className="relative shrink-0">

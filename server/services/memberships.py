@@ -14,7 +14,7 @@ must NOT be coupled to the audit write:
 The thread-membership inline grant (read endpoint auto-join) lives in
 `services.threads.grant_thread_membership_inline` instead — it shares the
 caller's read transaction so the visibility filter sees the new row in
-the same query. Migration 106 retired per-poll access entirely.
+the same query.
 """
 
 from __future__ import annotations

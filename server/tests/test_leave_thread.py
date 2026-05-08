@@ -8,9 +8,9 @@ calls DELETE on forget-of-last-poll (or via an explicit "leave thread"
 UX), `thread_members` becomes the sole source of truth for "is this
 thread on my home list" and the bridge is dead code.
 
-Migration 106 retired per-poll access; thread membership is the only
-access mechanism. Note that re-visiting a thread URL after leave will
-write a fresh `thread_members` row with a new `joined_at` watermark.
+Re-visiting a thread URL after leave writes a fresh `thread_members`
+row with a new `joined_at` watermark — leave is durable only against
+the user not navigating back.
 
 Shared fixtures (`client`, `creator_secret`, `browser_id`) and helpers
 (`create_poll`, `bid_headers`, `thread_members_for`) live in

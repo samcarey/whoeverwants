@@ -11,10 +11,9 @@ Covers:
     from the triggering action — a vote that fails validation still
     leaves thread_members in place
 
-Migration 106 retired per-poll access. The visit-path auto-join is
-inline in the by-route-id read transaction, so it can't be observed
-without going through `/api/threads/by-route-id`. Read-side visibility
-filtering tests live in test_threads_visibility.py.
+The visit-path auto-join is inline in the by-route-id read transaction,
+so it can't be observed without going through `/api/threads/by-route-id`.
+Read-side visibility filtering tests live in `test_threads_visibility.py`.
 
 Shared fixtures (`client`, `creator_secret`, `browser_id`) and helpers
 (`create_poll`) live in `conftest.py`.

@@ -26,36 +26,25 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Visibility enforcement (post-migration-106)
+# Visibility rule
 # ---------------------------------------------------------------------------
 #
-# Visibility rule:
-#
-#   A poll P in thread T is visible to browser B iff EITHER:
-#     1. B has a thread_members row for T AND
-#        (P.is_closed = false OR P.closed_at >= members.joined_at), OR
-#     2. (transitional bridge) The legacy `accessible_question_ids` list
-#        passed by the FE contains a question_id whose poll lives in T.
-#        Treated as THREAD-level access (every poll in T visible, no
-#        closed_at filter) — pre-B.3 votes never wrote browser_id, so the
-#        localStorage list is the only access signal those users have
-#        until they re-establish membership by voting. Applies to
-#        /api/threads/mine only.
-#
-# Migration 106 dropped per-poll access (`poll_access`). Visiting any
-# thread URL via `/api/threads/by-route-id/{id}` writes a thread_members
-# row inline (idempotent ON CONFLICT), so direct-link recipients become
-# thread members with `joined_at = NOW()` — they see open polls and any
-# polls closed after they joined, but not polls closed before. The user
-# spec: "if they received a direct link to a poll closed before they
-# joined, just show the thread and don't try to show the old poll."
+# A poll P in thread T is visible to browser B iff EITHER:
+#   1. B has a thread_members row for T AND
+#      (P.is_closed = false OR P.closed_at >= members.joined_at), OR
+#   2. (transitional bridge) The legacy `accessible_question_ids` list
+#      passed by the FE contains a question_id whose poll lives in T.
+#      Treated as THREAD-level access (every poll in T visible, no
+#      closed_at filter) — pre-B.3 votes never wrote browser_id, so the
+#      localStorage list is the only access signal those users have
+#      until they re-establish membership by voting. Applies to
+#      /api/threads/mine only.
 #
 # `closed_at` proxy: we use `polls.updated_at`, which the existing close
 # trigger refreshes on every `is_closed` flip. Subsequent edits to a closed
-# poll bump updated_at forward; that makes the visibility rule slightly more
-# permissive (a previously hidden closed poll can become visible if it's
-# touched after the user joins), which fails open. A dedicated `closed_at`
-# column would be marginally tighter but isn't required for correctness.
+# poll bump updated_at forward; that makes the rule slightly more permissive
+# (a previously hidden closed poll becomes visible if touched after the
+# user joins), which fails open.
 
 
 @dataclass

@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from algorithms.poll_title import generate_poll_title
 from database import get_db
+from middleware import browser_id_from_request as _browser_id
 from models import (
     CloseQuestionRequest,
     CreatePollRequest,
@@ -69,12 +70,6 @@ def _iso_or_none(value) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
-
-
-def _browser_id(request: Request) -> str | None:
-    """Phase C.2: read the browser_id captured by `BrowserIdMiddleware`.
-    Helper exists because Phase C handlers will all reach for this."""
-    return getattr(request.state, "browser_id", None)
 
 
 def _validate_request(req: CreatePollRequest) -> None:
@@ -486,13 +481,6 @@ def get_poll(short_id: str):
         question_rows = _fetch_questions(conn, str(row["id"]))
         voter_names, anonymous_count = _compute_poll_voter_data(conn, str(row["id"]))
     return _row_to_poll(row, question_rows, voter_names, anonymous_count)
-
-
-# Migration 106 retired per-poll access entirely. The standalone
-# `POST /api/polls/{id}/access` endpoint and the `?p=` auto-grant on
-# `/api/threads/by-route-id/{id}` are gone — sharing a thread URL grants
-# whole-thread membership inline on the read endpoint, so callers no
-# longer need a separate grant request.
 
 
 # ---------------------------------------------------------------------------

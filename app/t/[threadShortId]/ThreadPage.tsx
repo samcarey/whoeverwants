@@ -1935,10 +1935,7 @@ function ThreadPageInner() {
     return () => { cancelled = true; };
   }, [threadShortId, router, rootInitial]);
 
-  // `?p=<id>` → resolve to the cached Poll once for the initial-expand
-  // target. Migration 106 retired per-poll access; thread membership is
-  // granted server-side as part of the by-route-id GET, so no separate
-  // grant call is needed here.
+  // `?p=<id>` → resolve to the cached Poll for the initial-expand target.
   const targetPoll = useMemo<Poll | null>(() => {
     if (typeof window === "undefined" || !pollParam || !rootPoll) return null;
     return getCachedPollForShortId(pollParam);

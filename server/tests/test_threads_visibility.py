@@ -12,8 +12,6 @@ Covers:
 
 The companion file `test_membership_writes.py` covers the WRITE side
 (auto-join from create / vote / visit). This file covers the READ side.
-Both depend on a real Postgres reachable via DATABASE_URL and the
-migration set including 106 (drop poll_access).
 
 Shared fixtures (`client`, `creator_secret`) and helpers (`create_poll`)
 live in `conftest.py`.
