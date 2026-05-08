@@ -277,9 +277,9 @@ function TemplateInner({ children }: AppTemplateProps) {
             // resolves to ~34px (home indicator zone), pushing the FAB
             // visibly above its browser-mode position. The home
             // indicator is centered at screen-bottom and doesn't reach
-            // the right corner, so a flat 1rem keeps the FAB at the
-            // same visual height in both modes.
-            bottom: '1rem',
+            // the right corner, so a flat 0.25rem keeps the FAB sitting
+            // close to the bottom edge in both modes.
+            bottom: '0.25rem',
           }}
           aria-label="Create new question"
         >
