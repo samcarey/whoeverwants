@@ -286,7 +286,13 @@ function TemplateInner({ children }: AppTemplateProps) {
 
       {/* DIAGNOSTIC: green bar at layout-viewport bottom */}
       {isMounted && createPortal(
-        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, height: 6, background: '#00cc44', zIndex: 9999, pointerEvents: 'none' }} />,
+        <>
+          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, height: 6, background: '#00cc44', zIndex: 9999, pointerEvents: 'none' }} />
+          {/* Orange bar inside the home indicator zone — anchored below the layout viewport bottom by env(safe-area-inset-bottom) and as tall as that env value, so it should exactly fill the white bar between the green line and the physical screen edge. If the orange bar matches the white bar perfectly, the white area = the home indicator safe zone. */}
+          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(0px - env(safe-area-inset-bottom, 0px))', height: 'env(safe-area-inset-bottom, 0px)', background: '#ff8800', zIndex: 9998, pointerEvents: 'none' }} />
+          {/* Purple sliver flush with physical-screen bottom: if visible it confirms env(safe-area-inset-bottom) matches the white-bar height. */}
+          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(0px - env(safe-area-inset-bottom, 0px))', height: 3, background: '#9933cc', zIndex: 9999, pointerEvents: 'none', transform: 'translateY(-3px)' }} />
+        </>,
         document.body
       )}
 
