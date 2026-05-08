@@ -48,6 +48,9 @@ function DiagnosticOverlay() {
     visualBottom: number;// window.visualViewport.height (if available)
     bodyHeight: number;  // body.getBoundingClientRect().height
     bottomMarkerY: number; // y-coord on screen of an element with style {position: fixed; bottom: 0}
+    screenH: number;     // window.screen.height
+    screenAvailH: number;// window.screen.availHeight
+    devicePR: number;    // window.devicePixelRatio
   } | null>(null);
   const [copiedAt, setCopiedAt] = React.useState<number | null>(null);
   React.useEffect(() => {
@@ -73,6 +76,9 @@ function DiagnosticOverlay() {
         visualBottom: window.visualViewport?.height ?? -1,
         bodyHeight: document.body.getBoundingClientRect().height,
         bottomMarkerY: rect.top, // Where bottom:0 actually lands (relative to visual viewport top).
+        screenH: window.screen.height,
+        screenAvailH: window.screen.availHeight,
+        devicePR: window.devicePixelRatio,
       });
     };
     measure();
@@ -95,11 +101,26 @@ function DiagnosticOverlay() {
       <div style={{ position: 'fixed', left: 0, right: 0, top: 'calc(100vh - 6px)', height: 6, background: '#ff00ff', zIndex: 9997, pointerEvents: 'none' }} />
       {/* Black: top: 100dvh - 6px (dvh = dynamic viewport height) — should land at bottom of dynamic visual viewport */}
       <div style={{ position: 'fixed', left: 0, right: 0, top: 'calc(100dvh - 6px)', height: 6, background: '#000000', zIndex: 9996, pointerEvents: 'none' }} />
+      {/* JS-positioned markers BELOW innerHeight: if these are visible, the physical screen IS taller than the layout viewport. */}
+      {m && (
+        <>
+          {/* Brown bar at top: innerH + 0 (immediately below layout viewport bottom) */}
+          <div style={{ position: 'fixed', left: 0, right: 0, top: m.iH, height: 6, background: '#8b4513', zIndex: 9995, pointerEvents: 'none' }} />
+          {/* Pink bar at top: innerH + 20 */}
+          <div style={{ position: 'fixed', left: 0, right: 0, top: m.iH + 20, height: 6, background: '#ff66cc', zIndex: 9995, pointerEvents: 'none' }} />
+          {/* Yellow bar at top: innerH + 40 */}
+          <div style={{ position: 'fixed', left: 0, right: 0, top: m.iH + 40, height: 6, background: '#ffd700', zIndex: 9995, pointerEvents: 'none' }} />
+          {/* Lime bar at top: innerH + 60 */}
+          <div style={{ position: 'fixed', left: 0, right: 0, top: m.iH + 60, height: 6, background: '#aaff00', zIndex: 9995, pointerEvents: 'none' }} />
+          {/* Teal bar at top: innerH + 100 */}
+          <div style={{ position: 'fixed', left: 0, right: 0, top: m.iH + 100, height: 6, background: '#00aaaa', zIndex: 9995, pointerEvents: 'none' }} />
+        </>
+      )}
       {/* Text readout — tap to copy values to clipboard */}
       {m && (
         <button
           onClick={() => {
-            const txt = `innerH=${m.iH}\ndocH=${m.dH}\nscrH=${m.sH}\nvisualH=${m.visualBottom}\nbodyH=${Math.round(m.bodyHeight)}\nsafeBot=${m.safeBottom}\nfixed-bot-Y=${Math.round(m.bottomMarkerY)}`;
+            const txt = `innerH=${m.iH}\ndocH=${m.dH}\nscrH=${m.sH}\nvisualH=${m.visualBottom}\nbodyH=${Math.round(m.bodyHeight)}\nsafeBot=${m.safeBottom}\nfixed-bot-Y=${Math.round(m.bottomMarkerY)}\nscreenH=${m.screenH}\nscreenAvailH=${m.screenAvailH}\ndevicePR=${m.devicePR}\nUA=${navigator.userAgent}`;
             navigator.clipboard?.writeText(txt).then(
               () => { setCopiedAt(Date.now()); },
               () => {},
@@ -114,6 +135,9 @@ function DiagnosticOverlay() {
           <div>bodyH={Math.round(m.bodyHeight)}</div>
           <div>safeBot={m.safeBottom}</div>
           <div>fixed-bot-Y={Math.round(m.bottomMarkerY)}</div>
+          <div>screenH={m.screenH}</div>
+          <div>screenAvailH={m.screenAvailH}</div>
+          <div>devicePR={m.devicePR}</div>
           {copiedAt && <div style={{ marginTop: 2, fontWeight: 'bold' }}>copied!</div>}
         </button>
       )}
