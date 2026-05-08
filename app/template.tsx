@@ -273,15 +273,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
-            // viewport-fit=cover means the page extends to the actual
-            // screen edge in iOS PWA, but the bottom ~34px is the home
-            // indicator zone, where the white page background shows
-            // through and reads as a thick "white bar" beneath any FAB
-            // that respects the safe area. The home indicator pill is
-            // centered (not in the right corner), so we render the FAB
-            // flush at the screen edge — its visual bottom matches the
-            // actual screen bottom in both iOS PWA and browser.
-            bottom: '0',
+            bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
           }}
           aria-label="Create new question"
         >
