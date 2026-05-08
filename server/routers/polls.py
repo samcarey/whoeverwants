@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 import psycopg.errors
@@ -33,6 +34,8 @@ from services.questions import (
     _row_to_vote,
     _submit_vote_to_question,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/polls", tags=["polls"])
 
@@ -151,6 +154,10 @@ def _resolve_or_create_thread(
                     {"id": requested_thread_id, "title": initial_title},
                 )
             return str(existing["id"])
+        logger.warning(
+            "create_poll: requested thread_id=%s not found; minting a fresh thread",
+            requested_thread_id,
+        )
     row = conn.execute(
         "INSERT INTO threads (title) VALUES (%(title)s) RETURNING id",
         {"title": initial_title},
