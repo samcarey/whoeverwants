@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { QuestionResults, OptionsMetadata } from "@/lib/types";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
+import CollapsibleFadeSection from "./CollapsibleFadeSection";
 import {
   formatDayLabel,
   formatStackedDayLabel,
@@ -277,23 +278,7 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
       )}
 
       {options.length > 1 && (
-        <div>
-          <div className="flex items-baseline justify-between gap-3 mb-3">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Candidate Slots ({options.length})
-            </h3>
-            <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 flex-shrink-0">
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> liked
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /> disliked
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" /> unavail.
-              </span>
-            </div>
-          </div>
+        <CollapsibleStartOptions>
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
             {slotsByDay.map(([dateStr, slots]) => {
               const { weekday, monthDay } = formatStackedDayLabel(dateStr);
@@ -350,9 +335,44 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
               );
             })}
           </div>
-        </div>
+        </CollapsibleStartOptions>
       )}
     </div>
+  );
+}
+
+const COLLAPSED_SLOTS_HEIGHT = 80;
+
+function CollapsibleStartOptions({ children }: { children: React.ReactNode }) {
+  const header = (
+    <div className="flex items-baseline justify-between gap-3 mb-3">
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        Start Options
+      </h3>
+      <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 flex-shrink-0">
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> liked
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /> disliked
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" /> unavail.
+        </span>
+      </div>
+    </div>
+  );
+
+  return (
+    <CollapsibleFadeSection
+      collapsedHeight={COLLAPSED_SLOTS_HEIGHT}
+      fadePx={28}
+      innerClassName="pt-1.5"
+      header={header}
+      ariaLabel="start options"
+    >
+      {children}
+    </CollapsibleFadeSection>
   );
 }
 
