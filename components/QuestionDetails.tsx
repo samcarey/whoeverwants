@@ -5,6 +5,7 @@ import CollapsibleFadeSection from "./CollapsibleFadeSection";
 
 interface QuestionDetailsProps {
   details: string;
+  label?: string;
 }
 
 const LINE_HEIGHT = 20; // text-sm line-height = 1.25rem
@@ -37,7 +38,7 @@ function renderWithLinks(text: string) {
   });
 }
 
-export default function QuestionDetails({ details }: QuestionDetailsProps) {
+export default function QuestionDetails({ details, label }: QuestionDetailsProps) {
   const renderedDetails = useMemo(() => renderWithLinks(details), [details]);
   if (!details) return null;
 
@@ -50,6 +51,7 @@ export default function QuestionDetails({ details }: QuestionDetailsProps) {
         innerClassName="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words"
         ariaLabel="details"
       >
+        {label && <span className="font-medium">{label}</span>}
         {renderedDetails}
       </CollapsibleFadeSection>
     </div>
