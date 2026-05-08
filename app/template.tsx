@@ -273,17 +273,11 @@ function TemplateInner({ children }: AppTemplateProps) {
           className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
-            // Don't add env(safe-area-inset-bottom) — on some iOS PWA
-            // configurations it reports values much larger than the
-            // home indicator zone (~70-100px vs the typical ~34px),
-            // pushing the FAB visibly far from the screen edge while a
-            // wide white strip of page bg sits beneath it. Flat 1rem
-            // keeps the FAB at the same 16px-from-screen-edge position
-            // in both PWA and browser. The home indicator gesture pill
-            // is centered at the bottom and doesn't reach the right
-            // corner, so the FAB rendering inside iOS's reserved zone
-            // there is fine.
-            bottom: '1rem',
+            // iOS PWA's layout viewport excludes the home indicator zone (~34px
+            // on iPhone X+); position:fixed bottom:0 lands above that zone, with
+            // body bg painted below it. Use safe-area-inset-bottom so the FAB
+            // sits just above the home indicator instead of an extra ~34px above.
+            bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
           }}
           aria-label="Create new question"
         >
@@ -292,12 +286,6 @@ function TemplateInner({ children }: AppTemplateProps) {
           </svg>
         </button>,
         document.getElementById('floating-fab-portal')!
-      )}
-
-      {/* DIAGNOSTIC: green bar at the layout viewport's bottom (position:fixed; bottom:0). Pair with the red bar at end-of-content in app/page.tsx — gap between them = empty page bg below the document scroll area. */}
-      {isMounted && createPortal(
-        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, height: 6, background: '#00cc44', zIndex: 9999, pointerEvents: 'none' }} />,
-        document.body
       )}
 
       {/* Header elements rendered outside scaling container */}
