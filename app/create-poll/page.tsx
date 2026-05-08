@@ -1809,9 +1809,13 @@ export function CreateQuestionContent() {
             </div>
           )}
 
-          {/* Category bubble bar — pt-* is the gap above; the gap below
-              comes from the page's outer paddingBottom (template.tsx). */}
-          <div className={`px-3 ${hasDrafts ? 'pt-4' : 'pt-3'} flex flex-wrap justify-center gap-2`}>
+          {/* Category bubble bar — pt-* is the gap above; pb-4 supplements
+              the page's outer paddingBottom (template.tsx) so iOS Safari's
+              bottom URL bar (~50–64px, overlays the viewport at max scroll)
+              doesn't clip the last bubble row. env(safe-area-inset-bottom)
+              isn't usable here — it returns 0 when the URL bar is visible
+              (the case we need to handle) and feeds scrollHeight. */}
+          <div className={`px-3 ${hasDrafts ? 'pt-4' : 'pt-3'} pb-4 flex flex-wrap justify-center gap-2`}>
             {BUBBLE_ENTRIES.map((entry) => (
               <button
                 key={entry.value}
