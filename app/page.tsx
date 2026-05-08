@@ -249,6 +249,9 @@ export default function Home() {
         <ThreadList polls={polls} />
       )}
 
+      {/* DIAGNOSTIC: red bar at the very bottom of the home page's scrollable content. Anything that appears below it on the device is empty page bg below the document scroll area. */}
+      <div style={{ height: 6, background: '#ff0000', marginTop: 0 }} />
+
     </>
   );
 }
