@@ -273,7 +273,13 @@ function TemplateInner({ children }: AppTemplateProps) {
           className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
-            bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
+            // Don't add env(safe-area-inset-bottom) — in iOS PWA it
+            // resolves to ~34px (home indicator zone), pushing the FAB
+            // visibly above its browser-mode position. The home
+            // indicator is centered at screen-bottom and doesn't reach
+            // the right corner, so a flat 1rem keeps the FAB at the
+            // same visual height in both modes.
+            bottom: '1rem',
           }}
           aria-label="Create new question"
         >

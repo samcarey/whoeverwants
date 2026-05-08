@@ -18,9 +18,12 @@ export interface ThreadHeaderProps {
 /**
  * Fixed thread header. top:0 + padding-top:env(safe-area-inset-top) fills
  * the notch zone with the header background (otherwise items are visible
- * there when the document scrolls). headerRef is on the inner content
- * div so offsetHeight stays content-only; the sibling content below
- * reserves exactly that much padding-top.
+ * there when the document scrolls). headerRef is on the OUTER fixed div
+ * so offsetHeight includes the safe-area-inset-top padding — sibling
+ * content below reserves the full visual header height (47-59px notch +
+ * ~40px content in iOS PWA, just ~40px in browser/desktop where the env
+ * resolves to 0). Earlier the ref was on the inner content div, leaving
+ * iOS PWA pages with content tucked behind the bottom of the header.
  *
  * onBack defaults to navigating to '/'; sub-routes pass their own handler
  * (e.g. back to the thread root or the info page when in-app history exists).
@@ -52,12 +55,12 @@ export default function ThreadHeader({
   );
   return (
     <div
+      ref={headerRef}
       data-thread-header=""
       className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
     >
       <div
-        ref={headerRef}
         className={`max-w-4xl mx-auto pl-2 ${hasRightSlot ? 'pr-2' : 'pr-4'} py-2 flex items-center gap-2 overflow-hidden`}
       >
         <button
