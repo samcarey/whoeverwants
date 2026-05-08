@@ -294,15 +294,6 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.getElementById('floating-fab-portal')!
       )}
 
-      {/* DIAGNOSTIC: thin red bar at bottom: 0 + green at bottom: env(safe-area-inset-bottom). Shows where iOS PWA places the layout viewport bottom and what env reports. Remove after we figure out the white-bar issue. */}
-      {isMounted && createPortal(
-        <>
-          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, height: '3px', background: '#ff0066', zIndex: 999 }} />
-          <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'env(safe-area-inset-bottom, 0px)', height: '3px', background: '#00cc44', zIndex: 999 }} />
-        </>,
-        document.body
-      )}
-
       {/* Header elements rendered outside scaling container */}
       <HeaderPortal>
         {/* Back arrow in upper left — settings page only, when there's in-app history. */}
