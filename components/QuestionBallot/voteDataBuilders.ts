@@ -7,7 +7,7 @@
  * Centralising the construction keeps the two paths in lockstep — when a new
  * field lands on `PollVoteItem` it's added in exactly one place.
  */
-import type { DayTimeWindow, OptionsMetadata } from "@/lib/types";
+import type { DayTimeWindow, DurationWindow, OptionsMetadata } from "@/lib/types";
 import type { PollVoteItem, QuestionType } from "@/lib/api";
 
 export interface BallotInputs {
@@ -31,7 +31,11 @@ export interface BallotInputs {
   dislikedSlots: string[] | null;
   voterName: string;
   questionOptions: string[];
-  userVoteData: { suggestions?: string[] } | null;
+  userVoteData: {
+    suggestions?: string[];
+    voter_day_time_windows?: DayTimeWindow[] | null;
+    voter_duration?: DurationWindow | null;
+  } | null;
 }
 
 type BuildVoteDataResult =
@@ -147,11 +151,18 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
         },
       };
     }
+    // Preferences phase: re-send the voter's existing availability so the
+    // server's UPDATE doesn't overwrite voter_day_time_windows / voter_duration
+    // with NULL. The fields are intentionally left out of the UI for this
+    // phase (availability is locked once finalization runs); the SQL writes
+    // them directly, so omitting them would clear what's already stored.
     return {
       ok: true,
       effectiveIsAbstaining,
       voteData: {
         vote_type: 'time' as const,
+        voter_day_time_windows: state.userVoteData?.voter_day_time_windows ?? null,
+        voter_duration: state.userVoteData?.voter_duration ?? null,
         liked_slots: effectiveIsAbstaining ? null : (state.likedSlots ?? []),
         disliked_slots: effectiveIsAbstaining ? null : (state.dislikedSlots ?? []),
         is_abstain: effectiveIsAbstaining,

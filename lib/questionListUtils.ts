@@ -34,29 +34,30 @@ export function getBuiltInCategoryIcon(category: string | null | undefined): str
 }
 
 /** Per-question section header used in multi-question poll cards.
- *  Mirrors the auto-title format ("<Label> for <Context>") so a Time
- *  question with details="Partie" reads as "Time for Partie" instead of
- *  just "Partie" (which dropped the type signal entirely). Time questions
- *  always resolve to label="Time" regardless of the stored category column
- *  (the Time bubble sets question_type=time but leaves category=custom).
- *  Falls back to details / category / question_type when no label is
- *  available. */
+ *  Mirrors the server-side auto-title ("<Label> for <Context>") so a
+ *  Time question with details="Partie" reads as "Time for Partie"
+ *  instead of just "Partie". The `time` special-case is load-bearing:
+ *  the Time bubble stores question_type=time but leaves category=custom,
+ *  so reading the category alone gives "Custom" — same convention as
+ *  `_category_for_title` in `server/routers/polls.py`. */
+function getQuestionLabel(question: Question): string | null {
+  if (question.question_type === 'time') return 'Time';
+  // Match the server's auto-title format ("Yes/No" with no spaces, in
+  // contrast to BUILT_IN_TYPES.label "Yes / No"); keep them aligned so
+  // section headers don't visually diverge from the auto-generated
+  // wrapper title.
+  if (question.question_type === 'yes_no') return 'Yes/No';
+  const builtIn = getBuiltInType(question.category ?? '');
+  if (builtIn) return builtIn.label;
+  if (question.category && question.category !== 'custom') return question.category;
+  return null;
+}
+
 export function getQuestionSectionTitle(question: Question): string {
   const details = question.details?.trim();
-  let label: string | null = null;
-  if (question.question_type === 'time') {
-    label = 'Time';
-  } else if (question.question_type === 'yes_no') {
-    label = 'Yes/No';
-  } else {
-    const builtIn = getBuiltInType(question.category ?? '');
-    if (builtIn) label = builtIn.label;
-    else if (question.category && question.category !== 'custom') label = question.category;
-  }
+  const label = getQuestionLabel(question);
   if (label && details) return `${label} for ${details}`;
-  if (label) return label;
-  if (details) return details;
-  return question.question_type.replace('_', '/');
+  return label ?? details ?? question.question_type.replace('_', '/');
 }
 
 export function relativeTime(dateStr: string): string {
