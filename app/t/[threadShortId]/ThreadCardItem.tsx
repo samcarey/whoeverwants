@@ -27,6 +27,7 @@ import type {
 import {
   getCategoryIcon,
   getBuiltInCategoryIcon,
+  getQuestionSectionTitle,
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
   compactDurationSince,
@@ -835,14 +836,14 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                         )}
                         {isMultiGroup && (
                           // Multi-question poll: icon + title text per
-                          // section. Title falls back to category, then
-                          // question type, when sp.details is empty.
+                          // section. Format mirrors the auto-title
+                          // ("<Label> for <Context>") so the type signal
+                          // (Time / Restaurant / etc.) doesn't get dropped
+                          // when the user sets a per-question context.
                           <div className="mb-2 relative">
                             <HangingCategoryIcon question={sp} isClosed={isClosed} />
                             <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white capitalize truncate">
-                              {(sp.details && sp.details.trim()) ||
-                                sp.category ||
-                                sp.question_type.replace("_", "/")}
+                              {getQuestionSectionTitle(sp)}
                             </div>
                           </div>
                         )}

@@ -495,8 +495,8 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
             is_abstain = %(is_abstain)s,
             is_ranking_abstain = %(is_ranking_abstain)s,
             voter_name = %(voter_name)s,
-            voter_day_time_windows = %(voter_day_time_windows)s::jsonb,
-            voter_duration = %(voter_duration)s::jsonb,
+            voter_day_time_windows = COALESCE(%(voter_day_time_windows)s::jsonb, voter_day_time_windows),
+            voter_duration = COALESCE(%(voter_duration)s::jsonb, voter_duration),
             liked_slots = COALESCE(%(liked_slots)s::jsonb, liked_slots),
             disliked_slots = COALESCE(%(disliked_slots)s::jsonb, disliked_slots),
             updated_at = %(now)s
