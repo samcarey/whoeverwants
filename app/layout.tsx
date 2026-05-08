@@ -50,8 +50,16 @@ export function generateViewport() {
     maximumScale: 1,
     userScalable: false,
     viewportFit: "cover",
-    // Help Safari with viewport stability
-    interactiveWidget: "resizes-content",
+    // `resizes-content` permanently shrinks the layout viewport in iOS PWA
+    // standalone mode, reserving a thick blank strip above the home
+    // indicator even when no keyboard is showing — the page can't render
+    // into that area, so it appears as a "white bar" the FAB has to sit
+    // above. Default `resizes-visual` lets the layout viewport reach the
+    // actual screen bottom; the keyboard, when shown, only resizes the
+    // visual viewport, which is fine for our use case (the only PWA
+    // surface with form inputs is the create-poll modal, which already
+    // does its own keyboard handling via position:fixed body lock).
+    interactiveWidget: "resizes-visual",
     themeColor: [
       { media: "(prefers-color-scheme: light)", color: "#ffffff" },
       { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" }
