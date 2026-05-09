@@ -819,6 +819,9 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                     const isYesNo = sp.question_type === "yes_no";
                     const r = isYesNo ? questionResultsMap.get(sp.id) : undefined;
                     const userVote = isYesNo ? userVoteMap.get(sp.id) : undefined;
+                    const hangingIcon = (
+                      <HangingCategoryIcon question={sp} isClosed={isClosed} />
+                    );
                     return (
                       <div
                         key={sp.id}
@@ -828,30 +831,21 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                             : ""
                         }${!isMultiGroup ? " relative" : ""}`}
                       >
-                        {/* Per-question section header.
-                             Multi-question polls render the section title
-                             text to disambiguate sibling questions. Single-
-                             question polls skip the title — the card top
-                             already shows it (and for yes_no, surfacing the
-                             label "Yes/No" right under the user's prompt
-                             reads as if the label were the title). The
-                             hanging category icon still renders so each
-                             section keeps its visual type cue; for the
-                             single-question case the outer section div is
-                             the icon's `relative` anchor (instead of an
-                             intermediate header div), so the icon sits at
-                             the top of the section content area exactly as
-                             before while the rest of the content slides up
-                             into the freed space. */}
+                        {/* Single-question polls skip the section title (it
+                             duplicates the card's top header) and anchor
+                             the icon on the outer section div. Multi-
+                             question polls keep an intermediate header div
+                             so the icon stays below `pt-3` for idx > 0
+                             rows. */}
                         {isMultiGroup ? (
                           <div className="mb-2 relative">
-                            <HangingCategoryIcon question={sp} isClosed={isClosed} />
+                            {hangingIcon}
                             <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white truncate">
                               {getQuestionSectionTitle(sp)}
                             </div>
                           </div>
                         ) : (
-                          <HangingCategoryIcon question={sp} isClosed={isClosed} />
+                          hangingIcon
                         )}
                         {isYesNo &&
                           isExpanded &&
