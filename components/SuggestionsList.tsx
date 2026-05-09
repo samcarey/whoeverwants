@@ -87,7 +87,7 @@ export default function SuggestionsList({
                 className={`flex items-center rounded-xl overflow-hidden ${
                   isUserSuggestion
                     ? 'bg-blue-100 dark:bg-blue-900/30'
-                    : 'bg-gray-100 dark:bg-gray-700'
+                    : 'bg-gray-200 dark:bg-gray-700'
                 }`}
               >
                 <div className={`min-w-0 flex-1 px-3 py-1.5 text-sm font-medium overflow-hidden ${
@@ -101,7 +101,7 @@ export default function SuggestionsList({
                   <span className={`px-2.5 self-stretch flex items-center text-sm font-bold flex-shrink-0 ${
                     isUserSuggestion
                       ? 'bg-blue-500 text-white'
-                      : 'bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-gray-100'
+                      : 'bg-gray-400 dark:bg-gray-600 text-gray-900 dark:text-gray-100'
                   }`}>
                     {suggestion.count}
                   </span>
@@ -122,7 +122,7 @@ export default function SuggestionsList({
                 className={`inline-flex items-center rounded-full overflow-hidden ${
                   isUserSuggestion
                     ? 'bg-blue-100 dark:bg-blue-900/30'
-                    : 'bg-gray-100 dark:bg-gray-700'
+                    : 'bg-gray-200 dark:bg-gray-700'
                 }`}
               >
                 <div className={`px-3 py-1 text-sm font-medium ${
@@ -136,7 +136,7 @@ export default function SuggestionsList({
                   <span className={`px-2.5 self-stretch flex items-center text-sm font-bold ${
                     isUserSuggestion
                       ? 'bg-blue-500 text-white'
-                      : 'bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-gray-100'
+                      : 'bg-gray-400 dark:bg-gray-600 text-gray-900 dark:text-gray-100'
                   }`}>
                     {suggestion.count}
                   </span>
