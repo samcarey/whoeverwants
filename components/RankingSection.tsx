@@ -5,10 +5,8 @@ import SimpleCountdown from "@/components/SimpleCountdown";
 import RankableOptions from "@/components/RankableOptions";
 import CompactNameField from "@/components/CompactNameField";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
-import VoterList from "@/components/VoterList";
 import BinaryRankedChoiceBallot from "@/components/QuestionBallot/BinaryRankedChoiceBallot";
 import type { OptionsMetadata, QuestionResults } from "@/lib/types";
-import type { ApiVote } from "@/lib/api";
 
 interface RankingSectionProps {
   question: any;
@@ -60,8 +58,6 @@ interface RankingSectionProps {
   // path; the multi-option drag-to-rank list keeps the explicit Submit flow.
   onBinaryRankedChoiceTap?: (option: string) => void;
 }
-
-const rankingsVoterFilter = (v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0);
 
 export default function RankingSection({
   question,
@@ -263,12 +259,6 @@ export default function RankingSection({
           </>
         )}
       </div>
-
-      {hasSuggestionPhase && hasVoted && !isEditingRanking && !isLoadingVoteData && (
-        <div className="mt-2 mb-3">
-          <VoterList questionId={question.id} label="Ranked" filter={rankingsVoterFilter} />
-        </div>
-      )}
 
       {showBallot && !wrapperHandlesSubmit && (
         <>
