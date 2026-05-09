@@ -835,7 +835,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                              leave only the abstain message visible. */}
                         <div className="mb-2 relative">
                           <HangingCategoryIcon question={sp} isClosed={isClosed} />
-                          <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white capitalize truncate">
+                          <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white truncate">
                             {getQuestionSectionTitle(sp)}
                           </div>
                         </div>
