@@ -310,7 +310,6 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
         ))}
       </ul>
     ) : null;
-    // Check if there are any votes at all
     if (results.total_votes === 0) {
       return (
         <div className="text-center">
@@ -318,15 +317,13 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
           {optionsList}
         </div>
       );
-    } else {
-      // There are votes but all abstained
-      return (
-        <div className="text-center">
-          <p className="text-gray-600 dark:text-gray-400">All voters abstained</p>
-          {optionsList}
-        </div>
-      );
     }
+    return (
+      <div className="text-center">
+        <p className="text-gray-600 dark:text-gray-400">All voters abstained</p>
+        {optionsList}
+      </div>
+    );
   }
 
   const currentRound = roundVisualizations[currentRoundIndex];

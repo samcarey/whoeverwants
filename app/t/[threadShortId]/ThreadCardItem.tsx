@@ -828,15 +828,11 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                             : ""
                         }`}
                       >
-                        {/* Per-question section header: icon + title text.
-                             Format mirrors the auto-title ("<Label> for
-                             <Context>") so the type signal (Time / Restaurant
-                             / etc.) doesn't get dropped when the user sets a
-                             per-question context. Rendered for both single-
-                             and multi-question polls so the expanded card
-                             always shows what the question is about — even
-                             when there are no votes / all abstained, leaving
-                             the body otherwise empty. */}
+                        {/* Per-question section header. Rendered for both
+                             single- and multi-question polls so the expanded
+                             card always identifies the question — empty
+                             states (no votes / all abstained) would otherwise
+                             leave only the abstain message visible. */}
                         <div className="mb-2 relative">
                           <HangingCategoryIcon question={sp} isClosed={isClosed} />
                           <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white capitalize truncate">
