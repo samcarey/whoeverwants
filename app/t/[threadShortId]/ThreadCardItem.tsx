@@ -826,27 +826,19 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                           isMultiGroup && idx > 0
                             ? "mt-4 pt-3 border-t border-gray-200 dark:border-gray-800"
                             : ""
-                        } ${!isMultiGroup ? "relative" : ""}`}
+                        }`}
                       >
-                        {!isMultiGroup && (
-                          // Single-question poll: icon alone — the poll
-                          // title at the top of the card already names the
-                          // question, so no title text is rendered here.
+                        {/* Per-question section header. Rendered for both
+                             single- and multi-question polls so the expanded
+                             card always identifies the question — empty
+                             states (no votes / all abstained) would otherwise
+                             leave only the abstain message visible. */}
+                        <div className="mb-2 relative">
                           <HangingCategoryIcon question={sp} isClosed={isClosed} />
-                        )}
-                        {isMultiGroup && (
-                          // Multi-question poll: icon + title text per
-                          // section. Format mirrors the auto-title
-                          // ("<Label> for <Context>") so the type signal
-                          // (Time / Restaurant / etc.) doesn't get dropped
-                          // when the user sets a per-question context.
-                          <div className="mb-2 relative">
-                            <HangingCategoryIcon question={sp} isClosed={isClosed} />
-                            <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white capitalize truncate">
-                              {getQuestionSectionTitle(sp)}
-                            </div>
+                          <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white capitalize truncate">
+                            {getQuestionSectionTitle(sp)}
                           </div>
-                        )}
+                        </div>
                         {isYesNo &&
                           isExpanded &&
                           r &&
