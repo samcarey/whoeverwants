@@ -826,19 +826,33 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                           isMultiGroup && idx > 0
                             ? "mt-4 pt-3 border-t border-gray-200 dark:border-gray-800"
                             : ""
-                        }`}
+                        }${!isMultiGroup ? " relative" : ""}`}
                       >
-                        {/* Per-question section header. Rendered for both
-                             single- and multi-question polls so the expanded
-                             card always identifies the question — empty
-                             states (no votes / all abstained) would otherwise
-                             leave only the abstain message visible. */}
-                        <div className="mb-2 relative">
-                          <HangingCategoryIcon question={sp} isClosed={isClosed} />
-                          <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white truncate">
-                            {getQuestionSectionTitle(sp)}
+                        {/* Per-question section header.
+                             Multi-question polls render the section title
+                             text to disambiguate sibling questions. Single-
+                             question polls skip the title — the card top
+                             already shows it (and for yes_no, surfacing the
+                             label "Yes/No" right under the user's prompt
+                             reads as if the label were the title). The
+                             hanging category icon still renders so each
+                             section keeps its visual type cue; for the
+                             single-question case the outer section div is
+                             the icon's `relative` anchor (instead of an
+                             intermediate header div), so the icon sits at
+                             the top of the section content area exactly as
+                             before while the rest of the content slides up
+                             into the freed space. */}
+                        {isMultiGroup ? (
+                          <div className="mb-2 relative">
+                            <HangingCategoryIcon question={sp} isClosed={isClosed} />
+                            <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white truncate">
+                              {getQuestionSectionTitle(sp)}
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <HangingCategoryIcon question={sp} isClosed={isClosed} />
+                        )}
                         {isYesNo &&
                           isExpanded &&
                           r &&
