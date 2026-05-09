@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { buildThreads, getThreadHref, isPendingPollId, Thread } from "@/lib/threadUtils";
 import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
 import ThreadListItem from "@/components/ThreadListItem";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import HeaderPortal from "@/components/HeaderPortal";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import { apiGetVotes, apiGetQuestionResults } from "@/lib/api";
@@ -18,9 +18,12 @@ interface ThreadListProps {
   // returned by getAccessiblePolls(). buildThreads walks
   // poll.follow_up_to to chain wrappers into threads.
   polls: Poll[];
-  /** Called after one or more threads are forgotten so the parent page can
-   *  refresh its `polls` prop (re-fetch via getMyThreads). */
-  onThreadsForgotten?: () => void;
+  /** Called with the poll-ids of every poll in every forgotten thread, so
+   *  the parent page can drop them optimistically (avoids a full server
+   *  round-trip just to hide deleted rows). A thread spans multiple polls
+   *  sharing a `thread_id`; passing only root ids would leave follow-up
+   *  polls behind and rebuild a ghost thread. */
+  onThreadsForgotten?: (forgottenPollIds: string[]) => void;
 }
 
 const LONG_PRESS_MS = 500;
@@ -45,16 +48,11 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set());
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [portalReady, setPortalReady] = useState(false);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFiredRef = useRef(false);
   const touchHandledRef = useRef(false);
-
-  useEffect(() => {
-    setPortalReady(true);
-  }, []);
 
   const threads = useMemo(() => {
     return buildThreads(polls, votedQuestionIds, abstainedQuestionIds);
@@ -85,7 +83,6 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
     setConfirmingDelete(false);
   }, []);
 
-  // Esc exits selection mode without deleting.
   useEffect(() => {
     if (!selectionMode) return;
     const onKey = (e: KeyboardEvent) => {
@@ -167,60 +164,62 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
   const handleConfirmDelete = useCallback(() => {
     const idsToForget = new Set(selectedThreadIds);
     const threadsToForget = threads.filter((t) => idsToForget.has(t.rootPollId));
+    const forgottenPollIds: string[] = [];
     for (const thread of threadsToForget) {
       forgetThread(thread);
+      for (const poll of thread.polls) forgottenPollIds.push(poll.id);
     }
     setConfirmingDelete(false);
     setSelectionMode(false);
     setSelectedThreadIds(new Set());
-    onThreadsForgotten?.();
+    onThreadsForgotten?.(forgottenPollIds);
   }, [selectedThreadIds, threads, onThreadsForgotten]);
 
   if (threads.length === 0) return null;
 
-  // Selection-mode chrome: cancel (X) button in upper-left visually replaces
-  // the home page's gear icon (covers it via fixed positioning + higher
-  // z-index), trashcan in upper-right. Both portal to document.body so the
-  // template's stacking context can't trap them behind the title row.
-  const selectionChrome = selectionMode && portalReady && typeof document !== 'undefined'
-    ? createPortal(
-        <>
-          <button
-            onClick={exitSelectionMode}
-            aria-label="Exit selection mode"
-            className="fixed z-50 w-10 h-10 rounded-full flex items-center justify-center bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 text-gray-700 dark:text-gray-200 shadow-md shadow-black/20 transition-colors"
-            style={{
-              left: 'max(0.5rem, env(safe-area-inset-left, 0px))',
-              top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
-            }}
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setConfirmingDelete(true)}
-            disabled={selectedThreadIds.size === 0}
-            aria-label={`Forget ${selectedThreadIds.size} selected thread${selectedThreadIds.size === 1 ? '' : 's'}`}
-            className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700 active:bg-red-800 text-white shadow-md shadow-black/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            style={{
-              right: 'max(0.75rem, env(safe-area-inset-right, 0px))',
-              top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)',
-            }}
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
-            </svg>
-            {selectedThreadIds.size > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1.5 rounded-full bg-white dark:bg-gray-900 text-red-600 dark:text-red-400 text-xs font-bold flex items-center justify-center border border-red-600 dark:border-red-500">
-                {selectedThreadIds.size}
-              </span>
-            )}
-          </button>
-        </>,
-        document.body,
-      )
-    : null;
+  // Cancel + trashcan render via HeaderPortal so they sit outside the
+  // ResponsiveScaling container — same target the settings-page back arrow
+  // uses. The cancel button visually replaces the home page's gear icon.
+  const selectedCount = selectedThreadIds.size;
+  const trashLabel = selectedCount === 0
+    ? 'Forget selected threads (none selected)'
+    : `Forget ${selectedCount} selected thread${selectedCount === 1 ? '' : 's'}`;
+  const selectionChrome = selectionMode ? (
+    <HeaderPortal>
+      <button
+        onClick={exitSelectionMode}
+        aria-label="Exit selection mode"
+        className="fixed z-50 w-10 h-10 rounded-full flex items-center justify-center bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 text-gray-700 dark:text-gray-200 shadow-md shadow-black/20 transition-colors"
+        style={{
+          left: 'max(0.5rem, env(safe-area-inset-left, 0px))',
+          top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+        }}
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+      <button
+        onClick={() => setConfirmingDelete(true)}
+        disabled={selectedCount === 0}
+        aria-label={trashLabel}
+        className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700 active:bg-red-800 text-white shadow-md shadow-black/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        style={{
+          right: 'max(0.75rem, env(safe-area-inset-right, 0px))',
+          top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)',
+        }}
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+        {selectedCount > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1.5 rounded-full bg-white dark:bg-gray-900 text-red-600 dark:text-red-400 text-xs font-bold flex items-center justify-center border border-red-600 dark:border-red-500">
+            {selectedCount}
+          </span>
+        )}
+      </button>
+    </HeaderPortal>
+  ) : null;
 
   return (
     <div>
@@ -244,10 +243,7 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
         };
 
         const handleClick = () => {
-          if (touchHandledRef.current) {
-            // Touchend already handled this gesture; suppress synthetic click.
-            return;
-          }
+          if (touchHandledRef.current) return;
           handleActivate();
         };
 
@@ -261,8 +257,7 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
             y: e.touches[0].clientY,
           };
           cancelLongPressTimer();
-          // Only arm long-press when not already in selection mode — once
-          // in selection mode taps just toggle.
+          // Already-selecting taps just toggle; no long-press needed.
           if (!selectionMode) {
             longPressTimerRef.current = setTimeout(() => {
               if (isScrolling.current) return;
@@ -279,15 +274,9 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
           const wasScrolling = isScrolling.current;
           touchStartPos.current = null;
           isScrolling.current = false;
-          if (wasLongPress || wasScrolling) {
-            // Long-press already opened selection mode (or the user scrolled);
-            // don't navigate or toggle. Suppress the synthetic click.
-            touchHandledRef.current = true;
-            setTimeout(() => { touchHandledRef.current = false; }, 400);
-            return;
-          }
           touchHandledRef.current = true;
           setTimeout(() => { touchHandledRef.current = false; }, 400);
+          if (wasLongPress || wasScrolling) return;
           handleActivate();
         };
 
