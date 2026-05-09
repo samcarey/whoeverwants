@@ -61,8 +61,9 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
   }, [polls, votedQuestionIds, abstainedQuestionIds]);
 
   // Threads can drop out from under us (deletions, re-fetch). Strip selection
-  // ids that no longer correspond to a visible thread; auto-exit selection
-  // mode when the working set goes empty.
+  // ids that no longer correspond to a visible thread. (Selection mode stays
+  // active even when the set is empty — the user exits explicitly via the
+  // upper-left cancel button or Escape.)
   useEffect(() => {
     if (!selectionMode) return;
     const validIds = new Set(threads.map((t) => t.rootPollId));
@@ -78,25 +79,21 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
     });
   }, [threads, selectionMode]);
 
-  useEffect(() => {
-    if (selectionMode && selectedThreadIds.size === 0 && !confirmingDelete) {
-      setSelectionMode(false);
-    }
-  }, [selectionMode, selectedThreadIds, confirmingDelete]);
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedThreadIds(new Set());
+    setConfirmingDelete(false);
+  }, []);
 
   // Esc exits selection mode without deleting.
   useEffect(() => {
     if (!selectionMode) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSelectionMode(false);
-        setSelectedThreadIds(new Set());
-        setConfirmingDelete(false);
-      }
+      if (e.key === 'Escape') exitSelectionMode();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [selectionMode]);
+  }, [selectionMode, exitSelectionMode]);
 
   // Prefetch thread page routes for all visible threads on mount.
   // `getThreadHref` returns `/t/<root>?p=<target>` (with the targeted poll
@@ -181,34 +178,53 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
 
   if (threads.length === 0) return null;
 
-  const trashButton = selectionMode && portalReady && typeof document !== 'undefined'
+  // Selection-mode chrome: cancel (X) button in upper-left visually replaces
+  // the home page's gear icon (covers it via fixed positioning + higher
+  // z-index), trashcan in upper-right. Both portal to document.body so the
+  // template's stacking context can't trap them behind the title row.
+  const selectionChrome = selectionMode && portalReady && typeof document !== 'undefined'
     ? createPortal(
-        <button
-          onClick={() => setConfirmingDelete(true)}
-          disabled={selectedThreadIds.size === 0}
-          aria-label={`Forget ${selectedThreadIds.size} selected thread${selectedThreadIds.size === 1 ? '' : 's'}`}
-          className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700 active:bg-red-800 text-white shadow-md shadow-black/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          style={{
-            right: 'max(0.75rem, env(safe-area-inset-right, 0px))',
-            top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)',
-          }}
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
-          </svg>
-          {selectedThreadIds.size > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1.5 rounded-full bg-white dark:bg-gray-900 text-red-600 dark:text-red-400 text-xs font-bold flex items-center justify-center border border-red-600 dark:border-red-500">
-              {selectedThreadIds.size}
-            </span>
-          )}
-        </button>,
+        <>
+          <button
+            onClick={exitSelectionMode}
+            aria-label="Exit selection mode"
+            className="fixed z-50 w-10 h-10 rounded-full flex items-center justify-center bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 text-gray-700 dark:text-gray-200 shadow-md shadow-black/20 transition-colors"
+            style={{
+              left: 'max(0.5rem, env(safe-area-inset-left, 0px))',
+              top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+            }}
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setConfirmingDelete(true)}
+            disabled={selectedThreadIds.size === 0}
+            aria-label={`Forget ${selectedThreadIds.size} selected thread${selectedThreadIds.size === 1 ? '' : 's'}`}
+            className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-red-600 hover:bg-red-700 active:bg-red-800 text-white shadow-md shadow-black/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            style={{
+              right: 'max(0.75rem, env(safe-area-inset-right, 0px))',
+              top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)',
+            }}
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+            </svg>
+            {selectedThreadIds.size > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1.5 rounded-full bg-white dark:bg-gray-900 text-red-600 dark:text-red-400 text-xs font-bold flex items-center justify-center border border-red-600 dark:border-red-500">
+                {selectedThreadIds.size}
+              </span>
+            )}
+          </button>
+        </>,
         document.body,
       )
     : null;
 
   return (
     <div>
-      {trashButton}
+      {selectionChrome}
       {threads.map((thread, index) => {
         const href = getThreadHref(thread);
         const latestQuestion = thread.latestQuestion;
