@@ -32,6 +32,20 @@ export function formatDurationLabel(minutes: number): string {
   return `${mins}m`;
 }
 
+/** Format a remaining-time milliseconds difference for countdown display.
+ *  Hides seconds whenever ≥ 60 seconds remain — only the final sub-minute
+ *  window shows the seconds counter ticking down. */
+export function formatCountdownTime(diffMs: number): string {
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${seconds}s`;
+}
+
 /** Format "label (clock time)" showing the absolute time `minutes` from now.
  *  Returns just the label on the server or when minutes <= 0. */
 export function formatDeadlineLabel(minutes: number, label: string): string {

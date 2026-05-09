@@ -165,7 +165,6 @@ export default function ThreadListItem(props: ThreadListItemProps) {
                   <SimpleCountdown
                     deadline={soonestUnvotedDeadline}
                     colorClass="text-green-600 dark:text-green-400"
-                    hideSecondsInDays
                   />
                 </ClientOnly>
               </div>
