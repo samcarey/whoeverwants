@@ -7,7 +7,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // UIWindow's default backgroundColor is black; if the WebView's
+        // frame doesn't fully cover the window (e.g. iOS reserving the
+        // home-indicator zone), the window bg shows through as a black bar.
+        // Use `.systemBackground` so the leak adapts to light/dark, matching
+        // the page's `prefers-color-scheme`-aware background.
+        window?.backgroundColor = .systemBackground
         return true
     }
 
@@ -46,4 +51,27 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+}
+
+// CAPBridgeViewController.loadView() is `final` and assigns
+// `view = webView`, so we can't override the view hierarchy or root
+// view's class — only react in viewDidLoad. Belt-and-suspenders against
+// any case where the WebView's frame doesn't fully cover the window
+// (Capacitor config not yet parsed, frame-vs-window mismatch, etc.):
+// pin the view to `.systemBackground` so any leak reads as page bg
+// instead of UIWindow's default black. Capacitor's own setup also
+// writes `webView.backgroundColor` + `scrollView.backgroundColor` from
+// `capacitor.config.ts` (CAPBridgeViewController.swift L308-310), so
+// don't redo those — the view is the only layer this VC owns that
+// isn't covered by the config.
+//
+// Colocated with AppDelegate because adding a new .swift file requires
+// hand-patching project.pbxproj (the headless CI build has no Xcode GUI
+// to handle the file-add flow); class is small enough that splitting
+// pays no readability dividend.
+class MainViewController: CAPBridgeViewController {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+    }
 }

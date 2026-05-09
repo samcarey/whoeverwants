@@ -7,10 +7,13 @@ name: iOS Build & TestFlight
 
 on:
   push:
+    # Build on every branch — pushes to `main` go to TestFlight as the prod
+    # bundle (`com.whoeverwants.app`), every other branch builds against
+    # the per-developer dev bundle (`com.whoeverwants.app.dev.<github-actor>`).
+    # The path filter still gates on native-relevant files so routine code
+    # pushes don't burn TestFlight uploads.
     branches:
-      - main
-      - 'claude/capacitor-**'
-      - 'ios/**'
+      - '**'
     paths:
       - 'capacitor.config.ts'
       - 'ios/**'
