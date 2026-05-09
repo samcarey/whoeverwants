@@ -1050,9 +1050,10 @@ export function CreateQuestionContent() {
       } else {
         effectiveDrafts = [...drafts, newDraft];
       }
-      setDrafts(effectiveDrafts);
-      applyDraftToState(emptyDraft());
-      setEditingDraftIndex(null);
+      // NOTE: don't reset the form state here. If poll-level validation
+      // fails below — or the API call errors out later — the user keeps
+      // their typed values in the modal. The reset only happens on the
+      // success path (after POLL_HYDRATED dispatches).
     }
 
     const validationError = getValidationErrorFor(effectiveDrafts);
@@ -1227,7 +1228,8 @@ export function CreateQuestionContent() {
             detail: { placeholderId: placeholderPoll.id },
           }),
         );
-        setDrafts(effectiveDrafts);
+        // Form state is still intact in the modal (we never reset it
+        // before the API call) — the user can fix and retry.
         return;
       }
 
