@@ -298,21 +298,32 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
   }
 
   if (roundVisualizations.length === 0) {
+    const optionsList = results.options && results.options.length > 0 ? (
+      <ul className="mt-3 space-y-1 text-left max-w-xs mx-auto">
+        {results.options.map((opt) => (
+          <li
+            key={opt}
+            className="text-sm text-gray-700 dark:text-gray-300 px-3 py-1 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+          >
+            <OptionLabel text={opt} metadata={optionsMetadata?.[opt]} />
+          </li>
+        ))}
+      </ul>
+    ) : null;
     // Check if there are any votes at all
     if (results.total_votes === 0) {
       return (
         <div className="text-center">
           <p className="text-gray-600 dark:text-gray-400">No Voters</p>
+          {optionsList}
         </div>
       );
     } else {
       // There are votes but all abstained
       return (
         <div className="text-center">
-          <p className="text-gray-600 dark:text-gray-400">No Votes</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            All voters abstained
-          </p>
+          <p className="text-gray-600 dark:text-gray-400">All voters abstained</p>
+          {optionsList}
         </div>
       );
     }
