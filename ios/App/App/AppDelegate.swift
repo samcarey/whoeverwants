@@ -7,12 +7,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Default UIWindow background is black; if the WebView's frame ever
-        // shrinks below screen bounds (safe-area layout-guide, transient
-        // resize during rotation, etc.) the window's bg shows through as
-        // a black bar. Pin to white so any leak matches the page's light
-        // background.
-        window?.backgroundColor = .white
+        // UIWindow's default backgroundColor is black; if the WebView's
+        // frame doesn't fully cover the window (e.g. iOS reserving the
+        // home-indicator zone), the window bg shows through as a black bar.
+        // Use `.systemBackground` so the leak adapts to light/dark, matching
+        // the page's `prefers-color-scheme`-aware background.
+        window?.backgroundColor = .systemBackground
         return true
     }
 
@@ -54,22 +54,24 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 }
 
 // CAPBridgeViewController.loadView() is `final` and assigns
-// `view = webView`, so we can't override the view hierarchy. The
-// home-indicator zone on iPhone X-class devices was rendering as a
-// black bar on top of the WebView — symptomatic of either the WebView's
-// frame not reaching the screen bottom or a backing surface showing
-// through under the home-indicator area. Pin every backing surface this
-// view controller touches to white so a leak in any layer reads as
-// page-background instead of a black bar. Lives in AppDelegate.swift
-// (rather than a new file) because that file is already wired into the
-// Xcode build phase — adding a new .swift file requires hand-patching
-// project.pbxproj which is fragile.
+// `view = webView`, so we can't override the view hierarchy or root
+// view's class — only react in viewDidLoad. Belt-and-suspenders against
+// any case where the WebView's frame doesn't fully cover the window
+// (Capacitor config not yet parsed, frame-vs-window mismatch, etc.):
+// pin the view to `.systemBackground` so any leak reads as page bg
+// instead of UIWindow's default black. Capacitor's own setup also
+// writes `webView.backgroundColor` + `scrollView.backgroundColor` from
+// `capacitor.config.ts` (CAPBridgeViewController.swift L308-310), so
+// don't redo those — the view is the only layer this VC owns that
+// isn't covered by the config.
+//
+// Colocated with AppDelegate because adding a new .swift file requires
+// hand-patching project.pbxproj (the headless CI build has no Xcode GUI
+// to handle the file-add flow); class is small enough that splitting
+// pays no readability dividend.
 class MainViewController: CAPBridgeViewController {
     override open func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .white
-        webView?.backgroundColor = .white
-        webView?.scrollView.backgroundColor = .white
-        webView?.isOpaque = true
+        view.backgroundColor = .systemBackground
     }
 }
