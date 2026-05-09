@@ -1,5 +1,20 @@
 import { invalidateQuestion } from '@/lib/questionCache';
 import { addForgottenQuestionId, removeAccessibleQuestionId } from '@/lib/browserQuestionAccess';
+import { apiLeaveThread } from '@/lib/api';
+import type { Thread } from '@/lib/threadUtils';
+
+// Forget every question in a thread + drop server-side membership.
+// Mirrors the per-question forget flow in the thread page's pendingAction
+// handler: after `forgetQuestion` for each question, fire `apiLeaveThread`
+// fire-and-forget so the thread doesn't reappear via Phase C.3 membership
+// visibility on the next /api/threads/mine call.
+export function forgetThread(thread: Thread): void {
+  for (const question of thread.questions) {
+    forgetQuestion(question.id);
+  }
+  const routeId = thread.threadId ?? thread.rootPollId;
+  if (routeId) void apiLeaveThread(routeId);
+}
 
 // Function to completely forget a question from browser storage
 export function forgetQuestion(questionId: string): void {

@@ -46,6 +46,11 @@ export interface ThreadListItemProps {
   /** Inline replacement for the relative-time stamp when `createdAt` is
    *  absent — e.g. "ready to submit" / "just now" for the draft poll card. */
   statusBadge?: React.ReactNode;
+  /** When true, render a circular selection checkbox to the left of the row.
+   *  Used by the home-page bulk-forget flow. */
+  selectionMode?: boolean;
+  /** Whether this thread is selected. Only meaningful when selectionMode. */
+  isSelected?: boolean;
   onClick?: () => void;
   onTouchStart?: (e: React.TouchEvent) => void;
   onTouchEnd?: () => void;
@@ -70,6 +75,8 @@ export default function ThreadListItem(props: ThreadListItemProps) {
     isFirst = false,
     hideRespondents = false,
     statusBadge,
+    selectionMode = false,
+    isSelected = false,
     onClick,
     onTouchStart,
     onTouchEnd,
@@ -107,6 +114,30 @@ export default function ThreadListItem(props: ThreadListItemProps) {
           showDraftChrome ? 'bg-blue-50/40 dark:bg-blue-900/10' : ''
         }`}
       >
+        {selectionMode && (
+          <div
+            aria-checked={isSelected}
+            role="checkbox"
+            className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center self-center transition-colors ${
+              isSelected
+                ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500'
+                : 'border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-900'
+            }`}
+          >
+            {isSelected && (
+              <svg
+                className="w-4 h-4 text-white"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={3}
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </div>
+        )}
+
         {/* Drafts skip this entirely so the "?" placeholder doesn't appear
             before anyone has actually voted. */}
         {!hideRespondents && (

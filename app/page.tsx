@@ -246,7 +246,7 @@ export default function Home() {
       )}
 
       {!loading && !error && (
-        <ThreadList polls={polls} />
+        <ThreadList polls={polls} onThreadsForgotten={refreshQuestions} />
       )}
 
     </>
