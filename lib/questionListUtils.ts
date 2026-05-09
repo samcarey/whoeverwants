@@ -33,7 +33,7 @@ export function getBuiltInCategoryIcon(category: string | null | undefined): str
   return getBuiltInType(category)?.icon;
 }
 
-/** Per-question section header used in multi-question poll cards.
+/** Per-question section header used in poll cards.
  *  Mirrors the server-side auto-title ("<Label> for <Context>") so a
  *  Time question with details="Partie" reads as "Time for Partie"
  *  instead of just "Partie". The `time` special-case is load-bearing:
@@ -42,11 +42,6 @@ export function getBuiltInCategoryIcon(category: string | null | undefined): str
  *  `_category_for_title` in `server/routers/polls.py`. */
 function getQuestionLabel(question: Question): string | null {
   if (question.question_type === 'time') return 'Time';
-  // Match the server's auto-title format ("Yes/No" with no spaces, in
-  // contrast to BUILT_IN_TYPES.label "Yes / No"); keep them aligned so
-  // section headers don't visually diverge from the auto-generated
-  // wrapper title.
-  if (question.question_type === 'yes_no') return 'Yes/No';
   const builtIn = getBuiltInType(question.category ?? '');
   if (builtIn) return builtIn.label;
   if (question.category && question.category !== 'custom') return question.category;
@@ -54,6 +49,16 @@ function getQuestionLabel(question: Question): string | null {
 }
 
 export function getQuestionSectionTitle(question: Question): string {
+  // Yes/No questions carry the user-typed prompt as their explicit title
+  // (is_auto_title === false). Use it directly — the category label
+  // "Yes/No" is just a type signal and would override the user's actual
+  // question, e.g. "Should we go?" would render as "Yes/No" in the
+  // section header. The hanging category icon next to the text still
+  // signals the type.
+  if (question.question_type === 'yes_no') {
+    const title = question.title?.trim();
+    if (title) return title;
+  }
   const details = question.details?.trim();
   const label = getQuestionLabel(question);
   if (label && details) return `${label} for ${details}`;
