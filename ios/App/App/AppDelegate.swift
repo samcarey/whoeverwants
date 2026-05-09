@@ -7,7 +7,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Default UIWindow background is black; if the WebView's frame ever
+        // shrinks below screen bounds (safe-area layout-guide, transient
+        // resize during rotation, etc.) the window's bg shows through as
+        // a black bar. Pin to white so any leak matches the page's light
+        // background.
+        window?.backgroundColor = .white
         return true
     }
 
@@ -46,4 +51,25 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+}
+
+// CAPBridgeViewController.loadView() is `final` and assigns
+// `view = webView`, so we can't override the view hierarchy. The
+// home-indicator zone on iPhone X-class devices was rendering as a
+// black bar on top of the WebView — symptomatic of either the WebView's
+// frame not reaching the screen bottom or a backing surface showing
+// through under the home-indicator area. Pin every backing surface this
+// view controller touches to white so a leak in any layer reads as
+// page-background instead of a black bar. Lives in AppDelegate.swift
+// (rather than a new file) because that file is already wired into the
+// Xcode build phase — adding a new .swift file requires hand-patching
+// project.pbxproj which is fragile.
+class MainViewController: CAPBridgeViewController {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .white
+        webView?.backgroundColor = .white
+        webView?.scrollView.backgroundColor = .white
+        webView?.isOpaque = true
+    }
 }
