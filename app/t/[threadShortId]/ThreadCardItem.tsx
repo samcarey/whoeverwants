@@ -819,6 +819,9 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                     const isYesNo = sp.question_type === "yes_no";
                     const r = isYesNo ? questionResultsMap.get(sp.id) : undefined;
                     const userVote = isYesNo ? userVoteMap.get(sp.id) : undefined;
+                    const hangingIcon = (
+                      <HangingCategoryIcon question={sp} isClosed={isClosed} />
+                    );
                     return (
                       <div
                         key={sp.id}
@@ -826,19 +829,24 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                           isMultiGroup && idx > 0
                             ? "mt-4 pt-3 border-t border-gray-200 dark:border-gray-800"
                             : ""
-                        }`}
+                        }${!isMultiGroup ? " relative" : ""}`}
                       >
-                        {/* Per-question section header. Rendered for both
-                             single- and multi-question polls so the expanded
-                             card always identifies the question — empty
-                             states (no votes / all abstained) would otherwise
-                             leave only the abstain message visible. */}
-                        <div className="mb-2 relative">
-                          <HangingCategoryIcon question={sp} isClosed={isClosed} />
-                          <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white capitalize truncate">
-                            {getQuestionSectionTitle(sp)}
+                        {/* Single-question polls skip the section title (it
+                             duplicates the card's top header) and anchor
+                             the icon on the outer section div. Multi-
+                             question polls keep an intermediate header div
+                             so the icon stays below `pt-3` for idx > 0
+                             rows. */}
+                        {isMultiGroup ? (
+                          <div className="mb-2 relative">
+                            {hangingIcon}
+                            <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white truncate">
+                              {getQuestionSectionTitle(sp)}
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          hangingIcon
+                        )}
                         {isYesNo &&
                           isExpanded &&
                           r &&
