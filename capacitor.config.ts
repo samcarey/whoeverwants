@@ -27,8 +27,8 @@ const config: CapacitorConfig = {
     // The web app uses `viewport-fit=cover` and draws its own
     // `env(safe-area-inset-*)` padding throughout (fixed headers fill the
     // notch zone, page titles use `.page-title-safe-top`, etc.). Let the
-    // WebView extend edge-to-edge under the status bar and home indicator
-    // — `contentInset: 'always'` produced visible black bars at top and
+    // WebView extend edge-to-edge under the status bar and home indicator.
+    // `contentInset: 'always'` produced visible black bars at top and
     // bottom because it pads the WebView away from the safe areas and
     // exposes the `backgroundColor` underneath.
     contentInset: 'never',
