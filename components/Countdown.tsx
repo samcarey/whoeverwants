@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { formatCountdownTime } from "@/lib/timeUtils";
 
 interface CountdownProps {
   deadline: string | null;
@@ -32,24 +33,7 @@ export default function Countdown({ deadline, label, onExpire }: CountdownProps)
         return;
       }
 
-      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((difference % (1000 * 60)) / 1000);
-
-      let timeString = "";
-      
-      if (days > 0) {
-        timeString = `${days}d ${hours}h ${minutes}m`;
-      } else if (hours > 0) {
-        timeString = `${hours}h ${minutes}m ${seconds}s`;
-      } else if (minutes > 0) {
-        timeString = `${minutes}m ${seconds}s`;
-      } else {
-        timeString = `${seconds}s`;
-      }
-
-      setTimeLeft(timeString);
+      setTimeLeft(formatCountdownTime(difference));
     };
 
     updateCountdown();
