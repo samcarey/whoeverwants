@@ -1397,7 +1397,7 @@ self-hosted Mac mini runner (labels: `self-hosted, macos-mini`). The workflow:
 5. On first run only: auto-scaffolds `ios/` via `npx cap add ios` and commits it back to the branch.
 
 Triggers:
-- Pushes to `main`, `claude/capacitor-**`, or `ios/**` that touch `capacitor.config.ts`, `ios/**`, `package.json`, `package-lock.json`, the workflow file, or `scripts/ios/**`.
+- Pushes to ANY branch that touch `capacitor.config.ts`, `ios/**`, `package.json`, `package-lock.json`, the workflow file, or `scripts/ios/**`. `main` builds the prod bundle (`com.whoeverwants.app`); every other branch builds the per-developer dev bundle (`com.whoeverwants.app.dev.<github-actor>`) so each contributor can install their dev build alongside prod without collision. Concurrency is keyed on `github.ref` with `cancel-in-progress: true`, so rapid pushes to the same branch only run the latest commit.
 - Manual via `workflow_dispatch` — inputs: `cap_env` (dev|prod), `cap_server_url` (explicit URL override), `skip_upload` (bool).
 
 ### Helper scripts
