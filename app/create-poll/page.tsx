@@ -13,8 +13,6 @@ import type { Poll, OptionsMetadata, Question } from "@/lib/types";
 import CompactNameField from "@/components/CompactNameField";
 import { BUILT_IN_TYPES, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
-import ConfirmationModal from "@/components/ConfirmationModal";
-import { useLongPress } from "@/lib/useLongPress";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } from "@/lib/userProfile";
@@ -40,7 +38,7 @@ import {
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID, THREAD_HEADER_ATTR, THREAD_ID_ATTR } from "@/lib/threadDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, THREAD_ID_ATTR } from "@/lib/threadDomMarkers";
 import {
   pollLookup,
   shortenOption,
@@ -56,9 +54,6 @@ import {
   draftToQuestionParams,
   anyDraftUsesPrephase,
   anyDraftIsRankedChoice,
-  deriveDraftTitle,
-  draftCardLabels,
-  draftPollPreview,
   sharedDraftContext,
   synthesizePlaceholderPoll,
 } from "./createPollHelpers";
@@ -73,50 +68,6 @@ const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
   { value: 'custom', label: 'Other' },
 ];
-
-// Extracted so each row owns its own useLongPress hook (one timer per row).
-function DraftRow({
-  draft,
-  index,
-  isLoading,
-  onEdit,
-  onRequestDelete,
-}: {
-  draft: QuestionDraft;
-  index: number;
-  isLoading: boolean;
-  onEdit: (index: number) => void;
-  onRequestDelete: (index: number) => void;
-}) {
-  const { props: longPressProps, isPressed } = useLongPress(
-    isLoading ? null : () => onRequestDelete(index)
-  );
-  const { icon, label } = draftCardLabels(draft);
-  const derivedTitle = deriveDraftTitle(draft);
-  return (
-    <li
-      role="button"
-      tabIndex={isLoading ? -1 : 0}
-      aria-label={`Edit ${label} section. Long-press to delete.`}
-      aria-disabled={isLoading || undefined}
-      onClick={() => { if (!isLoading) onEdit(index); }}
-      onKeyDown={(e) => {
-        if (isLoading) return;
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onEdit(index);
-        }
-      }}
-      {...longPressProps}
-      className={`flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 select-none transition-transform ${isPressed ? 'scale-[0.98]' : ''} ${isLoading ? 'opacity-50 pointer-events-none' : 'cursor-pointer hover:border-blue-300 dark:hover:border-blue-700'}`}
-    >
-      <span className="text-lg leading-none" aria-hidden>{icon}</span>
-      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex-1 min-w-0">
-        {derivedTitle}
-      </span>
-    </li>
-  );
-}
 
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
@@ -178,16 +129,15 @@ export function CreateQuestionContent() {
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
 
+  // Single-question mode: `drafts` holds the auto-staged inline form
+  // mid-submit (handleSubmitClick reads it for the API payload). Always
+  // empty between submits. The legacy multi-question staging UI is gone.
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
-  // When non-null, the modal is editing this draft index; confirm
-  // replaces in place, dismiss leaves the list untouched (the draft
-  // is never popped on edit-pencil click).
+  // editingDraftIndex is dormant in single-question mode; kept around so
+  // handleSubmitClick's auto-stage path doesn't need to special-case the
+  // null branch when multi-question staging returns.
   const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [pendingDeleteIndex, setPendingDeleteIndex] = useState<number | null>(null);
-  // Synthetic click after touch-release lands on the just-mounted modal
-  // backdrop; gate onCancel for 400ms (same as FollowUpModal's guard).
-  const deleteOpenedAtRef = useRef(0);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
@@ -695,83 +645,16 @@ export function CreateQuestionContent() {
     setMinimumParticipation(d.minimumParticipation);
   }, []);
 
-  const handleEditDraft = useCallback((index: number) => {
-    const target = drafts[index];
-    if (!target) return;
-    setError(null);
-    setEditingDraftIndex(index);
-    applyDraftToState(target);
-    setIsModalOpen(true);
-  }, [drafts, applyDraftToState]);
-
-  const requestDeleteDraft = useCallback((index: number) => {
-    if (index < 0 || index >= drafts.length) return;
-    deleteOpenedAtRef.current = Date.now();
-    setPendingDeleteIndex(index);
-  }, [drafts.length]);
-
-  const cancelDeleteDraft = useCallback(() => {
-    if (Date.now() - deleteOpenedAtRef.current < 400) return;
-    setPendingDeleteIndex(null);
-  }, []);
-
-  const confirmDeleteDraft = useCallback(() => {
-    if (pendingDeleteIndex === null) return;
-    const idx = pendingDeleteIndex;
-    setDrafts((prev) => prev.filter((_, i) => i !== idx));
-    setPendingDeleteIndex(null);
-  }, [pendingDeleteIndex]);
-
-  // Bring the just-materialized draft card up under the fixed header,
-  // capped at the document's natural maxScroll — never push the card
-  // downward or extend the page artificially. The 12px gap leaves a
-  // sliver of breathing room when the card does reach the top.
-  const scrollDraftCardUnderHeader = useCallback(() => {
-    const DRAFT_TOP_GAP = 12;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const card = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
-        if (!card) return;
-        const header = document.querySelector(`[${THREAD_HEADER_ATTR}]`) as HTMLElement | null;
-        const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
-        const target = Math.max(0, window.scrollY + card.getBoundingClientRect().top - headerBottom - DRAFT_TOP_GAP);
-        if (target <= window.scrollY) return;
-        window.scrollTo({ top: target, behavior: 'smooth' });
-      });
-    });
-  }, []);
-
-  const confirmModal = useCallback((): boolean => {
-    const subErr = getCurrentQuestionFormError();
-    if (subErr) { setError(subErr); return false; }
-    setError(null);
-    const draft = readCurrentDraft();
-    // Only the 0 → 1 transition materializes the card; subsequent
-    // additions don't shift its position enough to warrant scrolling.
-    const draftCardJustMaterialized = drafts.length === 0 && editingDraftIndex === null;
-    if (editingDraftIndex !== null) {
-      setDrafts(prev => {
-        const next = [...prev];
-        next[editingDraftIndex] = draft;
-        return next;
-      });
-    } else {
-      setDrafts(prev => [...prev, draft]);
-    }
-    applyDraftToState(emptyDraft());
-    setEditingDraftIndex(null);
-    setIsModalOpen(false);
-    if (draftCardJustMaterialized) {
-      scrollDraftCardUnderHeader();
-    }
-    return true;
-  }, [drafts.length, editingDraftIndex, readCurrentDraft, applyDraftToState, scrollDraftCardUnderHeader]);
-
   const dismissModal = useCallback(() => {
     applyDraftToState(emptyDraft());
     setEditingDraftIndex(null);
     setError(null);
     setIsModalOpen(false);
+    // Single-question mode: dismissing the modal also clears any staged
+    // draft so reopening starts fresh. The legacy multi-question staging
+    // path is dormant; drafts only ever holds the auto-staged inline form
+    // mid-submit.
+    setDrafts([]);
   }, [applyDraftToState]);
 
   const openModalFor = useCallback((cat: string) => {
@@ -1363,6 +1246,13 @@ export function CreateQuestionContent() {
       setIsSubmitted(false);
       isSubmittingRef.current = false;
       setIsLoading(false);
+      // Close the create-question modal — the optimistic placeholder
+      // is in place on the thread, and the upcoming POLL_HYDRATED swaps
+      // it for the real card. Reset form state so reopening starts fresh.
+      setIsModalOpen(false);
+      applyDraftToState(emptyDraft());
+      setEditingDraftIndex(null);
+      setError(null);
 
       // Cache the real poll, then notify thread state so it swaps placeholder
       // fields for real ones in place (same DOM node — no remount mid-FLIP).
@@ -1445,16 +1335,6 @@ export function CreateQuestionContent() {
       )}
     </div>
   );
-
-  // Mirror the auto-stage logic from handleSubmitClick so the displayed error
-  // and the disabled-state of the Submit button match what would actually
-  // happen on tap. If the inline form has content, treat it as if it were
-  // already staged for validation purposes.
-  const projectedDrafts = inlineFormHasContent() && !getCurrentQuestionFormError()
-    ? [...drafts, readCurrentDraft()]
-    : drafts;
-  const validationError = getValidationErrorFor(projectedDrafts);
-  const submitDisabled = isLoading || isSubmitted || !!validationError;
 
   // Compact suggestion/availability cutoff field — used in the BOTTOM modal
   // when the poll has at least one prephase question, since the cutoff is
@@ -1636,182 +1516,17 @@ export function CreateQuestionContent() {
     </form>
   );
 
-  const hasDrafts = drafts.length > 0;
-
   return (
     <div className="question-content">
       {draftPollPortal && createPortal(
         <>
-          {hasDrafts && (
-            <div className="pt-3">
-              {/* Submit button is absolute-positioned so adding it doesn't
-                  shift the centered preview-title label off-axis. */}
-              <div className="relative mx-1.5 mb-2 flex items-center justify-center min-h-9">
-                <span className="inline-block text-sm font-medium text-gray-500 dark:text-gray-400 select-none mt-[3px] truncate max-w-[calc(100%-4rem)]">
-                  {projectedDrafts.length > 0 && !validationError
-                    ? draftPollPreview(projectedDrafts, '').title
-                    : 'Create Poll'}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleSubmitClick}
-                  disabled={submitDisabled}
-                  aria-label="Submit poll"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isSubmitted || isLoading ? (
-                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-              <div
-                data-draft-poll-card
-                className="mx-1.5 rounded-3xl border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10"
-              >
-                {/* Staged questions list — tap to edit, long-press to delete. */}
-                <div className="px-3 pt-3 pb-1">
-                  <ul className="space-y-1.5">
-                    {drafts.map((d, i) => (
-                      <DraftRow
-                        key={i}
-                        draft={d}
-                        index={i}
-                        isLoading={isLoading}
-                        onEdit={handleEditDraft}
-                        onRequestDelete={requestDeleteDraft}
-                      />
-                    ))}
-                  </ul>
-                </div>
-
-                {/* Settings — voting cutoff, suggestion/availability cutoff,
-                    notes, voter name. */}
-                <div className="pb-3">
-                  <div className="px-3 pt-2">
-                    <form
-                      onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                      className="space-y-3"
-                    >
-                      <VotingCutoffField
-                        deadlineOption={deadlineOption}
-                        setDeadlineOption={setDeadlineOption}
-                        customDate={customDate}
-                        setCustomDate={setCustomDate}
-                        customTime={customTime}
-                        setCustomTime={setCustomTime}
-                        isLoading={isLoading}
-                        isClient={isClient}
-                      />
-
-                      {pollHasPrephase && suggestionCutoffField}
-
-                      {pollHasRankedChoice && (
-                        <CompactMinResponsesField
-                          value={minResponses}
-                          setValue={(val) => {
-                            setMinResponses(val);
-                            saveUserMinResponses(val);
-                          }}
-                          showPreliminary={showPreliminaryResults}
-                          setShowPreliminary={setShowPreliminaryResults}
-                          disabled={isLoading}
-                        />
-                      )}
-
-                      {pollHasPrephase && (
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={allowPreRanking}
-                            onChange={(e) => setAllowPreRanking(e.target.checked)}
-                            disabled={isLoading}
-                            className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                          />
-                          <span className="text-sm text-gray-600 dark:text-gray-400">
-                            allow voting before options are finalized
-                          </span>
-                        </label>
-                      )}
-
-                      <div>
-                        {detailsOpen ? (
-                          <>
-                            <label htmlFor="details" className="block text-sm font-medium mb-1">
-                              Notes
-                            </label>
-                            <textarea
-                              ref={detailsRef}
-                              id="details"
-                              value={details}
-                              onChange={(e) => {
-                                setDetails(e.target.value);
-                                const el = e.target;
-                                el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
-                                const maxH = 5 * 20 + 16;
-                                el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
-                                el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
-                              }}
-                              onBlur={() => {
-                                const trimmed = details.trim();
-                                if (!trimmed) {
-                                  setDetailsOpen(false);
-                                  setDetails('');
-                                } else if (trimmed !== details) {
-                                  setDetails(trimmed);
-                                }
-                              }}
-                              disabled={isLoading}
-                              style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
-                              className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
-                              placeholder="Add more context or instructions..."
-                            />
-                          </>
-                        ) : (
-                          <div className="text-sm font-medium">
-                            Notes:{' '}
-                            <button
-                              type="button"
-                              onClick={() => setDetailsOpen(true)}
-                              className="font-normal text-blue-600 dark:text-blue-400"
-                            >
-                              Add
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      <CompactNameField
-                        name={creatorName}
-                        setName={setCreatorName}
-                        disabled={isLoading}
-                      />
-                    </form>
-
-                    {(error || (validationError && drafts.length > 0)) && (
-                      <div className="mt-3 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
-                        {error ?? validationError}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Category bubble bar — pt-* is the gap above; pb-4 supplements
               the page's outer paddingBottom (template.tsx) so iOS Safari's
               bottom URL bar (~50–64px, overlays the viewport at max scroll)
               doesn't clip the last bubble row. env(safe-area-inset-bottom)
               isn't usable here — it returns 0 when the URL bar is visible
               (the case we need to handle) and feeds scrollHeight. */}
-          <div className={`px-3 ${hasDrafts ? 'pt-4' : 'pt-3'} pb-4 flex flex-wrap justify-center gap-2`}>
+          <div className="px-3 pt-3 pb-4 flex flex-wrap justify-center gap-2">
             {BUBBLE_ENTRIES.map((entry) => (
               <button
                 key={entry.value}
@@ -1833,72 +1548,189 @@ export function CreateQuestionContent() {
         draftPollPortal
       )}
 
-      {/* Question-form modal — backdrop + rounded-corner card with the
-          checkmark in the upper-right. Tap the checkmark to commit the
-          in-progress question to the staged-list draft; tap the backdrop /
-          X / Escape to discard. Edit flow: pencil on a staged draft loads
-          it into the modal — confirm replaces at the original index,
-          dismiss leaves the original draft untouched. */}
+      {/* New-poll bottom sheet — slides up from the bottom edge. Top half
+          holds the question form; bottom half holds poll-level settings
+          (voting cutoff, prephase cutoff, notes, voter name). Each section
+          is a borderless rounded card with a lighter bg than the sheet so
+          the two read as stacked panels. The check button submits the
+          whole poll immediately (single-question mode); backdrop / Escape
+          dismisses. */}
       {isModalOpen && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
+          <div className="fixed inset-0 z-[60] flex items-end justify-center">
             {/* Backdrop — tap to dismiss. */}
             <div
-              className="absolute inset-0 bg-black/40 dark:bg-black/60"
+              className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
               onClick={dismissModal}
               aria-hidden="true"
             />
-            {/* Modal panel — rounded corners, capped height, scrollable
-                inner body. On mobile we anchor to the bottom (sheet-like);
-                on sm+ screens we center it. The sheet still has rounded
-                corners on every edge so it reads as a card. */}
+            {/* Sheet panel — anchored to the bottom edge with rounded top
+                corners. Slides up on mount via the shared `slide-up`
+                keyframe in globals.css. */}
             <div
-              className="relative w-full sm:max-w-md bg-white dark:bg-gray-900 rounded-3xl shadow-2xl mx-2 mb-2 sm:mb-0 flex flex-col"
-              style={{ maxHeight: 'min(calc(100dvh - 5rem), 44rem)' }}
+              className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col animate-slide-up"
+              style={{ maxHeight: 'calc(100dvh - 3rem)' }}
               role="dialog"
               aria-modal="true"
-              aria-label={editingDraftIndex !== null ? 'Edit question' : 'New question'}
+              aria-label="New poll"
             >
               <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.25rem]">
                 <span className="text-sm font-medium text-gray-500 dark:text-gray-400 select-none">
-                  {editingDraftIndex !== null ? 'Edit Question' : 'New Question'}
+                  New Poll
                 </span>
                 <button
                   type="button"
-                  onClick={() => confirmModal()}
-                  disabled={isLoading || !inlineFormHasDraftableContent}
-                  aria-label={editingDraftIndex !== null ? 'Save question edits' : 'Save question'}
+                  onClick={handleSubmitClick}
+                  disabled={isLoading || isSubmitted || !inlineFormHasDraftableContent}
+                  aria-label="Submit poll"
                   className="absolute right-2 top-2 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
+                  {isSubmitted || isLoading ? (
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
                 </button>
               </div>
 
-              {/* Form body — scrollable when content overflows. The bottom
-                  padding here matches the thread-like page's outer
-                  `paddingBottom: '4.5rem'` (template.tsx) so elements
-                  inside the sheet have the same breathing room above the
-                  modal edge that the bubbles have above the screen edge. */}
-              <div className="flex-1 overflow-y-auto px-4 pb-[4.5rem]">
-                <div className="mb-3">
-                  {questionType === 'question' ? (
-                    <CategoryForLine
-                      category={category}
-                      onCategoryChange={handleCategoryChange}
-                      forField={forField}
-                      onForFieldChange={setForField}
-                      generatedCategoryText={generatedCategoryFromOptions}
+              {/* Sheet body — scrollable when content overflows. Holds the
+                  two stacked section cards with a small gap between them.
+                  The bottom padding matches the thread-like page's outer
+                  `paddingBottom: '4.5rem'` so elements have the same
+                  breathing room above the sheet edge that the bubbles
+                  have above the screen edge. */}
+              <div className="flex-1 overflow-y-auto px-3 pb-[4.5rem] space-y-3">
+                {/* Top card: question form. */}
+                <section
+                  data-draft-poll-card
+                  className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-4"
+                >
+                  <div className="mb-3">
+                    {questionType === 'question' ? (
+                      <CategoryForLine
+                        category={category}
+                        onCategoryChange={handleCategoryChange}
+                        forField={forField}
+                        onForFieldChange={setForField}
+                        generatedCategoryText={generatedCategoryFromOptions}
+                        disabled={isLoading}
+                      />
+                    ) : (
+                      <AnimatedTitle title={title} initialDelay={0} />
+                    )}
+                  </div>
+                  {questionFormBody}
+                </section>
+
+                {/* Bottom card: poll-level settings. */}
+                <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-4">
+                  <form
+                    onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    className="space-y-3"
+                  >
+                    <VotingCutoffField
+                      deadlineOption={deadlineOption}
+                      setDeadlineOption={setDeadlineOption}
+                      customDate={customDate}
+                      setCustomDate={setCustomDate}
+                      customTime={customTime}
+                      setCustomTime={setCustomTime}
+                      isLoading={isLoading}
+                      isClient={isClient}
+                    />
+
+                    {pollHasPrephase && suggestionCutoffField}
+
+                    {pollHasRankedChoice && (
+                      <CompactMinResponsesField
+                        value={minResponses}
+                        setValue={(val) => {
+                          setMinResponses(val);
+                          saveUserMinResponses(val);
+                        }}
+                        showPreliminary={showPreliminaryResults}
+                        setShowPreliminary={setShowPreliminaryResults}
+                        disabled={isLoading}
+                      />
+                    )}
+
+                    {pollHasPrephase && (
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={allowPreRanking}
+                          onChange={(e) => setAllowPreRanking(e.target.checked)}
+                          disabled={isLoading}
+                          className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          allow voting before options are finalized
+                        </span>
+                      </label>
+                    )}
+
+                    <div>
+                      {detailsOpen ? (
+                        <>
+                          <label htmlFor="details" className="block text-sm font-medium mb-1">
+                            Notes
+                          </label>
+                          <textarea
+                            ref={detailsRef}
+                            id="details"
+                            value={details}
+                            onChange={(e) => {
+                              setDetails(e.target.value);
+                              const el = e.target;
+                              el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
+                              const maxH = 5 * 20 + 16;
+                              el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                              el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+                            }}
+                            onBlur={() => {
+                              const trimmed = details.trim();
+                              if (!trimmed) {
+                                setDetailsOpen(false);
+                                setDetails('');
+                              } else if (trimmed !== details) {
+                                setDetails(trimmed);
+                              }
+                            }}
+                            disabled={isLoading}
+                            style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
+                            className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
+                            placeholder="Add more context or instructions..."
+                          />
+                        </>
+                      ) : (
+                        <div className="text-sm font-medium">
+                          Notes:{' '}
+                          <button
+                            type="button"
+                            onClick={() => setDetailsOpen(true)}
+                            className="font-normal text-blue-600 dark:text-blue-400"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <CompactNameField
+                      name={creatorName}
+                      setName={setCreatorName}
                       disabled={isLoading}
                     />
-                  ) : (
-                    <AnimatedTitle title={title} initialDelay={0} />
-                  )}
-                </div>
-                {questionFormBody}
+                  </form>
+                </section>
+
                 {error && (
-                  <div className="mt-3 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
+                  <div className="p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
                     {error}
                   </div>
                 )}
@@ -1914,20 +1746,6 @@ export function CreateQuestionContent() {
         value={minimumParticipation}
         onChange={setMinimumParticipation}
         disabled={isLoading}
-      />
-
-      <ConfirmationModal
-        isOpen={pendingDeleteIndex !== null}
-        onConfirm={confirmDeleteDraft}
-        onCancel={cancelDeleteDraft}
-        title="Delete question?"
-        message={
-          pendingDeleteIndex !== null && drafts[pendingDeleteIndex]
-            ? `Remove "${deriveDraftTitle(drafts[pendingDeleteIndex])}" from this draft poll?`
-            : 'Remove this question from this draft poll?'
-        }
-        confirmText="Delete"
-        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
     </div>
   );
