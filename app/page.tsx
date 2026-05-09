@@ -246,7 +246,16 @@ export default function Home() {
       )}
 
       {!loading && !error && (
-        <ThreadList polls={polls} />
+        <ThreadList
+          polls={polls}
+          onThreadsForgotten={(forgottenPollIds) => {
+            // Drop the forgotten threads optimistically — caches were
+            // already invalidated inside forgetThread, so the next natural
+            // refresh re-syncs; no immediate fetch needed.
+            const forgotten = new Set(forgottenPollIds);
+            setPolls((prev) => prev.filter((p) => !forgotten.has(p.id)));
+          }}
+        />
       )}
 
     </>
