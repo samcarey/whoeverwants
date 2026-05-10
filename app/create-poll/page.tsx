@@ -1118,6 +1118,16 @@ export function CreateQuestionContent() {
             const rootRouteId = wrapper ? resolveThreadRootRouteId(wrapper) : shortId;
             questionBackTarget.set(shortId, rootRouteId);
             const href = wrapper ? getThreadHrefForPoll(wrapper) : `/t/${shortId}`;
+            // Tear down the submit state BEFORE navigating away. Without
+            // this the spinner spins forever + the modal stays open
+            // covering the destination thread (the duplicate of the poll
+            // the user just typed).
+            isSubmittingRef.current = false;
+            setIsLoading(false);
+            setIsModalOpen(false);
+            applyDraftToState(emptyDraft());
+            setEditingDraftIndex(null);
+            setError(null);
             router.replace(href);
             return;
           }
