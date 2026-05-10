@@ -14,7 +14,7 @@ import CompactNameField from "@/components/CompactNameField";
 import { BUILT_IN_TYPES, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
 import { useAppPrefetch } from "@/lib/prefetch";
-import { generateCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
+import { generateCreatorSecret, getCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
@@ -1107,12 +1107,24 @@ export function CreateQuestionContent() {
       const questionsForRequest: CreateQuestionParams[] =
         effectiveDrafts.map(d => draftToQuestionParams(d, prephaseMinutes));
 
-      // Find duplicate when adding a poll to an existing thread.
+      // Accidental-double-submit guard. We allow duplicate titles in
+      // general — different users (or the same user later) might
+      // legitimately want a fresh "Movie?" suggestion round in the same
+      // thread. The redirect only fires when both:
+      //   1. The current browser is the creator of the existing
+      //      question (a creator_secret for it lives in localStorage),
+      //   2. The existing question was created within the last 30s.
+      // That narrows the rule to its real purpose: catching the
+      // user who tapped Submit twice in quick succession.
+      const DUPLICATE_REDIRECT_WINDOW_MS = 30_000;
       const dedupTitle = wrapperTitle || onlyDraft?.title || '';
       if (effectiveThreadId && dedupTitle.trim()) {
         try {
           const existing = await apiFindDuplicateQuestion(dedupTitle, effectiveThreadId);
-          if (existing) {
+          const isOwnRecentDuplicate = existing
+            && !!getCreatorSecret(existing.id)
+            && (Date.now() - new Date(existing.created_at).getTime()) < DUPLICATE_REDIRECT_WINDOW_MS;
+          if (existing && isOwnRecentDuplicate) {
             const wrapper = existing.poll_id ? pollLookup()(existing.poll_id) : null;
             const shortId = wrapper?.short_id || existing.id;
             const rootRouteId = wrapper ? resolveThreadRootRouteId(wrapper) : shortId;
