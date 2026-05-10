@@ -42,7 +42,7 @@ router = APIRouter(prefix="/api/polls", tags=["polls"])
 
 # Phase B.4: every SELECT that feeds `_row_to_poll` must surface
 # `groups.short_id` as `group_short_id` so the FE can build
-# `/t/<group.short_id>` URLs without a second round-trip. Migration 105
+# `/g/<group.short_id>` URLs without a second round-trip. Migration 105
 # moved `group_title` to `groups.title`, so the same JOIN is the source
 # of truth for the group-name override too. Centralizing the JOIN here
 # keeps the SELECTs in routers/polls.py and services/groups.py in

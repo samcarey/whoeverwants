@@ -353,7 +353,7 @@ def poll_ids_for_group_ids(conn, group_ids: list[str]) -> list[str]:
 
 
 def resolve_group_id_from_route_id(conn, route_id: str) -> str | None:
-    """Resolve a route id (path param of `/t/<routeId>`) to a `groups.id`.
+    """Resolve a route id (path param of `/g/<routeId>`) to a `groups.id`.
 
     Phase B.3 supports four forms:
       - groups.short_id (preferred when present)

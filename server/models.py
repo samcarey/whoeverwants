@@ -312,7 +312,7 @@ class PollResponse(BaseModel):
     created_at: str
     updated_at: str
     # Phase B.4: every poll exposes its group's id and short_id so the FE
-    # can build /t/<group.short_id>?p=<poll.short_id> URLs without walking
+    # can build /g/<group.short_id>?p=<poll.short_id> URLs without walking
     # follow_up_to chains client-side. `group_id` is NOT NULL post-migration
     # 100; `group_short_id` is NOT NULL post-migration 101 (trigger mints
     # one on every insert) but typed as Optional for resilience against

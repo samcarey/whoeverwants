@@ -159,7 +159,7 @@ class TestGroupByRouteId:
     ):
         """Even if the user types a child poll's short_id into the route id
         slot, we still return the WHOLE group — that's the only sensible
-        definition of `/t/<routeId>`."""
+        definition of `/g/<routeId>`."""
         root = create_poll(client, creator_secret, browser_id=browser_id)
         child = create_followup(
             client, creator_secret, root["questions"][0]["id"],
@@ -265,7 +265,7 @@ class TestGroupShortIdKeyspace:
     def test_resolves_by_group_short_id(
         self, client, creator_secret, browser_id,
     ):
-        """Phase B.4: /t/<routeId> with the new `~`-prefixed group short_id
+        """Phase B.4: /g/<routeId> with the new `~`-prefixed group short_id
         resolves the same way as the legacy root-poll-short-id form."""
         root = create_poll(client, creator_secret, browser_id=browser_id)
         child = create_followup(
