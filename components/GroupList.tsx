@@ -3,39 +3,39 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Poll } from "@/lib/types";
-import { buildThreads, getThreadHref, isPendingPollId, Thread } from "@/lib/threadUtils";
+import { buildGroups, getGroupHref, isPendingPollId, Group } from "@/lib/groupUtils";
 import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
-import ThreadListItem from "@/components/ThreadListItem";
+import GroupListItem from "@/components/GroupListItem";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import HeaderPortal from "@/components/HeaderPortal";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import { apiGetVotes, apiGetQuestionResults } from "@/lib/api";
-import { forgetThread } from "@/lib/forgetQuestion";
+import { forgetGroup } from "@/lib/forgetQuestion";
 
-interface ThreadListProps {
+interface GroupListProps {
   // Phase 5b: the home page passes the polls (wrapper-level units)
-  // returned by getAccessiblePolls(). buildThreads walks
-  // poll.follow_up_to to chain wrappers into threads.
+  // returned by getAccessiblePolls(). buildGroups walks
+  // poll.follow_up_to to chain wrappers into groups.
   polls: Poll[];
-  /** Called with the poll-ids of every poll in every forgotten thread, so
+  /** Called with the poll-ids of every poll in every forgotten group, so
    *  the parent page can drop them optimistically (avoids a full server
-   *  round-trip just to hide deleted rows). A thread spans multiple polls
-   *  sharing a `thread_id`; passing only root ids would leave follow-up
-   *  polls behind and rebuild a ghost thread. */
-  onThreadsForgotten?: (forgottenPollIds: string[]) => void;
+   *  round-trip just to hide deleted rows). A group spans multiple polls
+   *  sharing a `group_id`; passing only root ids would leave follow-up
+   *  polls behind and rebuild a ghost group. */
+  onGroupsForgotten?: (forgottenPollIds: string[]) => void;
 }
 
 const LONG_PRESS_MS = 500;
 
-export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProps) {
+export default function GroupList({ polls, onGroupsForgotten }: GroupListProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
   // Load voted/abstained synchronously so the very first render's
-  // buildThreads call sees the real voted state. Initializing these as
+  // buildGroups call sees the real voted state. Initializing these as
   // empty Sets and loading via useEffect made `pickTargetedPoll` treat
-  // every question as awaiting on first render, so getThreadRouteId
-  // pointed at the chronologically oldest poll (the thread root) instead
+  // every question as awaiting on first render, so getGroupRouteId
+  // pointed at the chronologically oldest poll (the group root) instead
   // of the oldest unresponded open poll — clicks and prefetches that
   // raced React's post-effect re-render landed on the root URL.
   const [{ votedQuestionIds, abstainedQuestionIds }] = useState(() => {
@@ -44,9 +44,9 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
     }
     return loadVotedQuestions();
   });
-  const [pressedThreadId, setPressedThreadId] = useState<string | null>(null);
+  const [pressedGroupId, setPressedGroupId] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set());
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
@@ -54,18 +54,18 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
   const longPressFiredRef = useRef(false);
   const touchHandledRef = useRef(false);
 
-  const threads = useMemo(() => {
-    return buildThreads(polls, votedQuestionIds, abstainedQuestionIds);
+  const groups = useMemo(() => {
+    return buildGroups(polls, votedQuestionIds, abstainedQuestionIds);
   }, [polls, votedQuestionIds, abstainedQuestionIds]);
 
-  // Threads can drop out from under us (deletions, re-fetch). Strip selection
-  // ids that no longer correspond to a visible thread. (Selection mode stays
+  // Groups can drop out from under us (deletions, re-fetch). Strip selection
+  // ids that no longer correspond to a visible group. (Selection mode stays
   // active even when the set is empty — the user exits explicitly via the
   // upper-left cancel button or Escape.)
   useEffect(() => {
     if (!selectionMode) return;
-    const validIds = new Set(threads.map((t) => t.rootPollId));
-    setSelectedThreadIds((prev) => {
+    const validIds = new Set(groups.map((t) => t.rootPollId));
+    setSelectedGroupIds((prev) => {
       let changed = false;
       const next = new Set<string>();
       for (const id of prev) {
@@ -75,11 +75,11 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
       if (!changed) return prev;
       return next;
     });
-  }, [threads, selectionMode]);
+  }, [groups, selectionMode]);
 
   const exitSelectionMode = useCallback(() => {
     setSelectionMode(false);
-    setSelectedThreadIds(new Set());
+    setSelectedGroupIds(new Set());
     setConfirmingDelete(false);
   }, []);
 
@@ -92,37 +92,37 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
     return () => document.removeEventListener('keydown', onKey);
   }, [selectionMode, exitSelectionMode]);
 
-  // Prefetch thread page routes for all visible threads on mount.
-  // `getThreadHref` returns `/t/<root>?p=<target>` (with the targeted poll
-  // expanded) when the user has awaiting work, or `/t/<root>` (no expand,
+  // Prefetch group page routes for all visible groups on mount.
+  // `getGroupHref` returns `/g/<root>?p=<target>` (with the targeted poll
+  // expanded) when the user has awaiting work, or `/g/<root>` (no expand,
   // scroll to bottom) when nothing's awaiting.
   useEffect(() => {
-    if (threads.length === 0) return;
-    const hrefs = threads.map(t => getThreadHref(t));
+    if (groups.length === 0) return;
+    const hrefs = groups.map(t => getGroupHref(t));
     prefetchBatch(hrefs, { priority: "low" });
-  }, [threads, prefetchBatch]);
+  }, [groups, prefetchBatch]);
 
-  // Warm per-question votes + results for visible threads so the destination
+  // Warm per-question votes + results for visible groups so the destination
   // renders from cache on first paint. apiGetVotes is coalesced; re-calls are cheap.
-  const warmedThreadIdsRef = useRef<Set<string>>(new Set());
-  const threadsByRootId = useMemo(
-    () => new Map(threads.map((t) => [t.rootQuestionId, t])),
-    [threads],
+  const warmedGroupIdsRef = useRef<Set<string>>(new Set());
+  const groupsByRootId = useMemo(
+    () => new Map(groups.map((t) => [t.rootQuestionId, t])),
+    [groups],
   );
   useEffect(() => {
-    if (threads.length === 0 || typeof window === 'undefined') return;
+    if (groups.length === 0 || typeof window === 'undefined') return;
     if (!('IntersectionObserver' in window)) return;
 
-    warmedThreadIdsRef.current = new Set();
+    warmedGroupIdsRef.current = new Set();
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
-        const rootQuestionId = entry.target.getAttribute('data-thread-root-id');
-        if (!rootQuestionId || warmedThreadIdsRef.current.has(rootQuestionId)) continue;
-        warmedThreadIdsRef.current.add(rootQuestionId);
-        const thread = threadsByRootId.get(rootQuestionId);
-        if (!thread) continue;
-        for (const question of thread.questions) {
+        const rootQuestionId = entry.target.getAttribute('data-group-root-id');
+        if (!rootQuestionId || warmedGroupIdsRef.current.has(rootQuestionId)) continue;
+        warmedGroupIdsRef.current.add(rootQuestionId);
+        const group = groupsByRootId.get(rootQuestionId);
+        if (!group) continue;
+        for (const question of group.questions) {
           if (isPendingPollId(question.id)) continue;
           void apiGetVotes(question.id).catch(() => null);
           if (!question.results) void apiGetQuestionResults(question.id).catch(() => null);
@@ -131,10 +131,10 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
       }
     }, { rootMargin: '200px' });
 
-    const els = document.querySelectorAll<HTMLElement>('[data-thread-root-id]');
+    const els = document.querySelectorAll<HTMLElement>('[data-group-root-id]');
     els.forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [threads, threadsByRootId]);
+  }, [groups, groupsByRootId]);
 
   const cancelLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current) {
@@ -143,47 +143,47 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
     }
   }, []);
 
-  const enterSelectionWithThread = useCallback((threadId: string) => {
+  const enterSelectionWithGroup = useCallback((groupId: string) => {
     setSelectionMode(true);
-    setSelectedThreadIds(new Set([threadId]));
-    setPressedThreadId(null);
+    setSelectedGroupIds(new Set([groupId]));
+    setPressedGroupId(null);
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       try { navigator.vibrate(50); } catch {}
     }
   }, []);
 
-  const toggleThreadSelection = useCallback((threadId: string) => {
-    setSelectedThreadIds((prev) => {
+  const toggleGroupSelection = useCallback((groupId: string) => {
+    setSelectedGroupIds((prev) => {
       const next = new Set(prev);
-      if (next.has(threadId)) next.delete(threadId);
-      else next.add(threadId);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
       return next;
     });
   }, []);
 
   const handleConfirmDelete = useCallback(() => {
-    const idsToForget = new Set(selectedThreadIds);
-    const threadsToForget = threads.filter((t) => idsToForget.has(t.rootPollId));
+    const idsToForget = new Set(selectedGroupIds);
+    const groupsToForget = groups.filter((t) => idsToForget.has(t.rootPollId));
     const forgottenPollIds: string[] = [];
-    for (const thread of threadsToForget) {
-      forgetThread(thread);
-      for (const poll of thread.polls) forgottenPollIds.push(poll.id);
+    for (const group of groupsToForget) {
+      forgetGroup(group);
+      for (const poll of group.polls) forgottenPollIds.push(poll.id);
     }
     setConfirmingDelete(false);
     setSelectionMode(false);
-    setSelectedThreadIds(new Set());
-    onThreadsForgotten?.(forgottenPollIds);
-  }, [selectedThreadIds, threads, onThreadsForgotten]);
+    setSelectedGroupIds(new Set());
+    onGroupsForgotten?.(forgottenPollIds);
+  }, [selectedGroupIds, groups, onGroupsForgotten]);
 
-  if (threads.length === 0) return null;
+  if (groups.length === 0) return null;
 
   // Cancel + trashcan render via HeaderPortal so they sit outside the
   // ResponsiveScaling container — same target the settings-page back arrow
   // uses. The cancel button visually replaces the home page's gear icon.
-  const selectedCount = selectedThreadIds.size;
+  const selectedCount = selectedGroupIds.size;
   const trashLabel = selectedCount === 0
-    ? 'Forget selected threads (none selected)'
-    : `Forget ${selectedCount} selected thread${selectedCount === 1 ? '' : 's'}`;
+    ? 'Forget selected groups (none selected)'
+    : `Forget ${selectedCount} selected group${selectedCount === 1 ? '' : 's'}`;
   const selectionChrome = selectionMode ? (
     <HeaderPortal>
       <button
@@ -224,19 +224,19 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
   return (
     <div>
       {selectionChrome}
-      {threads.map((thread, index) => {
-        const href = getThreadHref(thread);
-        const latestQuestion = thread.latestQuestion;
-        const hasUnvoted = thread.unvotedCount > 0;
-        const threadKey = thread.rootPollId;
+      {groups.map((group, index) => {
+        const href = getGroupHref(group);
+        const latestQuestion = group.latestQuestion;
+        const hasUnvoted = group.unvotedCount > 0;
+        const groupKey = group.rootPollId;
 
         const handleActivate = () => {
           if (selectionMode) {
-            toggleThreadSelection(threadKey);
+            toggleGroupSelection(groupKey);
           } else {
-            // `getThreadHref` returns `/t/<root>?p=<target>` when the thread has
-            // awaiting work, else `/t/<root>` — the URL itself encodes whether
-            // to auto-expand a poll, replacing the old `?thread=1` +
+            // `getGroupHref` returns `/g/<root>?p=<target>` when the group has
+            // awaiting work, else `/g/<root>` — the URL itself encodes whether
+            // to auto-expand a poll, replacing the old `?group=1` +
             // `suppressExpand` heuristic.
             navigateWithTransition(router, href, 'forward');
           }
@@ -251,7 +251,7 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
           isScrolling.current = false;
           longPressFiredRef.current = false;
           touchHandledRef.current = false;
-          setPressedThreadId(threadKey);
+          setPressedGroupId(groupKey);
           touchStartPos.current = {
             x: e.touches[0].clientX,
             y: e.touches[0].clientY,
@@ -262,14 +262,14 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
             longPressTimerRef.current = setTimeout(() => {
               if (isScrolling.current) return;
               longPressFiredRef.current = true;
-              enterSelectionWithThread(threadKey);
+              enterSelectionWithGroup(groupKey);
             }, LONG_PRESS_MS);
           }
         };
 
         const handleTouchEnd = () => {
           cancelLongPressTimer();
-          setPressedThreadId(null);
+          setPressedGroupId(null);
           const wasLongPress = longPressFiredRef.current;
           const wasScrolling = isScrolling.current;
           touchStartPos.current = null;
@@ -286,28 +286,28 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
           const deltaY = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
           if (deltaX > 10 || deltaY > 10) {
             isScrolling.current = true;
-            setPressedThreadId(null);
+            setPressedGroupId(null);
             cancelLongPressTimer();
           }
         };
 
         return (
-          <ThreadListItem
-            key={thread.rootQuestionId}
-            threadRootId={thread.rootQuestionId}
-            title={thread.title}
+          <GroupListItem
+            key={group.rootQuestionId}
+            groupRootId={group.rootQuestionId}
+            title={group.title}
             latestQuestionTitle={latestQuestion.title}
-            participantNames={thread.participantNames}
-            anonymousRespondentCount={thread.anonymousRespondentCount}
-            questionCount={thread.questions.length}
+            participantNames={group.participantNames}
+            anonymousRespondentCount={group.anonymousRespondentCount}
+            questionCount={group.questions.length}
             createdAt={latestQuestion.created_at}
-            soonestUnvotedDeadline={thread.soonestUnvotedDeadline}
-            unvotedCount={thread.unvotedCount}
+            soonestUnvotedDeadline={group.soonestUnvotedDeadline}
+            unvotedCount={group.unvotedCount}
             hasUnvoted={hasUnvoted}
-            pressed={pressedThreadId === threadKey}
+            pressed={pressedGroupId === groupKey}
             isFirst={index === 0}
             selectionMode={selectionMode}
-            isSelected={selectedThreadIds.has(threadKey)}
+            isSelected={selectedGroupIds.has(groupKey)}
             onClick={handleClick}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
@@ -319,8 +319,8 @@ export default function ThreadList({ polls, onThreadsForgotten }: ThreadListProp
       {confirmingDelete && (
         <ConfirmationModal
           isOpen={true}
-          title="Forget threads"
-          message={`Forget ${selectedThreadIds.size} ${selectedThreadIds.size === 1 ? 'thread' : 'threads'}? This removes ${selectedThreadIds.size === 1 ? 'it' : 'them'} from this browser.`}
+          title="Forget groups"
+          message={`Forget ${selectedGroupIds.size} ${selectedGroupIds.size === 1 ? 'group' : 'groups'}? This removes ${selectedGroupIds.size === 1 ? 'it' : 'them'} from this browser.`}
           confirmText="Forget"
           cancelText="Cancel"
           confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"

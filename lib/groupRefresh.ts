@@ -1,16 +1,16 @@
 /**
- * Helpers for the periodic background refresh on `/t/<id>` that keeps a
- * thread in sync with other users' actions (new polls, new votes, close /
+ * Helpers for the periodic background refresh on `/g/<id>` that keeps a
+ * group in sync with other users' actions (new polls, new votes, close /
  * reopen / cutoff).
  *
- * The thread page already has the machinery to update its state on the
+ * The group page already has the machinery to update its state on the
  * user's own writes (POLL_HYDRATED, QUESTION_VOTES_CHANGED, etc.). For
- * remote writes we poll `apiGetThreadByRouteId` every few seconds and
- * merge the response. To avoid forcing every memoized `ThreadCardItem` to
+ * remote writes we poll `apiGetGroupByRouteId` every few seconds and
+ * merge the response. To avoid forcing every memoized `GroupCardItem` to
  * re-render on every poll tick, the merge preserves prev `Poll` and
  * `Question` identities when their content is unchanged.
  *
- * `arePropsEqual` in `ThreadCardItem.tsx` compares `prev.group.poll` /
+ * `arePropsEqual` in `GroupCardItem.tsx` compares `prev.group.poll` /
  * `subQuestions[i]` by reference, so passing the SAME `Poll` object for
  * polls whose data didn't change is the difference between zero and N
  * card re-renders per refresh tick.
@@ -106,7 +106,7 @@ function isPollContentEqual(a: Poll, b: Poll): boolean {
   if (a.response_deadline !== b.response_deadline) return false;
   if (a.prephase_deadline !== b.prephase_deadline) return false;
   if (a.prephase_deadline_minutes !== b.prephase_deadline_minutes) return false;
-  if (a.thread_title !== b.thread_title) return false;
+  if (a.group_title !== b.group_title) return false;
   if (a.title !== b.title) return false;
   if (a.context !== b.context) return false;
   if (a.details !== b.details) return false;
@@ -124,7 +124,7 @@ function isPollContentEqual(a: Poll, b: Poll): boolean {
 export interface PollMergeResult {
   /** Polls list to use going forward. Equals `prev` when no content
    *  changed (both reference and order — safe to short-circuit further
-   *  thread-state updates against). */
+   *  group-state updates against). */
   polls: Poll[];
   /** Whether `polls` differs from `prev` (membership, order, or content). */
   changed: boolean;
@@ -168,7 +168,7 @@ export function mergePollListPreservingIdentity(
   return { polls: merged, changed: true };
 }
 
-/** Merge inline `question.results` from `polls` into the thread page's
+/** Merge inline `question.results` from `polls` into the group page's
  *  `questionResultsMap` state, returning `prev` unchanged when nothing
  *  meaningful differs. Identity preservation here matters because this
  *  Map is one of the slices `arePropsEqual` compares per-question. */

@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export default function InfoRedirectPage() {
   return (
     <LegacyRedirectPage
-      buildTarget={(rootRouteId) => `/t/${rootRouteId}/info`}
+      buildTarget={(rootRouteId) => `/g/${rootRouteId}/info`}
     />
   );
 }

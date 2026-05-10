@@ -27,12 +27,12 @@ export interface Question {
   created_at: string;
   updated_at: string;
   // Phase 5b: wrapper-level fields (response_deadline, is_closed,
-  // close_reason, creator_secret, creator_name, short_id, thread_title,
+  // close_reason, creator_secret, creator_name, short_id, group_title,
   // suggestion_deadline) live on the parent Poll. Resolve via
   // questionCache.getPollForQuestion() or accept a Poll prop. Migration
   // 105 retired `polls.follow_up_to` (and the FE-only mirror
-  // `poll_follow_up_to` along with it); threads are flat lists of polls
-  // under one `Poll.thread_id`.
+  // `poll_follow_up_to` along with it); groups are flat lists of polls
+  // under one `Poll.group_id`.
   suggestion_deadline_minutes?: number | null;
   auto_close_after?: number;
   details?: string;
@@ -127,13 +127,13 @@ export interface RankedChoiceRound {
 export interface Poll {
   id: string;
   short_id?: string | null;
-  // Phase B.4 + Migration 105: every poll carries its thread's id +
-  // short_id. The FE builds /t/<thread.short_id>?p=<poll.short_id> URLs
+  // Phase B.4 + Migration 105: every poll carries its group's id +
+  // short_id. The FE builds /g/<group.short_id>?p=<poll.short_id> URLs
   // straight from these fields — no chain walks. Both are nullable for
   // resilience: synthesized placeholder polls don't have them yet, and
   // pre-Phase-B.4 cached polls (in-memory across a deploy) won't either.
-  thread_id?: string | null;
-  thread_short_id?: string | null;
+  group_id?: string | null;
+  group_short_id?: string | null;
   creator_secret?: string | null;
   creator_name?: string | null;
   response_deadline?: string | null;
@@ -141,10 +141,10 @@ export interface Poll {
   prephase_deadline_minutes?: number | null;
   is_closed: boolean;
   close_reason?: string | null;
-  // Migration 105: thread name override. Surfaced from `threads.title`
-  // (single source of truth, one row per thread). Every poll in the same
-  // thread receives the same value.
-  thread_title?: string | null;
+  // Migration 105: group name override. Surfaced from `groups.title`
+  // (single source of truth, one row per group). Every poll in the same
+  // group receives the same value.
+  group_title?: string | null;
   context?: string | null;
   details?: string | null;
   title: string;

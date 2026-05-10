@@ -308,7 +308,7 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
             "authors": list(emails),
         }).encode())
 
-        # Trigger upsert for each author in background threads
+        # Trigger upsert for each author in background groups
         for email in emails:
             t = threading.Thread(target=trigger_upsert, args=(email, branch))
             t.daemon = True

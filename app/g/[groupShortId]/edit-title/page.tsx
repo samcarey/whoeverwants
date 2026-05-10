@@ -2,47 +2,47 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { apiUpdateThreadTitle } from "@/lib/api";
+import { apiUpdateGroupTitle } from "@/lib/api";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
-import { useThread } from "@/lib/useThread";
+import { useGroup } from "@/lib/useGroup";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
-import type { Thread } from "@/lib/threadUtils";
-import ThreadHeader from "@/components/ThreadHeader";
-import { ThreadLoading, ThreadNotFound } from "@/components/ThreadLoadState";
+import type { Group } from "@/lib/groupUtils";
+import GroupHeader from "@/components/GroupHeader";
+import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
 
-function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
+function Editor({ group, groupId }: { group: Group; groupId: string }) {
   const router = useRouter();
-  // Migration 105: thread_title lives on threads.title — surfaced on
-  // every poll in the thread as the same value.
-  const [value, setValue] = useState<string>(thread.latestPoll.thread_title ?? '');
+  // Migration 105: group_title lives on groups.title — surfaced on
+  // every poll in the group as the same value.
+  const [value, setValue] = useState<string>(group.latestPoll.group_title ?? '');
   const [saving, setSaving] = useState(false);
 
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
   const goBack = () => {
     if (hasAppHistory()) navigateBackWithTransition();
-    else navigateWithTransition(router, `/t/${threadId}/info`, 'back');
+    else navigateWithTransition(router, `/g/${groupId}/info`, 'back');
   };
 
   const save = async () => {
     if (saving) return;
     setSaving(true);
     try {
-      // `threadId` is the route param — the server resolves any of
-      // `threads.short_id`, `threads.id`, `polls.short_id`, or
-      // `polls.id` to the same thread. apiUpdateThreadTitle handles
-      // cache invalidation for every poll in the thread.
-      await apiUpdateThreadTitle(threadId, value.trim() || null);
+      // `groupId` is the route param — the server resolves any of
+      // `groups.short_id`, `groups.id`, `polls.short_id`, or
+      // `polls.id` to the same group. apiUpdateGroupTitle handles
+      // cache invalidation for every poll in the group.
+      await apiUpdateGroupTitle(groupId, value.trim() || null);
       goBack();
     } catch (err) {
-      console.error('Failed to update thread title:', err);
+      console.error('Failed to update group title:', err);
       setSaving(false);
     }
   };
 
   return (
     <>
-      <ThreadHeader
+      <GroupHeader
         headerRef={headerRef}
         title="Edit Title"
         onBack={goBack}
@@ -51,7 +51,7 @@ function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
             onClick={save}
             disabled={saving}
             className="w-14 h-10 flex items-center justify-center shrink-0 text-blue-600 dark:text-blue-400 text-sm font-semibold disabled:opacity-50"
-            aria-label="Save thread title"
+            aria-label="Save group title"
           >
             {saving ? '...' : 'Save'}
           </button>
@@ -59,38 +59,38 @@ function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
       />
 
       <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 1rem)` }}>
-        <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Thread title</label>
+        <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Group title</label>
         <input
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onBlur={(e) => setValue(e.target.value.trim())}
-          placeholder={thread.defaultTitle}
+          placeholder={group.defaultTitle}
           autoFocus
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Leave blank to use the default: <span className="italic">{thread.defaultTitle}</span>
+          Leave blank to use the default: <span className="italic">{group.defaultTitle}</span>
         </p>
       </div>
     </>
   );
 }
 
-function EditThreadTitleInner() {
+function EditGroupTitleInner() {
   const params = useParams();
-  const threadId = params.threadShortId as string;
-  const { thread, loading, error } = useThread(threadId);
+  const groupId = params.groupShortId as string;
+  const { group, loading, error } = useGroup(groupId);
 
-  if (loading) return <ThreadLoading />;
-  if (error || !thread) return <ThreadNotFound />;
-  return <Editor thread={thread} threadId={threadId} />;
+  if (loading) return <GroupLoading />;
+  if (error || !group) return <GroupNotFound />;
+  return <Editor group={group} groupId={groupId} />;
 }
 
-export default function EditThreadTitlePage() {
+export default function EditGroupTitlePage() {
   return (
-    <Suspense fallback={<ThreadLoading />}>
-      <EditThreadTitleInner />
+    <Suspense fallback={<GroupLoading />}>
+      <EditGroupTitleInner />
     </Suspense>
   );
 }

@@ -1,19 +1,19 @@
 import { invalidateQuestion } from '@/lib/questionCache';
 import { addForgottenQuestionId, removeAccessibleQuestionId } from '@/lib/browserQuestionAccess';
-import { apiLeaveThread } from '@/lib/api';
-import type { Thread } from '@/lib/threadUtils';
+import { apiLeaveGroup } from '@/lib/api';
+import type { Group } from '@/lib/groupUtils';
 
-// Forget every question in a thread + drop server-side membership.
-// Mirrors the per-question forget flow in the thread page's pendingAction
-// handler: after `forgetQuestion` for each question, fire `apiLeaveThread`
-// fire-and-forget so the thread doesn't reappear via Phase C.3 membership
-// visibility on the next /api/threads/mine call.
-export function forgetThread(thread: Thread): void {
-  for (const question of thread.questions) {
+// Forget every question in a group + drop server-side membership.
+// Mirrors the per-question forget flow in the group page's pendingAction
+// handler: after `forgetQuestion` for each question, fire `apiLeaveGroup`
+// fire-and-forget so the group doesn't reappear via Phase C.3 membership
+// visibility on the next /api/groups/mine call.
+export function forgetGroup(group: Group): void {
+  for (const question of group.questions) {
     forgetQuestion(question.id);
   }
-  const routeId = thread.threadId ?? thread.rootPollId;
-  if (routeId) void apiLeaveThread(routeId);
+  const routeId = group.groupId ?? group.rootPollId;
+  if (routeId) void apiLeaveGroup(routeId);
 }
 
 // Function to completely forget a question from browser storage
@@ -38,7 +38,7 @@ export function forgetQuestion(questionId: string): void {
     localStorage.setItem('question_creator_secrets', JSON.stringify(filteredSecrets));
 
     // Drop in-memory caches so subsequent navigations (e.g. back to the
-    // containing thread) don't rebuild views from stale data that still
+    // containing group) don't rebuild views from stale data that still
     // includes this question.
     invalidateQuestion(questionId);
 

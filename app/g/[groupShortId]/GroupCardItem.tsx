@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * Per-card render for the thread page. Memoized via React.memo with a custom
+ * Per-card render for the group page. Memoized via React.memo with a custom
  * equality function that compares only the slices of state Maps relevant to
  * this card's question/sub-question/poll IDs — so a vote on card A never
  * re-renders cards B..N. Card-local handlers (touch/swipe/click) live inside
  * the component so they close over per-card props instead of being re-created
  * on every parent render.
  *
- * See CLAUDE.md → "Thread-Page Layout Stability" for the rationale and the
+ * See CLAUDE.md → "Group-Page Layout Stability" for the rationale and the
  * subscription pattern used for high-frequency state.
  */
 
@@ -23,7 +23,7 @@ import type {
   UserYesNoVote,
   WrapperSubmitState,
   YesNoChoice,
-} from "@/lib/useThreadVoting";
+} from "@/lib/useGroupVoting";
 import {
   getCategoryIcon,
   getBuiltInCategoryIcon,
@@ -35,7 +35,7 @@ import {
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { getUserInitials, getUserName } from "@/lib/userProfile";
-import { getThreadHrefForPoll } from "@/lib/threadUtils";
+import { getGroupHrefForPoll } from "@/lib/groupUtils";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
 import { ANONYMOUS_FALLBACK_COLOR, nameToColor } from "@/components/RespondentCircles";
@@ -50,7 +50,7 @@ import QuestionResultsDisplay, {
 } from "@/components/QuestionResults";
 import SimpleCountdown from "@/components/SimpleCountdown";
 
-export type ThreadCardGroup = {
+export type GroupCardGroup = {
   key: string;
   pollId: string | null;
   poll: Poll | null;
@@ -104,7 +104,7 @@ function HangingCategoryIcon({
   );
 }
 
-// Inverse grid-rows clip for compact pills in the thread card header:
+// Inverse grid-rows clip for compact pills in the group card header:
 // full height when collapsed, 0 when expanded, animating in lockstep with the
 // heavy-content expand clip below. The pill sits directly at the top of the
 // overflow-hidden child so its text center aligns with the sibling status
@@ -128,9 +128,9 @@ function CompactPreviewClip({
   );
 }
 
-export interface ThreadCardItemProps {
+export interface GroupCardItemProps {
   // Identity / data ---------------------------------------------------------
-  group: ThreadCardGroup;
+  group: GroupCardGroup;
 
   // Per-card primitives (computed in parent .map) --------------------------
   isExpanded: boolean;
@@ -190,7 +190,7 @@ export interface ThreadCardItemProps {
   ) => void;
 }
 
-function ThreadCardItemImpl(props: ThreadCardItemProps) {
+function GroupCardItemImpl(props: GroupCardItemProps) {
   const {
     group,
     isExpanded,
@@ -746,12 +746,12 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                 <FloatingCopyLinkButton
                   url={(() => {
                     if (typeof window === "undefined") return "";
-                    // Canonical share URL — uses `thread_short_id` from the
+                    // Canonical share URL — uses `group_short_id` from the
                     // poll directly (Migration 105: no chain walk needed);
                     // falls back to this poll as root for placeholders.
                     const href = wrapper
-                      ? getThreadHrefForPoll(wrapper)
-                      : `/t/${question.id}?p=${question.id}`;
+                      ? getGroupHrefForPoll(wrapper)
+                      : `/g/${question.id}?p=${question.id}`;
                     return `${window.location.origin}${href}`;
                   })()}
                 />
@@ -806,7 +806,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                   to 0 against the `grid-template-rows: 0fr` collapse —
                   leaving the card visually expanded even after the React
                   state has collapsed.
-                  See CLAUDE.md → "Thread-page scroll strategy" pitfalls. */}
+                  See CLAUDE.md → "Group-page scroll strategy" pitfalls. */}
               <div className="overflow-y-clip overflow-x-visible min-h-0" ref={setExpandedWrapperEl}>
                 <div className={allYesNo && !usePollSubmit ? "" : "mt-1.5"}>
                   {wrapper?.details && (
@@ -815,7 +815,7 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
                   {group.subQuestions.map((sp, idx) => {
                     // Phase 3.3: every yes_no question uses external
                     // rendering so non-anchor questions also get the
-                    // thread-page tap-to-change flow.
+                    // group-page tap-to-change flow.
                     const isYesNo = sp.question_type === "yes_no";
                     const r = isYesNo ? questionResultsMap.get(sp.id) : undefined;
                     const userVote = isYesNo ? userVoteMap.get(sp.id) : undefined;
@@ -1175,8 +1175,8 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
  * re-renders — fix it in the parent.
  */
 function arePropsEqual(
-  prev: ThreadCardItemProps,
-  next: ThreadCardItemProps,
+  prev: GroupCardItemProps,
+  next: GroupCardItemProps,
 ): boolean {
   // Cheap booleans first — most state changes flip exactly one of these for
   // exactly two cards (prev active + new active), so the bulk of cards exit
@@ -1194,13 +1194,13 @@ function arePropsEqual(
     return false;
   }
 
-  // Group identity is recreated on every parent re-render: groupedThreadQuestions
-  // is memoized on (threadQuestions, pollWrapperMap), and BOTH inputs get a new
-  // identity whenever `thread` mutates (vote, hydrate, results refresh). So a
+  // Group identity is recreated on every parent re-render: groupedGroupQuestions
+  // is memoized on (groupQuestions, pollWrapperMap), and BOTH inputs get a new
+  // identity whenever `group` mutates (vote, hydrate, results refresh). So a
   // naive `prev.group !== next.group` would invalidate every card on every
-  // thread mutation, defeating the memoization. Instead, compare the parts that
+  // group mutation, defeating the memoization. Instead, compare the parts that
   // actually drive the render — both preserve identity across no-op updates
-  // because patchThreadPolls / patchThreadQuestions only allocate new objects
+  // because patchGroupPolls / patchGroupQuestions only allocate new objects
   // for mutated entries:
   //   - poll wrapper identity (Poll object)
   //   - per-question identity (Question objects in subQuestions)
@@ -1251,4 +1251,4 @@ function arePropsEqual(
   return true;
 }
 
-export const ThreadCardItem = React.memo(ThreadCardItemImpl, arePropsEqual);
+export const GroupCardItem = React.memo(GroupCardItemImpl, arePropsEqual);

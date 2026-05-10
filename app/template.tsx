@@ -9,7 +9,7 @@ import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
-import { isUuidLike, isThreadRootView } from '@/lib/questionId';
+import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -100,7 +100,7 @@ function TemplateInner({ children }: AppTemplateProps) {
     }
   }, []);
   
-  // Initialize questionPageTitle synchronously from the question cache on thread pages,
+  // Initialize questionPageTitle synchronously from the question cache on group pages,
   // so the header shows the title on the very first paint after navigation
   // (avoids the h1 being empty during a view transition slide).
   const [questionPageTitle, setQuestionPageTitle] = useState(() => {
@@ -118,7 +118,7 @@ function TemplateInner({ children }: AppTemplateProps) {
 
   const pageTitle =
     pathname === '/create-poll' || pathname === '/create-poll/' ? 'Create Poll' :
-    pathname.startsWith('/t/') ? questionPageTitle :
+    pathname.startsWith('/g/') ? questionPageTitle :
     '';
 
   // Listen for title changes from question pages
@@ -134,22 +134,22 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, []);
 
-  // True for any page under `/t/...` (the canonical thread route family) AND
-  // legacy `/p/...` URLs (which are now thin client-side redirects to /t/).
-  // Used by the fallback header gate so neither /t/ nor /p/ pages get the
+  // True for any page under `/g/...` (the canonical group route family) AND
+  // legacy `/p/...` URLs (which are now thin client-side redirects to /g/).
+  // Used by the fallback header gate so neither /g/ nor /p/ pages get the
   // template's centered title bar (they render their own fixed headers).
-  const isThreadFamilyPage =
-    pathname === '/t' || pathname === '/t/' || pathname.startsWith('/t/') ||
+  const isGroupFamilyPage =
+    pathname === '/g' || pathname === '/g/' || pathname.startsWith('/g/') ||
     pathname === '/p' || pathname === '/p/' || pathname.startsWith('/p/');
-  // /t/<id> renders the thread view with a card expanded; the bare /t/ route is
-  // the empty placeholder. Both share the thread-like layout (fixed header +
+  // /g/<id> renders the group view with a card expanded; the bare /g/ route is
+  // the empty placeholder. Both share the group-like layout (fixed header +
   // scroll list, bottom-padding for the floating FAB). Sub-routes
-  // (/t/<id>/info, .../edit-title) render their own fixed header but opt out
-  // of the thread-like FAB + padding treatment via isThreadRootView.
-  const isThreadLikePage = isThreadRootView(pathname);
+  // (/g/<id>/info, .../edit-title) render their own fixed header but opt out
+  // of the group-like FAB + padding treatment via isGroupRootView.
+  const isGroupLikePage = isGroupRootView(pathname);
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
 
-  // The draft poll card on every thread-like page hosts the inline question
+  // The draft poll card on every group-like page hosts the inline question
   // form (CategoryForLine + question fields) plus the staged-questions list
   // and Settings. The "+ Question" button inside the card commits the
   // in-progress form to the staged list. The home page keeps a single "+"
@@ -158,8 +158,8 @@ function TemplateInner({ children }: AppTemplateProps) {
 
   return (
     <>
-      {/* Fallback header for pages without a page-specific header (not thread, settings, home, or create-modal). */}
-      {!isThreadFamilyPage && !isSettingsPage && pathname !== '/' && (
+      {/* Fallback header for pages without a page-specific header (not group, settings, home, or create-modal). */}
+      {!isGroupFamilyPage && !isSettingsPage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -187,7 +187,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
         }}>
         {/* Commit age badge portal target — anchored to the top safe-area
-             boundary via .pwa-badge-top. z-30 keeps it above the thread page's
+             boundary via .pwa-badge-top. z-30 keeps it above the group page's
              fixed header (z-20). */}
         {isMounted && <div id="commit-badge-portal" className="fixed left-0 right-0 z-30 pwa-badge-top"></div>}
 
@@ -233,16 +233,16 @@ function TemplateInner({ children }: AppTemplateProps) {
         )}
 
         <div
-          className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isSettingsPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}
+          className={`max-w-4xl mx-auto ${(pathname === '/' || isGroupLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isGroupLikePage ? '' : (isSettingsPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}
           style={pathname === '/'
             // Home reserves enough room for the floating "+" FAB to clear the
             // last card.
             ? { paddingBottom: '6rem' }
-            // Thread-like pages have no floating chrome past the draft form,
+            // Group-like pages have no floating chrome past the draft form,
             // but the draft card's outer dashed border shouldn't visually
             // touch the screen edge at scroll-bottom — give it a small
             // breather below.
-            : isThreadLikePage
+            : isGroupLikePage
               ? { paddingBottom: '4.5rem' }
               : undefined}
         >
@@ -251,25 +251,25 @@ function TemplateInner({ children }: AppTemplateProps) {
       </div>
 
       {/* CreateQuestionContent owns the draft-poll-card portal AND the
-           question form modal. Mount it on every thread-like page so the
+           question form modal. Mount it on every group-like page so the
            draft card appears whenever drafts exist (even after navigation
            with the modal closed). The component renders nothing visible
            when there are no drafts and the form modal is closed. */}
-      {isMounted && isThreadLikePage && (
+      {isMounted && isGroupLikePage && (
         <Suspense fallback={null}>
           <LazyCreateQuestionContent />
         </Suspense>
       )}
 
-      {/* Floating "+" FAB — home page only. Navigates to /t/ (the empty
+      {/* Floating "+" FAB — home page only. Navigates to /g/ (the empty
            placeholder) where the user picks a What/When/Where bubble for what
            they want to create. Rendered via portal outside the scaling
            container so it positions against the viewport. Slides with the
            rest of the page in view transitions (no shared transition name
-           with the thread bubble bar). */}
+           with the group bubble bar). */}
       {isMounted && pathname === '/' && createPortal(
         <button
-          onClick={() => navigateWithTransition(router, '/t', 'forward')}
+          onClick={() => navigateWithTransition(router, '/g', 'forward')}
           className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',

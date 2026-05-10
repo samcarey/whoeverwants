@@ -96,11 +96,11 @@ class TestCreatePoll:
             "movie",
         ]
 
-    def test_explicit_title_does_not_pollute_thread_title(self, client, creator_secret):
+    def test_explicit_title_does_not_pollute_group_title(self, client, creator_secret):
         # `req.title` is the poll's DISPLAY title (e.g. a user-typed yes_no
-        # prompt). It must NOT be written to `polls.thread_title`, which is
-        # the thread-name override consulted by the FE when computing
-        # Thread.title. Conflating the two caused the user-reported "thread
+        # prompt). It must NOT be written to `polls.group_title`, which is
+        # the group-name override consulted by the FE when computing
+        # Group.title. Conflating the two caused the user-reported "group
         # name silently becomes a poll's title" bug.
         resp = client.post(
             "/api/polls",
@@ -113,22 +113,22 @@ class TestCreatePoll:
         assert resp.status_code == 201, resp.text
         data = resp.json()
         assert data["title"] == "What should we do tonight?"
-        assert data["thread_title"] is None
+        assert data["group_title"] is None
 
-    def test_explicit_thread_title_persisted(self, client, creator_secret):
-        # The dedicated `thread_title` field is the only path that should
-        # write to `polls.thread_title` on poll creation.
+    def test_explicit_group_title_persisted(self, client, creator_secret):
+        # The dedicated `group_title` field is the only path that should
+        # write to `polls.group_title` on poll creation.
         resp = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "thread_title": "Friday Night Plans",
+                "group_title": "Friday Night Plans",
                 "questions": [_yes_no_question()],
             },
         )
         assert resp.status_code == 201, resp.text
         data = resp.json()
-        assert data["thread_title"] == "Friday Night Plans"
+        assert data["group_title"] == "Friday Night Plans"
         # The override flows through to the computed display title too.
         assert data["title"] == "Friday Night Plans"
 
@@ -269,10 +269,10 @@ class TestQuestionLinkage:
                 assert row[1] == index
 
 
-class TestThreadAddition:
+class TestGroupAddition:
     """Migration 105 retired the `follow_up_to` chain pointer. Polls join an
-    existing thread by passing `req.thread_id`; threads.title is the single
-    source of truth for the thread-name override (no per-poll copies)."""
+    existing group by passing `req.group_id`; groups.title is the single
+    source of truth for the group-name override (no per-poll copies)."""
 
     def _create_root(self, client, creator_secret, **kwargs):
         resp = client.post(
@@ -286,166 +286,166 @@ class TestThreadAddition:
         assert resp.status_code == 201, resp.text
         return resp.json()
 
-    def test_poll_added_to_thread_inherits_thread_id(self, client, creator_secret):
+    def test_poll_added_to_group_inherits_group_id(self, client, creator_secret):
         parent = self._create_root(client, creator_secret)
-        thread_id = parent["thread_id"]
-        assert thread_id is not None
+        group_id = parent["group_id"]
+        assert group_id is not None
 
         child = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "thread_id": thread_id,
+                "group_id": group_id,
                 "questions": [_yes_no_question()],
             },
         )
         assert child.status_code == 201, child.text
-        assert child.json()["thread_id"] == thread_id
+        assert child.json()["group_id"] == group_id
 
-    def test_unknown_thread_id_falls_through_to_fresh_thread(
+    def test_unknown_group_id_falls_through_to_fresh_group(
         self, client, creator_secret
     ):
-        # Unknown thread_id is silently ignored; the new poll lands in a
-        # freshly-minted thread instead of 404'ing the request.
+        # Unknown group_id is silently ignored; the new poll lands in a
+        # freshly-minted group instead of 404'ing the request.
         bogus = str(uuid.uuid4())
         resp = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "thread_id": bogus,
+                "group_id": bogus,
                 "questions": [_yes_no_question()],
             },
         )
         assert resp.status_code == 201, resp.text
-        assert resp.json()["thread_id"] != bogus
+        assert resp.json()["group_id"] != bogus
 
-    def test_thread_title_lives_at_thread_level(self, client, creator_secret):
-        # Setting `thread_title` on a root-poll create writes to threads.title;
-        # subsequent polls in the same thread see the SAME thread_title.
+    def test_group_title_lives_at_group_level(self, client, creator_secret):
+        # Setting `group_title` on a root-poll create writes to groups.title;
+        # subsequent polls in the same group see the SAME group_title.
         parent = self._create_root(
-            client, creator_secret, thread_title="Friday Night"
+            client, creator_secret, group_title="Friday Night"
         )
-        thread_id = parent["thread_id"]
-        assert parent["thread_title"] == "Friday Night"
+        group_id = parent["group_id"]
+        assert parent["group_title"] == "Friday Night"
 
         child = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "thread_id": thread_id,
+                "group_id": group_id,
                 "questions": [_yes_no_question()],
             },
         )
-        assert child.json()["thread_title"] == "Friday Night"
+        assert child.json()["group_title"] == "Friday Night"
 
-    def test_explicit_thread_title_overwrites_existing(
+    def test_explicit_group_title_overwrites_existing(
         self, client, creator_secret
     ):
-        # `thread_title` on a poll-create is symmetric with the dedicated
-        # thread-title endpoint: passing it always sets `threads.title`,
-        # both for fresh threads and additions to existing threads.
+        # `group_title` on a poll-create is symmetric with the dedicated
+        # group-title endpoint: passing it always sets `groups.title`,
+        # both for fresh groups and additions to existing groups.
         parent = self._create_root(
-            client, creator_secret, thread_title="Old Title"
+            client, creator_secret, group_title="Old Title"
         )
-        thread_id = parent["thread_id"]
+        group_id = parent["group_id"]
 
         child = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "thread_id": thread_id,
-                "thread_title": "New Title",
+                "group_id": group_id,
+                "group_title": "New Title",
                 "questions": [_yes_no_question()],
             },
         )
-        assert child.json()["thread_title"] == "New Title"
+        assert child.json()["group_title"] == "New Title"
         # Parent re-read picks up the same updated title.
         refetched = client.get(f"/api/polls/by-id/{parent['id']}")
-        assert refetched.json()["thread_title"] == "New Title"
+        assert refetched.json()["group_title"] == "New Title"
 
-    def test_poll_title_does_not_pollute_thread_title(
+    def test_poll_title_does_not_pollute_group_title(
         self, client, creator_secret
     ):
-        # Regression for the original "thread name silently becomes a
+        # Regression for the original "group name silently becomes a
         # poll's title" bug: `req.title` (poll display title) must never
-        # leak into `threads.title` (thread name override).
+        # leak into `groups.title` (group name override).
         parent = self._create_root(
             client, creator_secret, title="Should we order pizza?"
         )
-        assert parent["thread_title"] is None
+        assert parent["group_title"] is None
         assert parent["title"] == "Should we order pizza?"
 
-        # A poll added to the same thread also picks up no thread_title.
+        # A poll added to the same group also picks up no group_title.
         child = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "thread_id": parent["thread_id"],
+                "group_id": parent["group_id"],
                 "questions": [_yes_no_question()],
             },
         )
-        assert child.json()["thread_title"] is None
+        assert child.json()["group_title"] is None
 
-    def test_update_thread_title_endpoint(self, client, creator_secret):
+    def test_update_group_title_endpoint(self, client, creator_secret):
         parent = self._create_root(client, creator_secret)
-        thread_id = parent["thread_id"]
+        group_id = parent["group_id"]
 
         # Set
         resp = client.post(
-            f"/api/threads/{thread_id}/title",
-            json={"thread_title": "Renamed"},
+            f"/api/groups/{group_id}/title",
+            json={"group_title": "Renamed"},
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["title"] == "Renamed"
-        assert body["thread_id"] == thread_id
+        assert body["group_id"] == group_id
 
         # Subsequent poll reads see the new title.
         refetched = client.get(f"/api/polls/by-id/{parent['id']}")
-        assert refetched.json()["thread_title"] == "Renamed"
+        assert refetched.json()["group_title"] == "Renamed"
 
         # Clear
         cleared = client.post(
-            f"/api/threads/{thread_id}/title",
-            json={"thread_title": ""},
+            f"/api/groups/{group_id}/title",
+            json={"group_title": ""},
         )
         assert cleared.json()["title"] is None
         assert client.get(
             f"/api/polls/by-id/{parent['id']}"
-        ).json()["thread_title"] is None
+        ).json()["group_title"] is None
 
-    def test_update_thread_title_resolves_route_id_forms(
+    def test_update_group_title_resolves_route_id_forms(
         self, client, creator_secret
     ):
         parent = self._create_root(client, creator_secret)
-        # threads.short_id is the canonical FE-facing form
-        for route_id in (parent["thread_id"], parent["thread_short_id"]):
+        # groups.short_id is the canonical FE-facing form
+        for route_id in (parent["group_id"], parent["group_short_id"]):
             r = client.post(
-                f"/api/threads/{route_id}/title",
-                json={"thread_title": f"name-{route_id[:6]}"},
+                f"/api/groups/{route_id}/title",
+                json={"group_title": f"name-{route_id[:6]}"},
             )
             assert r.status_code == 200, r.text
 
 
-class TestThreadId:
-    """Phase B.1: every new poll has a thread_id. Root polls get a fresh
-    thread row; polls added to an existing thread (`req.thread_id`) reuse
+class TestGroupId:
+    """Phase B.1: every new poll has a group_id. Root polls get a fresh
+    group row; polls added to an existing group (`req.group_id`) reuse
     it. Migration 105 retired `polls.follow_up_to` so chain-walking is
-    gone — these tests now assert the flat thread_id semantics directly.
+    gone — these tests now assert the flat group_id semantics directly.
     """
 
-    def _thread_id_for(self, poll_id: str) -> str | None:
+    def _group_id_for(self, poll_id: str) -> str | None:
         import psycopg
 
         with psycopg.connect(TEST_DB_URL) as conn:
             row = conn.execute(
-                "SELECT thread_id FROM polls WHERE id = %s",
+                "SELECT group_id FROM polls WHERE id = %s",
                 (poll_id,),
             ).fetchone()
             assert row is not None
             return str(row[0]) if row[0] is not None else None
 
-    def test_root_poll_gets_fresh_thread(self, client, creator_secret):
+    def test_root_poll_gets_fresh_group(self, client, creator_secret):
         resp = client.post(
             "/api/polls",
             json={
@@ -454,11 +454,11 @@ class TestThreadId:
             },
         )
         assert resp.status_code == 201, resp.text
-        thread_id = self._thread_id_for(resp.json()["id"])
-        assert thread_id is not None
-        assert uuid.UUID(thread_id)  # valid uuid
+        group_id = self._group_id_for(resp.json()["id"])
+        assert group_id is not None
+        assert uuid.UUID(group_id)  # valid uuid
 
-    def test_two_root_polls_get_distinct_threads(self, client, creator_secret):
+    def test_two_root_polls_get_distinct_groups(self, client, creator_secret):
         a = client.post(
             "/api/polls",
             json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
@@ -467,47 +467,47 @@ class TestThreadId:
             "/api/polls",
             json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
         )
-        assert self._thread_id_for(a.json()["id"]) != self._thread_id_for(b.json()["id"])
+        assert self._group_id_for(a.json()["id"]) != self._group_id_for(b.json()["id"])
 
-    def test_thread_id_param_reuses_thread(self, client, creator_secret):
+    def test_group_id_param_reuses_group(self, client, creator_secret):
         parent = client.post(
             "/api/polls",
             json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
         )
-        parent_thread_id = self._thread_id_for(parent.json()["id"])
+        parent_group_id = self._group_id_for(parent.json()["id"])
 
         child = client.post(
             "/api/polls",
             json={
                 "creator_secret": creator_secret,
-                "thread_id": parent_thread_id,
+                "group_id": parent_group_id,
                 "questions": [_yes_no_question()],
             },
         )
         assert child.status_code == 201, child.text
-        assert self._thread_id_for(child.json()["id"]) == parent_thread_id
+        assert self._group_id_for(child.json()["id"]) == parent_group_id
 
-    def test_chain_of_additions_share_thread(self, client, creator_secret):
-        # Multiple polls added to the same thread all share the same
-        # thread_id — analog of the old "grandchild inherits root thread"
+    def test_chain_of_additions_share_group(self, client, creator_secret):
+        # Multiple polls added to the same group all share the same
+        # group_id — analog of the old "grandchild inherits root group"
         # assertion now that there's no chain walk.
         root = client.post(
             "/api/polls",
             json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
         )
-        root_thread = self._thread_id_for(root.json()["id"])
+        root_group = self._group_id_for(root.json()["id"])
 
         for _ in range(2):
             resp = client.post(
                 "/api/polls",
                 json={
                     "creator_secret": creator_secret,
-                    "thread_id": root_thread,
+                    "group_id": root_group,
                     "questions": [_yes_no_question()],
                 },
             )
             assert resp.status_code == 201, resp.text
-            assert self._thread_id_for(resp.json()["id"]) == root_thread
+            assert self._group_id_for(resp.json()["id"]) == root_group
 
 
 class TestPollOperations:

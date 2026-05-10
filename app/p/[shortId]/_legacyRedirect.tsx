@@ -4,7 +4,7 @@
  * Shared resolution helper for the legacy `/p/<shortId>/...` redirect stubs.
  *
  * Each stub looks up the (possibly ambiguous) `shortId` in the cache, falls
- * back to the API, then `router.replace`s to a `/t/<rootRouteId>...` URL
+ * back to the API, then `router.replace`s to a `/g/<rootRouteId>...` URL
  * built by the caller via `buildTarget`. The three stubs (the bare poll
  * redirect plus `/info` and `/edit-title`) only differ in the trailing path
  * suffix and whether they accept a question-uuid form.
@@ -20,7 +20,7 @@ import {
   ApiError,
 } from "@/lib/api";
 import { getCachedPollById, getCachedPollForShortId } from "@/lib/questionCache";
-import { resolveThreadRootRouteId } from "@/lib/threadUtils";
+import { resolveGroupRootRouteId } from "@/lib/groupUtils";
 import { isUuidLike } from "@/lib/questionId";
 import type { Poll } from "@/lib/types";
 
@@ -73,7 +73,7 @@ function LegacyRedirectInner({ buildTarget, allowQuestionUuid = false }: LegacyR
         router.replace('/');
         return;
       }
-      const rootRouteId = resolveThreadRootRouteId(poll);
+      const rootRouteId = resolveGroupRootRouteId(poll);
       const pollShortId = poll.short_id || poll.id;
       router.replace(buildTarget(rootRouteId, pollShortId));
     })();

@@ -3,10 +3,10 @@
  *
  * When the create-question flow lands the user on a new question page, the natural
  * back destination is wherever they were when they opened the create modal
- * (home page, some thread, another question). We want back to lead to the thread
+ * (home page, some group, another question). We want back to lead to the group
  * containing the new question instead.
  *
- * `set()` records the thread URL for a just-created question; `consume()` reads
+ * `set()` records the group URL for a just-created question; `consume()` reads
  * and removes it. Scoped to `sessionStorage`, so entries disappear on tab
  * close. Key namespace: `questionBackTarget:<questionRouteId>`.
  */
@@ -15,15 +15,15 @@ import { normalizePath } from './questionId';
 
 const KEY_PREFIX = 'questionBackTarget:';
 
-/** Record `/t/<threadRootRouteId>` as the back destination for the given
+/** Record `/g/<groupRootRouteId>` as the back destination for the given
  *  question page. Skipped when the page currently underneath the create modal
  *  already matches — natural `history.back()` will land there anyway, and an
  *  explicit override would just add a duplicate history entry. */
-export function set(questionRouteId: string, threadRootRouteId: string): void {
+export function set(questionRouteId: string, groupRootRouteId: string): void {
   if (typeof window === 'undefined') return;
-  const threadPath = `/t/${threadRootRouteId}`;
-  if (normalizePath(window.location.pathname) === threadPath) return;
-  sessionStorage.setItem(KEY_PREFIX + questionRouteId, threadPath);
+  const groupPath = `/g/${groupRootRouteId}`;
+  if (normalizePath(window.location.pathname) === groupPath) return;
+  sessionStorage.setItem(KEY_PREFIX + questionRouteId, groupPath);
 }
 
 /** Read and remove the custom back target for a question. Returns null if none. */

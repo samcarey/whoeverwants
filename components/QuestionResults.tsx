@@ -23,7 +23,7 @@ interface QuestionResultsProps {
   optionsMetadata?: OptionsMetadata | null;
   // For yes/no questions: keeps the winner card rendered in a stable DOM
   // position and hides the losing card (via grid-rows animation) when true.
-  // Used by the thread view so the winner doesn't flicker across
+  // Used by the group view so the winner doesn't flicker across
   // expand/collapse transitions.
   hideLoser?: boolean;
   // For yes/no questions: the current viewer's choice (if voted). When defined
@@ -57,7 +57,7 @@ function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick
   const winner = results.winner;
   const totalVotes = results.total_votes;
 
-  // Prefer the explicit userVoteChoice prop (used by the thread view) over
+  // Prefer the explicit userVoteChoice prop (used by the group view) over
   // the legacy userVoteData shape so callers can drive the badges + abstain
   // row without needing the full vote object.
   const voteChoice: 'yes' | 'no' | 'abstain' | null =
@@ -376,12 +376,12 @@ function CollapsibleStartOptions({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Compact single-line previews rendered in the lower-right of the thread
+// Compact single-line previews rendered in the lower-right of the group
 // card's compact header when collapsed. Empty states render below the card in
 // the respondents row, so these all return null when there's no content.
 
 // min-w-0 overrides the default `min-width: auto` on flex items so the pill
-// can shrink below its content width when the thread card's footer row is
+// can shrink below its content width when the group card's footer row is
 // tight, letting the internal `truncate` produce ellipsis on long winner names.
 const PILL_CLASS = "inline-block min-w-0 px-2 py-px rounded-full border text-sm font-bold truncate max-w-[14rem]";
 const PILL_COLORS_CLOSED = "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100";

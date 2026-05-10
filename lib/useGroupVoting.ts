@@ -18,7 +18,7 @@ import {
   setStoredVoteId,
   setVotedQuestionFlag,
 } from "@/lib/votedQuestionsStorage";
-import type { Thread } from "@/lib/threadUtils";
+import type { Group } from "@/lib/groupUtils";
 
 export type YesNoChoice = "yes" | "no" | "abstain";
 
@@ -44,29 +44,29 @@ export type PendingPollSubmit = {
   preparedNonYesNo: PreparedNonYesNoEntry[];
 };
 
-interface UseThreadVotingArgs {
-  thread: Thread | null;
+interface UseGroupVotingArgs {
+  group: Group | null;
   setVotedQuestionIds: Dispatch<SetStateAction<Set<string>>>;
   setAbstainedQuestionIds: Dispatch<SetStateAction<Set<string>>>;
 }
 
 /**
  * Owns every piece of state and every handler involved in submitting or
- * editing a vote from the thread page. Pulled out of `app/p/[shortId]/
- * page.tsx` so the page only deals with thread layout/expand/scroll concerns
+ * editing a vote from the group page. Pulled out of `app/p/[shortId]/
+ * page.tsx` so the page only deals with group layout/expand/scroll concerns
  * while voting flows live in one place.
  *
  * Why setVotedQuestionIds / setAbstainedQuestionIds are passed in: the page owns those
- * sets because they're also seeded synchronously alongside the cached thread
+ * sets because they're also seeded synchronously alongside the cached group
  * (and consumed by the awaiting-response sort + golden-border predicate
  * outside the voting flow). The hook calls `loadVotedQuestions()` post-write and
  * pushes the fresh sets back through these setters.
  */
-export function useThreadVoting({
-  thread,
+export function useGroupVoting({
+  group,
   setVotedQuestionIds,
   setAbstainedQuestionIds,
-}: UseThreadVotingArgs) {
+}: UseGroupVotingArgs) {
   const [userVoteMap, setUserVoteMap] = useState<Map<string, UserYesNoVote>>(
     () => new Map(),
   );
@@ -116,7 +116,7 @@ export function useThreadVoting({
 
   // Shared post-`apiSubmitPollVotes` sync used by every poll-vote write path.
   // Per CLAUDE.md, localStorage flags must be written BEFORE dispatching
-  // QUESTION_VOTES_CHANGED_EVENT — listeners (e.g. the thread page's golden
+  // QUESTION_VOTES_CHANGED_EVENT — listeners (e.g. the group page's golden
   // border re-evaluator) read localStorage in the handler.
   const syncStateAfterPollVotes = (returnedVotes: ApiVote[], voter_name: string | null) => {
     for (const v of returnedVotes) {
@@ -246,11 +246,11 @@ export function useThreadVoting({
     }
   };
 
-  // Swipe-to-abstain on a thread card. Submits a single batched abstain for
+  // Swipe-to-abstain on a group card. Submits a single batched abstain for
   // every un-responded sub-question of the poll. The caller drives the
   // slide-off animation; this function is the data side of the gesture.
-  // Pinned via useRef so the identity is stable across renders — the thread
-  // page passes this to React.memo'd ThreadCardItem and a fresh closure on
+  // Pinned via useRef so the identity is stable across renders — the group
+  // page passes this to React.memo'd GroupCardItem and a fresh closure on
   // every parent render would defeat memoization.
   const submitSwipeAbstain = useRef(async (
     pollId: string,
@@ -288,7 +288,7 @@ export function useThreadVoting({
     newChoice: YesNoChoice,
   ) => {
     const current = userVoteMap.get(questionId);
-    const subQuestion = thread?.questions.find((p) => p.id === questionId);
+    const subQuestion = group?.questions.find((p) => p.id === questionId);
     const pollId = subQuestion?.poll_id ?? null;
     if (!pollId) {
       // Phase 5: every question has a poll wrapper, so this branch is dead.

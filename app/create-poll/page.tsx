@@ -27,9 +27,9 @@ import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
-import { getThreadHrefForPoll, resolveThreadRootRouteId } from "@/lib/threadUtils";
+import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
-import { cachePoll, getCachedThreadIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
+import { cachePoll, getCachedGroupIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
@@ -38,7 +38,7 @@ import {
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID, THREAD_ID_ATTR } from "@/lib/threadDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 import {
   pollLookup,
   shortenOption,
@@ -682,10 +682,10 @@ export function CreateQuestionContent() {
   }, [isModalOpen, dismissModal]);
 
   // Portal target for the in-progress draft poll card, rendered in the page
-  // body by the thread / empty-thread routes. Re-queried via a
+  // body by the group / empty-group routes. Re-queried via a
   // MutationObserver that stays armed for the full component lifetime —
   // page navigations swap the portal target node (and the loading-spinner
-  // early-return inside ThreadContent unmounts it transiently), so a
+  // early-return inside GroupContent unmounts it transiently), so a
   // self-disconnecting observer can leave us holding a stale reference
   // pointing at a detached node and the draft card stops rendering.
   // The mutation callback is coalesced into one rAF per frame, so the
@@ -1047,21 +1047,21 @@ export function CreateQuestionContent() {
 
       const creatorSecret = generateCreatorSecret();
 
-      // Implicit follow-up: pick up the thread's latest question id from
-      // The thread the new poll attaches to: either the body marker (set
-      // by the thread page on mount) or, for the legacy duplicate /
-      // vote-on-it / FollowUpButton flows, the thread of the question id
+      // Implicit follow-up: pick up the group's latest question id from
+      // The group the new poll attaches to: either the body marker (set
+      // by the group page on mount) or, for the legacy duplicate /
+      // vote-on-it / FollowUpButton flows, the group of the question id
       // the caller passed. Skip the body marker on /t (empty placeholder)
-      // — by construction the user is starting a new thread, and the
-      // attribute can be stale (the thread route's cleanup is a useEffect
+      // — by construction the user is starting a new group, and the
+      // attribute can be stale (the group route's cleanup is a useEffect
       // return that React/HMR/view-transitions can delay).
-      const onEmptyThread = typeof window !== 'undefined' && /^\/t\/?$/.test(window.location.pathname);
-      const bodyThreadId = !onEmptyThread && typeof document !== 'undefined'
-        ? document.body.getAttribute(THREAD_ID_ATTR)
+      const onEmptyGroup = typeof window !== 'undefined' && /^\/t\/?$/.test(window.location.pathname);
+      const bodyGroupId = !onEmptyGroup && typeof document !== 'undefined'
+        ? document.body.getAttribute(GROUP_ID_ATTR)
         : null;
-      const effectiveThreadId = followUpTo
-        ? getCachedThreadIdForQuestion(followUpTo)
-        : bodyThreadId;
+      const effectiveGroupId = followUpTo
+        ? getCachedGroupIdForQuestion(followUpTo)
+        : bodyGroupId;
 
       // Resolve the poll-level prephase cutoff once. Used both for the wrapper
       // field and for each draft that has a prephase (suggestion mode + time).
@@ -1077,7 +1077,7 @@ export function CreateQuestionContent() {
       // title), use that as the wrapper title. Otherwise send null and let
       // the server auto-generate from question categories + poll context.
       // The standalone wrapper-title input was removed when the form moved
-      // inline; users can override the title later via /t/<id>/edit-title.
+      // inline; users can override the title later via /g/<id>/edit-title.
       const onlyDraft = effectiveDrafts.length === 1 ? effectiveDrafts[0] : null;
       const wrapperTitle = onlyDraft && !onlyDraft.isAutoTitle ? onlyDraft.title.trim() : null;
 
@@ -1087,7 +1087,7 @@ export function CreateQuestionContent() {
       // Accidental-double-submit guard. We allow duplicate titles in
       // general — different users (or the same user later) might
       // legitimately want a fresh "Movie?" suggestion round in the same
-      // thread. The redirect only fires when both:
+      // group. The redirect only fires when both:
       //   1. The current browser is the creator of the existing
       //      question (a creator_secret for it lives in localStorage),
       //   2. The existing question was created within the last 30s.
@@ -1095,21 +1095,21 @@ export function CreateQuestionContent() {
       // user who tapped Submit twice in quick succession.
       const DUPLICATE_REDIRECT_WINDOW_MS = 30_000;
       const dedupTitle = wrapperTitle || onlyDraft?.title || '';
-      if (effectiveThreadId && dedupTitle.trim()) {
+      if (effectiveGroupId && dedupTitle.trim()) {
         try {
-          const existing = await apiFindDuplicateQuestion(dedupTitle, effectiveThreadId);
+          const existing = await apiFindDuplicateQuestion(dedupTitle, effectiveGroupId);
           const isOwnRecentDuplicate = !!existing
             && !!getCreatorSecret(existing.id)
             && (Date.now() - new Date(existing.created_at).getTime()) < DUPLICATE_REDIRECT_WINDOW_MS;
           if (existing && isOwnRecentDuplicate) {
             const wrapper = existing.poll_id ? pollLookup()(existing.poll_id) : null;
             const shortId = wrapper?.short_id || existing.id;
-            const rootRouteId = wrapper ? resolveThreadRootRouteId(wrapper) : shortId;
+            const rootRouteId = wrapper ? resolveGroupRootRouteId(wrapper) : shortId;
             questionBackTarget.set(shortId, rootRouteId);
-            const href = wrapper ? getThreadHrefForPoll(wrapper) : `/t/${shortId}`;
+            const href = wrapper ? getGroupHrefForPoll(wrapper) : `/g/${shortId}`;
             // Tear down the submit state BEFORE navigating away. Without
             // this the spinner spins forever + the modal stays open
-            // covering the destination thread (the duplicate of the poll
+            // covering the destination group (the duplicate of the poll
             // the user just typed).
             isSubmittingRef.current = false;
             setIsLoading(false);
@@ -1124,28 +1124,28 @@ export function CreateQuestionContent() {
         }
       }
 
-      // Build a placeholder Poll from the draft data so the thread can render
+      // Build a placeholder Poll from the draft data so the group can render
       // a real card in the destination position immediately, before the API
       // call resolves. The card mounts with only the title visible (other
       // fields empty / default) and FLIP-animates from the draft card's
       // bbox to its natural collapsed-card slot. apiCreatePoll runs in
       // parallel and dispatches POLL_HYDRATED_EVENT on success so the
-      // thread page can swap placeholder fields for real ones in place.
+      // group page can swap placeholder fields for real ones in place.
       const placeholderPoll = synthesizePlaceholderPoll(effectiveDrafts, {
         wrapperTitle,
         responseDeadline,
-        threadId: effectiveThreadId ?? null,
+        groupId: effectiveGroupId ?? null,
         creatorName: creatorName.trim() || null,
         details: details.trim() || null,
       });
 
-      // For new-root submissions on /t/ (the empty placeholder), the
+      // For new-root submissions on /g/ (the empty placeholder), the
       // placeholder card needs to be visible. The placeholder route doesn't
       // render a poll list, so we still navigate first; the destination
-      // ThreadContent mounts with the placeholder in cache and FLIP-animates.
+      // GroupContent mounts with the placeholder in cache and FLIP-animates.
       // We use router.replace with a placeholder id route — once apiCreatePoll
       // resolves, we router.replace again to the real shortId.
-      // For follow-ups, the current thread page is already rendering and
+      // For follow-ups, the current group page is already rendering and
       // takes the placeholder via POLL_PENDING_EVENT inline.
       const draftCardEl = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
       const draftBbox = draftCardEl?.getBoundingClientRect();
@@ -1153,7 +1153,7 @@ export function CreateQuestionContent() {
         ? { x: draftBbox.x, y: draftBbox.y, width: draftBbox.width, height: draftBbox.height }
         : { x: 0, y: 0, width: 0, height: 0 };
 
-      // Cache the placeholder so destination thread render can find it.
+      // Cache the placeholder so destination group render can find it.
       cachePoll(placeholderPoll);
       updateAccessiblePollsIfFresh(existing => [
         ...existing.filter(p => p.id !== placeholderPoll.id),
@@ -1174,19 +1174,19 @@ export function CreateQuestionContent() {
         setDrafts([]);
       });
 
-      // Stay on /t until the API resolves on empty-thread submits — the
+      // Stay on /t until the API resolves on empty-group submits — the
       // placeholder id (`pending-...`) doesn't resolve as a UUID/short_id,
-      // so redirecting eagerly would render "Thread Not Found" and lose the
+      // so redirecting eagerly would render "Group Not Found" and lose the
       // draft-poll-portal that hosts restored drafts + error on failure.
       // Success redirects to the real short_id below.
       // duplicateOf carries a question id from the "duplicate this poll"
-      // flow; resolve it to its thread_id (we want the duplicate to land
-      // in the original's thread) and prefer that when no thread context
+      // flow; resolve it to its group_id (we want the duplicate to land
+      // in the original's group) and prefer that when no group context
       // is set via the body marker / props.
-      const duplicateThreadId = duplicateOf
-        ? getCachedThreadIdForQuestion(duplicateOf)
+      const duplicateGroupId = duplicateOf
+        ? getCachedGroupIdForQuestion(duplicateOf)
         : null;
-      const requestThreadId = effectiveThreadId ?? duplicateThreadId ?? null;
+      const requestGroupId = effectiveGroupId ?? duplicateGroupId ?? null;
 
       let createdPoll: Poll;
       try {
@@ -1196,7 +1196,7 @@ export function CreateQuestionContent() {
           response_deadline: responseDeadline,
           prephase_deadline: prephaseDeadlineIso,
           prephase_deadline_minutes: prephaseDeadlineIso ? null : prephaseMinutes != null ? Math.round(prephaseMinutes) : null,
-          thread_id: requestThreadId,
+          group_id: requestGroupId,
           title: wrapperTitle,
           context: null,
           details: details.trim() || null,
@@ -1213,9 +1213,9 @@ export function CreateQuestionContent() {
         isSubmittingRef.current = false;
         // Clean up the optimistic state so the user doesn't see a stuck
         // placeholder card with no chrome (just a title) lingering in the
-        // thread, with the form cleared and seemingly nothing to retry. The
-        // POLL_FAILED listener on the thread page removes the placeholder
-        // from thread state; here we evict it from cache and restore the
+        // group, with the form cleared and seemingly nothing to retry. The
+        // POLL_FAILED listener on the group page removes the placeholder
+        // from group state; here we evict it from cache and restore the
         // staged drafts so the user can edit and resubmit.
         invalidatePoll(placeholderPoll.id);
         updateAccessiblePollsIfFresh(existing => existing.filter(p => p.id !== placeholderPoll.id));
@@ -1246,7 +1246,7 @@ export function CreateQuestionContent() {
       applyDraftToState(emptyDraft());
       setError(null);
 
-      // Cache the real poll, then notify thread state so it swaps placeholder
+      // Cache the real poll, then notify group state so it swaps placeholder
       // fields for real ones in place (same DOM node — no remount mid-FLIP).
       cachePoll(createdPoll);
       updateAccessiblePollsIfFresh(existing => [
@@ -1259,12 +1259,12 @@ export function CreateQuestionContent() {
         }),
       );
 
-      if (onEmptyThread) {
-        // Land on the real thread URL with the new poll expanded. The cache is
+      if (onEmptyGroup) {
+        // Land on the real group URL with the new poll expanded. The cache is
         // hot from the just-completed POLL_HYDRATED so re-mount is instant.
         const redirectId = createdPoll.short_id ?? createdPoll.id;
-        questionBackTarget.set(redirectId, resolveThreadRootRouteId(createdPoll));
-        router.replace(getThreadHrefForPoll(createdPoll));
+        questionBackTarget.set(redirectId, resolveGroupRootRouteId(createdPoll));
+        router.replace(getGroupHrefForPoll(createdPoll));
       }
     } catch (error) {
       console.error("Unexpected error:", error);
@@ -1592,7 +1592,7 @@ export function CreateQuestionContent() {
 
               {/* Sheet body — scrollable when content overflows. Holds the
                   two stacked section cards with a small gap between them.
-                  The bottom padding matches the thread-like page's outer
+                  The bottom padding matches the group-like page's outer
                   `paddingBottom: '4.5rem'` so elements have the same
                   breathing room above the sheet edge that the bubbles
                   have above the screen edge. */}
@@ -1743,14 +1743,14 @@ export function CreateQuestionContent() {
   );
 }
 
-// Redirect /create-poll to /t/ where the always-visible draft card lives.
+// Redirect /create-poll to /g/ where the always-visible draft card lives.
 // Forwards any duplicate / followUpTo / voteFromSuggestion params so the
 // inline form can pre-fill from the original entry-point.
 export default function CreateQuestionRedirect() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const qs = params.toString();
-    window.location.replace(`/t/${qs ? `?${qs}` : ''}`);
+    window.location.replace(`/g/${qs ? `?${qs}` : ''}`);
   }, []);
 
   return null;

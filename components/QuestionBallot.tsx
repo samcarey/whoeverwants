@@ -40,14 +40,14 @@ interface QuestionBallotProps {
   createdDate: string;
   questionId: string | null;
   // When true, this component skips rendering YesNoResults itself — the
-  // caller (thread view) is rendering them in a stable DOM position above
+  // caller (group view) is rendering them in a stable DOM position above
   // the expand clip to avoid winner-card flicker across expand/collapse.
   externalYesNoResults?: boolean;
-  // Thread-view cards pre-mount QuestionBallot in a collapsed grid clip.
+  // Group-view cards pre-mount QuestionBallot in a collapsed grid clip.
   // When the card collapses while the ballot is being edited, we cancel
   // the edit so it doesn't persist for the next expansion.
   isExpanded?: boolean;
-  // Suppresses the inner <QuestionDetails> when the thread-page section label
+  // Suppresses the inner <QuestionDetails> when the group-page section label
   // already shows question.details.
   partOfPollGroup?: boolean;
   // Phase 3.4 follow-up B: parent poll wrapper owns Submit + voter
@@ -272,7 +272,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
 
   // Mark question as voted: writes both the votedQuestions flag and questionVoteIds in
   // one call. Listeners that re-read localStorage on QUESTION_VOTES_CHANGED_EVENT
-  // (e.g. the thread page's awaiting-response border) need both writes
+  // (e.g. the group page's awaiting-response border) need both writes
   // visible before the dispatch.
   const markQuestionAsVoted = useCallback((questionId: string, voteId?: string, abstained?: boolean) => {
     setVotedQuestionFlag(questionId, abstained ? 'abstained' : true);
@@ -898,7 +898,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
 
       // Sync voted/abstained status to localStorage. Must happen BEFORE the
       // QUESTION_VOTES_CHANGED_EVENT dispatch below so listeners that re-read
-      // localStorage (e.g. the thread page's awaiting-response border) see
+      // localStorage (e.g. the group page's awaiting-response border) see
       // the updated value. Also runs on edits so abstain-via-edit transitions
       // get recorded (the flag is a one-way set otherwise).
       markQuestionAsVoted(question.id, voteId, isAbstaining);
@@ -1133,7 +1133,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     </button>
   ) : null;
 
-  // When the thread view renders yes/no results externally (to keep the
+  // When the group view renders yes/no results externally (to keep the
   // winner card DOM-stable across expand/collapse), the internal copies of
   // QuestionResultsDisplay would duplicate them — so skip them entirely for
   // yes_no questions in that context.
@@ -1169,7 +1169,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
         {/* Creation info lives on the compact card header (creator name + relative time);
              full timestamp is available via the tooltip on that time. */}
 
-        {/* Suppress when the thread-page section label already renders
+        {/* Suppress when the group-page section label already renders
              question.details (multi-group), or when the auto-title encodes
              the same context as a "for X" suffix — otherwise the same
              string shows up twice (once as the title, once as a subtitle). */}
@@ -1202,7 +1202,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
           // render nothing here — the modal owns those labels now.
 
           // Case 4: Question open, not expired. Live countdown is rendered
-          // above the card in the thread view; only deferred-deadline
+          // above the card in the group view; only deferred-deadline
           // notices render here, since they convey run-duration info
           // ("X minutes after first submission") that the above-card
           // "Taking Suggestions" label doesn't surface.
@@ -1264,7 +1264,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
           <div>
               {suppressYesNoHere ? (
                 // All yes_no UI (voting, changing, results) is rendered by
-                // the thread view's external YesNoResults — nothing to show
+                // the group view's external YesNoResults — nothing to show
                 // here for any state.
                 null
               ) : isQuestionClosed ? (

@@ -32,10 +32,10 @@ export function getAccessibleQuestionIds(): string[] {
 }
 
 // Add a question ID to the accessible list. Callers should only use this for
-// *explicit* access grants (visiting a question/thread URL, creating a question) —
+// *explicit* access grants (visiting a question/group URL, creating a question) —
 // doing so clears any prior "forgotten" marker since the user is opting in.
 // Automatic discovery must go through the forgotten-list-aware path in
-// `getMyThreads` (lib/simpleQuestionQueries.ts) instead.
+// `getMyGroups` (lib/simpleQuestionQueries.ts) instead.
 export function addAccessibleQuestionId(questionId: string): void {
   if (typeof window === 'undefined' || !questionId) {
     return;
