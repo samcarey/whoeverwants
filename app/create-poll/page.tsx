@@ -129,14 +129,7 @@ export function CreateQuestionContent() {
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
 
-  // Single-question mode: `drafts` holds the auto-staged inline form
-  // mid-submit (handleSubmitClick reads it for the API payload). Always
-  // empty between submits. The legacy multi-question staging UI is gone.
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
-  // editingDraftIndex is dormant in single-question mode; kept around so
-  // handleSubmitClick's auto-stage path doesn't need to special-case the
-  // null branch when multi-question staging returns.
-  const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
@@ -647,13 +640,8 @@ export function CreateQuestionContent() {
 
   const dismissModal = useCallback(() => {
     applyDraftToState(emptyDraft());
-    setEditingDraftIndex(null);
     setError(null);
     setIsModalOpen(false);
-    // Single-question mode: dismissing the modal also clears any staged
-    // draft so reopening starts fresh. The legacy multi-question staging
-    // path is dormant; drafts only ever holds the auto-staged inline form
-    // mid-submit.
     setDrafts([]);
   }, [applyDraftToState]);
 
@@ -664,7 +652,6 @@ export function CreateQuestionContent() {
     // Still editable — they can clear or change it freely.
     const inheritedForField = sharedDraftContext(drafts) ?? '';
     applyDraftToState(emptyDraft({ category: cat, forField: inheritedForField }));
-    setEditingDraftIndex(null);
     setError(null);
     setIsModalOpen(true);
   }, [applyDraftToState, drafts]);
@@ -1037,23 +1024,13 @@ export function CreateQuestionContent() {
     // user submit a single-question poll without first tapping "+ Question".
     // We compute the effective drafts list locally because setDrafts won't
     // be visible later in this function (React batches state updates).
+    // Don't reset the form state here either — if poll-level validation or
+    // the API call fails, the user keeps their typed values in the modal.
     let effectiveDrafts = drafts;
     if (inlineFormHasContent()) {
       const subErr = getCurrentQuestionFormError();
       if (subErr) { setError(subErr); return; }
-      const newDraft = readCurrentDraft();
-      if (editingDraftIndex !== null) {
-        const next = [...drafts];
-        const at = Math.min(editingDraftIndex, next.length);
-        next.splice(at, 0, newDraft);
-        effectiveDrafts = next;
-      } else {
-        effectiveDrafts = [...drafts, newDraft];
-      }
-      // NOTE: don't reset the form state here. If poll-level validation
-      // fails below — or the API call errors out later — the user keeps
-      // their typed values in the modal. The reset only happens on the
-      // success path (after POLL_HYDRATED dispatches).
+      effectiveDrafts = [...drafts, readCurrentDraft()];
     }
 
     const validationError = getValidationErrorFor(effectiveDrafts);
@@ -1078,8 +1055,8 @@ export function CreateQuestionContent() {
       // — by construction the user is starting a new thread, and the
       // attribute can be stale (the thread route's cleanup is a useEffect
       // return that React/HMR/view-transitions can delay).
-      const onEmptyThreadPath = typeof window !== 'undefined' && /^\/t\/?$/.test(window.location.pathname);
-      const bodyThreadId = !onEmptyThreadPath && typeof document !== 'undefined'
+      const onEmptyThread = typeof window !== 'undefined' && /^\/t\/?$/.test(window.location.pathname);
+      const bodyThreadId = !onEmptyThread && typeof document !== 'undefined'
         ? document.body.getAttribute(THREAD_ID_ATTR)
         : null;
       const effectiveThreadId = followUpTo
@@ -1121,7 +1098,7 @@ export function CreateQuestionContent() {
       if (effectiveThreadId && dedupTitle.trim()) {
         try {
           const existing = await apiFindDuplicateQuestion(dedupTitle, effectiveThreadId);
-          const isOwnRecentDuplicate = existing
+          const isOwnRecentDuplicate = !!existing
             && !!getCreatorSecret(existing.id)
             && (Date.now() - new Date(existing.created_at).getTime()) < DUPLICATE_REDIRECT_WINDOW_MS;
           if (existing && isOwnRecentDuplicate) {
@@ -1138,7 +1115,6 @@ export function CreateQuestionContent() {
             setIsLoading(false);
             setIsModalOpen(false);
             applyDraftToState(emptyDraft());
-            setEditingDraftIndex(null);
             setError(null);
             router.replace(href);
             return;
@@ -1147,8 +1123,6 @@ export function CreateQuestionContent() {
           // If the check fails, proceed with creation
         }
       }
-
-      const onEmptyThread = typeof window !== 'undefined' && /^\/t\/?$/.test(window.location.pathname);
 
       // Build a placeholder Poll from the draft data so the thread can render
       // a real card in the destination position immediately, before the API
@@ -1250,8 +1224,6 @@ export function CreateQuestionContent() {
             detail: { placeholderId: placeholderPoll.id },
           }),
         );
-        // Form state is still intact in the modal (we never reset it
-        // before the API call) — the user can fix and retry.
         return;
       }
 
@@ -1270,12 +1242,8 @@ export function CreateQuestionContent() {
       setIsSubmitted(false);
       isSubmittingRef.current = false;
       setIsLoading(false);
-      // Close the create-question modal — the optimistic placeholder
-      // is in place on the thread, and the upcoming POLL_HYDRATED swaps
-      // it for the real card. Reset form state so reopening starts fresh.
       setIsModalOpen(false);
       applyDraftToState(emptyDraft());
-      setEditingDraftIndex(null);
       setError(null);
 
       // Cache the real poll, then notify thread state so it swaps placeholder
