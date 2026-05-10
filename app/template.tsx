@@ -105,7 +105,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   // (avoids the h1 being empty during a view transition slide).
   const [questionPageTitle, setQuestionPageTitle] = useState(() => {
     if (typeof window === 'undefined') return '';
-    const match = pathname.match(/^\/t\/([^/]+)\/?$/);
+    const match = pathname.match(/^\/g\/([^/]+)\/?$/);
     if (!match) return '';
     const id = match[1];
     const question = isUuidLike(id) ? getCachedQuestionById(id) : getCachedQuestionByShortId(id);

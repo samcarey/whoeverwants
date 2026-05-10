@@ -25,7 +25,7 @@ export function normalizePath(path: string): string {
 /** If `pathname` is a group page (`/g/<id>` with optional trailing slash),
  *  return the group route ID (root poll's short_id or UUID). Otherwise null. */
 export function extractGroupRouteId(pathname: string): string | null {
-  const match = pathname.match(/^\/t\/([^/]+)\/?$/);
+  const match = pathname.match(/^\/g\/([^/]+)\/?$/);
   return match ? match[1] : null;
 }
 
@@ -34,5 +34,5 @@ export function extractGroupRouteId(pathname: string): string | null {
  *  `/g/<id>/info`. Template uses this to decide which pages get the
  *  group-like layout + floating-plus FAB. */
 export function isGroupRootView(pathname: string): boolean {
-  return /^\/t(\/[^/]+)?\/?$/.test(pathname);
+  return /^\/g(\/[^/]+)?\/?$/.test(pathname);
 }

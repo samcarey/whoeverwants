@@ -1055,7 +1055,7 @@ export function CreateQuestionContent() {
       // — by construction the user is starting a new group, and the
       // attribute can be stale (the group route's cleanup is a useEffect
       // return that React/HMR/view-transitions can delay).
-      const onEmptyGroup = typeof window !== 'undefined' && /^\/t\/?$/.test(window.location.pathname);
+      const onEmptyGroup = typeof window !== 'undefined' && /^\/g\/?$/.test(window.location.pathname);
       const bodyGroupId = !onEmptyGroup && typeof document !== 'undefined'
         ? document.body.getAttribute(GROUP_ID_ATTR)
         : null;
