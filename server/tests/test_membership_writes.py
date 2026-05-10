@@ -1,19 +1,19 @@
 """Write-only membership tests.
 
 Covers:
-  * thread_members written on POST /api/polls (creator auto-joins)
-  * thread_members written on POST /api/polls/{id}/votes (voter auto-joins)
-  * thread_members written on GET /api/threads/by-route-id/{id} (visit auto-joins)
+  * group_members written on POST /api/polls (creator auto-joins)
+  * group_members written on POST /api/polls/{id}/votes (voter auto-joins)
+  * group_members written on GET /api/groups/by-route-id/{id} (visit auto-joins)
   * Idempotency: composite PK + ON CONFLICT DO NOTHING preserves the
     original joined_at watermark
-  * Browser_id isolation: two browsers voting in one thread produce two rows
+  * Browser_id isolation: two browsers voting in one group produce two rows
   * Decoupling: vote/create membership write is in a separate transaction
     from the triggering action — a vote that fails validation still
-    leaves thread_members in place
+    leaves group_members in place
 
 The visit-path auto-join is inline in the by-route-id read transaction,
-so it can't be observed without going through `/api/threads/by-route-id`.
-Read-side visibility filtering tests live in `test_threads_visibility.py`.
+so it can't be observed without going through `/api/groups/by-route-id`.
+Read-side visibility filtering tests live in `test_groups_visibility.py`.
 
 Shared fixtures (`client`, `creator_secret`, `browser_id`) and helpers
 (`create_poll`) live in `conftest.py`.
@@ -26,57 +26,57 @@ import psycopg
 from tests.conftest import TEST_DB_URL, create_poll
 
 
-def _thread_members(thread_id):
-    """Return list of (browser_id, joined_at) tuples for a thread."""
+def _group_members(group_id):
+    """Return list of (browser_id, joined_at) tuples for a group."""
     with psycopg.connect(TEST_DB_URL) as conn:
         rows = conn.execute(
-            "SELECT browser_id, joined_at FROM thread_members WHERE thread_id = %s",
-            (thread_id,),
+            "SELECT browser_id, joined_at FROM group_members WHERE group_id = %s",
+            (group_id,),
         ).fetchall()
     return rows
 
 
 class TestCreatePollMembership:
-    def test_creator_auto_joins_thread(self, client, creator_secret, browser_id):
+    def test_creator_auto_joins_group(self, client, creator_secret, browser_id):
         poll = create_poll(client, creator_secret, browser_id=browser_id)
-        thread_id = poll["thread_id"]
-        rows = _thread_members(thread_id)
+        group_id = poll["group_id"]
+        rows = _group_members(group_id)
         assert len(rows) == 1
         assert str(rows[0][0]) == browser_id
 
-    def test_followup_creator_joins_parent_thread(
+    def test_followup_creator_joins_parent_group(
         self, client, creator_secret, browser_id
     ):
         root = create_poll(client, creator_secret, browser_id=browser_id)
-        thread_id = root["thread_id"]
-        # Same browser adds a poll to the same thread — already a member;
-        # ON CONFLICT keeps the thread_members row count at 1.
+        group_id = root["group_id"]
+        # Same browser adds a poll to the same group — already a member;
+        # ON CONFLICT keeps the group_members row count at 1.
         followup = create_poll(
             client,
             creator_secret,
             browser_id=browser_id,
-            thread_id=thread_id,
+            group_id=group_id,
         )
-        assert followup["thread_id"] == thread_id
-        rows = _thread_members(thread_id)
+        assert followup["group_id"] == group_id
+        rows = _group_members(group_id)
         assert len(rows) == 1
 
     def test_followup_creator_from_different_browser_adds_row(
         self, client, creator_secret, browser_id
     ):
         root = create_poll(client, creator_secret, browser_id=browser_id)
-        thread_id = root["thread_id"]
+        group_id = root["group_id"]
         other = str(uuid.uuid4())
         create_poll(
-            client, creator_secret, browser_id=other, thread_id=thread_id
+            client, creator_secret, browser_id=other, group_id=group_id
         )
-        rows = _thread_members(root["thread_id"])
+        rows = _group_members(root["group_id"])
         bids = {str(r[0]) for r in rows}
         assert bids == {browser_id, other}
 
 
 class TestVoteMembership:
-    def test_voter_auto_joins_thread(self, client, creator_secret, browser_id):
+    def test_voter_auto_joins_group(self, client, creator_secret, browser_id):
         # Creator on browser A; voter on browser B.
         creator_browser = browser_id
         poll = create_poll(client, creator_secret, browser_id=creator_browser)
@@ -99,7 +99,7 @@ class TestVoteMembership:
         )
         assert resp.status_code == 201, resp.text
 
-        rows = _thread_members(poll["thread_id"])
+        rows = _group_members(poll["group_id"])
         bids = {str(r[0]) for r in rows}
         assert bids == {creator_browser, voter_browser}
 
@@ -107,7 +107,7 @@ class TestVoteMembership:
         poll = create_poll(client, creator_secret, browser_id=browser_id)
         sub = poll["questions"][0]
 
-        # First vote — creates thread_members row for this browser.
+        # First vote — creates group_members row for this browser.
         first = client.post(
             f"/api/polls/{poll['id']}/votes",
             json={
@@ -124,12 +124,12 @@ class TestVoteMembership:
         )
         assert first.status_code == 201
 
-        rows_before = _thread_members(poll["thread_id"])
+        rows_before = _group_members(poll["group_id"])
         joined_at_before = next(
             r[1] for r in rows_before if str(r[0]) == browser_id
         )
 
-        # Edit the vote — same browser, same thread; ON CONFLICT preserves
+        # Edit the vote — same browser, same group; ON CONFLICT preserves
         # the original joined_at watermark (critical for Phase C.3 visibility).
         vote_id = first.json()[0]["id"]
         edit = client.post(
@@ -149,7 +149,7 @@ class TestVoteMembership:
         )
         assert edit.status_code == 201
 
-        rows_after = _thread_members(poll["thread_id"])
+        rows_after = _group_members(poll["group_id"])
         # Same row count (one per distinct browser, deduped by composite PK).
         assert len(rows_after) == len(rows_before)
         joined_at_after = next(
@@ -161,7 +161,7 @@ class TestVoteMembership:
         self, client, creator_secret, browser_id
     ):
         """Membership writes run BEFORE the vote in their own transaction.
-        A vote that the validator rejects still leaves the user as a thread
+        A vote that the validator rejects still leaves the user as a group
         member — they 'attempted to participate' which is the trigger
         regardless of whether the ballot was well-formed."""
         poll = create_poll(client, creator_secret, browser_id=browser_id)
@@ -196,26 +196,26 @@ class TestVoteMembership:
 
         # But the membership write fired (it ran in its own transaction
         # before the vote validation triggered the rollback).
-        rows = _thread_members(poll["thread_id"])
+        rows = _group_members(poll["group_id"])
         bids = {str(r[0]) for r in rows}
         assert voter_browser in bids
 
 
 class TestVisitAutoJoin:
-    """Visiting `/api/threads/by-route-id/{id}` writes thread_members
-    inline. Migration 106 made thread URLs the canonical 'invite' — the
-    bare URL grants whole-thread membership."""
+    """Visiting `/api/groups/by-route-id/{id}` writes group_members
+    inline. Migration 106 made group URLs the canonical 'invite' — the
+    bare URL grants whole-group membership."""
 
-    def test_visit_creates_thread_members_row(self, client, creator_secret):
+    def test_visit_creates_group_members_row(self, client, creator_secret):
         poll = create_poll(client, creator_secret)
         visitor_browser = str(uuid.uuid4())
         resp = client.get(
-            f"/api/threads/by-route-id/{poll['short_id']}",
+            f"/api/groups/by-route-id/{poll['short_id']}",
             headers={"X-Browser-Id": visitor_browser},
         )
         assert resp.status_code == 200
 
-        rows = _thread_members(poll["thread_id"])
+        rows = _group_members(poll["group_id"])
         bids = {str(r[0]) for r in rows}
         assert visitor_browser in bids
 
@@ -224,12 +224,12 @@ class TestVisitAutoJoin:
         visitor_browser = str(uuid.uuid4())
         for _ in range(3):
             resp = client.get(
-                f"/api/threads/by-route-id/{poll['short_id']}",
+                f"/api/groups/by-route-id/{poll['short_id']}",
                 headers={"X-Browser-Id": visitor_browser},
             )
             assert resp.status_code == 200
 
-        rows = _thread_members(poll["thread_id"])
+        rows = _group_members(poll["group_id"])
         bids = [str(r[0]) for r in rows if str(r[0]) == visitor_browser]
         assert len(bids) == 1
 
@@ -240,19 +240,19 @@ class TestVisitAutoJoin:
         poll = create_poll(client, creator_secret)
         visitor_browser = str(uuid.uuid4())
         client.get(
-            f"/api/threads/by-route-id/{poll['short_id']}",
+            f"/api/groups/by-route-id/{poll['short_id']}",
             headers={"X-Browser-Id": visitor_browser},
         )
         first = next(
-            r[1] for r in _thread_members(poll["thread_id"])
+            r[1] for r in _group_members(poll["group_id"])
             if str(r[0]) == visitor_browser
         )
         client.get(
-            f"/api/threads/by-route-id/{poll['short_id']}",
+            f"/api/groups/by-route-id/{poll['short_id']}",
             headers={"X-Browser-Id": visitor_browser},
         )
         second = next(
-            r[1] for r in _thread_members(poll["thread_id"])
+            r[1] for r in _group_members(poll["group_id"])
             if str(r[0]) == visitor_browser
         )
         assert first == second
@@ -261,14 +261,14 @@ class TestVisitAutoJoin:
         bogus = "zzznotreal"
         visitor_browser = str(uuid.uuid4())
         resp = client.get(
-            f"/api/threads/by-route-id/{bogus}",
+            f"/api/groups/by-route-id/{bogus}",
             headers={"X-Browser-Id": visitor_browser},
         )
         assert resp.status_code == 404
         # Sanity: no rows for this browser anywhere.
         with psycopg.connect(TEST_DB_URL) as conn:
             rows = conn.execute(
-                "SELECT 1 FROM thread_members WHERE browser_id = %s",
+                "SELECT 1 FROM group_members WHERE browser_id = %s",
                 (visitor_browser,),
             ).fetchall()
         assert rows == []

@@ -33,7 +33,7 @@ body {
   font-family: Arial, Helvetica, sans-serif;
   margin: 0;
   /* Horizontal safe-area only. Top/bottom insets are handled per-element by
-     whatever sits at the top/bottom (fixed thread header, home/settings
+     whatever sits at the top/bottom (fixed group header, home/settings
      titles via .page-title-safe-top, the floating "+" FAB). */
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
@@ -200,7 +200,7 @@ html[data-nav-direction="back"]::view-transition-new(root) {
 }
 
 /* Draft poll card → live poll card morph is now a JS-driven FLIP animation
-   on the actual DOM node (see app/thread/[threadId]/page.tsx). The View
+   on the actual DOM node (see app/group/[groupId]/page.tsx). The View
    Transitions API approach was abandoned because the bitmap snapshot
    crossfade couldn't make the card content (title) flow naturally as the
    frame resized — it was a stretched image, not a real card. */

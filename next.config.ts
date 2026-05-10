@@ -71,16 +71,16 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
         destination: `${apiDest}/api/polls/:path*`,
       },
       {
-        source: '/api/threads',
-        destination: `${apiDest}/api/threads`,
+        source: '/api/groups',
+        destination: `${apiDest}/api/groups`,
       },
       {
-        source: '/api/threads/',
-        destination: `${apiDest}/api/threads`,
+        source: '/api/groups/',
+        destination: `${apiDest}/api/groups`,
       },
       {
-        source: '/api/threads/:path*',
-        destination: `${apiDest}/api/threads/:path*`,
+        source: '/api/groups/:path*',
+        destination: `${apiDest}/api/groups/:path*`,
       },
       {
         source: '/api/search/:path*',

@@ -8,7 +8,7 @@
  */
 import { CreatePollParams, CreateQuestionParams } from "@/lib/api";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
-import { buildPollMap } from "@/lib/threadUtils";
+import { buildPollMap } from "@/lib/groupUtils";
 import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import type { DayTimeWindow, OptionsMetadata, Poll, Question } from "@/lib/types";
 
@@ -231,19 +231,19 @@ function appendForSuffix(base: string, forField: string): string {
 
 /**
  * Build an optimistic Poll/Question pair from the draft list at submit
- * time, before the server has responded. The thread page renders this as a
+ * time, before the server has responded. The group page renders this as a
  * normal collapsed poll card while the FLIP animation runs and apiCreatePoll
- * resolves in parallel. Once the real Poll arrives, ThreadContent swaps the
+ * resolves in parallel. Once the real Poll arrives, GroupContent swaps the
  * placeholder fields for the real ones via POLL_HYDRATED_EVENT.
  *
- * IDs use a `pending-...` prefix so thread state can identify and replace
+ * IDs use a `pending-...` prefix so group state can identify and replace
  * them on hydration. Placeholder questions get realistic-looking defaults
  * (created_at = now, is_closed = false, empty voter_names) so the
  * collapsed-card render path doesn't crash on missing fields.
  */
 export function synthesizePlaceholderPoll(
   drafts: QuestionDraft[],
-  args: { wrapperTitle: string | null; responseDeadline: string | null; threadId: string | null; creatorName: string | null; details?: string | null },
+  args: { wrapperTitle: string | null; responseDeadline: string | null; groupId: string | null; creatorName: string | null; details?: string | null },
 ): Poll {
   const now = new Date().toISOString();
   const pollId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -275,11 +275,11 @@ export function synthesizePlaceholderPoll(
   return {
     id: pollId,
     short_id: null,
-    // Migration 105: thread_id placeholders use the parent thread when
-    // adding a poll; new threads get null and the real thread_id is
+    // Migration 105: group_id placeholders use the parent group when
+    // adding a poll; new groups get null and the real group_id is
     // filled in on POLL_HYDRATED_EVENT.
-    thread_id: args.threadId,
-    thread_short_id: null,
+    group_id: args.groupId,
+    group_short_id: null,
     creator_secret: null,
     creator_name: args.creatorName,
     response_deadline: args.responseDeadline,
@@ -287,7 +287,7 @@ export function synthesizePlaceholderPoll(
     prephase_deadline_minutes: null,
     is_closed: false,
     close_reason: null,
-    thread_title: null,
+    group_title: null,
     context: null,
     details: args.details ?? null,
     title: titleForAllQuestions,
@@ -410,7 +410,7 @@ function _buildDistinctContextsTitle(
 
 /**
  * Preview values for the in-progress "Draft Poll" card in the create-poll
- * panel. Drives a `ThreadListItem` rendered in draft mode so the card
+ * panel. Drives a `GroupListItem` rendered in draft mode so the card
  * looks like the live poll will when submitted (just with a DRAFT pill +
  * dashed border that morph away on submit).
  *
@@ -460,7 +460,7 @@ export function draftPollPreview(
     }
   }
 
-  // Preview line — same role as `latestQuestion.title` on a live thread
+  // Preview line — same role as `latestQuestion.title` on a live group
   // card. Use the most recently committed draft's summary so the user sees
   // their last edit reflected.
   const latest = drafts[drafts.length - 1];
@@ -491,10 +491,10 @@ export function pollLookup() {
 /**
  * Translate the existing flat questionData object into a CreatePollRequest
  * with one question. Wrapper-level fields (creator_secret, response_deadline,
- * thread_id, title, voting cutoff, prephase deadlines) live on the
+ * group_id, title, voting cutoff, prephase deadlines) live on the
  * poll; everything ballot-shaped stays on the question. Migration 105:
- * `thread_id` directly identifies the thread to add this poll to (null
- * for new threads). Wrapper-level `context` carries today's `details`
+ * `group_id` directly identifies the group to add this poll to (null
+ * for new groups). Wrapper-level `context` carries today's `details`
  * field; per-question `context` is unused for 1-question polls and
  * Phase 2.4 will start populating it for disambiguation. Pydantic
  * supplies defaults for omitted fields.
@@ -514,7 +514,7 @@ export function questionDataToPollRequest(
     response_deadline: questionData.response_deadline,
     prephase_deadline: questionData.suggestion_deadline,
     prephase_deadline_minutes: questionData.suggestion_deadline_minutes,
-    thread_id: questionData.thread_id,
+    group_id: questionData.group_id,
     title: questionData.title,
     context: questionData.details,
     // Migration 098: poll-level results-display + ranked-choice settings.

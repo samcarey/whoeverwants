@@ -2,13 +2,13 @@
 
 import React, { useEffect, useState } from "react";
 import type { Poll } from "@/lib/types";
-import { getMyThreads } from "@/lib/simpleQuestionQueries";
+import { getMyGroups } from "@/lib/simpleQuestionQueries";
 import { apiGetAllQuestionIds } from "@/lib/api";
 import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
 import { usePageReady } from "@/lib/usePageReady";
-import ThreadList from "@/components/ThreadList";
+import GroupList from "@/components/GroupList";
 
 // Fun activity phrases (max 25 chars)
 const activityPhrases = [
@@ -35,7 +35,7 @@ const activityPhrases = [
 ];
 
 export default function Home() {
-  // Cache-seed avoids loading flash on view-transition return from a thread.
+  // Cache-seed avoids loading flash on view-transition return from a group.
   const [{ polls: initialPolls, loading: initialLoading }] = useState(() => {
     const cached = typeof window === "undefined" ? null : getCachedAccessiblePolls();
     return { polls: cached ?? [], loading: cached === null };
@@ -151,13 +151,13 @@ export default function Home() {
           }
         }
 
-        // Phase B.3: one round-trip — server walks polls.thread_id and
-        // returns every poll in any thread containing one of our
+        // Phase B.3: one round-trip — server walks polls.group_id and
+        // returns every poll in any group containing one of our
         // accessible questions, with results inline. Replaces the legacy
         // discoverRelatedQuestions + getAccessiblePolls pair.
-        const data = await getMyThreads();
+        const data = await getMyGroups();
         if (!data) {
-          console.error("Error fetching threads");
+          console.error("Error fetching groups");
           setError("Failed to load polls");
           return;
         }
@@ -182,7 +182,7 @@ export default function Home() {
   useEffect(() => {
     const handler = async () => {
       try {
-        const data = await getMyThreads();
+        const data = await getMyGroups();
         if (!data) return;
         setPolls((prev) =>
           prev.length === data.length && prev.every((p, i) => p.id === data[i].id)
@@ -201,12 +201,12 @@ export default function Home() {
       setLoading(true);
       setError(null);
 
-      // Phase B.3: server walks polls.thread_id and returns every poll
-      // in any thread containing one of our accessible questions —
+      // Phase B.3: server walks polls.group_id and returns every poll
+      // in any group containing one of our accessible questions —
       // discovery + accessibility are one round-trip now.
-      const data = await getMyThreads();
+      const data = await getMyGroups();
       if (!data) {
-        console.error("Error fetching threads");
+        console.error("Error fetching groups");
         setError("Failed to load polls");
         return;
       }
@@ -246,11 +246,11 @@ export default function Home() {
       )}
 
       {!loading && !error && (
-        <ThreadList
+        <GroupList
           polls={polls}
-          onThreadsForgotten={(forgottenPollIds) => {
-            // Drop the forgotten threads optimistically — caches were
-            // already invalidated inside forgetThread, so the next natural
+          onGroupsForgotten={(forgottenPollIds) => {
+            // Drop the forgotten groups optimistically — caches were
+            // already invalidated inside forgetGroup, so the next natural
             // refresh re-syncs; no immediate fetch needed.
             const forgotten = new Set(forgottenPollIds);
             setPolls((prev) => prev.filter((p) => !forgotten.has(p.id)));

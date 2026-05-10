@@ -73,7 +73,7 @@ export async function apiCreateTestQuestion(params) {
     show_preliminary_results,
     min_availability_percent,
     is_auto_title,
-    thread_title,
+    group_title,
     ...rest
   } = params
   const body = {
@@ -82,7 +82,7 @@ export async function apiCreateTestQuestion(params) {
     response_deadline,
     follow_up_to,
     title,
-    thread_title,
+    group_title,
     prephase_deadline: suggestion_deadline,
     prephase_deadline_minutes: suggestion_deadline_minutes,
     // Migration 098: poll-level results-display + ranked-choice settings.

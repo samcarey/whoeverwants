@@ -4,12 +4,12 @@ import { useCallback, useEffect, useLayoutEffect, useState, useRef, useMemo, Sus
 import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
-import { getMyThreads } from "@/lib/simpleQuestionQueries";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/threadUtils";
-import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/threadRefresh";
-import { apiGetQuestionResults, apiGetThreadByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveThread, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { getMyGroups } from "@/lib/simpleQuestionQueries";
+import { buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
+import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
+import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
-import { useThreadVoting } from "@/lib/useThreadVoting";
+import { useGroupVoting } from "@/lib/useGroupVoting";
 import type { QuestionResults } from "@/lib/types";
 import { addAccessibleQuestionId, getCreatorSecret } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls, getCachedPollById, getCachedPollByShortId, getCachedPollForShortId } from "@/lib/questionCache";
@@ -22,7 +22,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
-import { DRAFT_POLL_PORTAL_ID, THREAD_ID_ATTR } from "@/lib/threadDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
@@ -32,22 +32,22 @@ import { navigateWithTransition } from "@/lib/viewTransitions";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { type QuestionBallotHandle } from "@/components/QuestionBallot";
-import ThreadHeader from "@/components/ThreadHeader";
-import ThreadShareButton from "@/components/ThreadShareButton";
+import GroupHeader from "@/components/GroupHeader";
+import GroupShareButton from "@/components/GroupShareButton";
 import { forgetQuestion } from "@/lib/forgetQuestion";
-import { PENDING_ACTION_COPY, type PendingActionKind } from "./threadActionCopy";
-import { ThreadCardItem, type SwipeState, type ThreadCardGroup } from "./ThreadCardItem";
+import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
+import { GroupCardItem, type SwipeState, type GroupCardGroup } from "./GroupCardItem";
 
-import type { Thread } from "@/lib/threadUtils";
+import type { Group } from "@/lib/groupUtils";
 
 // Default placeholder height for not-yet-measured groups in the virtualized
-// thread list. Tuned to typical compact yes_no card height; the ResizeObserver
+// group list. Tuned to typical compact yes_no card height; the ResizeObserver
 // replaces this with the measured value as soon as a group has been mounted
 // once. Subsequent unmounts use the measured height, so unmount→remount cycles
 // don't shift the document layout.
 const ESTIMATED_GROUP_HEIGHT = 110;
 
-// Group key for `groupedThreadQuestions` — questions of the same poll share
+// Group key for `groupedGroupQuestions` — questions of the same poll share
 // poll_id; legacy (non-poll) questions get a unique `solo-` prefix so they
 // don't collide. Used in the .map() loop's key + virtualization mountedKeys.
 const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
@@ -76,19 +76,19 @@ function ScrollHelperButton({
   );
 }
 
-// Inverse grid-rows clip for compact pills in the thread card header:
+// Inverse grid-rows clip for compact pills in the group card header:
 // full height when collapsed, 0 when expanded, animating in lockstep
 // with the heavy-content expand clip below. The pill sits directly at the
 // top of the overflow-hidden child so its text center aligns with the
 // sibling status text via the parent flex row's items-center.
-// Shared cache-driven Thread rebuild for POLL_PENDING / POLL_HYDRATED /
-// POLL_FAILED setThread updaters. Returns prev when the rebuild would produce
+// Shared cache-driven Group rebuild for POLL_PENDING / POLL_HYDRATED /
+// POLL_FAILED setGroup updaters. Returns prev when the rebuild would produce
 // the same poll-id sequence (no placeholder swap) so identity-based memos stay
 // stable.
 //
 // `mutate` lets callers add a just-arrived poll (placeholder or real) and/or
 // drop a placeholder being replaced. Without explicit add/remove, leaving the
-// placeholder AND the real poll both in scope would yield a thread containing
+// placeholder AND the real poll both in scope would yield a group containing
 // both as children of the parent.
 //
 // `prev.polls` is always merged into the rebuild source. This is the
@@ -96,12 +96,12 @@ function ScrollHelperButton({
 // TTL, and the submit handler's `cacheAccessiblePolls([...getCached() ?? [],
 // new])` pattern wipes every other poll out of the cache when the cache
 // happened to be stale (idle >60s). Without prev.polls in the merge, the
-// `buildThreadFromPollDown(rootPollId, ...)` call fails to find rootPollId and
-// the new poll never lands in the thread.
-function rebuildThreadFromCacheOrPrev(
-  prev: Thread,
+// `buildGroupFromPollDown(rootPollId, ...)` call fails to find rootPollId and
+// the new poll never lands in the group.
+function rebuildGroupFromCacheOrPrev(
+  prev: Group,
   mutate?: { add?: Poll; remove?: string },
-): Thread {
+): Group {
   if (!prev.rootPollId) return prev;
   const cached = getCachedAccessiblePolls() ?? [];
   const byId = new Map<string, Poll>();
@@ -111,7 +111,7 @@ function rebuildThreadFromCacheOrPrev(
   if (mutate?.add) byId.set(mutate.add.id, mutate.add);
   const polls = Array.from(byId.values());
   const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-  const rebuilt = buildThreadFromPollDown(prev.rootPollId, polls, voted, abstained);
+  const rebuilt = buildGroupFromPollDown(prev.rootPollId, polls, voted, abstained);
   if (!rebuilt) return prev;
   if (
     rebuilt.polls.length === prev.polls.length &&
@@ -122,25 +122,25 @@ function rebuildThreadFromCacheOrPrev(
   return rebuilt;
 }
 
-interface ThreadContentProps {
-  threadId: string;
+interface GroupContentProps {
+  groupId: string;
   initialExpandedQuestionId?: string | null;
 }
 
-export function ThreadContent({ threadId, initialExpandedQuestionId = null }: ThreadContentProps) {
+export function GroupContent({ groupId, initialExpandedQuestionId = null }: GroupContentProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
 
-  // Initialize voted/abstained sets + thread synchronously from cached data
+  // Initialize voted/abstained sets + group synchronously from cached data
   // on first render, so the page mounts with full content (no loading flash
   // during view transition slide).
-  const [{ thread: initialThread, votedQuestionIds: initialVoted, abstainedQuestionIds: initialAbstained }] = useState(() => {
+  const [{ group: initialGroup, votedQuestionIds: initialVoted, abstainedQuestionIds: initialAbstained }] = useState(() => {
     if (typeof window === 'undefined') {
-      return { thread: null as Thread | null, votedQuestionIds: new Set<string>(), abstainedQuestionIds: new Set<string>() };
+      return { group: null as Group | null, votedQuestionIds: new Set<string>(), abstainedQuestionIds: new Set<string>() };
     }
     const voted = loadVotedQuestions();
     return {
-      thread: buildThreadSyncFromCache(threadId, voted.votedQuestionIds, voted.abstainedQuestionIds),
+      group: buildGroupSyncFromCache(groupId, voted.votedQuestionIds, voted.abstainedQuestionIds),
       votedQuestionIds: voted.votedQuestionIds,
       abstainedQuestionIds: voted.abstainedQuestionIds,
     };
@@ -148,15 +148,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
   const [votedQuestionIds, setVotedQuestionIds] = useState<Set<string>>(initialVoted);
   const [abstainedQuestionIds, setAbstainedQuestionIds] = useState<Set<string>>(initialAbstained);
-  const [thread, setThread] = useState<Thread | null>(initialThread);
-  const [loading, setLoading] = useState(!initialThread);
+  const [group, setGroup] = useState<Group | null>(initialGroup);
+  const [loading, setLoading] = useState(!initialGroup);
   const [error, setError] = useState(false);
 
   // Phase 5b: poll-level mutations (close/reopen/cutoff) update the
   // polls array; question mutations (forget) update the questions array.
-  const patchThreadPolls = useRef(
+  const patchGroupPolls = useRef(
     (predicate: (mp: Poll) => boolean, patcher: (mp: Poll) => Partial<Poll>) => {
-      setThread((prev) => {
+      setGroup((prev) => {
         if (!prev) return prev;
         if (!prev.polls.some(predicate)) return prev;
         return {
@@ -166,9 +166,9 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       });
     },
   ).current;
-  const patchThreadQuestions = useRef(
+  const patchGroupQuestions = useRef(
     (predicate: (p: Question) => boolean, patcher: (p: Question) => Partial<Question>) => {
-      setThread((prev) => {
+      setGroup((prev) => {
         if (!prev) return prev;
         if (!prev.questions.some(predicate)) return prev;
         return {
@@ -180,14 +180,14 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   ).current;
 
   // Set data attribute on body so the create-poll form attaches new
-  // polls to this thread (Migration 105: thread_id is the addressable
+  // polls to this group (Migration 105: group_id is the addressable
   // unit; the legacy follow_up_to chain pointer is gone).
   useEffect(() => {
-    if (thread?.threadId) {
-      document.body.setAttribute(THREAD_ID_ATTR, thread.threadId);
+    if (group?.groupId) {
+      document.body.setAttribute(GROUP_ID_ATTR, group.groupId);
     }
-    return () => { document.body.removeAttribute(THREAD_ID_ATTR); };
-  }, [thread]);
+    return () => { document.body.removeAttribute(GROUP_ID_ATTR); };
+  }, [group]);
 
   // Signal to the view transition helper that this page's content is
   // rendered AND its initial scroll position has been applied. Without the
@@ -198,26 +198,26 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // the final scroll position and the user sees zero motion after the
   // slide-in completes.
   const [initialScrollApplied, setInitialScrollApplied] = useState(false);
-  usePageReady(!!thread && !loading && initialScrollApplied);
+  usePageReady(!!group && !loading && initialScrollApplied);
 
-  // Prefetch `/t/<root>?p=<poll>` for every poll in the thread so taps land
-  // on a warm cache. The path stays constant (thread root); only `?p=` varies.
+  // Prefetch `/g/<root>?p=<poll>` for every poll in the group so taps land
+  // on a warm cache. The path stays constant (group root); only `?p=` varies.
   useEffect(() => {
-    if (!thread) return;
+    if (!group) return;
     const wrapperByQuestionId = new Map<string, string>();
-    for (const mp of thread.polls) {
+    for (const mp of group.polls) {
       if (!mp.short_id) continue;
       for (const sp of mp.questions) wrapperByQuestionId.set(sp.id, mp.short_id);
     }
-    const hrefs = thread.questions.map(p => {
+    const hrefs = group.questions.map(p => {
       const pollShort = wrapperByQuestionId.get(p.id);
-      return pollShort ? `/t/${threadId}?${POLL_QUERY_PARAM}=${pollShort}` : `/t/${threadId}`;
+      return pollShort ? `/g/${groupId}?${POLL_QUERY_PARAM}=${pollShort}` : `/g/${groupId}`;
     });
     prefetchBatch(hrefs, { priority: "low" });
-  }, [thread, prefetchBatch, threadId]);
+  }, [group, prefetchBatch, groupId]);
 
   // Expanded card state — only one card can be expanded at a time.
-  // Initialized from the prop so the `/t/<root>?p=<id>` route can open a card on first render.
+  // Initialized from the prop so the `/g/<root>?p=<id>` route can open a card on first render.
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(initialExpandedQuestionId);
   // Which question's creation-time tooltip is currently showing (null = none). Shared
   // across all cards so only one tooltip is visible at a time.
@@ -238,16 +238,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // entries.
   const [questionResultsMap, setQuestionResultsMap] = useState<Map<string, QuestionResults>>(() => {
     const seed = new Map<string, QuestionResults>();
-    if (initialThread) {
-      for (const p of initialThread.questions) {
+    if (initialGroup) {
+      for (const p of initialGroup.questions) {
         if (p.results) seed.set(p.id, p.results);
       }
     }
     return seed;
   });
-  // Voting state + handlers for the thread page. See lib/useThreadVoting.ts.
+  // Voting state + handlers for the group page. See lib/useGroupVoting.ts.
   // votedQuestionIds / abstainedQuestionIds stay on the page because they're seeded
-  // synchronously alongside the cached thread; the hook pushes fresh values
+  // synchronously alongside the cached group; the hook pushes fresh values
   // back through the setters after every successful vote write.
   const {
     userVoteMap,
@@ -269,7 +269,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     confirmVoteChange,
     submitYesNoChoice,
     submitSwipeAbstain,
-  } = useThreadVoting({ thread, setVotedQuestionIds, setAbstainedQuestionIds });
+  } = useGroupVoting({ group, setVotedQuestionIds, setAbstainedQuestionIds });
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
   const touchJustHandled = useRef(false);
   // Refs for each card wrapper so we can scroll the expanded card into view
@@ -295,7 +295,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // === Windowed virtualization ===
   // Only mount cards within ~2 viewport heights of the visible region. Cards
   // outside collapse to a measured-height placeholder div. Bounds DOM weight
-  // on long threads; placeholders take the same height the card occupied so
+  // on long groups; placeholders take the same height the card occupied so
   // mount/unmount cycles don't shift the document layout.
   const groupHeightById = useRef<Map<string, number>>(new Map());
   const groupSizeObserverRef = useRef<ResizeObserver | null>(null);
@@ -304,7 +304,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // iterates cardRefs works regardless of mount state) and observe via the
   // visibleQuestionIds + groupSize observers. useCallback with empty deps —
   // identity must be stable across renders since these are passed into the
-  // React.memo'd ThreadCardItem; a fresh closure per render would force every
+  // React.memo'd GroupCardItem; a fresh closure per render would force every
   // card to re-render on every parent state change.
   const attachCardEl = useCallback((el: HTMLElement, anchorId: string, groupKey: string) => {
     el.dataset.questionId = anchorId;
@@ -328,15 +328,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // when the doc shrinks; gating on real input events sidesteps that.
   const userInteractedRef = useRef(false);
   const [mountedGroupKeys, setMountedGroupKeys] = useState<Set<string>>(() => {
-    if (!initialThread) return new Set();
+    if (!initialGroup) return new Set();
     // Seed with the URL-anchored group only — keeps initial paint cheap
-    // (one card rendered) even for very long threads. The progressive-fill
+    // (one card rendered) even for very long groups. The progressive-fill
     // effect below mounts the rest in idle-time batches around the anchor.
     const initial = new Set<string>();
     const target = initialExpandedQuestionId
-      ? initialThread.questions.find(p => p.id === initialExpandedQuestionId)
+      ? initialGroup.questions.find(p => p.id === initialExpandedQuestionId)
       : null;
-    const seed = target ?? initialThread.questions[initialThread.questions.length - 1] ?? null;
+    const seed = target ?? initialGroup.questions[initialGroup.questions.length - 1] ?? null;
     if (seed) initial.add(groupKeyFor(seed));
     return initial;
   });
@@ -374,7 +374,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // click after the touchend doesn't toggle expand.
   const swipeJustHandled = useRef(false);
   const [swipeThresholdQuestionId, setSwipeThresholdQuestionId] = useState<string | null>(null);
-  // Stable callback identity for ThreadCardItem props — empty deps because
+  // Stable callback identity for GroupCardItem props — empty deps because
   // every reference inside is itself stable (refs + useState dispatcher).
   const resetSwipeRef = useCallback(() => {
     swipeRef.current.questionId = null;
@@ -388,16 +388,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // On cache hit, defer the background refresh via requestIdleCallback so it
   // doesn't compete with React commit during a view transition.
   useEffect(() => {
-    async function fetchThread() {
+    async function fetchGroup() {
       try {
-        if (!initialThread) setLoading(true);
+        if (!initialGroup) setLoading(true);
         setError(false);
 
-        // Phase B.3: one round-trip — apiGetThreadByRouteId resolves the
-        // route id to a thread_id and returns every poll in that thread,
+        // Phase B.3: one round-trip — apiGetGroupByRouteId resolves the
+        // route id to a group_id and returns every poll in that group,
         // with full inline-results / voter aggregates. The legacy
         // discoverRelatedQuestions + getAccessiblePolls pair walked the
-        // follow_up_to chain client-side; the server walks polls.thread_id
+        // follow_up_to chain client-side; the server walks polls.group_id
         // directly now.
         //
         // Votes prefetch fires in parallel so the votes cache is warm by
@@ -406,7 +406,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         // coalesced, so the later per-card fetch hits the warm cache.
         let polls: Poll[];
         try {
-          polls = await apiGetThreadByRouteId(threadId);
+          polls = await apiGetGroupByRouteId(groupId);
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) { setError(true); return; }
           throw err;
@@ -424,32 +424,32 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
         // Re-read voted state — discovery or the user voting elsewhere may have changed it.
         const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-        const foundThread = buildThreadFromPollDown(anchorPoll.id, polls, voted, abstained);
+        const foundGroup = buildGroupFromPollDown(anchorPoll.id, polls, voted, abstained);
 
-        if (!foundThread) {
+        if (!foundGroup) {
           setError(true);
           return;
         }
 
-        // Seed inline results BEFORE setThread so the first render with the
-        // loaded thread already has compact previews (no slide-down on refresh).
+        // Seed inline results BEFORE setGroup so the first render with the
+        // loaded group already has compact previews (no slide-down on refresh).
         setQuestionResultsMap((prev) => {
-          const additions = foundThread.questions.filter(p => p.results && !prev.has(p.id));
+          const additions = foundGroup.questions.filter(p => p.results && !prev.has(p.id));
           if (additions.length === 0) return prev;
           const next = new Map(prev);
           for (const p of additions) next.set(p.id, p.results!);
           return next;
         });
-        setThread(foundThread);
+        setGroup(foundGroup);
       } catch (err) {
-        console.error('Error loading thread:', err);
+        console.error('Error loading group:', err);
         setError(true);
       } finally {
         setLoading(false);
       }
     }
 
-    if (initialThread) {
+    if (initialGroup) {
       // `requestIdleCallback` is unsupported in Safari; fall back to setTimeout(0).
       const w = window as Window & {
         requestIdleCallback?: (cb: () => void) => number;
@@ -457,11 +457,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       };
       const schedule = w.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 0) as unknown as number);
       const cancel = w.cancelIdleCallback ?? ((id: number) => clearTimeout(id as unknown as NodeJS.Timeout));
-      const id = schedule(() => { void fetchThread(); });
+      const id = schedule(() => { void fetchGroup(); });
       return () => cancel(id);
     }
-    fetchThread();
-  }, [threadId]);
+    fetchGroup();
+  }, [groupId]);
 
   // The first question of a freshly submitted (placeholder) poll, while its
   // card is FLIP-animating from the draft frame to its natural slot. While
@@ -469,15 +469,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // status row, voter circles, etc. are suppressed until hydration completes.
   const [pendingPollFirstQuestionId, setPendingPollFirstQuestionId] = useState<string | null>(null);
 
-  // Latest `thread` snapshot for the POLL_PENDING handler. Updated in a
+  // Latest `group` snapshot for the POLL_PENDING handler. Updated in a
   // separate effect so the listener can stay registered with empty deps
-  // — re-attaching on every thread mutation would tear down + re-add the
+  // — re-attaching on every group mutation would tear down + re-add the
   // event listener on every vote/hydration/cache refresh.
-  const threadRef = useRef(thread);
-  useEffect(() => { threadRef.current = thread; }, [thread]);
+  const groupRef = useRef(group);
+  useEffect(() => { groupRef.current = group; }, [group]);
 
   // POLL_PENDING_EVENT: a draft was just submitted. Insert the placeholder
-  // poll into thread state immediately so the user sees the new card in
+  // poll into group state immediately so the user sees the new card in
   // its sorted position right away. apiCreatePoll is running in parallel;
   // POLL_HYDRATED_EVENT will swap the placeholder for the real Poll once
   // it resolves.
@@ -496,26 +496,26 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const newPoll = detail?.poll;
       if (!newPoll) return;
 
-      const t = threadRef.current;
+      const t = groupRef.current;
       if (!t) return;
 
-      // Migration 105: a placeholder belongs to this thread when its
-      // `thread_id` matches. (Pre-105 we walked `follow_up_to` to a
-      // parent poll; that's gone.) Solo placeholders without a thread_id
-      // are root polls of a fresh thread and only land here if they
+      // Migration 105: a placeholder belongs to this group when its
+      // `group_id` matches. (Pre-105 we walked `follow_up_to` to a
+      // parent poll; that's gone.) Solo placeholders without a group_id
+      // are root polls of a fresh group and only land here if they
       // happen to match `t.rootPollId`.
-      const sameThread = newPoll.thread_id && t.threadId && newPoll.thread_id === t.threadId;
+      const sameGroup = newPoll.group_id && t.groupId && newPoll.group_id === t.groupId;
       const isOwnRoot = newPoll.id === t.rootPollId;
-      if (!sameThread && !isOwnRoot) return;
+      if (!sameGroup && !isOwnRoot) return;
 
       flushSync(() => {
         setPendingPollFirstQuestionId(newPoll.questions[0]?.id ?? null);
-        setThread((prev) => prev ? rebuildThreadFromCacheOrPrev(prev, { add: newPoll }) : prev);
+        setGroup((prev) => prev ? rebuildGroupFromCacheOrPrev(prev, { add: newPoll }) : prev);
         // Mount the new card eagerly. Without this, the validation effect
         // resets mountedGroupKeys to (prev ∩ validKeys + anchor), which
         // doesn't include this freshly-added group key. The card would
         // render as a gray placeholder div until progressive fill walked
-        // the queue to it (~270ms on a long thread, since the new card
+        // the queue to it (~270ms on a long group, since the new card
         // sits at the chronological end far from the URL anchor).
         setMountedGroupKeys((prev) => {
           if (prev.has(newPoll.id)) return prev;
@@ -530,15 +530,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   }, []);
 
   // POLL_HYDRATED_EVENT: the API call has resolved with the real Poll.
-  // Replace the placeholder fields in thread state with the real ones in
+  // Replace the placeholder fields in group state with the real ones in
   // place — keep the SAME placeholder id as the React key so the card's
   // DOM node doesn't unmount/re-mount mid-FLIP. Once the placeholder is
   // gone (its id was 'pending-...'), the real Poll's id takes over for
   // subsequent operations.
   //
-  // Fallback: if the placeholder isn't in the thread (POLL_PENDING bailed
+  // Fallback: if the placeholder isn't in the group (POLL_PENDING bailed
   // out, e.g., follow_up_to wasn't recognized at the time), still add the
-  // real poll if it belongs to this thread — without that, the user sees
+  // real poll if it belongs to this group — without that, the user sees
   // the form clear with no new poll appearing despite a successful API
   // create.
   useEffect(() => {
@@ -552,36 +552,36 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       // prev.polls is the resilience fallback for stale `accessiblePollsCache`
       // (60s TTL) — the submit handler's `cacheAccessiblePolls([...getCached()
       // ?? [], realPoll])` writes only [realPoll] when the cache was stale,
-      // and without prev.polls in the merge `buildThreadFromPollDown` can't
+      // and without prev.polls in the merge `buildGroupFromPollDown` can't
       // find rootPollId and bails.
       //
       // `optimisticWillAdd` mirrors the bail check inside the updater: when
-      // the placeholder is in thread state OR realPoll's parent is recognized
+      // the placeholder is in group state OR realPoll's parent is recognized
       // OR realPoll IS the root, the rebuild succeeds and lands realPoll.
       // When false the optimistic bails to prev and the async refresh below
       // is the only path that brings the new poll in. Computed from
-      // threadRef.current (kept in sync via a [thread] useEffect) instead of
+      // groupRef.current (kept in sync via a [group] useEffect) instead of
       // inside the updater because setState is async — reading the flag
-      // synchronously after setThread would see the pre-write value.
-      const t = threadRef.current;
+      // synchronously after setGroup would see the pre-write value.
+      const t = groupRef.current;
       const optimisticWillAdd =
         !!t && (
-          (!!realPoll.thread_id && realPoll.thread_id === t.threadId) ||
+          (!!realPoll.group_id && realPoll.group_id === t.groupId) ||
           realPoll.id === t.rootPollId ||
           t.polls.some(p => p.id === placeholderId)
         );
-      setThread((prev) => {
+      setGroup((prev) => {
         if (!prev) return prev;
-        const sameThread = realPoll.thread_id && prev.threadId && realPoll.thread_id === prev.threadId;
+        const sameGroup = realPoll.group_id && prev.groupId && realPoll.group_id === prev.groupId;
         const isOwnRoot = realPoll.id === prev.rootPollId;
         const hasPlaceholder = prev.polls.some(p => p.id === placeholderId);
-        if (!hasPlaceholder && !sameThread && !isOwnRoot) return prev;
-        return rebuildThreadFromCacheOrPrev(prev, { add: realPoll, remove: placeholderId });
+        if (!hasPlaceholder && !sameGroup && !isOwnRoot) return prev;
+        return rebuildGroupFromCacheOrPrev(prev, { add: realPoll, remove: placeholderId });
       });
       setPendingPollFirstQuestionId(null);
       // Mount the real card eagerly (same reason as POLL_PENDING — see
       // comment there). Drop the placeholder's key in the same setState so
-      // mountedGroupKeys stays consistent with thread state.
+      // mountedGroupKeys stays consistent with group state.
       setMountedGroupKeys((prev) => {
         if (!prev.has(placeholderId) && prev.has(realPoll.id)) return prev;
         const next = new Set(prev);
@@ -591,7 +591,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       });
 
       // Optimistic-rebuild fallback: when the new poll's parent isn't in
-      // prev.polls (e.g. the parent was discovered AFTER thread state was
+      // prev.polls (e.g. the parent was discovered AFTER group state was
       // built — accessiblePollsCache got invalidated, so the cache fallback
       // can't fill it in either), the in-place rebuild leaves the new poll
       // out of the chain. Re-fetch the accessible-polls list (which respects
@@ -602,8 +602,8 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (optimisticWillAdd) return;
       void (async () => {
         try {
-          await getMyThreads();
-          setThread((prev) => prev ? rebuildThreadFromCacheOrPrev(prev, { add: realPoll, remove: placeholderId }) : prev);
+          await getMyGroups();
+          setGroup((prev) => prev ? rebuildGroupFromCacheOrPrev(prev, { add: realPoll, remove: placeholderId }) : prev);
         } catch {
           // Optimistic rebuild has already fired; nothing else to do.
         }
@@ -619,12 +619,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PollFailedDetail>).detail;
       const placeholderId = detail?.placeholderId;
-      setThread((prev) => {
+      setGroup((prev) => {
         if (!prev) return prev;
         // Skip rebuild when no placeholder is present — POLL_FAILED on a
-        // brand-new-thread submit fires while we're on a different thread.
+        // brand-new-group submit fires while we're on a different group.
         if (!prev.polls.some(p => isPendingPollId(p.id))) return prev;
-        return rebuildThreadFromCacheOrPrev(prev, placeholderId ? { remove: placeholderId } : undefined);
+        return rebuildGroupFromCacheOrPrev(prev, placeholderId ? { remove: placeholderId } : undefined);
       });
       setPendingPollFirstQuestionId(null);
       if (placeholderId) {
@@ -641,7 +641,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   }, []);
 
   // ===================================================================
-  // Real-time refresh: periodically re-fetch the thread so other users'
+  // Real-time refresh: periodically re-fetch the group so other users'
   // newly-created polls and votes appear without a manual reload.
   //
   // Tab-visible only (skipped when document.hidden) — a hidden tab's
@@ -649,18 +649,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // listener fires an immediate refresh on re-show so the user always
   // lands on fresh state.
   //
-  // No-op when ANY placeholder poll is in thread state (a local create is
+  // No-op when ANY placeholder poll is in group state (a local create is
   // mid-flight): POLL_PENDING / POLL_HYDRATED owns that timeline and we
   // don't want to race it. Same for an in-flight refresh — `inFlight`
   // gates re-entry.
   //
   // Identity-preserving merge: `mergePollListPreservingIdentity` reuses
   // prev `Poll` references for polls whose content didn't change, so the
-  // ThreadCardItem `arePropsEqual` slice-by-reference check short-circuits
+  // GroupCardItem `arePropsEqual` slice-by-reference check short-circuits
   // and unchanged cards skip re-render. New polls land at the bottom of
   // the chronological list (server already sorts ASC by created_at). Vote
   // updates flow through `voter_names` / `anonymous_count` on the poll
-  // and `results` on each question — the thread page's existing compact-
+  // and `results` on each question — the group page's existing compact-
   // preview pipeline picks up both via the matching state Maps.
   //
   // We pace via recursive setTimeout (5s after the previous response
@@ -668,7 +668,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // overlapping fetches.
   // ===================================================================
   useEffect(() => {
-    if (!thread || error) return;
+    if (!group || error) return;
     if (typeof document === 'undefined') return;
 
     const REFRESH_INTERVAL_MS = 5000;
@@ -679,7 +679,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     const refresh = async () => {
       if (cancelled || inFlight) return;
       if (document.visibilityState !== 'visible') return;
-      const t = threadRef.current;
+      const t = groupRef.current;
       if (!t) return;
       // A locally-submitted poll is being hydrated — let POLL_HYDRATED own
       // the resolution rather than racing with our merge.
@@ -687,19 +687,19 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
       inFlight = true;
       try {
-        const polls = await apiGetThreadByRouteId(threadId);
+        const polls = await apiGetGroupByRouteId(groupId);
         if (cancelled) return;
 
         // Update inline-results map first so any card that re-renders via
-        // the thread-state replace below sees the fresh results in the
+        // the group-state replace below sees the fresh results in the
         // same render tick.
         setQuestionResultsMap((prev) => mergeQuestionResultsMap(prev, polls));
 
-        setThread((prev) => {
+        setGroup((prev) => {
           if (!prev) return prev;
           const merge = mergePollListPreservingIdentity(prev.polls, polls);
           if (!merge.changed) return prev;
-          // Rebuild the Thread struct using the merged poll list. The
+          // Rebuild the Group struct using the merged poll list. The
           // anchor must be a poll that exists in `merge.polls` — pick the
           // chronological root from the merged set rather than `prev` to
           // handle the (rare) case where the previous root was deleted.
@@ -709,7 +709,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
           // no-op ticks (the steady-state majority) don't pay the
           // localStorage parse + Set allocation.
           const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-          const rebuilt = buildThreadFromPollDown(mergedRoot.id, merge.polls, voted, abstained);
+          const rebuilt = buildGroupFromPollDown(mergedRoot.id, merge.polls, voted, abstained);
           if (!rebuilt) return prev;
           return rebuilt;
         });
@@ -745,25 +745,25 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (timerId !== null) clearTimeout(timerId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-    // `threadRef` is updated on every `thread` change so we don't need
-    // `thread` in the deps; gating on `!!thread` ensures we don't start
+    // `groupRef` is updated on every `group` change so we don't need
+    // `group` in the deps; gating on `!!group` ensures we don't start
     // until the initial load lands.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, !!thread, error]);
+  }, [groupId, !!group, error]);
 
-  // Measure the fixed thread header so we can apply matching padding-top on the scroll list
+  // Measure the fixed group header so we can apply matching padding-top on the scroll list
   // (the header is position:fixed and out of flow, so the list doesn't naturally reserve space).
-  // Re-measure when `thread` flips loaded — the header is rendered behind a
+  // Re-measure when `group` flips loaded — the header is rendered behind a
   // `if (loading) return <Spinner/>` early return, so the measured ref only
-  // exists once `thread` is non-null.
-  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([thread]);
+  // exists once `group` is non-null.
+  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group]);
 
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
   // content when they scroll into view. rootMargin prefetches slightly early.
   // Runs once; callback refs on each card attach/detach the observer.
   useEffect(() => {
-    if (!thread || typeof IntersectionObserver === 'undefined') return;
+    if (!group || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver(
       (entries) => {
         const newlyVisible: string[] = [];
@@ -796,10 +796,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       observer.disconnect();
       intersectionObserverRef.current = null;
     };
-    // Only re-create when a thread first arrives — not on every mutation
+    // Only re-create when a group first arrives — not on every mutation
     // (forget/reopen). Card ref callbacks attach each new card to the live
     // observer automatically.
-  }, [!!thread]);
+  }, [!!group]);
 
   // Fetch results + viewer's own vote for every yes_no question that has entered
   // the viewport. Both calls are coalesced + cache-backed. Results drive the
@@ -808,7 +808,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // because apiGetQuestionResults always allocates a fresh result object even
   // when the underlying data is unchanged.
   useEffect(() => {
-    if (!thread) return;
+    if (!group) return;
     let cancelled = false;
 
     const maybeFetch = async (questionId: string, questionType: string) => {
@@ -869,19 +869,19 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     // question's preview is populated, not just the anchor's. Compute
     // anchor ids per poll once.
     const anchorByPoll = new Map<string, string>();
-    for (const question of thread.questions) {
+    for (const question of group.questions) {
       if (!question.poll_id) continue;
       const cur = anchorByPoll.get(question.poll_id);
       if (!cur) {
         anchorByPoll.set(question.poll_id, question.id);
         continue;
       }
-      const curQuestion = thread.questions.find((p) => p.id === cur);
+      const curQuestion = group.questions.find((p) => p.id === cur);
       if ((question.question_index ?? 0) < (curQuestion?.question_index ?? 0)) {
         anchorByPoll.set(question.poll_id, question.id);
       }
     }
-    for (const question of thread.questions) {
+    for (const question of group.questions) {
       const anchorId = question.poll_id
         ? (anchorByPoll.get(question.poll_id) ?? question.id)
         : question.id;
@@ -893,7 +893,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const detail = (e as CustomEvent).detail as { questionId?: string } | undefined;
       const questionId = detail?.questionId;
       if (!questionId) return;
-      const question = thread.questions.find((p) => p.id === questionId);
+      const question = group.questions.find((p) => p.id === questionId);
       if (!question) return;
       void maybeFetch(question.id, question.question_type);
     };
@@ -903,10 +903,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       cancelled = true;
       window.removeEventListener(QUESTION_VOTES_CHANGED_EVENT, onVotesChanged);
     };
-  }, [thread, visibleQuestionIds]);
+  }, [group, visibleQuestionIds]);
 
   // ===================================================================
-  // Thread-page scroll strategy (single source of truth — keep cohesive)
+  // Group-page scroll strategy (single source of truth — keep cohesive)
   // ===================================================================
   // Four scroll surfaces all serve the same goal: keep the viewer's
   // attention on whichever poll most likely wants their input next. The
@@ -916,7 +916,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // 1. INITIAL load (`useLayoutEffect` below, fires once per mount):
   //    - URL targets a specific poll → scroll its expanded card's top
   //      flush with the bottom of the fixed header.
-  //    - URL is the empty thread route → land at the document bottom
+  //    - URL is the empty group route → land at the document bottom
   //      so the always-on draft poll form is visible.
   //    Runs synchronously before paint via a fire-once `useRef` guard so
   //    the first painted frame is already at the destination — never an
@@ -955,7 +955,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   //          • at least one awaiting poll sits wholly above it.
   //        Targets the OLDEST above-the-fold awaiting poll (= first in
   //        DOM order, since awaiting cards sort by created_at ASC at the
-  //        bottom of the thread list).
+  //        bottom of the group list).
   //
   //      - DOWN (above the bottom safe-area inset) shows when:
   //          • no awaiting poll is FULLY visible, AND
@@ -977,7 +977,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // ===================================================================
   const hasHandledInitialExpandRef = useRef(false);
   useLayoutEffect(() => {
-    if (!thread || loading) return;
+    if (!group || loading) return;
     if (headerHeight === 0) return;
     if (hasHandledInitialExpandRef.current) return;
     hasHandledInitialExpandRef.current = true;
@@ -992,7 +992,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       }
     } else {
       // No expand → land at the bottom of the document so the draft poll
-      // form is in view. With the thread-like content paddingBottom trimmed
+      // form is in view. With the group-like content paddingBottom trimmed
       // to 0.5rem the bottom scroll position leaves only a thin margin below
       // the form.
       window.scrollTo(0, document.documentElement.scrollHeight);
@@ -1001,12 +1001,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     // No cleanup return: useRef persists across React StrictMode's
     // mount→cleanup→mount cycle, so the ref check above guarantees fire-once
     // semantics. A cleanup that reset the ref would fire on every dep change
-    // (e.g. `thread` updating from an async accessible-polls refresh) and
+    // (e.g. `group` updating from an async accessible-polls refresh) and
     // re-apply the scroll against the new — taller — page, producing a
     // visible "settle further down" jump after the user already saw the
     // page in the right position.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread, loading, headerHeight, initialExpandedQuestionId]);
+  }, [group, loading, headerHeight, initialExpandedQuestionId]);
 
   // ===================================================================
   // Tap-expand smooth scroll (path 2 — see strategy block above). Only
@@ -1059,13 +1059,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   }, [expandedQuestionId, headerHeight, initialExpandedQuestionId]);
 
   // Listen for question:updated events (fired when close/reopen happens from within
-  // a card). Merge the updates into our local thread state so downstream UI —
+  // a card). Merge the updates into our local group state so downstream UI —
   // e.g. whether the modal should offer a Reopen button — reflects reality.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { questionId: string; updates: Partial<Question> };
       if (!detail?.questionId) return;
-      setThread((prev) => {
+      setGroup((prev) => {
         if (!prev || !prev.questions.some((p) => p.id === detail.questionId)) return prev;
         return {
           ...prev,
@@ -1084,7 +1084,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // the app. The golden border reads from these sets, so it clears immediately
   // on vote. loadVotedQuestions always allocates new Sets, so compare contents
   // before committing — otherwise every event triggers a re-render even when
-  // this user's vote on this thread didn't change.
+  // this user's vote on this group didn't change.
   useEffect(() => {
     const setsEqual = (a: Set<string>, b: Set<string>) => {
       if (a.size !== b.size) return false;
@@ -1118,19 +1118,19 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
   // Awaiting questions (open + not voted/abstained) get sorted to the bottom and
   // wear a golden border. The border uses the live predicate so it clears
-  // immediately on vote; the sort order captures this at thread-load only so
+  // immediately on vote; the sort order captures this at group-load only so
   // the card doesn't jump positions underneath the user.
   // Phase 5b: open/closed is poll-level — every question inherits its
   // wrapper's is_closed + response_deadline.
   const now = new Date();
   const pollByQuestionId = useMemo(() => {
     const map = new Map<string, Poll>();
-    if (!thread) return map;
-    for (const mp of thread.polls) {
+    if (!group) return map;
+    for (const mp of group.polls) {
       for (const sp of mp.questions) map.set(sp.id, mp);
     }
     return map;
-  }, [thread]);
+  }, [group]);
   const wrapperFor = (question: Question): Poll | null =>
     pollByQuestionId.get(question.id) ?? (question.poll_id ? pollWrapperMap.get(question.poll_id) ?? null : null);
   const isQuestionOpen = (question: Question) => {
@@ -1145,21 +1145,21 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // awaiting/closed grouping — voting on a card never reshuffles the list,
   // so the sort can read live state directly. Defined above the early
   // returns so the hook call order is stable.
-  const threadQuestions = useMemo(() => {
-    if (!thread) return [] as Question[];
-    return [...thread.questions].sort(
+  const groupQuestions = useMemo(() => {
+    if (!group) return [] as Question[];
+    return [...group.questions].sort(
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     );
-  }, [thread]);
+  }, [group]);
 
-  // Phase 5b: poll wrappers ride along on the thread state directly
+  // Phase 5b: poll wrappers ride along on the group state directly
   // (returned in bulk from /api/questions/accessible). Build a quick id → wrapper
   // map for the existing callsites that look one up. Voter aggregates stay
   // fresh via the QUESTION_VOTES_CHANGED_EVENT handler below, which refetches
-  // affected wrappers and merges them back into thread.polls.
+  // affected wrappers and merges them back into group.polls.
   const pollWrapperMap = useMemo(
-    () => (thread ? buildPollMap(thread.polls) : new Map<string, Poll>()),
-    [thread],
+    () => (group ? buildPollMap(group.polls) : new Map<string, Poll>()),
+    [group],
   );
 
   // Phase 3.2: group sibling questions of a poll into a single visual
@@ -1171,7 +1171,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // Phase 5b: each group also carries the wrapper Poll so callsites can
   // read wrapper-level fields (is_closed, response_deadline, ...) directly
   // instead of looking them up via the cache.
-  const groupedThreadQuestions = useMemo(() => {
+  const groupedGroupQuestions = useMemo(() => {
     type Group = {
       key: string;
       pollId: string | null;
@@ -1181,12 +1181,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     };
     const groups: Group[] = [];
     const seen = new Set<string>();
-    for (const question of threadQuestions) {
+    for (const question of groupQuestions) {
       const groupKey = groupKeyFor(question);
       if (seen.has(groupKey)) continue;
       seen.add(groupKey);
       const subQuestions = question.poll_id
-        ? threadQuestions
+        ? groupQuestions
             .filter((p) => p.poll_id === question.poll_id)
             .sort((a, b) => (a.question_index ?? 0) - (b.question_index ?? 0))
         : [question];
@@ -1202,7 +1202,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       });
     }
     return groups;
-  }, [threadQuestions, pollWrapperMap]);
+  }, [groupQuestions, pollWrapperMap]);
 
   // === Virtualization helpers (anchor + observer wiring) ===
   // The URL-targeted group is the layout-shift compensation anchor + the
@@ -1210,22 +1210,22 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // null), fall back to the last group so the document stays pinned to the
   // bottom while cards above mount.
   const anchorGroupKey = useMemo(() => {
-    if (groupedThreadQuestions.length === 0) return null;
+    if (groupedGroupQuestions.length === 0) return null;
     if (initialExpandedQuestionId) {
-      const found = groupedThreadQuestions.find(g =>
+      const found = groupedGroupQuestions.find(g =>
         g.subQuestions.some(p => p.id === initialExpandedQuestionId)
       );
       if (found) return found.key;
     }
-    return groupedThreadQuestions[groupedThreadQuestions.length - 1].key;
-  }, [groupedThreadQuestions, initialExpandedQuestionId]);
+    return groupedGroupQuestions[groupedGroupQuestions.length - 1].key;
+  }, [groupedGroupQuestions, initialExpandedQuestionId]);
 
   // Drop mountedGroupKeys entries for groups that no longer exist (forget,
   // error reload). Always include the anchor. Progressive fill below adds
   // the rest of the keys.
   useEffect(() => {
-    if (groupedThreadQuestions.length === 0) return;
-    const validKeys = new Set(groupedThreadQuestions.map(g => g.key));
+    if (groupedGroupQuestions.length === 0) return;
+    const validKeys = new Set(groupedGroupQuestions.map(g => g.key));
     setMountedGroupKeys(prev => {
       const next = new Set<string>();
       for (const k of prev) if (validKeys.has(k)) next.add(k);
@@ -1237,33 +1237,33 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       }
       return next;
     });
-  }, [groupedThreadQuestions, anchorGroupKey]);
+  }, [groupedGroupQuestions, anchorGroupKey]);
 
   // Progressive fill: after first paint, mount remaining groups in idle-time
   // batches, prioritizing the cards closest to the anchor so the user sees
   // surrounding content fill in first. Batches of N groups per idle tick keep
   // each setState's re-render bounded; once all are mounted, no more setState
-  // fires, so subsequent scroll is steady. For very long threads this still
-  // loads everything (memory grows linearly with thread size); cards are
-  // already extracted into a React.memo'd ThreadCardItem, so a future
+  // fires, so subsequent scroll is steady. For very long groups this still
+  // loads everything (memory grows linearly with group size); cards are
+  // already extracted into a React.memo'd GroupCardItem, so a future
   // bounded-memory scroll-window can swap this fill for IO-driven
-  // mount/unmount when threads hit hundreds of polls. See CLAUDE.md
-  // "Thread-Page Layout Stability".
+  // mount/unmount when groups hit hundreds of polls. See CLAUDE.md
+  // "Group-Page Layout Stability".
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (groupedThreadQuestions.length === 0) return;
-    if (mountedGroupKeys.size >= groupedThreadQuestions.length) return;
+    if (groupedGroupQuestions.length === 0) return;
+    if (mountedGroupKeys.size >= groupedGroupQuestions.length) return;
     const anchorIdx = anchorGroupKey
-      ? groupedThreadQuestions.findIndex(g => g.key === anchorGroupKey)
+      ? groupedGroupQuestions.findIndex(g => g.key === anchorGroupKey)
       : 0;
     // Build a queue ordered by distance from anchor.
     const queue: string[] = [];
-    const len = groupedThreadQuestions.length;
+    const len = groupedGroupQuestions.length;
     for (let d = 1; queue.length < len; d++) {
       const before = anchorIdx - d;
       const after = anchorIdx + d;
-      if (after < len) queue.push(groupedThreadQuestions[after].key);
-      if (before >= 0) queue.push(groupedThreadQuestions[before].key);
+      if (after < len) queue.push(groupedGroupQuestions[after].key);
+      if (before >= 0) queue.push(groupedGroupQuestions[before].key);
       if (before < 0 && after >= len) break;
     }
     const BATCH = 4;
@@ -1291,10 +1291,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if ((window as any).cancelIdleCallback) (window as any).cancelIdleCallback(handle);
     };
     // We deliberately omit mountedGroupKeys from deps so this effect runs
-    // once per groupedThreadQuestions change rather than on each batch
+    // once per groupedGroupQuestions change rather than on each batch
     // setState; the cursor + filter handle resumption.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupedThreadQuestions, anchorGroupKey]);
+  }, [groupedGroupQuestions, anchorGroupKey]);
 
   // ResizeObserver: keep groupHeightById in sync with each rendered group's
   // actual height (mounted card OR placeholder). Placeholders use these
@@ -1366,7 +1366,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // ===================================================================
   const applyScrollAdjustmentRef = useRef<() => void>(() => {});
   applyScrollAdjustmentRef.current = () => {
-    if (typeof window === 'undefined' || !thread) return;
+    if (typeof window === 'undefined' || !group) return;
     if (userInteractedRef.current) return;
     if (initialExpandedQuestionId === null) {
       const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -1412,19 +1412,19 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // have flipped from null → real timestamp (the deferred suggestion /
   // availability timer starts on the first qualifying vote). Refresh
   // affected poll wrappers — cheap because the request is small and
-  // cached. Updates flow through patchThreadPolls so the derived map stays
-  // in sync. Without `prephase_deadline` in the patch, the thread card's
+  // cached. Updates flow through patchGroupPolls so the derived map stays
+  // in sync. Without `prephase_deadline` in the patch, the group card's
   // status row stays stuck on "Taking Suggestions" / "Collecting
   // Availability" until a manual refresh.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { questionId?: string } | undefined;
-      if (!detail?.questionId || !thread) return;
-      const question = thread.questions.find((p) => p.id === detail.questionId);
+      if (!detail?.questionId || !group) return;
+      const question = group.questions.find((p) => p.id === detail.questionId);
       const mid = question?.poll_id;
       if (!mid) return;
       void apiGetPollById(mid).then((wrapper) => {
-        patchThreadPolls(
+        patchGroupPolls(
           (mp) => mp.id === mid,
           () => ({
             voter_names: wrapper.voter_names,
@@ -1438,13 +1438,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     };
     window.addEventListener(QUESTION_VOTES_CHANGED_EVENT, handler);
     return () => window.removeEventListener(QUESTION_VOTES_CHANGED_EVENT, handler);
-  }, [thread, patchThreadPolls]);
+  }, [group, patchGroupPolls]);
 
   // Sync `?p=` to the expanded card via shallow replaceState — sharing the
   // URL reopens the same card. Collapse leaves `?p=` on the just-collapsed
   // poll so refresh doesn't surprise-collapse what the user was viewing.
   useEffect(() => {
-    if (typeof window === 'undefined' || !thread || !expandedQuestionId) return;
+    if (typeof window === 'undefined' || !group || !expandedQuestionId) return;
     const wrapper = pollByQuestionId.get(expandedQuestionId) ?? null;
     const routeId = wrapper?.short_id || expandedQuestionId;
     const params = new URLSearchParams(window.location.search);
@@ -1465,7 +1465,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   }>({ showUp: false, showDown: false, upTargetId: null, downTargetId: null });
 
   useEffect(() => {
-    if (!thread || typeof window === 'undefined') return;
+    if (!group || typeof window === 'undefined') return;
     let rafId: number | null = null;
     const evaluate = () => {
       rafId = null;
@@ -1476,12 +1476,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       let anyInView = false;
       let anyFullyVisible = false;
       let anyAbove = false; // wholly above OR top-clipped (partially above)
-      // threadQuestions is in strict chronological order (created_at ASC),
+      // groupQuestions is in strict chronological order (created_at ASC),
       // so iterating in order: the FIRST wholly-above awaiting match is
       // the oldest above-the-fold awaiting card, and the FIRST
       // below-the-fold match is the closest one beneath the viewport
       // (oldest among those still to be reached).
-      for (const group of groupedThreadQuestions) {
+      for (const group of groupedGroupQuestions) {
         const question = group.anchor;
         if (!isAwaitingResponse(question)) continue;
         const card = cardRefs.current.get(question.id);
@@ -1543,7 +1543,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       observer.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread, groupedThreadQuestions, headerHeight, votedQuestionIds, abstainedQuestionIds]);
+  }, [group, groupedGroupQuestions, headerHeight, votedQuestionIds, abstainedQuestionIds]);
 
   // Both arrows use the same action: align the target card's top flush
   // with the bottom of the fixed header. For wholly-above / wholly-below
@@ -1575,18 +1575,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          <p className="text-gray-600 dark:text-gray-400">Loading thread...</p>
+          <p className="text-gray-600 dark:text-gray-400">Loading group...</p>
         </div>
       </div>
     );
   }
 
-  if (error || !thread) {
+  if (error || !group) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Thread Not Found</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">This thread may not exist or you don&apos;t have access.</p>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Group Not Found</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">This group may not exist or you don&apos;t have access.</p>
           <button
             onClick={() => router.push('/')}
             className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
@@ -1600,19 +1600,19 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
   return (
     <>
-      <ThreadHeader
+      <GroupHeader
         headerRef={headerRef}
-        title={thread.title}
-        participantNames={thread.participantNames}
-        anonymousCount={thread.anonymousRespondentCount}
-        subtitle={`${thread.questions.length} ${thread.questions.length === 1 ? 'question' : 'questions'}`}
-        onTitleClick={() => navigateWithTransition(router, `/t/${threadId}/info`, 'forward')}
-        rightSlot={<ThreadShareButton routeId={threadId} title={thread.title} />}
+        title={group.title}
+        participantNames={group.participantNames}
+        anonymousCount={group.anonymousRespondentCount}
+        subtitle={`${group.questions.length} ${group.questions.length === 1 ? 'question' : 'questions'}`}
+        onTitleClick={() => navigateWithTransition(router, `/g/${groupId}/info`, 'forward')}
+        rightSlot={<GroupShareButton routeId={groupId} title={group.title} />}
       />
 
       {/* paddingTop reserves space for the fixed header above. */}
       <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
-        {groupedThreadQuestions.map((group) => {
+        {groupedGroupQuestions.map((group) => {
             // Virtualized window: groups outside ±2 viewport heights of the
             // visible region render as a measured-height placeholder div. The
             // anchor (URL-targeted card or last group when suppressExpand) is
@@ -1647,9 +1647,9 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             const isSwipeThresholdActive = swipeThresholdQuestionId === question.id;
             const isTooltipActive = tooltipQuestionId === question.id;
             return (
-              <ThreadCardItem
+              <GroupCardItem
                 key={question.id}
-                group={group as ThreadCardGroup}
+                group={group as GroupCardGroup}
                 isExpanded={isExpanded}
                 isPressed={isPressed}
                 isPlaceholder={isPlaceholder}
@@ -1700,7 +1700,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         <div id={DRAFT_POLL_PORTAL_ID} />
       </div>
 
-      {/* Thread-aware long-press modal — Copy + Forget, plus Reopen when
+      {/* Group-aware long-press modal — Copy + Forget, plus Reopen when
            the poll is closed and the current browser is the creator (or dev). */}
       {modalQuestion && (() => {
         const modalWrapper = wrapperFor(modalQuestion);
@@ -1764,15 +1764,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             // If the forgotten question was expanded, collapse it so the URL `?p=`
             // doesn't still point at the deleted poll.
             setExpandedQuestionId((curr) => (curr === action.question.id ? null : curr));
-            const remaining = thread ? thread.questions.filter((p) => p.id !== action.question.id) : [];
-            if (thread && remaining.length === 0) {
-              // Drop the server-side `thread_members` row so the thread
+            const remaining = group ? group.questions.filter((p) => p.id !== action.question.id) : [];
+            if (group && remaining.length === 0) {
+              // Drop the server-side `group_members` row so the group
               // doesn't reappear via Phase C.3 membership-based visibility
-              // on the next /api/threads/mine call. Fire-and-forget.
-              void apiLeaveThread(threadId);
+              // on the next /api/groups/mine call. Fire-and-forget.
+              void apiLeaveGroup(groupId);
               router.push('/');
             } else {
-              setThread((prev) => (prev ? { ...prev, questions: prev.questions.filter((p) => p.id !== action.question.id) } : prev));
+              setGroup((prev) => (prev ? { ...prev, questions: prev.questions.filter((p) => p.id !== action.question.id) } : prev));
             }
           } else if (action.kind === 'reopen') {
             try {
@@ -1783,7 +1783,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                 return;
               }
               const updated = await apiReopenPoll(pollId, secret);
-              patchThreadPolls(
+              patchGroupPolls(
                 (mp) => mp.id === pollId,
                 () => ({
                   is_closed: false,
@@ -1803,7 +1803,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                 return;
               }
               await apiClosePoll(pollId, secret);
-              patchThreadPolls(
+              patchGroupPolls(
                 (mp) => mp.id === pollId,
                 () => ({ is_closed: true, close_reason: 'manual' }),
               );
@@ -1826,14 +1826,14 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                 return;
               }
               const wrapper = await apiFn(pollId, secret);
-              patchThreadPolls(
+              patchGroupPolls(
                 (mp) => mp.id === pollId,
                 () => ({ prephase_deadline: wrapper.prephase_deadline ?? null }),
               );
               for (const sp of wrapper.questions) {
                 if (sp.options) {
                   const newOptions = sp.options;
-                  patchThreadQuestions(
+                  patchGroupQuestions(
                     (p) => p.id === sp.id,
                     () => ({ options: newOptions }),
                   );
@@ -1877,7 +1877,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       )}
 
       {/* First-time votes on single-question polls bypass this modal entirely
-          (see ThreadCardItem.dispatchYesNoTap); multi-group cards stage into
+          (see GroupCardItem.dispatchYesNoTap); multi-group cards stage into
           pendingPollChoices and confirm via the wrapper-level modal below. */}
       {(() => {
         const current = pendingVoteChange
@@ -1914,7 +1914,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
       {/* Wrapper-level Submit confirmation. subQuestions + stagedCount are
           snapshotted at button-tap time so the modal stays consistent if
-          groupedThreadQuestions re-derives mid-confirmation. */}
+          groupedGroupQuestions re-derives mid-confirmation. */}
       <ConfirmationModal
         isOpen={!!pendingPollSubmit}
         title="Submit vote"
@@ -1967,33 +1967,33 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   );
 }
 
-// Resolves `/t/<threadShortId>?p=<pollShortId>` to the thread root + the
+// Resolves `/g/<groupShortId>?p=<pollShortId>` to the group root + the
 // optional poll to expand. The path id is unambiguously a poll short_id /
-// poll uuid (the thread root); legacy `/p/<id>` URLs with arbitrary ids
+// poll uuid (the group root); legacy `/p/<id>` URLs with arbitrary ids
 // resolve via the `/p/[shortId]` redirect before reaching this component.
-function ThreadPageInner() {
+function GroupPageInner() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
-  const threadShortId = params.threadShortId as string;
+  const groupShortId = params.groupShortId as string;
   const pollParam = searchParams.get(POLL_QUERY_PARAM);
 
   const rootInitial = useMemo<Poll | null>(() => {
-    if (typeof window === "undefined" || !threadShortId) return null;
-    if (isUuidLike(threadShortId)) return getCachedPollById(threadShortId);
-    // Phase B.4: thread route id can be `threads.short_id` (preferred) OR
-    // `polls.short_id` (legacy /t/<root-poll-short-id> fallback). Look up
+    if (typeof window === "undefined" || !groupShortId) return null;
+    if (isUuidLike(groupShortId)) return getCachedPollById(groupShortId);
+    // Phase B.4: group route id can be `groups.short_id` (preferred) OR
+    // `polls.short_id` (legacy /g/<root-poll-short-id> fallback). Look up
     // both forms before falling back to the async fetch.
     const accessible = getCachedAccessiblePolls() ?? [];
-    const matches = accessible.filter(mp => mp.thread_short_id === threadShortId);
-    return findChainRoot(matches) ?? getCachedPollByShortId(threadShortId);
-  }, [threadShortId]);
+    const matches = accessible.filter(mp => mp.group_short_id === groupShortId);
+    return findChainRoot(matches) ?? getCachedPollByShortId(groupShortId);
+  }, [groupShortId]);
 
   const [rootPoll, setRootPoll] = useState<Poll | null>(rootInitial);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (!threadShortId) {
+    if (!groupShortId) {
       router.replace("/");
       return;
     }
@@ -2006,12 +2006,12 @@ function ThreadPageInner() {
     let cancelled = false;
     (async () => {
       try {
-        // Phase B.4: prefer the thread endpoint which resolves any route id
-        // form (threads.short_id, threads.id, polls.short_id, polls.id) in
-        // one call. Fall back to the per-poll endpoint when the thread
+        // Phase B.4: prefer the group endpoint which resolves any route id
+        // form (groups.short_id, groups.id, polls.short_id, polls.id) in
+        // one call. Fall back to the per-poll endpoint when the group
         // endpoint 404s (older deploys, network glitches) so we don't lose
         // resolution on partially-rolled-out backends.
-        const polls = await apiGetThreadByRouteId(threadShortId).catch((err: unknown) => {
+        const polls = await apiGetGroupByRouteId(groupShortId).catch((err: unknown) => {
           if (err instanceof ApiError && err.status === 404) return null;
           throw err;
         });
@@ -2024,11 +2024,11 @@ function ThreadPageInner() {
           return;
         }
         // Last-ditch fallback: per-poll lookup for very old URL forms whose
-        // resolution path didn't survive the threads-endpoint cutover.
-        const isUuid = isUuidLike(threadShortId);
+        // resolution path didn't survive the groups-endpoint cutover.
+        const isUuid = isUuidLike(groupShortId);
         const poll = await (isUuid
-          ? apiGetPollById(threadShortId)
-          : apiGetPollByShortId(threadShortId)
+          ? apiGetPollById(groupShortId)
+          : apiGetPollByShortId(groupShortId)
         ).catch((err: unknown) => {
           if (err instanceof ApiError && err.status === 404) return null;
           throw err;
@@ -2045,7 +2045,7 @@ function ThreadPageInner() {
       }
     })();
     return () => { cancelled = true; };
-  }, [threadShortId, router, rootInitial]);
+  }, [groupShortId, router, rootInitial]);
 
   // `?p=<id>` → resolve to the cached Poll for the initial-expand target.
   const targetPoll = useMemo<Poll | null>(() => {
@@ -2059,8 +2059,8 @@ function ThreadPageInner() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Thread Not Found</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">This thread may have been removed or the link is incorrect.</p>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Group Not Found</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">This group may have been removed or the link is incorrect.</p>
           <button
             onClick={() => router.push("/")}
             className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
@@ -2080,27 +2080,27 @@ function ThreadPageInner() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          <p className="text-gray-600 dark:text-gray-400">Loading thread...</p>
+          <p className="text-gray-600 dark:text-gray-400">Loading group...</p>
         </div>
       </div>
     );
   }
 
-  // Phase B.4: prefer threads.short_id (the canonical /t/<id> form) so any
+  // Phase B.4: prefer groups.short_id (the canonical /g/<id> form) so any
   // FE-built URL based on the resolved Poll matches the route id the user
-  // landed with. Falls back to the URL's threadShortId for placeholder
-  // polls and pre-B.4 cached polls without thread_short_id.
-  const threadRouteId = rootPoll.thread_short_id || rootPoll.short_id || threadShortId;
+  // landed with. Falls back to the URL's groupShortId for placeholder
+  // polls and pre-B.4 cached polls without group_short_id.
+  const groupRouteId = rootPoll.group_short_id || rootPoll.short_id || groupShortId;
 
   return (
-    <ThreadContent
-      threadId={threadRouteId}
+    <GroupContent
+      groupId={groupRouteId}
       initialExpandedQuestionId={initialExpandedQuestionId}
     />
   );
 }
 
-export default function ThreadPage() {
+export default function GroupPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center">
@@ -2113,11 +2113,11 @@ export default function ThreadPage() {
               <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
             </div>
           </div>
-          <p className="text-gray-600 dark:text-gray-400 mt-4">Loading thread...</p>
+          <p className="text-gray-600 dark:text-gray-400 mt-4">Loading group...</p>
         </div>
       </div>
     }>
-      <ThreadPageInner />
+      <GroupPageInner />
     </Suspense>
   );
 }

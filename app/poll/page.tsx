@@ -14,10 +14,10 @@ function QuestionRedirect() {
 
   useEffect(() => {
     if (id) {
-      // Hand off to /t/?id=<id> which resolves the question id to its thread
-      // root and redirects to `/t/<root>?p=<pollShortId>`. Preserves the
+      // Hand off to /g/?id=<id> which resolves the question id to its group
+      // root and redirects to `/g/<root>?p=<pollShortId>`. Preserves the
       // legacy /poll?id=<question-uuid> deep-link form.
-      router.replace(`/t/?id=${encodeURIComponent(id)}`);
+      router.replace(`/g/?id=${encodeURIComponent(id)}`);
     } else {
       // If no id, redirect to home
       router.replace('/');

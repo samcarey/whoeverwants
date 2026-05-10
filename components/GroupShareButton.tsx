@@ -3,28 +3,28 @@
 import { useCallback, useState } from "react";
 import { copyTextToClipboard } from "@/lib/clipboard";
 
-interface ThreadShareButtonProps {
+interface GroupShareButtonProps {
   routeId: string;
   title: string;
 }
 
 /**
- * Top-right action in the thread header. Tapping invokes the native share
+ * Top-right action in the group header. Tapping invokes the native share
  * sheet (`navigator.share`) on iOS / Android, or copies the URL to the
  * clipboard on desktop with a "Link copied" toast. Falls through to a
  * manual-copy `prompt()` as last resort.
  *
- * Shares the BARE thread URL with no `?p=`. Per-card copy-link buttons
+ * Shares the BARE group URL with no `?p=`. Per-card copy-link buttons
  * still emit `?p=<short>` URLs for "navigate to this poll's view" — both
- * forms grant the recipient thread membership on visit; the difference is
+ * forms grant the recipient group membership on visit; the difference is
  * that `?p=` drives auto-expand and scroll target.
  */
-export default function ThreadShareButton({ routeId, title }: ThreadShareButtonProps) {
+export default function GroupShareButton({ routeId, title }: GroupShareButtonProps) {
   const [feedback, setFeedback] = useState<null | "copied" | "error">(null);
 
   const handleShare = useCallback(async () => {
     if (typeof window === "undefined") return;
-    const url = `${window.location.origin}/t/${encodeURIComponent(routeId)}`;
+    const url = `${window.location.origin}/g/${encodeURIComponent(routeId)}`;
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
       try {
         await navigator.share({ title, url });
@@ -54,7 +54,7 @@ export default function ThreadShareButton({ routeId, title }: ThreadShareButtonP
         type="button"
         onClick={handleShare}
         className="w-10 h-10 flex items-center justify-center active:opacity-60 transition-opacity"
-        aria-label="Share thread"
+        aria-label="Share group"
       >
         <svg
           className="w-[1.125rem] h-[1.125rem] text-gray-600 dark:text-gray-400"

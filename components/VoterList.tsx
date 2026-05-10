@@ -16,7 +16,7 @@ interface VoterListProps {
   label?: string;
   filter?: (vote: ApiVote) => boolean;
   /** Single-line overflow mode: hides icon + count, renders one row, and
-   *  collapses overflow into a "+N" badge. Used under thread question cards. */
+   *  collapses overflow into a "+N" badge. Used under group question cards. */
   singleLine?: boolean;
   /** In singleLine mode: text to render (at bubble height) when there are no
    *  voters, so the row doesn't collapse and cause layout shift. Ignored in

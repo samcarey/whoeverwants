@@ -36,13 +36,13 @@ export interface CreatePollParams {
   response_deadline?: string | null;
   prephase_deadline?: string | null;
   prephase_deadline_minutes?: number | null;
-  /** Adds the new poll to an existing thread. None / omitted → server
-   *  mints a fresh thread. Migration 105 retired the legacy `follow_up_to`
-   *  chain pointer; threads are flat lists keyed by `thread_id`. */
-  thread_id?: string | null;
-  /** Sets the thread's title override at creation time. For existing
-   *  threads, prefer `apiUpdateThreadTitle` instead. */
-  thread_title?: string | null;
+  /** Adds the new poll to an existing group. None / omitted → server
+   *  mints a fresh group. Migration 105 retired the legacy `follow_up_to`
+   *  chain pointer; groups are flat lists keyed by `group_id`. */
+  group_id?: string | null;
+  /** Sets the group's title override at creation time. For existing
+   *  groups, prefer `apiUpdateGroupTitle` instead. */
+  group_title?: string | null;
   /** Short single-line — drives the auto-title's "for X" suffix. Maps to polls.context. */
   context?: string | null;
   /** Multi-line description with link support. Maps to polls.details. */

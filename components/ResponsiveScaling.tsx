@@ -19,10 +19,10 @@ export default function ResponsiveScaling({
 }: ResponsiveScalingProps) {
   const pathname = usePathname();
 
-  // Disable responsive scaling for thread pages to prevent scroll issues.
-  // Both `/t/...` (canonical) and `/p/...` (legacy redirect) are matched —
+  // Disable responsive scaling for group pages to prevent scroll issues.
+  // Both `/g/...` (canonical) and `/p/...` (legacy redirect) are matched —
   // /p/ pages are brief redirect stubs but still benefit from no transform.
-  const isQuestionPage = pathname?.startsWith('/t/') || pathname?.startsWith('/p/');
+  const isQuestionPage = pathname?.startsWith('/g/') || pathname?.startsWith('/p/');
 
   // Pure CSS approach - no JavaScript hooks needed
   // All scaling logic is handled by CSS media queries in globals.css

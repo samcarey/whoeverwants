@@ -7,7 +7,7 @@ import SimpleCountdown from "@/components/SimpleCountdown";
 import { relativeTime } from "@/lib/questionListUtils";
 
 /**
- * Shared row used by both the home/thread poll list and the in-progress
+ * Shared row used by both the home/group poll list and the in-progress
  * "Draft Poll" card in the create-poll flow. Keeping the structure unified
  * means the submit-time morph (dashed → solid border, DRAFT pill collapse)
  * lands on a card that's already pixel-aligned with what real polls render
@@ -17,11 +17,11 @@ import { relativeTime } from "@/lib/questionListUtils";
  * set `finalizing` (a transient prop driven by submit) to release those
  * styles back to the regular live appearance over a CSS transition.
  *
- * Live polls use ThreadList's `goToThread` onClick; the draft variant
+ * Live polls use GroupList's `goToGroup` onClick; the draft variant
  * passes onClick=undefined (the entire card isn't clickable; per-draft
  * editing happens via the edit-rows slot rendered below the card).
  */
-export interface ThreadListItemProps {
+export interface GroupListItemProps {
   title: string;
   latestQuestionTitle: string;
   participantNames: string[];
@@ -49,16 +49,16 @@ export interface ThreadListItemProps {
   /** When true, render a circular selection checkbox to the left of the row.
    *  Used by the home-page bulk-forget flow. */
   selectionMode?: boolean;
-  /** Whether this thread is selected. Only meaningful when selectionMode. */
+  /** Whether this group is selected. Only meaningful when selectionMode. */
   isSelected?: boolean;
   onClick?: () => void;
   onTouchStart?: (e: React.TouchEvent) => void;
   onTouchEnd?: () => void;
   onTouchMove?: (e: React.TouchEvent) => void;
-  threadRootId?: string;
+  groupRootId?: string;
 }
 
-export default function ThreadListItem(props: ThreadListItemProps) {
+export default function GroupListItem(props: GroupListItemProps) {
   const {
     title,
     latestQuestionTitle,
@@ -81,7 +81,7 @@ export default function ThreadListItem(props: ThreadListItemProps) {
     onTouchStart,
     onTouchEnd,
     onTouchMove,
-    threadRootId,
+    groupRootId,
   } = props;
 
   // Apply draft chrome only while still in draft mode AND not yet finalizing.
@@ -92,7 +92,7 @@ export default function ThreadListItem(props: ThreadListItemProps) {
 
   return (
     <div
-      data-thread-root-id={threadRootId}
+      data-group-root-id={groupRootId}
       className={`mx-1.5 transition-colors duration-500 ease-out ${isFirst ? 'border-t' : ''} border-b ${
         showDraftChrome
           ? 'border-dashed border-blue-400 dark:border-blue-500'

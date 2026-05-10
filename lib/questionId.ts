@@ -17,22 +17,22 @@ export function isUuidLike(id: string): boolean {
 
 /** Normalize a URL pathname: strip a trailing slash, but keep root `/` as `/`.
  *  Used for comparing pathnames coming from different sources — the app has
- *  `trailingSlash: true`, so `/t/abc` can render at `/t/abc/`. */
+ *  `trailingSlash: true`, so `/g/abc` can render at `/g/abc/`. */
 export function normalizePath(path: string): string {
   return path.replace(/\/$/, '') || '/';
 }
 
-/** If `pathname` is a thread page (`/t/<id>` with optional trailing slash),
- *  return the thread route ID (root poll's short_id or UUID). Otherwise null. */
-export function extractThreadRouteId(pathname: string): string | null {
-  const match = pathname.match(/^\/t\/([^/]+)\/?$/);
+/** If `pathname` is a group page (`/g/<id>` with optional trailing slash),
+ *  return the group route ID (root poll's short_id or UUID). Otherwise null. */
+export function extractGroupRouteId(pathname: string): string | null {
+  const match = pathname.match(/^\/g\/([^/]+)\/?$/);
   return match ? match[1] : null;
 }
 
-/** True when `pathname` is the top-level thread view: the empty placeholder
- *  (`/t` or `/t/`) or a specific thread (`/t/<id>`). False for sub-routes like
- *  `/t/<id>/info`. Template uses this to decide which pages get the
- *  thread-like layout + floating-plus FAB. */
-export function isThreadRootView(pathname: string): boolean {
-  return /^\/t(\/[^/]+)?\/?$/.test(pathname);
+/** True when `pathname` is the top-level group view: the empty placeholder
+ *  (`/g` or `/g/`) or a specific group (`/g/<id>`). False for sub-routes like
+ *  `/g/<id>/info`. Template uses this to decide which pages get the
+ *  group-like layout + floating-plus FAB. */
+export function isGroupRootView(pathname: string): boolean {
+  return /^\/g(\/[^/]+)?\/?$/.test(pathname);
 }

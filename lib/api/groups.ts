@@ -1,25 +1,25 @@
 /**
- * Phase B.3: thread-level API helpers.
+ * Phase B.3: group-level API helpers.
  *
- * `apiGetMyThreads(accessibleQuestionIds)` collapses the legacy
+ * `apiGetMyGroups(accessibleQuestionIds)` collapses the legacy
  * `discoverRelatedQuestions + apiGetAccessibleQuestions` pair into one
- * server round-trip. The server resolves the question_ids to their threads
- * (via `polls.thread_id`) and returns every poll in those threads with the
+ * server round-trip. The server resolves the question_ids to their groups
+ * (via `polls.group_id`) and returns every poll in those groups with the
  * full inline-results / voter aggregates that the home page expects.
  *
- * `apiGetThreadByRouteId(routeId)` returns the same shape for one thread,
+ * `apiGetGroupByRouteId(routeId)` returns the same shape for one group,
  * resolved by `routeId` (today: root poll's short_id; Phase B.4 will mint
- * dedicated `threads.short_id`s).
+ * dedicated `groups.short_id`s).
  *
  * Both helpers piggyback on the existing per-poll cache: `cachePoll` is
  * called for each returned poll so subsequent `apiGetPollById` calls hit
  * warm cache.
  *
- * `apiLeaveThread(routeId)` is the explicit "leave thread" action —
- * fire-and-forget DELETE to `/api/threads/{routeId}/membership`. Errors
+ * `apiLeaveGroup(routeId)` is the explicit "leave group" action —
+ * fire-and-forget DELETE to `/api/groups/{routeId}/membership`. Errors
  * are swallowed because the post-condition is verifiable on the next
- * `/api/threads/mine` call. Used to retire the legacy
- * `accessible_question_ids` bridge in `/api/threads/mine` once
+ * `/api/groups/mine` call. Used to retire the legacy
+ * `accessible_question_ids` bridge in `/api/groups/mine` once
  * forget-of-last-poll calls land.
  */
 
@@ -31,7 +31,7 @@ import {
   invalidateAccessibleQuestions,
   invalidatePoll,
 } from "@/lib/questionCache";
-import { threadFetch, toPoll, toQuestionResults } from "./_internal";
+import { groupFetch, toPoll, toQuestionResults } from "./_internal";
 
 function hydrateAndCache(data: any[]): Poll[] {
   return data.map((d) => {
@@ -55,12 +55,12 @@ function hydrateAndCache(data: any[]): Poll[] {
   });
 }
 
-export async function apiGetMyThreads(
+export async function apiGetMyGroups(
   accessibleQuestionIds: string[],
   options: { include_results?: boolean } = {},
 ): Promise<Poll[]> {
   if (accessibleQuestionIds.length === 0) return [];
-  const data: any[] = await threadFetch('/mine', {
+  const data: any[] = await groupFetch('/mine', {
     method: 'POST',
     body: JSON.stringify({
       accessible_question_ids: accessibleQuestionIds,
@@ -70,7 +70,7 @@ export async function apiGetMyThreads(
   return hydrateAndCache(data);
 }
 
-export async function apiGetThreadByRouteId(
+export async function apiGetGroupByRouteId(
   routeId: string,
   options: { include_results?: boolean } = {},
 ): Promise<Poll[]> {
@@ -78,23 +78,23 @@ export async function apiGetThreadByRouteId(
   if (options.include_results === false) params.set('include_results', 'false');
   const qs = params.toString();
   const path = `/by-route-id/${encodeURIComponent(routeId)}${qs ? `?${qs}` : ''}`;
-  const data: any[] = await threadFetch(path);
+  const data: any[] = await groupFetch(path);
   return hydrateAndCache(data);
 }
 
 /**
- * Explicit "leave thread" action — DELETE the caller's `thread_members`
- * row for the resolved thread. Idempotent server-side and fire-and-forget
+ * Explicit "leave group" action — DELETE the caller's `group_members`
+ * row for the resolved group. Idempotent server-side and fire-and-forget
  * client-side: the server returns 204 whether or not a row existed (and
  * even for strangers), so a transient failure is never user-visible. The
- * post-condition is verifiable on the next `/api/threads/mine` call.
+ * post-condition is verifiable on the next `/api/groups/mine` call.
  *
- * `routeId` accepts `threads.short_id`, `threads.id`, `polls.short_id`, or
- * `polls.id` — same as `apiGetThreadByRouteId`.
+ * `routeId` accepts `groups.short_id`, `groups.id`, `polls.short_id`, or
+ * `polls.id` — same as `apiGetGroupByRouteId`.
  */
-export async function apiLeaveThread(routeId: string): Promise<void> {
+export async function apiLeaveGroup(routeId: string): Promise<void> {
   try {
-    await threadFetch(`/${encodeURIComponent(routeId)}/membership`, {
+    await groupFetch(`/${encodeURIComponent(routeId)}/membership`, {
       method: 'DELETE',
     });
   } catch {
@@ -102,39 +102,39 @@ export async function apiLeaveThread(routeId: string): Promise<void> {
   }
 }
 
-/** Update (or clear) a thread's title override.
+/** Update (or clear) a group's title override.
  *
- *  Migration 105 moved the override from `polls.thread_title` to
- *  `threads.title`. The endpoint takes a `route_id` (the same four forms
- *  as `apiGetThreadByRouteId`) and updates `threads.title` directly —
- *  one row per thread, no per-poll divergence.
+ *  Migration 105 moved the override from `polls.group_title` to
+ *  `groups.title`. The endpoint takes a `route_id` (the same four forms
+ *  as `apiGetGroupByRouteId`) and updates `groups.title` directly —
+ *  one row per group, no per-poll divergence.
  *
  *  Empty string or null clears the override (stored as NULL).
  *
- *  Cache invalidation: every poll in the thread carries `thread_title`
+ *  Cache invalidation: every poll in the group carries `group_title`
  *  in its cached payload, so we evict each one (cascades to per-question
  *  caches via `invalidatePoll`) plus the accessible-polls cache. Done
  *  here so callers don't have to remember the cleanup ritual.
  */
-export async function apiUpdateThreadTitle(
+export async function apiUpdateGroupTitle(
   routeId: string,
   title: string | null,
-): Promise<{ thread_id: string; thread_short_id: string | null; title: string | null }> {
-  const data = await threadFetch<any>(
+): Promise<{ group_id: string; group_short_id: string | null; title: string | null }> {
+  const data = await groupFetch<any>(
     `/${encodeURIComponent(routeId)}/title`,
     {
       method: 'POST',
-      body: JSON.stringify({ thread_title: title }),
+      body: JSON.stringify({ group_title: title }),
     },
   );
   const result = {
-    thread_id: data.thread_id as string,
-    thread_short_id: (data.thread_short_id ?? null) as string | null,
+    group_id: data.group_id as string,
+    group_short_id: (data.group_short_id ?? null) as string | null,
     title: (data.title ?? null) as string | null,
   };
   const accessible = getCachedAccessiblePolls() ?? [];
   for (const mp of accessible) {
-    if (mp.thread_id === result.thread_id) invalidatePoll(mp.id);
+    if (mp.group_id === result.group_id) invalidatePoll(mp.id);
   }
   invalidateAccessibleQuestions();
   return result;

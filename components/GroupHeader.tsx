@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import RespondentCircles from "@/components/RespondentCircles";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 
-export interface ThreadHeaderProps {
+export interface GroupHeaderProps {
   headerRef: React.Ref<HTMLDivElement>;
   title: string;
   participantNames?: string[];
@@ -16,7 +16,7 @@ export interface ThreadHeaderProps {
 }
 
 /**
- * Fixed thread header. top:0 + padding-top:env(safe-area-inset-top) fills
+ * Fixed group header. top:0 + padding-top:env(safe-area-inset-top) fills
  * the notch zone with the header background (otherwise items are visible
  * there when the document scrolls). headerRef is on the OUTER fixed div
  * so offsetHeight includes the safe-area-inset-top padding — sibling
@@ -26,10 +26,10 @@ export interface ThreadHeaderProps {
  * iOS PWA pages with content tucked behind the bottom of the header.
  *
  * onBack defaults to navigating to '/'; sub-routes pass their own handler
- * (e.g. back to the thread root or the info page when in-app history exists).
+ * (e.g. back to the group root or the info page when in-app history exists).
  * rightSlot renders an action button on the right.
  */
-export default function ThreadHeader({
+export default function GroupHeader({
   headerRef,
   title,
   participantNames,
@@ -38,7 +38,7 @@ export default function ThreadHeader({
   onTitleClick,
   onBack,
   rightSlot,
-}: ThreadHeaderProps) {
+}: GroupHeaderProps) {
   const router = useRouter();
   const hasRightSlot = !!rightSlot;
   const handleBack = onBack ?? (() => navigateWithTransition(router, '/', 'back'));
@@ -56,7 +56,7 @@ export default function ThreadHeader({
   return (
     <div
       ref={headerRef}
-      data-thread-header=""
+      data-group-header=""
       className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
     >
@@ -83,7 +83,7 @@ export default function ThreadHeader({
             type="button"
             onClick={onTitleClick}
             className="min-w-0 flex-1 text-left active:opacity-60 transition-opacity"
-            aria-label="Thread details"
+            aria-label="Group details"
           >
             {titleBlock}
           </button>

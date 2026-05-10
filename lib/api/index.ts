@@ -37,11 +37,11 @@ export type { ApiVote, PollVoteItem } from "./votes";
 export { apiGetQuestionResults } from "./results";
 
 export {
-  apiGetMyThreads,
-  apiGetThreadByRouteId,
-  apiLeaveThread,
-  apiUpdateThreadTitle,
-} from "./threads";
+  apiGetMyGroups,
+  apiGetGroupByRouteId,
+  apiLeaveGroup,
+  apiUpdateGroupTitle,
+} from "./groups";
 
 export {
   apiSearchLocations,

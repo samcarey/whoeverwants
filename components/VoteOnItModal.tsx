@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
 import { apiCreatePoll } from "@/lib/api";
-import { getCachedThreadIdForQuestion } from "@/lib/questionCache";
+import { getCachedGroupIdForQuestion } from "@/lib/questionCache";
 import { generateCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
 import { getUserName } from "@/lib/userProfile";
 
@@ -54,16 +54,16 @@ export default function VoteOnItModal({ isOpen, questionId, questionTitle, sugge
       const creatorSecret = generateCreatorSecret();
       const creatorName = getUserName() || undefined;
 
-      // Migration 105: resolve the source question's thread_id from cache.
-      // Falls back to null (new thread) on cache miss — graceful
+      // Migration 105: resolve the source question's group_id from cache.
+      // Falls back to null (new group) on cache miss — graceful
       // degradation rather than a failed create.
-      const threadId = getCachedThreadIdForQuestion(questionId);
+      const groupId = getCachedGroupIdForQuestion(questionId);
 
       const poll = await apiCreatePoll({
         creator_secret: creatorSecret,
         creator_name: creatorName,
         response_deadline: deadline.toISOString(),
-        thread_id: threadId,
+        group_id: groupId,
         questions: [
           {
             question_type: "ranked_choice",

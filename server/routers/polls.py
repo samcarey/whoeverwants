@@ -24,7 +24,7 @@ from models import (
     SubmitVoteRequest,
     VoteResponse,
 )
-from services.memberships import join_thread, join_thread_for_poll
+from services.memberships import join_group, join_group_for_poll
 from services.questions import (
     _edit_vote_on_question,
     _finalize_suggestion_options,
@@ -41,18 +41,18 @@ router = APIRouter(prefix="/api/polls", tags=["polls"])
 
 
 # Phase B.4: every SELECT that feeds `_row_to_poll` must surface
-# `threads.short_id` as `thread_short_id` so the FE can build
-# `/t/<thread.short_id>` URLs without a second round-trip. Migration 105
-# moved `thread_title` to `threads.title`, so the same JOIN is the source
-# of truth for the thread-name override too. Centralizing the JOIN here
-# keeps the SELECTs in routers/polls.py and services/threads.py in
-# lockstep — adding another field from the threads table only requires
+# `groups.short_id` as `group_short_id` so the FE can build
+# `/g/<group.short_id>` URLs without a second round-trip. Migration 105
+# moved `group_title` to `groups.title`, so the same JOIN is the source
+# of truth for the group-name override too. Centralizing the JOIN here
+# keeps the SELECTs in routers/polls.py and services/groups.py in
+# lockstep — adding another field from the groups table only requires
 # extending this string.
-_SELECT_POLLS_WITH_THREAD = (
+_SELECT_POLLS_WITH_GROUP = (
     "SELECT polls.*, "
-    "t.short_id AS thread_short_id, "
-    "t.title AS thread_title "
-    "FROM polls LEFT JOIN threads t ON polls.thread_id = t.id"
+    "t.short_id AS group_short_id, "
+    "t.title AS group_title "
+    "FROM polls LEFT JOIN groups t ON polls.group_id = t.id"
 )
 
 
@@ -117,84 +117,84 @@ def _validate_request(req: CreatePollRequest) -> None:
             )
 
 
-def _resolve_or_create_thread(
+def _resolve_or_create_group(
     conn,
-    requested_thread_id: str | None,
+    requested_group_id: str | None,
     initial_title: str | None,
 ) -> str:
-    """Resolve `req.thread_id` to an existing thread, or mint a fresh one.
+    """Resolve `req.group_id` to an existing group, or mint a fresh one.
 
     Migration 105 retired `polls.follow_up_to` so the new-poll path no
-    longer walks parent → child relationships. A thread is just a uuid
-    that polls share via `polls.thread_id`. When `requested_thread_id`
-    points at a real thread, return it; otherwise create a new thread
+    longer walks parent → child relationships. A group is just a uuid
+    that polls share via `polls.group_id`. When `requested_group_id`
+    points at a real group, return it; otherwise create a new group
     (optionally with `title` set on creation so first-poll-with-name
     flows are a single transaction).
 
-    Unknown / malformed thread ids fall through to "mint a fresh thread"
+    Unknown / malformed group ids fall through to "mint a fresh group"
     rather than 404 — the request still succeeds, it just lands in a new
-    thread instead of the one the caller named. That's the same fallback
-    `_resolve_or_create_thread_id` had for missing parents.
+    group instead of the one the caller named. That's the same fallback
+    `_resolve_or_create_group_id` had for missing parents.
     """
-    if requested_thread_id:
+    if requested_group_id:
         existing = conn.execute(
-            "SELECT id FROM threads WHERE id = %(id)s",
-            {"id": requested_thread_id},
+            "SELECT id FROM groups WHERE id = %(id)s",
+            {"id": requested_group_id},
         ).fetchone()
         if existing:
             if initial_title is not None:
                 conn.execute(
-                    "UPDATE threads SET title = %(title)s WHERE id = %(id)s",
-                    {"id": requested_thread_id, "title": initial_title},
+                    "UPDATE groups SET title = %(title)s WHERE id = %(id)s",
+                    {"id": requested_group_id, "title": initial_title},
                 )
             return str(existing["id"])
         logger.warning(
-            "create_poll: requested thread_id=%s not found; minting a fresh thread",
-            requested_thread_id,
+            "create_poll: requested group_id=%s not found; minting a fresh group",
+            requested_group_id,
         )
     row = conn.execute(
-        "INSERT INTO threads (title) VALUES (%(title)s) RETURNING id",
+        "INSERT INTO groups (title) VALUES (%(title)s) RETURNING id",
         {"title": initial_title},
     ).fetchone()
     return str(row["id"])
 
 
-def _attach_thread_fields(conn, row) -> dict:
-    """Enrich a polls row dict with `thread_short_id` and `thread_title`.
+def _attach_group_fields(conn, row) -> dict:
+    """Enrich a polls row dict with `group_short_id` and `group_title`.
 
     INSERT/UPDATE `RETURNING *` paths only see polls.* columns, not the
-    joined threads fields surfaced by `_SELECT_POLLS_WITH_THREAD`. After
-    a write, look up the thread row by `thread_id` so the resulting row
+    joined groups fields surfaced by `_SELECT_POLLS_WITH_GROUP`. After
+    a write, look up the group row by `group_id` so the resulting row
     dict matches the SELECT shape `_row_to_poll` expects.
     """
     out = dict(row)
-    if out.get("thread_id") and not (
-        out.get("thread_short_id") and "thread_title" in out
+    if out.get("group_id") and not (
+        out.get("group_short_id") and "group_title" in out
     ):
         t = conn.execute(
-            "SELECT short_id, title FROM threads WHERE id = %(id)s",
-            {"id": out["thread_id"]},
+            "SELECT short_id, title FROM groups WHERE id = %(id)s",
+            {"id": out["group_id"]},
         ).fetchone()
         if t:
-            out.setdefault("thread_short_id", t.get("short_id"))
-            out.setdefault("thread_title", t.get("title"))
+            out.setdefault("group_short_id", t.get("short_id"))
+            out.setdefault("group_title", t.get("title"))
     return out
 
 
 def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
-    """Insert a new poll under the requested (or freshly-minted) thread.
+    """Insert a new poll under the requested (or freshly-minted) group.
 
-    Migration 105 dropped `polls.follow_up_to` and `polls.thread_title`:
-    threads are first-class entities (one row in `threads`), and the
-    thread name override lives on `threads.title` rather than being
+    Migration 105 dropped `polls.follow_up_to` and `polls.group_title`:
+    groups are first-class entities (one row in `groups`), and the
+    group name override lives on `groups.title` rather than being
     duplicated across every poll.
     """
-    # `req.thread_title` only seeds the title when minting a fresh thread.
-    # For existing threads, it overwrites the title — kept for API symmetry
-    # but the FE create flow doesn't pass it; thread renames go through
-    # `POST /api/threads/{route_id}/title` instead.
-    thread_id = _resolve_or_create_thread(
-        conn, req.thread_id, req.thread_title
+    # `req.group_title` only seeds the title when minting a fresh group.
+    # For existing groups, it overwrites the title — kept for API symmetry
+    # but the FE create flow doesn't pass it; group renames go through
+    # `POST /api/groups/{route_id}/title` instead.
+    group_id = _resolve_or_create_group(
+        conn, req.group_id, req.group_title
     )
     row = conn.execute(
         """
@@ -203,7 +203,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
             prephase_deadline, prephase_deadline_minutes,
             context, details,
             min_responses, show_preliminary_results, allow_pre_ranking,
-            thread_id,
+            group_id,
             created_at, updated_at
         )
         VALUES (
@@ -211,7 +211,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
             %(prephase_deadline)s, %(prephase_deadline_minutes)s,
             %(context)s, %(details)s,
             %(min_responses)s, %(show_preliminary_results)s, %(allow_pre_ranking)s,
-            %(thread_id)s,
+            %(group_id)s,
             %(now)s, %(now)s
         )
         RETURNING *
@@ -232,11 +232,11 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
             "min_responses": req.min_responses,
             "show_preliminary_results": req.show_preliminary_results,
             "allow_pre_ranking": req.allow_pre_ranking,
-            "thread_id": thread_id,
+            "group_id": group_id,
             "now": now,
         },
     ).fetchone()
-    return _attach_thread_fields(conn, row)
+    return _attach_group_fields(conn, row)
 
 
 def _insert_question(
@@ -249,7 +249,7 @@ def _insert_question(
     now: datetime,
 ) -> dict:
     # Phase 5: wrapper-level columns (creator_secret, creator_name,
-    # response_deadline, follow_up_to, thread_title, is_closed, close_reason,
+    # response_deadline, follow_up_to, group_title, is_closed, close_reason,
     # short_id, suggestion_deadline) live exclusively on the poll wrapper.
     # Sub-question rows carry only per-question fields.
     return conn.execute(
@@ -320,14 +320,14 @@ def _category_for_title(question_row: dict) -> str:
 
 
 def _compute_display_title(row: dict, question_rows: list[dict]) -> str:
-    override = row.get("thread_title")
+    override = row.get("group_title")
     if override:
         return override
     # Every question shares the wrapper-level `question_title` resolved by
-    # `create_poll` (user-typed yes_no prompt OR `req.thread_title` OR the
+    # `create_poll` (user-typed yes_no prompt OR `req.group_title` OR the
     # auto-generated multi-question title), so reading questions[0].title
     # gives us the user's intended poll title without conflating with the
-    # `thread_title` thread-name override.
+    # `group_title` group-name override.
     if question_rows:
         primary = (question_rows[0].get("title") or "").strip()
         if primary:
@@ -349,8 +349,8 @@ def _row_to_poll(
     return PollResponse(
         id=str(row["id"]),
         short_id=row.get("short_id"),
-        thread_id=str(row["thread_id"]) if row.get("thread_id") else None,
-        thread_short_id=row.get("thread_short_id"),
+        group_id=str(row["group_id"]) if row.get("group_id") else None,
+        group_short_id=row.get("group_short_id"),
         creator_secret=row.get("creator_secret"),
         creator_name=row.get("creator_name"),
         response_deadline=_iso_or_none(row.get("response_deadline")),
@@ -358,7 +358,7 @@ def _row_to_poll(
         prephase_deadline_minutes=row.get("prephase_deadline_minutes"),
         is_closed=row.get("is_closed", False),
         close_reason=row.get("close_reason"),
-        thread_title=row.get("thread_title"),
+        group_title=row.get("group_title"),
         context=row.get("context"),
         details=row.get("details"),
         title=_compute_display_title(row, question_rows),
@@ -427,7 +427,7 @@ def create_poll(req: CreatePollRequest, request: Request):
     # display goes through the poll's computed title.
     question_title = (
         req.title
-        or req.thread_title
+        or req.group_title
         or generate_poll_title(
             _categories_for_title(req.questions),
             req.context,
@@ -444,10 +444,10 @@ def create_poll(req: CreatePollRequest, request: Request):
             for index, sub in enumerate(req.questions)
         ]
 
-    # Phase C.2: creator auto-joins the thread. Runs after the create
-    # commits — root polls' thread_id only exists post-`_insert_poll`.
-    join_thread(
-        str(poll_row["thread_id"]) if poll_row.get("thread_id") else None,
+    # Phase C.2: creator auto-joins the group. Runs after the create
+    # commits — root polls' group_id only exists post-`_insert_poll`.
+    join_group(
+        str(poll_row["group_id"]) if poll_row.get("group_id") else None,
         _browser_id(request),
     )
 
@@ -459,7 +459,7 @@ def create_poll(req: CreatePollRequest, request: Request):
 def get_poll_by_id(poll_id: str):
     with get_db() as conn:
         row = conn.execute(
-            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.id = %(id)s",
+            f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         if not row:
@@ -473,7 +473,7 @@ def get_poll_by_id(poll_id: str):
 def get_poll(short_id: str):
     with get_db() as conn:
         row = conn.execute(
-            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.short_id = %(short_id)s",
+            f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.short_id = %(short_id)s",
             {"short_id": short_id},
         ).fetchone()
         if not row:
@@ -545,7 +545,7 @@ def close_poll(poll_id: str, req: CloseQuestionRequest):
                 _finalize_suggestion_options(conn, str(sp["id"]), now)
 
         poll_row = conn.execute(
-            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.id = %(id)s",
+            f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
@@ -572,7 +572,7 @@ def reopen_poll(poll_id: str, req: ReopenQuestionRequest):
             {"poll_id": poll_id, "now": now},
         )
         poll_row = conn.execute(
-            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.id = %(id)s",
+            f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
@@ -628,7 +628,7 @@ def cutoff_poll_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
             _finalize_suggestion_options(conn, str(row["id"]), now)
 
         poll_row = conn.execute(
-            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.id = %(id)s",
+            f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
@@ -692,10 +692,10 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
     """
     now = datetime.now(timezone.utc)
 
-    # Phase C.2: thread join runs BEFORE the vote in its own transaction so
+    # Phase C.2: group join runs BEFORE the vote in its own transaction so
     # "attempted to participate" is the membership trigger — a vote that
-    # fails validation still leaves the user as a thread member.
-    join_thread_for_poll(poll_id, _browser_id(request))
+    # fails validation still leaves the user as a group member.
+    join_group_for_poll(poll_id, _browser_id(request))
 
     question_ids = [item.question_id for item in req.items]
     if len(set(question_ids)) != len(question_ids):
@@ -788,7 +788,7 @@ def cutoff_poll_availability(poll_id: str, req: CutoffSuggestionsRequest):
             _finalize_time_slots(conn, str(row["id"]), now)
 
         poll_row = conn.execute(
-            f"{_SELECT_POLLS_WITH_THREAD} WHERE polls.id = %(id)s",
+            f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)

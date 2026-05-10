@@ -28,7 +28,7 @@ from services.questions import (
     _row_to_question,
     _row_to_vote,
 )
-from services.threads import polls_for_poll_ids
+from services.groups import polls_for_poll_ids
 
 router = APIRouter(prefix="/api/questions", tags=["questions"])
 
@@ -52,26 +52,26 @@ def get_all_question_ids():
 
 
 @router.get("/find-duplicate", response_model=QuestionResponse)
-def find_duplicate_question(title: str, thread_id: str):
-    """Find an existing question under the same thread as `thread_id` with
+def find_duplicate_question(title: str, group_id: str):
+    """Find an existing question under the same group as `group_id` with
     the same title (case-insensitive). Used by the create-poll flow to
     short-circuit accidental duplicates when the user types a title that
-    already exists in the thread they're posting into.
+    already exists in the group they're posting into.
 
     Migration 105 retired `polls.follow_up_to` so the legacy "walk the
     parent question's chain" approach is gone — this is now a flat
-    `WHERE mp.thread_id = ?` lookup.
+    `WHERE mp.group_id = ?` lookup.
     """
     with get_db() as conn:
         row = conn.execute(
             _SELECT_QUESTION_FULL
             + """
             WHERE LOWER(p.title) = LOWER(%(title)s)
-              AND mp.thread_id = %(thread_id)s::uuid
+              AND mp.group_id = %(group_id)s::uuid
             ORDER BY p.created_at ASC
             LIMIT 1
             """,
-            {"title": title, "thread_id": thread_id},
+            {"title": title, "group_id": group_id},
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="No duplicate question found")
@@ -184,7 +184,7 @@ def get_results(question_id: str):
 
 # --- Question management ---
 # Phase 5: per-question close/reopen/cutoff-suggestions/cutoff-availability and
-# thread-title endpoints all removed — these are poll-level concerns and
+# group-title endpoints all removed — these are poll-level concerns and
 # now live exclusively under `/api/polls/{id}/...`.
 
 
@@ -207,8 +207,8 @@ def get_accessible_questions(req: AccessibleQuestionsRequest):
     endpoint (closed questions always; open questions when show_preliminary_results
     is true and min_responses is unset-or-met).
 
-    Phase B.3: aggregation logic moved to `services.threads.polls_for_poll_ids`
-    so `/api/threads/*` can build identical payloads from a thread-id-driven
+    Phase B.3: aggregation logic moved to `services.groups.polls_for_poll_ids`
+    so `/api/groups/*` can build identical payloads from a group-id-driven
     poll set. This endpoint stays as a same-shape compatibility surface.
     """
     if not req.question_ids:
@@ -232,19 +232,19 @@ def get_related_questions(req: RelatedQuestionsRequest):
             all_related_ids=[], original_count=0, discovered_count=0
         )
     with get_db() as conn:
-        # Phase B.2: thread membership is materialized as `polls.thread_id`.
-        # Fetch every question whose thread matches any input's thread —
+        # Phase B.2: group membership is materialized as `polls.group_id`.
+        # Fetch every question whose group matches any input's group —
         # one indexed lookup, no chain walking.
         rows = conn.execute(
-            """SELECT p.id, mp.thread_id
+            """SELECT p.id, mp.group_id
                  FROM questions p
                  JOIN polls mp ON p.poll_id = mp.id
-                WHERE mp.thread_id IN (
-                          SELECT mp2.thread_id
+                WHERE mp.group_id IN (
+                          SELECT mp2.group_id
                             FROM questions p2
                             JOIN polls mp2 ON p2.poll_id = mp2.id
                            WHERE p2.id = ANY(%(question_ids)s)
-                             AND mp2.thread_id IS NOT NULL
+                             AND mp2.group_id IS NOT NULL
                       )
                    OR p.id = ANY(%(question_ids)s)""",
             {"question_ids": req.question_ids},
@@ -253,7 +253,7 @@ def get_related_questions(req: RelatedQuestionsRequest):
     all_questions = [
         QuestionRelation(
             id=str(r["id"]),
-            thread_id=str(r["thread_id"]) if r.get("thread_id") else None,
+            group_id=str(r["group_id"]) if r.get("group_id") else None,
         )
         for r in rows
     ]

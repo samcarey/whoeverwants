@@ -1,4 +1,4 @@
-"""Fire-and-forget thread_members writes for vote/create paths.
+"""Fire-and-forget group_members writes for vote/create paths.
 
 These helpers are for vote/create paths where the action's own transaction
 must NOT be coupled to the audit write:
@@ -11,8 +11,8 @@ must NOT be coupled to the audit write:
     `joined_at` watermark across re-votes — visibility compares poll
     closure timestamps against that watermark.
 
-The thread-membership inline grant (read endpoint auto-join) lives in
-`services.threads.grant_thread_membership_inline` instead — it shares the
+The group-membership inline grant (read endpoint auto-join) lives in
+`services.groups.grant_group_membership_inline` instead — it shares the
 caller's read transaction so the visibility filter sees the new row in
 the same query.
 """
@@ -26,32 +26,32 @@ from database import get_db
 logger = logging.getLogger(__name__)
 
 
-def join_thread(thread_id: str | None, browser_id: str | None) -> None:
-    """Insert a `thread_members(thread_id, browser_id)` row."""
-    if not thread_id or not browser_id:
+def join_group(group_id: str | None, browser_id: str | None) -> None:
+    """Insert a `group_members(group_id, browser_id)` row."""
+    if not group_id or not browser_id:
         return
     try:
         with get_db() as conn:
             conn.execute(
                 """
-                INSERT INTO thread_members (thread_id, browser_id)
-                VALUES (%(thread_id)s, %(browser_id)s)
-                ON CONFLICT (thread_id, browser_id) DO NOTHING
+                INSERT INTO group_members (group_id, browser_id)
+                VALUES (%(group_id)s, %(browser_id)s)
+                ON CONFLICT (group_id, browser_id) DO NOTHING
                 """,
-                {"thread_id": thread_id, "browser_id": browser_id},
+                {"group_id": group_id, "browser_id": browser_id},
             )
     except Exception:
         logger.warning(
-            "Phase C.2: thread_members insert failed (thread=%s, browser=%s)",
-            thread_id,
+            "Phase C.2: group_members insert failed (group=%s, browser=%s)",
+            group_id,
             browser_id,
             exc_info=True,
         )
 
 
-def join_thread_for_poll(poll_id: str | None, browser_id: str | None) -> None:
-    """Join the thread that owns this poll. INSERT ... SELECT fuses the
-    poll → thread_id lookup with the thread_members write so the vote
+def join_group_for_poll(poll_id: str | None, browser_id: str | None) -> None:
+    """Join the group that owns this poll. INSERT ... SELECT fuses the
+    poll → group_id lookup with the group_members write so the vote
     hot path pays one round-trip instead of two."""
     if not poll_id or not browser_id:
         return
@@ -59,37 +59,37 @@ def join_thread_for_poll(poll_id: str | None, browser_id: str | None) -> None:
         with get_db() as conn:
             conn.execute(
                 """
-                INSERT INTO thread_members (thread_id, browser_id)
-                SELECT thread_id, %(browser_id)s FROM polls
-                 WHERE id = %(poll_id)s AND thread_id IS NOT NULL
-                ON CONFLICT (thread_id, browser_id) DO NOTHING
+                INSERT INTO group_members (group_id, browser_id)
+                SELECT group_id, %(browser_id)s FROM polls
+                 WHERE id = %(poll_id)s AND group_id IS NOT NULL
+                ON CONFLICT (group_id, browser_id) DO NOTHING
                 """,
                 {"poll_id": poll_id, "browser_id": browser_id},
             )
     except Exception:
         logger.warning(
-            "Phase C.2: thread_members insert failed (poll=%s, browser=%s)",
+            "Phase C.2: group_members insert failed (poll=%s, browser=%s)",
             poll_id,
             browser_id,
             exc_info=True,
         )
 
 
-def leave_thread(conn, thread_id: str | None, browser_id: str | None) -> None:
-    """Delete the caller's `thread_members` row. Counterpart to
-    `join_thread` — used by the explicit "leave thread" endpoint.
+def leave_group(conn, group_id: str | None, browser_id: str | None) -> None:
+    """Delete the caller's `group_members` row. Counterpart to
+    `join_group` — used by the explicit "leave group" endpoint.
 
     Unlike the join helpers, this runs on the caller's connection (the
     leave endpoint already holds one to do route_id resolution, so reusing
     it saves a round-trip). No-op when either id is missing; the DELETE
     silently affects 0 rows when no membership row exists, which is the
     intended idempotent semantics."""
-    if not thread_id or not browser_id:
+    if not group_id or not browser_id:
         return
     conn.execute(
-        "DELETE FROM thread_members "
-        "WHERE thread_id = %(thread_id)s::uuid AND browser_id = %(browser_id)s",
-        {"thread_id": thread_id, "browser_id": browser_id},
+        "DELETE FROM group_members "
+        "WHERE group_id = %(group_id)s::uuid AND browser_id = %(browser_id)s",
+        {"group_id": group_id, "browser_id": browser_id},
     )
 
 

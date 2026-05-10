@@ -14,10 +14,10 @@
  *
  * Scenarios covered:
  *   1. Cold home load          — page.goto + reload baseline
- *   2. Home → Thread (warm)    — same session, cache populated
- *   3. Home → Thread (cold)    — reload before each run, in-memory cache gone
- *   4. Thread → Home (back)    — in-app back button
- *   5. Rapid Home ⇄ Thread     — per-hop during a fast flow
+ *   2. Home → Group (warm)    — same session, cache populated
+ *   3. Home → Group (cold)    — reload before each run, in-memory cache gone
+ *   4. Group → Home (back)    — in-app back button
+ *   5. Rapid Home ⇄ Group     — per-hop during a fast flow
  *
  * Usage:
  *   BENCH_URL=https://<slug>.dev.whoeverwants.com node scripts/bench-navigation.mjs
@@ -107,17 +107,17 @@ async function waitForReady(page, targetPath, timeout = NAV_READY_TIMEOUT) {
   // Per-route structural fallback: if the attribute doesn't land in time but
   // the page's canonical DOM fingerprint is present, treat as ready.
   const structuralSelector = target === '/'
-    ? '[data-thread-root-id]'
+    ? '[data-group-root-id]'
     : target.startsWith('/p/')
-      ? '[data-thread-latest-poll-id="true"], body[data-thread-latest-poll-id]'
+      ? '[data-group-latest-poll-id="true"], body[data-group-latest-poll-id]'
       : null;
 
   try {
     await page.waitForFunction(
       ({ t, structural }) => {
         if (document.documentElement.getAttribute('data-page-ready') === t) return true;
-        if (structural && document.body?.getAttribute('data-thread-latest-poll-id')) return true;
-        if (structural === '[data-thread-root-id]' && document.querySelector('[data-thread-root-id]')) return true;
+        if (structural && document.body?.getAttribute('data-group-latest-poll-id')) return true;
+        if (structural === '[data-group-root-id]' && document.querySelector('[data-group-root-id]')) return true;
         return false;
       },
       { t: target, structural: structuralSelector },
@@ -281,7 +281,7 @@ async function main() {
   }, { ids: pollIds, secret: creatorSecret });
   await page.reload();
   await waitForReady(page, '/');
-  await page.waitForSelector(`[data-thread-root-id]`);
+  await page.waitForSelector(`[data-group-root-id]`);
 
   const results = [];
   const scenarioErrors = [];
@@ -331,7 +331,7 @@ async function main() {
         const t0 = Date.now();
         await p2.reload({ timeout: 60_000 });
         await waitForReady(p2, '/', 60_000);
-        await p2.waitForSelector(`[data-thread-root-id]`, { timeout: 60_000 });
+        await p2.waitForSelector(`[data-group-root-id]`, { timeout: 60_000 });
         samples.push(Date.now() - t0);
       } finally {
         await c2.close();
@@ -344,17 +344,17 @@ async function main() {
   // `/p/[shortId]` triggers Next.js on-demand compile (can exceed 30s).
   // Hitting it once here lets the real scenarios measure warm-compile
   // timings; otherwise the first click in every scenario eats the compile.
-  console.log('Warming up thread route...');
+  console.log('Warming up group route...');
   {
-    const thread = polls[0];
-    const threadPath = `/p/${thread.short_id || thread.id}`;
-    await page.goto(`${BASE_URL}${threadPath}`, { timeout: 60_000 });
-    await waitForReady(page, threadPath, 60_000);
+    const group = polls[0];
+    const groupPath = `/p/${group.short_id || group.id}`;
+    await page.goto(`${BASE_URL}${groupPath}`, { timeout: 60_000 });
+    await waitForReady(page, groupPath, 60_000);
   }
 
-  // --- Scenario 2: Home → Thread (warm cache) ---
-  console.log('Scenario 2: home → thread (warm)');
-  await scenario('home → thread (warm)', async () => {
+  // --- Scenario 2: Home → Group (warm cache) ---
+  console.log('Scenario 2: home → group (warm)');
+  await scenario('home → group (warm)', async () => {
     const readySamples = [];
     const urlSamples = [];
     const readyLagSamples = [];
@@ -362,38 +362,38 @@ async function main() {
     for (let i = 0; i < RUNS; i++) {
       await page.goto(BASE_URL);
       await waitForReady(page, '/');
-      await page.waitForSelector(`[data-thread-root-id]`);
-      const thread = polls[i % polls.length];
-      const threadPath = `/p/${thread.short_id || thread.id}`;
-      const m = await measureClickNav(page, `[data-thread-root-id="${thread.id}"] > div`, threadPath);
+      await page.waitForSelector(`[data-group-root-id]`);
+      const group = polls[i % polls.length];
+      const groupPath = `/p/${group.short_id || group.id}`;
+      const m = await measureClickNav(page, `[data-group-root-id="${group.id}"] > div`, groupPath);
       readySamples.push(m.clickToReady);
       urlSamples.push(m.clickToUrl ?? m.clickToReady);
       readyLagSamples.push(m.readyAfterUrl ?? 0);
       transitionDoneSamples.push(m.clickToTransitionDone ?? m.clickToReady);
     }
-    addResult(results, 'home → thread (warm)', 'click → ready', readySamples);
-    addResult(results, 'home → thread (warm)', 'click → url', urlSamples);
-    addResult(results, 'home → thread (warm)', 'ready after url', readyLagSamples);
-    addResult(results, 'home → thread (warm)', 'click → transition done', transitionDoneSamples);
+    addResult(results, 'home → group (warm)', 'click → ready', readySamples);
+    addResult(results, 'home → group (warm)', 'click → url', urlSamples);
+    addResult(results, 'home → group (warm)', 'ready after url', readyLagSamples);
+    addResult(results, 'home → group (warm)', 'click → transition done', transitionDoneSamples);
   });
 
-  // --- Scenario 3: Home → Thread (cold cache) ---
+  // --- Scenario 3: Home → Group (cold cache) ---
   // `page.goto(BASE_URL)` fully tears down the page (cache, in-flight requests)
   // on each run, simulating a first-time visitor. `reload()` alone would keep
   // whatever URL we ended on from the previous scenario.
-  console.log('Scenario 3: home → thread (cold)');
-  await scenario('home → thread (cold)', async () => {
+  console.log('Scenario 3: home → group (cold)');
+  await scenario('home → group (cold)', async () => {
     const readySamples = [];
     for (let i = 0; i < RUNS; i++) {
       await page.goto(BASE_URL);
       await waitForReady(page, '/');
-      await page.waitForSelector(`[data-thread-root-id]`);
-      const thread = polls[i % polls.length];
-      const threadPath = `/p/${thread.short_id || thread.id}`;
-      const m = await measureClickNav(page, `[data-thread-root-id="${thread.id}"] > div`, threadPath);
+      await page.waitForSelector(`[data-group-root-id]`);
+      const group = polls[i % polls.length];
+      const groupPath = `/p/${group.short_id || group.id}`;
+      const m = await measureClickNav(page, `[data-group-root-id="${group.id}"] > div`, groupPath);
       readySamples.push(m.clickToReady);
     }
-    addResult(results, 'home → thread (cold)', 'click → ready', readySamples);
+    addResult(results, 'home → group (cold)', 'click → ready', readySamples);
   });
 
   // Back nav (`navigateBackWithTransition` → `window.history.back`) can
@@ -411,44 +411,44 @@ async function main() {
     return Date.now() - t0;
   }
 
-  async function measureHomeToThread(thread) {
-    const threadPath = `/p/${thread.short_id || thread.id}`;
+  async function measureHomeToGroup(group) {
+    const groupPath = `/p/${group.short_id || group.id}`;
     const t0 = Date.now();
-    await page.locator(`[data-thread-root-id="${thread.id}"] > div`).click();
-    await waitForReady(page, threadPath);
+    await page.locator(`[data-group-root-id="${group.id}"] > div`).click();
+    await waitForReady(page, groupPath);
     return Date.now() - t0;
   }
 
-  // --- Scenario 4: Thread → Home (back button) ---
-  console.log('Scenario 4: thread → home (back)');
-  await scenario('thread → home (back)', async () => {
+  // --- Scenario 4: Group → Home (back button) ---
+  console.log('Scenario 4: group → home (back)');
+  await scenario('group → home (back)', async () => {
     const samples = [];
     for (let i = 0; i < RUNS; i++) {
-      const thread = polls[i % polls.length];
-      const threadPath = `/p/${thread.short_id || thread.id}`;
+      const group = polls[i % polls.length];
+      const groupPath = `/p/${group.short_id || group.id}`;
       await page.goto(BASE_URL);
       await waitForReady(page, '/');
-      await page.waitForSelector(`[data-thread-root-id]`);
-      await page.locator(`[data-thread-root-id="${thread.id}"] > div`).click();
-      await waitForReady(page, threadPath);
+      await page.waitForSelector(`[data-group-root-id]`);
+      await page.locator(`[data-group-root-id="${group.id}"] > div`).click();
+      await waitForReady(page, groupPath);
       samples.push(await measureBackToHome());
     }
-    addResult(results, 'thread → home (back)', 'click → ready', samples);
+    addResult(results, 'group → home (back)', 'click → ready', samples);
   });
 
-  // --- Scenario 5: Rapid Home ⇄ Thread ---
-  console.log('Scenario 5: rapid home ⇄ thread');
-  await scenario('rapid home ⇄ thread', async () => {
+  // --- Scenario 5: Rapid Home ⇄ Group ---
+  console.log('Scenario 5: rapid home ⇄ group');
+  await scenario('rapid home ⇄ group', async () => {
     const samples = [];
     await page.goto(BASE_URL);
     await waitForReady(page, '/');
-    await page.waitForSelector(`[data-thread-root-id]`);
+    await page.waitForSelector(`[data-group-root-id]`);
     for (let i = 0; i < RUNS; i++) {
-      const thread = polls[i % polls.length];
-      samples.push(await measureHomeToThread(thread));
+      const group = polls[i % polls.length];
+      samples.push(await measureHomeToGroup(group));
       samples.push(await measureBackToHome());
     }
-    addResult(results, 'rapid home ⇄ thread', 'click → ready', samples);
+    addResult(results, 'rapid home ⇄ group', 'click → ready', samples);
   });
 
   // --- Report ---

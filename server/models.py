@@ -107,9 +107,9 @@ class ReopenQuestionRequest(BaseModel):
     creator_secret: str
 
 
-class UpdateThreadTitleRequest(BaseModel):
+class UpdateGroupTitleRequest(BaseModel):
     # Empty string or all-whitespace clears the override (stored as NULL).
-    thread_title: str | None = None
+    group_title: str | None = None
 
 
 class CutoffSuggestionsRequest(BaseModel):
@@ -138,7 +138,7 @@ class QuestionResponse(BaseModel):
     """Sub-question API response shape.
 
     Phase 5b: wrapper-level fields (creator_secret, response_deadline,
-    is_closed, close_reason, short_id, thread_title, suggestion_deadline,
+    is_closed, close_reason, short_id, group_title, suggestion_deadline,
     creator_name) are no longer surfaced here — they live exclusively on the
     parent `PollResponse`. The FE consumes them from the wrapper per the
     addressability paradigm.
@@ -235,7 +235,7 @@ class RankedChoiceRoundResponse(BaseModel):
 
 class CreateQuestionRequest(BaseModel):
     """A question inside a poll create request. Wrapper-level fields
-    (response_deadline, creator_secret, thread_id, etc.) live on the
+    (response_deadline, creator_secret, group_id, etc.) live on the
     poll, not here. `context` disambiguates same-kind questions and is
     stored on questions.details."""
 
@@ -262,16 +262,16 @@ class CreatePollRequest(BaseModel):
     response_deadline: str | None = None
     prephase_deadline: str | None = None
     prephase_deadline_minutes: int | None = None
-    # `thread_id` adds the new poll to an existing thread. None / omitted →
-    # the server creates a fresh thread. Migration 105 retired the legacy
-    # `follow_up_to` chain pointer along with `polls.follow_up_to`; threads
+    # `group_id` adds the new poll to an existing group. None / omitted →
+    # the server creates a fresh group. Migration 105 retired the legacy
+    # `follow_up_to` chain pointer along with `polls.follow_up_to`; groups
     # are flat lists of polls (sorted by `created_at`) under one
-    # `thread_id`, not parent/child trees.
-    thread_id: str | None = None
-    # Sets the thread's title override at creation time (only meaningful
-    # when the new thread is being minted — for existing threads, use
-    # `POST /api/threads/{route_id}/title`). Stored on `threads.title`.
-    thread_title: str | None = None
+    # `group_id`, not parent/child trees.
+    group_id: str | None = None
+    # Sets the group's title override at creation time (only meaningful
+    # when the new group is being minted — for existing groups, use
+    # `POST /api/groups/{route_id}/title`). Stored on `groups.title`.
+    group_title: str | None = None
     # Short single-line poll-level context — drives the auto-title's "for X"
     # suffix. Stored on polls.context.
     context: str | None = None
@@ -301,24 +301,24 @@ class PollResponse(BaseModel):
     prephase_deadline_minutes: int | None = None
     is_closed: bool = False
     close_reason: str | None = None
-    # Migration 105 retired `polls.follow_up_to` and moved `thread_title`
-    # to `threads.title`. The wrapper still surfaces `thread_title` for FE
-    # compat, but it's now sourced from the joined threads row (one value
-    # per thread, no per-poll divergence).
-    thread_title: str | None = None
+    # Migration 105 retired `polls.follow_up_to` and moved `group_title`
+    # to `groups.title`. The wrapper still surfaces `group_title` for FE
+    # compat, but it's now sourced from the joined groups row (one value
+    # per group, no per-poll divergence).
+    group_title: str | None = None
     context: str | None = None
     details: str | None = None
     title: str
     created_at: str
     updated_at: str
-    # Phase B.4: every poll exposes its thread's id and short_id so the FE
-    # can build /t/<thread.short_id>?p=<poll.short_id> URLs without walking
-    # follow_up_to chains client-side. `thread_id` is NOT NULL post-migration
-    # 100; `thread_short_id` is NOT NULL post-migration 101 (trigger mints
+    # Phase B.4: every poll exposes its group's id and short_id so the FE
+    # can build /g/<group.short_id>?p=<poll.short_id> URLs without walking
+    # follow_up_to chains client-side. `group_id` is NOT NULL post-migration
+    # 100; `group_short_id` is NOT NULL post-migration 101 (trigger mints
     # one on every insert) but typed as Optional for resilience against
-    # mid-deploy races where a thread row briefly exists without a short_id.
-    thread_id: str | None = None
-    thread_short_id: str | None = None
+    # mid-deploy races where a group row briefly exists without a short_id.
+    group_id: str | None = None
+    group_short_id: str | None = None
     # Poll-level results-display + ranked-choice settings (migration 098).
     min_responses: int | None = None
     show_preliminary_results: bool = True

@@ -4,7 +4,7 @@
 import type { Poll, Question } from '@/lib/types';
 import {
   apiGetAccessibleQuestions,
-  apiGetMyThreads,
+  apiGetMyGroups,
   apiGetQuestionById,
 } from '@/lib/api';
 import {
@@ -19,10 +19,10 @@ import {
   invalidateAccessibleQuestions,
 } from '@/lib/questionCache';
 
-// Coalesce concurrent getAccessiblePolls / getMyThreads calls
+// Coalesce concurrent getAccessiblePolls / getMyGroups calls
 // (e.g., StrictMode double-mount).
 let inFlight: Promise<Poll[]> | null = null;
-let myThreadsInFlight: Promise<Poll[]> | null = null;
+let myGroupsInFlight: Promise<Poll[]> | null = null;
 
 /** Get the poll wrappers this browser has access to. Phase 5b: returns
  *  Poll[] (the wrappers covering the user's accessible questions).
@@ -79,9 +79,9 @@ export async function getAccessibleQuestions(): Promise<Question[]> {
 }
 
 /** Phase B.3: drop-in replacement for `getAccessiblePolls() +
- *  discoverRelatedQuestions()`. Returns every poll in any thread that
+ *  discoverRelatedQuestions()`. Returns every poll in any group that
  *  contains one of this browser's accessible questions — the server walks
- *  `polls.thread_id` once instead of the FE doing follow_up_to chain
+ *  `polls.group_id` once instead of the FE doing follow_up_to chain
  *  expansion across two round-trips.
  *
  *  Side-effect: any newly-discovered question_ids are added to the browser's
@@ -89,7 +89,7 @@ export async function getAccessibleQuestions(): Promise<Question[]> {
  *  cache flush. The cache is then cleared so the next call sees the
  *  expanded set in subsequent freshness checks.
  */
-export async function getMyThreads(): Promise<Poll[]> {
+export async function getMyGroups(): Promise<Poll[]> {
   if (typeof window === 'undefined') return [];
   try {
     const accessibleIds = getAccessibleQuestionIds();
@@ -106,11 +106,11 @@ export async function getMyThreads(): Promise<Poll[]> {
       if (allPresent) return cached;
     }
 
-    if (myThreadsInFlight) return myThreadsInFlight;
+    if (myGroupsInFlight) return myGroupsInFlight;
 
-    myThreadsInFlight = (async () => {
+    myGroupsInFlight = (async () => {
       try {
-        const polls = await apiGetMyThreads(accessibleIds);
+        const polls = await apiGetMyGroups(accessibleIds);
         const forgotten = new Set(getForgottenQuestionIds());
         const knownIds = new Set(accessibleIds);
         let discovered = 0;
@@ -130,13 +130,13 @@ export async function getMyThreads(): Promise<Poll[]> {
         cacheAccessiblePolls(polls);
         return polls;
       } finally {
-        myThreadsInFlight = null;
+        myGroupsInFlight = null;
       }
     })();
 
-    return myThreadsInFlight;
+    return myGroupsInFlight;
   } catch (error) {
-    console.error('Error in getMyThreads:', error);
+    console.error('Error in getMyGroups:', error);
     return [];
   }
 }

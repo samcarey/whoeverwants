@@ -13,7 +13,7 @@
  * compromised middlebox can't rewrite the id mid-session.
  *
  * Phase C will switch reads on the server to drive visibility off this id
- * (via a `thread_members` table). For Phase B.3 it's pure scaffolding.
+ * (via a `group_members` table). For Phase B.3 it's pure scaffolding.
  */
 
 const STORAGE_KEY = 'browser_id';

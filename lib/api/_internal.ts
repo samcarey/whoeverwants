@@ -35,7 +35,7 @@ export function getApiEndpoint(endpoint: string): string {
 
 export const API_BASE = getApiEndpoint('questions');
 export const POLL_BASE = getApiEndpoint('polls');
-export const THREAD_BASE = getApiEndpoint('threads');
+export const GROUP_BASE = getApiEndpoint('groups');
 export const SEARCH_BASE = getApiEndpoint('search');
 
 const BROWSER_ID_HEADER = 'X-Browser-Id';
@@ -91,8 +91,8 @@ export function pollFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return fetchWithBase<T>(POLL_BASE, path, options);
 }
 
-export function threadFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  return fetchWithBase<T>(THREAD_BASE, path, options);
+export function groupFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  return fetchWithBase<T>(GROUP_BASE, path, options);
 }
 
 /**
@@ -136,7 +136,7 @@ export type Results = QuestionResults & { ranked_choice_rounds?: ApiRankedChoice
 
 export function toQuestion(data: any): Question {
   // Phase 5b: wrapper-level fields (response_deadline, creator_secret,
-  // creator_name, is_closed, close_reason, short_id, thread_title,
+  // creator_name, is_closed, close_reason, short_id, group_title,
   // suggestion_deadline) are sourced from the parent Poll. Migration 105
   // also dropped the FE-only `poll_follow_up_to` chain pointer.
   return {
@@ -194,13 +194,13 @@ export function toPoll(data: any): Poll {
   return {
     id: data.id,
     short_id: data.short_id ?? null,
-    // Phase B.4 + Migration 105: every poll carries its thread's id +
-    // short_id and the thread-level title override (sourced from
-    // threads.title server-side). Tolerates absence (synthesized
+    // Phase B.4 + Migration 105: every poll carries its group's id +
+    // short_id and the group-level title override (sourced from
+    // groups.title server-side). Tolerates absence (synthesized
     // placeholder polls and pre-Phase-B.4 cached polls don't have these
     // fields).
-    thread_id: data.thread_id ?? null,
-    thread_short_id: data.thread_short_id ?? null,
+    group_id: data.group_id ?? null,
+    group_short_id: data.group_short_id ?? null,
     creator_secret: data.creator_secret ?? null,
     creator_name: data.creator_name ?? null,
     response_deadline: data.response_deadline ?? null,
@@ -208,7 +208,7 @@ export function toPoll(data: any): Poll {
     prephase_deadline_minutes: data.prephase_deadline_minutes ?? null,
     is_closed: data.is_closed ?? false,
     close_reason: data.close_reason ?? null,
-    thread_title: data.thread_title ?? null,
+    group_title: data.group_title ?? null,
     context: data.context ?? null,
     details: data.details ?? null,
     title: data.title,

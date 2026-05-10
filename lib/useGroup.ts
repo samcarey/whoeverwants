@@ -1,46 +1,46 @@
 "use client";
 
 /**
- * Load a thread by route id (short_id or UUID).
+ * Load a group by route id (short_id or UUID).
  *
  * Initializes synchronously from the in-memory cache when possible so that
- * consumers mount with a full thread on the first render (no loading-spinner
+ * consumers mount with a full group on the first render (no loading-spinner
  * flash during view-transition slides). Falls through to an async fetch
  * + relationship-discovery path only when the cache miss occurs.
  */
 
 import { useEffect, useState } from "react";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, findChainRoot, type Thread } from "./threadUtils";
-import { apiGetThreadByRouteId } from "./api";
+import { buildGroupFromPollDown, buildGroupSyncFromCache, findChainRoot, type Group } from "./groupUtils";
+import { apiGetGroupByRouteId } from "./api";
 import { addAccessibleQuestionId } from "./browserQuestionAccess";
 import { loadVotedQuestions } from "./votedQuestionsStorage";
 import { usePageReady } from "./usePageReady";
 
-export interface UseThreadResult {
-  thread: Thread | null;
+export interface UseGroupResult {
+  group: Group | null;
   loading: boolean;
   error: boolean;
 }
 
-export function useThread(threadId: string): UseThreadResult {
-  const [initialThread] = useState<Thread | null>(() => {
+export function useGroup(groupId: string): UseGroupResult {
+  const [initialGroup] = useState<Group | null>(() => {
     if (typeof window === "undefined") return null;
     const voted = loadVotedQuestions();
-    return buildThreadSyncFromCache(threadId, voted.votedQuestionIds, voted.abstainedQuestionIds);
+    return buildGroupSyncFromCache(groupId, voted.votedQuestionIds, voted.abstainedQuestionIds);
   });
-  const [thread, setThread] = useState<Thread | null>(initialThread);
-  const [loading, setLoading] = useState(!initialThread);
+  const [group, setGroup] = useState<Group | null>(initialGroup);
+  const [loading, setLoading] = useState(!initialGroup);
   const [error, setError] = useState(false);
 
   // Signal "page rendered" to the view-transition helper so the slide
   // animation captures a fully-painted destination.
-  usePageReady(!!thread && !loading);
+  usePageReady(!!group && !loading);
 
   useEffect(() => {
-    // Cache hit: synchronous init already populated `thread`; skip the async
+    // Cache hit: synchronous init already populated `group`; skip the async
     // refetch/discovery path entirely. Mutations invalidate via questionCache so
     // a stale read here is bounded by the cache TTL.
-    if (initialThread) return;
+    if (initialGroup) return;
 
     let cancelled = false;
     (async () => {
@@ -48,11 +48,11 @@ export function useThread(threadId: string): UseThreadResult {
         setLoading(true);
         setError(false);
 
-        // Phase B.3+: a single thread endpoint resolves any route id form
-        // (threads.short_id, threads.id, polls.short_id, polls.id) to the
+        // Phase B.3+: a single group endpoint resolves any route id form
+        // (groups.short_id, groups.id, polls.short_id, polls.id) to the
         // full poll list. Migration 105 retired the chain pointer — the
         // "root" is now just the chronologically-oldest poll in the list.
-        const polls = await apiGetThreadByRouteId(threadId);
+        const polls = await apiGetGroupByRouteId(groupId);
         if (cancelled) return;
         const root = findChainRoot(polls);
         if (!root) { setError(true); return; }
@@ -61,12 +61,12 @@ export function useThread(threadId: string): UseThreadResult {
         }
 
         const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
-        const found = buildThreadFromPollDown(root.id, polls, votedQuestionIds, abstainedQuestionIds);
+        const found = buildGroupFromPollDown(root.id, polls, votedQuestionIds, abstainedQuestionIds);
         if (cancelled) return;
         if (!found) { setError(true); return; }
-        setThread(found);
+        setGroup(found);
       } catch (err) {
-        console.error("useThread: load failed", err);
+        console.error("useGroup: load failed", err);
         if (!cancelled) setError(true);
       } finally {
         if (!cancelled) setLoading(false);
@@ -74,7 +74,7 @@ export function useThread(threadId: string): UseThreadResult {
     })();
 
     return () => { cancelled = true; };
-  }, [threadId, initialThread]);
+  }, [groupId, initialGroup]);
 
-  return { thread, loading, error };
+  return { group, loading, error };
 }

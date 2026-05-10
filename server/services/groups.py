@@ -1,15 +1,15 @@
-"""Shared helpers for poll/thread aggregation queries.
+"""Shared helpers for poll/group aggregation queries.
 
 Phase B.3 extracted the heavy aggregation body of
 `POST /api/questions/accessible` here so both the legacy endpoint and the
-new `/api/threads/*` endpoints can build identical PollResponse[] payloads
+new `/api/groups/*` endpoints can build identical PollResponse[] payloads
 from a list of poll_ids — without each router re-implementing the
 inline-results / per-question voter_names / poll-level voter aggregation
 logic.
 
 `polls_for_poll_ids(conn, poll_ids, include_results)` is the canonical entry:
 caller resolves which poll_ids to surface (via question_ids → poll_id
-lookup, thread_id-grouped fanout, or any other path) and the helper does the
+lookup, group_id-grouped fanout, or any other path) and the helper does the
 rest.
 """
 
@@ -29,16 +29,16 @@ logger = logging.getLogger(__name__)
 # Visibility rule
 # ---------------------------------------------------------------------------
 #
-# A poll P in thread T is visible to browser B iff EITHER:
-#   1. B has a thread_members row for T AND
+# A poll P in group T is visible to browser B iff EITHER:
+#   1. B has a group_members row for T AND
 #      (P.is_closed = false OR P.closed_at >= members.joined_at), OR
 #   2. (transitional bridge) The legacy `accessible_question_ids` list
 #      passed by the FE contains a question_id whose poll lives in T.
-#      Treated as THREAD-level access (every poll in T visible, no
+#      Treated as GROUP-level access (every poll in T visible, no
 #      closed_at filter) — pre-B.3 votes never wrote browser_id, so the
 #      localStorage list is the only access signal those users have
 #      until they re-establish membership by voting. Applies to
-#      /api/threads/mine only.
+#      /api/groups/mine only.
 #
 # `closed_at` proxy: we use `polls.updated_at`, which the existing close
 # trigger refreshes on every `is_closed` flip. Subsequent edits to a closed
@@ -56,13 +56,13 @@ class UserVisibility:
     """
 
     browser_id: str | None
-    # thread_id → joined_at watermark (drives closed_at filter for
-    # member-thread polls).
-    joined_by_thread: dict[str, datetime] = field(default_factory=dict)
-    # thread_ids the legacy accessible_question_ids list resolves to.
-    # Treated as thread-level access with no closed_at filter for
+    # group_id → joined_at watermark (drives closed_at filter for
+    # member-group polls).
+    joined_by_group: dict[str, datetime] = field(default_factory=dict)
+    # group_ids the legacy accessible_question_ids list resolves to.
+    # Treated as group-level access with no closed_at filter for
     # backwards compatibility during the rollout window.
-    bridged_thread_ids: set[str] = field(default_factory=set)
+    bridged_group_ids: set[str] = field(default_factory=set)
 
 
 def load_user_visibility(
@@ -74,26 +74,26 @@ def load_user_visibility(
     """Read every membership/access signal for one browser in a single
     place so callers can construct candidate sets and filter against the
     same data without re-querying."""
-    joined_by_thread: dict[str, datetime] = {}
+    joined_by_group: dict[str, datetime] = {}
     if browser_id:
         rows = conn.execute(
-            "SELECT thread_id, joined_at FROM thread_members "
+            "SELECT group_id, joined_at FROM group_members "
             "WHERE browser_id = %(bid)s",
             {"bid": browser_id},
         ).fetchall()
         for r in rows:
-            joined_by_thread[str(r["thread_id"])] = r["joined_at"]
+            joined_by_group[str(r["group_id"])] = r["joined_at"]
 
-    bridged_thread_ids: set[str] = set()
+    bridged_group_ids: set[str] = set()
     if legacy_question_ids:
-        bridged_thread_ids = set(
-            thread_ids_for_question_ids(conn, legacy_question_ids)
+        bridged_group_ids = set(
+            group_ids_for_question_ids(conn, legacy_question_ids)
         )
 
     return UserVisibility(
         browser_id=browser_id,
-        joined_by_thread=joined_by_thread,
-        bridged_thread_ids=bridged_thread_ids,
+        joined_by_group=joined_by_group,
+        bridged_group_ids=bridged_group_ids,
     )
 
 
@@ -108,40 +108,40 @@ def filter_visible_polls(
     if not candidate_poll_ids:
         return []
     rows = conn.execute(
-        "SELECT id, thread_id, is_closed, updated_at "
+        "SELECT id, group_id, is_closed, updated_at "
         "FROM polls WHERE id = ANY(%(ids)s)",
         {"ids": candidate_poll_ids},
     ).fetchall()
     visible: list[str] = []
     for r in rows:
         pid = str(r["id"])
-        tid = str(r["thread_id"]) if r.get("thread_id") else None
-        # Thread-level legacy bridge: every poll in the thread visible
+        tid = str(r["group_id"]) if r.get("group_id") else None
+        # Group-level legacy bridge: every poll in the group visible
         # without a closed_at filter (per Phase B.3 backwards-compat).
-        if tid and tid in visibility.bridged_thread_ids:
+        if tid and tid in visibility.bridged_group_ids:
             visible.append(pid)
             continue
         # Membership: visible if open OR closed-after-joined_at.
-        if not tid or tid not in visibility.joined_by_thread:
+        if not tid or tid not in visibility.joined_by_group:
             continue
         if not r["is_closed"]:
             visible.append(pid)
             continue
         closed_at = r.get("updated_at")
-        joined_at = visibility.joined_by_thread[tid]
+        joined_at = visibility.joined_by_group[tid]
         if closed_at and closed_at >= joined_at:
             visible.append(pid)
     return visible
 
 
-def grant_thread_membership_inline(
+def grant_group_membership_inline(
     conn,
-    thread_id: str,
+    group_id: str,
     browser_id: str | None,
 ) -> None:
-    """Write `thread_members(thread_id, browser_id)` in the same
+    """Write `group_members(group_id, browser_id)` in the same
     transaction as the read that's about to use it. Used by
-    `/api/threads/by-route-id/{id}` so any visit to a thread URL
+    `/api/groups/by-route-id/{id}` so any visit to a group URL
     establishes membership before the visibility filter runs — no
     chicken-and-egg with a separate round-trip.
 
@@ -155,11 +155,11 @@ def grant_thread_membership_inline(
         return
     conn.execute(
         """
-        INSERT INTO thread_members (thread_id, browser_id)
+        INSERT INTO group_members (group_id, browser_id)
         VALUES (%(t)s::uuid, %(b)s)
-        ON CONFLICT (thread_id, browser_id) DO NOTHING
+        ON CONFLICT (group_id, browser_id) DO NOTHING
         """,
-        {"t": thread_id, "b": browser_id},
+        {"t": group_id, "b": browser_id},
     )
 
 
@@ -173,13 +173,13 @@ def polls_for_poll_ids(
     given poll_ids. Order: most recently created first. Empty list in →
     empty list out (no DB roundtrip)."""
     # Local import keeps services/* free of router cycles. Reusing
-    # `_SELECT_POLLS_WITH_THREAD` (rather than re-writing the JOIN) is what
+    # `_SELECT_POLLS_WITH_GROUP` (rather than re-writing the JOIN) is what
     # actually keeps this read in lockstep with the rest of the polls reads —
     # the previous local copy quietly went stale after Migration 105 moved
-    # `thread_title` from polls to threads, returning thread_title=null on
-    # every /api/threads/* read.
+    # `group_title` from polls to groups, returning group_title=null on
+    # every /api/groups/* read.
     from routers.polls import (
-        _SELECT_POLLS_WITH_THREAD,
+        _SELECT_POLLS_WITH_GROUP,
         _compute_poll_voter_data,
         _row_to_poll,
     )
@@ -190,7 +190,7 @@ def polls_for_poll_ids(
     now = datetime.now(timezone.utc)
 
     poll_rows = conn.execute(
-        f"{_SELECT_POLLS_WITH_THREAD} "
+        f"{_SELECT_POLLS_WITH_GROUP} "
         "WHERE polls.id = ANY(%(ids)s) "
         "ORDER BY polls.created_at DESC",
         {"ids": poll_ids},
@@ -321,54 +321,54 @@ def polls_for_poll_ids(
     return responses
 
 
-def thread_ids_for_question_ids(conn, question_ids: list[str]) -> list[str]:
-    """Resolve a list of question_ids to the set of thread_ids that own them.
+def group_ids_for_question_ids(conn, question_ids: list[str]) -> list[str]:
+    """Resolve a list of question_ids to the set of group_ids that own them.
     Skips question_ids without a poll_id (post-Phase-4 there shouldn't be any)
-    and polls without a thread_id (post-migration-100 there aren't any). Order
+    and polls without a group_id (post-migration-100 there aren't any). Order
     is unstable — the caller deduplicates."""
     if not question_ids:
         return []
     rows = conn.execute(
-        """SELECT DISTINCT mp.thread_id
+        """SELECT DISTINCT mp.group_id
              FROM questions p
              JOIN polls mp ON p.poll_id = mp.id
             WHERE p.id = ANY(%(ids)s)
-              AND mp.thread_id IS NOT NULL""",
+              AND mp.group_id IS NOT NULL""",
         {"ids": question_ids},
     ).fetchall()
-    return [str(r["thread_id"]) for r in rows]
+    return [str(r["group_id"]) for r in rows]
 
 
-def poll_ids_for_thread_ids(conn, thread_ids: list[str]) -> list[str]:
-    """Resolve a list of thread_ids to every poll_id that belongs to those
-    threads. Used by the threads endpoints to fan out from the user's
-    'these threads matter' set to every poll the user should see."""
-    if not thread_ids:
+def poll_ids_for_group_ids(conn, group_ids: list[str]) -> list[str]:
+    """Resolve a list of group_ids to every poll_id that belongs to those
+    groups. Used by the groups endpoints to fan out from the user's
+    'these groups matter' set to every poll the user should see."""
+    if not group_ids:
         return []
     rows = conn.execute(
-        """SELECT id FROM polls WHERE thread_id = ANY(%(ids)s)""",
-        {"ids": thread_ids},
+        """SELECT id FROM polls WHERE group_id = ANY(%(ids)s)""",
+        {"ids": group_ids},
     ).fetchall()
     return [str(r["id"]) for r in rows]
 
 
-def resolve_thread_id_from_route_id(conn, route_id: str) -> str | None:
-    """Resolve a route id (path param of `/t/<routeId>`) to a `threads.id`.
+def resolve_group_id_from_route_id(conn, route_id: str) -> str | None:
+    """Resolve a route id (path param of `/g/<routeId>`) to a `groups.id`.
 
     Phase B.3 supports four forms:
-      - threads.short_id (preferred when present)
-      - threads.id (uuid, e.g. fresh threads with NULL short_id)
-      - polls.short_id (Phase A → Phase B.3 fallback: threadShortId today
+      - groups.short_id (preferred when present)
+      - groups.id (uuid, e.g. fresh groups with NULL short_id)
+      - polls.short_id (Phase A → Phase B.3 fallback: groupShortId today
         is the root poll's short_id)
       - polls.id (uuid fallback for unkeyed routing)
 
-    Returns None if no thread can be resolved.
+    Returns None if no group can be resolved.
     """
     if not route_id:
         return None
 
     row = conn.execute(
-        "SELECT id FROM threads WHERE short_id = %(rid)s",
+        "SELECT id FROM groups WHERE short_id = %(rid)s",
         {"rid": route_id},
     ).fetchone()
     if row:
@@ -377,25 +377,25 @@ def resolve_thread_id_from_route_id(conn, route_id: str) -> str | None:
     is_uuid_like = (len(route_id) == 36 and route_id.count("-") == 4)
     if is_uuid_like:
         row = conn.execute(
-            "SELECT id FROM threads WHERE id = %(rid)s::uuid",
+            "SELECT id FROM groups WHERE id = %(rid)s::uuid",
             {"rid": route_id},
         ).fetchone()
         if row:
             return str(row["id"])
 
     row = conn.execute(
-        "SELECT thread_id FROM polls WHERE short_id = %(rid)s AND thread_id IS NOT NULL",
+        "SELECT group_id FROM polls WHERE short_id = %(rid)s AND group_id IS NOT NULL",
         {"rid": route_id},
     ).fetchone()
     if row:
-        return str(row["thread_id"])
+        return str(row["group_id"])
 
     if is_uuid_like:
         row = conn.execute(
-            "SELECT thread_id FROM polls WHERE id = %(rid)s::uuid AND thread_id IS NOT NULL",
+            "SELECT group_id FROM polls WHERE id = %(rid)s::uuid AND group_id IS NOT NULL",
             {"rid": route_id},
         ).fetchone()
         if row:
-            return str(row["thread_id"])
+            return str(row["group_id"])
 
     return None

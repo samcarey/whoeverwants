@@ -13,7 +13,7 @@ import { apiGetPollByShortId } from "./polls";
 
 // Phase 5: legacy `apiCreateQuestion` (POST /api/questions) is gone — everything goes
 // through `apiCreatePoll`. Same for the per-question close/reopen/cutoff/
-// thread-title/vote helpers — see the corresponding poll-level helpers
+// group-title/vote helpers — see the corresponding poll-level helpers
 // in ./polls.ts.
 
 const questionInFlight = new Map<string, Promise<Question>>();
@@ -21,7 +21,7 @@ const questionInFlight = new Map<string, Promise<Question>>();
 /** Resolve an "anchor question" for a poll's short_id. Phase 5b: short_id
  *  lives on the poll wrapper, so we fetch the wrapper (warming the
  *  poll cache + its questions in the per-question cache) and return its
- *  first question. Callers use this to bootstrap thread building, where any
+ *  first question. Callers use this to bootstrap group building, where any
  *  question of the target poll is sufficient. */
 export async function apiGetQuestionByShortId(shortId: string): Promise<Question> {
   const mp = await apiGetPollByShortId(shortId);
@@ -40,12 +40,12 @@ export async function apiGetQuestionById(questionId: string): Promise<Question> 
   });
 }
 
-/** Find an existing question with the same title in the given thread.
+/** Find an existing question with the same title in the given group.
  *  Migration 105 retired `follow_up_to` chain walking — duplicates are
- *  resolved by `thread_id` lookup. */
-export async function apiFindDuplicateQuestion(title: string, threadId: string): Promise<Question | null> {
+ *  resolved by `group_id` lookup. */
+export async function apiFindDuplicateQuestion(title: string, groupId: string): Promise<Question | null> {
   try {
-    const params = new URLSearchParams({ title, thread_id: threadId });
+    const params = new URLSearchParams({ title, group_id: groupId });
     const data = await apiFetch(`/find-duplicate?${params}`);
     return toQuestion(data);
   } catch (err) {
@@ -74,7 +74,7 @@ export async function apiGetAccessibleQuestions(questionIds: string[]): Promise<
     cachePoll(poll);
     // Mirror inline per-question results into the per-question results cache so
     // apiGetQuestionResults hits it without a late re-fetch (avoids layout shift
-    // when the thread page warms results on viewport intersection).
+    // when the group page warms results on viewport intersection).
     for (let i = 0; i < (Array.isArray(d.questions) ? d.questions.length : 0); i++) {
       const subData = d.questions[i];
       if (subData?.results) {

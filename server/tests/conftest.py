@@ -1,9 +1,9 @@
 """Shared pytest fixtures + helpers for the Phase B.3 / C.x test suite.
 
-`test_threads_api.py`, `test_threads_visibility.py`,
-`test_membership_writes.py`, and `test_leave_thread.py` all need the
+`test_groups_api.py`, `test_groups_visibility.py`,
+`test_membership_writes.py`, and `test_leave_group.py` all need the
 same TestClient setup, yes/no question shape, and `create_poll` /
-`bid_headers` / `thread_members_for` helpers. Centralizing keeps the
+`bid_headers` / `group_members_for` helpers. Centralizing keeps the
 per-test files focused on assertions.
 """
 
@@ -68,24 +68,24 @@ def create_followup(
     *,
     browser_id=None,
 ) -> dict:
-    """Create another poll in the same thread as `parent_question_id`.
+    """Create another poll in the same group as `parent_question_id`.
 
-    Migration 105 retired `polls.follow_up_to`; threads are flat lists
-    of polls under one `thread_id`. Tests still pass a parent_question_id
+    Migration 105 retired `polls.follow_up_to`; groups are flat lists
+    of polls under one `group_id`. Tests still pass a parent_question_id
     here for ergonomics — the helper resolves it to the parent's
-    `thread_id` and forwards that as `req.thread_id`.
+    `group_id` and forwards that as `req.group_id`.
     """
     parent = client.get(f"/api/questions/{parent_question_id}")
     assert parent.status_code == 200, parent.text
     poll_id = parent.json()["poll_id"]
     poll = client.get(f"/api/polls/by-id/{poll_id}")
     assert poll.status_code == 200, poll.text
-    thread_id = poll.json()["thread_id"]
+    group_id = poll.json()["group_id"]
     return create_poll(
         client,
         creator_secret,
         browser_id=browser_id,
-        thread_id=thread_id,
+        group_id=group_id,
     )
 
 
@@ -93,13 +93,13 @@ def bid_headers(browser_id):
     return {"X-Browser-Id": browser_id} if browser_id else {}
 
 
-def thread_members_for(thread_id) -> list[str]:
-    """Return the browser_id list (as strings) for a thread. Used by tests
+def group_members_for(group_id) -> list[str]:
+    """Return the browser_id list (as strings) for a group. Used by tests
     that need to assert membership state directly against the DB rather
-    than going through `/api/threads/mine`."""
+    than going through `/api/groups/mine`."""
     with psycopg.connect(TEST_DB_URL) as conn:
         rows = conn.execute(
-            "SELECT browser_id FROM thread_members WHERE thread_id = %s",
-            (thread_id,),
+            "SELECT browser_id FROM group_members WHERE group_id = %s",
+            (group_id,),
         ).fetchall()
     return [str(r[0]) for r in rows]

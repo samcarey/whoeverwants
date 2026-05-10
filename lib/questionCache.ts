@@ -2,7 +2,7 @@
  * In-memory question data cache.
  *
  * The home page fetches all accessible questions on mount. When navigating to a
- * thread or question page, the same data would otherwise be re-fetched from the
+ * group or question page, the same data would otherwise be re-fetched from the
  * API — adding 1-3 seconds of latency. This cache stores question data in memory
  * so subsequent navigations can resolve instantly without waiting for the
  * network.
@@ -19,7 +19,7 @@
  * per-question short_id index. `getCachedQuestionByShortId` resolves the poll
  * cache and returns its first question. Sub-question lookup by short_id is
  * unambiguous because every poll's short_id maps to exactly one wrapper,
- * and the FE only needs an "anchor question" for thread building.
+ * and the FE only needs an "anchor question" for group building.
  */
 
 import type { Poll, Question, QuestionResults } from './types';
@@ -139,20 +139,20 @@ export function getPollForQuestion(question: Question): Poll | null {
   return getCachedPollById(question.poll_id);
 }
 
-/** Resolve a question id to its thread_id via the in-memory caches.
+/** Resolve a question id to its group_id via the in-memory caches.
  *  Returns null if the question or its poll isn't cached. Used by flows
- *  that receive a question id as input but need to reference the thread
+ *  that receive a question id as input but need to reference the group
  *  (e.g. the create-poll duplicate / vote-on-it / FollowUpButton paths
  *  post Migration 105). */
-export function getCachedThreadIdForQuestion(questionId: string): string | null {
+export function getCachedGroupIdForQuestion(questionId: string): string | null {
   const accessible = getCachedAccessiblePolls() ?? [];
   const cachedQuestion = getCachedQuestionById(questionId);
   if (cachedQuestion?.poll_id) {
     const mp = accessible.find(p => p.id === cachedQuestion.poll_id);
-    if (mp?.thread_id) return mp.thread_id;
+    if (mp?.group_id) return mp.group_id;
   }
   const mp = accessible.find(p => p.questions.some(q => q.id === questionId));
-  return mp?.thread_id ?? null;
+  return mp?.group_id ?? null;
 }
 
 /** Cache question results. */
