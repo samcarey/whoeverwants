@@ -190,11 +190,11 @@ export function buildGroups(
   votedQuestionIds: Set<string>,
   abstainedQuestionIds: Set<string>,
 ): Group[] {
-  const groups = groupPollsByGroup(polls);
+  const byGroupId = groupPollsByGroup(polls);
   const groups: Group[] = [];
-  for (const group of groups.values()) {
+  for (const pollsInGroup of byGroupId.values()) {
     groups.push(buildGroupFromPolls(
-      sortByCreatedAt(group),
+      sortByCreatedAt(pollsInGroup),
       votedQuestionIds,
       abstainedQuestionIds,
     ));
