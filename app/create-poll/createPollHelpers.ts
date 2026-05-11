@@ -42,9 +42,9 @@ export interface QuestionDraft {
 /** Default empty draft, optionally preselected by the bubble that opened
  *  the modal. `category: 'time'` (with the default mode) is the canonical
  *  way to start a time-question draft now — questionType stays 'question'
- *  so CategoryForLine renders the inline context field, while the
- *  questionFormBody picks up time fields via `category === 'time'`. The
- *  legacy `mode: 'time'` path remains for any caller that hasn't migrated.
+ *  so the category/for fields render normally, while the questionFormBody
+ *  picks up time fields via `category === 'time'`. The legacy `mode: 'time'`
+ *  path remains for any caller that hasn't migrated.
  *  Yes/No drafts force `isAutoTitle: false` since the title IS the prompt.
  */
 export function emptyDraft(
