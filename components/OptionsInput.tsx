@@ -21,6 +21,9 @@ interface OptionsInputProps {
   referenceLongitude?: number;
   searchRadius?: number;
   hideReferenceLocationWarning?: boolean;
+  /** When 'compact', each option input is rendered borderless with right-
+   *  aligned text — for use inside row-style settings lists. */
+  variant?: 'default' | 'compact';
 }
 
 export default function OptionsInput({
@@ -36,6 +39,7 @@ export default function OptionsInput({
   referenceLongitude,
   searchRadius,
   hideReferenceLocationWarning = false,
+  variant = 'default',
 }: OptionsInputProps) {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -165,11 +169,24 @@ export default function OptionsInput({
     isLocationLikeCategory(category) &&
     (referenceLatitude === undefined || referenceLongitude === undefined);
   const inputClassName = (isDuplicate: boolean) =>
-    `flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
-      isDuplicate
-        ? 'bg-red-50 dark:bg-red-900/30 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
-        : 'border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white'
-    }`;
+    variant === 'compact'
+      ? `flex-1 min-w-0 bg-transparent text-sm text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic ${
+          isDuplicate
+            ? 'text-red-700 dark:text-red-300'
+            : 'text-blue-600 dark:text-blue-400'
+        }`
+      : `flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
+          isDuplicate
+            ? 'bg-red-50 dark:bg-red-900/30 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
+            : 'border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white'
+        }`;
+
+  const rowsClassName = variant === 'compact'
+    ? "divide-y divide-gray-200 dark:divide-gray-700"
+    : "space-y-2";
+  const rowItemClassName = variant === 'compact'
+    ? "flex items-center gap-2 py-3"
+    : "flex items-start gap-2";
 
   return (
     <div>
@@ -183,7 +200,7 @@ export default function OptionsInput({
           Choose a reference location above to enable search.
         </p>
       )}
-      <div className="space-y-2">
+      <div className={rowsClassName}>
         {(() => {
           const filledCount = options.filter(opt => opt.trim() !== '').length;
           const hasDuplicates = options.some((_, idx) => isDuplicateOption(idx));
@@ -195,7 +212,7 @@ export default function OptionsInput({
           const optionMeta = optionsMetadata?.[option];
 
           return (
-            <div key={index} className="flex items-start gap-2">
+            <div key={index} className={rowItemClassName}>
               {useAutocomplete ? (
                 <div className="flex-1">
                   <AutocompleteInput
@@ -236,21 +253,24 @@ export default function OptionsInput({
                 />
               )}
               {isLastField ? (
-                // Empty space for alignment on the last field
-                <div className="w-9 h-9"></div>
+                // Empty space for alignment on the last field. Compact
+                // variant uses a 5-unit (20px) placeholder so the row
+                // height (py-3 + 20px = 44px) matches the other settings
+                // rows; default keeps the legacy 9-unit footprint.
+                <div className={variant === 'compact' ? "w-5 h-5 shrink-0" : "w-9 h-9"}></div>
               ) : (
                 <button
                   type="button"
                   onClick={() => canDelete ? removeOption(index) : undefined}
                   disabled={isLoading || !canDelete}
-                  className={`p-2 transition-colors ${
+                  className={`${variant === 'compact' ? 'shrink-0' : 'p-2'} transition-colors ${
                     canDelete
                       ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300'
                       : 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                   aria-label={canDelete ? "Remove option" : "Cannot remove last option"}
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className={variant === 'compact' ? "w-5 h-5" : "w-5 h-5"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
                 </button>

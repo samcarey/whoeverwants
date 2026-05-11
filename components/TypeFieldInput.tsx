@@ -43,9 +43,14 @@ interface TypeFieldInputProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  /** When true, renders the input borderless with right-aligned text — for
+   *  use inside row-style settings lists where the field is the right column
+   *  of a `<label>     <value>` layout. The icon (if any) sits next to the
+   *  text on the right instead of being absolute-positioned on the left. */
+  borderless?: boolean;
 }
 
-export default function TypeFieldInput({ value, onChange, disabled = false }: TypeFieldInputProps) {
+export default function TypeFieldInput({ value, onChange, disabled = false, borderless = false }: TypeFieldInputProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [editText, setEditText] = useState<string | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -163,6 +168,105 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
   }
 
   const isCustomValue = value !== "" && value !== "custom" && !builtIn;
+
+  // Borderless variant: input has no border/bg/ring, text right-aligned;
+  // the built-in icon is rendered as an inline span to the left of the
+  // input (in the same flex row) so it visually hugs the text from the
+  // left while the whole pair sits at the right edge of its container.
+  if (borderless) {
+    // Display mode: when value is a built-in AND not currently typing/
+    // dropdown-open, render `<icon> <label>` as plain inline text inside
+    // a button — keeps the icon and label visually flush together (a
+    // text-right <input> with a proportional font leaves empty space on
+    // the left which detaches the leading icon). Tapping the button
+    // focuses the input, which opens the dropdown. A non-built-in or
+    // empty value falls through to the input directly so the user can
+    // type immediately.
+    const inDisplayMode = !!builtIn && !isOpen && editText === null;
+    const placeholderText = "Type or pick…";
+    const inputSize = Math.max((inputText || placeholderText).length, 8);
+    return (
+      <div ref={containerRef} className="relative">
+        <div className="flex items-center justify-end gap-1.5">
+          {inDisplayMode ? (
+            <button
+              type="button"
+              onClick={() => inputRef.current?.focus()}
+              disabled={disabled}
+              className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Change category"
+            >
+              <span className="text-base leading-none" aria-hidden>{builtIn!.icon}</span>
+              <span>{builtIn!.label}</span>
+            </button>
+          ) : null}
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputText}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+            placeholder={placeholderText}
+            size={inputSize}
+            tabIndex={inDisplayMode ? -1 : 0}
+            aria-hidden={inDisplayMode || undefined}
+            className={
+              inDisplayMode
+                ? "sr-only"
+                : "bg-transparent text-sm text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic w-auto"
+            }
+          />
+          {value !== "custom" && !isOpen && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange("custom");
+                inputRef.current?.focus();
+              }}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-sm shrink-0"
+              aria-label="Clear category"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        {isOpen && filteredTypes.length > 0 && (
+          <div
+            ref={listRef}
+            className="absolute z-50 right-0 mt-1 min-w-[14rem] bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto"
+          >
+            {filteredTypes.map((type, index) => (
+              <button
+                key={type.value}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectType(type);
+                }}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 ${
+                  highlightedIndex === index
+                    ? "bg-blue-50 dark:bg-blue-900/30"
+                    : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                } ${
+                  value === type.value
+                    ? "text-blue-600 dark:text-blue-400 font-medium"
+                    : "text-gray-900 dark:text-white"
+                }`}
+              >
+                <span className="text-base">{type.icon}</span>
+                <span>{type.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className="relative">
