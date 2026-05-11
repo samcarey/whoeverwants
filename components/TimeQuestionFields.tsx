@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import MinMaxCounter from './MinMaxCounter';
 import DaysSelector from './DaysSelector';
 import DayTimeWindowsInput from './DayTimeWindowsInput';
+import { useDayTimeWindowsState } from '@/lib/useDayTimeWindowsState';
 
 export interface TimeWindow {
   min: string;
@@ -64,54 +65,14 @@ export default function TimeQuestionFields({
   renderDaysSection = true,
 }: TimeQuestionFieldsProps) {
   const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
-  // Cache windows for removed days so they can be restored on re-add
-  const removedDaysCache = useRef<Record<string, TimeWindow[]>>({});
+  const {
+    onDaysSelected: handleDaysSelected,
+    onWindowsChange: handleDayWindowsChange,
+    onDeleteDay: handleDeleteDay,
+  } = useDayTimeWindowsState(dayTimeWindows, onDayTimeWindowsChange);
 
   const formatDurationValue = (value: number) => {
     return parseFloat(value.toFixed(2)).toString();
-  };
-
-  const handleDaysSelected = (newDays: string[]) => {
-    if (!onDayTimeWindowsChange) return;
-
-    const existingDays = dayTimeWindows.map(dtw => dtw.day);
-    const removedDays = existingDays.filter(day => !newDays.includes(day));
-
-    // Cache windows for removed days before discarding them
-    for (const day of removedDays) {
-      const dtw = dayTimeWindows.find(d => d.day === day);
-      if (dtw && dtw.windows.length > 0) {
-        removedDaysCache.current[day] = dtw.windows;
-      }
-    }
-
-    const addedDays = newDays.filter(day => !existingDays.includes(day));
-    const newEntries: DayTimeWindow[] = addedDays.map(day => {
-      const cached = removedDaysCache.current[day];
-      if (cached) delete removedDaysCache.current[day];
-      return { day, windows: cached || [] };
-    });
-
-    const updated = [
-      ...dayTimeWindows.filter(dtw => !removedDays.includes(dtw.day)),
-      ...newEntries
-    ];
-    updated.sort((a, b) => a.day.localeCompare(b.day));
-    onDayTimeWindowsChange(updated);
-  };
-
-  const handleDayWindowsChange = (day: string, windows: TimeWindow[]) => {
-    if (!onDayTimeWindowsChange) return;
-    const updated = dayTimeWindows.map(dtw =>
-      dtw.day === day ? { ...dtw, windows } : dtw
-    );
-    onDayTimeWindowsChange(updated);
-  };
-
-  const handleDeleteDay = (day: string) => {
-    if (!onDayTimeWindowsChange) return;
-    const updated = dayTimeWindows.filter(dtw => dtw.day !== day);
-    onDayTimeWindowsChange(updated);
   };
 
   const selectedDays = dayTimeWindows.map(dtw => dtw.day);

@@ -25,7 +25,8 @@ import TimeQuestionFields from "@/components/TimeQuestionFields";
 import DayTimeWindowsInput from "@/components/DayTimeWindowsInput";
 import DaysSelector from "@/components/DaysSelector";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
-import type { DayTimeWindow, TimeWindow } from "@/lib/types";
+import type { DayTimeWindow } from "@/lib/types";
+import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
@@ -97,10 +98,12 @@ export function CreateQuestionContent() {
   const [minimumParticipation, setMinimumParticipation] = useState<number>(95);
   const [showMinParticipationModal, setShowMinParticipationModal] = useState(false);
   const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
-  // Preserves windows for removed days so re-adding the same day restores
-  // them (mirrors the cache TimeQuestionFields owns for its embedded days
-  // section). Survives across re-renders via useRef.
-  const removedDaysCache = useRef<Record<string, TimeWindow[]>>({});
+  const {
+    onDaysSelected: handleDaysSelected,
+    onWindowsChange: handleDayWindowsChange,
+    onDeleteDay: handleDeleteDay,
+    reset: resetDayTimeWindowsCache,
+  } = useDayTimeWindowsState(dayTimeWindows, setDayTimeWindows);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -620,11 +623,12 @@ export function CreateQuestionContent() {
 
   const discardAndClose = useCallback(() => {
     applyDraftToState(emptyDraft());
+    resetDayTimeWindowsCache();
     setError(null);
     setIsModalOpen(false);
     setDrafts([]);
     setShowDiscardConfirm(false);
-  }, [applyDraftToState]);
+  }, [applyDraftToState, resetDayTimeWindowsCache]);
 
   const handleCloseClick = useCallback(() => {
     if (inlineFormHasContent() || drafts.length > 0) {
@@ -1414,44 +1418,10 @@ export function CreateQuestionContent() {
     questionType === 'time' || (questionType === 'question' && category === 'time');
   const formHasContent = isLocationLikeCategory(category) || showTimeFields;
 
-  // Day Time Windows handlers — mirror the logic that used to live inside
-  // TimeQuestionFields. Lifted here so the "Time Windows" card (rendered
-  // right after the top question-form card) can drive the days picker +
-  // the days list directly.
   const selectedDays = dayTimeWindows.map(dtw => dtw.day);
   const minDurationMinutesForWindows = durationMinEnabled && durationMinValue != null
     ? Math.round(durationMinValue * 60)
     : null;
-  const handleDaysSelected = (newDays: string[]) => {
-    const existingDays = dayTimeWindows.map(dtw => dtw.day);
-    const removedDays = existingDays.filter(d => !newDays.includes(d));
-    for (const d of removedDays) {
-      const dtw = dayTimeWindows.find(x => x.day === d);
-      if (dtw && dtw.windows.length > 0) {
-        removedDaysCache.current[d] = dtw.windows;
-      }
-    }
-    const addedDays = newDays.filter(d => !existingDays.includes(d));
-    const newEntries: DayTimeWindow[] = addedDays.map(d => {
-      const cached = removedDaysCache.current[d];
-      if (cached) delete removedDaysCache.current[d];
-      return { day: d, windows: cached || [] };
-    });
-    const updated = [
-      ...dayTimeWindows.filter(dtw => !removedDays.includes(dtw.day)),
-      ...newEntries,
-    ];
-    updated.sort((a, b) => a.day.localeCompare(b.day));
-    setDayTimeWindows(updated);
-  };
-  const handleDayWindowsChange = (day: string, windows: TimeWindow[]) => {
-    setDayTimeWindows(dayTimeWindows.map(dtw =>
-      dtw.day === day ? { ...dtw, windows } : dtw
-    ));
-  };
-  const handleDeleteDay = (day: string) => {
-    setDayTimeWindows(dayTimeWindows.filter(dtw => dtw.day !== day));
-  };
   const questionFormBody = (
     <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className={`space-y-4${formHasContent ? ' border-t border-gray-200 dark:border-gray-700 py-3' : ''}`}>
       {isLocationLikeCategory(category) && (
