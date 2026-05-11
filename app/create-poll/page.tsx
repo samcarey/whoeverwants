@@ -1679,7 +1679,7 @@ export function CreateQuestionContent() {
 
                 {showTimeFields && (
                   <div>
-                    <div className="flex items-end justify-between mb-1 px-1">
+                    <div className="flex items-center justify-between mb-1 px-1">
                       <label className="block text-sm font-medium">
                         Time Windows
                       </label>
@@ -1687,13 +1687,13 @@ export function CreateQuestionContent() {
                         type="button"
                         onClick={() => setIsDaysPickerOpen(true)}
                         disabled={isLoading}
-                        className={`px-3 py-1 text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                        className={`px-3 py-0.5 text-xs font-medium rounded-full border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                           dayTimeWindows.length === 0
-                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60'
-                            : 'text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
                       >
-                        {dayTimeWindows.length === 0 ? 'Select Days' : 'Add/Remove Days'}
+                        Select Days
                       </button>
                     </div>
                     {dayTimeWindows.length > 0 && (
