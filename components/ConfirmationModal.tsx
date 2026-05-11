@@ -7,7 +7,10 @@ interface ConfirmationModalProps {
   isOpen: boolean;
   onConfirm: () => void;
   onCancel: () => void;
-  title: string;
+  // title + cancelText are accepted for callsite compatibility but unused —
+  // the modal renders only the message and a single confirm button; cancel
+  // is via backdrop click or Escape.
+  title?: string;
   message: string;
   confirmText?: string;
   cancelText?: string;

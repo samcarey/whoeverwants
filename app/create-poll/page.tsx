@@ -13,6 +13,7 @@ import type { Poll, OptionsMetadata, Question } from "@/lib/types";
 import CompactNameField from "@/components/CompactNameField";
 import { BUILT_IN_TYPES, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, getCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } from "@/lib/userProfile";
@@ -131,6 +132,7 @@ export function CreateQuestionContent() {
 
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
@@ -638,12 +640,29 @@ export function CreateQuestionContent() {
     setMinimumParticipation(d.minimumParticipation);
   }, []);
 
-  const dismissModal = useCallback(() => {
+  // Backdrop + Escape preserve form state; only the explicit X-confirm
+  // path resets it. The retained state survives in React + the
+  // questionFormState localStorage auto-save.
+  const closeKeepState = useCallback(() => {
+    setError(null);
+    setIsModalOpen(false);
+  }, []);
+
+  const discardAndClose = useCallback(() => {
     applyDraftToState(emptyDraft());
     setError(null);
     setIsModalOpen(false);
     setDrafts([]);
+    setShowDiscardConfirm(false);
   }, [applyDraftToState]);
+
+  const handleCloseClick = useCallback(() => {
+    if (inlineFormHasContent() || drafts.length > 0) {
+      setShowDiscardConfirm(true);
+    } else {
+      closeKeepState();
+    }
+  }, [inlineFormHasContent, drafts.length, closeKeepState]);
 
   const openModalFor = useCallback((cat: string) => {
     // When the poll already has staged drafts AND they share a context,
@@ -655,6 +674,14 @@ export function CreateQuestionContent() {
     setError(null);
     setIsModalOpen(true);
   }, [applyDraftToState, drafts]);
+
+  // Read showDiscardConfirm via a ref inside the Escape handler so toggling
+  // the inner confirm dialog doesn't tear down + rebuild the body-position
+  // lock on every open/close.
+  const showDiscardConfirmRef = useRef(showDiscardConfirm);
+  useEffect(() => {
+    showDiscardConfirmRef.current = showDiscardConfirm;
+  }, [showDiscardConfirm]);
 
   // `position: fixed` on body (vs. `overflow: hidden`) is required to
   // block iOS pull-to-refresh from bypassing the lock. Mirrors the
@@ -668,8 +695,10 @@ export function CreateQuestionContent() {
     document.body.style.position = 'fixed';
     document.body.style.top = `-${scrollY}px`;
     document.body.style.width = '100%';
+    // Skip when the inner ConfirmationModal is open — its own document-level
+    // Escape handler runs too, and we don't want one Escape to dismiss both.
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') dismissModal();
+      if (e.key === 'Escape' && !showDiscardConfirmRef.current) closeKeepState();
     };
     document.addEventListener('keydown', handleEsc);
     return () => {
@@ -679,7 +708,7 @@ export function CreateQuestionContent() {
       window.scrollTo(0, scrollY);
       document.removeEventListener('keydown', handleEsc);
     };
-  }, [isModalOpen, dismissModal]);
+  }, [isModalOpen, closeKeepState]);
 
   // Portal target for the in-progress draft poll card, rendered in the page
   // body by the group / empty-group routes. Re-queried via a
@@ -1550,10 +1579,10 @@ export function CreateQuestionContent() {
       {isModalOpen && (
         <ModalPortal>
           <div className="fixed inset-0 z-[60] flex items-end justify-center">
-            {/* Backdrop — tap to dismiss. */}
+            {/* Backdrop — tap to close the sheet (state retained). */}
             <div
               className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
-              onClick={dismissModal}
+              onClick={closeKeepState}
               aria-hidden="true"
             />
             {/* Sheet panel — anchored to the bottom edge with rounded top
@@ -1567,6 +1596,17 @@ export function CreateQuestionContent() {
               aria-label="New poll"
             >
               <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.25rem]">
+                <button
+                  type="button"
+                  onClick={handleCloseClick}
+                  disabled={isLoading}
+                  aria-label="Close poll form"
+                  className="absolute left-2 top-2 w-9 h-9 flex items-center justify-center rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
                 <span className="text-sm font-medium text-gray-500 dark:text-gray-400 select-none">
                   New Poll
                 </span>
@@ -1738,6 +1778,15 @@ export function CreateQuestionContent() {
         value={minimumParticipation}
         onChange={setMinimumParticipation}
         disabled={isLoading}
+      />
+
+      <ConfirmationModal
+        isOpen={showDiscardConfirm}
+        onConfirm={discardAndClose}
+        onCancel={() => setShowDiscardConfirm(false)}
+        message="Discard this poll? Your changes will be lost."
+        confirmText="Discard"
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
     </div>
   );
