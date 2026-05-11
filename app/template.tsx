@@ -150,8 +150,8 @@ function TemplateInner({ children }: AppTemplateProps) {
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
 
   // The draft poll card on every group-like page hosts the inline question
-  // form (CategoryForLine + question fields) plus the staged-questions list
-  // and Settings. The "+ Question" button inside the card commits the
+  // form (category/for fields + question fields) plus the staged-questions
+  // list and Settings. The "+ Question" button inside the card commits the
   // in-progress form to the staged list. The home page keeps a single "+"
   // FAB which navigates to /p/ (the empty placeholder) so the user can
   // start a new poll.

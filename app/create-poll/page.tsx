@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
-import AnimatedTitle from "@/components/AnimatedTitle";
 import {
   apiCreatePoll,
   apiFindDuplicateQuestion,
@@ -11,7 +10,7 @@ import {
 } from "@/lib/api";
 import type { Poll, OptionsMetadata, Question } from "@/lib/types";
 import CompactNameField from "@/components/CompactNameField";
-import { BUILT_IN_TYPES, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
+import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { useAppPrefetch } from "@/lib/prefetch";
@@ -26,7 +25,6 @@ import MinimumParticipationModal from "@/components/MinimumParticipationModal";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
-import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
@@ -232,32 +230,7 @@ export function CreateQuestionContent() {
     }
   }, [isAutoTitle, generateTitle]);
 
-  // Auto-generated category text from options (shown in CategoryForLine when no explicit category)
-  const generatedCategoryFromOptions = useMemo(() => {
-    if (category !== 'custom') return '';
-    if (questionType !== 'question') return '';
-    const filled = options.filter(o => o.trim()).map(shortenOption);
-    if (filled.length === 0) return '';
-    if (filled.length === 1) return filled[0];
-    const limit = 40;
-    const joinWithOr = (items: string[]) => {
-      if (items.length === 2) return `${items[0]} or ${items[1]}`;
-      return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}`;
-    };
-    const included = [filled[0]];
-    for (let i = 1; i < filled.length; i++) {
-      const isLast = i === filled.length - 1;
-      const candidate = isLast
-        ? joinWithOr([...included, filled[i]])
-        : `${[...included, filled[i]].join(', ')}, or ...`;
-      if (candidate.length > limit && included.length >= 2) break;
-      included.push(filled[i]);
-    }
-    if (included.length === filled.length) return joinWithOr(included);
-    return `${included.join(', ')}, or ...`;
-  }, [category, questionType, options]);
-
-  // Handle category changes from CategoryForLine
+  // Handle category changes
   const handleCategoryChange = useCallback((val: string) => {
     setCategory(val);
     if (val === 'yes_no') {
@@ -1637,25 +1610,61 @@ export function CreateQuestionContent() {
                   breathing room above the sheet edge that the bubbles
                   have above the screen edge. */}
               <div className="flex-1 overflow-y-auto px-3 pb-[4.5rem] space-y-3">
+                {/* Auto-generated poll title preview, outside the card. Uses
+                    the same monospace blue font that the prior inline
+                    category-for-context field used, always at full opacity. */}
+                <div className="text-center px-2 pt-1 break-words">
+                  <span
+                    className="font-bold text-blue-600 dark:text-blue-400"
+                    style={{
+                      fontSize: "20px",
+                      fontFamily: "'M PLUS 1 Code', monospace",
+                    }}
+                  >
+                    {title.trim() || "‹title›"}
+                  </span>
+                </div>
+
                 {/* Top card: question form. */}
                 <section
                   data-draft-poll-card
                   className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-4"
                 >
-                  <div className="mb-3">
-                    {questionType === 'question' ? (
-                      <CategoryForLine
-                        category={category}
-                        onCategoryChange={handleCategoryChange}
-                        forField={forField}
-                        onForFieldChange={setForField}
-                        generatedCategoryText={generatedCategoryFromOptions}
-                        disabled={isLoading}
-                      />
-                    ) : (
-                      <AnimatedTitle title={title} initialDelay={0} />
-                    )}
-                  </div>
+                  {questionType === 'question' && (
+                    <div className="space-y-3 mb-3">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Category
+                        </label>
+                        <TypeFieldInput
+                          value={category}
+                          onChange={handleCategoryChange}
+                          disabled={isLoading}
+                        />
+                      </div>
+                      {category !== 'yes_no' && (
+                        <div>
+                          <label htmlFor="forField" className="block text-sm font-medium mb-1">
+                            For
+                          </label>
+                          <input
+                            id="forField"
+                            type="text"
+                            value={forField}
+                            onChange={(e) => setForField(e.target.value)}
+                            onBlur={(e) => {
+                              const trimmed = e.target.value.trim();
+                              if (trimmed !== forField) setForField(trimmed);
+                            }}
+                            disabled={isLoading}
+                            maxLength={100}
+                            placeholder={FOR_FIELD_PLACEHOLDERS[category] || "Context"}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {questionFormBody}
                 </section>
 
