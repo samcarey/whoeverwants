@@ -1417,7 +1417,7 @@ export function CreateQuestionContent() {
     questionType === 'time' ||
     (questionType === 'question' && category === 'time');
   const questionFormBody = (
-    <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className={`space-y-4${formHasContent ? ' border-t border-gray-200 dark:border-gray-700 pt-3' : ''}`}>
+    <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className={`space-y-4${formHasContent ? ' border-t border-gray-200 dark:border-gray-700 py-3' : ''}`}>
       {isLocationLikeCategory(category) && (
         <ReferenceLocationInput
           latitude={refLatitude}
