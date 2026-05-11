@@ -37,6 +37,10 @@ interface TimeQuestionFieldsProps {
     maxEnabled: boolean;
   };
   highlightDaysButton?: boolean;
+  // When false, the embedded Day Time Windows block (label + button + day
+  // list + DaysSelector) is omitted so the caller can render its own copy
+  // (e.g. the create-poll form lifts it into a dedicated card).
+  renderDaysSection?: boolean;
 }
 
 // Time-question creation/voting form section: duration + per-day time windows.
@@ -57,6 +61,7 @@ export default function TimeQuestionFields({
   questionDayTimeWindows,
   questionDurationWindow,
   highlightDaysButton = false,
+  renderDaysSection = true,
 }: TimeQuestionFieldsProps) {
   const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
   // Cache windows for removed days so they can be restored on re-add
@@ -146,7 +151,7 @@ export default function TimeQuestionFields({
       )}
 
       {/* Day Time Windows */}
-      {onDayTimeWindowsChange && (
+      {renderDaysSection && onDayTimeWindowsChange && (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium">

@@ -22,8 +22,10 @@ import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal"
 import VotingCutoffField from "@/components/VotingCutoffField";
 import MinimumParticipationModal from "@/components/MinimumParticipationModal";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
+import DayTimeWindowsInput from "@/components/DayTimeWindowsInput";
+import DaysSelector from "@/components/DaysSelector";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
-import type { DayTimeWindow } from "@/lib/types";
+import type { DayTimeWindow, TimeWindow } from "@/lib/types";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
@@ -94,6 +96,11 @@ export function CreateQuestionContent() {
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
   const [minimumParticipation, setMinimumParticipation] = useState<number>(95);
   const [showMinParticipationModal, setShowMinParticipationModal] = useState(false);
+  const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
+  // Preserves windows for removed days so re-adding the same day restores
+  // them (mirrors the cache TimeQuestionFields owns for its embedded days
+  // section). Survives across re-renders via useRef.
+  const removedDaysCache = useRef<Record<string, TimeWindow[]>>({});
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -1406,6 +1413,45 @@ export function CreateQuestionContent() {
   const showTimeFields =
     questionType === 'time' || (questionType === 'question' && category === 'time');
   const formHasContent = isLocationLikeCategory(category) || showTimeFields;
+
+  // Day Time Windows handlers — mirror the logic that used to live inside
+  // TimeQuestionFields. Lifted here so the "Time Windows" card (rendered
+  // alongside Notes / Min Availability further down) can drive the days
+  // picker + the days list directly.
+  const selectedDays = dayTimeWindows.map(dtw => dtw.day);
+  const minDurationMinutesForWindows = durationMinEnabled && durationMinValue != null
+    ? Math.round(durationMinValue * 60)
+    : null;
+  const handleDaysSelected = (newDays: string[]) => {
+    const existingDays = dayTimeWindows.map(dtw => dtw.day);
+    const removedDays = existingDays.filter(d => !newDays.includes(d));
+    for (const d of removedDays) {
+      const dtw = dayTimeWindows.find(x => x.day === d);
+      if (dtw && dtw.windows.length > 0) {
+        removedDaysCache.current[d] = dtw.windows;
+      }
+    }
+    const addedDays = newDays.filter(d => !existingDays.includes(d));
+    const newEntries: DayTimeWindow[] = addedDays.map(d => {
+      const cached = removedDaysCache.current[d];
+      if (cached) delete removedDaysCache.current[d];
+      return { day: d, windows: cached || [] };
+    });
+    const updated = [
+      ...dayTimeWindows.filter(dtw => !removedDays.includes(dtw.day)),
+      ...newEntries,
+    ];
+    updated.sort((a, b) => a.day.localeCompare(b.day));
+    setDayTimeWindows(updated);
+  };
+  const handleDayWindowsChange = (day: string, windows: TimeWindow[]) => {
+    setDayTimeWindows(dayTimeWindows.map(dtw =>
+      dtw.day === day ? { ...dtw, windows } : dtw
+    ));
+  };
+  const handleDeleteDay = (day: string) => {
+    setDayTimeWindows(dayTimeWindows.filter(dtw => dtw.day !== day));
+  };
   const questionFormBody = (
     <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className={`space-y-4${formHasContent ? ' border-t border-gray-200 dark:border-gray-700 py-3' : ''}`}>
       {isLocationLikeCategory(category) && (
@@ -1438,6 +1484,7 @@ export function CreateQuestionContent() {
           dayTimeWindows={dayTimeWindows}
           onDayTimeWindowsChange={setDayTimeWindows}
           highlightDaysButton={dayTimeWindows.length === 0}
+          renderDaysSection={false}
         />
       )}
 
@@ -1702,6 +1749,54 @@ export function CreateQuestionContent() {
                     </div>
                   </form>
                 </section>
+
+                {showTimeFields && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1 px-1">
+                      <label className="text-sm font-medium">
+                        Time Windows
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsDaysPickerOpen(true)}
+                        disabled={isLoading}
+                        className={`px-3 py-1 text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                          dayTimeWindows.length === 0
+                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60'
+                            : 'text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        {dayTimeWindows.length === 0 ? 'Select Days' : 'Add/Remove Days'}
+                      </button>
+                    </div>
+                    {dayTimeWindows.length > 0 && (
+                      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+                        <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                          {dayTimeWindows.map((dtw) => (
+                            <DayTimeWindowsInput
+                              key={dtw.day}
+                              day={dtw.day}
+                              windows={dtw.windows}
+                              onChange={(windows) => handleDayWindowsChange(dtw.day, windows)}
+                              onDelete={() => handleDeleteDay(dtw.day)}
+                              disabled={isLoading}
+                              minDurationMinutes={minDurationMinutesForWindows}
+                              borderless
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                    <DaysSelector
+                      selectedDays={selectedDays}
+                      onChange={handleDaysSelected}
+                      disabled={isLoading}
+                      isOpen={isDaysPickerOpen}
+                      onOpenChange={setIsDaysPickerOpen}
+                      hideButton={true}
+                    />
+                  </div>
+                )}
 
                 {showTimeFields && (
                   <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
