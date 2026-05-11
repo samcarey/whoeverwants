@@ -24,12 +24,11 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
   }, [isEditing]);
 
   return (
-    <div className="flex items-center justify-between gap-3">
-      <label htmlFor={isEditing ? id : checkboxId} className="text-sm font-medium shrink-0">
-        Min Responses{' '}
-        <span className="font-normal text-xs text-gray-500 dark:text-gray-400">then show results</span>
-      </label>
-      <div className="flex items-center gap-3">
+    <>
+      <div className="flex items-center justify-between gap-3 py-3">
+        <label htmlFor={id} className="text-sm font-medium shrink-0">
+          Min Responses
+        </label>
         {isEditing ? (
           <input
             ref={inputRef}
@@ -56,6 +55,11 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
             {value}
           </button>
         )}
+      </div>
+      <label htmlFor={checkboxId} className="flex items-center justify-between gap-3 py-3 cursor-pointer">
+        <span className="text-sm font-medium">
+          Share Results
+        </span>
         <input
           type="checkbox"
           id={checkboxId}
@@ -64,7 +68,7 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
           disabled={disabled}
           className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
         />
-      </div>
-    </div>
+      </label>
+    </>
   );
 }

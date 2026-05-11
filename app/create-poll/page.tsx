@@ -1409,8 +1409,14 @@ export function CreateQuestionContent() {
 
   // Question-specific JSX rendered inline at the top of the draft poll card,
   // right above the staged-questions list and the "+ Question" button.
+  // The form gets a top hairline + matching py-3 when it has content, so
+  // Context → first form field keeps the same vertical rhythm as the
+  // divide-y rows above it.
+  const showTimeFields =
+    questionType === 'time' || (questionType === 'question' && category === 'time');
+  const formHasContent = isLocationLikeCategory(category) || showTimeFields;
   const questionFormBody = (
-    <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className="space-y-4">
+    <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className={`space-y-4${formHasContent ? ' border-t border-gray-200 dark:border-gray-700 py-3' : ''}`}>
       {isLocationLikeCategory(category) && (
         <ReferenceLocationInput
           latitude={refLatitude}
@@ -1427,7 +1433,7 @@ export function CreateQuestionContent() {
         />
       )}
 
-      {(questionType === 'time' || (questionType === 'question' && category === 'time')) && (
+      {showTimeFields && (
         <>
           <TimeQuestionFields
             disabled={isLoading}
@@ -1549,15 +1555,15 @@ export function CreateQuestionContent() {
               aria-modal="true"
               aria-label="New poll"
             >
-              <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.25rem]">
+              <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
                 <button
                   type="button"
                   onClick={handleCloseClick}
                   disabled={isLoading}
                   aria-label="Close poll form"
-                  className="absolute left-2 top-2 w-9 h-9 flex items-center justify-center rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -1569,15 +1575,15 @@ export function CreateQuestionContent() {
                   onClick={handleSubmitClick}
                   disabled={isLoading || isSubmitted || !inlineFormHasDraftableContent}
                   aria-label="Submit poll"
-                  className="absolute right-2 top-2 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {isSubmitted || isLoading ? (
-                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                   ) : (
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   )}
@@ -1590,7 +1596,7 @@ export function CreateQuestionContent() {
                   `paddingBottom: '4.5rem'` so elements have the same
                   breathing room above the sheet edge that the bubbles
                   have above the screen edge. */}
-              <div className="flex-1 overflow-y-auto px-3 pb-[4.5rem] space-y-3">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-3">
                 <div className="text-center px-2 pt-1 break-words">
                   <span
                     className="text-xl font-bold text-blue-600 dark:text-blue-400"
@@ -1653,41 +1659,7 @@ export function CreateQuestionContent() {
                   {questionFormBody}
                 </section>
 
-                {/* Notes card — sits as the second card, between question
-                    fields and poll settings. The label is rendered as an
-                    external left-justified header above the card. The
-                    textarea is always visible (no collapse/expand) and
-                    auto-grows up to ~5 rows. */}
-                <div>
-                  <label
-                    htmlFor="details"
-                    className="block text-sm font-medium mb-1 px-1"
-                  >
-                    Notes
-                  </label>
-                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
-                    <textarea
-                      ref={detailsRef}
-                      id="details"
-                      value={details}
-                      onChange={(e) => {
-                        setDetails(e.target.value);
-                        const el = e.target;
-                        el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
-                        const maxH = 5 * 20 + 16;
-                        el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
-                        el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
-                      }}
-                      onBlur={() => {
-                        const trimmed = details.trim();
-                        if (trimmed !== details) setDetails(trimmed);
-                      }}
-                      disabled={isLoading}
-                      rows={3}
-                      className="block w-full bg-transparent text-sm focus:outline-none dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none"
-                    />
-                  </section>
-                </div>
+                {optionsCard}
 
                 {/* Bottom card: poll-level settings. Each setting is a row
                     with label left, value right; hairlines between rows
@@ -1715,18 +1687,16 @@ export function CreateQuestionContent() {
                     )}
 
                     {pollHasRankedChoice && (
-                      <div className="py-3">
-                        <CompactMinResponsesField
-                          value={minResponses}
-                          setValue={(val) => {
-                            setMinResponses(val);
-                            saveUserMinResponses(val);
-                          }}
-                          showPreliminary={showPreliminaryResults}
-                          setShowPreliminary={setShowPreliminaryResults}
-                          disabled={isLoading}
-                        />
-                      </div>
+                      <CompactMinResponsesField
+                        value={minResponses}
+                        setValue={(val) => {
+                          setMinResponses(val);
+                          saveUserMinResponses(val);
+                        }}
+                        showPreliminary={showPreliminaryResults}
+                        setShowPreliminary={setShowPreliminaryResults}
+                        disabled={isLoading}
+                      />
                     )}
 
                     {pollHasPrephase && (
@@ -1789,7 +1759,40 @@ export function CreateQuestionContent() {
                   </form>
                 </section>
 
-                {optionsCard}
+                {/* Notes card — sits at the bottom, after poll settings.
+                    The label is rendered as an external left-justified
+                    header above the card. The textarea is always visible
+                    (no collapse/expand) and auto-grows up to ~5 rows. */}
+                <div>
+                  <label
+                    htmlFor="details"
+                    className="block text-sm font-medium mb-1 px-1"
+                  >
+                    Notes
+                  </label>
+                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+                    <textarea
+                      ref={detailsRef}
+                      id="details"
+                      value={details}
+                      onChange={(e) => {
+                        setDetails(e.target.value);
+                        const el = e.target;
+                        el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
+                        const maxH = 5 * 20 + 16;
+                        el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                        el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+                      }}
+                      onBlur={() => {
+                        const trimmed = details.trim();
+                        if (trimmed !== details) setDetails(trimmed);
+                      }}
+                      disabled={isLoading}
+                      rows={3}
+                      className="block w-full bg-transparent text-sm focus:outline-none dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none"
+                    />
+                  </section>
+                </div>
 
                 {error && (
                   <div className="p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
