@@ -1653,41 +1653,7 @@ export function CreateQuestionContent() {
                   {questionFormBody}
                 </section>
 
-                {/* Notes card — sits as the second card, between question
-                    fields and poll settings. The label is rendered as an
-                    external left-justified header above the card. The
-                    textarea is always visible (no collapse/expand) and
-                    auto-grows up to ~5 rows. */}
-                <div>
-                  <label
-                    htmlFor="details"
-                    className="block text-sm font-medium mb-1 px-1"
-                  >
-                    Notes
-                  </label>
-                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
-                    <textarea
-                      ref={detailsRef}
-                      id="details"
-                      value={details}
-                      onChange={(e) => {
-                        setDetails(e.target.value);
-                        const el = e.target;
-                        el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
-                        const maxH = 5 * 20 + 16;
-                        el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
-                        el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
-                      }}
-                      onBlur={() => {
-                        const trimmed = details.trim();
-                        if (trimmed !== details) setDetails(trimmed);
-                      }}
-                      disabled={isLoading}
-                      rows={3}
-                      className="block w-full bg-transparent text-sm focus:outline-none dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none"
-                    />
-                  </section>
-                </div>
+                {optionsCard}
 
                 {/* Bottom card: poll-level settings. Each setting is a row
                     with label left, value right; hairlines between rows
@@ -1789,7 +1755,40 @@ export function CreateQuestionContent() {
                   </form>
                 </section>
 
-                {optionsCard}
+                {/* Notes card — sits at the bottom, after poll settings.
+                    The label is rendered as an external left-justified
+                    header above the card. The textarea is always visible
+                    (no collapse/expand) and auto-grows up to ~5 rows. */}
+                <div>
+                  <label
+                    htmlFor="details"
+                    className="block text-sm font-medium mb-1 px-1"
+                  >
+                    Notes
+                  </label>
+                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+                    <textarea
+                      ref={detailsRef}
+                      id="details"
+                      value={details}
+                      onChange={(e) => {
+                        setDetails(e.target.value);
+                        const el = e.target;
+                        el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
+                        const maxH = 5 * 20 + 16;
+                        el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                        el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+                      }}
+                      onBlur={() => {
+                        const trimmed = details.trim();
+                        if (trimmed !== details) setDetails(trimmed);
+                      }}
+                      disabled={isLoading}
+                      rows={3}
+                      className="block w-full bg-transparent text-sm focus:outline-none dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none"
+                    />
+                  </section>
+                </div>
 
                 {error && (
                   <div className="p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
