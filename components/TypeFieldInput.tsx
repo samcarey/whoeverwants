@@ -214,7 +214,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
             className={
               inDisplayMode
                 ? "sr-only"
-                : "bg-transparent text-sm text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic w-auto"
+                : "bg-transparent text-sm text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed w-auto"
             }
           />
           {value !== "custom" && !isOpen && (

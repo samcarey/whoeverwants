@@ -134,7 +134,7 @@ export default function OptionsInput({
     (referenceLatitude === undefined || referenceLongitude === undefined);
   const inputClassName = (isDuplicate: boolean) =>
     variant === 'compact'
-      ? `flex-1 min-w-0 bg-transparent text-sm text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic ${
+      ? `flex-1 min-w-0 bg-transparent text-sm text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
           isDuplicate
             ? 'text-red-700 dark:text-red-300'
             : 'text-blue-600 dark:text-blue-400'
