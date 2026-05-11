@@ -1610,16 +1610,10 @@ export function CreateQuestionContent() {
                   breathing room above the sheet edge that the bubbles
                   have above the screen edge. */}
               <div className="flex-1 overflow-y-auto px-3 pb-[4.5rem] space-y-3">
-                {/* Auto-generated poll title preview, outside the card. Uses
-                    the same monospace blue font that the prior inline
-                    category-for-context field used, always at full opacity. */}
                 <div className="text-center px-2 pt-1 break-words">
                   <span
-                    className="font-bold text-blue-600 dark:text-blue-400"
-                    style={{
-                      fontSize: "20px",
-                      fontFamily: "'M PLUS 1 Code', monospace",
-                    }}
+                    className="text-xl font-bold text-blue-600 dark:text-blue-400"
+                    style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
                   >
                     {title.trim() || "‹title›"}
                   </span>
