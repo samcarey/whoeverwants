@@ -1425,38 +1425,20 @@ export function CreateQuestionContent() {
       )}
 
       {showTimeFields && (
-        <>
-          <TimeQuestionFields
-            disabled={isLoading}
-            durationMinValue={durationMinValue}
-            durationMaxValue={durationMaxValue}
-            durationMinEnabled={durationMinEnabled}
-            durationMaxEnabled={durationMaxEnabled}
-            onDurationMinChange={setDurationMinValue}
-            onDurationMaxChange={setDurationMaxValue}
-            onDurationMinEnabledChange={setDurationMinEnabled}
-            onDurationMaxEnabledChange={setDurationMaxEnabled}
-            dayTimeWindows={dayTimeWindows}
-            onDayTimeWindowsChange={setDayTimeWindows}
-            highlightDaysButton={dayTimeWindows.length === 0}
-          />
-
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-medium shrink-0">
-              Minimum Availability{' '}
-              <span className="font-normal text-xs text-gray-500 dark:text-gray-400">of the top slot</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowMinParticipationModal(true)}
-              disabled={isLoading}
-              className="text-sm font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
-              aria-label="Adjust minimum availability percentage"
-            >
-              {minimumParticipation}%
-            </button>
-          </div>
-        </>
+        <TimeQuestionFields
+          disabled={isLoading}
+          durationMinValue={durationMinValue}
+          durationMaxValue={durationMaxValue}
+          durationMinEnabled={durationMinEnabled}
+          durationMaxEnabled={durationMaxEnabled}
+          onDurationMinChange={setDurationMinValue}
+          onDurationMaxChange={setDurationMaxValue}
+          onDurationMinEnabledChange={setDurationMinEnabled}
+          onDurationMaxEnabledChange={setDurationMaxEnabled}
+          dayTimeWindows={dayTimeWindows}
+          onDayTimeWindowsChange={setDayTimeWindows}
+          highlightDaysButton={dayTimeWindows.length === 0}
+        />
       )}
 
     </form>
@@ -1720,6 +1702,26 @@ export function CreateQuestionContent() {
                     </div>
                   </form>
                 </section>
+
+                {showTimeFields && (
+                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+                    <div className="flex items-center justify-between gap-3 h-12">
+                      <span className="text-sm font-medium shrink-0">
+                        Minimum Availability{' '}
+                        <span className="font-normal text-xs text-gray-500 dark:text-gray-400">of the top slot</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowMinParticipationModal(true)}
+                        disabled={isLoading}
+                        className="text-sm font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
+                        aria-label="Adjust minimum availability percentage"
+                      >
+                        {minimumParticipation}%
+                      </button>
+                    </div>
+                  </section>
+                )}
 
                 {/* Notes card — sits at the bottom, after poll settings.
                     The label is rendered as an external left-justified
