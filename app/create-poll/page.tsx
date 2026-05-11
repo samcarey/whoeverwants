@@ -1409,13 +1409,12 @@ export function CreateQuestionContent() {
 
   // Question-specific JSX rendered inline at the top of the draft poll card,
   // right above the staged-questions list and the "+ Question" button.
-  // The form gets a top hairline (matching the divide-y above it) whenever
-  // it has content, so Context → Near / Context → Time fields keep the same
-  // visual rhythm as the rows in the Category/Context block.
-  const formHasContent =
-    isLocationLikeCategory(category) ||
-    questionType === 'time' ||
-    (questionType === 'question' && category === 'time');
+  // The form gets a top hairline + matching py-3 when it has content, so
+  // Context → first form field keeps the same vertical rhythm as the
+  // divide-y rows above it.
+  const showTimeFields =
+    questionType === 'time' || (questionType === 'question' && category === 'time');
+  const formHasContent = isLocationLikeCategory(category) || showTimeFields;
   const questionFormBody = (
     <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className={`space-y-4${formHasContent ? ' border-t border-gray-200 dark:border-gray-700 py-3' : ''}`}>
       {isLocationLikeCategory(category) && (
@@ -1434,7 +1433,7 @@ export function CreateQuestionContent() {
         />
       )}
 
-      {(questionType === 'time' || (questionType === 'question' && category === 'time')) && (
+      {showTimeFields && (
         <>
           <TimeQuestionFields
             disabled={isLoading}
