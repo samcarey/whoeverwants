@@ -1645,7 +1645,7 @@ export function CreateQuestionContent() {
                       {category !== 'yes_no' && (
                         <div>
                           <label htmlFor="forField" className="block text-sm font-medium mb-1">
-                            For
+                            Context
                           </label>
                           <input
                             id="forField"
