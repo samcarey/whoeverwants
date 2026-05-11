@@ -1722,7 +1722,7 @@ export function CreateQuestionContent() {
                       {creatorNameEditing || creatorName.trim() ? (
                         <div className="flex items-center justify-between gap-3">
                           <label htmlFor="creatorName" className="text-sm font-medium shrink-0">
-                            Your Name <span className="font-normal text-xs text-gray-500 dark:text-gray-400">(optional)</span>
+                            Your Name
                           </label>
                           <input
                             ref={creatorNameInputRef}
@@ -1743,7 +1743,7 @@ export function CreateQuestionContent() {
                       ) : (
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-sm font-medium">
-                            Your Name <span className="font-normal text-xs text-gray-500 dark:text-gray-400">(optional)</span>
+                            Your Name
                           </span>
                           <button
                             type="button"

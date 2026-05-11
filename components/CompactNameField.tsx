@@ -24,7 +24,7 @@ export default function CompactNameField({ name, setName, disabled = false, maxL
     return (
       <div>
         <label htmlFor={id} className="block text-sm font-medium mb-1">
-          Your Name{!name.trim() && <> <span className="font-normal">(optional)</span></>}
+          Your Name
         </label>
         <input
           ref={inputRef}
@@ -51,7 +51,7 @@ export default function CompactNameField({ name, setName, disabled = false, maxL
 
   return (
     <div className="text-sm font-medium">
-      Your Name <span className="font-normal">(optional)</span>:{' '}
+      Your Name:{' '}
       <button
         type="button"
         onClick={() => setIsEditing(true)}
