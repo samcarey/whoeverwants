@@ -18,6 +18,10 @@ interface DayTimeWindowsInputProps {
   disabled?: boolean;
   questionWindows?: TimeWindow[]; // Creator's windows for this day (constrains voter edits)
   minDurationMinutes?: number | null; // Minimum duration in minutes for validation
+  // When true, omit the outer bg/border/padding chrome so the row composes
+  // cleanly inside a parent card's `divide-y` layout. Used by the create-poll
+  // "Time Windows" card; default usage keeps the standalone-strip look.
+  borderless?: boolean;
 }
 
 // Format time in 12-hour format (compact) - returns {time, period}
@@ -59,6 +63,7 @@ export default function DayTimeWindowsInput({
   disabled = false,
   questionWindows,
   minDurationMinutes,
+  borderless = false,
 }: DayTimeWindowsInputProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -109,7 +114,13 @@ export default function DayTimeWindowsInput({
   const isVoterForm = !!questionWindows;
 
   return (
-    <div className="flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+    <div
+      className={
+        borderless
+          ? 'flex items-center gap-3 min-h-12 py-2'
+          : 'flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
+      }
+    >
       {/* Left: Day display */}
       <div className="min-w-[100px] self-start">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">

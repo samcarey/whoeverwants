@@ -22,8 +22,11 @@ import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal"
 import VotingCutoffField from "@/components/VotingCutoffField";
 import MinimumParticipationModal from "@/components/MinimumParticipationModal";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
+import DayTimeWindowsInput from "@/components/DayTimeWindowsInput";
+import DaysSelector from "@/components/DaysSelector";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
+import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
@@ -94,6 +97,13 @@ export function CreateQuestionContent() {
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
   const [minimumParticipation, setMinimumParticipation] = useState<number>(95);
   const [showMinParticipationModal, setShowMinParticipationModal] = useState(false);
+  const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
+  const {
+    onDaysSelected: handleDaysSelected,
+    onWindowsChange: handleDayWindowsChange,
+    onDeleteDay: handleDeleteDay,
+    reset: resetDayTimeWindowsCache,
+  } = useDayTimeWindowsState(dayTimeWindows, setDayTimeWindows);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -613,11 +623,12 @@ export function CreateQuestionContent() {
 
   const discardAndClose = useCallback(() => {
     applyDraftToState(emptyDraft());
+    resetDayTimeWindowsCache();
     setError(null);
     setIsModalOpen(false);
     setDrafts([]);
     setShowDiscardConfirm(false);
-  }, [applyDraftToState]);
+  }, [applyDraftToState, resetDayTimeWindowsCache]);
 
   const handleCloseClick = useCallback(() => {
     if (inlineFormHasContent() || drafts.length > 0) {
@@ -1406,6 +1417,11 @@ export function CreateQuestionContent() {
   const showTimeFields =
     questionType === 'time' || (questionType === 'question' && category === 'time');
   const formHasContent = isLocationLikeCategory(category) || showTimeFields;
+
+  const selectedDays = dayTimeWindows.map(dtw => dtw.day);
+  const minDurationMinutesForWindows = durationMinEnabled && durationMinValue != null
+    ? Math.round(durationMinValue * 60)
+    : null;
   const questionFormBody = (
     <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className={`space-y-4${formHasContent ? ' border-t border-gray-200 dark:border-gray-700 py-3' : ''}`}>
       {isLocationLikeCategory(category) && (
@@ -1425,38 +1441,21 @@ export function CreateQuestionContent() {
       )}
 
       {showTimeFields && (
-        <>
-          <TimeQuestionFields
-            disabled={isLoading}
-            durationMinValue={durationMinValue}
-            durationMaxValue={durationMaxValue}
-            durationMinEnabled={durationMinEnabled}
-            durationMaxEnabled={durationMaxEnabled}
-            onDurationMinChange={setDurationMinValue}
-            onDurationMaxChange={setDurationMaxValue}
-            onDurationMinEnabledChange={setDurationMinEnabled}
-            onDurationMaxEnabledChange={setDurationMaxEnabled}
-            dayTimeWindows={dayTimeWindows}
-            onDayTimeWindowsChange={setDayTimeWindows}
-            highlightDaysButton={dayTimeWindows.length === 0}
-          />
-
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-medium shrink-0">
-              Minimum Availability{' '}
-              <span className="font-normal text-xs text-gray-500 dark:text-gray-400">of the top slot</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowMinParticipationModal(true)}
-              disabled={isLoading}
-              className="text-sm font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
-              aria-label="Adjust minimum availability percentage"
-            >
-              {minimumParticipation}%
-            </button>
-          </div>
-        </>
+        <TimeQuestionFields
+          disabled={isLoading}
+          durationMinValue={durationMinValue}
+          durationMaxValue={durationMaxValue}
+          durationMinEnabled={durationMinEnabled}
+          durationMaxEnabled={durationMaxEnabled}
+          onDurationMinChange={setDurationMinValue}
+          onDurationMaxChange={setDurationMaxValue}
+          onDurationMinEnabledChange={setDurationMinEnabled}
+          onDurationMaxEnabledChange={setDurationMaxEnabled}
+          dayTimeWindows={dayTimeWindows}
+          onDayTimeWindowsChange={setDayTimeWindows}
+          highlightDaysButton={dayTimeWindows.length === 0}
+          renderDaysSection={false}
+        />
       )}
 
     </form>
@@ -1648,6 +1647,54 @@ export function CreateQuestionContent() {
                   {questionFormBody}
                 </section>
 
+                {showTimeFields && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1 px-1">
+                      <label className="block text-sm font-medium">
+                        Time Windows
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsDaysPickerOpen(true)}
+                        disabled={isLoading}
+                        className={`px-3 py-0.5 text-xs font-medium rounded-full border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                          dayTimeWindows.length === 0
+                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        Select Days
+                      </button>
+                    </div>
+                    {dayTimeWindows.length > 0 && (
+                      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+                        <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                          {dayTimeWindows.map((dtw) => (
+                            <DayTimeWindowsInput
+                              key={dtw.day}
+                              day={dtw.day}
+                              windows={dtw.windows}
+                              onChange={(windows) => handleDayWindowsChange(dtw.day, windows)}
+                              onDelete={() => handleDeleteDay(dtw.day)}
+                              disabled={isLoading}
+                              minDurationMinutes={minDurationMinutesForWindows}
+                              borderless
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                    <DaysSelector
+                      selectedDays={selectedDays}
+                      onChange={handleDaysSelected}
+                      disabled={isLoading}
+                      isOpen={isDaysPickerOpen}
+                      onOpenChange={setIsDaysPickerOpen}
+                      hideButton={true}
+                    />
+                  </div>
+                )}
+
                 {optionsCard}
 
                 {/* Bottom card: poll-level settings. Each setting is a row
@@ -1720,6 +1767,26 @@ export function CreateQuestionContent() {
                     </div>
                   </form>
                 </section>
+
+                {showTimeFields && (
+                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+                    <div className="flex items-center justify-between gap-3 h-12">
+                      <span className="text-sm font-medium shrink-0">
+                        Minimum Availability{' '}
+                        <span className="font-normal text-xs text-gray-500 dark:text-gray-400">of the top slot</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowMinParticipationModal(true)}
+                        disabled={isLoading}
+                        className="text-sm font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
+                        aria-label="Adjust minimum availability percentage"
+                      >
+                        {minimumParticipation}%
+                      </button>
+                    </div>
+                  </section>
+                )}
 
                 {/* Notes card — sits at the bottom, after poll settings.
                     The label is rendered as an external left-justified
