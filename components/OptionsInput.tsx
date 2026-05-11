@@ -253,21 +253,24 @@ export default function OptionsInput({
                 />
               )}
               {isLastField ? (
-                // Empty space for alignment on the last field
-                <div className="w-9 h-9"></div>
+                // Empty space for alignment on the last field. Compact
+                // variant uses a 5-unit (20px) placeholder so the row
+                // height (py-3 + 20px = 44px) matches the other settings
+                // rows; default keeps the legacy 9-unit footprint.
+                <div className={variant === 'compact' ? "w-5 h-5 shrink-0" : "w-9 h-9"}></div>
               ) : (
                 <button
                   type="button"
                   onClick={() => canDelete ? removeOption(index) : undefined}
                   disabled={isLoading || !canDelete}
-                  className={`p-2 transition-colors ${
+                  className={`${variant === 'compact' ? 'shrink-0' : 'p-2'} transition-colors ${
                     canDelete
                       ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300'
                       : 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                   aria-label={canDelete ? "Remove option" : "Cannot remove last option"}
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className={variant === 'compact' ? "w-5 h-5" : "w-5 h-5"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
                 </button>
