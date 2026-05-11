@@ -183,8 +183,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
     // empty value falls through to the input directly so the user can
     // type immediately.
     const inDisplayMode = !!builtIn && !isOpen && editText === null;
-    const placeholderText = "Type or pick…";
-    const inputSize = Math.max((inputText || placeholderText).length, 8);
+    const inputSize = Math.max(inputText.length, 8);
     return (
       <div ref={containerRef} className="relative">
         <div className="flex items-center justify-end gap-1.5">
@@ -209,14 +208,13 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             disabled={disabled}
-            placeholder={placeholderText}
             size={inputSize}
             tabIndex={inDisplayMode ? -1 : 0}
             aria-hidden={inDisplayMode || undefined}
             className={
               inDisplayMode
                 ? "sr-only"
-                : "bg-transparent text-sm text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic w-auto"
+                : "bg-transparent text-sm text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed w-auto"
             }
           />
           {value !== "custom" && !isOpen && (
@@ -285,7 +283,6 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder="Built-in or custom"
           className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed ${
             builtIn && !isOpen ? "pl-9" : ""
           } ${

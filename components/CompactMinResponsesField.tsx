@@ -25,7 +25,7 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
 
   return (
     <>
-      <div className="flex items-center justify-between gap-3 py-3">
+      <div className="flex items-center justify-between gap-3 h-12">
         <label htmlFor={id} className="text-sm font-medium shrink-0">
           Min Responses
         </label>
@@ -56,7 +56,7 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
           </button>
         )}
       </div>
-      <label htmlFor={checkboxId} className="flex items-center justify-between gap-3 py-3 cursor-pointer">
+      <label htmlFor={checkboxId} className="flex items-center justify-between gap-3 h-12 cursor-pointer">
         <span className="text-sm font-medium">
           Share Results
         </span>

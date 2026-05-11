@@ -13,7 +13,6 @@ interface OptionsInputProps {
   setOptions: (options: string[]) => void;
   isLoading?: boolean;
   label?: React.ReactNode;
-  placeholder?: string;
   category?: QuestionCategory;
   optionsMetadata?: OptionsMetadata;
   onMetadataChange?: (metadata: OptionsMetadata) => void;
@@ -31,7 +30,6 @@ export default function OptionsInput({
   setOptions,
   isLoading = false,
   label,
-  placeholder,
   category = 'custom',
   optionsMetadata,
   onMetadataChange,
@@ -130,47 +128,13 @@ export default function OptionsInput({
     setOptions(newOptions);
   };
 
-  const getPlaceholder = (index: number) => {
-    if (placeholder) return placeholder;
-
-    const filledOptions = options.filter(opt => opt.trim() !== '');
-    const isLastField = index === options.length - 1;
-
-    if (category === 'location') {
-      if (isLastField) {
-        return filledOptions.length === 0 ? "Search for a location..." : "Add another location...";
-      }
-      return `Location ${index + 1}`;
-    } else if (category === 'movie') {
-      if (isLastField) {
-        return filledOptions.length === 0 ? "Search for a movie..." : "Add another movie...";
-      }
-      return `Movie ${index + 1}`;
-    } else if (category === 'video_game') {
-      if (isLastField) {
-        return filledOptions.length === 0 ? "Search for a video game..." : "Add another video game...";
-      }
-      return `Video game ${index + 1}`;
-    } else if (category === 'restaurant') {
-      if (isLastField) {
-        return filledOptions.length === 0 ? "Search for a restaurant..." : "Add another restaurant...";
-      }
-      return `Restaurant ${index + 1}`;
-    } else {
-      if (isLastField) {
-        return filledOptions.length === 0 ? "Add an option" : "Add another option...";
-      }
-      return `Option ${index + 1}`;
-    }
-  };
-
   const useAutocomplete = isAutocompleteCategory(category);
   const needsReferenceLocation =
     isLocationLikeCategory(category) &&
     (referenceLatitude === undefined || referenceLongitude === undefined);
   const inputClassName = (isDuplicate: boolean) =>
     variant === 'compact'
-      ? `flex-1 min-w-0 bg-transparent text-sm text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic ${
+      ? `flex-1 min-w-0 bg-transparent text-sm text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
           isDuplicate
             ? 'text-red-700 dark:text-red-300'
             : 'text-blue-600 dark:text-blue-400'
@@ -222,7 +186,6 @@ export default function OptionsInput({
                     category={category as Exclude<QuestionCategory, 'custom'>}
                     disabled={isLoading}
                     maxLength={100}
-                    placeholder={getPlaceholder(index)}
                     className={inputClassName(isDuplicate) + ' w-full'}
                     inputRef={(el) => { optionRefs.current[index] = el; }}
                     referenceLatitude={referenceLatitude}
@@ -249,7 +212,6 @@ export default function OptionsInput({
                   disabled={isLoading}
                   maxLength={35}
                   className={inputClassName(isDuplicate)}
-                  placeholder={getPlaceholder(index)}
                 />
               )}
               {isLastField ? (

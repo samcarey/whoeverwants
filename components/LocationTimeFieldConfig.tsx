@@ -121,7 +121,6 @@ export default function LocationTimeFieldConfig({
               options={options}
               setOptions={onOptionsChange}
               isLoading={isLoading}
-              placeholder={`Add a ${label.toLowerCase()} option...`}
             />
             <button type="button" onClick={() => setShowOptionsModal(false)} className="mt-3 w-full py-2 bg-gray-100 dark:bg-gray-800 rounded-md text-sm hover:bg-gray-200 dark:hover:bg-gray-700">
               Done

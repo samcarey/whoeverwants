@@ -296,7 +296,7 @@ export default function SuggestionVotingInterface({
 
       {!wrapperHandlesSubmit && (
         <>
-          <div className="mb-3 empty:hidden">
+          <div className="mb-3">
             <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} />
           </div>
 

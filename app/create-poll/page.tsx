@@ -105,8 +105,6 @@ export function CreateQuestionContent() {
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
   const isSubmittingRef = useRef(false);
   const [creatorName, setCreatorName] = useState<string>("");
-  const [creatorNameEditing, setCreatorNameEditing] = useState(false);
-  const creatorNameInputRef = useRef<HTMLInputElement>(null);
   const [isAutoTitle, setIsAutoTitle] = useState(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const loadedTitleRef = useRef<string | null>(null);
@@ -202,13 +200,6 @@ export function CreateQuestionContent() {
     // time
     return appendFor("Time?");
   }, [questionType, category, options, forField]);
-
-  // Focus name input when editing starts
-  useEffect(() => {
-    if (creatorNameEditing) {
-      creatorNameInputRef.current?.focus();
-    }
-  }, [creatorNameEditing]);
 
   // Auto-update title when form fields change (if user hasn't manually edited)
   useEffect(() => {
@@ -1275,7 +1266,7 @@ export function CreateQuestionContent() {
   };
 
   const titleField = (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex items-center justify-between gap-3 h-12">
       <label htmlFor="title" className="text-sm font-medium shrink-0">
         Title
       </label>
@@ -1306,7 +1297,7 @@ export function CreateQuestionContent() {
   // poll-level. Mirrors the legacy per-question rendering.
   const suggestionCutoffField = (
     <div>
-      <label className="flex items-center justify-between gap-3 cursor-pointer">
+      <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
         <span className="text-sm font-medium">Suggestion/Availability Cutoff</span>
         <span className="relative inline-flex">
           <span className="text-sm font-normal text-blue-600 dark:text-blue-400 text-right">
@@ -1480,7 +1471,7 @@ export function CreateQuestionContent() {
       <label className="block text-sm font-medium mb-1 px-1">
         Options <span className="font-normal text-xs text-gray-500 dark:text-gray-400">(leave blank to ask for suggestions)</span>
       </label>
-      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-1">
+      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
         <OptionsInput
           options={options}
           setOptions={setOptions}
@@ -1613,11 +1604,11 @@ export function CreateQuestionContent() {
                     full-width below the simple-row group. */}
                 <section
                   data-draft-poll-card
-                  className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-2"
+                  className="rounded-3xl bg-white dark:bg-gray-800 px-4"
                 >
                   {questionType === 'question' && (
                     <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                      <div className="flex items-center justify-between gap-3 py-3">
+                      <div className="flex items-center justify-between gap-3 h-12">
                         <label className="text-sm font-medium shrink-0">
                           Category
                         </label>
@@ -1631,7 +1622,7 @@ export function CreateQuestionContent() {
                         </div>
                       </div>
                       {category !== 'yes_no' && (
-                        <div className="flex items-center justify-between gap-3 py-3">
+                        <div className="flex items-center justify-between gap-3 h-12">
                           <label htmlFor="forField" className="text-sm font-medium shrink-0">
                             Context
                           </label>
@@ -1651,9 +1642,7 @@ export function CreateQuestionContent() {
                           />
                         </div>
                       )}
-                      {category === 'yes_no' && (
-                        <div className="py-3">{titleField}</div>
-                      )}
+                      {category === 'yes_no' && titleField}
                     </div>
                   )}
                   {questionFormBody}
@@ -1664,27 +1653,23 @@ export function CreateQuestionContent() {
                 {/* Bottom card: poll-level settings. Each setting is a row
                     with label left, value right; hairlines between rows
                     (inset to the card's px-4 padding). */}
-                <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-2">
+                <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
                   <form
                     onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     className="divide-y divide-gray-200 dark:divide-gray-700"
                   >
-                    <div className="py-3">
-                      <VotingCutoffField
-                        deadlineOption={deadlineOption}
-                        setDeadlineOption={setDeadlineOption}
-                        customDate={customDate}
-                        setCustomDate={setCustomDate}
-                        customTime={customTime}
-                        setCustomTime={setCustomTime}
-                        isLoading={isLoading}
-                        isClient={isClient}
-                      />
-                    </div>
+                    <VotingCutoffField
+                      deadlineOption={deadlineOption}
+                      setDeadlineOption={setDeadlineOption}
+                      customDate={customDate}
+                      setCustomDate={setCustomDate}
+                      customTime={customTime}
+                      setCustomTime={setCustomTime}
+                      isLoading={isLoading}
+                      isClient={isClient}
+                    />
 
-                    {pollHasPrephase && (
-                      <div className="py-3">{suggestionCutoffField}</div>
-                    )}
+                    {pollHasPrephase && suggestionCutoffField}
 
                     {pollHasRankedChoice && (
                       <CompactMinResponsesField
@@ -1700,7 +1685,7 @@ export function CreateQuestionContent() {
                     )}
 
                     {pollHasPrephase && (
-                      <label className="flex items-center justify-between gap-3 py-3 cursor-pointer">
+                      <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
                         <span className="text-sm font-medium">
                           Allow voting before options are finalized
                         </span>
@@ -1718,43 +1703,20 @@ export function CreateQuestionContent() {
                         shared CompactNameField) so we can apply the
                         label-left / value-right layout without affecting
                         the voting-flow consumers of CompactNameField. */}
-                    <div className="py-3">
-                      {creatorNameEditing || creatorName.trim() ? (
-                        <div className="flex items-center justify-between gap-3">
-                          <label htmlFor="creatorName" className="text-sm font-medium shrink-0">
-                            Your Name <span className="font-normal text-xs text-gray-500 dark:text-gray-400">(optional)</span>
-                          </label>
-                          <input
-                            ref={creatorNameInputRef}
-                            id="creatorName"
-                            type="text"
-                            value={creatorName}
-                            onChange={(e) => setCreatorName(e.target.value)}
-                            onBlur={() => {
-                              setCreatorName(creatorName.trim());
-                              setCreatorNameEditing(false);
-                            }}
-                            disabled={isLoading}
-                            maxLength={50}
-                            placeholder="Enter your name..."
-                            className="flex-1 min-w-0 text-sm bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-sm font-medium">
-                            Your Name <span className="font-normal text-xs text-gray-500 dark:text-gray-400">(optional)</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setCreatorNameEditing(true)}
-                            disabled={isLoading}
-                            className="text-sm font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
-                          >
-                            Add
-                          </button>
-                        </div>
-                      )}
+                    <div className="flex items-center justify-between gap-3 h-12">
+                      <label htmlFor="creatorName" className="text-sm font-medium shrink-0">
+                        Your Name
+                      </label>
+                      <input
+                        id="creatorName"
+                        type="text"
+                        value={creatorName}
+                        onChange={(e) => setCreatorName(e.target.value)}
+                        onBlur={() => setCreatorName(creatorName.trim())}
+                        disabled={isLoading}
+                        maxLength={50}
+                        className="flex-1 min-w-0 text-sm bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
                     </div>
                   </form>
                 </section>
@@ -1770,7 +1732,7 @@ export function CreateQuestionContent() {
                   >
                     Notes
                   </label>
-                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
                     <textarea
                       ref={detailsRef}
                       id="details"
