@@ -270,15 +270,15 @@ function TemplateInner({ children }: AppTemplateProps) {
       {isMounted && pathname === '/' && createPortal(
         <button
           onClick={() => navigateWithTransition(router, '/g', 'forward')}
-          className="fixed z-50 h-12 px-3 rounded-full flex items-center justify-center gap-1 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-semibold"
+          className="fixed z-50 h-12 px-3 rounded-full flex items-center justify-center gap-1 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
           style={{
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
             bottom: '1rem',
           }}
           aria-label="Create new group"
         >
-          <span aria-hidden="true" className="text-3xl leading-none">+</span>
-          <span className="text-xl leading-none">Group</span>
+          <span aria-hidden="true" className="text-4xl leading-none">+</span>
+          <span className="text-lg leading-none">Group</span>
         </button>,
         document.getElementById('floating-fab-portal')!
       )}
