@@ -1462,7 +1462,19 @@ export function CreateQuestionContent() {
         </>
       )}
 
-      {questionType === 'question' && category !== 'yes_no' && category !== 'time' && (
+    </form>
+  );
+
+  // Options card — rendered as a separate card below the bottom card,
+  // with an external left-justified "Options" header. Only meaningful
+  // for ranked-choice (non-yes_no, non-time) questions.
+  const showOptionsCard = questionType === 'question' && category !== 'yes_no' && category !== 'time';
+  const optionsCard = showOptionsCard ? (
+    <div>
+      <label className="block text-sm font-medium mb-1 px-1">
+        Options <span className="font-normal text-xs text-gray-500 dark:text-gray-400">(leave blank to ask for suggestions)</span>
+      </label>
+      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-1">
         <OptionsInput
           options={options}
           setOptions={setOptions}
@@ -1473,12 +1485,11 @@ export function CreateQuestionContent() {
           referenceLatitude={refLatitude}
           referenceLongitude={refLongitude}
           searchRadius={searchRadius}
-          label={<>Options <span className="font-normal">(leave blank to ask for suggestions)</span></>}
           variant="compact"
         />
-      )}
-    </form>
-  );
+      </section>
+    </div>
+  ) : null;
 
   return (
     <div className="question-content">
@@ -1742,7 +1753,9 @@ export function CreateQuestionContent() {
                   </form>
                 </section>
 
-                {/* Notes card — third card with the label as an external
+                {optionsCard}
+
+                {/* Notes card — last card with the label as an external
                     left-justified header (per spec). The textarea is always
                     visible (no collapse/expand toggle); auto-grows as the
                     user types. */}

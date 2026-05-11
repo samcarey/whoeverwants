@@ -181,6 +181,13 @@ export default function OptionsInput({
             : 'border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white'
         }`;
 
+  const rowsClassName = variant === 'compact'
+    ? "divide-y divide-gray-200 dark:divide-gray-700"
+    : "space-y-2";
+  const rowItemClassName = variant === 'compact'
+    ? "flex items-center gap-2 py-3"
+    : "flex items-start gap-2";
+
   return (
     <div>
       {label && (
@@ -193,7 +200,7 @@ export default function OptionsInput({
           Choose a reference location above to enable search.
         </p>
       )}
-      <div className="space-y-2">
+      <div className={rowsClassName}>
         {(() => {
           const filledCount = options.filter(opt => opt.trim() !== '').length;
           const hasDuplicates = options.some((_, idx) => isDuplicateOption(idx));
@@ -205,7 +212,7 @@ export default function OptionsInput({
           const optionMeta = optionsMetadata?.[option];
 
           return (
-            <div key={index} className="flex items-start gap-2">
+            <div key={index} className={rowItemClassName}>
               {useAutocomplete ? (
                 <div className="flex-1">
                   <AutocompleteInput

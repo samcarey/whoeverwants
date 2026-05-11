@@ -174,20 +174,32 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
   // input (in the same flex row) so it visually hugs the text from the
   // left while the whole pair sits at the right edge of its container.
   if (borderless) {
-    const showIcon = builtIn && !isOpen;
-    // Auto-size the input width via the native `size` attribute so the icon
-    // and value text stay flush together at the row's right edge. `size`
-    // uses the font's actual average-char width (unlike `ch` which is
-    // computed from the digit-zero glyph and overshoots for proportional
-    // fonts). Min size keeps the cursor visible when the field is empty.
+    // Display mode: when value is a built-in AND not currently typing/
+    // dropdown-open, render `<icon> <label>` as plain inline text inside
+    // a button — keeps the icon and label visually flush together (a
+    // text-right <input> with a proportional font leaves empty space on
+    // the left which detaches the leading icon). Tapping the button
+    // focuses the input, which opens the dropdown. A non-built-in or
+    // empty value falls through to the input directly so the user can
+    // type immediately.
+    const inDisplayMode = !!builtIn && !isOpen && editText === null;
     const placeholderText = "Type or pick…";
     const inputSize = Math.max((inputText || placeholderText).length, 8);
     return (
       <div ref={containerRef} className="relative">
         <div className="flex items-center justify-end gap-1.5">
-          {showIcon && (
-            <span className="text-base leading-none shrink-0" aria-hidden>{builtIn.icon}</span>
-          )}
+          {inDisplayMode ? (
+            <button
+              type="button"
+              onClick={() => inputRef.current?.focus()}
+              disabled={disabled}
+              className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Change category"
+            >
+              <span className="text-base leading-none" aria-hidden>{builtIn!.icon}</span>
+              <span>{builtIn!.label}</span>
+            </button>
+          ) : null}
           <input
             ref={inputRef}
             type="text"
@@ -199,7 +211,13 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
             disabled={disabled}
             placeholder={placeholderText}
             size={inputSize}
-            className="bg-transparent text-sm text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic w-auto"
+            tabIndex={inDisplayMode ? -1 : 0}
+            aria-hidden={inDisplayMode || undefined}
+            className={
+              inDisplayMode
+                ? "sr-only"
+                : "bg-transparent text-sm text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic w-auto"
+            }
           />
           {value !== "custom" && !isOpen && (
             <button
