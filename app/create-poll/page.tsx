@@ -1681,18 +1681,16 @@ export function CreateQuestionContent() {
                     )}
 
                     {pollHasRankedChoice && (
-                      <div className="py-3">
-                        <CompactMinResponsesField
-                          value={minResponses}
-                          setValue={(val) => {
-                            setMinResponses(val);
-                            saveUserMinResponses(val);
-                          }}
-                          showPreliminary={showPreliminaryResults}
-                          setShowPreliminary={setShowPreliminaryResults}
-                          disabled={isLoading}
-                        />
-                      </div>
+                      <CompactMinResponsesField
+                        value={minResponses}
+                        setValue={(val) => {
+                          setMinResponses(val);
+                          saveUserMinResponses(val);
+                        }}
+                        showPreliminary={showPreliminaryResults}
+                        setShowPreliminary={setShowPreliminaryResults}
+                        disabled={isLoading}
+                      />
                     )}
 
                     {pollHasPrephase && (
