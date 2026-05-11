@@ -1297,7 +1297,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                     )}
                   </div>
 
-                  <div className="mb-4 empty:hidden">
+                  <div className="mb-4">
                     <CompactNameField name={voterName} setName={setVoterName} />
                   </div>
 

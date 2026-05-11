@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useId } from 'react';
+import { useId } from 'react';
 
 interface CompactNameFieldProps {
   name: string;
@@ -10,12 +10,7 @@ interface CompactNameFieldProps {
 }
 
 export default function CompactNameField({ name, setName, disabled = false, maxLength = 50 }: CompactNameFieldProps) {
-  const [editing, setEditing] = useState(() => !name.trim());
   const id = useId();
-
-  if (!editing && name.trim()) {
-    return null;
-  }
 
   return (
     <div>
@@ -27,11 +22,7 @@ export default function CompactNameField({ name, setName, disabled = false, maxL
         id={id}
         value={name}
         onChange={(e) => setName(e.target.value)}
-        onFocus={() => setEditing(true)}
-        onBlur={() => {
-          setName(name.trim());
-          setEditing(false);
-        }}
+        onBlur={() => setName(name.trim())}
         disabled={disabled}
         maxLength={maxLength}
         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"

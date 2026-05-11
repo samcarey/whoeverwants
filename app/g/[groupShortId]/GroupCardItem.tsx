@@ -971,7 +971,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                           onTouchEnd={stopBubble}
                           onTouchMove={stopBubble}
                         >
-                          <div className="mb-3 empty:hidden">
+                          <div className="mb-3">
                             <CompactNameField
                               name={voterNameVal}
                               setName={(name: string) =>
@@ -1056,7 +1056,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                           onTouchEnd={stopBubble}
                           onTouchMove={stopBubble}
                         >
-                          <div className="mb-3 empty:hidden">
+                          <div className="mb-3">
                             <CompactNameField
                               name={voterNameVal}
                               setName={(name: string) =>
