@@ -21,6 +21,9 @@ interface OptionsInputProps {
   referenceLongitude?: number;
   searchRadius?: number;
   hideReferenceLocationWarning?: boolean;
+  /** When 'compact', each option input is rendered borderless with right-
+   *  aligned text — for use inside row-style settings lists. */
+  variant?: 'default' | 'compact';
 }
 
 export default function OptionsInput({
@@ -36,6 +39,7 @@ export default function OptionsInput({
   referenceLongitude,
   searchRadius,
   hideReferenceLocationWarning = false,
+  variant = 'default',
 }: OptionsInputProps) {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -165,11 +169,17 @@ export default function OptionsInput({
     isLocationLikeCategory(category) &&
     (referenceLatitude === undefined || referenceLongitude === undefined);
   const inputClassName = (isDuplicate: boolean) =>
-    `flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
-      isDuplicate
-        ? 'bg-red-50 dark:bg-red-900/30 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
-        : 'border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white'
-    }`;
+    variant === 'compact'
+      ? `flex-1 min-w-0 bg-transparent text-sm text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic ${
+          isDuplicate
+            ? 'text-red-700 dark:text-red-300'
+            : 'text-blue-600 dark:text-blue-400'
+        }`
+      : `flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
+          isDuplicate
+            ? 'bg-red-50 dark:bg-red-900/30 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
+            : 'border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white'
+        }`;
 
   return (
     <div>

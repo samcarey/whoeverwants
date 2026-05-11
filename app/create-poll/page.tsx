@@ -116,7 +116,6 @@ export function CreateQuestionContent() {
   const [customSuggestionTime, setCustomSuggestionTime] = useState('');
   const [allowPreRanking, setAllowPreRanking] = useState(true);
   const [details, setDetails] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsRef = useRef<HTMLTextAreaElement>(null);
   const [category, setCategory] = useState<string>('custom');
   const [forField, setForField] = useState("");
@@ -203,13 +202,6 @@ export function CreateQuestionContent() {
     // time
     return appendFor("Time?");
   }, [questionType, category, options, forField]);
-
-  // Focus details textarea when opening
-  useEffect(() => {
-    if (detailsOpen) {
-      detailsRef.current?.focus();
-    }
-  }, [detailsOpen]);
 
   // Focus name input when editing starts
   useEffect(() => {
@@ -374,7 +366,6 @@ export function CreateQuestionContent() {
           if (formState.isAutoTitle === false) setIsAutoTitle(false);
           if (formState.questionType === 'time') setQuestionType('time');
           setDetails(formState.details || '');
-          if (formState.details) setDetailsOpen(true);
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '10min');
           setCustomDate(formState.customDate || '');
@@ -802,7 +793,6 @@ export function CreateQuestionContent() {
           // copied — it regenerates fresh from the new input fields (or stays
           // empty for user-typed yes_no prompts). See buildQuestionSnapshot.
           setDetails(duplicateData.details || "");
-          if (duplicateData.details) setDetailsOpen(true);
 
           // Set question type based on duplicated question
           if (duplicateData.question_type === 'ranked_choice') {
@@ -1484,6 +1474,7 @@ export function CreateQuestionContent() {
           referenceLongitude={refLongitude}
           searchRadius={searchRadius}
           label={<>Options <span className="font-normal">(leave blank to ask for suggestions)</span></>}
+          variant="compact"
         />
       )}
 
@@ -1620,6 +1611,7 @@ export function CreateQuestionContent() {
                             value={category}
                             onChange={handleCategoryChange}
                             disabled={isLoading}
+                            borderless
                           />
                         </div>
                       </div>
@@ -1704,53 +1696,6 @@ export function CreateQuestionContent() {
                       </label>
                     )}
 
-                    <div className="py-3">
-                      {detailsOpen ? (
-                        <div>
-                          <label htmlFor="details" className="block text-sm font-medium mb-2">
-                            Notes
-                          </label>
-                          <textarea
-                            ref={detailsRef}
-                            id="details"
-                            value={details}
-                            onChange={(e) => {
-                              setDetails(e.target.value);
-                              const el = e.target;
-                              el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
-                              const maxH = 5 * 20 + 16;
-                              el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
-                              el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
-                            }}
-                            onBlur={() => {
-                              const trimmed = details.trim();
-                              if (!trimmed) {
-                                setDetailsOpen(false);
-                                setDetails('');
-                              } else if (trimmed !== details) {
-                                setDetails(trimmed);
-                              }
-                            }}
-                            disabled={isLoading}
-                            style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
-                            className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
-                            placeholder="Add more context or instructions..."
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-sm font-medium">Notes</span>
-                          <button
-                            type="button"
-                            onClick={() => setDetailsOpen(true)}
-                            className="text-sm font-normal text-blue-600 dark:text-blue-400"
-                          >
-                            Add
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
                     {/* Voter name row — inline custom version (instead of
                         shared CompactNameField) so we can apply the
                         label-left / value-right layout without affecting
@@ -1795,6 +1740,42 @@ export function CreateQuestionContent() {
                     </div>
                   </form>
                 </section>
+
+                {/* Notes card — third card with the label as an external
+                    left-justified header (per spec). The textarea is always
+                    visible (no collapse/expand toggle); auto-grows as the
+                    user types. */}
+                <div>
+                  <label
+                    htmlFor="details"
+                    className="block text-sm font-medium mb-1 px-1"
+                  >
+                    Notes
+                  </label>
+                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+                    <textarea
+                      ref={detailsRef}
+                      id="details"
+                      value={details}
+                      onChange={(e) => {
+                        setDetails(e.target.value);
+                        const el = e.target;
+                        el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
+                        const maxH = 5 * 20 + 16;
+                        el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                        el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+                      }}
+                      onBlur={() => {
+                        const trimmed = details.trim();
+                        if (trimmed !== details) setDetails(trimmed);
+                      }}
+                      disabled={isLoading}
+                      rows={3}
+                      className="block w-full bg-transparent text-sm focus:outline-none dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
+                      placeholder="Add more context or instructions..."
+                    />
+                  </section>
+                </div>
 
                 {error && (
                   <div className="p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
