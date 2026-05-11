@@ -807,7 +807,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                   leaving the card visually expanded even after the React
                   state has collapsed.
                   See CLAUDE.md → "Group-page scroll strategy" pitfalls. */}
-              <div className="overflow-y-clip overflow-x-visible min-h-0" ref={setExpandedWrapperEl}>
+              <div className="overflow-y-clip overflow-x-visible min-h-0 min-w-0" ref={setExpandedWrapperEl}>
                 <div className={allYesNo && !usePollSubmit ? "" : "mt-1.5"}>
                   {wrapper?.details && (
                     <QuestionDetails details={wrapper.details} label="Notes: " />
