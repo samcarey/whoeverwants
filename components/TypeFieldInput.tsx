@@ -175,6 +175,11 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
   // left while the whole pair sits at the right edge of its container.
   if (borderless) {
     const showIcon = builtIn && !isOpen;
+    // Auto-size the input width to its content so the icon + value text
+    // sit as a tight group flush against the row's right edge. Minimum
+    // width keeps the cursor visible when the field is empty.
+    const placeholderText = "Type or pick…";
+    const widthCh = Math.max((inputText || placeholderText).length, 8);
     return (
       <div ref={containerRef} className="relative">
         <div className="flex items-center justify-end gap-1.5">
@@ -190,8 +195,9 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             disabled={disabled}
-            placeholder="Type or pick…"
-            className="flex-1 min-w-0 bg-transparent text-sm text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
+            placeholder={placeholderText}
+            style={{ width: `${widthCh}ch` }}
+            className="bg-transparent text-sm text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
           />
           {value !== "custom" && !isOpen && (
             <button

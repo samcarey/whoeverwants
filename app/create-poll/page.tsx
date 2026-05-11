@@ -1477,8 +1477,6 @@ export function CreateQuestionContent() {
           variant="compact"
         />
       )}
-
-      {category === 'yes_no' && titleField}
     </form>
   );
 
@@ -1635,6 +1633,9 @@ export function CreateQuestionContent() {
                             className="flex-1 min-w-0 text-sm bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
                           />
                         </div>
+                      )}
+                      {category === 'yes_no' && (
+                        <div className="py-3">{titleField}</div>
                       )}
                     </div>
                   )}
