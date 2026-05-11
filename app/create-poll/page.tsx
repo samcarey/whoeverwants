@@ -640,17 +640,14 @@ export function CreateQuestionContent() {
     setMinimumParticipation(d.minimumParticipation);
   }, []);
 
-  // Close without resetting state — backdrop click + Escape. The retained
-  // state survives in React + localStorage (auto-save) so reopening lands
-  // the user back in the same form (subject to openModalFor reseeding on
-  // bubble taps).
+  // Backdrop + Escape preserve form state; only the explicit X-confirm
+  // path resets it. The retained state survives in React + the
+  // questionFormState localStorage auto-save.
   const closeKeepState = useCallback(() => {
     setError(null);
     setIsModalOpen(false);
   }, []);
 
-  // Reset state + close — X-button confirm-discard path, plus existing
-  // success/redirect callsites that inline the same operations.
   const discardAndClose = useCallback(() => {
     applyDraftToState(emptyDraft());
     setError(null);
@@ -659,8 +656,6 @@ export function CreateQuestionContent() {
     setShowDiscardConfirm(false);
   }, [applyDraftToState]);
 
-  // X button: ask before discarding when the form has user input or
-  // staged drafts; otherwise just close (nothing to lose).
   const handleCloseClick = useCallback(() => {
     if (inlineFormHasContent() || drafts.length > 0) {
       setShowDiscardConfirm(true);
@@ -680,6 +675,14 @@ export function CreateQuestionContent() {
     setIsModalOpen(true);
   }, [applyDraftToState, drafts]);
 
+  // Read showDiscardConfirm via a ref inside the Escape handler so toggling
+  // the inner confirm dialog doesn't tear down + rebuild the body-position
+  // lock on every open/close.
+  const showDiscardConfirmRef = useRef(showDiscardConfirm);
+  useEffect(() => {
+    showDiscardConfirmRef.current = showDiscardConfirm;
+  }, [showDiscardConfirm]);
+
   // `position: fixed` on body (vs. `overflow: hidden`) is required to
   // block iOS pull-to-refresh from bypassing the lock. Mirrors the
   // pattern in TimeGridModal / DaysSelector / RankableOptions.
@@ -692,8 +695,10 @@ export function CreateQuestionContent() {
     document.body.style.position = 'fixed';
     document.body.style.top = `-${scrollY}px`;
     document.body.style.width = '100%';
+    // Skip when the inner ConfirmationModal is open — its own document-level
+    // Escape handler runs too, and we don't want one Escape to dismiss both.
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeKeepState();
+      if (e.key === 'Escape' && !showDiscardConfirmRef.current) closeKeepState();
     };
     document.addEventListener('keydown', handleEsc);
     return () => {
@@ -1779,7 +1784,6 @@ export function CreateQuestionContent() {
         isOpen={showDiscardConfirm}
         onConfirm={discardAndClose}
         onCancel={() => setShowDiscardConfirm(false)}
-        title=""
         message="Discard this poll? Your changes will be lost."
         confirmText="Discard"
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
