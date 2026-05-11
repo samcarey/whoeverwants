@@ -1277,56 +1277,29 @@ export function CreateQuestionContent() {
   };
 
   const titleField = (
-    <div>
-      {isAutoTitle ? (
-        <button
-          type="button"
-          onClick={() => {
-            setIsAutoTitle(false);
-            setTitle('');
-            setTimeout(() => titleInputRef.current?.focus(), 0);
-          }}
-          className="block text-sm font-medium text-left"
-        >
-          Title: <span className="text-blue-600 dark:text-blue-400 font-normal">{title || <span className="italic">auto</span>}</span>
-        </button>
-      ) : (
-        <>
-          <div className="flex items-center justify-between mb-1">
-            <label htmlFor="title" className="text-sm font-medium">
-              Title
-            </label>
-            {category !== 'yes_no' && (
-              <button
-                type="button"
-                onClick={() => setIsAutoTitle(true)}
-                className="text-xs px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                Generate
-              </button>
-            )}
-          </div>
-          <input
-            type="text"
-            id="title"
-            ref={titleInputRef}
-            value={title}
-            onChange={(e) => {
-              setTitle(e.target.value);
-              setIsAutoTitle(false);
-            }}
-            onBlur={(e) => {
-              const trimmed = e.target.value.trim();
-              if (trimmed !== title) setTitle(trimmed);
-            }}
-            disabled={isLoading}
-            maxLength={100}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            placeholder="Enter your title..."
-            required
-          />
-        </>
-      )}
+    <div className="flex items-center justify-between gap-3">
+      <label htmlFor="title" className="text-sm font-medium shrink-0">
+        Title
+      </label>
+      <input
+        type="text"
+        id="title"
+        ref={titleInputRef}
+        value={title}
+        onChange={(e) => {
+          setTitle(e.target.value);
+          setIsAutoTitle(false);
+        }}
+        onBlur={(e) => {
+          const trimmed = e.target.value.trim();
+          if (trimmed !== title) setTitle(trimmed);
+        }}
+        disabled={isLoading}
+        maxLength={100}
+        className="flex-1 min-w-0 text-sm bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
+        placeholder={isAutoTitle ? "auto" : "Enter your title..."}
+        required={!isAutoTitle}
+      />
     </div>
   );
 
@@ -1335,56 +1308,54 @@ export function CreateQuestionContent() {
   // poll-level. Mirrors the legacy per-question rendering.
   const suggestionCutoffField = (
     <div>
-      <div className="flex items-center justify-between">
-        <label className="block text-sm font-medium cursor-pointer">
-          <span>Suggestion/Availability Cutoff: </span>
-          <span className="relative inline-flex">
-            <span className="font-normal text-blue-600 dark:text-blue-400">
-              {(() => {
-                if (suggestionCutoff === 'custom') return 'Custom';
-                const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
-                if (frac) {
-                  const votingMin = getVotingDeadlineMinutes();
-                  if (votingMin != null) return formatMinutesLabel(votingMin * frac.fraction);
-                  return `${frac.fraction}x`;
-                }
-                const absOpt = ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
-                if (!absOpt) return suggestionCutoff;
-                return formatDeadlineLabel(absOpt.minutes, absOpt.label);
-              })()}
-            </span>
-            <select
-              value={suggestionCutoff}
-              onChange={(e) => setSuggestionCutoff(e.target.value)}
-              disabled={isLoading}
-              className="absolute inset-0 opacity-0 cursor-pointer"
-              aria-label="Prephase cutoff duration"
-            >
-              {getVotingDeadlineMinutes() != null && (
-                <optgroup label="Relative to Voting Cutoff">
-                  {FRACTIONAL_CUTOFF_OPTIONS.map(opt => {
-                    const votingMin = getVotingDeadlineMinutes()!;
-                    const mins = votingMin * opt.fraction;
-                    return (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.fraction}x ({formatMinutesLabel(mins)})
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              )}
-              <optgroup label="Fixed Duration">
-                {ABSOLUTE_CUTOFF_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value}>
-                    {formatDeadlineLabel(opt.minutes, opt.label)}
-                  </option>
-                ))}
-              </optgroup>
-              <option value="custom">Custom</option>
-            </select>
+      <label className="flex items-center justify-between gap-3 cursor-pointer">
+        <span className="text-sm font-medium">Suggestion/Availability Cutoff</span>
+        <span className="relative inline-flex">
+          <span className="text-sm font-normal text-blue-600 dark:text-blue-400 text-right">
+            {(() => {
+              if (suggestionCutoff === 'custom') return 'Custom';
+              const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+              if (frac) {
+                const votingMin = getVotingDeadlineMinutes();
+                if (votingMin != null) return formatMinutesLabel(votingMin * frac.fraction);
+                return `${frac.fraction}x`;
+              }
+              const absOpt = ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+              if (!absOpt) return suggestionCutoff;
+              return formatDeadlineLabel(absOpt.minutes, absOpt.label);
+            })()}
           </span>
-        </label>
-      </div>
+          <select
+            value={suggestionCutoff}
+            onChange={(e) => setSuggestionCutoff(e.target.value)}
+            disabled={isLoading}
+            className="absolute inset-0 opacity-0 cursor-pointer"
+            aria-label="Prephase cutoff duration"
+          >
+            {getVotingDeadlineMinutes() != null && (
+              <optgroup label="Relative to Voting Cutoff">
+                {FRACTIONAL_CUTOFF_OPTIONS.map(opt => {
+                  const votingMin = getVotingDeadlineMinutes()!;
+                  const mins = votingMin * opt.fraction;
+                  return (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.fraction}x ({formatMinutesLabel(mins)})
+                    </option>
+                  );
+                })}
+              </optgroup>
+            )}
+            <optgroup label="Fixed Duration">
+              {ABSOLUTE_CUTOFF_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>
+                  {formatDeadlineLabel(opt.minutes, opt.label)}
+                </option>
+              ))}
+            </optgroup>
+            <option value="custom">Custom</option>
+          </select>
+        </span>
+      </label>
       {isClient && (() => {
         const warnings: string[] = [];
         const cutoffMin = getSuggestionCutoffMinutes();
@@ -1475,18 +1446,20 @@ export function CreateQuestionContent() {
             highlightDaysButton={dayTimeWindows.length === 0}
           />
 
-          <div className="text-sm font-medium">
-            Minimum Availability:{' '}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium shrink-0">
+              Minimum Availability{' '}
+              <span className="font-normal text-xs text-gray-500 dark:text-gray-400">of the top slot</span>
+            </span>
             <button
               type="button"
               onClick={() => setShowMinParticipationModal(true)}
               disabled={isLoading}
-              className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
+              className="text-sm font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
               aria-label="Adjust minimum availability percentage"
             >
               {minimumParticipation}%
-            </button>{' '}
-            of the top slot
+            </button>
           </div>
         </>
       )}
@@ -1619,26 +1592,32 @@ export function CreateQuestionContent() {
                   </span>
                 </div>
 
-                {/* Top card: question form. */}
+                {/* Top card: question form. Simple fields (Category, Context,
+                    Title) sit as inline rows in a divide-y container — labels
+                    left, values right, hairlines between. Complex widgets
+                    (reference location, time fields, options list) render
+                    full-width below the simple-row group. */}
                 <section
                   data-draft-poll-card
-                  className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-4"
+                  className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-2"
                 >
                   {questionType === 'question' && (
-                    <div className="space-y-3 mb-3">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">
+                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                      <div className="flex items-center justify-between gap-3 py-3">
+                        <label className="text-sm font-medium shrink-0">
                           Category
                         </label>
-                        <TypeFieldInput
-                          value={category}
-                          onChange={handleCategoryChange}
-                          disabled={isLoading}
-                        />
+                        <div className="flex-1 min-w-0">
+                          <TypeFieldInput
+                            value={category}
+                            onChange={handleCategoryChange}
+                            disabled={isLoading}
+                          />
+                        </div>
                       </div>
                       {category !== 'yes_no' && (
-                        <div>
-                          <label htmlFor="forField" className="block text-sm font-medium mb-1">
+                        <div className="flex items-center justify-between gap-3 py-3">
+                          <label htmlFor="forField" className="text-sm font-medium shrink-0">
                             Context
                           </label>
                           <input
@@ -1653,7 +1632,7 @@ export function CreateQuestionContent() {
                             disabled={isLoading}
                             maxLength={100}
                             placeholder={FOR_FIELD_PLACEHOLDERS[category] || "Context"}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex-1 min-w-0 text-sm bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
                           />
                         </div>
                       )}
@@ -1662,57 +1641,65 @@ export function CreateQuestionContent() {
                   {questionFormBody}
                 </section>
 
-                {/* Bottom card: poll-level settings. */}
-                <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-4">
+                {/* Bottom card: poll-level settings. Each setting is a row
+                    with label left, value right; hairlines between rows
+                    (inset to the card's px-4 padding). */}
+                <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-2">
                   <form
                     onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    className="space-y-3"
+                    className="divide-y divide-gray-200 dark:divide-gray-700"
                   >
-                    <VotingCutoffField
-                      deadlineOption={deadlineOption}
-                      setDeadlineOption={setDeadlineOption}
-                      customDate={customDate}
-                      setCustomDate={setCustomDate}
-                      customTime={customTime}
-                      setCustomTime={setCustomTime}
-                      isLoading={isLoading}
-                      isClient={isClient}
-                    />
+                    <div className="py-3">
+                      <VotingCutoffField
+                        deadlineOption={deadlineOption}
+                        setDeadlineOption={setDeadlineOption}
+                        customDate={customDate}
+                        setCustomDate={setCustomDate}
+                        customTime={customTime}
+                        setCustomTime={setCustomTime}
+                        isLoading={isLoading}
+                        isClient={isClient}
+                      />
+                    </div>
 
-                    {pollHasPrephase && suggestionCutoffField}
+                    {pollHasPrephase && (
+                      <div className="py-3">{suggestionCutoffField}</div>
+                    )}
 
                     {pollHasRankedChoice && (
-                      <CompactMinResponsesField
-                        value={minResponses}
-                        setValue={(val) => {
-                          setMinResponses(val);
-                          saveUserMinResponses(val);
-                        }}
-                        showPreliminary={showPreliminaryResults}
-                        setShowPreliminary={setShowPreliminaryResults}
-                        disabled={isLoading}
-                      />
+                      <div className="py-3">
+                        <CompactMinResponsesField
+                          value={minResponses}
+                          setValue={(val) => {
+                            setMinResponses(val);
+                            saveUserMinResponses(val);
+                          }}
+                          showPreliminary={showPreliminaryResults}
+                          setShowPreliminary={setShowPreliminaryResults}
+                          disabled={isLoading}
+                        />
+                      </div>
                     )}
 
                     {pollHasPrephase && (
-                      <label className="flex items-center gap-2 cursor-pointer">
+                      <label className="flex items-center justify-between gap-3 py-3 cursor-pointer">
+                        <span className="text-sm font-medium">
+                          Allow voting before options are finalized
+                        </span>
                         <input
                           type="checkbox"
                           checked={allowPreRanking}
                           onChange={(e) => setAllowPreRanking(e.target.checked)}
                           disabled={isLoading}
-                          className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                         />
-                        <span className="text-sm text-gray-600 dark:text-gray-400">
-                          allow voting before options are finalized
-                        </span>
                       </label>
                     )}
 
-                    <div>
+                    <div className="py-3">
                       {detailsOpen ? (
-                        <>
-                          <label htmlFor="details" className="block text-sm font-medium mb-1">
+                        <div>
+                          <label htmlFor="details" className="block text-sm font-medium mb-2">
                             Notes
                           </label>
                           <textarea
@@ -1741,14 +1728,14 @@ export function CreateQuestionContent() {
                             className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
                             placeholder="Add more context or instructions..."
                           />
-                        </>
+                        </div>
                       ) : (
-                        <div className="text-sm font-medium">
-                          Notes:{' '}
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-medium">Notes</span>
                           <button
                             type="button"
                             onClick={() => setDetailsOpen(true)}
-                            className="font-normal text-blue-600 dark:text-blue-400"
+                            className="text-sm font-normal text-blue-600 dark:text-blue-400"
                           >
                             Add
                           </button>
@@ -1756,11 +1743,13 @@ export function CreateQuestionContent() {
                       )}
                     </div>
 
-                    <CompactNameField
-                      name={creatorName}
-                      setName={setCreatorName}
-                      disabled={isLoading}
-                    />
+                    <div className="py-3 empty:hidden">
+                      <CompactNameField
+                        name={creatorName}
+                        setName={setCreatorName}
+                        disabled={isLoading}
+                      />
+                    </div>
                   </form>
                 </section>
 
