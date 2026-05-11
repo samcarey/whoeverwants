@@ -206,6 +206,7 @@ export default function AutocompleteInput({
           onBlur={(e) => {
             const trimmed = e.target.value.trim();
             if (trimmed !== value) onChange(trimmed);
+            setShowSuggestions(false);
           }}
           onFocus={() => {
             if (!searchDisabled && suggestions.length > 0) setShowSuggestions(true);
