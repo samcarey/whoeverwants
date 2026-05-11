@@ -270,16 +270,15 @@ function TemplateInner({ children }: AppTemplateProps) {
       {isMounted && pathname === '/' && createPortal(
         <button
           onClick={() => navigateWithTransition(router, '/g', 'forward')}
-          className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
+          className="fixed z-50 h-12 px-3 rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
           style={{
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
             bottom: '1rem',
           }}
-          aria-label="Create new question"
+          aria-label="Create new group"
         >
-          <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
+          <span aria-hidden="true" className="text-4xl leading-none">+</span>
+          <span className="text-lg leading-none">Group</span>
         </button>,
         document.getElementById('floating-fab-portal')!
       )}
