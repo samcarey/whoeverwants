@@ -1409,8 +1409,15 @@ export function CreateQuestionContent() {
 
   // Question-specific JSX rendered inline at the top of the draft poll card,
   // right above the staged-questions list and the "+ Question" button.
+  // The form gets a top hairline (matching the divide-y above it) whenever
+  // it has content, so Context → Near / Context → Time fields keep the same
+  // visual rhythm as the rows in the Category/Context block.
+  const formHasContent =
+    isLocationLikeCategory(category) ||
+    questionType === 'time' ||
+    (questionType === 'question' && category === 'time');
   const questionFormBody = (
-    <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className="space-y-4">
+    <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className={`space-y-4${formHasContent ? ' border-t border-gray-200 dark:border-gray-700 pt-3' : ''}`}>
       {isLocationLikeCategory(category) && (
         <ReferenceLocationInput
           latitude={refLatitude}
