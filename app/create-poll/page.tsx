@@ -105,8 +105,6 @@ export function CreateQuestionContent() {
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
   const isSubmittingRef = useRef(false);
   const [creatorName, setCreatorName] = useState<string>("");
-  const [creatorNameEditing, setCreatorNameEditing] = useState(false);
-  const creatorNameInputRef = useRef<HTMLInputElement>(null);
   const [isAutoTitle, setIsAutoTitle] = useState(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const loadedTitleRef = useRef<string | null>(null);
@@ -202,13 +200,6 @@ export function CreateQuestionContent() {
     // time
     return appendFor("Time?");
   }, [questionType, category, options, forField]);
-
-  // Focus name input when editing starts
-  useEffect(() => {
-    if (creatorNameEditing) {
-      creatorNameInputRef.current?.focus();
-    }
-  }, [creatorNameEditing]);
 
   // Auto-update title when form fields change (if user hasn't manually edited)
   useEffect(() => {
@@ -1719,42 +1710,21 @@ export function CreateQuestionContent() {
                         label-left / value-right layout without affecting
                         the voting-flow consumers of CompactNameField. */}
                     <div className="py-3">
-                      {creatorNameEditing || creatorName.trim() ? (
-                        <div className="flex items-center justify-between gap-3">
-                          <label htmlFor="creatorName" className="text-sm font-medium shrink-0">
-                            Your Name
-                          </label>
-                          <input
-                            ref={creatorNameInputRef}
-                            id="creatorName"
-                            type="text"
-                            value={creatorName}
-                            onChange={(e) => setCreatorName(e.target.value)}
-                            onBlur={() => {
-                              setCreatorName(creatorName.trim());
-                              setCreatorNameEditing(false);
-                            }}
-                            disabled={isLoading}
-                            maxLength={50}
-                            placeholder="Enter your name..."
-                            className="flex-1 min-w-0 text-sm bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-sm font-medium">
-                            Your Name
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setCreatorNameEditing(true)}
-                            disabled={isLoading}
-                            className="text-sm font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
-                          >
-                            Add
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex items-center justify-between gap-3">
+                        <label htmlFor="creatorName" className="text-sm font-medium shrink-0">
+                          Your Name
+                        </label>
+                        <input
+                          id="creatorName"
+                          type="text"
+                          value={creatorName}
+                          onChange={(e) => setCreatorName(e.target.value)}
+                          onBlur={() => setCreatorName(creatorName.trim())}
+                          disabled={isLoading}
+                          maxLength={50}
+                          className="flex-1 min-w-0 text-sm bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
+                      </div>
                     </div>
                   </form>
                 </section>
