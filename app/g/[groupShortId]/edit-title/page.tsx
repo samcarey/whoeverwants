@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import {
   apiUpdateGroupTitle,
@@ -10,104 +10,129 @@ import {
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import { useGroup } from "@/lib/useGroup";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
-import { buildGroupImageUrl, type Group } from "@/lib/groupUtils";
+import { type Group } from "@/lib/groupUtils";
 import GroupHeader from "@/components/GroupHeader";
 import GroupAvatar from "@/components/GroupAvatar";
 import ImageCropModal from "@/components/ImageCropModal";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
 
 function Editor({ group, groupId }: { group: Group; groupId: string }) {
   const router = useRouter();
-  // Migration 105: group_title lives on groups.title — surfaced on
-  // every poll in the group as the same value. Empty groups carry the
-  // override directly on `Group.groupTitleOverride` (no latestPoll to
-  // read from).
+  // Title state — the input value. The saved value is `group.groupTitleOverride`
+  // (raw value of `groups.title`, null when no override is set). Empty string in
+  // the input clears the override on save.
   const [value, setValue] = useState<string>(group.groupTitleOverride ?? '');
   const [saving, setSaving] = useState(false);
 
-  // Avatar state: local override of `group.imageUrl` so a freshly-uploaded
-  // (or cleared) image appears instantly without re-routing through the
-  // useGroup loader. `imageOverride === undefined` → use `group.imageUrl`;
-  // `null` → forced no image; string → forced new URL.
-  const [imageOverride, setImageOverride] = useState<string | null | undefined>(undefined);
-  const effectiveImageUrl =
-    imageOverride === undefined ? group.imageUrl : imageOverride;
+  // Image staging: changes accumulate in local state and only commit on Save.
+  // Back triggers a confirmation if any staging is present.
+  //   * pendingCroppedBlob — a fresh image the user just cropped (overrides
+  //     anything that was already on the server).
+  //   * pendingImageRemoval — user tapped Remove; the server's current image
+  //     should be deleted on save. Cleared if the user then picks a new image.
+  // The previewed avatar uses the local blob URL when a fresh image is staged,
+  // null when removal is staged, otherwise the server-side `group.imageUrl`.
+  const [pendingCroppedBlob, setPendingCroppedBlob] = useState<Blob | null>(null);
+  const [pendingImageRemoval, setPendingImageRemoval] = useState(false);
+  const [localImagePreviewUrl, setLocalImagePreviewUrl] = useState<string | null>(null);
+
+  // Blob URL lifecycle for the staged image preview. Created from the
+  // cropped Blob whenever it changes; revoked on cleanup. Same StrictMode-
+  // safe pattern as the cropper itself.
+  useEffect(() => {
+    if (!pendingCroppedBlob) {
+      setLocalImagePreviewUrl(null);
+      return;
+    }
+    const u = URL.createObjectURL(pendingCroppedBlob);
+    setLocalImagePreviewUrl(u);
+    return () => {
+      URL.revokeObjectURL(u);
+    };
+  }, [pendingCroppedBlob]);
+
+  const effectiveImageUrl = pendingCroppedBlob
+    ? localImagePreviewUrl
+    : pendingImageRemoval
+      ? null
+      : group.imageUrl;
+
+  const titleChanged = (value.trim() || null) !== (group.groupTitleOverride ?? null);
+  const imageChanged = pendingCroppedBlob !== null || pendingImageRemoval;
+  const hasUnsavedChanges = titleChanged || imageChanged;
 
   const [pickedFile, setPickedFile] = useState<File | null>(null);
-  const [imageBusy, setImageBusy] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
-  const goBack = () => {
-    console.log('[edit-title] goBack called', {
-      hasAppHistory: hasAppHistory(),
-      pickedFile: !!pickedFile,
-      saving,
-      imageBusy,
-    });
+  const navigateAway = () => {
     if (hasAppHistory()) navigateBackWithTransition();
     else navigateWithTransition(router, `/g/${groupId}/info`, 'back');
   };
 
+  const handleBack = () => {
+    if (hasUnsavedChanges) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+    navigateAway();
+  };
+
+  const discardAndLeave = () => {
+    setShowDiscardConfirm(false);
+    navigateAway();
+  };
+
   const save = async () => {
-    console.log('[edit-title] save called', { saving, value, original: group.groupTitleOverride });
     if (saving) return;
     setSaving(true);
     try {
-      console.log('[edit-title] save: calling apiUpdateGroupTitle');
-      await apiUpdateGroupTitle(groupId, value.trim() || null);
-      console.log('[edit-title] save: apiUpdateGroupTitle resolved, calling goBack');
-      goBack();
-      console.log('[edit-title] save: goBack returned');
+      // Image first — the cache-invalidation in apiUpload/Delete primes the
+      // accessible-polls cache so subsequent title-update + group reads pick
+      // up the same updated_at watermark cleanly. Order doesn't otherwise
+      // matter (each endpoint is independent server-side).
+      if (pendingCroppedBlob) {
+        await apiUploadGroupImage(groupId, pendingCroppedBlob);
+      } else if (pendingImageRemoval && group.imageUrl) {
+        // Only call DELETE if there was actually an image to remove.
+        // (User-tapped Remove on a group with no image is a no-op.)
+        await apiDeleteGroupImage(groupId);
+      }
+      if (titleChanged) {
+        await apiUpdateGroupTitle(groupId, value.trim() || null);
+      }
+      navigateAway();
     } catch (err) {
-      console.error('Failed to update group title:', err);
+      console.error('Failed to save group changes:', err);
       setSaving(false);
     }
   };
 
   const openFilePicker = () => {
-    if (imageBusy) return;
+    if (saving) return;
     fileInputRef.current?.click();
   };
 
   const onFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    // Reset the input so re-picking the same file fires `change` again.
     e.target.value = '';
     if (!file) return;
     setPickedFile(file);
   };
 
-  const onCropConfirm = async (croppedBlob: Blob) => {
-    setImageBusy(true);
-    try {
-      const result = await apiUploadGroupImage(groupId, croppedBlob);
-      setImageOverride(
-        buildGroupImageUrl(
-          result.group_short_id ?? result.group_id ?? groupId,
-          result.image_updated_at,
-        ),
-      );
-      setPickedFile(null);
-    } catch (err) {
-      console.error('Failed to upload group image:', err);
-    } finally {
-      setImageBusy(false);
-    }
+  const onCropConfirm = (croppedBlob: Blob) => {
+    setPendingCroppedBlob(croppedBlob);
+    setPendingImageRemoval(false);
+    setPickedFile(null);
   };
 
-  const onRemoveImage = async () => {
-    if (imageBusy) return;
-    setImageBusy(true);
-    try {
-      await apiDeleteGroupImage(groupId);
-      setImageOverride(null);
-    } catch (err) {
-      console.error('Failed to remove group image:', err);
-    } finally {
-      setImageBusy(false);
-    }
+  const onRemoveImage = () => {
+    if (saving) return;
+    setPendingImageRemoval(true);
+    setPendingCroppedBlob(null);
   };
 
   return (
@@ -115,7 +140,7 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
       <GroupHeader
         headerRef={headerRef}
         title="Edit Title"
-        onBack={goBack}
+        onBack={handleBack}
         rightSlot={
           <button
             onClick={save}
@@ -137,7 +162,7 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
           <button
             type="button"
             onClick={openFilePicker}
-            disabled={imageBusy}
+            disabled={saving}
             aria-label="Change group image"
             className="relative outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-full disabled:opacity-60"
           >
@@ -147,8 +172,6 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
               anonymousCount={group.anonymousRespondentCount}
               sizeClassName="w-28"
             />
-            {/* Camera badge in lower-right. Sized so it slightly overlaps
-                the circle edge — same idiom as message-app avatar editors. */}
             <span
               className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-md ring-2 ring-white dark:ring-gray-900"
               aria-hidden
@@ -156,7 +179,7 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
               <CameraPencilIcon />
             </span>
           </button>
-          {effectiveImageUrl && !imageBusy && (
+          {effectiveImageUrl && !saving && (
             <button
               type="button"
               onClick={onRemoveImage}
@@ -164,9 +187,6 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
             >
               Remove image
             </button>
-          )}
-          {imageBusy && (
-            <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">Uploading…</p>
           )}
           <input
             ref={fileInputRef}
@@ -199,13 +219,20 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
           onConfirm={onCropConfirm}
         />
       )}
+
+      <ConfirmationModal
+        isOpen={showDiscardConfirm}
+        message="Discard your changes?"
+        confirmText="Discard"
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        onConfirm={discardAndLeave}
+        onCancel={() => setShowDiscardConfirm(false)}
+      />
     </>
   );
 }
 
 function CameraPencilIcon() {
-  // Combined camera + pencil glyph. Camera body with a tiny pencil
-  // overlapping the lower-right of the lens — reads as "edit photo".
   return (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
       <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h3l2-3h6l2 3h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" />
