@@ -41,6 +41,21 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     : group.participantNames;
   const totalCount = membersList.length;
 
+  // Solo case: when the viewer is the only member, treat the hero avatar
+  // and title the same way as the list — show the viewer as a normal
+  // member instead of the gray placeholder circle + "New Group" fallback.
+  // Other surfaces (home list, group page header) keep the
+  // filter-out-viewer behavior so the viewer doesn't see themselves in
+  // the group name elsewhere; /info is the canonical roster.
+  const isSoloViewer =
+    group.participantNames.length === 0 &&
+    group.anonymousRespondentCount === 0 &&
+    currentUserName !== null;
+  const heroNames = isSoloViewer ? [currentUserName] : group.participantNames;
+  const displayTitle = isSoloViewer && !group.groupTitleOverride
+    ? currentUserName
+    : group.title;
+
   return (
     <>
       <GroupHeader
@@ -60,12 +75,12 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
       <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
         <div className="flex flex-col items-center text-center mb-8">
           <RespondentCircles
-            names={group.participantNames}
+            names={heroNames}
             anonymousCount={group.anonymousRespondentCount}
             sizeClassName="w-28"
           />
           <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white break-words">
-            {group.title}
+            {displayTitle}
           </h1>
         </div>
 
