@@ -796,29 +796,27 @@ On dev/debug sites (`*.dev.whoeverwants.com`, `localhost`), the browser automati
 
 ### When the user reports an issue
 
-**IMMEDIATELY check client logs** in addition to server-side logs. This is the fastest way to see what the browser was doing when the error occurred:
+**IMMEDIATELY check client logs** in addition to server-side logs. This is the fastest way to see what the browser was doing when the error occurred. The dev server's FE proxies `/api/*` to its in-container API, so the public URL works directly:
 
 ```bash
-# Read recent client logs (most recent first)
-bash scripts/remote.sh "curl -s http://localhost:<api_port>/api/client-logs?limit=100" | python3 -m json.tool
+# Read recent client logs (most recent first) — slug = your branch's dev slug
+curl -s "https://<slug>.dev.whoeverwants.com/api/client-logs?limit=100" | python3 -m json.tool
 
 # Filter by level (error, warn, log, info, debug)
-bash scripts/remote.sh "curl -s 'http://localhost:<api_port>/api/client-logs?level=error&limit=50'" | python3 -m json.tool
+curl -s "https://<slug>.dev.whoeverwants.com/api/client-logs?level=error&limit=50" | python3 -m json.tool
 
 # Search for specific text in log messages
-bash scripts/remote.sh "curl -s 'http://localhost:<api_port>/api/client-logs?search=failed&limit=50'" | python3 -m json.tool
+curl -s "https://<slug>.dev.whoeverwants.com/api/client-logs?search=failed&limit=50" | python3 -m json.tool
 
 # Clear logs (useful before reproducing an issue)
-bash scripts/remote.sh "curl -s -X DELETE http://localhost:<api_port>/api/client-logs"
+curl -s -X DELETE "https://<slug>.dev.whoeverwants.com/api/client-logs"
 ```
-
-Replace `<api_port>` with the dev server's API port (8001-8005).
 
 ### Diagnostic checklist when user reports a bug
 
-1. **Client logs**: `curl http://localhost:<api_port>/api/client-logs?level=error&limit=50`
-2. **Server logs**: `docker compose logs --tail 100` or `tail -50 /root/dev-servers/<slug>/api.log`
-3. **Full client log dump**: `curl http://localhost:<api_port>/api/client-logs?limit=200` (includes info/debug for context)
+1. **Client logs**: `curl 'https://<slug>.dev.whoeverwants.com/api/client-logs?level=error&limit=50'`
+2. **Server logs**: `bash scripts/remote-mac.sh "docker exec whoeverwants-dev-<slug> tail -50 /repo/api.log"`
+3. **Full client log dump**: `curl 'https://<slug>.dev.whoeverwants.com/api/client-logs?limit=200'` (includes info/debug for context)
 
 ### How it works
 
@@ -1906,7 +1904,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Dev server rate limiting is disabled** via `DISABLE_RATE_LIMIT=1` in `dev-server-manager.sh`. Dev servers are single-user, so production rate limits (120 GET/30 POST per minute) just cause friction during development.
 - **`npm run dev` spawns a process chain** (`npm` -> `next` -> `node`). Killing the parent PID doesn't reliably kill child processes holding the TCP port. After PID-based kill, always `fuser -k <port>/tcp` to clean up orphaned children — otherwise the next start gets `EADDRINUSE`.
 - **Dev server shows stale commit info** when the restart fails silently. The old process keeps serving pages. Always check `dev-server-manager.sh list` for `[STOPPED]` status after a push if the commit info doesn't update.
-- **App-router directory renames poison Turbopack's filesystem cache.** Renaming/deleting an `app/<route>/` directory (e.g. `app/profile/` → `app/settings/`) leaves a pinned `AppPageLoaderTree` cell in `.next/cache` that no longer resolves. Turbopack panics `Failed to write app endpoint /<old-route>/page` on every request and broadcasts an HMR event that the client converts into a full reload — producing a ~1 Hz spontaneous-refresh loop on the dev site even though the source tree is correct. Fix: wipe `.next/` on the dev server and restart (`rm -rf /root/dev-servers/<slug>/.next && dev-server-manager.sh upsert <email> <branch>`). Note: `git pull` does not clear `.next/` — the normal push → webhook → upsert path won't fix a poisoned cache. If you see the loop pattern after a route rename, go straight to the `.next` wipe.
+- **App-router directory renames poison Turbopack's filesystem cache.** Renaming/deleting an `app/<route>/` directory (e.g. `app/profile/` → `app/settings/`) leaves a pinned `AppPageLoaderTree` cell in `.next/cache` that no longer resolves. Turbopack panics `Failed to write app endpoint /<old-route>/page` on every request and broadcasts an HMR event that the client converts into a full reload — producing a ~1 Hz spontaneous-refresh loop on the dev site even though the source tree is correct. Fix: wipe `.next/` inside the Mac dev container and re-upsert (`bash scripts/remote-mac.sh "docker exec whoeverwants-dev-<slug> rm -rf /repo/.next" && bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh upsert <branch>"`). Note: `git pull` does not clear `.next/` — the normal push → webhook → upsert path won't fix a poisoned cache. If you see the loop pattern after a route rename, go straight to the `.next` wipe.
 - **`dev-server-manager.sh upsert` must force-clean the working tree before checkout.** Earlier versions ran `git checkout "$branch" || git checkout -b "$branch" FETCH_HEAD || git checkout "$branch"` with `2>/dev/null` on the first two — when the dev tree had stranded local mods or untracked files (a stale `.tsx` edit, leftover `test-*.cjs` debug scripts, an untracked file shadowing one the new branch wanted to add), all three checkouts failed and only the third's `pathspec did not match` line surfaced in the webhook log. Net effect: every push silently failed to update the dev server until somebody manually cleaned the tree. Current sequence is `git fetch + git reset --hard HEAD + git clean -fd + git checkout -B "$branch" FETCH_HEAD + git reset --hard FETCH_HEAD`. **Never use `clean -x`** — that wipes `.next/`, `node_modules/`, `.api.pid`, `*.log` (all gitignored runtime/build state). To diagnose this class of failure, `tail -30 /var/log/dev-webhook.log` on the droplet for the post-fetch ERROR; if you see "pathspec did not match" or "would be overwritten by checkout", the working tree drifted.
 - **Manually-triggered upsert may not stop the previous Next.js dev server.** When a previous dev server crashes or is killed without going through `dev-server-manager.sh stop`, its PID in `.dev-meta.json` goes stale; the next upsert assigns a fresh port (e.g. 3001 → 3004), starts a new Next.js, and Turbopack's per-directory lock detects the orphaned old process in the same dir and refuses to start: `⨯ Another next dev server is already running. PID: <old>`. The old process keeps serving on the OLD port; the new server doesn't bind. Fix: `kill <old PID>` (the log shows it explicitly) + `fuser -k <old port>/tcp` and re-run upsert. The lock check is per-directory, not per-port, so even with different ports they conflict. **Mitigated by `reap_orphans_for_slug` (next bullet)** which now runs unconditionally before port allocation.
 - **Orphan reaper runs before port allocation in `cmd_upsert`.** `stop_api`/`stop_nextjs` only know which port to free if `.dev-meta.json` was written by the previous upsert — when an upsert crashes mid-flight and never writes meta, its API/FE processes survive as untracked orphans on the same ports. `find_available_port_in_range` then sees every port held and bails with "No available ports in range 8001-8005", and each retry leaves another orphan on top (the failure mode that wedged `sam-at-samcarey-com`'s dev server with 6 stacked orphans across 5 API ports + 1 FE port). `reap_orphans_for_slug` (in `scripts/dev-server-manager.sh`) walks `/proc/[0-9]*/cwd`, matches every process whose CWD is the slug's dev dir or anywhere underneath (catches both `/root/dev-servers/<slug>` and `/root/dev-servers/<slug>/server` etc.), and SIGKILLs them — port-independent, meta-independent. Called AFTER `stop_api` + `stop_nextjs` (which handle the meta-tracked happy path) and BEFORE `find_available_port_in_range`. Alternatives are worse: `pgrep -f` matches argv not CWD (can't distinguish this slug from a sibling dev server's), `lsof +D` walks the whole subtree (slow + not installed by default), `fuser -m` matches mountpoints (way too broad). The `/proc/*/cwd` walk is sub-10ms on the droplet's ~100-200 process count.
@@ -2152,22 +2150,24 @@ Submitting a draft used to navigate to `/p/<newPollShortId>`. The user described
 
 #### Using `scripts/screenshot.sh`
 
-The `screenshot.sh` script automates the full pipeline: Playwright screenshot on the droplet → base64 transfer to local `/tmp` for Claude assessment → optional serving via a dev server's `public/screenshots/` directory.
+The `screenshot.sh` script automates the full pipeline: Playwright (on the droplet, which has it pre-installed) hits the public Mac-mini dev URL → base64 transfer to local `/tmp` for Claude assessment → serve into the Mac dev container's `/repo/public/screenshots/` so the PNG is reachable at `https://<slug>.dev.whoeverwants.com/screenshots/<name>.png`.
 
 ```bash
-# Take a screenshot and serve it
-bash scripts/screenshot.sh take <port> <path> <name> [--width W] [--height H] [--wait MS] [--serve-slug SLUG]
+# Take a screenshot and serve it (uses the dev server's branch slug, not a port)
+bash scripts/screenshot.sh take <slug> <path> <name> [--width W] [--height H] [--wait MS] [--no-serve]
 
-# Examples:
-bash scripts/screenshot.sh take 3001 / home-before --serve-slug screenshot-test-at-test-com
-bash scripts/screenshot.sh take 3001 /p/abc123 question-after --width 430 --height 932 --serve-slug my-slug
+# Examples (slug = the branch's dev server slug, e.g. claude-my-branch):
+bash scripts/screenshot.sh take claude-my-branch / home-before
+bash scripts/screenshot.sh take claude-my-branch /g/abc123 group-after --width 430 --height 932
 
-# Serve a previously taken screenshot to a dev server
-bash scripts/screenshot.sh serve my-screenshot my-dev-slug
+# Serve a previously taken screenshot to a Mac dev server
+bash scripts/screenshot.sh serve my-screenshot claude-my-branch
 
 # Print comparison URLs
-bash scripts/screenshot.sh compare before-name after-name my-dev-slug
+bash scripts/screenshot.sh compare before-name after-name claude-my-branch
 ```
+
+The `take` action's first positional was previously a port (`localhost:<port>` on the droplet). That form is gone — dev servers live on the Mac mini now, so the slug + public URL is the only valid input. The serve path writes through `remote-mac.sh` + `docker exec` into the dev container, so a single `take` invocation works end-to-end without ever touching the droplet's filesystem.
 
 After taking a screenshot, **always read the local file** to assess it:
 ```bash
@@ -2245,11 +2245,11 @@ For pixel-precise verification, use `page.evaluate()` with `getBoundingClientRec
 - **`getAccessiblePolls`'s cache-freshness check is asymmetric.** It re-fetches when any accessible ID is *missing* from the cache (a new question was discovered) but does NOT detect *stale extras* (a question the user removed). So every removal mutation — forget, revoke, etc. — MUST call `invalidateQuestion()` / `invalidateAccessibleQuestions()` itself; the next `getAccessiblePolls()` call will happily return a stale cache containing the removed question.
 - **Coalesce concurrent API calls** with `coalesced()` in `lib/api.ts`. React StrictMode double-mounts effects in dev, causing two simultaneous calls to the same endpoint. Same idiom for `getMyGroups` and `getAccessiblePolls` — both use an in-flight promise to dedupe.
 
-### Production build testing on dev droplet
+### Production build testing on the Mac dev server
 
-- To test with a real production bundle instead of `next dev` on the dev server:
+- To test with a real production bundle instead of `next dev`, build + start inside the Mac dev container. The container's FE port (3000 internal) is already wired through Caddy to `https://<slug>.dev.whoeverwants.com`, so swap out `next dev` for `next start` in place:
   ```bash
-  bash scripts/remote.sh "fuser -k 3001/tcp; cd /root/dev-servers/<slug> && rm -rf .next && PYTHON_API_URL='http://localhost:8001' npm run build && nohup npx next start -p 3001 > nextjs-prod.log 2>&1 &"
+  bash scripts/remote-mac.sh "docker exec whoeverwants-dev-<slug> sh -c 'pkill -f \"next dev\" || true; rm -rf /repo/.next && cd /repo && PYTHON_API_URL=http://localhost:8000 npm run build && nohup npx next start -p 3000 > /repo/nextjs-prod.log 2>&1 &'" / 600
   ```
 - **Patch `next.config.ts` first** — as mentioned above, production mode ignores `PYTHON_API_URL`. Add an early return at the top of `getApiRewriteDestination()`: `if (process.env.PYTHON_API_URL) return process.env.PYTHON_API_URL;`
 - **The next git push will clobber the build** — the webhook calls `dev-server-manager.sh upsert` which runs `git pull` (resetting `next.config.ts` patch) and starts `next dev` again. For extended testing, be prepared to re-apply the patch and rebuild after each push.
