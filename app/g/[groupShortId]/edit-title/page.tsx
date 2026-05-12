@@ -40,20 +40,26 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
   const goBack = () => {
+    console.log('[edit-title] goBack called', {
+      hasAppHistory: hasAppHistory(),
+      pickedFile: !!pickedFile,
+      saving,
+      imageBusy,
+    });
     if (hasAppHistory()) navigateBackWithTransition();
     else navigateWithTransition(router, `/g/${groupId}/info`, 'back');
   };
 
   const save = async () => {
+    console.log('[edit-title] save called', { saving, value, original: group.groupTitleOverride });
     if (saving) return;
     setSaving(true);
     try {
-      // `groupId` is the route param — the server resolves any of
-      // `groups.short_id`, `groups.id`, `polls.short_id`, or
-      // `polls.id` to the same group. apiUpdateGroupTitle handles
-      // cache invalidation for every poll in the group.
+      console.log('[edit-title] save: calling apiUpdateGroupTitle');
       await apiUpdateGroupTitle(groupId, value.trim() || null);
+      console.log('[edit-title] save: apiUpdateGroupTitle resolved, calling goBack');
       goBack();
+      console.log('[edit-title] save: goBack returned');
     } catch (err) {
       console.error('Failed to update group title:', err);
       setSaving(false);
