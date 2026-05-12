@@ -34,11 +34,15 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   // for the title + hero graphic ("don't list yourself in the group name
   // or graphic"), but the list under "Members" is the canonical roster
   // and should include the viewer like anyone else. When the user hasn't
-  // picked a name they're omitted (consistent with anonymous voters).
+  // picked a name they still appear as "You" — visiting any group URL
+  // auto-joins the viewer as a member (the `grant_group_membership_inline`
+  // call on `/api/groups/by-route-id/<id>`), so omitting them would
+  // render an obviously-wrong "0 Members" on a group they just joined.
   const currentUserName = getUserName()?.trim() || null;
-  const membersList = currentUserName
-    ? [...group.participantNames, currentUserName].sort((a, b) => a.localeCompare(b))
-    : group.participantNames;
+  const viewerLabel = currentUserName ?? "You";
+  const membersList = [...group.participantNames, viewerLabel].sort((a, b) =>
+    a.localeCompare(b),
+  );
   const totalCount = membersList.length;
 
   // Solo case: when the viewer is the only member, treat the hero avatar
@@ -46,15 +50,19 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   // member instead of the gray placeholder circle + "New Group" fallback.
   // Other surfaces (home list, group page header) keep the
   // filter-out-viewer behavior so the viewer doesn't see themselves in
-  // the group name elsewhere; /info is the canonical roster.
+  // the group name elsewhere; /info is the canonical roster. When the
+  // viewer has no name, the hero falls through to its gray placeholder
+  // (RespondentCircles' empty-state) and the title stays "New Group" —
+  // we'd rather not invent a group name from a fallback label.
   const isSoloViewer =
     group.participantNames.length === 0 &&
-    group.anonymousRespondentCount === 0 &&
-    currentUserName !== null;
-  const heroNames = isSoloViewer ? [currentUserName] : group.participantNames;
-  const displayTitle = isSoloViewer && !group.groupTitleOverride
-    ? currentUserName
-    : group.title;
+    group.anonymousRespondentCount === 0;
+  const heroNames =
+    isSoloViewer && currentUserName ? [currentUserName] : group.participantNames;
+  const displayTitle =
+    isSoloViewer && currentUserName && !group.groupTitleOverride
+      ? currentUserName
+      : group.title;
 
   return (
     <>
@@ -89,19 +97,13 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         </h2>
 
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
-          {totalCount === 0 ? (
-            <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-              No members yet.
-            </div>
-          ) : (
-            <ul className="divide-y divide-gray-200 dark:divide-gray-800">
-              {membersList.map((name) => (
-                <li key={name} className="px-4 py-3 text-gray-900 dark:text-white">
-                  {name}
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul className="divide-y divide-gray-200 dark:divide-gray-800">
+            {membersList.map((name) => (
+              <li key={name} className="px-4 py-3 text-gray-900 dark:text-white">
+                {name}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </>
