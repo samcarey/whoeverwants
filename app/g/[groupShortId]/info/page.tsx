@@ -73,12 +73,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         }
       />
 
-      {/* `-mt-6` neutralizes the 24px `py-6` top padding applied by the
-          page template wrapper (app/template.tsx) for non-root group
-          routes. Without it, content sits 24px below where our paddingTop
-          intends. With it, paddingTop ≈ headerHeight + small gap lands
-          the hero avatar just below the back/Edit header. */}
-      <div className="max-w-4xl mx-auto px-4 -mt-6" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
+      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
         <div className="flex flex-col items-center text-center mb-8">
           <GroupAvatar
             imageUrl={group.imageUrl}
