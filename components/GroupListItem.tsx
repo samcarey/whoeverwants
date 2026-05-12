@@ -175,9 +175,11 @@ export default function GroupListItem(props: GroupListItemProps) {
             </div>
           </div>
 
-          <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-0.5">
-            {latestQuestionTitle}
-          </p>
+          {latestQuestionTitle && (
+            <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-0.5">
+              {latestQuestionTitle}
+            </p>
+          )}
 
           <div className="flex items-center justify-between mt-1">
             <div className="text-xs text-gray-400 dark:text-gray-500">

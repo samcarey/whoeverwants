@@ -5,9 +5,9 @@ import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyGroups } from "@/lib/simpleQuestionQueries";
-import { buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
+import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
 import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
-import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useGroupVoting } from "@/lib/useGroupVoting";
 import type { QuestionResults } from "@/lib/types";
@@ -102,16 +102,26 @@ function rebuildGroupFromCacheOrPrev(
   prev: Group,
   mutate?: { add?: Poll; remove?: string },
 ): Group {
-  if (!prev.rootPollId) return prev;
   const cached = getCachedAccessiblePolls() ?? [];
   const byId = new Map<string, Poll>();
   for (const p of prev.polls) byId.set(p.id, p);
   for (const p of cached) byId.set(p.id, p);
   if (mutate?.remove) byId.delete(mutate.remove);
   if (mutate?.add) byId.set(mutate.add.id, mutate.add);
-  const polls = Array.from(byId.values());
+  // Filter to polls in THIS group only — accessiblePollsCache may carry
+  // polls from other groups the user is part of, and including them
+  // here would cross-contaminate the rebuild.
+  const groupId = prev.groupId;
+  const polls = Array.from(byId.values()).filter((p) =>
+    groupId ? p.group_id === groupId : p.id === prev.rootPollId,
+  );
+  if (polls.length === 0) return prev;
+  // Empty-group transition: the previous Group has no polls (just-created
+  // via the home "+" FAB), but a placeholder/real poll was just added.
+  // Use the new poll as the anchor since there's no `prev.rootPollId`.
+  const anchorPollId = prev.rootPollId ?? polls[0].id;
   const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-  const rebuilt = buildGroupFromPollDown(prev.rootPollId, polls, voted, abstained);
+  const rebuilt = buildGroupFromPollDown(anchorPollId, polls, voted, abstained);
   if (!rebuilt) return prev;
   if (
     rebuilt.polls.length === prev.polls.length &&
@@ -410,6 +420,16 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) { setError(true); return; }
           throw err;
+        }
+        // Empty group (no visible polls) — typically just-created via the
+        // home "+" FAB. Fall back to the metadata-only summary endpoint
+        // so we can render the header + bubble bar; the user adds the
+        // first poll from there.
+        if (polls.length === 0) {
+          const summary = await apiGetGroupSummary(groupId);
+          if (!summary) { setError(true); return; }
+          setGroup(buildEmptyGroup(summary));
+          return;
         }
         const anchorPoll = findChainRoot(polls);
         if (!anchorPoll) { setError(true); return; }

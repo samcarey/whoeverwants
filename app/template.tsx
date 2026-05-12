@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useEffect, useState, Suspense, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
 import HeaderPortal from '@/components/HeaderPortal';
@@ -10,6 +10,7 @@ import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
+import { apiCreateGroup } from '@/lib/api';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -46,6 +47,50 @@ export default function Template({ children }: AppTemplateProps) {
     <Suspense fallback={<div />}>
       <TemplateInner>{children}</TemplateInner>
     </Suspense>
+  );
+}
+
+/** Home-page floating "+" FAB. Calls `apiCreateGroup` on tap so a real
+ *  group row materializes BEFORE the user adds any polls — that way the
+ *  user can name the group (title click → /info / /edit-title) and
+ *  share its URL before there's any content. Falls back to navigating
+ *  to the legacy /g/ empty placeholder on API failure so the flow still
+ *  produces a usable destination.
+ *
+ *  In-flight guard via ref prevents double-creates on rapid taps (which
+ *  would mint two empty groups via two simultaneous POSTs). */
+function CreateGroupButton({ router }: { router: ReturnType<typeof useRouter> }) {
+  const inFlight = useRef(false);
+  const onClick = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
+      const summary = await apiCreateGroup();
+      const routeId = summary.short_id || summary.id;
+      // Forward navigation with the standard slide transition. Group
+      // page mounts an empty group via useGroup's summary-fallback path.
+      navigateWithTransition(router, `/g/${routeId}`, 'forward');
+    } catch {
+      // Network or 400 from the create endpoint — fall back to the
+      // legacy empty placeholder so the user can still start a poll.
+      navigateWithTransition(router, '/g', 'forward');
+    } finally {
+      inFlight.current = false;
+    }
+  };
+  return (
+    <button
+      onClick={onClick}
+      className="fixed z-50 h-12 px-3 rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
+      style={{
+        right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
+        bottom: '1rem',
+      }}
+      aria-label="Create new group"
+    >
+      <span aria-hidden="true" className="text-4xl leading-none">+</span>
+      <span className="text-lg leading-none">Group</span>
+    </button>
   );
 }
 
@@ -261,25 +306,14 @@ function TemplateInner({ children }: AppTemplateProps) {
         </Suspense>
       )}
 
-      {/* Floating "+" FAB — home page only. Navigates to /g/ (the empty
-           placeholder) where the user picks a What/When/Where bubble for what
-           they want to create. Rendered via portal outside the scaling
-           container so it positions against the viewport. Slides with the
-           rest of the page in view transitions (no shared transition name
-           with the group bubble bar). */}
+      {/* Floating "+" FAB — home page only. Materializes a brand-new group
+           in the DB (via apiCreateGroup) so the user can name it / share it /
+           edit info before adding any polls. Then navigates to the new
+           group's URL where the bubble bar lives for picking the first
+           poll's category. Falls back to the legacy /g/ empty placeholder
+           on API failure so the user can still create a poll. */}
       {isMounted && pathname === '/' && createPortal(
-        <button
-          onClick={() => navigateWithTransition(router, '/g', 'forward')}
-          className="fixed z-50 h-12 px-3 rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
-          style={{
-            right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
-            bottom: '1rem',
-          }}
-          aria-label="Create new group"
-        >
-          <span aria-hidden="true" className="text-4xl leading-none">+</span>
-          <span className="text-lg leading-none">Group</span>
-        </button>,
+        <CreateGroupButton router={router} />,
         document.getElementById('floating-fab-portal')!
       )}
 

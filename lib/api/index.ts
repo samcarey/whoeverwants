@@ -39,6 +39,9 @@ export { apiGetQuestionResults } from "./results";
 export {
   apiGetMyGroups,
   apiGetGroupByRouteId,
+  apiCreateGroup,
+  apiGetMyEmptyGroups,
+  apiGetGroupSummary,
   apiLeaveGroup,
   apiUpdateGroupTitle,
 } from "./groups";

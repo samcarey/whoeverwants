@@ -23,7 +23,7 @@
  * forget-of-last-poll calls land.
  */
 
-import type { Poll } from "@/lib/types";
+import type { GroupSummary, Poll } from "@/lib/types";
 import {
   cachePoll,
   cacheQuestionResults,
@@ -32,6 +32,15 @@ import {
   invalidatePoll,
 } from "@/lib/questionCache";
 import { groupFetch, toPoll, toQuestionResults } from "./_internal";
+
+function toGroupSummary(data: any): GroupSummary {
+  return {
+    id: data.id,
+    short_id: data.short_id ?? null,
+    title: data.title ?? null,
+    created_at: data.created_at,
+  };
+}
 
 function hydrateAndCache(data: any[]): Poll[] {
   return data.map((d) => {
@@ -80,6 +89,65 @@ export async function apiGetGroupByRouteId(
   const path = `/by-route-id/${encodeURIComponent(routeId)}${qs ? `?${qs}` : ''}`;
   const data: any[] = await groupFetch(path);
   return hydrateAndCache(data);
+}
+
+/** Create a brand-new empty group and auto-join the caller as a member.
+ *
+ *  Used by the home "+" FAB so the group materializes in the DB BEFORE
+ *  any polls exist — the user can immediately name it, share its URL,
+ *  and see it on their home list. Subsequent visits to its URL go
+ *  through `apiGetGroupByRouteId` like any other group; empty groups
+ *  with no visible polls are surfaced on home via `apiGetMyEmptyGroups`.
+ *
+ *  Invalidates the accessible-polls cache so the next `getMyGroups()`
+ *  call re-fetches and picks up the new empty group via the
+ *  `/api/groups/empty` parallel call.
+ */
+export async function apiCreateGroup(): Promise<GroupSummary> {
+  const data = await groupFetch<any>('', { method: 'POST' });
+  const summary = toGroupSummary(data);
+  // The new group has no polls yet, so the polls cache doesn't need
+  // explicit per-poll invalidation — but the accessible-polls cache
+  // gates freshness on a list of question_ids that didn't change, and
+  // we want the next freshness check on the home page to re-fetch so
+  // the new empty group lands. Invalidate to force a refetch.
+  invalidateAccessibleQuestions();
+  return summary;
+}
+
+/** Return every empty group the caller is a member of (groups they
+ *  joined that have ZERO polls). Sibling to `apiGetMyGroups` — the
+ *  home page calls both in parallel and merges client-side.
+ *
+ *  Returns an empty array on transient failure rather than throwing —
+ *  empty groups are nice-to-have on the home list; a network blip
+ *  shouldn't break the populated list. */
+export async function apiGetMyEmptyGroups(): Promise<GroupSummary[]> {
+  try {
+    const data: any[] = await groupFetch('/empty', { method: 'POST' });
+    return Array.isArray(data) ? data.map(toGroupSummary) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Read just the group's metadata (id, short_id, title, created_at).
+ *  Used by `useGroup` when `apiGetGroupByRouteId` returned no polls —
+ *  the group page still needs the title to render its header for a
+ *  freshly-created empty group or a member viewing a group whose every
+ *  poll was closed before they joined.
+ *
+ *  Does NOT auto-join the caller (unlike `/by-route-id/{id}` which
+ *  writes membership inline). Safe to call from any read-only context. */
+export async function apiGetGroupSummary(routeId: string): Promise<GroupSummary | null> {
+  try {
+    const data = await groupFetch<any>(
+      `/by-route-id/${encodeURIComponent(routeId)}/summary`,
+    );
+    return toGroupSummary(data);
+  } catch {
+    return null;
+  }
 }
 
 /**

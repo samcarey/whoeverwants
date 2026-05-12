@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Poll } from "@/lib/types";
+import { GroupSummary, Poll } from "@/lib/types";
 import { buildGroups, getGroupHref, isPendingPollId, Group } from "@/lib/groupUtils";
 import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
 import GroupListItem from "@/components/GroupListItem";
@@ -15,20 +15,25 @@ import { forgetGroup } from "@/lib/forgetQuestion";
 
 interface GroupListProps {
   // Phase 5b: the home page passes the polls (wrapper-level units)
-  // returned by getAccessiblePolls(). buildGroups walks
-  // poll.follow_up_to to chain wrappers into groups.
+  // returned by getAccessiblePolls(). buildGroups groups every poll
+  // sharing a `group_id`.
   polls: Poll[];
-  /** Called with the poll-ids of every poll in every forgotten group, so
-   *  the parent page can drop them optimistically (avoids a full server
-   *  round-trip just to hide deleted rows). A group spans multiple polls
-   *  sharing a `group_id`; passing only root ids would leave follow-up
-   *  polls behind and rebuild a ghost group. */
-  onGroupsForgotten?: (forgottenPollIds: string[]) => void;
+  /** Membership-only "empty groups" the user joined that have no polls
+   *  yet (typically just-created via the home "+" FAB). Built into the
+   *  same group list so they appear alongside populated groups. */
+  emptyGroups?: GroupSummary[];
+  /** Called with the poll-ids of every poll in every forgotten group +
+   *  the empty-group-ids of every forgotten empty group, so the parent
+   *  page can drop them optimistically (avoids a full server round-trip
+   *  just to hide deleted rows). A group spans multiple polls sharing a
+   *  `group_id`; passing only root ids would leave follow-up polls
+   *  behind and rebuild a ghost group. */
+  onGroupsForgotten?: (forgottenPollIds: string[], forgottenGroupIds?: string[]) => void;
 }
 
 const LONG_PRESS_MS = 500;
 
-export default function GroupList({ polls, onGroupsForgotten }: GroupListProps) {
+export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }: GroupListProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
   // Load voted/abstained synchronously so the very first render's
@@ -55,8 +60,15 @@ export default function GroupList({ polls, onGroupsForgotten }: GroupListProps) 
   const touchHandledRef = useRef(false);
 
   const groups = useMemo(() => {
-    return buildGroups(polls, votedQuestionIds, abstainedQuestionIds);
-  }, [polls, votedQuestionIds, abstainedQuestionIds]);
+    return buildGroups(polls, votedQuestionIds, abstainedQuestionIds, emptyGroups);
+  }, [polls, votedQuestionIds, abstainedQuestionIds, emptyGroups]);
+
+  // Stable "row id" for selection state, prefetch keys, ref maps, etc.
+  // Populated groups use `rootPollId`; empty groups use `groupId` (no
+  // polls exist yet). Both produce a single non-null string per group.
+  const groupKeyOf = useCallback((group: Group): string => {
+    return group.rootPollId ?? group.groupId ?? '';
+  }, []);
 
   // Groups can drop out from under us (deletions, re-fetch). Strip selection
   // ids that no longer correspond to a visible group. (Selection mode stays
@@ -64,7 +76,7 @@ export default function GroupList({ polls, onGroupsForgotten }: GroupListProps) 
   // upper-left cancel button or Escape.)
   useEffect(() => {
     if (!selectionMode) return;
-    const validIds = new Set(groups.map((t) => t.rootPollId));
+    const validIds = new Set(groups.map(groupKeyOf));
     setSelectedGroupIds((prev) => {
       let changed = false;
       const next = new Set<string>();
@@ -75,7 +87,7 @@ export default function GroupList({ polls, onGroupsForgotten }: GroupListProps) 
       if (!changed) return prev;
       return next;
     });
-  }, [groups, selectionMode]);
+  }, [groups, selectionMode, groupKeyOf]);
 
   const exitSelectionMode = useCallback(() => {
     setSelectionMode(false);
@@ -104,9 +116,15 @@ export default function GroupList({ polls, onGroupsForgotten }: GroupListProps) 
 
   // Warm per-question votes + results for visible groups so the destination
   // renders from cache on first paint. apiGetVotes is coalesced; re-calls are cheap.
+  // Empty groups have no questions, so nothing to warm — the observer skips them
+  // via the `groupsByRootId` lookup.
   const warmedGroupIdsRef = useRef<Set<string>>(new Set());
   const groupsByRootId = useMemo(
-    () => new Map(groups.map((t) => [t.rootQuestionId, t])),
+    () => new Map(
+      groups
+        .filter((t) => t.rootQuestionId)
+        .map((t) => [t.rootQuestionId as string, t] as const),
+    ),
     [groups],
   );
   useEffect(() => {
@@ -163,17 +181,21 @@ export default function GroupList({ polls, onGroupsForgotten }: GroupListProps) 
 
   const handleConfirmDelete = useCallback(() => {
     const idsToForget = new Set(selectedGroupIds);
-    const groupsToForget = groups.filter((t) => idsToForget.has(t.rootPollId));
+    const groupsToForget = groups.filter((t) => idsToForget.has(groupKeyOf(t)));
     const forgottenPollIds: string[] = [];
+    const forgottenGroupIds: string[] = [];
     for (const group of groupsToForget) {
       forgetGroup(group);
       for (const poll of group.polls) forgottenPollIds.push(poll.id);
+      if (group.isEmpty && group.groupId) {
+        forgottenGroupIds.push(group.groupId);
+      }
     }
     setConfirmingDelete(false);
     setSelectionMode(false);
     setSelectedGroupIds(new Set());
-    onGroupsForgotten?.(forgottenPollIds);
-  }, [selectedGroupIds, groups, onGroupsForgotten]);
+    onGroupsForgotten?.(forgottenPollIds, forgottenGroupIds);
+  }, [selectedGroupIds, groups, onGroupsForgotten, groupKeyOf]);
 
   if (groups.length === 0) return null;
 
@@ -228,7 +250,7 @@ export default function GroupList({ polls, onGroupsForgotten }: GroupListProps) 
         const href = getGroupHref(group);
         const latestQuestion = group.latestQuestion;
         const hasUnvoted = group.unvotedCount > 0;
-        const groupKey = group.rootPollId;
+        const groupKey = groupKeyOf(group);
 
         const handleActivate = () => {
           if (selectionMode) {
@@ -293,17 +315,19 @@ export default function GroupList({ polls, onGroupsForgotten }: GroupListProps) 
 
         return (
           <GroupListItem
-            key={group.rootQuestionId}
-            groupRootId={group.rootQuestionId}
+            key={groupKey}
+            groupRootId={group.rootQuestionId ?? group.groupId ?? undefined}
             title={group.title}
-            latestQuestionTitle={latestQuestion.title}
+            latestQuestionTitle={latestQuestion?.title ?? ''}
             participantNames={group.participantNames}
             anonymousRespondentCount={group.anonymousRespondentCount}
             questionCount={group.questions.length}
-            createdAt={latestQuestion.created_at}
+            createdAt={latestQuestion?.created_at ?? null}
+            statusBadge={group.isEmpty ? 'New group — tap to add a poll' : undefined}
             soonestUnvotedDeadline={group.soonestUnvotedDeadline}
             unvotedCount={group.unvotedCount}
             hasUnvoted={hasUnvoted}
+            hideRespondents={group.isEmpty}
             pressed={pressedGroupId === groupKey}
             isFirst={index === 0}
             selectionMode={selectionMode}

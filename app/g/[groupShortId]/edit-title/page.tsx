@@ -13,8 +13,10 @@ import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
 function Editor({ group, groupId }: { group: Group; groupId: string }) {
   const router = useRouter();
   // Migration 105: group_title lives on groups.title — surfaced on
-  // every poll in the group as the same value.
-  const [value, setValue] = useState<string>(group.latestPoll.group_title ?? '');
+  // every poll in the group as the same value. Empty groups carry the
+  // override directly on `Group.groupTitleOverride` (no latestPoll to
+  // read from).
+  const [value, setValue] = useState<string>(group.groupTitleOverride ?? '');
   const [saving, setSaving] = useState(false);
 
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
