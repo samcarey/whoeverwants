@@ -34,7 +34,6 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     <>
       <GroupHeader
         headerRef={headerRef}
-        title={group.title}
         onBack={goBack}
         rightSlot={
           <button
@@ -47,16 +46,24 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         }
       />
 
-      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 1rem)` }}>
-        <div className="flex flex-col items-center text-center mb-6">
-          <RespondentCircles names={group.participantNames} anonymousCount={group.anonymousRespondentCount} />
-          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-            {totalCount} {totalCount === 1 ? 'person' : 'people'}
-          </p>
+      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
+        <div className="flex flex-col items-center text-center mb-8">
+          <RespondentCircles
+            names={group.participantNames}
+            anonymousCount={group.anonymousRespondentCount}
+            sizeClassName="w-28"
+          />
+          <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white break-words">
+            {group.title}
+          </h1>
         </div>
 
+        <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
+          {totalCount} {totalCount === 1 ? 'Member' : 'Members'}
+        </h2>
+
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
-          {group.participantNames.length === 0 ? (
+          {totalCount === 0 ? (
             <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
               No names submitted yet.
             </div>

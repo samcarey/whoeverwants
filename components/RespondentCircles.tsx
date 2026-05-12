@@ -37,9 +37,10 @@ export function nameToColor(name: string): string {
 interface RespondentCirclesProps {
   names: string[];
   anonymousCount: number;
+  sizeClassName?: string;
 }
 
-export default function RespondentCircles({ names, anonymousCount }: RespondentCirclesProps) {
+export default function RespondentCircles({ names, anonymousCount, sizeClassName = "w-16" }: RespondentCirclesProps) {
   const validNames = names.filter(n => n.trim().length > 0);
   const shownNames = validNames.slice(0, MAX_NAMED);
   const overflow = Math.max(0, validNames.length - MAX_NAMED) + anonymousCount;
@@ -61,7 +62,7 @@ export default function RespondentCircles({ names, anonymousCount }: RespondentC
   const layout = LAYOUTS[n];
 
   return (
-    <div className="w-16 aspect-square flex-shrink-0 self-center">
+    <div className={`${sizeClassName} aspect-square flex-shrink-0 self-center`}>
       <svg viewBox="0 0 100 100" className="w-full h-full" aria-hidden="true">
         {circles.map((circle, i) => {
           const [cx, cy] = layout.centers[i];
