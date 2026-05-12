@@ -63,7 +63,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         </h2>
 
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
-          {group.participantNames.length === 0 ? (
+          {totalCount === 0 ? (
             <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
               No names submitted yet.
             </div>
