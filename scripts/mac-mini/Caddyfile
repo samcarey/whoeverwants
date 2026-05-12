@@ -1,0 +1,26 @@
+# /opt/homebrew/etc/Caddyfile on the Mac mini.
+#
+# Each site block:
+#   - bind 0.0.0.0 ::  ensures both IPv4 and IPv6 listeners (macOS dual-stack
+#     can be flaky for hairpin packets — explicit binds are safer)
+#   - reverse_proxy localhost:NNNN  hits the Mac-published port that Colima
+#     forwards from the corresponding container in the VM
+#
+# When dev-server-manager is ported, per-author site blocks land here too,
+# OR (preferred) replaced by a wildcard *.dev.whoeverwants.com block forwarding
+# to a single in-VM router (Traefik). See docs/mac-mini-next-steps.md §1.
+
+mac-test.dev.whoeverwants.com {
+    bind 0.0.0.0 ::
+    reverse_proxy localhost:8080
+}
+
+cmd-api.dev.whoeverwants.com {
+    bind 0.0.0.0 ::
+    reverse_proxy localhost:9090
+}
+
+webhook.dev.whoeverwants.com {
+    bind 0.0.0.0 ::
+    reverse_proxy localhost:9091
+}

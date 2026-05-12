@@ -1,0 +1,63 @@
+# ~/devbox/docker-compose.yml on the Mac mini.
+#
+# Reads secrets from ~/devbox/.env (mode 600, gitignored):
+#   CMD_API_TOKEN          — bearer token for cmd-api
+#   POSTGRES_PASSWORD      — postgres superuser password
+#   GITHUB_WEBHOOK_SECRET  — HMAC secret for GitHub webhook signatures
+#
+# All containers run inside the Colima VM. Caddy on the Mac terminates TLS for
+# *.dev.whoeverwants.com and reverse-proxies to the published 127.0.0.1 ports.
+
+services:
+  nginx-test:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    networks:
+      - devbox-net
+
+  cmd-api:
+    build:
+      context: ./cmd-api
+    restart: unless-stopped
+    environment:
+      - API_SECRET=${CMD_API_TOKEN}
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - devbox-net
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: whoeverwants
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: whoeverwants
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - devbox-net
+
+  webhook:
+    build:
+      context: ./webhook
+    restart: unless-stopped
+    environment:
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+    ports:
+      - "127.0.0.1:9091:9091"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - devbox-net
+
+volumes:
+  postgres-data:
+
+networks:
+  devbox-net:
+    driver: bridge
