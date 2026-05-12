@@ -1278,7 +1278,7 @@ export function CreateQuestionContent() {
 
   const titleField = (
     <div className="flex items-center justify-between gap-3 h-12">
-      <label htmlFor="title" className="text-sm font-medium shrink-0">
+      <label htmlFor="title" className="text-base font-normal shrink-0">
         Title
       </label>
       <input
@@ -1296,7 +1296,7 @@ export function CreateQuestionContent() {
         }}
         disabled={isLoading}
         maxLength={100}
-        className="flex-1 min-w-0 text-sm bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
+        className="flex-1 min-w-0 text-base bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
         placeholder={isAutoTitle ? "auto" : "Enter your title..."}
         required={!isAutoTitle}
       />
@@ -1309,9 +1309,9 @@ export function CreateQuestionContent() {
   const suggestionCutoffField = (
     <div>
       <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
-        <span className="text-sm font-medium">Suggestion/Availability Cutoff</span>
+        <span className="text-base font-normal">Suggestion/Availability Cutoff</span>
         <span className="relative inline-flex">
-          <span className="text-sm font-normal text-blue-600 dark:text-blue-400 text-right">
+          <span className="text-base font-normal text-blue-600 dark:text-blue-400 text-right">
             {(() => {
               if (suggestionCutoff === 'custom') return 'Custom';
               const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
@@ -1467,8 +1467,8 @@ export function CreateQuestionContent() {
   const showOptionsCard = questionType === 'question' && category !== 'yes_no' && category !== 'time';
   const optionsCard = showOptionsCard ? (
     <div>
-      <label className="block text-sm font-medium mb-1 px-1">
-        Options <span className="font-normal text-xs text-gray-500 dark:text-gray-400">(leave blank to ask for suggestions)</span>
+      <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+        Options <span className="font-normal text-xs">(leave blank to ask for suggestions)</span>
       </label>
       <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
         <OptionsInput
@@ -1557,7 +1557,7 @@ export function CreateQuestionContent() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
-                <span className="text-sm font-medium text-gray-500 dark:text-gray-400 select-none">
+                <span className="text-lg font-semibold select-none">
                   New Poll
                 </span>
                 <button
@@ -1608,7 +1608,7 @@ export function CreateQuestionContent() {
                   {questionType === 'question' && (
                     <div className="divide-y divide-gray-200 dark:divide-gray-700">
                       <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
-                        <span className="text-sm font-medium shrink-0">
+                        <span className="text-base font-normal shrink-0">
                           Category
                         </span>
                         <div className="flex-1 min-w-0">
@@ -1622,7 +1622,7 @@ export function CreateQuestionContent() {
                       </label>
                       {category !== 'yes_no' && (
                         <div className="flex items-center justify-between gap-3 h-12">
-                          <label htmlFor="forField" className="text-sm font-medium shrink-0">
+                          <label htmlFor="forField" className="text-base font-normal shrink-0">
                             Context
                           </label>
                           <input
@@ -1637,7 +1637,7 @@ export function CreateQuestionContent() {
                             disabled={isLoading}
                             maxLength={100}
                             placeholder={FOR_FIELD_PLACEHOLDERS[category] || "Context"}
-                            className="flex-1 min-w-0 text-sm bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
+                            className="flex-1 min-w-0 text-base bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
                           />
                         </div>
                       )}
@@ -1650,7 +1650,7 @@ export function CreateQuestionContent() {
                 {showTimeFields && (
                   <div>
                     <div className="flex items-center justify-between mb-1 px-1">
-                      <label className="block text-sm font-medium">
+                      <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">
                         Time Windows
                       </label>
                       <button
@@ -1733,7 +1733,7 @@ export function CreateQuestionContent() {
 
                     {pollHasPrephase && (
                       <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
-                        <span className="text-sm font-medium">
+                        <span className="text-base font-normal">
                           Allow voting before options are finalized
                         </span>
                         <input
@@ -1751,7 +1751,7 @@ export function CreateQuestionContent() {
                         label-left / value-right layout without affecting
                         the voting-flow consumers of CompactNameField. */}
                     <div className="flex items-center justify-between gap-3 h-12">
-                      <label htmlFor="creatorName" className="text-sm font-medium shrink-0">
+                      <label htmlFor="creatorName" className="text-base font-normal shrink-0">
                         Your Name
                       </label>
                       <input
@@ -1762,7 +1762,7 @@ export function CreateQuestionContent() {
                         onBlur={() => setCreatorName(creatorName.trim())}
                         disabled={isLoading}
                         maxLength={50}
-                        className="flex-1 min-w-0 text-sm bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 min-w-0 text-base bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
                   </form>
@@ -1771,15 +1771,15 @@ export function CreateQuestionContent() {
                 {showTimeFields && (
                   <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
                     <div className="flex items-center justify-between gap-3 h-12">
-                      <span className="text-sm font-medium shrink-0">
+                      <span className="text-base font-normal shrink-0">
                         Minimum Availability{' '}
-                        <span className="font-normal text-xs text-gray-500 dark:text-gray-400">of the top slot</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">of the top slot</span>
                       </span>
                       <button
                         type="button"
                         onClick={() => setShowMinParticipationModal(true)}
                         disabled={isLoading}
-                        className="text-sm font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
+                        className="text-base font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
                         aria-label="Adjust minimum availability percentage"
                       >
                         {minimumParticipation}%
@@ -1795,7 +1795,7 @@ export function CreateQuestionContent() {
                 <div>
                   <label
                     htmlFor="details"
-                    className="block text-sm font-medium mb-1 px-1"
+                    className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 px-1"
                   >
                     Notes
                   </label>

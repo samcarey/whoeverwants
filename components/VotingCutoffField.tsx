@@ -33,9 +33,9 @@ export default function VotingCutoffField({
   return (
     <div>
       <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
-        <span className="text-sm font-medium">Voting Cutoff</span>
+        <span className="text-base font-normal">Voting Cutoff</span>
         <span className="relative inline-flex">
-          <span className="text-sm font-normal text-blue-600 dark:text-blue-400 text-right">
+          <span className="text-base font-normal text-blue-600 dark:text-blue-400 text-right">
             {(() => {
               if (deadlineOption === 'none') return 'None';
               if (deadlineOption === 'custom') {
