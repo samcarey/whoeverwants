@@ -104,6 +104,17 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
     return () => document.removeEventListener('keydown', onKey);
   }, [selectionMode, exitSelectionMode]);
 
+  // Tell the template to hide the home-page settings gear while we own the
+  // upper-left slot via HeaderPortal. Fire on entry, clear on exit/unmount.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('homeSelectionModeChange', { detail: { active: selectionMode } }));
+    return () => {
+      if (selectionMode) {
+        window.dispatchEvent(new CustomEvent('homeSelectionModeChange', { detail: { active: false } }));
+      }
+    };
+  }, [selectionMode]);
+
   // Prefetch group page routes for all visible groups on mount.
   // `getGroupHref` returns `/g/<root>?p=<target>` (with the targeted poll
   // expanded) when the user has awaiting work, or `/g/<root>` (no expand,
