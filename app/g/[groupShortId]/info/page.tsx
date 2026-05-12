@@ -72,10 +72,12 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         rightSlot={
           <button
             onClick={() => navigateWithTransition(router, `/g/${groupId}/edit-title`, 'forward')}
-            className="w-10 h-10 flex items-center justify-center shrink-0 text-blue-600 dark:text-blue-400 text-sm font-medium"
+            className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
             aria-label="Edit group title"
           >
-            Edit
+            <span className="w-10 h-10 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-medium">
+              Edit
+            </span>
           </button>
         }
       />
