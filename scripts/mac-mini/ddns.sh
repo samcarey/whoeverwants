@@ -11,7 +11,12 @@
 set -euo pipefail
 
 HOSTED_ZONE_ID="Z000095423MM09UF7IBWG"
-RECORD_NAME="mac-test.dev.whoeverwants.com"
+# Records we keep in sync with the home IP. The wildcard covers per-author
+# dev servers and ad-hoc hostnames so they don't need their own CNAMEs.
+RECORD_NAMES=(
+  "mac-test.dev.whoeverwants.com"
+  "*.dev.whoeverwants.com"
+)
 TTL=60
 PROVIDERS="https://ifconfig.co https://ipv4.icanhazip.com https://api.ipify.org"
 
@@ -32,29 +37,31 @@ current_ip=$(fetch_public_ip) || {
     exit 1
 }
 
-current_record=$(aws route53 list-resource-record-sets \
-    --hosted-zone-id "$HOSTED_ZONE_ID" \
-    --query "ResourceRecordSets[?Name == '${RECORD_NAME}.' && Type == 'A'].ResourceRecords[0].Value | [0]" \
-    --output text 2>/dev/null || echo "")
+# Build the list of changes for any record whose current value drifted from
+# our home IP. AWS allows a single ChangeResourceRecordSets batch with N
+# updates, which is preferable to N calls (atomic + cheaper).
+changes=""
+for RECORD_NAME in "${RECORD_NAMES[@]}"; do
+    # Route 53 lookups need the trailing dot; wildcard records are returned
+    # with the literal '*' so query and value match by name.
+    current_record=$(aws route53 list-resource-record-sets \
+        --hosted-zone-id "$HOSTED_ZONE_ID" \
+        --query "ResourceRecordSets[?Name == '${RECORD_NAME}.' && Type == 'A'].ResourceRecords[0].Value | [0]" \
+        --output text 2>/dev/null || echo "")
+    if [ "$current_record" = "$current_ip" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') $RECORD_NAME unchanged ($current_ip)"
+        continue
+    fi
+    echo "$(date '+%Y-%m-%d %H:%M:%S') updating $RECORD_NAME: ${current_record:-NONE} -> $current_ip"
+    if [ -n "$changes" ]; then changes+=","; fi
+    changes+="{\"Action\":\"UPSERT\",\"ResourceRecordSet\":{\"Name\":\"$RECORD_NAME\",\"Type\":\"A\",\"TTL\":$TTL,\"ResourceRecords\":[{\"Value\":\"$current_ip\"}]}}"
+done
 
-if [ "$current_record" = "$current_ip" ]; then
-    echo "$(date '+%Y-%m-%d %H:%M:%S') unchanged ($current_ip)"
+if [ -z "$changes" ]; then
     exit 0
 fi
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') updating $RECORD_NAME: ${current_record:-NONE} -> $current_ip"
-
 aws route53 change-resource-record-sets \
     --hosted-zone-id "$HOSTED_ZONE_ID" \
-    --change-batch "{
-        \"Changes\": [{
-            \"Action\": \"UPSERT\",
-            \"ResourceRecordSet\": {
-                \"Name\": \"$RECORD_NAME\",
-                \"Type\": \"A\",
-                \"TTL\": $TTL,
-                \"ResourceRecords\": [{\"Value\": \"$current_ip\"}]
-            }
-        }]
-    }" > /dev/null
+    --change-batch "{\"Changes\":[$changes]}" > /dev/null
 echo "$(date '+%Y-%m-%d %H:%M:%S') done"

@@ -6,9 +6,10 @@
 #   - reverse_proxy localhost:NNNN  hits the Mac-published port that Colima
 #     forwards from the corresponding container in the VM
 #
-# When dev-server-manager is ported, per-author site blocks land here too,
-# OR (preferred) replaced by a wildcard *.dev.whoeverwants.com block forwarding
-# to a single in-VM router (Traefik). See docs/mac-mini-next-steps.md §1.
+# Per-author dev-server site blocks are written by dev-server-manager.sh (inside
+# the VM) into ~/devbox/caddy.d/<slug>.caddy and imported below. The launchd
+# watcher (~/Library/LaunchAgents/com.devbox.caddy-watch.plist) runs `caddy
+# reload` when files change.
 
 mac-test.dev.whoeverwants.com {
     bind 0.0.0.0 ::
@@ -24,3 +25,8 @@ webhook.dev.whoeverwants.com {
     bind 0.0.0.0 ::
     reverse_proxy localhost:9091
 }
+
+# Per-author dev servers (one file per slug). Glob import is OK if the
+# directory is empty — Caddy just no-ops. Caddy's import glob only supports
+# a single wildcard, so the user path is hardcoded.
+import /Users/sccarey/devbox/caddy.d/*.caddy

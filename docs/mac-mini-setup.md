@@ -2,22 +2,18 @@
 
 ## Status
 
-**Foundation infrastructure complete; dev-server-manager port is the remaining work.**
+**Migration complete; dev-server side runs on the Mac mini.**
 
 This document captures the architecture and reproduction steps for migrating the dev-server side of WhoeverWants from the DigitalOcean droplet to a Mac mini at home. The Mac is the new control plane for per-author dev servers; the droplet keeps the production API.
 
-What's working today:
+Running today:
 - Colima VM as Claude's sandbox
 - Per-hostname HTTPS via home-router port forwarding + Caddy + Let's Encrypt
-- Self-healing public IP via DDNS into Route 53
-- `cmd-api` container — Claude can drive the Mac via HTTPS, same model as the droplet
-- `webhook` container — receives GitHub push events, HMAC-verifies, routes to dev-server-manager
+- Self-healing public IP via DDNS into Route 53 (now also manages the `*.dev.whoeverwants.com` wildcard)
+- `cmd-api` container — Claude drives the Mac via HTTPS, same model as the droplet
+- `webhook` container — receives GitHub push events, HMAC-verifies, dispatches to `dev-server-manager.sh`
 - Postgres 16 container with persistent volume
-
-What's NOT yet ported (see `docs/mac-mini-next-steps.md`):
-- `dev-server-manager.sh` — the script that actually provisions per-author dev servers
-- Wildcard `*.dev.whoeverwants.com` cutover from droplet IP to home IP
-- GitHub webhook URL change
+- Per-author dev servers: one Docker container in the VM (Next.js + uvicorn together), routed by Caddy on the Mac via auto-managed snippets at `~/devbox/caddy.d/<slug>.caddy`
 
 ## Architecture
 
@@ -37,16 +33,20 @@ Mac mini host
   ├─ Colima daemon (Apple Virtualization Framework)
   │   └─ Linux ARM64 VM ── Claude's sandbox ── isolated from Mac filesystem
   │       ├─ docker-compose stack at /Users/<you>/devbox/docker-compose.yml
-  │       │   ├─ cmd-api      — published 127.0.0.1:9090 — bearer-token auth
-  │       │   ├─ webhook      — published 127.0.0.1:9091 — HMAC-verified
-  │       │   ├─ postgres     — internal only (no published port)
-  │       │   └─ nginx-test   — published 127.0.0.1:8080 — placeholder
-  │       └─ Docker socket mounted into cmd-api & webhook (so they can spawn dev-server containers)
-  ├─ DDNS launchd job (5-min interval, AWS Route 53 UPSERT)
+  │       │   ├─ cmd-api          — published 127.0.0.1:9090 — bearer-token auth
+  │       │   ├─ webhook          — published 127.0.0.1:9091 — HMAC-verified
+  │       │   ├─ postgres         — internal only (shared by every author's DB)
+  │       │   ├─ nginx-test       — published 127.0.0.1:8080 — placeholder
+  │       │   └─ whoeverwants-dev-<slug>  — one per author, published 127.0.0.1:<3001-3010>
+  │       └─ Docker socket mounted into cmd-api & webhook so they can spawn dev-server containers
+  ├─ DDNS LaunchAgent (5-min interval, AWS Route 53 UPSERT for mac-test.dev + *.dev wildcard)
+  ├─ caddy-watch LaunchAgent (5-sec interval, runs `caddy reload` when ~/devbox/caddy.d/ changes)
   └─ Other LaunchAgents (iOS GH runner, Ollama, etc.) — independent
 ```
 
-**Key isolation boundary**: cmd-api lives in the VM. It can spawn/manage VM containers (via Docker socket) but cannot touch the Mac filesystem. The Mac host runs only Colima + Caddy + DDNS + the user's pre-existing services. To update infrastructure config (Caddyfile, docker-compose.yml, .env), edits happen on the Mac filesystem at `~/devbox/`.
+**Key isolation boundary**: cmd-api lives in the VM. The Mac host runs only Colima + Caddy + DDNS + the user's pre-existing services. Colima auto-mounts `/Users` into the VM as RW (virtiofs), so cmd-api can write to `~/devbox/` on the Mac via a spawned container with `-v /Users:/Users`; everything outside `/Users` (e.g. `/opt/homebrew/etc/Caddyfile`) is not reachable and requires a Mac-side action.
+
+**Per-author dev server flow**: GitHub webhook → `webhook` container HMAC-verifies → spawns a docker:cli sidecar that runs `dev-server-manager.sh upsert <email> <branch>` → manager pulls the prebuilt `whoeverwants-devserver:latest` image, starts one container per author with a per-author Docker volume mounted at `/repo`, the entrypoint clones the repo, runs `npm ci` + `uv sync`, then starts Next.js (port 3000 in container, published to 127.0.0.1:<NNNN> on the VM) and uvicorn (port 8000, container-internal). The manager writes `~/devbox/caddy.d/<slug>.caddy` (a colima-mounted directory) which the launchd watcher picks up and reloads Caddy.
 
 ## Prerequisites
 
@@ -180,12 +180,15 @@ sudo brew services start caddy
 Generate per-secret values, write the compose file, build & start everything. Full templates in `scripts/mac-mini/`.
 
 ```bash
-mkdir -p ~/devbox/cmd-api ~/devbox/webhook
-cp scripts/mac-mini/cmd-api.py     ~/devbox/cmd-api/
-cp scripts/mac-mini/Dockerfile.cmd-api ~/devbox/cmd-api/Dockerfile
-cp scripts/mac-mini/webhook.py     ~/devbox/webhook/
-cp scripts/mac-mini/Dockerfile.webhook ~/devbox/webhook/Dockerfile
-cp scripts/mac-mini/docker-compose.yml ~/devbox/docker-compose.yml
+mkdir -p ~/devbox/cmd-api ~/devbox/webhook ~/devbox/devserver ~/devbox/scripts ~/devbox/caddy.d
+cp scripts/mac-mini/cmd-api.py             ~/devbox/cmd-api/
+cp scripts/mac-mini/Dockerfile.cmd-api     ~/devbox/cmd-api/Dockerfile
+cp scripts/mac-mini/webhook.py             ~/devbox/webhook/
+cp scripts/mac-mini/Dockerfile.webhook     ~/devbox/webhook/Dockerfile
+cp scripts/mac-mini/devserver-entrypoint.sh ~/devbox/devserver/
+cp scripts/mac-mini/Dockerfile.devserver   ~/devbox/devserver/Dockerfile
+cp scripts/mac-mini/dev-server-manager.sh  ~/devbox/scripts/
+cp scripts/mac-mini/docker-compose.yml     ~/devbox/docker-compose.yml
 
 # Generate secrets (NEVER commit these)
 {
@@ -197,6 +200,9 @@ chmod 600 ~/devbox/.env
 
 cd ~/devbox && docker compose up -d --build
 docker compose ps   # nginx-test, cmd-api, postgres, webhook all "Up"
+
+# Build the prebuilt dev-server image (one-time; per-author containers spawn from this)
+docker compose --profile build-only build devserver-image
 ```
 
 ### 9. DNS + Caddy entries for cmd-api and webhook
@@ -210,17 +216,37 @@ for SUB in cmd-api webhook; do
     --change-batch "{\"Changes\":[{\"Action\":\"UPSERT\",\"ResourceRecordSet\":{\"Name\":\"$HOST\",\"Type\":\"CNAME\",\"TTL\":60,\"ResourceRecords\":[{\"Value\":\"$ANCHOR\"}]}}]}"
 done
 
-# Update Caddyfile to add the additional site blocks
-HOST1=$(printf 'mac-test.dev.%s.%s' whoeverwants com)
-HOST2=$(printf 'cmd-api.dev.%s.%s' whoeverwants com)
-HOST3=$(printf 'webhook.dev.%s.%s' whoeverwants com)
-sudo tee /opt/homebrew/etc/Caddyfile <<EOF
-$HOST1 { bind 0.0.0.0 :: ; reverse_proxy localhost:8080 }
-$HOST2 { bind 0.0.0.0 :: ; reverse_proxy localhost:9090 }
-$HOST3 { bind 0.0.0.0 :: ; reverse_proxy localhost:9091 }
-EOF
+# Install the Caddyfile (matches scripts/mac-mini/Caddyfile in this repo;
+# includes per-author dev-server snippet imports).
+sudo cp scripts/mac-mini/Caddyfile /opt/homebrew/etc/Caddyfile
 sudo brew services restart caddy
 sleep 45  # cert provisioning
+```
+
+### 9b. Caddy snippet watcher + LaunchAgent
+
+The dev-server-manager writes per-author snippets to `~/devbox/caddy.d/`. A
+LaunchAgent polls every 5 seconds and runs `caddy reload` when the directory
+content hash changes.
+
+```bash
+cp scripts/mac-mini/caddy-watch.sh ~/devbox/caddy-watch.sh
+chmod +x ~/devbox/caddy-watch.sh
+cp scripts/mac-mini/com.devbox.caddy-watch.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.devbox.caddy-watch.plist
+launchctl list | grep caddy-watch   # confirm loaded
+```
+
+### 9c. Wildcard DNS record
+
+DDNS now manages a wildcard `*.dev.whoeverwants.com` A record so any
+per-author hostname resolves to the home IP without needing a per-author DNS
+edit. The launchd job (`com.devbox.ddns.plist`) calls `~/devbox/ddns.sh`
+every 5 minutes. After installing the updated script, trigger an immediate
+refresh:
+
+```bash
+~/devbox/ddns.sh   # one-shot: upserts both mac-test.dev and *.dev to home IP
 ```
 
 ### 10. Verify externally

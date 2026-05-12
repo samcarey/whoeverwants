@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+~/Library/LaunchAgents/com.devbox.caddy-watch.plist on the Mac mini.
+
+Polls ~/devbox/caddy.d/ every 5 seconds and runs `caddy reload` if any
+*.caddy file changed. dev-server-manager.sh (inside the VM) writes those
+snippets via a colima mount; this watcher is how the Mac reacts.
+
+Install with:
+  cp scripts/mac-mini/com.devbox.caddy-watch.plist ~/Library/LaunchAgents/
+  launchctl load ~/Library/LaunchAgents/com.devbox.caddy-watch.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.devbox.caddy-watch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <!-- Resolve $HOME at agent launch; ~/devbox/caddy-watch.sh is the actual script -->
+        <string>exec "$HOME/devbox/caddy-watch.sh"</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>5</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/caddy-watch.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/caddy-watch.err.log</string>
+</dict>
+</plist>

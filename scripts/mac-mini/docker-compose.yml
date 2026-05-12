@@ -7,6 +7,10 @@
 #
 # All containers run inside the Colima VM. Caddy on the Mac terminates TLS for
 # *.dev.whoeverwants.com and reverse-proxies to the published 127.0.0.1 ports.
+#
+# Per-author dev servers are spawned as siblings by dev-server-manager.sh
+# (running inside cmd-api or webhook). The manager writes Caddy snippets to
+# /host-caddy.d/ — a colima mount from the Mac's ~/devbox/caddy.d/.
 
 services:
   nginx-test:
@@ -27,6 +31,12 @@ services:
       - "127.0.0.1:9090:9090"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # dev-server-manager + apply-migrations land here (mounted RO from Mac
+      # so updates flow on `git pull` without rebuilding cmd-api)
+      - ./scripts:/opt/scripts:ro
+      # Caddy snippet directory (RW from VM; the Mac's launchd watcher
+      # picks up changes and reloads Caddy)
+      - ./caddy.d:/host-caddy.d
     networks:
       - devbox-net
 
@@ -48,12 +58,31 @@ services:
     restart: unless-stopped
     environment:
       - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      # MANAGER_CMD points at the script inside the container (mounted below).
+      # webhook.py shells out to: bash $MANAGER_CMD upsert <email> <branch>
+      - MANAGER_CMD=/opt/scripts/dev-server-manager.sh
     ports:
       - "127.0.0.1:9091:9091"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./scripts:/opt/scripts:ro
+      - ./caddy.d:/host-caddy.d
     networks:
       - devbox-net
+
+  # Build-only service: produces the whoeverwants-devserver:latest image that
+  # dev-server-manager spawns per author. Not started; just built.
+  #
+  # Build with:  docker compose build devserver-image
+  # Or:          docker compose --profile build-only build
+  devserver-image:
+    image: whoeverwants-devserver:latest
+    build:
+      context: ./devserver
+      dockerfile: Dockerfile
+    profiles: ["build-only"]
+    # Never start this service; it's a packaging target.
+    entrypoint: ["/bin/true"]
 
 volumes:
   postgres-data:

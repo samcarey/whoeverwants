@@ -187,33 +187,62 @@ This installs Docker, Caddy, the command execution API, clones the repo, starts 
 - The remote execution API has a configurable timeout (default 120s, max via 3rd arg)
 - The API returns stdout, stderr, and exit code for every command
 
-## Mac Mini Dev Box (Migration In Progress)
+## Mac Mini Dev Box
 
-The dev-server side of the system is migrating from the droplet to a Mac mini at home (`samcarey@mini4`, public IP `65.28.10.210`, Apple M4, 32 GB RAM, macOS 26). Production API stays on the droplet — only per-author dev servers are moving.
+The dev-server side of the system runs on a Mac mini at home (`samcarey@mini4`, public IP `65.28.10.210`, Apple M4, 32 GB RAM, macOS 26). Production API stays on the droplet — only per-author dev servers run here.
 
-**Status: foundation complete, dev-server-manager port pending.** What's running:
+**Status: dev-server-manager ported, end-to-end working.** Running:
 - Colima VM (Apple Virtualization Framework, 6 CPU / 12 GB / 80 GB) as Claude's sandbox
 - Per-hostname HTTPS at `*.dev.whoeverwants.com` via home-router port forwarding (80/443) → Caddy on Mac → containers in VM
-- DDNS (launchd → AWS Route 53) keeping the home IP record self-healing
+- DDNS (launchd → AWS Route 53) keeping both `mac-test.dev` and the `*.dev` wildcard A records self-healing
 - `cmd-api.dev.whoeverwants.com` — Claude→VM control endpoint, same model as droplet's cmd-api
-- `webhook.dev.whoeverwants.com` — GitHub push receiver, HMAC-verified (no-op until dev-server-manager lands)
+- `webhook.dev.whoeverwants.com` — GitHub push receiver, HMAC-verified, dispatches to `dev-server-manager.sh`
 - `mac-test.dev.whoeverwants.com` — placeholder serving nginx
-- Postgres 16 in VM (persistent volume, network-only)
+- Postgres 16 in VM (persistent volume, network-only) — one DB per author
+- One `whoeverwants-dev-<slug>` container per author (Next.js + uvicorn together) spawned by `dev-server-manager.sh`
 
 **Where to look:**
-- `docs/mac-mini-setup.md` — full reproduction guide (modeled after droplet-setup.md)
-- `docs/mac-mini-next-steps.md` — remaining work + open architectural decisions (`dev-server-manager` port, wildcard cert via DNS-01, GitHub webhook URL change, droplet decommission)
-- `scripts/mac-mini/` — production source files (cmd-api.py, webhook.py, Dockerfiles, ddns, Caddyfile, compose, LaunchAgent plist)
+- `docs/mac-mini-setup.md` — full reproduction guide
+- `docs/mac-mini-next-steps.md` — historical record of the deferred decisions; this branch resolves them
+- `scripts/mac-mini/` — production source files (cmd-api.py, webhook.py, Dockerfiles, ddns, Caddyfile, compose, LaunchAgent plists, dev-server-manager.sh, devserver-entrypoint.sh, caddy-watch.sh)
+- `scripts/remote-mac.sh` — analogous to `scripts/remote.sh`; drives cmd-api over HTTPS
+- `scripts/mac-deploy.sh` — file-deploy helper (uses cmd-api + colima's `/Users` auto-mount to write `~/devbox/`)
 
-**Calling cmd-api on the Mac mini** (analogous to `bash scripts/remote.sh "command"` for the droplet) — set in your shell:
+**Calling cmd-api on the Mac mini** (analogous to `bash scripts/remote.sh` for the droplet) — set in your shell:
 ```
 export MAC_API_URL=https://cmd-api.dev.whoeverwants.com
-export MAC_API_TOKEN=<from ~/devbox/.env on the Mac>
-curl -s -X POST -H "Authorization: Bearer $MAC_API_TOKEN" -H "Content-Type: application/json" \
-  -d '{"cmd":"hostname; docker ps"}' "$MAC_API_URL/"
+export MAC_API_TOKEN=<CMD_API_TOKEN value in ~/devbox/.env on the Mac>
+bash scripts/remote-mac.sh "hostname; docker ps"
 ```
 
-The cmd-api lives in the VM, not on the Mac host. It can spawn/manage VM containers (Docker socket mounted) but cannot touch the Mac filesystem — that boundary is deliberate. To edit infrastructure config (Caddyfile, docker-compose.yml, .env), edits happen on the Mac side at `~/devbox/`.
+The cmd-api lives in the VM, not on the Mac host. **Mac filesystem access from the VM**: Colima auto-mounts `/Users` into the VM RW via virtiofs, so cmd-api can read/write `~/devbox/` (and `~/Library/LaunchAgents/`) by spawning a sibling container with `-v /Users:/Users`. Anything outside `/Users` (notably `/opt/homebrew/etc/Caddyfile`) is not reachable from the VM and needs a Mac-side action. `scripts/mac-deploy.sh` encapsulates the `/Users` write pattern.
+
+**Per-author dev server architecture** (Option A from the original plan):
+- Each developer = one Docker container `whoeverwants-dev-<slug>` running Next.js (port 3000) + uvicorn (port 8000) together
+- Per-author Docker volume `whoeverwants-dev-repo-<slug>` mounted at `/repo` preserves node_modules / .venv / .next across restarts
+- Per-author Postgres DB `dev_<slug>` in the shared `devbox-postgres-1` container; migrations applied by the manager
+- Container's port 3000 published to VM `127.0.0.1:<3001-3010>`; Colima auto-forwards to Mac `localhost:<same port>`
+- Caddy snippet at `~/devbox/caddy.d/<slug>.caddy` routes `<slug>.dev.whoeverwants.com` to that port; the `com.devbox.caddy-watch.plist` LaunchAgent polls the dir every 5s and runs `caddy reload`
+- `dev-server-manager.sh` runs inside cmd-api OR webhook (both mount `/host-caddy.d`) and orchestrates the lifecycle. Lives at `~/devbox/scripts/dev-server-manager.sh` on the Mac, mounted at `/opt/scripts/dev-server-manager.sh` inside the containers.
+- Webhook receives the GitHub push event, extracts (email, branch), and calls `bash $MANAGER_CMD upsert <email> <branch>` in-process. Failures are logged + swallowed.
+
+**Operational commands** (via remote-mac.sh):
+```bash
+bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh list"
+bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh destroy <slug>"
+bash scripts/remote-mac.sh "docker logs whoeverwants-dev-<slug> --tail 50"
+bash scripts/remote-mac.sh "docker exec devbox-postgres-1 psql -U whoeverwants -c '\\l'"
+```
+
+**Pitfalls learned during the port:**
+- **`docker build` from cmd-api reads context from cmd-api's filesystem, not the daemon's.** The cmd-api container has only `/var/run/docker.sock` mounted — no `/Users`. To build images that reference Mac files, spawn an intermediate `docker:cli` sidecar that has BOTH `-v /Users:/Users` and `-v /var/run/docker.sock:/var/run/docker.sock`; build from there. Used in `mac-mini-setup.md` step 8 for the dev-server image build.
+- **Bind paths in `docker-compose.yml` are interpreted by the daemon, NOT by the docker CLI's CWD.** When invoking compose from a sidecar with `-v /Users:/Users`, set the sidecar's working directory to the **daemon-visible path** (`-w /Users/sccarey/devbox`), not a remapped one (`-w /devbox`). Otherwise relative `./scripts` resolves to `/devbox/scripts` and the daemon can't find it. `compose config` is the canonical sanity check — confirm `source:` fields match real VM paths before running `up -d`.
+- **Recreating cmd-api kills the in-flight cmd-api request.** When `docker compose up -d cmd-api` runs from inside cmd-api, the stop step terminates the requesting process mid-flight. Workaround: launch the recreate from a detached sidecar (`docker run -d`) — the sidecar is a sibling container and survives cmd-api's restart. Wait ~15s, then verify via `hostname` (returns a fresh container hostname).
+- **`docker exec ... --format '{{ ... }}'` quoting through cmd-api eats braces.** When cmd-api hands the cmd to `subprocess.run(cmd, shell=True)`, embedded `{{ }}` survives, but single-quoted Go templates inside single-quoted shell arguments can produce empty stdout (no JSON parse → remote-mac.sh's `json.load` fails on empty body). Workaround: switch the outer quotes to `"` and pass the inner braces literally — or use `--format` with no quoting and pipe through `head -c N`.
+- **Smoke-test sidecars need the same mounts as cmd-api.** When running `dev-server-manager.sh upsert` from an ad-hoc `docker run` sidecar (for testing), include both `-v /Users:/Users` (so it can read repo state on the Mac) AND `-v /Users/sccarey/devbox/caddy.d:/host-caddy.d` (so caddy snippet writes land in the real Mac-visible dir). The production path goes through cmd-api or webhook which both have these mounts baked in via `docker-compose.yml`.
+- **Per-author volume + bootstrap-marker race on re-upsert.** The manager polls for `/repo/.dev-server-ready` to know when the dev-server is up. If a previous run left the marker file in the per-author volume, the new run sees it immediately and skips waiting. Today this is harmless because the entrypoint deletes the marker on startup and the manager's downstream steps (caddy snippet write, migration apply) are idempotent. If you add side effects that need actual "this container is up RIGHT NOW", delete the marker via a one-shot `docker run --rm -v $volume:/repo alpine rm -f /repo/.dev-server-ready` BEFORE launching, then wait for it to reappear.
+- **Caddy `import` only supports ONE wildcard per glob.** `import /Users/*/devbox/caddy.d/*.caddy` is rejected with `Glob pattern may only contain one wildcard (*), but has others`. Hardcode the user portion: `import /Users/sccarey/devbox/caddy.d/*.caddy`. The username is fixed per Mac install anyway, so no real flexibility lost.
+- **Two GitHub webhooks during/after migration: droplet handles prod-deploy, Mac handles dev upserts.** The droplet's `dev-webhook.service` was patched in-place to short-circuit non-`main` pushes (returns `dev-side-on-mac` JSON, no upsert). The Mac webhook handles every branch including `main` (but no-ops since its `webhook.py` has no prod-deploy logic). Both webhooks fire on every push; each handles only its scope. Don't remove the droplet webhook — production auto-deploy still runs there. If the patch on the droplet ever drifts (`/root/whoeverwants/scripts/dev-webhook.py`), the patch marker is the `if branch != "main":` early-return block right after `log.info(f"Push to {branch} by {emails}")`.
 
 ## Tech Stack
 
