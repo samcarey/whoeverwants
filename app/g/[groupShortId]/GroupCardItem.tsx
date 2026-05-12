@@ -972,7 +972,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                           onTouchEnd={stopBubble}
                           onTouchMove={stopBubble}
                         >
-                          <section className="mb-3 rounded-3xl bg-white dark:bg-gray-800 px-4">
+                          <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
                             <CompactNameField
                               name={voterNameVal}
                               setName={(name: string) =>
@@ -1057,7 +1057,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                           onTouchEnd={stopBubble}
                           onTouchMove={stopBubble}
                         >
-                          <section className="mb-3 rounded-3xl bg-white dark:bg-gray-800 px-4">
+                          <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
                             <CompactNameField
                               name={voterNameVal}
                               setName={(name: string) =>

@@ -118,7 +118,7 @@ export default function SettingsPage() {
     <div className="question-content">
       {/* Name Input Section */}
       <div className="mb-6">
-        <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
           <CompactNameField name={name} setName={setName} disabled={isLoading} />
         </section>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">

@@ -262,7 +262,7 @@ export default function RankingSection({
 
       {showBallot && !wrapperHandlesSubmit && (
         <>
-          <section className="mt-4 rounded-3xl bg-white dark:bg-gray-800 px-4">
+          <section className="mt-4 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
             <CompactNameField name={voterName} setName={setVoterName} />
           </section>
           <button
