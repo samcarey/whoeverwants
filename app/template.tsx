@@ -11,6 +11,7 @@ import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } fro
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { apiCreateGroup } from '@/lib/api';
+import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -184,12 +185,12 @@ function TemplateInner({ children }: AppTemplateProps) {
   // same upper-left slot and the gear's tap target would compete with it.
   const [homeSelectionMode, setHomeSelectionMode] = useState(false);
   useEffect(() => {
-    const handleSelectionChange = (event: CustomEvent) => {
-      setHomeSelectionMode(!!event.detail.active);
+    const handle = (event: CustomEvent<HomeSelectionModeChangeDetail>) => {
+      setHomeSelectionMode(event.detail.active);
     };
-    window.addEventListener('homeSelectionModeChange', handleSelectionChange as EventListener);
+    window.addEventListener(HOME_SELECTION_MODE_CHANGE_EVENT, handle as EventListener);
     return () => {
-      window.removeEventListener('homeSelectionModeChange', handleSelectionChange as EventListener);
+      window.removeEventListener(HOME_SELECTION_MODE_CHANGE_EVENT, handle as EventListener);
     };
   }, []);
 

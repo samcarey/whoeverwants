@@ -41,3 +41,11 @@ export const POLL_FAILED_EVENT = 'pollFailed';
 export interface PollFailedDetail {
   placeholderId: string;
 }
+
+/** Fired by GroupList when bulk-forget selection mode toggles on the home
+ *  page. The template listens to hide the upper-left settings gear so the
+ *  cancel (X) button portalled into the same slot owns the hit area. */
+export const HOME_SELECTION_MODE_CHANGE_EVENT = 'homeSelectionModeChange';
+export interface HomeSelectionModeChangeDetail {
+  active: boolean;
+}
