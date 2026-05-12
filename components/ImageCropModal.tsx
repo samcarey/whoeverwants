@@ -60,30 +60,49 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
 
-  // Load the file → image. The cancelled guard is load-bearing under
-  // React StrictMode (Next.js dev mode): StrictMode runs the effect →
-  // cleanup → effect again synchronously on mount. Without the guard,
-  // the first mount's cleanup revokes URL_A before its `img.onload` has
-  // a chance to fire, which then fires `onerror` (the blob is dead) and
-  // permanently sets `loadError` to "Couldn't read that image file" —
-  // overriding the second mount's successful load. Same trap applies to
-  // any async effect that maps a temporary blob URL to React state.
+  // Load the file → image. Use FileReader → data URL rather than
+  // URL.createObjectURL: data URLs have no lifecycle (no
+  // revoke-vs-onload race under React StrictMode, no blob-URL quirks
+  // on iOS Safari / WebKit-based browsers like iOS Firefox where
+  // blob URLs created from <input type=file> have historically been
+  // flaky). The memory overhead is ~33% over the raw file, which is
+  // fine for a single image being cropped client-side.
+  //
+  // Cancellation guard is still kept: the effect can re-run if `file`
+  // changes (today: never, since the parent unmounts the modal to swap
+  // files — but cheap insurance against future callers).
   useEffect(() => {
     let cancelled = false;
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
+    const reader = new FileReader();
+    reader.onload = () => {
       if (cancelled) return;
-      setImage({ url, width: img.naturalWidth, height: img.naturalHeight });
+      const dataUrl = reader.result as string;
+      if (typeof dataUrl !== "string") {
+        setLoadError("Couldn't read that image file");
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        setImage({
+          url: dataUrl,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+        });
+      };
+      img.onerror = () => {
+        if (cancelled) return;
+        setLoadError("Couldn't read that image file");
+      };
+      img.src = dataUrl;
     };
-    img.onerror = () => {
+    reader.onerror = () => {
       if (cancelled) return;
       setLoadError("Couldn't read that image file");
     };
-    img.src = url;
+    reader.readAsDataURL(file);
     return () => {
       cancelled = true;
-      URL.revokeObjectURL(url);
     };
   }, [file]);
 
