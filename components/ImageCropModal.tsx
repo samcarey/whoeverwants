@@ -65,13 +65,16 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     const u = URL.createObjectURL(file);
+    console.log('[ImageCropModal] createObjectURL', {
+      url: u,
+      fileType: file.type,
+      fileSize: file.size,
+      fileName: (file as any).name,
+    });
     setUrl(u);
     return () => {
+      console.log('[ImageCropModal] revokeObjectURL', u);
       URL.revokeObjectURL(u);
-      // Also clear url state so a stale src isn't briefly applied to
-      // the img between cleanup and the next setup. Without this, the
-      // img would retain its src=URL_A attribute and fire onError as
-      // soon as the browser dispatches its load-fail event.
       setUrl((prev) => (prev === u ? null : prev));
     };
   }, [file]);
@@ -153,6 +156,13 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
     offsetXRef.current = 0;
     offsetYRef.current = 0;
     applyTransformToDom();
+    console.log('[ImageCropModal] applied initial transform', {
+      minScale,
+      frameSize,
+      imageW: imageDims.width,
+      imageH: imageDims.height,
+      imgStyle: imgRef.current?.getAttribute('style')?.slice(0, 200),
+    });
   }, [imageDims, frameSize, minScale]);
 
   function applyTransformToDom() {
@@ -384,6 +394,12 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
                 draggable={false}
                 onLoad={(e) => {
                   const t = e.currentTarget;
+                  console.log('[ImageCropModal] img onLoad', {
+                    naturalWidth: t.naturalWidth,
+                    naturalHeight: t.naturalHeight,
+                    src: t.src.slice(0, 60),
+                    complete: t.complete,
+                  });
                   if (t.naturalWidth > 0 && t.naturalHeight > 0) {
                     setImageDims({
                       width: t.naturalWidth,
@@ -392,7 +408,12 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
                     setLoadError(false);
                   }
                 }}
-                onError={() => setLoadError(true)}
+                onError={(e) => {
+                  console.log('[ImageCropModal] img onError', {
+                    src: (e.currentTarget as HTMLImageElement).src.slice(0, 60),
+                  });
+                  setLoadError(true);
+                }}
                 style={imageDims ? ({
                   position: 'absolute',
                   left: '50%',
