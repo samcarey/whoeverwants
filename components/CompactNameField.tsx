@@ -13,19 +13,19 @@ export default function CompactNameField({ name, setName, disabled = false, maxL
   const id = useId();
 
   return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium mb-1">
+    <div className="flex items-center justify-between gap-3 h-12">
+      <label htmlFor={id} className="text-base font-normal shrink-0">
         Your Name
       </label>
       <input
-        type="text"
         id={id}
+        type="text"
         value={name}
         onChange={(e) => setName(e.target.value)}
         onBlur={() => setName(name.trim())}
         disabled={disabled}
         maxLength={maxLength}
-        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex-1 min-w-0 text-base bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
       />
     </div>
   );

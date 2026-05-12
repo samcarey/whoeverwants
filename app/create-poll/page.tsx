@@ -18,6 +18,7 @@ import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } 
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
+import CompactNameField from "@/components/CompactNameField";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
 import MinimumParticipationModal from "@/components/MinimumParticipationModal";
@@ -1746,25 +1747,11 @@ export function CreateQuestionContent() {
                       </label>
                     )}
 
-                    {/* Voter name row — inline custom version (instead of
-                        shared CompactNameField) so we can apply the
-                        label-left / value-right layout without affecting
-                        the voting-flow consumers of CompactNameField. */}
-                    <div className="flex items-center justify-between gap-3 h-12">
-                      <label htmlFor="creatorName" className="text-base font-normal shrink-0">
-                        Your Name
-                      </label>
-                      <input
-                        id="creatorName"
-                        type="text"
-                        value={creatorName}
-                        onChange={(e) => setCreatorName(e.target.value)}
-                        onBlur={() => setCreatorName(creatorName.trim())}
-                        disabled={isLoading}
-                        maxLength={50}
-                        className="flex-1 min-w-0 text-base bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                    </div>
+                    <CompactNameField
+                      name={creatorName}
+                      setName={setCreatorName}
+                      disabled={isLoading}
+                    />
                   </form>
                 </section>
 

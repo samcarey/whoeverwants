@@ -262,9 +262,9 @@ export default function RankingSection({
 
       {showBallot && !wrapperHandlesSubmit && (
         <>
-          <div className="mt-4">
+          <section className="mt-4 rounded-3xl bg-white dark:bg-gray-800 px-4">
             <CompactNameField name={voterName} setName={setVoterName} />
-          </div>
+          </section>
           <button
             onClick={handleVoteClick}
             disabled={isSubmitting || (!isAbstaining && !justCancelledAbstain && rankedChoices.filter(choice => choice && choice.trim().length > 0).length === 0 && suggestionChoices.filter(c => c && c.trim().length > 0).length === 0)}

@@ -201,9 +201,9 @@ export default function TimeBallotSection({
 
             {!wrapperHandlesSubmit && (
               <>
-                <div className="mb-4">
+                <section className="mb-4 rounded-3xl bg-white dark:bg-gray-800 px-4">
                   <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
-                </div>
+                </section>
 
                 <button
                   type="button"
@@ -255,9 +255,9 @@ export default function TimeBallotSection({
 
             {!wrapperHandlesSubmit && (
               <>
-                <div className="mb-4">
+                <section className="mb-4 rounded-3xl bg-white dark:bg-gray-800 px-4">
                   <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
-                </div>
+                </section>
 
                 <button
                   type="button"
