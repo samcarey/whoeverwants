@@ -27,16 +27,12 @@ export interface GroupHeaderProps {
  *
  * Hitbox split: back / middle (participant graphic + title) / rightSlot
  * each take a full-height slice of the bar so there is no untappable
- * padding strip. The original `pl-2 / gap-2 / pr-2` whitespace on the
- * inner container is folded into the children's own padding so icon
- * positions stay pixel-identical:
- *   back  = pl-2 + w-10 + pr-2 (absorbs left edge + gap to title)
- *   title = pr-2  (absorbs gap to rightSlot when present, else pr-4)
- *   share = pr-2 + w-10  (absorbs gap from title + right edge)
- * `items-center` on the row preserves vertical centering for callers
- * whose rightSlot has an explicit `h-10` (info/edit-title Edit/Save);
- * back + title + GroupShareButton mark themselves `self-stretch` so
- * their hitboxes span the full bar height.
+ * padding strip. The original inner-container whitespace is folded
+ * into the children's own padding so icon positions stay pixel-
+ * identical. `items-center` (not `items-stretch`) preserves vertical
+ * centering for callers whose rightSlot has an explicit `h-10` (info /
+ * edit-title Edit/Save); back + title + GroupShareButton mark
+ * themselves `self-stretch` so their hitboxes span the full bar height.
  *
  * onBack defaults to navigating to '/'; sub-routes pass their own handler
  * (e.g. back to the group root or the info page when in-app history exists).
@@ -90,7 +86,7 @@ export default function GroupHeader({
       <div className="max-w-4xl mx-auto flex items-center overflow-hidden">
         <button
           onClick={handleBack}
-          className="self-stretch py-2 pl-2 pr-2 flex items-center justify-center shrink-0"
+          className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
           aria-label="Go back"
         >
           <span className="w-10 h-10 flex items-center justify-center">
