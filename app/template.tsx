@@ -11,6 +11,7 @@ import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } fro
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { apiCreateGroup } from '@/lib/api';
+import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -179,6 +180,20 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, []);
 
+  // Hide the settings gear on the home page when GroupList enters
+  // bulk-forget selection mode — the cancel (X) button portals into the
+  // same upper-left slot and the gear's tap target would compete with it.
+  const [homeSelectionMode, setHomeSelectionMode] = useState(false);
+  useEffect(() => {
+    const handle = (event: CustomEvent<HomeSelectionModeChangeDetail>) => {
+      setHomeSelectionMode(event.detail.active);
+    };
+    window.addEventListener(HOME_SELECTION_MODE_CHANGE_EVENT, handle as EventListener);
+    return () => {
+      window.removeEventListener(HOME_SELECTION_MODE_CHANGE_EVENT, handle as EventListener);
+    };
+  }, []);
+
   // True for any page under `/g/...` (the canonical group route family) AND
   // legacy `/p/...` URLs (which are now thin client-side redirects to /g/).
   // Used by the fallback header gate so neither /g/ nor /p/ pages get the
@@ -252,7 +267,10 @@ function TemplateInner({ children }: AppTemplateProps) {
             style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}
           >
             <div className="relative text-center">
-              {/* Wrapper is relative so the gear auto-centers with the h1. */}
+              {/* Wrapper is relative so the gear auto-centers with the h1.
+                  Hidden while GroupList is in bulk-forget selection mode —
+                  the cancel (X) portal lands in the same upper-left slot. */}
+              {!homeSelectionMode && (
               <button
                 onClick={() => navigateWithTransition(router, '/settings', 'forward')}
                 {...prefetchOnHover('/settings')}
@@ -267,6 +285,7 @@ function TemplateInner({ children }: AppTemplateProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </button>
+              )}
               <h1 className="text-2xl font-bold mb-1 select-none" {...longPressProps}>
                 Whoever Wants
               </h1>

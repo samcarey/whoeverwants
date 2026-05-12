@@ -12,6 +12,7 @@ import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import { apiGetVotes, apiGetQuestionResults } from "@/lib/api";
 import { forgetGroup } from "@/lib/forgetQuestion";
+import { HOME_SELECTION_MODE_CHANGE_EVENT } from "@/lib/eventChannels";
 
 interface GroupListProps {
   // Phase 5b: the home page passes the polls (wrapper-level units)
@@ -103,6 +104,17 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [selectionMode, exitSelectionMode]);
+
+  // Tell the template to hide the home-page settings gear while we own the
+  // upper-left slot via HeaderPortal. Cleanup always dispatches false so an
+  // unmount mid-selection (e.g. navigating away from home) restores the gear
+  // for the next home-page mount.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(HOME_SELECTION_MODE_CHANGE_EVENT, { detail: { active: selectionMode } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent(HOME_SELECTION_MODE_CHANGE_EVENT, { detail: { active: false } }));
+    };
+  }, [selectionMode]);
 
   // Prefetch group page routes for all visible groups on mount.
   // `getGroupHref` returns `/g/<root>?p=<target>` (with the targeted poll
