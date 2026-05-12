@@ -29,17 +29,31 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     else navigateWithTransition(router, `/g/${groupId}`, 'back');
   };
 
-  // The members list ALSO shows the current user (alphabetically merged
-  // with the others). The current-user filter applies to `participantNames`
-  // for the title + hero graphic ("don't list yourself in the group name
-  // or graphic"), but the list under "Members" is the canonical roster
-  // and should include the viewer like anyone else. When the user hasn't
-  // picked a name they're omitted (consistent with anonymous voters).
+  // /info is the canonical roster — the viewer is always a member
+  // (visiting the URL auto-joins them via the by-route-id read endpoint),
+  // so they always appear in the list. Other surfaces filter them out of
+  // `participantNames` so they don't see themselves in the group name;
+  // here we add them back in. `viewerLabel` falls back to "You" when no
+  // localStorage name is set so a freshly-joined nameless viewer doesn't
+  // see "0 Members".
   const currentUserName = getUserName()?.trim() || null;
-  const membersList = currentUserName
-    ? [...group.participantNames, currentUserName].sort((a, b) => a.localeCompare(b))
-    : group.participantNames;
+  const viewerLabel = currentUserName ?? "You";
+  const membersList = [...group.participantNames, viewerLabel].sort((a, b) =>
+    a.localeCompare(b),
+  );
   const totalCount = membersList.length;
+
+  // Hero + title also surface the viewer in the solo case so the page
+  // doesn't render a gray placeholder + "New Group" fallback for a
+  // single-member group. Gated on a real name — we'd rather not invent a
+  // group name from "You".
+  const showViewerInHero =
+    group.participantNames.length === 0 &&
+    group.anonymousRespondentCount === 0 &&
+    currentUserName !== null;
+  const heroNames = showViewerInHero ? [currentUserName] : group.participantNames;
+  const displayTitle =
+    showViewerInHero && !group.groupTitleOverride ? currentUserName : group.title;
 
   return (
     <>
@@ -49,10 +63,12 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         rightSlot={
           <button
             onClick={() => navigateWithTransition(router, `/g/${groupId}/edit-title`, 'forward')}
-            className="w-10 h-10 flex items-center justify-center shrink-0 text-blue-600 dark:text-blue-400 text-sm font-medium"
+            className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
             aria-label="Edit group title"
           >
-            Edit
+            <span className="w-10 h-10 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-medium">
+              Edit
+            </span>
           </button>
         }
       />
@@ -60,12 +76,12 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
       <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
         <div className="flex flex-col items-center text-center mb-8">
           <RespondentCircles
-            names={group.participantNames}
+            names={heroNames}
             anonymousCount={group.anonymousRespondentCount}
             sizeClassName="w-28"
           />
           <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white break-words">
-            {group.title}
+            {displayTitle}
           </h1>
         </div>
 
@@ -74,19 +90,13 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         </h2>
 
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
-          {totalCount === 0 ? (
-            <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-              No members yet.
-            </div>
-          ) : (
-            <ul className="divide-y divide-gray-200 dark:divide-gray-800">
-              {membersList.map((name) => (
-                <li key={name} className="px-4 py-3 text-gray-900 dark:text-white">
-                  {name}
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul className="divide-y divide-gray-200 dark:divide-gray-800">
+            {membersList.map((name) => (
+              <li key={name} className="px-4 py-3 text-gray-900 dark:text-white">
+                {name}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </>

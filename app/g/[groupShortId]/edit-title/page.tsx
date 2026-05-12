@@ -52,10 +52,12 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
           <button
             onClick={save}
             disabled={saving}
-            className="w-14 h-10 flex items-center justify-center shrink-0 text-blue-600 dark:text-blue-400 text-sm font-semibold disabled:opacity-50"
+            className="self-stretch py-2 px-2 flex items-center justify-center shrink-0 disabled:opacity-50"
             aria-label="Save group title"
           >
-            {saving ? '...' : 'Save'}
+            <span className="min-w-10 h-10 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-semibold">
+              {saving ? '...' : 'Save'}
+            </span>
           </button>
         }
       />
