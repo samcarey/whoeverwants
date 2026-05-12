@@ -111,57 +111,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(200); self.end_headers()
         self.wfile.write(b'{"status": "ignored"}')
 
+    def _skip(self, reason):
+        self.send_response(200); self.end_headers()
+        self.wfile.write(f'{{"status": "{reason}"}}'.encode())
+
+    def _accept(self, action, branch):
+        log.info(f"{action} branch={branch}")
+        self.send_response(202); self.end_headers()
+        self.wfile.write(json.dumps({
+            "status": "accepted", "action": action, "branch": branch,
+        }).encode())
+        DISPATCH_POOL.submit(run_manager, action, branch)
+
     def _handle_push(self, p):
         branch = get_branch(p)
         if not branch:
-            self.send_response(200); self.end_headers()
-            self.wfile.write(b'{"status": "no branch"}')
-            return
+            return self._skip("no branch")
         if branch in SKIP_BRANCHES:
-            log.info(f"Push to skipped branch {branch}; ignoring")
-            self.send_response(200); self.end_headers()
-            self.wfile.write(b'{"status": "skipped branch"}')
-            return
-        # `push` with deleted=true fires when a branch is deleted via `git push
-        # --delete`; GitHub also sends a separate `delete` event. Handle both.
-        if p.get("deleted"):
-            log.info(f"Push payload signals deletion of branch {branch}; destroying")
-            self.send_response(202); self.end_headers()
-            self.wfile.write(json.dumps({
-                "status": "accepted", "action": "destroy", "branch": branch,
-            }).encode())
-            DISPATCH_POOL.submit(run_manager, "destroy", branch)
-            return
-        log.info(f"Push to {branch}")
-        self.send_response(202); self.end_headers()
-        self.wfile.write(json.dumps({
-            "status": "accepted", "action": "upsert", "branch": branch,
-        }).encode())
-        DISPATCH_POOL.submit(run_manager, "upsert", branch)
+            return self._skip("skipped branch")
+        action = "destroy" if p.get("deleted") else "upsert"
+        self._accept(action, branch)
 
     def _handle_delete(self, p):
-        # GitHub `delete` event fires for branch + tag deletions; we only care
-        # about branches. `ref` is the branch name (no refs/heads/ prefix).
         if p.get("ref_type") != "branch":
-            self.send_response(200); self.end_headers()
-            self.wfile.write(b'{"status": "ignored (not a branch)"}')
-            return
+            return self._skip("ignored (not a branch)")
         branch = p.get("ref", "")
         if not branch:
-            self.send_response(200); self.end_headers()
-            self.wfile.write(b'{"status": "no branch"}')
-            return
+            return self._skip("no branch")
         if branch in SKIP_BRANCHES:
-            log.info(f"Delete event for skipped branch {branch}; ignoring")
-            self.send_response(200); self.end_headers()
-            self.wfile.write(b'{"status": "skipped branch"}')
-            return
-        log.info(f"Delete event for branch {branch}")
-        self.send_response(202); self.end_headers()
-        self.wfile.write(json.dumps({
-            "status": "accepted", "action": "destroy", "branch": branch,
-        }).encode())
-        DISPATCH_POOL.submit(run_manager, "destroy", branch)
+            return self._skip("skipped branch")
+        self._accept("destroy", branch)
 
     def do_GET(self):
         if self.path == "/health":

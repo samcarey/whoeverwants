@@ -95,12 +95,9 @@ log() {
 #   - trim leading / trailing '-'
 #   - truncate to MAX_SLUG_LEN (then re-trim trailing '-')
 branch_to_slug() {
-  local branch="$1"
   local slug
-  slug=$(echo "$branch" | tr '[:upper:]' '[:lower:]' \
-    | sed 's/[^a-z0-9-]/-/g' \
-    | sed 's/--*/-/g' \
-    | sed 's/^-//; s/-$//')
+  slug=$(echo "$1" | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-+|-+$//g')
   if [ "${#slug}" -gt "$MAX_SLUG_LEN" ]; then
     slug="${slug:0:$MAX_SLUG_LEN}"
     slug="${slug%-}"
