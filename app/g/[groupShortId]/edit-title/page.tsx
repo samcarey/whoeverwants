@@ -156,38 +156,47 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
       />
 
       <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 1rem)` }}>
-        {/* Avatar + camera badge — centered above the title. Tap anywhere
-            on the avatar (or the badge) to open the native image picker. */}
+        {/* Avatar + badges — centered above the title. Camera badge in
+            the lower-right opens the file picker; X badge in the upper-
+            right stages an image removal (only shown when an image is
+            actually displayed). Both badges are siblings of the avatar
+            button inside a `relative` wrapper so their click handlers
+            stay independent. */}
         <div className="flex flex-col items-center mb-6">
-          <button
-            type="button"
-            onClick={openFilePicker}
-            disabled={saving}
-            aria-label="Change group image"
-            className="relative outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-full disabled:opacity-60"
-          >
-            <GroupAvatar
-              imageUrl={effectiveImageUrl}
-              names={group.participantNames}
-              anonymousCount={group.anonymousRespondentCount}
-              sizeClassName="w-28"
-            />
-            <span
-              className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-md ring-2 ring-white dark:ring-gray-900"
-              aria-hidden
-            >
-              <CameraPencilIcon />
-            </span>
-          </button>
-          {effectiveImageUrl && !saving && (
+          <div className="relative">
             <button
               type="button"
-              onClick={onRemoveImage}
-              className="mt-3 text-xs text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 underline-offset-2 hover:underline"
+              onClick={openFilePicker}
+              disabled={saving}
+              aria-label="Change group image"
+              className="block outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-full disabled:opacity-60"
             >
-              Remove image
+              <GroupAvatar
+                imageUrl={effectiveImageUrl}
+                names={group.participantNames}
+                anonymousCount={group.anonymousRespondentCount}
+                sizeClassName="w-28"
+              />
+              <span
+                className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-md ring-2 ring-white dark:ring-gray-900"
+                aria-hidden
+              >
+                <CameraPencilIcon />
+              </span>
             </button>
-          )}
+            {effectiveImageUrl && !saving && (
+              <button
+                type="button"
+                onClick={onRemoveImage}
+                aria-label="Remove group image"
+                className="absolute top-0 right-0 w-7 h-7 rounded-full bg-gray-500 dark:bg-gray-600 text-white flex items-center justify-center shadow-md ring-2 ring-white dark:ring-gray-900 hover:bg-gray-600 dark:hover:bg-gray-500 active:scale-95 transition-transform"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
           <input
             ref={fileInputRef}
             type="file"

@@ -79,7 +79,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
             imageUrl={group.imageUrl}
             names={heroNames}
             anonymousCount={group.anonymousRespondentCount}
-            sizeClassName="w-28"
+            sizeClassName="w-[10.5rem]"
           />
           <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white break-words">
             {displayTitle}
