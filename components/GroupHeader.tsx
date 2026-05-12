@@ -6,7 +6,7 @@ import { navigateWithTransition } from "@/lib/viewTransitions";
 
 export interface GroupHeaderProps {
   headerRef: React.Ref<HTMLDivElement>;
-  title: string;
+  title?: string;
   participantNames?: string[];
   anonymousCount?: number;
   subtitle?: string;
@@ -43,7 +43,7 @@ export default function GroupHeader({
   const hasRightSlot = !!rightSlot;
   const handleBack = onBack ?? (() => navigateWithTransition(router, '/', 'back'));
 
-  const titleBlock = (
+  const titleBlock = title ? (
     <>
       <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
         {title}
@@ -52,7 +52,7 @@ export default function GroupHeader({
         <p className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>
       )}
     </>
-  );
+  ) : null;
   return (
     <div
       ref={headerRef}
@@ -78,7 +78,7 @@ export default function GroupHeader({
             anonymousCount={anonymousCount ?? 0}
           />
         )}
-        {onTitleClick ? (
+        {onTitleClick && titleBlock ? (
           <button
             type="button"
             onClick={onTitleClick}
