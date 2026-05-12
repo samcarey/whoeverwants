@@ -25,8 +25,26 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
   const goBack = () => {
-    if (hasAppHistory()) navigateBackWithTransition();
-    else navigateWithTransition(router, `/g/${groupId}`, 'back');
+    const hasHistory = hasAppHistory();
+    const supportsVT = typeof document !== 'undefined' && 'startViewTransition' in document;
+    console.log('[info-page] goBack called', {
+      hasHistory,
+      supportsVT,
+      currentPath: window.location.pathname,
+      groupId,
+      historyLength: window.history.length,
+    });
+    if (hasHistory) {
+      console.log('[info-page] calling navigateBackWithTransition');
+      navigateBackWithTransition();
+    } else {
+      console.log('[info-page] calling navigateWithTransition to /g/' + groupId);
+      navigateWithTransition(router, `/g/${groupId}`, 'back');
+    }
+    // Followup check to see if URL actually changed
+    setTimeout(() => {
+      console.log('[info-page] 1s after goBack', { currentPath: window.location.pathname });
+    }, 1000);
   };
 
   // /info is the canonical roster — the viewer is always a member
