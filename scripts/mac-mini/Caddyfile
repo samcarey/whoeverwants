@@ -27,5 +27,6 @@ webhook.dev.whoeverwants.com {
 }
 
 # Per-author dev servers (one file per slug). Glob import is OK if the
-# directory is empty — Caddy just no-ops.
-import /Users/*/devbox/caddy.d/*.caddy
+# directory is empty — Caddy just no-ops. Caddy's import glob only supports
+# a single wildcard, so the user path is hardcoded.
+import /Users/sccarey/devbox/caddy.d/*.caddy
