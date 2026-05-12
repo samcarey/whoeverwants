@@ -280,7 +280,7 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
   };
 
   async function handleConfirm() {
-    if (!imageDims || submitting) return;
+    if (!imageDims || !url || submitting) return;
     setSubmitting(true);
     try {
       const blob = await renderCropToBlob({
