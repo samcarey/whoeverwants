@@ -1146,6 +1146,17 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     questionOptions.length === 2 &&
     !canSubmitSuggestions;
 
+  // Below-ballot preliminary results are restricted to "the viewer is
+  // revising a non-ranked-choice vote" — ranked_choice edits hide the
+  // block so the user stays focused on their re-ranking, and pre-vote
+  // viewers never see results (the above-ballot block, gated on hasVoted,
+  // is the post-vote display).
+  const showPreliminaryBelowBallot =
+    isEditingVote &&
+    !inSuggestionPhase &&
+    !hasSuggestionPhase &&
+    question.question_type !== 'ranked_choice';
+
   const preliminaryResultsBlock = (className: string) => (
     showPrelimResults && !isQuestionClosed && !suppressYesNoHere && !suppressBinaryRcHere ? (
       <div className={className}>
@@ -1465,11 +1476,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
             </div>
           )}
 
-          {/* Preliminary results stay hidden until the viewer has voted. */}
-          {/* During an active edit on a non-ranked_choice ballot, surface them */}
-          {/* below so the user can compare while revising; otherwise the */}
-          {/* above-ballot block (gated on hasVoted) is the sole display. */}
-          {isEditingVote && !inSuggestionPhase && !hasSuggestionPhase && question.question_type !== 'ranked_choice' && preliminaryResultsBlock("mt-6")}
+          {showPreliminaryBelowBallot && preliminaryResultsBlock("mt-6")}
 
       </div>
 

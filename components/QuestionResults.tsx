@@ -31,11 +31,15 @@ interface QuestionResultsProps {
   // tappable — clicking a different option fires onVoteChange(newChoice).
   userVoteChoice?: 'yes' | 'no' | 'abstain' | null;
   onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void;
+  // True when `userVoteChoice` reflects a staged-but-not-yet-submitted tap
+  // (multi-question polls batching choices through a wrapper Submit). The
+  // abstain label flips to "Abstaining" so it doesn't imply a committed vote.
+  isStagedChoice?: boolean;
 }
 
-export default function QuestionResultsDisplay({ results, isQuestionClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser, userVoteChoice, onVoteChange }: QuestionResultsProps) {
+export default function QuestionResultsDisplay({ results, isQuestionClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser, userVoteChoice, onVoteChange, isStagedChoice }: QuestionResultsProps) {
   if (results.question_type === 'yes_no') {
-    return <YesNoResults results={results} isQuestionClosed={isQuestionClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} userVoteChoice={userVoteChoice} onVoteChange={onVoteChange} />;
+    return <YesNoResults results={results} isQuestionClosed={isQuestionClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} userVoteChoice={userVoteChoice} onVoteChange={onVoteChange} isStagedChoice={isStagedChoice} />;
   }
 
   if (results.question_type === 'ranked_choice') {
@@ -49,7 +53,7 @@ export default function QuestionResultsDisplay({ results, isQuestionClosed, user
   return null;
 }
 
-function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick, hideLoser = false, userVoteChoice, onVoteChange }: { results: QuestionResults, isQuestionClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean, userVoteChoice?: 'yes' | 'no' | 'abstain' | null, onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void }) {
+function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick, hideLoser = false, userVoteChoice, onVoteChange, isStagedChoice }: { results: QuestionResults, isQuestionClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean, userVoteChoice?: 'yes' | 'no' | 'abstain' | null, onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void, isStagedChoice?: boolean }) {
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
   const yesPercentage = results.yes_percentage || 0;
@@ -185,7 +189,7 @@ function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick
 
   const abstainContent = userAbstained ? (
     <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-      You abstained
+      {isStagedChoice ? 'Abstaining' : 'You abstained'}
     </span>
   ) : canVote ? (
     <button

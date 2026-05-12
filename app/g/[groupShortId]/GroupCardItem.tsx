@@ -873,6 +873,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                                   isQuestionClosed={isClosed}
                                   hideLoser={false}
                                   userVoteChoice={displayedChoice}
+                                  isStagedChoice={stagedChoice !== null}
                                   onVoteChange={
                                     isClosed
                                       ? undefined
