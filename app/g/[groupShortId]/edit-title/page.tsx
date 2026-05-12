@@ -17,29 +17,21 @@ import ImageCropModal from "@/components/ImageCropModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
 
+/**
+ * Title + image staging: changes accumulate in local state and only commit
+ * on Save. Back triggers a "Discard changes?" confirmation when anything
+ * is staged. Picking a new image clears any pending removal; tapping
+ * Remove clears any pending blob.
+ */
 function Editor({ group, groupId }: { group: Group; groupId: string }) {
   const router = useRouter();
-  // Title state — the input value. The saved value is `group.groupTitleOverride`
-  // (raw value of `groups.title`, null when no override is set). Empty string in
-  // the input clears the override on save.
   const [value, setValue] = useState<string>(group.groupTitleOverride ?? '');
   const [saving, setSaving] = useState(false);
 
-  // Image staging: changes accumulate in local state and only commit on Save.
-  // Back triggers a confirmation if any staging is present.
-  //   * pendingCroppedBlob — a fresh image the user just cropped (overrides
-  //     anything that was already on the server).
-  //   * pendingImageRemoval — user tapped Remove; the server's current image
-  //     should be deleted on save. Cleared if the user then picks a new image.
-  // The previewed avatar uses the local blob URL when a fresh image is staged,
-  // null when removal is staged, otherwise the server-side `group.imageUrl`.
   const [pendingCroppedBlob, setPendingCroppedBlob] = useState<Blob | null>(null);
   const [pendingImageRemoval, setPendingImageRemoval] = useState(false);
   const [localImagePreviewUrl, setLocalImagePreviewUrl] = useState<string | null>(null);
 
-  // Blob URL lifecycle for the staged image preview. Created from the
-  // cropped Blob whenever it changes; revoked on cleanup. Same StrictMode-
-  // safe pattern as the cropper itself.
   useEffect(() => {
     if (!pendingCroppedBlob) {
       setLocalImagePreviewUrl(null);
@@ -90,15 +82,9 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
     if (saving) return;
     setSaving(true);
     try {
-      // Image first — the cache-invalidation in apiUpload/Delete primes the
-      // accessible-polls cache so subsequent title-update + group reads pick
-      // up the same updated_at watermark cleanly. Order doesn't otherwise
-      // matter (each endpoint is independent server-side).
       if (pendingCroppedBlob) {
         await apiUploadGroupImage(groupId, pendingCroppedBlob);
       } else if (pendingImageRemoval && group.imageUrl) {
-        // Only call DELETE if there was actually an image to remove.
-        // (User-tapped Remove on a group with no image is a no-op.)
         await apiDeleteGroupImage(groupId);
       }
       if (titleChanged) {

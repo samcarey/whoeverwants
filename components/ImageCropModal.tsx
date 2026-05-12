@@ -3,25 +3,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 /**
- * Drag + pinch-zoom circular cropper.
+ * Drag + pinch-zoom circular cropper modal.
  *
- * Renders a full-screen modal containing:
- *  - a square crop frame whose visible area is a centered circle
- *  - the source image rendered behind the frame, positioned by (offsetX, offsetY, scale)
- *  - everything outside the circle is dimmed
- *  - one-pointer drag → translate; two-pointer pinch → scale (around midpoint)
- *  - on confirm, the visible-in-circle square is exported as a JPEG Blob
- *
- * Imperative pointer math (NOT React state per pointermove) so a 60Hz
- * gesture doesn't cause 60 re-renders — the underlying transform is
- * written directly to the image DOM, and React state only reflects the
- * end-of-gesture snapshot. Same idiom as `RankableOptions`'s drag path.
- *
- * Minimum scale is "image must always fully cover the crop circle": the
- * user can't zoom out far enough to expose blank space behind the crop.
- *
- * Output is `EXPORT_SIZE`-px JPEG with quality 0.9 (a couple dozen KB
- * typically — well under the server's 5 MiB cap).
+ * Pointermove writes transform directly to the DOM (no per-frame React
+ * re-render); React state only holds end-of-gesture snapshots. Minimum
+ * scale guarantees the image always covers the crop frame.
  */
 
 const EXPORT_SIZE = 512;
@@ -42,26 +28,12 @@ interface ImageDims {
 }
 
 export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
-  // Blob URL for the picked file. Created+revoked inside the SAME effect
-  // so StrictMode's setup → cleanup → setup cycle pairs them correctly:
-  // mount 1 creates URL_A; cleanup revokes URL_A; mount 2 creates URL_B
-  // and writes it to state, triggering a re-render that swaps the
-  // displayed `<img src>` from the dead URL_A to the live URL_B. The
-  // first attempt at this pairing put the URL in `useState(() => ...)`
-  // lazy init — that locks the URL in state for the component's lifetime,
-  // so when StrictMode's cleanup revoked it, the setup effect couldn't
-  // create a replacement (state was already set), and the displayed img
-  // permanently pointed at a revoked URL.
-  //
-  // Two other pitfalls this approach sidesteps:
-  //   - data URLs via FileReader are silently truncated by
-  //     iOS Safari/WKWebView (and iOS Firefox, which uses WKWebView)
-  //     beyond ~1-2 MB in `<img src>`. Phone photos at 5-15 MB
-  //     produced an empty crop frame. Blob URLs have no length limit.
-  //   - new Image() probes can mis-fire on mobile (decoded but with
-  //     naturalWidth=0 on iOS for some HEIC files); we let the
-  //     displayed `<img>` be the only loader and read dimensions from
-  //     its onLoad.
+  // Blob URL for the picked file. Create + revoke + setUrl all pair inside
+  // one effect so React StrictMode's setup → cleanup → setup cycle swaps
+  // the displayed `<img src>` from the revoked URL_A to a fresh URL_B
+  // instead of stranding the img on a dead URL. Data URLs (FileReader)
+  // can't substitute: iOS WebKit silently fails `<img src>` for data URLs
+  // larger than ~1-2 MB, which most phone photos exceed.
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     const u = URL.createObjectURL(file);
@@ -176,7 +148,6 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
   // Track active pointers by pointerId; pinch when 2 are down.
   const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const gestureStartRef = useRef<{
-    pointers: Map<number, { x: number; y: number }>;
     centerX: number;
     centerY: number;
     distance: number;
@@ -186,27 +157,30 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
   } | null>(null);
 
   function snapshotGesture() {
-    const pts = Array.from(pointersRef.current.values());
-    if (pts.length === 0) {
+    const pts = pointersRef.current;
+    if (pts.size === 0) {
       gestureStartRef.current = null;
       return;
     }
     let cx = 0;
     let cy = 0;
-    for (const p of pts) {
+    let first: { x: number; y: number } | null = null;
+    let second: { x: number; y: number } | null = null;
+    for (const p of pts.values()) {
       cx += p.x;
       cy += p.y;
+      if (first === null) first = p;
+      else if (second === null) second = p;
     }
-    cx /= pts.length;
-    cy /= pts.length;
+    cx /= pts.size;
+    cy /= pts.size;
     let dist = 1;
-    if (pts.length >= 2) {
-      const dx = pts[0].x - pts[1].x;
-      const dy = pts[0].y - pts[1].y;
+    if (first && second) {
+      const dx = first.x - second.x;
+      const dy = first.y - second.y;
       dist = Math.max(1, Math.hypot(dx, dy));
     }
     gestureStartRef.current = {
-      pointers: new Map(pointersRef.current),
       centerX: cx,
       centerY: cy,
       distance: dist,
@@ -229,30 +203,36 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
     const start = gestureStartRef.current;
     if (!start || !imageDims) return;
 
-    const pts = Array.from(pointersRef.current.values());
+    // Direct iteration of the Map values avoids allocating an Array per
+    // pointermove (this runs at ~60Hz on touch). At most 2 pointers in
+    // practice — we capture the first two as we go for the pinch-distance
+    // math without a separate slice.
+    const pts = pointersRef.current;
     let cx = 0;
     let cy = 0;
-    for (const p of pts) {
+    let first: { x: number; y: number } | null = null;
+    let second: { x: number; y: number } | null = null;
+    for (const p of pts.values()) {
       cx += p.x;
       cy += p.y;
+      if (first === null) first = p;
+      else if (second === null) second = p;
     }
-    cx /= pts.length;
-    cy /= pts.length;
+    cx /= pts.size;
+    cy /= pts.size;
 
     let newScale = start.scale;
-    if (pts.length >= 2) {
-      const dx = pts[0].x - pts[1].x;
-      const dy = pts[0].y - pts[1].y;
+    if (first && second) {
+      const dx = first.x - second.x;
+      const dy = first.y - second.y;
       const dist = Math.max(1, Math.hypot(dx, dy));
       newScale = start.scale * (dist / start.distance);
     }
 
-    // Translate so the pinch midpoint stays put relative to the image.
-    // ox_new = ox_start + (cx_now - cx_start) + (centerX_relative_to_image
-    //   * (newScale - start.scale)). The "midpoint stays put" math:
-    //   pinch-midpoint in image-space = (centerX - frameCenterX - oxStart) / startScale
-    //   we want it to map to (centerX - frameCenterX - oxNew) / newScale
-    //   so oxNew = (centerX - frameCenterX) - newScale * imageX
+    // Pinch math: midpoint in image-space at gesture start =
+    // (cx_start - frameCenter - offsetStart) / scaleStart. Holding that
+    // image-space point under the current midpoint gives
+    // offsetNew = cx_now - frameCenter - scaleNew * imageMidpoint.
     const containerRect = containerRef.current?.getBoundingClientRect();
     if (!containerRect) return;
     const frameCenterX = containerRect.left + containerRect.width / 2;
@@ -361,16 +341,10 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
             onPointerCancel={handlePointerUp}
             onWheel={handleWheel}
           >
-            {/* Source image. Always rendered (when url is set) so the
-                browser loads it. Until onLoad reports natural dimensions,
-                the img is hidden 1×1px at top-left with opacity 0 — still
-                in the DOM, still loading. Once imageDims is set, the
-                inline width/height/margin/transform math takes over.
-                onError → loadError, but it doesn't unmount the img: a
-                src change (StrictMode mount 1 URL → mount 2 URL) will
-                trigger a fresh load attempt on the same img element, and
-                a successful onLoad both sets imageDims and clears
-                loadError. */}
+            {/* Pre-load: img stays in the DOM as a 1×1 hidden element so
+                a src change (StrictMode swaps the blob URL) triggers a
+                fresh load attempt rather than unmount/remount. onLoad
+                sets imageDims and clears any stale loadError. */}
             {url && (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
@@ -395,15 +369,9 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
                   top: '50%',
                   width: imageDims.width,
                   height: imageDims.height,
-                  // Tailwind's preflight applies `img { max-width: 100%; height: auto }`
-                  // globally, which would cap our explicit width at the container's
-                  // 370px before the transform downscales it — producing the
-                  // "image is visibly 1/N the expected width" rendering on
-                  // every browser, not just iOS. We need the img to lay out at
-                  // its natural pixel size so transform: scale() correctly
-                  // fits the crop frame. (height: auto loses to our inline
-                  // height anyway, so only max-width is actually load-bearing
-                  // here, but maxHeight: 'none' is harmless insurance.)
+                  // Override Tailwind preflight's `img { max-width: 100% }`
+                  // so the img lays out at its natural pixel size; transform:
+                  // scale() then fits it to the crop frame.
                   maxWidth: 'none',
                   maxHeight: 'none',
                   marginLeft: -imageDims.width / 2,

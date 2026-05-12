@@ -357,9 +357,8 @@ function buildGroupFromPolls(
   // Every poll in the group carries the same `group_image_updated_at`
   // (sourced server-side from `groups.image_updated_at` via JOIN). Read
   // off the latest poll for symmetry with the group_title source.
-  const groupRouteIdForImage = latestPoll.group_short_id ?? polls[0].group_id ?? null;
   const imageUrl = buildGroupImageUrl(
-    groupRouteIdForImage,
+    latestPoll.group_short_id ?? latestPoll.group_id ?? null,
     latestPoll.group_image_updated_at ?? null,
   );
 
