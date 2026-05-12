@@ -156,12 +156,20 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
     offsetXRef.current = 0;
     offsetYRef.current = 0;
     applyTransformToDom();
+    const el = imgRef.current;
+    const computed = el ? getComputedStyle(el) : null;
+    const rect = el?.getBoundingClientRect();
     console.log('[ImageCropModal] applied initial transform', {
       minScale,
       frameSize,
       imageW: imageDims.width,
       imageH: imageDims.height,
-      imgStyle: imgRef.current?.getAttribute('style')?.slice(0, 200),
+      inlineStyle: el?.getAttribute('style'),
+      computedTransform: computed?.transform,
+      computedDisplay: computed?.display,
+      computedVisibility: computed?.visibility,
+      computedOpacity: computed?.opacity,
+      rect: rect ? { w: rect.width, h: rect.height, x: rect.x, y: rect.y } : null,
     });
   }, [imageDims, frameSize, minScale]);
 
