@@ -1636,7 +1636,7 @@ export function CreateQuestionContent() {
                             }}
                             disabled={isLoading}
                             maxLength={100}
-                            placeholder={FOR_FIELD_PLACEHOLDERS[category] || "Context"}
+                            placeholder={FOR_FIELD_PLACEHOLDERS[category] || ""}
                             className="flex-1 min-w-0 text-base bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
                           />
                         </div>
