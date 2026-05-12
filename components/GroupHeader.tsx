@@ -25,6 +25,15 @@ export interface GroupHeaderProps {
  * resolves to 0). Earlier the ref was on the inner content div, leaving
  * iOS PWA pages with content tucked behind the bottom of the header.
  *
+ * Hitbox split: back / middle (participant graphic + title) / rightSlot
+ * each take a full-height slice of the bar so there is no untappable
+ * padding strip. The original inner-container whitespace is folded
+ * into the children's own padding so icon positions stay pixel-
+ * identical. `items-center` (not `items-stretch`) preserves vertical
+ * centering for callers whose rightSlot has an explicit `h-10` (info /
+ * edit-title Edit/Save); back + title + GroupShareButton mark
+ * themselves `self-stretch` so their hitboxes span the full bar height.
+ *
  * onBack defaults to navigating to '/'; sub-routes pass their own handler
  * (e.g. back to the group root or the info page when in-app history exists).
  * rightSlot renders an action button on the right.
@@ -53,6 +62,20 @@ export default function GroupHeader({
       )}
     </>
   ) : null;
+
+  const middleRightPad = hasRightSlot ? 'pr-2' : 'pr-4';
+  const middleContent = (
+    <>
+      {participantNames && (
+        <RespondentCircles
+          names={participantNames}
+          anonymousCount={anonymousCount ?? 0}
+        />
+      )}
+      <div className="min-w-0 flex-1">{titleBlock}</div>
+    </>
+  );
+
   return (
     <div
       ref={headerRef}
@@ -60,35 +83,31 @@ export default function GroupHeader({
       className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
     >
-      <div
-        className={`max-w-4xl mx-auto pl-2 ${hasRightSlot ? 'pr-2' : 'pr-4'} py-2 flex items-center gap-2 overflow-hidden`}
-      >
+      <div className="max-w-4xl mx-auto flex items-center overflow-hidden">
         <button
           onClick={handleBack}
-          className={`w-10 h-10 ${hasRightSlot ? '' : '-mr-1.5'} flex items-center justify-center shrink-0`}
+          className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
           aria-label="Go back"
         >
-          <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
+          <span className="w-10 h-10 flex items-center justify-center">
+            <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </span>
         </button>
-        {participantNames && (
-          <RespondentCircles
-            names={participantNames}
-            anonymousCount={anonymousCount ?? 0}
-          />
-        )}
         {onTitleClick && titleBlock ? (
           <button
             type="button"
             onClick={onTitleClick}
-            className="min-w-0 flex-1 text-left active:opacity-60 transition-opacity"
+            className={`self-stretch min-w-0 flex-1 py-2 ${middleRightPad} flex items-center gap-2 text-left active:opacity-60 transition-opacity`}
             aria-label="Group details"
           >
-            {titleBlock}
+            {middleContent}
           </button>
         ) : (
-          <div className="min-w-0 flex-1">{titleBlock}</div>
+          <div className={`self-stretch min-w-0 flex-1 py-2 ${middleRightPad} flex items-center gap-2`}>
+            {middleContent}
+          </div>
         )}
         {rightSlot}
       </div>
