@@ -64,10 +64,7 @@ screenshot_url() {
 }
 
 # Write a local PNG into the Mac dev container's /repo/public/screenshots/.
-# The cmd-api container has the docker socket mounted, so we can spawn
-# `docker exec whoeverwants-dev-<slug> sh -c 'cat > /repo/...'` to write
-# directly into the dev container's volume. Next.js dev serves /public/
-# at request time, so no restart needed.
+# Next.js dev serves /public/ at request time — no restart needed.
 serve_to_mac() {
     local name="$1" slug="$2" local_path="$3"
     local container="whoeverwants-dev-${slug}"
@@ -109,9 +106,7 @@ take_screenshot() {
 
     echo "Taking screenshot: ${url} (${width}x${height}, wait ${wait}ms)..."
 
-    # Playwright + Chromium live on the droplet under /root/whoeverwants.
-    # We hit the public Mac dev URL from there so this works regardless of
-    # which side hosts the dev server.
+    # Droplet hosts Playwright + Chromium; it hits the public Mac dev URL.
     bash "$REMOTE" "mkdir -p ${REMOTE_DIR} && cd /root/whoeverwants && node -e \"
 const { chromium } = require('playwright');
 (async () => {
