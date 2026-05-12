@@ -1607,10 +1607,10 @@ export function CreateQuestionContent() {
                 >
                   {questionType === 'question' && (
                     <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                      <div className="flex items-center justify-between gap-3 h-12">
-                        <label className="text-sm font-medium shrink-0">
+                      <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
+                        <span className="text-sm font-medium shrink-0">
                           Category
-                        </label>
+                        </span>
                         <div className="flex-1 min-w-0">
                           <TypeFieldInput
                             value={category}
@@ -1619,7 +1619,7 @@ export function CreateQuestionContent() {
                             borderless
                           />
                         </div>
-                      </div>
+                      </label>
                       {category !== 'yes_no' && (
                         <div className="flex items-center justify-between gap-3 h-12">
                           <label htmlFor="forField" className="text-sm font-medium shrink-0">
