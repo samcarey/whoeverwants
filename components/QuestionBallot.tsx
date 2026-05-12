@@ -1465,10 +1465,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
             </div>
           )}
 
-          {/* Preliminary results shown BELOW ballot when user hasn't voted yet (hidden during suggestion phase) */}
-          {/* For suggestion-phase questions, hide until user has submitted rankings */}
-          {/* When editing an existing ranked_choice ballot, skip the below block — the user is focused on revising their ranks. */}
-          {(!hasVoted || isEditingVote) && !inSuggestionPhase && !hasSuggestionPhase && !(isEditingVote && question.question_type === 'ranked_choice') && preliminaryResultsBlock("mt-6")}
+          {/* Preliminary results stay hidden until the viewer has voted. */}
+          {/* During an active edit on a non-ranked_choice ballot, surface them */}
+          {/* below so the user can compare while revising; otherwise the */}
+          {/* above-ballot block (gated on hasVoted) is the sole display. */}
+          {isEditingVote && !inSuggestionPhase && !hasSuggestionPhase && question.question_type !== 'ranked_choice' && preliminaryResultsBlock("mt-6")}
 
       </div>
 
