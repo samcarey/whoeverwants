@@ -187,6 +187,34 @@ This installs Docker, Caddy, the command execution API, clones the repo, starts 
 - The remote execution API has a configurable timeout (default 120s, max via 3rd arg)
 - The API returns stdout, stderr, and exit code for every command
 
+## Mac Mini Dev Box (Migration In Progress)
+
+The dev-server side of the system is migrating from the droplet to a Mac mini at home (`samcarey@mini4`, public IP `65.28.10.210`, Apple M4, 32 GB RAM, macOS 26). Production API stays on the droplet — only per-author dev servers are moving.
+
+**Status: foundation complete, dev-server-manager port pending.** What's running:
+- Colima VM (Apple Virtualization Framework, 6 CPU / 12 GB / 80 GB) as Claude's sandbox
+- Per-hostname HTTPS at `*.dev.whoeverwants.com` via home-router port forwarding (80/443) → Caddy on Mac → containers in VM
+- DDNS (launchd → AWS Route 53) keeping the home IP record self-healing
+- `cmd-api.dev.whoeverwants.com` — Claude→VM control endpoint, same model as droplet's cmd-api
+- `webhook.dev.whoeverwants.com` — GitHub push receiver, HMAC-verified (no-op until dev-server-manager lands)
+- `mac-test.dev.whoeverwants.com` — placeholder serving nginx
+- Postgres 16 in VM (persistent volume, network-only)
+
+**Where to look:**
+- `docs/mac-mini-setup.md` — full reproduction guide (modeled after droplet-setup.md)
+- `docs/mac-mini-next-steps.md` — remaining work + open architectural decisions (`dev-server-manager` port, wildcard cert via DNS-01, GitHub webhook URL change, droplet decommission)
+- `scripts/mac-mini/` — production source files (cmd-api.py, webhook.py, Dockerfiles, ddns, Caddyfile, compose, LaunchAgent plist)
+
+**Calling cmd-api on the Mac mini** (analogous to `bash scripts/remote.sh "command"` for the droplet) — set in your shell:
+```
+export MAC_API_URL=https://cmd-api.dev.whoeverwants.com
+export MAC_API_TOKEN=<from ~/devbox/.env on the Mac>
+curl -s -X POST -H "Authorization: Bearer $MAC_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"cmd":"hostname; docker ps"}' "$MAC_API_URL/"
+```
+
+The cmd-api lives in the VM, not on the Mac host. It can spawn/manage VM containers (Docker socket mounted) but cannot touch the Mac filesystem — that boundary is deliberate. To edit infrastructure config (Caddyfile, docker-compose.yml, .env), edits happen on the Mac side at `~/devbox/`.
+
 ## Tech Stack
 
 | Layer | Technology |
