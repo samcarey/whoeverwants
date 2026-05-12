@@ -122,6 +122,19 @@ export interface RankedChoiceRound {
   tie_broken_by_borda?: boolean;
 }
 
+/** Minimal group metadata for a group that may not have polls yet.
+ *  Mirrors GroupSummary in server/routers/groups.py — returned by
+ *  POST /api/groups (empty-group create), POST /api/groups/empty
+ *  (membership-only groups for the home list), and
+ *  GET /api/groups/by-route-id/{id}/summary (fallback for the group
+ *  page when no polls are visible). */
+export interface GroupSummary {
+  id: string;
+  short_id?: string | null;
+  title?: string | null;
+  created_at: string;
+}
+
 // Poll wrapper. Mirrors PollResponse in server/models.py.
 // See docs/poll-phasing.md.
 export interface Poll {

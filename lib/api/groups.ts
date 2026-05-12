@@ -23,7 +23,7 @@
  * forget-of-last-poll calls land.
  */
 
-import type { Poll } from "@/lib/types";
+import type { GroupSummary, Poll } from "@/lib/types";
 import {
   cachePoll,
   cacheQuestionResults,
@@ -32,6 +32,15 @@ import {
   invalidatePoll,
 } from "@/lib/questionCache";
 import { groupFetch, toPoll, toQuestionResults } from "./_internal";
+
+function toGroupSummary(data: any): GroupSummary {
+  return {
+    id: data.id,
+    short_id: data.short_id ?? null,
+    title: data.title ?? null,
+    created_at: data.created_at,
+  };
+}
 
 function hydrateAndCache(data: any[]): Poll[] {
   return data.map((d) => {
@@ -80,6 +89,40 @@ export async function apiGetGroupByRouteId(
   const path = `/by-route-id/${encodeURIComponent(routeId)}${qs ? `?${qs}` : ''}`;
   const data: any[] = await groupFetch(path);
   return hydrateAndCache(data);
+}
+
+/** Create a brand-new empty group and auto-join the caller as a member.
+ *  Used by the home "+" FAB. The next `getMyGroups()` call picks up the
+ *  new group via the always-fresh `/api/groups/empty` parallel fetch;
+ *  the polls cache is unaffected since this group has no polls. */
+export async function apiCreateGroup(): Promise<GroupSummary> {
+  const data = await groupFetch<any>('', { method: 'POST' });
+  return toGroupSummary(data);
+}
+
+/** Empty groups the caller is a member of (joined, zero polls). Returns
+ *  `[]` on transient failure — never throws, so an empty-groups blip
+ *  can't block the populated list. */
+export async function apiGetMyEmptyGroups(): Promise<GroupSummary[]> {
+  try {
+    const data: any[] = await groupFetch('/empty', { method: 'POST' });
+    return Array.isArray(data) ? data.map(toGroupSummary) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Group metadata (no polls, no auto-join). Safe from any read-only
+ *  context; returns null on resolution failure. */
+export async function apiGetGroupSummary(routeId: string): Promise<GroupSummary | null> {
+  try {
+    const data = await groupFetch<any>(
+      `/by-route-id/${encodeURIComponent(routeId)}/summary`,
+    );
+    return toGroupSummary(data);
+  } catch {
+    return null;
+  }
 }
 
 /**

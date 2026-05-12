@@ -5,9 +5,9 @@ import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyGroups } from "@/lib/simpleQuestionQueries";
-import { buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
+import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
 import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
-import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useGroupVoting } from "@/lib/useGroupVoting";
 import type { QuestionResults } from "@/lib/types";
@@ -76,42 +76,41 @@ function ScrollHelperButton({
   );
 }
 
-// Inverse grid-rows clip for compact pills in the group card header:
-// full height when collapsed, 0 when expanded, animating in lockstep
-// with the heavy-content expand clip below. The pill sits directly at the
-// top of the overflow-hidden child so its text center aligns with the
-// sibling status text via the parent flex row's items-center.
 // Shared cache-driven Group rebuild for POLL_PENDING / POLL_HYDRATED /
 // POLL_FAILED setGroup updaters. Returns prev when the rebuild would produce
 // the same poll-id sequence (no placeholder swap) so identity-based memos stay
 // stable.
 //
-// `mutate` lets callers add a just-arrived poll (placeholder or real) and/or
-// drop a placeholder being replaced. Without explicit add/remove, leaving the
-// placeholder AND the real poll both in scope would yield a group containing
-// both as children of the parent.
+// `mutate.add` / `mutate.remove` let callers explicitly swap a placeholder
+// poll for the real one; without it, leaving both in scope yields a group
+// containing both as children of the same parent.
 //
-// `prev.polls` is always merged into the rebuild source. This is the
-// resilience fallback for stale `accessiblePollsCache`: the cache has a 60s
-// TTL, and the submit handler's `cacheAccessiblePolls([...getCached() ?? [],
-// new])` pattern wipes every other poll out of the cache when the cache
-// happened to be stale (idle >60s). Without prev.polls in the merge, the
-// `buildGroupFromPollDown(rootPollId, ...)` call fails to find rootPollId and
+// `prev.polls` is always merged into the rebuild source — resilience against
+// a stale `accessiblePollsCache` (60s TTL); without it,
+// `buildGroupFromPollDown` can't find rootPollId when the cache is stale and
 // the new poll never lands in the group.
 function rebuildGroupFromCacheOrPrev(
   prev: Group,
   mutate?: { add?: Poll; remove?: string },
 ): Group {
-  if (!prev.rootPollId) return prev;
   const cached = getCachedAccessiblePolls() ?? [];
   const byId = new Map<string, Poll>();
   for (const p of prev.polls) byId.set(p.id, p);
   for (const p of cached) byId.set(p.id, p);
   if (mutate?.remove) byId.delete(mutate.remove);
   if (mutate?.add) byId.set(mutate.add.id, mutate.add);
-  const polls = Array.from(byId.values());
+  // accessiblePollsCache may carry polls from sibling groups — filter to
+  // this group only so the rebuild doesn't cross-contaminate.
+  const groupId = prev.groupId;
+  const polls = Array.from(byId.values()).filter((p) =>
+    groupId ? p.group_id === groupId : p.id === prev.rootPollId,
+  );
+  if (polls.length === 0) return prev;
+  // When transitioning from empty group (no rootPollId) to populated,
+  // anchor on the just-added poll.
+  const anchorPollId = prev.rootPollId ?? polls[0].id;
   const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-  const rebuilt = buildGroupFromPollDown(prev.rootPollId, polls, voted, abstained);
+  const rebuilt = buildGroupFromPollDown(anchorPollId, polls, voted, abstained);
   if (!rebuilt) return prev;
   if (
     rebuilt.polls.length === prev.polls.length &&
@@ -410,6 +409,14 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) { setError(true); return; }
           throw err;
+        }
+        // No visible polls — fall back to the summary endpoint for header
+        // metadata so we can still render the chrome + bubble bar.
+        if (polls.length === 0) {
+          const summary = await apiGetGroupSummary(groupId);
+          if (!summary) { setError(true); return; }
+          setGroup(buildEmptyGroup(summary));
+          return;
         }
         const anchorPoll = findChainRoot(polls);
         if (!anchorPoll) { setError(true); return; }
@@ -1605,7 +1612,11 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         title={group.title}
         participantNames={group.participantNames}
         anonymousCount={group.anonymousRespondentCount}
-        subtitle={`${group.questions.length} ${group.questions.length === 1 ? 'question' : 'questions'}`}
+        subtitle={
+          group.questions.length === 0
+            ? undefined
+            : `${group.questions.length} ${group.questions.length === 1 ? 'question' : 'questions'}`
+        }
         onTitleClick={() => navigateWithTransition(router, `/g/${groupId}/info`, 'forward')}
         rightSlot={<GroupShareButton routeId={groupId} title={group.title} />}
       />
@@ -1991,6 +2002,9 @@ function GroupPageInner() {
 
   const [rootPoll, setRootPoll] = useState<Poll | null>(rootInitial);
   const [error, setError] = useState(false);
+  // Group resolved with zero visible polls; GroupContent mounts via
+  // useGroup's summary-fallback path.
+  const [isEmptyGroup, setIsEmptyGroup] = useState(false);
 
   useEffect(() => {
     if (!groupShortId) {
@@ -2022,6 +2036,16 @@ function GroupPageInner() {
           }
           if (!cancelled) setRootPoll(root);
           return;
+        }
+        // Zero visible polls but group exists — short-circuit to the empty
+        // state via the summary endpoint before falling through to per-poll
+        // lookup.
+        if (Array.isArray(polls)) {
+          const summary = await apiGetGroupSummary(groupShortId);
+          if (summary) {
+            if (!cancelled) setIsEmptyGroup(true);
+            return;
+          }
         }
         // Last-ditch fallback: per-poll lookup for very old URL forms whose
         // resolution path didn't survive the groups-endpoint cutover.
@@ -2072,7 +2096,7 @@ function GroupPageInner() {
     );
   }
 
-  if (!rootPoll) {
+  if (!rootPoll && !isEmptyGroup) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -2089,8 +2113,10 @@ function GroupPageInner() {
   // Phase B.4: prefer groups.short_id (the canonical /g/<id> form) so any
   // FE-built URL based on the resolved Poll matches the route id the user
   // landed with. Falls back to the URL's groupShortId for placeholder
-  // polls and pre-B.4 cached polls without group_short_id.
-  const groupRouteId = rootPoll.group_short_id || rootPoll.short_id || groupShortId;
+  // polls and pre-B.4 cached polls without group_short_id. Empty groups
+  // pass the URL's groupShortId through (no rootPoll to read from).
+  const groupRouteId =
+    rootPoll?.group_short_id || rootPoll?.short_id || groupShortId;
 
   return (
     <GroupContent

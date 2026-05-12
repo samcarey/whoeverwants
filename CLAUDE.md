@@ -971,6 +971,91 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 > rightSlot (Edit / Save) — only the canonical group view gets the
 > Share button.
 
+> **Empty-group creation via `POST /api/groups`.** The home "+" FAB
+> now materializes a real group BEFORE any polls exist, so users can
+> immediately name + share the group URL. Endpoints shipped:
+>
+>   * `POST /api/groups` — `INSERT INTO groups DEFAULT VALUES` +
+>     `grant_group_membership_inline` for the caller. Returns
+>     `GroupSummary {id, short_id, title, created_at}`. Requires a
+>     `browser_id` (400 if missing) so the new group has a member.
+>   * `POST /api/groups/empty` — every group the caller is a member of
+>     that has zero polls. The membership lookup is `group_members` ∩
+>     anti-join `polls`. Sorted newest-first. The forget bridge does
+>     NOT apply here — empty groups always show for their members,
+>     regardless of `accessible_question_ids`.
+>   * `GET /api/groups/by-route-id/{id}/summary` — identity-free read
+>     returning just `GroupSummary`. No membership write. Used by
+>     `useGroup` (and `GroupPageInner`'s fallback chain) when
+>     `/by-route-id/{id}` returns `[]` so the group page can still
+>     render its header for membership-only groups.
+>
+> FE: `apiCreateGroup` invalidates the accessible-polls cache so the
+> home list re-fetches on the next render. `getMyGroups()` in
+> `lib/simpleQuestionQueries.ts` returns `{polls, emptyGroups}` and
+> fires both `/mine` + `/empty` in parallel; the home page passes both
+> to `GroupList` which builds them into a single list via
+> `buildGroups(polls, voted, abstained, emptyGroups)`. The home FAB
+> (`CreateGroupButton` in `app/template.tsx`) holds an in-flight ref
+> so rapid taps don't mint two groups.
+>
+> **`Group.isEmpty` distinguishes membership-only groups from
+> populated ones.** Empty groups carry: `rootPollId/rootQuestionId/
+> latestPoll/latestQuestion/targetedPoll = null`, `polls/questions =
+> []`, `groupId + groupShortId` from the GroupSummary. `getGroupHref`
+> returns `/g/<routeId>` (no `?p=`). The home list passes
+> `hideRespondents={true}` to GroupListItem and renders a
+> `statusBadge="New group — tap to add a poll"` instead of the
+> relative-time stamp. The group page (`/g/<id>`) and its sub-routes
+> (/info, /edit-title) all work for empty groups via the
+> `apiGetGroupSummary` fallback path in `useGroup` and
+> `GroupPageInner.fetchGroup`. `GroupPageInner` carries a separate
+> `isEmptyGroup` state alongside `rootPoll`: when
+> `apiGetGroupByRouteId` returns `[]` but `/summary` resolves, set
+> the flag, skip the per-poll fallback that would 404, and mount
+> `<GroupContent>` unconditionally — its internal `useGroup` builds an
+> empty Group from the summary. `rebuildGroupFromCacheOrPrev` no
+> longer early-returns on `!prev.rootPollId`; it picks the first
+> available poll in the group as the anchor for the empty → populated
+> transition (when a placeholder/real poll lands via POLL_PENDING /
+> POLL_HYDRATED).
+>
+> **`Group.groupTitleOverride` carries the raw `groups.title`** (or
+> null) so the edit-title page input can pre-fill with the raw value
+> rather than showing the computed "New Group" default. For populated
+> groups it's `latestPoll.group_title`; for empty groups it's
+> `summary.title`.
+>
+> **Current-user filter on participant names.** `buildGroups` and
+> `buildEmptyGroup` filter the current `localStorage` user name
+> (case-insensitive, trimmed) out of `Group.participantNames` so the
+> viewer doesn't see themselves in the group's title or
+> RespondentCircles graphic. When the filtered list is empty, the
+> title falls through to `defaultTitle = "New Group"`. The rule
+> applies uniformly:
+>   * Home list: GroupListItem's title, the RespondentCircles avatar
+>     (already gated via `hideRespondents` for empty groups).
+>   * Group page header: `GroupHeader` skips the avatar entirely when
+>     names is empty AND anonymousCount is 0 (previously rendered a
+>     `?` fallback, which misrepresents an empty group as a single
+>     anonymous voter).
+>   * /info page: hero avatar gated the same way; "Other Members"
+>     count + list reflect the filtered names; empty state copy
+>     branches on `group.isEmpty` ("Just you so far — share the group
+>     link to bring others in." vs "No other members have voted yet.").
+>
+> The legacy `/g/` empty placeholder route still exists as the home
+> FAB's fallback on API failure — kept so a network blip during
+> `apiCreateGroup` doesn't break the create-a-poll flow entirely.
+> Once an empty group is created (the happy path), the user is
+> navigated to `/g/<short_id>` rather than `/g/`.
+>
+> Backend tests live in `server/tests/test_empty_groups.py` (12
+> tests). The existing `test_groups_api.py` + `test_groups_visibility.py`
+> response shapes were NOT broken — `/api/groups/mine` still returns
+> `list[PollResponse]`, the new empty-groups list is on a separate
+> `/api/groups/empty` endpoint.
+
 > **`DELETE /api/groups/{route_id}/membership` ("leave group") shipped
 > in #268** as the explicit teardown counterpart to the auto-join
 > writes. The endpoint removes the caller's `group_members` row for

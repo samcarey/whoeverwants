@@ -54,8 +54,15 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
     circles.push({ label: `+${overflow}`, fill: '#6B7280' });
   }
 
-  if (circles.length === 0) {
-    circles.push({ label: '?', fill: ANONYMOUS_FALLBACK_COLOR });
+  // Empty state placeholder: a plain gray circle with NO label. Used by
+  // the home list, group page header, and /info hero for groups that
+  // only contain the current user (filtered out by buildGroups) AND
+  // have no anonymous votes — keeps the avatar slot occupied with a
+  // consistent gray bubble rather than misrepresenting the group as a
+  // single anonymous voter via the legacy "?" fallback.
+  const isPlaceholder = circles.length === 0;
+  if (isPlaceholder) {
+    circles.push({ label: '', fill: ANONYMOUS_FALLBACK_COLOR });
   }
 
   const n = Math.min(circles.length, LAYOUTS.length - 1);
@@ -71,18 +78,20 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
           return (
             <g key={i}>
               <circle cx={cx} cy={cy} r={r} fill={circle.fill} />
-              <text
-                x={cx}
-                y={cy}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fill="white"
-                fontSize={fontSize}
-                fontWeight="700"
-                fontFamily="system-ui, -apple-system, sans-serif"
-              >
-                {circle.label}
-              </text>
+              {circle.label && (
+                <text
+                  x={cx}
+                  y={cy}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fill="white"
+                  fontSize={fontSize}
+                  fontWeight="700"
+                  fontFamily="system-ui, -apple-system, sans-serif"
+                >
+                  {circle.label}
+                </text>
+              )}
             </g>
           );
         })}

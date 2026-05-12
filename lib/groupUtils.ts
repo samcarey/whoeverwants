@@ -12,13 +12,34 @@
  * voter_names, ...) still live on each `Question` inside `poll.questions`.
  */
 
-import type { Poll, Question } from './types';
+import type { GroupSummary, Poll, Question } from './types';
 import {
   getCachedQuestionById,
   getCachedAccessiblePolls,
   getCachedPollByShortId,
 } from './questionCache';
 import { isUuidLike } from './questionId';
+import { getUserName } from './userProfile';
+
+/** Fallback group title when no participant names remain after filtering
+ *  out the current user. */
+export const EMPTY_GROUP_TITLE = 'New Group';
+
+/** Trimmed + case-insensitive name equality. Collapses different casings
+ *  of the same name so the viewer doesn't appear twice in respondent
+ *  lists when a sibling poll's `voter_names` carries a variant spelling. */
+export function namesEqualCaseInsensitive(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/** Drop the current user's name from a list (case-insensitive, trimmed). */
+export function filterOutCurrentUser(
+  names: string[],
+  currentUserName: string | null,
+): string[] {
+  if (!currentUserName || !currentUserName.trim()) return names;
+  return names.filter(name => !namesEqualCaseInsensitive(name, currentUserName));
+}
 
 /** Query-param key on `/g/<group>` URLs that names a specific poll the page
  *  should expand and scroll to. Absent → no auto-expand, page scrolls to
@@ -65,24 +86,40 @@ export function findChainRoot(polls: Poll[]): Poll | null {
 }
 
 export interface Group {
-  /** ID of the root question (first question of the chain's earliest poll). */
-  rootQuestionId: string;
-  /** ID of the root poll (oldest poll in the group). */
-  rootPollId: string;
-  /** The group's id (uuid). All polls in `polls` share this. */
+  /** ID of the root question (first question of the chain's earliest poll).
+   *  Null for empty groups (no questions yet). */
+  rootQuestionId: string | null;
+  /** ID of the root poll (oldest poll in the group). Null for empty groups. */
+  rootPollId: string | null;
+  /** The group's id (uuid). All polls in `polls` share this. Non-null for
+   *  empty groups (the group exists in the DB even with no polls). */
   groupId: string | null;
-  /** Polls in the group, sorted chronologically (oldest first). */
+  /** The group's short_id (preferred URL form). Always present for empty
+   *  groups (server populates via DB trigger on insert); present on every
+   *  Poll in a populated group. */
+  groupShortId: string | null;
+  /** Polls in the group, sorted chronologically (oldest first). Empty for
+   *  empty groups. */
   polls: Poll[];
   /** Flat questions list in chronological + question_index order — kept for
-   *  callsites that iterate every ballot card. */
+   *  callsites that iterate every ballot card. Empty for empty groups. */
   questions: Question[];
-  /** Deduplicated participant names across the group (creator + voters). */
+  /** Deduplicated participant names across the group (creator + voters),
+   *  with the current user's name filtered out (matches the rule "don't
+   *  list yourself in your own group's name or graphic"). */
   participantNames: string[];
   /** Display title: group_title override if set, otherwise the
-   *  comma-separated participant-names default. */
+   *  comma-separated participant-names default ("New Group" if filtered
+   *  participantNames is empty). */
   title: string;
   /** The participant-names default (no group_title override applied). */
   defaultTitle: string;
+  /** Raw group_title override (from `groups.title`). Null when no
+   *  override is set — `title` then falls through to `defaultTitle`.
+   *  Distinct from `title` so the edit-title input can pre-fill with the
+   *  raw value rather than displaying "New Group" as if it were a typed
+   *  title. */
+  groupTitleOverride: string | null;
   /** Number of unvoted polls in the group (one count per wrapper, since
    *  poll-level open/closed determines whether voting is possible). */
   unvotedCount: number;
@@ -90,17 +127,24 @@ export interface Group {
   soonestUnvotedDeadline?: string;
   /** Pre-computed ms timestamp of soonestUnvotedDeadline for sorting. */
   soonestUnvotedDeadlineMs?: number;
-  /** Pre-computed ms timestamp of latest poll created_at for sorting. */
+  /** Pre-computed ms timestamp of latest poll created_at for sorting,
+   *  or the group's `created_at` for empty groups. */
   latestActivityMs: number;
-  /** The latest question in the group (most recently created). */
-  latestQuestion: Question;
+  /** True iff the group has no polls yet — distinguishes the brand-new
+   *  empty-group case from a normal group with `polls.length === 1`. */
+  isEmpty: boolean;
+  /** The latest question in the group (most recently created). Null for
+   *  empty groups. */
+  latestQuestion: Question | null;
   /** The latest poll in the group (kept for callsites that need
-   *  wrapper-level fields like is_closed / response_deadline). */
-  latestPoll: Poll;
+   *  wrapper-level fields like is_closed / response_deadline). Null for
+   *  empty groups. */
+  latestPoll: Poll | null;
   /** The poll the group URL should target — oldest open poll with at least
    *  one not-yet-responded question (matches the per-question gold-outline
-   *  rule), falling back to the newest poll when nothing is awaiting. */
-  targetedPoll: Poll;
+   *  rule), falling back to the newest poll when nothing is awaiting. Null
+   *  for empty groups (no polls to target). */
+  targetedPoll: Poll | null;
   /** Estimated count of anonymous respondents (max across polls). */
   anonymousRespondentCount: number;
 }
@@ -182,14 +226,17 @@ function groupPollsByGroup(polls: Poll[]): Map<string, Poll[]> {
 }
 
 /**
- * Build groups from a flat list of polls. Each group groups every poll
- * with the same `group_id`, sorted by `created_at` (oldest first).
+ * Build groups from a flat list of polls + an optional list of
+ * membership-only "empty groups" (the user joined them via the home
+ * "+" FAB but no polls exist yet).
  */
 export function buildGroups(
   polls: Poll[],
   votedQuestionIds: Set<string>,
   abstainedQuestionIds: Set<string>,
+  emptyGroups: GroupSummary[] = [],
 ): Group[] {
+  const currentUserName = getUserName();
   const byGroupId = groupPollsByGroup(polls);
   const groups: Group[] = [];
   for (const pollsInGroup of byGroupId.values()) {
@@ -197,7 +244,18 @@ export function buildGroups(
       sortByCreatedAt(pollsInGroup),
       votedQuestionIds,
       abstainedQuestionIds,
+      currentUserName,
     ));
+  }
+  // Drop empty-group entries whose group_id is already represented by a
+  // populated group — handles the race where /api/groups/empty races
+  // /api/groups/mine and a poll just landed.
+  const populatedGroupIds = new Set(
+    groups.map(g => g.groupId).filter((id): id is string => !!id),
+  );
+  for (const summary of emptyGroups) {
+    if (populatedGroupIds.has(summary.id)) continue;
+    groups.push(buildEmptyGroup(summary));
   }
   return sortGroups(groups);
 }
@@ -206,6 +264,7 @@ function buildGroupFromPolls(
   polls: Poll[],
   votedQuestionIds: Set<string>,
   abstainedQuestionIds: Set<string>,
+  currentUserName: string | null = getUserName(),
 ): Group {
   // Sub-questions flatten in (poll chronological, question_index) order.
   const questions: Question[] = [];
@@ -217,26 +276,29 @@ function buildGroupFromPolls(
   }
 
   // Collect participant names from each poll's wrapper-level
-  // creator_name + voter_names aggregate.
+  // creator_name + voter_names aggregate. Then filter out the current
+  // user (case-insensitive) so they don't see themselves in the group
+  // title or graphic.
   const nameSet = new Set<string>();
   for (const mp of polls) {
     if (mp.creator_name) nameSet.add(mp.creator_name);
     for (const name of mp.voter_names) nameSet.add(name);
   }
-  const participantNames = Array.from(nameSet).sort();
+  const allNames = Array.from(nameSet).sort();
+  const participantNames = filterOutCurrentUser(allNames, currentUserName);
 
   // Default title uses participant names; override comes from groups.title
   // (surfaced on every poll as `group_title`).
   const defaultTitle = participantNames.length > 0
     ? participantNames.join(', ')
-    : 'New Group';
+    : EMPTY_GROUP_TITLE;
   // Migration 105 makes group_title a single source of truth at the
   // group level — every poll in this group carries the same value.
   // Read off the latest poll for compat with placeholder/legacy polls
   // that may not have it set yet.
   const latestPoll = polls[polls.length - 1];
-  const groupTitle = latestPoll.group_title?.trim() ?? null;
-  const title = groupTitle || defaultTitle;
+  const groupTitleOverride = latestPoll.group_title?.trim() || null;
+  const title = groupTitleOverride || defaultTitle;
 
   const now = new Date();
   let unvotedCount = 0;
@@ -277,21 +339,57 @@ function buildGroupFromPolls(
     rootQuestionId: questions[0].id,
     rootPollId: polls[0].id,
     groupId: polls[0].group_id ?? null,
+    groupShortId: latestPoll.group_short_id ?? null,
     polls,
     questions,
     participantNames,
     title,
     defaultTitle,
+    groupTitleOverride,
     unvotedCount,
     soonestUnvotedDeadline,
     soonestUnvotedDeadlineMs: soonestUnvotedDeadline
       ? new Date(soonestUnvotedDeadline).getTime()
       : undefined,
     latestActivityMs,
+    isEmpty: false,
     latestQuestion: questions[questions.length - 1],
     latestPoll,
     targetedPoll,
     anonymousRespondentCount,
+  };
+}
+
+/** Build a `Group` for a membership-only "empty group" — joined but
+ *  no polls yet. */
+export function buildEmptyGroup(summary: GroupSummary): Group {
+  const groupTitleOverride = summary.title?.trim() || null;
+  const participantNames: string[] = [];
+  const defaultTitle = EMPTY_GROUP_TITLE;
+  const title = groupTitleOverride || defaultTitle;
+  const createdMs = summary.created_at
+    ? new Date(summary.created_at).getTime()
+    : Date.now();
+  return {
+    rootQuestionId: null,
+    rootPollId: null,
+    groupId: summary.id,
+    groupShortId: summary.short_id ?? null,
+    polls: [],
+    questions: [],
+    participantNames,
+    title,
+    defaultTitle,
+    groupTitleOverride,
+    unvotedCount: 0,
+    soonestUnvotedDeadline: undefined,
+    soonestUnvotedDeadlineMs: undefined,
+    latestActivityMs: createdMs,
+    isEmpty: true,
+    latestQuestion: null,
+    latestPoll: null,
+    targetedPoll: null,
+    anonymousRespondentCount: 0,
   };
 }
 
@@ -323,10 +421,19 @@ export function findGroupByQuestionId(groups: Group[], questionId: string): Grou
 /** Route id for a group URL. Migration 105 ties this to `groups.short_id`
  *  via `Poll.group_short_id`; the legacy fallbacks (root poll short_id,
  *  root question id) are kept for synthesized placeholder polls that
- *  haven't been persisted yet. */
+ *  haven't been persisted yet. Empty groups fall through to
+ *  `group.groupShortId` (from the GroupSummary) or `group.groupId`. */
 export function getGroupRouteId(group: Group): string {
+  if (group.isEmpty) {
+    return group.groupShortId || group.groupId || '';
+  }
   const rootPoll = group.polls.find(p => p.id === group.rootPollId) ?? group.polls[0];
-  return rootPoll?.group_short_id || rootPoll?.short_id || group.rootQuestionId;
+  return rootPoll?.group_short_id
+    || rootPoll?.short_id
+    || group.rootQuestionId
+    || group.groupShortId
+    || group.groupId
+    || '';
 }
 
 /** Resolve a poll's group route id (the path param of `/g/<routeId>`).
@@ -349,16 +456,17 @@ export function getGroupHrefForPoll(poll: Poll): string {
  *
  * - `/g/<root>?p=<target>` when the user has awaiting work — the poll is
  *   auto-expanded and scrolled-to on landing.
- * - `/g/<root>` when nothing is awaiting — the page scrolls to bottom (draft
- *   form area), inviting the user to start a new poll.
+ * - `/g/<root>` when nothing is awaiting OR the group is empty — the page
+ *   scrolls to bottom (draft form area), inviting the user to start a
+ *   new poll.
  */
 export function getGroupHref(group: Group): string {
   const rootRouteId = getGroupRouteId(group);
-  if (group.unvotedCount === 0) {
+  if (group.isEmpty || group.unvotedCount === 0 || !group.targetedPoll) {
     return `/g/${rootRouteId}`;
   }
   const target = group.targetedPoll;
-  const targetRouteId = target.short_id || target.questions[0]?.id || group.rootQuestionId;
+  const targetRouteId = target.short_id || target.questions[0]?.id || group.rootQuestionId || '';
   return `/g/${rootRouteId}?${POLL_QUERY_PARAM}=${targetRouteId}`;
 }
 

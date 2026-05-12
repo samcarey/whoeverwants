@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import type { Poll } from "@/lib/types";
-import { getMyGroups } from "@/lib/simpleQuestionQueries";
+import type { GroupSummary, Poll } from "@/lib/types";
+import { getCachedEmptyGroups, getMyGroups } from "@/lib/simpleQuestionQueries";
 import { apiGetAllQuestionIds } from "@/lib/api";
 import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
@@ -36,11 +36,17 @@ const activityPhrases = [
 
 export default function Home() {
   // Cache-seed avoids loading flash on view-transition return from a group.
-  const [{ polls: initialPolls, loading: initialLoading }] = useState(() => {
-    const cached = typeof window === "undefined" ? null : getCachedAccessiblePolls();
-    return { polls: cached ?? [], loading: cached === null };
+  const [{ polls: initialPolls, emptyGroups: initialEmptyGroups, loading: initialLoading }] = useState(() => {
+    const cachedPolls = typeof window === "undefined" ? null : getCachedAccessiblePolls();
+    const cachedEmptyGroups = typeof window === "undefined" ? [] : getCachedEmptyGroups();
+    return {
+      polls: cachedPolls ?? [],
+      emptyGroups: cachedEmptyGroups,
+      loading: cachedPolls === null && cachedEmptyGroups.length === 0,
+    };
   });
   const [polls, setPolls] = useState<Poll[]>(initialPolls);
+  const [emptyGroups, setEmptyGroups] = useState<GroupSummary[]>(initialEmptyGroups);
   const [loading, setLoading] = useState(initialLoading);
   const [error, setError] = useState<string | null>(null);
   const [currentPhrase, setCurrentPhrase] = useState<string>("");
@@ -155,14 +161,9 @@ export default function Home() {
         // returns every poll in any group containing one of our
         // accessible questions, with results inline. Replaces the legacy
         // discoverRelatedQuestions + getAccessiblePolls pair.
-        const data = await getMyGroups();
-        if (!data) {
-          console.error("Error fetching groups");
-          setError("Failed to load polls");
-          return;
-        }
-
-        setPolls(data);
+        const { polls: nextPolls, emptyGroups: nextEmptyGroups } = await getMyGroups();
+        setPolls(nextPolls);
+        setEmptyGroups(nextEmptyGroups);
       } catch (error) {
         console.error("Unexpected error:", error);
         setError("An unexpected error occurred");
@@ -174,51 +175,30 @@ export default function Home() {
     fetchQuestions();
   }, []);
 
-  // Live-refresh the polls list on poll creation. User submits from /p
-  // (empty placeholder), router.replace lands them on /p/<short_id>, and
+  // Live-refresh the polls list on poll creation. User submits from /g
+  // (empty placeholder), router.replace lands them on /g/<short_id>, and
   // when they navigate home the list would otherwise be stale until refresh.
   // POLL_FAILED is intentionally not listened to: placeholder polls never
   // reach the home cache, so a failure can't change the home list.
   useEffect(() => {
     const handler = async () => {
       try {
-        const data = await getMyGroups();
-        if (!data) return;
+        const { polls: nextPolls, emptyGroups: nextEmptyGroups } = await getMyGroups();
         setPolls((prev) =>
-          prev.length === data.length && prev.every((p, i) => p.id === data[i].id)
+          prev.length === nextPolls.length && prev.every((p, i) => p.id === nextPolls[i].id)
             ? prev
-            : data,
+            : nextPolls,
+        );
+        setEmptyGroups((prev) =>
+          prev.length === nextEmptyGroups.length && prev.every((g, i) => g.id === nextEmptyGroups[i].id)
+            ? prev
+            : nextEmptyGroups,
         );
       } catch {}
     };
     window.addEventListener(POLL_HYDRATED_EVENT, handler);
     return () => window.removeEventListener(POLL_HYDRATED_EVENT, handler);
   }, []);
-
-  // Extract fetchQuestions function for reuse in pull-to-refresh
-  const refreshQuestions = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Phase B.3: server walks polls.group_id and returns every poll
-      // in any group containing one of our accessible questions —
-      // discovery + accessibility are one round-trip now.
-      const data = await getMyGroups();
-      if (!data) {
-        console.error("Error fetching groups");
-        setError("Failed to load polls");
-        return;
-      }
-
-      setPolls(data);
-    } catch (error) {
-      console.error("Unexpected error:", error);
-      setError("An unexpected error occurred");
-    } finally {
-      setLoading(false);
-    }
-  };
 
 
   return (
@@ -239,7 +219,7 @@ export default function Home() {
         </div>
       )}
 
-      {!loading && !error && polls.length === 0 && (
+      {!loading && !error && polls.length === 0 && emptyGroups.length === 0 && (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           Once you create a question or open a link from someone, it will be shown here.
         </div>
@@ -248,12 +228,17 @@ export default function Home() {
       {!loading && !error && (
         <GroupList
           polls={polls}
-          onGroupsForgotten={(forgottenPollIds) => {
+          emptyGroups={emptyGroups}
+          onGroupsForgotten={(forgottenPollIds, forgottenGroupIds) => {
             // Drop the forgotten groups optimistically — caches were
             // already invalidated inside forgetGroup, so the next natural
             // refresh re-syncs; no immediate fetch needed.
-            const forgotten = new Set(forgottenPollIds);
-            setPolls((prev) => prev.filter((p) => !forgotten.has(p.id)));
+            const forgottenPolls = new Set(forgottenPollIds);
+            setPolls((prev) => prev.filter((p) => !forgottenPolls.has(p.id)));
+            if (forgottenGroupIds && forgottenGroupIds.length > 0) {
+              const forgottenGroups = new Set(forgottenGroupIds);
+              setEmptyGroups((prev) => prev.filter((g) => !forgottenGroups.has(g.id)));
+            }
           }}
         />
       )}
