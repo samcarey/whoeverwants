@@ -36,14 +36,33 @@ interface Props {
   onConfirm: (croppedBlob: Blob) => void | Promise<void>;
 }
 
-interface ImageMeta {
-  url: string;
+interface ImageDims {
   width: number;
   height: number;
 }
 
 export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
-  const [image, setImage] = useState<ImageMeta | null>(null);
+  // Blob URL for the picked file. Created ONCE per mount instance via
+  // useState lazy init (which runs per component instance, including each
+  // React StrictMode mount) and revoked only on real unmount via an
+  // empty-deps useEffect cleanup. This avoids two pitfalls that bit
+  // earlier attempts:
+  //
+  //   1. StrictMode double-mount + useEffect cleanup that revoked the
+  //      URL while the in-flight load was still running. Now the URL
+  //      is decoupled from the load effect entirely.
+  //   2. iOS Safari/WKWebView (including iOS Firefox) silently refuses
+  //      to render data URLs longer than ~1-2 MB in <img src>. Phone
+  //      photos at 5-15 MB produced an empty crop frame. Blob URLs
+  //      have no such length limit.
+  //
+  // The displayed <img> is the only loader — its onLoad reports the
+  // natural dimensions and gates the rest of the cropper UI. No
+  // separate `new Image()` probe.
+  const [url] = useState(() => URL.createObjectURL(file));
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+
+  const [imageDims, setImageDims] = useState<ImageDims | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -59,52 +78,6 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
-
-  // Load the file → image. Use FileReader → data URL rather than
-  // URL.createObjectURL: data URLs have no lifecycle (no
-  // revoke-vs-onload race under React StrictMode, no blob-URL quirks
-  // on iOS Safari / WebKit-based browsers like iOS Firefox where
-  // blob URLs created from <input type=file> have historically been
-  // flaky). The memory overhead is ~33% over the raw file, which is
-  // fine for a single image being cropped client-side.
-  //
-  // Cancellation guard is still kept: the effect can re-run if `file`
-  // changes (today: never, since the parent unmounts the modal to swap
-  // files — but cheap insurance against future callers).
-  useEffect(() => {
-    let cancelled = false;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (cancelled) return;
-      const dataUrl = reader.result as string;
-      if (typeof dataUrl !== "string") {
-        setLoadError("Couldn't read that image file");
-        return;
-      }
-      const img = new Image();
-      img.onload = () => {
-        if (cancelled) return;
-        setImage({
-          url: dataUrl,
-          width: img.naturalWidth,
-          height: img.naturalHeight,
-        });
-      };
-      img.onerror = () => {
-        if (cancelled) return;
-        setLoadError("Couldn't read that image file");
-      };
-      img.src = dataUrl;
-    };
-    reader.onerror = () => {
-      if (cancelled) return;
-      setLoadError("Couldn't read that image file");
-    };
-    reader.readAsDataURL(file);
-    return () => {
-      cancelled = true;
-    };
-  }, [file]);
 
   // Pick the largest square that fits the viewport with sensible margins.
   useLayoutEffect(() => {
@@ -154,19 +127,19 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
 
   // Min scale: image must fully cover the crop frame in BOTH axes.
   const minScale = useMemo(() => {
-    if (!image || frameSize === 0) return 1;
-    return Math.max(frameSize / image.width, frameSize / image.height);
-  }, [image, frameSize]);
+    if (!imageDims || frameSize === 0) return 1;
+    return Math.max(frameSize / imageDims.width, frameSize / imageDims.height);
+  }, [imageDims, frameSize]);
 
   // On image / frame-size change, reset the transform so the image is
   // centered and minimally-zoomed inside the crop frame.
   useLayoutEffect(() => {
-    if (!image || frameSize === 0) return;
+    if (!imageDims || frameSize === 0) return;
     scaleRef.current = minScale;
     offsetXRef.current = 0;
     offsetYRef.current = 0;
     applyTransformToDom();
-  }, [image, frameSize, minScale]);
+  }, [imageDims, frameSize, minScale]);
 
   function applyTransformToDom() {
     const el = imgRef.current;
@@ -178,10 +151,10 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
 
   // Clamp so the image always fully covers the crop frame.
   function clamp(scale: number, ox: number, oy: number): [number, number, number] {
-    if (!image) return [scale, ox, oy];
+    if (!imageDims) return [scale, ox, oy];
     const clampedScale = Math.max(minScale, Math.min(scale, minScale * MAX_SCALE_OVER_MIN));
-    const scaledW = image.width * clampedScale;
-    const scaledH = image.height * clampedScale;
+    const scaledW = imageDims.width * clampedScale;
+    const scaledH = imageDims.height * clampedScale;
     const maxX = Math.max(0, (scaledW - frameSize) / 2);
     const maxY = Math.max(0, (scaledH - frameSize) / 2);
     const clampedX = Math.max(-maxX, Math.min(maxX, ox));
@@ -234,7 +207,7 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
   }
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (!image) return;
+    if (!imageDims) return;
     (e.target as Element).setPointerCapture?.(e.pointerId);
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     snapshotGesture();
@@ -244,7 +217,7 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
     if (!pointersRef.current.has(e.pointerId)) return;
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const start = gestureStartRef.current;
-    if (!start || !image) return;
+    if (!start || !imageDims) return;
 
     const pts = Array.from(pointersRef.current.values());
     let cx = 0;
@@ -295,7 +268,7 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
 
   // Wheel for desktop zoom (deltaY < 0 = zoom in).
   const handleWheel = (e: React.WheelEvent) => {
-    if (!image || !containerRef.current) return;
+    if (!imageDims || !containerRef.current) return;
     e.preventDefault();
     const containerRect = containerRef.current.getBoundingClientRect();
     const frameCenterX = containerRect.left + containerRect.width / 2;
@@ -317,13 +290,13 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
   };
 
   async function handleConfirm() {
-    if (!image || submitting) return;
+    if (!imageDims || submitting) return;
     setSubmitting(true);
     try {
       const blob = await renderCropToBlob({
-        srcUrl: image.url,
-        imgWidth: image.width,
-        imgHeight: image.height,
+        srcUrl: url,
+        imgWidth: imageDims.width,
+        imgHeight: imageDims.height,
         frameSize,
         scale: scaleRef.current,
         offsetX: offsetXRef.current,
@@ -363,7 +336,7 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
       <div className="flex-1 flex items-center justify-center w-full px-4 overflow-hidden">
         {loadError ? (
           <p className="text-white text-sm">{loadError}</p>
-        ) : !image || frameSize === 0 ? (
+        ) : frameSize === 0 ? (
           <p className="text-white text-sm">Loading image…</p>
         ) : (
           <div
@@ -380,26 +353,55 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
             onPointerCancel={handlePointerUp}
             onWheel={handleWheel}
           >
-            {/* Source image, transform applied imperatively */}
+            {/* Source image — always rendered so the browser loads it.
+                Until onLoad reports natural dimensions, the image is
+                hidden via `visibility: hidden` (so it still loads) and
+                the "Loading image…" overlay is shown on top. Once
+                imageDims is set, the inline width/height/margin/transform
+                math kicks in and the image becomes visible. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               ref={imgRef}
-              src={image.url}
+              src={url}
               alt=""
               draggable={false}
-              style={{
+              onLoad={(e) => {
+                const t = e.currentTarget;
+                if (t.naturalWidth > 0 && t.naturalHeight > 0) {
+                  setImageDims({ width: t.naturalWidth, height: t.naturalHeight });
+                }
+              }}
+              onError={() => setLoadError("Couldn't read that image file")}
+              style={imageDims ? ({
                 position: 'absolute',
                 left: '50%',
                 top: '50%',
-                width: image.width,
-                height: image.height,
-                marginLeft: -image.width / 2,
-                marginTop: -image.height / 2,
+                width: imageDims.width,
+                height: imageDims.height,
+                marginLeft: -imageDims.width / 2,
+                marginTop: -imageDims.height / 2,
                 transformOrigin: 'center center',
                 userSelect: 'none',
                 WebkitUserDrag: 'none',
-              } as React.CSSProperties}
+              } as React.CSSProperties) : ({
+                // Pre-load: keep the img in the DOM (so it loads) but
+                // off-screen and zero-size so it doesn't affect layout
+                // or briefly flash at natural size before dimensions are
+                // captured.
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                width: 1,
+                height: 1,
+                opacity: 0,
+                pointerEvents: 'none',
+              } as React.CSSProperties)}
             />
+            {!imageDims && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <p className="text-white text-sm">Loading image…</p>
+              </div>
+            )}
             {/* Circular cutout overlay: darken everything outside the circle.
                 Implemented as an SVG mask so the inside stays crisp. */}
             <svg
@@ -443,7 +445,7 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
       <div className="w-full flex items-center justify-center px-4 py-4">
         <button
           onClick={handleConfirm}
-          disabled={!image || submitting || !!loadError}
+          disabled={!imageDims || submitting || !!loadError}
           className="px-6 py-3 rounded-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white text-base font-semibold"
         >
           {submitting ? 'Saving…' : 'Save'}
