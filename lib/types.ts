@@ -133,6 +133,10 @@ export interface GroupSummary {
   short_id?: string | null;
   title?: string | null;
   created_at: string;
+  // Migration 108: ISO timestamp of when the group's avatar image was
+  // last set. Null when no custom image is set. Doubles as the cache-
+  // buster query param on `/api/groups/by-route-id/<id>/image`.
+  image_updated_at?: string | null;
 }
 
 // Poll wrapper. Mirrors PollResponse in server/models.py.
@@ -158,6 +162,11 @@ export interface Poll {
   // (single source of truth, one row per group). Every poll in the same
   // group receives the same value.
   group_title?: string | null;
+  // Migration 108: ISO timestamp of when the group's avatar image was
+  // last set/cleared. Null when no custom image is set. Every poll in
+  // the same group carries the same value (sourced from groups.image_updated_at
+  // via JOIN). Doubles as the cache-buster query param on the image URL.
+  group_image_updated_at?: string | null;
   context?: string | null;
   details?: string | null;
   title: string;

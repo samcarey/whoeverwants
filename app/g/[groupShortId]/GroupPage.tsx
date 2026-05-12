@@ -1612,6 +1612,7 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         title={group.title}
         participantNames={group.participantNames}
         anonymousCount={group.anonymousRespondentCount}
+        imageUrl={group.imageUrl}
         subtitle={
           group.questions.length === 0
             ? undefined

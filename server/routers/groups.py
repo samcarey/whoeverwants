@@ -30,7 +30,11 @@ first.
 
 from __future__ import annotations
 
+import base64
+import binascii
+
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from database import get_db
@@ -52,12 +56,19 @@ class GroupSummary(BaseModel):
     yet. Surfaced by `POST /api/groups` (the empty-group create endpoint),
     `GET /api/groups/by-route-id/{id}/summary` (for the group page's
     direct-URL load when there are no visible polls), and the
-    `empty_groups` array on `POST /api/groups/mine`."""
+    `empty_groups` array on `POST /api/groups/mine`.
+
+    `image_updated_at` (migration 108) is the ISO timestamp of when the
+    group's avatar image was last set/cleared. Null when no custom image
+    is set. The FE constructs `/api/groups/by-route-id/<id>/image?v=<ts>`
+    using this value as the cache-buster.
+    """
 
     id: str
     short_id: str | None = None
     title: str | None = None
     created_at: str
+    image_updated_at: str | None = None
 
 
 class GroupPreviewResponse(BaseModel):
@@ -69,6 +80,33 @@ class GroupPreviewResponse(BaseModel):
 
     title: str
     description: str | None = None
+
+
+class GroupImageRequest(BaseModel):
+    """`POST /api/groups/{route_id}/image` body.
+
+    `image_base64` is the FE-cropped square image (JPEG or PNG) encoded as
+    base64 with no `data:` prefix. `mime_type` must be `image/jpeg` or
+    `image/png`. Max decoded size: `MAX_IMAGE_BYTES`. The FE crops to a
+    square + downscales to ~512px before sending, so the typical payload
+    is well under 100KB.
+    """
+
+    image_base64: str
+    mime_type: str
+
+
+class GroupImageResponse(BaseModel):
+    group_id: str
+    group_short_id: str | None = None
+    image_updated_at: str | None = None
+
+
+# 5 MiB — well above the FE-cropped ~100KB target but below anything
+# that would risk OOMing the 1GB droplet's API container even on a
+# pathological client.
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+_ALLOWED_IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png"})
 
 
 class GroupTitleResponse(BaseModel):
@@ -158,7 +196,7 @@ def get_my_empty_groups(request: Request):
         return []
     with get_db() as conn:
         rows = conn.execute(
-            """SELECT g.id, g.short_id, g.title, g.created_at
+            """SELECT g.id, g.short_id, g.title, g.created_at, g.image_updated_at
                  FROM groups g
                  JOIN group_members m ON m.group_id = g.id
                 WHERE m.browser_id = %(bid)s
@@ -173,11 +211,13 @@ def get_my_empty_groups(request: Request):
 
 def _row_to_group_summary(row) -> GroupSummary:
     created_at = row.get("created_at")
+    image_updated_at = row.get("image_updated_at")
     return GroupSummary(
         id=str(row["id"]),
         short_id=row.get("short_id"),
         title=row.get("title"),
         created_at=created_at.isoformat() if created_at else "",
+        image_updated_at=image_updated_at.isoformat() if image_updated_at else None,
     )
 
 
@@ -196,7 +236,7 @@ def create_group(request: Request):
     with get_db() as conn:
         row = conn.execute(
             "INSERT INTO groups DEFAULT VALUES "
-            "RETURNING id, short_id, title, created_at"
+            "RETURNING id, short_id, title, created_at, image_updated_at"
         ).fetchone()
         grant_group_membership_inline(conn, str(row["id"]), browser_id)
         return _row_to_group_summary(row)
@@ -218,7 +258,7 @@ def get_group_summary(route_id: str):
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
         row = conn.execute(
-            "SELECT id, short_id, title, created_at "
+            "SELECT id, short_id, title, created_at, image_updated_at "
             "FROM groups WHERE id = %(id)s",
             {"id": group_id},
         ).fetchone()
@@ -392,6 +432,125 @@ def update_group_title(route_id: str, req: UpdateGroupTitleRequest):
         group_short_id=row.get("short_id"),
         title=row.get("title"),
     )
+
+
+@router.post("/{route_id}/image", response_model=GroupImageResponse)
+def upload_group_image(route_id: str, req: GroupImageRequest):
+    """Set the group's avatar image (migration 108).
+
+    Body: base64-encoded JPEG or PNG bytes (already square-cropped by the
+    FE — the server does NOT crop or resize). Replaces any previous image
+    on the group. Stamps `image_updated_at` so the FE knows to invalidate
+    its `/api/groups/by-route-id/<id>/image?v=<ts>` cache.
+
+    Anyone with the URL can change the group's image — same trust model
+    as `POST /api/groups/{route_id}/title`. No creator-secret check today.
+
+    `route_id` accepts the same four forms as `/by-route-id/{route_id}`:
+    `groups.short_id`, `groups.id`, `polls.short_id`, `polls.id`.
+    """
+    if req.mime_type not in _ALLOWED_IMAGE_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Image mime_type must be image/jpeg or image/png",
+        )
+    try:
+        image_bytes = base64.b64decode(req.image_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid base64 image data: {exc}"
+        ) from exc
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Image is empty")
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Image exceeds {MAX_IMAGE_BYTES} bytes",
+        )
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        row = conn.execute(
+            """
+            UPDATE groups
+               SET image_data = %(data)s,
+                   image_mime_type = %(mime)s,
+                   image_updated_at = NOW()
+             WHERE id = %(id)s
+            RETURNING id, short_id, image_updated_at
+            """,
+            {"id": group_id, "data": image_bytes, "mime": req.mime_type},
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Group not found")
+    image_updated_at = row.get("image_updated_at")
+    return GroupImageResponse(
+        group_id=str(row["id"]),
+        group_short_id=row.get("short_id"),
+        image_updated_at=image_updated_at.isoformat() if image_updated_at else None,
+    )
+
+
+@router.delete("/{route_id}/image", response_model=GroupImageResponse)
+def delete_group_image(route_id: str):
+    """Clear the group's avatar image. Idempotent — a 200 is returned
+    even if no image was set, so the FE doesn't have to distinguish
+    "was set" from "wasn't set" to reset state. `image_updated_at` is
+    set to NULL so the FE falls back to the initials avatar."""
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        row = conn.execute(
+            """
+            UPDATE groups
+               SET image_data = NULL,
+                   image_mime_type = NULL,
+                   image_updated_at = NULL
+             WHERE id = %(id)s
+            RETURNING id, short_id, image_updated_at
+            """,
+            {"id": group_id},
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Group not found")
+    return GroupImageResponse(
+        group_id=str(row["id"]),
+        group_short_id=row.get("short_id"),
+        image_updated_at=None,
+    )
+
+
+@router.get("/by-route-id/{route_id}/image")
+def get_group_image(route_id: str):
+    """Serve the group's avatar image bytes with the stored MIME type.
+
+    Public — no membership / browser-id check. The URL itself is
+    unguessable (it requires the group's short_id or uuid), and the
+    image surface is intentionally narrow (just the avatar). Cached
+    via the FE's `?v=<image_updated_at>` query string; the response
+    sets `Cache-Control: public, max-age=31536000, immutable` so a
+    given URL never re-fetches once received (the next change bumps
+    the timestamp, producing a new URL).
+
+    Returns 404 when no image is set (FE renders fallback initials).
+    """
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        row = conn.execute(
+            "SELECT image_data, image_mime_type FROM groups WHERE id = %(id)s",
+            {"id": group_id},
+        ).fetchone()
+        if not row or not row.get("image_data"):
+            raise HTTPException(status_code=404, detail="Image not set")
+        return Response(
+            content=bytes(row["image_data"]),
+            media_type=row.get("image_mime_type") or "application/octet-stream",
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
 
 
 @router.delete("/{route_id}/membership", status_code=204)

@@ -209,6 +209,7 @@ export function toPoll(data: any): Poll {
     is_closed: data.is_closed ?? false,
     close_reason: data.close_reason ?? null,
     group_title: data.group_title ?? null,
+    group_image_updated_at: data.group_image_updated_at ?? null,
     context: data.context ?? null,
     details: data.details ?? null,
     title: data.title,

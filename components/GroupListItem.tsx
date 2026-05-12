@@ -2,7 +2,7 @@
 
 import React from "react";
 import ClientOnly from "@/components/ClientOnly";
-import RespondentCircles from "@/components/RespondentCircles";
+import GroupAvatar from "@/components/GroupAvatar";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { relativeTime } from "@/lib/questionListUtils";
 
@@ -43,6 +43,10 @@ export interface GroupListItemProps {
    *  text content takes the full row width. Used by the draft poll card so the
    *  in-progress poll doesn't show pre-vote initials before anyone has voted. */
   hideRespondents?: boolean;
+  /** When set, the group has an uploaded avatar image — overrides the
+   *  initials graphic. Null/undefined → render the participant initials
+   *  (RespondentCircles). */
+  imageUrl?: string | null;
   /** Inline replacement for the relative-time stamp when `createdAt` is
    *  absent — e.g. "ready to submit" / "just now" for the draft poll card. */
   statusBadge?: React.ReactNode;
@@ -74,6 +78,7 @@ export default function GroupListItem(props: GroupListItemProps) {
     finalizing = false,
     isFirst = false,
     hideRespondents = false,
+    imageUrl = null,
     statusBadge,
     selectionMode = false,
     isSelected = false,
@@ -141,7 +146,8 @@ export default function GroupListItem(props: GroupListItemProps) {
         {/* Drafts skip this entirely so the "?" placeholder doesn't appear
             before anyone has actually voted. */}
         {!hideRespondents && (
-          <RespondentCircles
+          <GroupAvatar
+            imageUrl={imageUrl}
             names={participantNames}
             anonymousCount={anonymousRespondentCount}
           />

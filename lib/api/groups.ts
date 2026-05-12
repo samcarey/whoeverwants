@@ -39,6 +39,7 @@ function toGroupSummary(data: any): GroupSummary {
     short_id: data.short_id ?? null,
     title: data.title ?? null,
     created_at: data.created_at,
+    image_updated_at: data.image_updated_at ?? null,
   };
 }
 
@@ -181,4 +182,78 @@ export async function apiUpdateGroupTitle(
   }
   invalidateAccessibleQuestions();
   return result;
+}
+
+/** Upload (or replace) a group's avatar image. Migration 108.
+ *
+ *  `imageBlob` is the FE-cropped square image — a JPEG or PNG Blob produced
+ *  by the cropper's canvas export. Encoded to base64 and POSTed as JSON
+ *  to match the rest of the API's content-type contract.
+ *
+ *  Invalidates every cached poll in the group (each carries
+ *  `group_image_updated_at`) plus the accessible-polls cache, so the next
+ *  read picks up the new timestamp + URL.
+ */
+export async function apiUploadGroupImage(
+  routeId: string,
+  imageBlob: Blob,
+): Promise<{ group_id: string; group_short_id: string | null; image_updated_at: string | null }> {
+  const mimeType = imageBlob.type || 'image/jpeg';
+  const arrayBuffer = await imageBlob.arrayBuffer();
+  const base64 = base64FromArrayBuffer(arrayBuffer);
+  const data = await groupFetch<any>(
+    `/${encodeURIComponent(routeId)}/image`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ image_base64: base64, mime_type: mimeType }),
+    },
+  );
+  const result = {
+    group_id: data.group_id as string,
+    group_short_id: (data.group_short_id ?? null) as string | null,
+    image_updated_at: (data.image_updated_at ?? null) as string | null,
+  };
+  invalidateGroupPolls(result.group_id);
+  return result;
+}
+
+/** Clear a group's avatar image (FE falls back to initials). Idempotent
+ *  server-side — safe to call even when no image is set. */
+export async function apiDeleteGroupImage(
+  routeId: string,
+): Promise<{ group_id: string; group_short_id: string | null }> {
+  const data = await groupFetch<any>(
+    `/${encodeURIComponent(routeId)}/image`,
+    { method: 'DELETE' },
+  );
+  const result = {
+    group_id: data.group_id as string,
+    group_short_id: (data.group_short_id ?? null) as string | null,
+  };
+  invalidateGroupPolls(result.group_id);
+  return result;
+}
+
+function invalidateGroupPolls(groupId: string) {
+  const accessible = getCachedAccessiblePolls() ?? [];
+  for (const mp of accessible) {
+    if (mp.group_id === groupId) invalidatePoll(mp.id);
+  }
+  invalidateAccessibleQuestions();
+}
+
+/** Encode an ArrayBuffer as base64. Chunked to avoid the `apply()`
+ *  call-stack limit on big buffers — handles the 5 MiB max-image-size
+ *  cap comfortably. */
+function base64FromArrayBuffer(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const CHUNK = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(
+      null,
+      Array.from(bytes.subarray(i, i + CHUNK)),
+    );
+  }
+  return btoa(binary);
 }

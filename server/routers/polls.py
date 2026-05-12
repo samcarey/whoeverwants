@@ -51,7 +51,8 @@ router = APIRouter(prefix="/api/polls", tags=["polls"])
 _SELECT_POLLS_WITH_GROUP = (
     "SELECT polls.*, "
     "t.short_id AS group_short_id, "
-    "t.title AS group_title "
+    "t.title AS group_title, "
+    "t.image_updated_at AS group_image_updated_at "
     "FROM polls LEFT JOIN groups t ON polls.group_id = t.id"
 )
 
@@ -169,15 +170,18 @@ def _attach_group_fields(conn, row) -> dict:
     """
     out = dict(row)
     if out.get("group_id") and not (
-        out.get("group_short_id") and "group_title" in out
+        out.get("group_short_id")
+        and "group_title" in out
+        and "group_image_updated_at" in out
     ):
         t = conn.execute(
-            "SELECT short_id, title FROM groups WHERE id = %(id)s",
+            "SELECT short_id, title, image_updated_at FROM groups WHERE id = %(id)s",
             {"id": out["group_id"]},
         ).fetchone()
         if t:
             out.setdefault("group_short_id", t.get("short_id"))
             out.setdefault("group_title", t.get("title"))
+            out.setdefault("group_image_updated_at", t.get("image_updated_at"))
     return out
 
 
@@ -359,6 +363,7 @@ def _row_to_poll(
         is_closed=row.get("is_closed", False),
         close_reason=row.get("close_reason"),
         group_title=row.get("group_title"),
+        group_image_updated_at=_iso_or_none(row.get("group_image_updated_at")),
         context=row.get("context"),
         details=row.get("details"),
         title=_compute_display_title(row, question_rows),

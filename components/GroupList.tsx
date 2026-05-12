@@ -333,6 +333,7 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
             latestQuestionTitle={latestQuestion?.title ?? ''}
             participantNames={group.participantNames}
             anonymousRespondentCount={group.anonymousRespondentCount}
+            imageUrl={group.imageUrl}
             questionCount={group.questions.length}
             createdAt={latestQuestion?.created_at ?? null}
             statusBadge={group.isEmpty ? 'New group — tap to add a poll' : undefined}

@@ -107,6 +107,7 @@ function isPollContentEqual(a: Poll, b: Poll): boolean {
   if (a.prephase_deadline !== b.prephase_deadline) return false;
   if (a.prephase_deadline_minutes !== b.prephase_deadline_minutes) return false;
   if (a.group_title !== b.group_title) return false;
+  if (a.group_image_updated_at !== b.group_image_updated_at) return false;
   if (a.title !== b.title) return false;
   if (a.context !== b.context) return false;
   if (a.details !== b.details) return false;
