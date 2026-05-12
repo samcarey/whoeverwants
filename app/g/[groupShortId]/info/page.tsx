@@ -73,7 +73,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         }
       />
 
-      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
+      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 0.75rem)` }}>
         <div className="flex flex-col items-center text-center mb-8">
           <GroupAvatar
             imageUrl={group.imageUrl}
