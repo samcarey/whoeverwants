@@ -65,15 +65,8 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     const u = URL.createObjectURL(file);
-    console.log('[ImageCropModal] createObjectURL', {
-      url: u,
-      fileType: file.type,
-      fileSize: file.size,
-      fileName: (file as any).name,
-    });
     setUrl(u);
     return () => {
-      console.log('[ImageCropModal] revokeObjectURL', u);
       URL.revokeObjectURL(u);
       setUrl((prev) => (prev === u ? null : prev));
     };
@@ -156,21 +149,6 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
     offsetXRef.current = 0;
     offsetYRef.current = 0;
     applyTransformToDom();
-    const el = imgRef.current;
-    const computed = el ? getComputedStyle(el) : null;
-    const rect = el?.getBoundingClientRect();
-    console.log('[ImageCropModal] applied initial transform', {
-      minScale,
-      frameSize,
-      imageW: imageDims.width,
-      imageH: imageDims.height,
-      inlineStyle: el?.getAttribute('style'),
-      computedTransform: computed?.transform,
-      computedDisplay: computed?.display,
-      computedVisibility: computed?.visibility,
-      computedOpacity: computed?.opacity,
-      rect: rect ? { w: rect.width, h: rect.height, x: rect.x, y: rect.y } : null,
-    });
   }, [imageDims, frameSize, minScale]);
 
   function applyTransformToDom() {
@@ -402,12 +380,6 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
                 draggable={false}
                 onLoad={(e) => {
                   const t = e.currentTarget;
-                  console.log('[ImageCropModal] img onLoad', {
-                    naturalWidth: t.naturalWidth,
-                    naturalHeight: t.naturalHeight,
-                    src: t.src.slice(0, 60),
-                    complete: t.complete,
-                  });
                   if (t.naturalWidth > 0 && t.naturalHeight > 0) {
                     setImageDims({
                       width: t.naturalWidth,
@@ -416,18 +388,24 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
                     setLoadError(false);
                   }
                 }}
-                onError={(e) => {
-                  console.log('[ImageCropModal] img onError', {
-                    src: (e.currentTarget as HTMLImageElement).src.slice(0, 60),
-                  });
-                  setLoadError(true);
-                }}
+                onError={() => setLoadError(true)}
                 style={imageDims ? ({
                   position: 'absolute',
                   left: '50%',
                   top: '50%',
                   width: imageDims.width,
                   height: imageDims.height,
+                  // Tailwind's preflight applies `img { max-width: 100%; height: auto }`
+                  // globally, which would cap our explicit width at the container's
+                  // 370px before the transform downscales it — producing the
+                  // "image is visibly 1/N the expected width" rendering on
+                  // every browser, not just iOS. We need the img to lay out at
+                  // its natural pixel size so transform: scale() correctly
+                  // fits the crop frame. (height: auto loses to our inline
+                  // height anyway, so only max-width is actually load-bearing
+                  // here, but maxHeight: 'none' is harmless insurance.)
+                  maxWidth: 'none',
+                  maxHeight: 'none',
                   marginLeft: -imageDims.width / 2,
                   marginTop: -imageDims.height / 2,
                   transformOrigin: 'center center',
