@@ -8,6 +8,7 @@ import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import RespondentCircles from "@/components/RespondentCircles";
 import GroupHeader from "@/components/GroupHeader";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
+import { getUserName } from "@/lib/userProfile";
 
 function GroupInfoInner() {
   const params = useParams();
@@ -28,7 +29,17 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     else navigateWithTransition(router, `/g/${groupId}`, 'back');
   };
 
-  const totalCount = group.participantNames.length;
+  // The members list ALSO shows the current user (alphabetically merged
+  // with the others). The current-user filter applies to `participantNames`
+  // for the title + hero graphic ("don't list yourself in the group name
+  // or graphic"), but the list under "Members" is the canonical roster
+  // and should include the viewer like anyone else. When the user hasn't
+  // picked a name they're omitted (consistent with anonymous voters).
+  const currentUserName = getUserName()?.trim() || null;
+  const membersList = currentUserName
+    ? [...group.participantNames, currentUserName].sort((a, b) => a.localeCompare(b))
+    : group.participantNames;
+  const totalCount = membersList.length;
 
   return (
     <>
@@ -59,19 +70,17 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         </div>
 
         <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
-          {totalCount} {totalCount === 1 ? 'Other Member' : 'Other Members'}
+          {totalCount} {totalCount === 1 ? 'Member' : 'Members'}
         </h2>
 
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
           {totalCount === 0 ? (
             <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-              {group.isEmpty
-                ? 'Just you so far — share the group link to bring others in.'
-                : 'No other members have voted yet.'}
+              No members yet.
             </div>
           ) : (
             <ul className="divide-y divide-gray-200 dark:divide-gray-800">
-              {group.participantNames.map((name) => (
+              {membersList.map((name) => (
                 <li key={name} className="px-4 py-3 text-gray-900 dark:text-white">
                   {name}
                 </li>
