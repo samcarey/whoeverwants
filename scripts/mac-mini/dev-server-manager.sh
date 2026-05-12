@@ -1,33 +1,38 @@
 #!/bin/bash
-# Per-user FULL-STACK dev server manager for the Mac mini Colima VM.
+# Per-BRANCH full-stack dev server manager for the Mac mini Colima VM.
 #
 # Architecture (differs from the droplet version — see scripts/dev-server-manager.sh
 # for that file's docs):
-#   - Each developer gets ONE Docker container: whoeverwants-dev-<slug>
+#   - Each open branch gets ONE Docker container: whoeverwants-dev-<slug>
 #   - Inside the container: Next.js (port 3000) + FastAPI (port 8000) run together
 #   - Container publishes Next.js to 127.0.0.1:<HOST_PORT> in the VM; Colima
 #     forwards the same port to Mac localhost
-#   - PostgreSQL is the shared devbox postgres container; one DB per author
+#   - PostgreSQL is the shared devbox postgres container; one DB per branch
 #   - Caddy snippets are written to /host-caddy.d/ (a colima mount from Mac's
 #     ~/devbox/caddy.d/); a launchd watcher on the Mac runs `caddy reload`
 #     when snippets change
 #
 # Runtime environment:
-#   - This script runs INSIDE the cmd-api container in the Colima VM
+#   - This script runs INSIDE the cmd-api / webhook container in the Colima VM
 #   - It uses the Docker socket (mounted from the VM into cmd-api) to spawn
-#     per-author dev-server containers as siblings
+#     per-branch dev-server containers as siblings
 #
 # Usage (driven from outside via bash scripts/remote-mac.sh):
-#   dev-server-manager.sh upsert <email> <branch>
+#   dev-server-manager.sh upsert <branch>
+#   dev-server-manager.sh destroy <branch>
+#   dev-server-manager.sh destroy-slug <branch-slug>
 #   dev-server-manager.sh list
-#   dev-server-manager.sh destroy <email-slug>
 #   dev-server-manager.sh destroy-all
 #   dev-server-manager.sh cleanup [days]
 #   dev-server-manager.sh revive
 #
-# Email-to-slug mapping:
-#   sam@example.com         -> sam-at-example-com
-#   user.name@company.co.uk -> user-name-at-company-co-uk
+# Branch-to-slug mapping (DNS-label-safe, ≤50 chars):
+#   claude/migrate-foo       -> claude-migrate-foo
+#   feature/UPPERCASE-bug    -> feature-uppercase-bug
+#   release/v1.2.3           -> release-v1-2-3
+#
+# The `main` branch is explicitly skipped (production lives on the droplet;
+# a long-lived `main.dev.whoeverwants.com` would never expire via 7d-idle).
 
 set -euo pipefail
 
@@ -38,12 +43,12 @@ set -euo pipefail
 # launchd watcher polls and reloads Caddy on changes.
 CADDY_DEV_DIR="/host-caddy.d"
 
-# Per-author repo state and logs land in a per-slug Docker named volume,
+# Per-branch repo state and logs land in a per-slug Docker named volume,
 # mounted at /repo inside each dev-server container. Stop+restart preserves
 # node_modules / .venv / .next; destroy drops the volume.
 #
-# DEV_REPO_VOLUME_PREFIX is also used by `list` and `destroy-all` to identify
-# our containers (they share the prefix in their container names).
+# DEV_*_PREFIX is also used by `list` and `destroy-all` to identify our
+# containers/volumes (they share the prefix in their names).
 DEV_CONTAINER_PREFIX="whoeverwants-dev"
 DEV_REPO_VOLUME_PREFIX="whoeverwants-dev-repo"
 DEV_IMAGE="whoeverwants-devserver:latest"
@@ -53,6 +58,11 @@ FRONTEND_PORT_START=3001
 FRONTEND_PORT_MAX=3010
 MAX_DEV_SERVERS=5
 
+# Slug length cap. A DNS label maxes out at 63 chars; we reserve plenty of
+# headroom for the `.dev.whoeverwants.com` suffix and for container/volume
+# name decoration.
+MAX_SLUG_LEN=50
+
 # Shared docker network everyone joins (the devbox-net created by ~/devbox/docker-compose.yml)
 DEVBOX_NET="devbox_devbox-net"
 # The shared postgres container name (set by docker compose; "devbox" is the
@@ -61,16 +71,12 @@ DB_CONTAINER="devbox-postgres-1"
 DB_USER="whoeverwants"
 DB_NAME_PREFIX="dev_"
 
+# Branches we never spin a dev server for. `main` is the prod branch (lives on
+# the droplet) and would never age out under the 7d-idle policy.
+SKIP_BRANCHES=("main")
+
 LOCK_DIR="/tmp/dev-server-locks"
 LOG_FILE="/var/log/dev-server-manager.log"
-
-# Claude/bot email patterns to ignore (push events from these don't create dev servers)
-IGNORE_EMAIL_PATTERNS=(
-  "noreply@anthropic.com"
-  "claude@anthropic.com"
-  "noreply@github.com"
-  "actions@github.com"
-)
 
 # --- Logging -----------------------------------------------------------------
 
@@ -82,13 +88,21 @@ log() {
 
 # --- Slug + name helpers -----------------------------------------------------
 
-email_to_slug() {
-  local email="$1"
-  echo "$email" | tr '[:upper:]' '[:lower:]' \
-    | sed 's/@/-at-/g' \
-    | sed 's/[^a-z0-9-]/-/g' \
-    | sed 's/--*/-/g' \
-    | sed 's/^-//; s/-$//'
+# Convert a branch name to a DNS-label-safe slug.
+#   - lowercase
+#   - replace any char not in [a-z0-9-] with '-'
+#   - collapse runs of '-'
+#   - trim leading / trailing '-'
+#   - truncate to MAX_SLUG_LEN (then re-trim trailing '-')
+branch_to_slug() {
+  local slug
+  slug=$(echo "$1" | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-+|-+$//g')
+  if [ "${#slug}" -gt "$MAX_SLUG_LEN" ]; then
+    slug="${slug:0:$MAX_SLUG_LEN}"
+    slug="${slug%-}"
+  fi
+  echo "$slug"
 }
 
 slug_to_dbname() {
@@ -103,14 +117,11 @@ slug_to_volume() {
   echo "${DEV_REPO_VOLUME_PREFIX}-$1"
 }
 
-is_ignored_email() {
-  local email="$1"
-  for pattern in "${IGNORE_EMAIL_PATTERNS[@]}"; do
-    [ "$email" = "$pattern" ] && return 0
+is_skipped_branch() {
+  local branch="$1"
+  for skip in "${SKIP_BRANCHES[@]}"; do
+    [ "$branch" = "$skip" ] && return 0
   done
-  if echo "$email" | grep -qi '@anthropic\.com$'; then
-    return 0
-  fi
   return 1
 }
 
@@ -278,7 +289,7 @@ evict_excess_servers() {
     [ -z "$container" ] && continue
     local victim_slug="${container#${DEV_CONTAINER_PREFIX}-}"
     log "Evicting dev server '$victim_slug' (limit: $MAX_DEV_SERVERS)"
-    cmd_destroy "$victim_slug"
+    cmd_destroy_slug "$victim_slug"
     to_evict=$((to_evict - 1))
   done <<< "$victims"
 }
@@ -286,22 +297,26 @@ evict_excess_servers() {
 # --- Commands ----------------------------------------------------------------
 
 cmd_upsert() {
-  local email="${1:?Usage: dev-server-manager.sh upsert <email> <branch>}"
-  local branch="${2:?Usage: dev-server-manager.sh upsert <email> <branch>}"
+  local branch="${1:?Usage: dev-server-manager.sh upsert <branch>}"
 
-  if is_ignored_email "$email"; then
-    log "Ignoring email: $email"
+  if is_skipped_branch "$branch"; then
+    log "Skipping branch: $branch (in SKIP_BRANCHES)"
     return 0
   fi
 
   local slug
-  slug=$(email_to_slug "$email")
+  slug=$(branch_to_slug "$branch")
+  if [ -z "$slug" ]; then
+    log "ERROR: branch '$branch' slugified to empty string; refusing to upsert"
+    return 1
+  fi
+
   local container db_name volume
   container=$(slug_to_container "$slug")
   db_name=$(slug_to_dbname "$slug")
   volume=$(slug_to_volume "$slug")
 
-  # Lock to prevent concurrent updates for same user
+  # Lock to prevent concurrent updates for same branch
   mkdir -p "$LOCK_DIR"
   local lockfile="${LOCK_DIR}/${slug}.lock"
   exec 200>"$lockfile"
@@ -310,7 +325,7 @@ cmd_upsert() {
     return 0
   fi
 
-  log "=== Upsert dev server: $email (slug: $slug, branch: $branch) ==="
+  log "=== Upsert dev server: branch=$branch (slug: $slug) ==="
 
   evict_excess_servers "$slug"
 
@@ -328,9 +343,7 @@ cmd_upsert() {
   # Allocate or reuse port
   local port
   port=$(get_container_port "$container" || true)
-  local existed_before=0
   if [ -n "${port:-}" ]; then
-    existed_before=1
     log "Reusing port $port for existing container $container"
   else
     port=$(find_available_port "$FRONTEND_PORT_START" "$FRONTEND_PORT_MAX")
@@ -344,7 +357,7 @@ cmd_upsert() {
     docker rm "$container" >/dev/null 2>&1 || true
   fi
 
-  # Create the per-author repo volume (idempotent)
+  # Create the per-branch repo volume (idempotent)
   docker volume create "$volume" >/dev/null
 
   # Read postgres password from the postgres container (it was set via $POSTGRES_PASSWORD
@@ -369,7 +382,6 @@ cmd_upsert() {
     -p "127.0.0.1:${port}:3000" \
     -v "${volume}:/repo" \
     -e BRANCH="$branch" \
-    -e EMAIL="$email" \
     -e SLUG="$slug" \
     -e REPO_URL="$REPO_URL" \
     -e DATABASE_URL="postgresql://${DB_USER}:${pg_password}@${DB_CONTAINER}:5432/${db_name}" \
@@ -379,7 +391,6 @@ cmd_upsert() {
     -e API_PORT=8000 \
     --label "whoeverwants-dev=true" \
     --label "slug=$slug" \
-    --label "email=$email" \
     --label "branch=$branch" \
     --label "host_port=$port" \
     --label "db_name=$db_name" \
@@ -418,7 +429,6 @@ cmd_upsert() {
   log ""
   log "=== Dev server ready ==="
   log "  URL:       https://${slug}.dev.whoeverwants.com"
-  log "  Email:     $email"
   log "  Branch:    $branch"
   log "  Port:      $port"
   log "  Container: $container"
@@ -426,24 +436,25 @@ cmd_upsert() {
 }
 
 cmd_list() {
-  printf "%-40s %-30s %-30s %-5s %-25s %s\n" "CONTAINER" "EMAIL" "BRANCH" "PORT" "UPDATED" "STATUS"
-  printf "%-40s %-30s %-30s %-5s %-25s %s\n" "---------" "-----" "------" "----" "-------" "------"
+  printf "%-40s %-40s %-5s %-25s %s\n" "CONTAINER" "BRANCH" "PORT" "UPDATED" "STATUS"
+  printf "%-40s %-40s %-5s %-25s %s\n" "---------" "------" "----" "-------" "------"
 
   local found=0
-  while IFS=$'\t' read -r container email branch port updated status; do
+  while IFS=$'\t' read -r container branch port updated status; do
     [ -z "$container" ] && continue
     found=1
-    printf "%-40s %-30s %-30s %-5s %-25s %s\n" "$container" "${email:-?}" "${branch:-?}" "${port:-?}" "${updated:-?}" "$status"
+    printf "%-40s %-40s %-5s %-25s %s\n" "$container" "${branch:-?}" "${port:-?}" "${updated:-?}" "$status"
   done < <(docker ps -a --filter "name=${DEV_CONTAINER_PREFIX}-" \
-    --format '{{.Names}}	{{.Label "email"}}	{{.Label "branch"}}	{{.Label "host_port"}}	{{.Label "updated_at"}}	{{.Status}}')
+    --format '{{.Names}}	{{.Label "branch"}}	{{.Label "host_port"}}	{{.Label "updated_at"}}	{{.Status}}')
 
   if [ "$found" -eq 0 ]; then
     echo "(no dev servers)"
   fi
 }
 
-cmd_destroy() {
-  local slug="${1:?Usage: dev-server-manager.sh destroy <email-slug>}"
+# Destroy by raw slug (used by eviction + the destroy-slug subcommand).
+cmd_destroy_slug() {
+  local slug="${1:?Usage: dev-server-manager.sh destroy-slug <branch-slug>}"
   local container db_name volume
   container=$(slug_to_container "$slug")
   db_name=$(slug_to_dbname "$slug")
@@ -463,13 +474,29 @@ cmd_destroy() {
   log "=== Dev server '$slug' destroyed ==="
 }
 
+# Destroy by branch name (used by the GitHub `delete` webhook handler).
+cmd_destroy_branch() {
+  local branch="${1:?Usage: dev-server-manager.sh destroy <branch>}"
+  if is_skipped_branch "$branch"; then
+    log "Skipping branch: $branch (in SKIP_BRANCHES)"
+    return 0
+  fi
+  local slug
+  slug=$(branch_to_slug "$branch")
+  if [ -z "$slug" ]; then
+    log "ERROR: branch '$branch' slugified to empty string; refusing to destroy"
+    return 1
+  fi
+  cmd_destroy_slug "$slug"
+}
+
 cmd_destroy_all() {
   log "=== Destroying all dev servers ==="
   local any=0
   for container in $(docker ps -a --filter "name=${DEV_CONTAINER_PREFIX}-" --format '{{.Names}}'); do
     any=1
     local slug="${container#${DEV_CONTAINER_PREFIX}-}"
-    cmd_destroy "$slug"
+    cmd_destroy_slug "$slug"
   done
   if [ "$any" -eq 0 ]; then
     echo "No dev servers to destroy."
@@ -490,7 +517,7 @@ cmd_cleanup_old() {
     if [ "$age_days" -ge "$max_age_days" ]; then
       local slug="${container#${DEV_CONTAINER_PREFIX}-}"
       log "Dev server '$slug' last updated ${age_days} days ago (max: ${max_age_days}). Destroying..."
-      cmd_destroy "$slug"
+      cmd_destroy_slug "$slug"
     fi
   done < <(docker ps -a --filter "name=${DEV_CONTAINER_PREFIX}-" \
     --format '{{.Names}}	{{.Label "updated_at"}}')
@@ -507,29 +534,34 @@ cmd_revive() {
 # --- Main --------------------------------------------------------------------
 
 case "${1:-help}" in
-  upsert)      cmd_upsert "${2:-}" "${3:-}" ;;
-  list)        cmd_list ;;
-  destroy)     cmd_destroy "${2:-}" ;;
-  destroy-all) cmd_destroy_all ;;
-  cleanup)     cmd_cleanup_old "${2:-7}" ;;
-  revive)      cmd_revive ;;
+  upsert)        cmd_upsert "${2:-}" ;;
+  destroy)       cmd_destroy_branch "${2:-}" ;;
+  destroy-slug)  cmd_destroy_slug "${2:-}" ;;
+  list)          cmd_list ;;
+  destroy-all)   cmd_destroy_all ;;
+  cleanup)       cmd_cleanup_old "${2:-7}" ;;
+  revive)        cmd_revive ;;
   *)
     cat <<USAGE
 Usage: dev-server-manager.sh <command> [args]
 
 Commands:
-  upsert <email> <branch>   Create or update a full-stack dev server
-  list                      List all dev server containers
-  destroy <email-slug>      Destroy a dev server (container, volume, database, Caddy)
-  destroy-all               Destroy every dev server
-  cleanup [days]            Destroy dev servers not updated in N days (default: 7)
-  revive                    Start any stopped dev-server containers
+  upsert <branch>          Create or update a full-stack dev server for a branch
+  destroy <branch>         Destroy the dev server for <branch> (by branch name)
+  destroy-slug <slug>      Destroy the dev server for <slug> (by raw slug)
+  list                     List all dev server containers
+  destroy-all              Destroy every dev server
+  cleanup [days]           Destroy dev servers not updated in N days (default: 7)
+  revive                   Start any stopped dev-server containers
 
 Each dev server gets:
   - One Docker container in the Colima VM (Next.js :3000 + FastAPI :8000)
-  - One PostgreSQL database (shared instance, separate DB per author)
+  - One PostgreSQL database (shared instance, separate DB per branch)
   - Migrations auto-applied from branch
-  - URL: https://<slug>.dev.whoeverwants.com (Caddy snippet auto-managed)
+  - URL: https://<branch-slug>.dev.whoeverwants.com (Caddy snippet auto-managed)
+
+Branches are slugified DNS-label-safe (lowercase, non-[a-z0-9-] -> '-',
+truncated to ${MAX_SLUG_LEN} chars). The 'main' branch is skipped.
 USAGE
     exit 1
     ;;

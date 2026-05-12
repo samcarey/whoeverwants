@@ -1,5 +1,5 @@
 #!/bin/bash
-# Entrypoint for per-author dev-server containers.
+# Entrypoint for per-branch dev-server containers.
 #
 # First-run behaviour (empty /repo volume):
 #   - git clone REPO_URL /repo
@@ -16,7 +16,7 @@
 # write /repo/.dev-server-ready once both are responsive. tini (PID 1) reaps
 # the children when the container stops.
 #
-# Required env: BRANCH, REPO_URL, DATABASE_URL, PYTHON_API_URL, EMAIL, SLUG
+# Required env: BRANCH, REPO_URL, DATABASE_URL, PYTHON_API_URL, SLUG
 
 set -euo pipefail
 
