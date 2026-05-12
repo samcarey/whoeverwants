@@ -49,13 +49,13 @@ export default function GroupShareButton({ routeId, title }: GroupShareButtonPro
   }, [routeId, title]);
 
   return (
-    <div className="relative shrink-0">
-      <button
-        type="button"
-        onClick={handleShare}
-        className="w-10 h-10 flex items-center justify-center active:opacity-60 transition-opacity"
-        aria-label="Share group"
-      >
+    <button
+      type="button"
+      onClick={handleShare}
+      className="relative shrink-0 self-stretch py-2 pr-2 flex items-center justify-center active:opacity-60 transition-opacity"
+      aria-label="Share group"
+    >
+      <span className="w-10 h-10 flex items-center justify-center">
         <svg
           className="w-[1.125rem] h-[1.125rem] text-gray-600 dark:text-gray-400"
           fill="none"
@@ -81,7 +81,7 @@ export default function GroupShareButton({ routeId, title }: GroupShareButtonPro
             d="M12 2v14"
           />
         </svg>
-      </button>
+      </span>
       {feedback && (
         <span
           className={`pointer-events-none absolute right-0 top-full mt-1 whitespace-nowrap rounded-md px-2 py-1 text-xs shadow-md ${
@@ -93,6 +93,6 @@ export default function GroupShareButton({ routeId, title }: GroupShareButtonPro
           {feedback === "copied" ? "Link copied" : "Copy failed"}
         </span>
       )}
-    </div>
+    </button>
   );
 }
