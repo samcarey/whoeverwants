@@ -103,18 +103,15 @@ class MyGroupsRequest(BaseModel):
 @router.post("/mine", response_model=list[PollResponse])
 def get_my_groups(req: MyGroupsRequest, request: Request):
     """Return every poll the user has visibility into. See the visibility
-    rule documented in `services/groups.py`.
+    rule in `services/groups.py`.
 
     Forget bridge: when the FE passes `accessible_question_ids`, the home
     list is narrowed to groups still represented in that list, so
-    forgetting every question in a group removes it from home even
-    while the `group_members` row persists. Membership-only callers
-    (empty list) skip the narrowing.
+    forgetting every question in a group removes it from home even while
+    the `group_members` row persists.
 
-    Membership-only "empty groups" (the user is a `group_members` row
-    but produced 0 visible polls) are surfaced by the sibling endpoint
-    `POST /api/groups/empty` — separate so the legacy bare-list response
-    shape of `/mine` stays unchanged.
+    Membership-only "empty groups" (member row but zero visible polls)
+    are surfaced by the sibling `POST /api/groups/empty` endpoint.
     """
     browser_id = _browser_id(request)
 
@@ -147,92 +144,50 @@ def get_my_groups(req: MyGroupsRequest, request: Request):
 @router.post("/empty", response_model=list[GroupSummary])
 def get_my_empty_groups(request: Request):
     """Return every group the caller is a `group_members` row for that
-    has ZERO visible polls under the standard visibility rule. These
-    are membership-only "empty groups" — either freshly created via
-    `POST /api/groups` with no polls yet, or groups whose every poll
-    was closed before the user's joined_at watermark.
+    has zero polls. Sorted newest-first. Called by the home page in
+    parallel with `/mine`.
 
-    Sorted newest-first by `groups.created_at` so a just-created empty
-    group surfaces at the top of the FE list. The forget bridge does
-    NOT apply: empty groups always appear for their members regardless
-    of whatever `accessible_question_ids` the home page sent to `/mine`.
-
-    Cheap query: just an indexed lookup on `group_members.browser_id`
-    + an anti-join against `polls.group_id`. Called by the home page
-    in parallel with `/mine` so the home list reflects both populated
-    and empty groups in one render.
+    The visibility rule is intentionally NOT applied — a group whose
+    every poll was closed before the caller's joined_at watermark
+    still appears here (the "are there any polls at all?" question
+    has no time dimension). The /mine endpoint owns visibility
+    filtering for groups that do have polls.
     """
     browser_id = _browser_id(request)
     if not browser_id:
         return []
     with get_db() as conn:
-        # Every group the caller is a member of.
-        member_rows = conn.execute(
-            "SELECT group_id FROM group_members WHERE browser_id = %(bid)s",
+        rows = conn.execute(
+            """SELECT g.id, g.short_id, g.title, g.created_at
+                 FROM groups g
+                 JOIN group_members m ON m.group_id = g.id
+                WHERE m.browser_id = %(bid)s
+                  AND NOT EXISTS (
+                      SELECT 1 FROM polls p WHERE p.group_id = g.id
+                  )
+                ORDER BY g.created_at DESC""",
             {"bid": browser_id},
         ).fetchall()
-        if not member_rows:
-            return []
-        member_group_ids = [str(r["group_id"]) for r in member_rows]
-        # Groups among those that have at least one poll. Note: we don't
-        # apply the visibility filter here — even a group whose every
-        # poll was closed before joined_at would still appear in this
-        # list (no rows in `empty`), which is the correct behavior for
-        # the home list. The /mine endpoint is the one that hides those
-        # closed polls; here we just ask "are there any polls at all?"
-        # so the user sees the group whether it's truly empty or just
-        # visibility-empty.
-        with_polls_rows = conn.execute(
-            "SELECT DISTINCT group_id FROM polls "
-            "WHERE group_id = ANY(%(ids)s)",
-            {"ids": member_group_ids},
-        ).fetchall()
-        groups_with_polls = {str(r["group_id"]) for r in with_polls_rows}
-        empty_group_ids = sorted(
-            gid for gid in member_group_ids if gid not in groups_with_polls
-        )
-        return _fetch_group_summaries(conn, empty_group_ids)
+        return [_row_to_group_summary(r) for r in rows]
 
 
-def _fetch_group_summaries(conn, group_ids: list[str]) -> list[GroupSummary]:
-    """Read group metadata (id, short_id, title, created_at) for a list
-    of group_ids. Empty-list-in → empty-list-out; preserves the input
-    order roughly via ORDER BY created_at DESC so newer empty groups
-    surface first."""
-    if not group_ids:
-        return []
-    rows = conn.execute(
-        "SELECT id, short_id, title, created_at "
-        "FROM groups WHERE id = ANY(%(ids)s) "
-        "ORDER BY created_at DESC",
-        {"ids": group_ids},
-    ).fetchall()
-    out: list[GroupSummary] = []
-    for r in rows:
-        created_at = r.get("created_at")
-        out.append(
-            GroupSummary(
-                id=str(r["id"]),
-                short_id=r.get("short_id"),
-                title=r.get("title"),
-                created_at=created_at.isoformat() if created_at else "",
-            )
-        )
-    return out
+def _row_to_group_summary(row) -> GroupSummary:
+    created_at = row.get("created_at")
+    return GroupSummary(
+        id=str(row["id"]),
+        short_id=row.get("short_id"),
+        title=row.get("title"),
+        created_at=created_at.isoformat() if created_at else "",
+    )
 
 
 @router.post("", response_model=GroupSummary, status_code=201)
 def create_group(request: Request):
     """Create an empty group + auto-join the caller as a member.
 
-    Used by the home "+" FAB so a real group exists in the DB before
-    any polls are created. The caller is added to `group_members`
-    inline so the new group shows up on subsequent
-    `POST /api/groups/mine` calls (via the `empty_groups` array).
-
-    Requires `browser_id` (from `BrowserIdMiddleware`). Without one,
-    the group would be created but unreachable — return 400 instead so
-    the FE can retry after the middleware mints an id.
+    Requires `browser_id` (from `BrowserIdMiddleware`) — without one
+    the group would be created but unreachable, so return 400 and let
+    the FE retry after the middleware mints an id.
     """
     browser_id = _browser_id(request)
     if not browser_id:
@@ -244,13 +199,7 @@ def create_group(request: Request):
             "RETURNING id, short_id, title, created_at"
         ).fetchone()
         grant_group_membership_inline(conn, str(row["id"]), browser_id)
-        created_at = row.get("created_at")
-        return GroupSummary(
-            id=str(row["id"]),
-            short_id=row.get("short_id"),
-            title=row.get("title"),
-            created_at=created_at.isoformat() if created_at else "",
-        )
+        return _row_to_group_summary(row)
 
 
 @router.get(
@@ -258,19 +207,11 @@ def create_group(request: Request):
     response_model=GroupSummary,
 )
 def get_group_summary(route_id: str):
-    """Return the group's metadata (id, short_id, title, created_at)
-    without joining or filtering by visibility. Used by the group page
-    when `/by-route-id/{route_id}` returned no visible polls — the
-    page still needs the group's title to render its header even when
-    the polls list is empty (e.g. a freshly-created empty group, or a
-    member whose every poll was closed before they joined).
-
-    Does NOT auto-join the caller — that's the job of `/by-route-id/`
-    which the FE calls in parallel. Keeping this read identity-free
-    means it's safe to call from any context (preview crawlers,
-    metadata pages, etc.) without writing membership rows.
-
-    Returns 404 if route resolution fails.
+    """Group metadata (id, short_id, title, created_at) for the group
+    page header when `/by-route-id/{route_id}` returned no visible
+    polls. Identity-free + no membership writes, so it's safe to call
+    from preview crawlers or metadata routes. Returns 404 on route
+    resolution failure.
     """
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
@@ -283,13 +224,7 @@ def get_group_summary(route_id: str):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Group not found")
-        created_at = row.get("created_at")
-        return GroupSummary(
-            id=str(row["id"]),
-            short_id=row.get("short_id"),
-            title=row.get("title"),
-            created_at=created_at.isoformat() if created_at else "",
-        )
+        return _row_to_group_summary(row)
 
 
 @router.get("/by-route-id/{route_id}", response_model=list[PollResponse])

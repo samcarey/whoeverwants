@@ -21,23 +21,18 @@ import {
 import { isUuidLike } from './questionId';
 import { getUserName } from './userProfile';
 
-/** Case-insensitive equality. The current-user filter in `participantNames`
- *  matches names regardless of capitalization so "Alice" and "alice"
- *  collapse — the user typed their name once and shouldn't see themselves
- *  twice if a sibling poll's `voter_names` includes a slightly different
- *  casing. */
-function namesEqualCaseInsensitive(a: string, b: string): boolean {
+/** Fallback group title when no participant names remain after filtering
+ *  out the current user. */
+export const EMPTY_GROUP_TITLE = 'New Group';
+
+/** Trimmed + case-insensitive name equality. Collapses different casings
+ *  of the same name so the viewer doesn't appear twice in respondent
+ *  lists when a sibling poll's `voter_names` carries a variant spelling. */
+export function namesEqualCaseInsensitive(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-/** Drop the current user's name from a list (case-insensitive, trimmed).
- *  Used in `buildGroupFromPolls` and `buildEmptyGroup` so the home list's
- *  group title + the RespondentCircles graphic exclude the viewer — they
- *  already know they're in the group. With only the viewer as participant,
- *  the title falls through to "New Group".
- *
- *  `currentUserName` must already be the localStorage value (or null on
- *  the server); callers should not re-read it inside the loop. */
+/** Drop the current user's name from a list (case-insensitive, trimmed). */
 export function filterOutCurrentUser(
   names: string[],
   currentUserName: string | null,
@@ -260,7 +255,7 @@ export function buildGroups(
   );
   for (const summary of emptyGroups) {
     if (populatedGroupIds.has(summary.id)) continue;
-    groups.push(buildEmptyGroup(summary, currentUserName));
+    groups.push(buildEmptyGroup(summary));
   }
   return sortGroups(groups);
 }
@@ -296,7 +291,7 @@ function buildGroupFromPolls(
   // (surfaced on every poll as `group_title`).
   const defaultTitle = participantNames.length > 0
     ? participantNames.join(', ')
-    : 'New Group';
+    : EMPTY_GROUP_TITLE;
   // Migration 105 makes group_title a single source of truth at the
   // group level — every poll in this group carries the same value.
   // Read off the latest poll for compat with placeholder/legacy polls
@@ -365,21 +360,12 @@ function buildGroupFromPolls(
   };
 }
 
-/** Build a `Group` for a membership-only "empty group" — the user
- *  joined it (via the home "+" FAB) but no polls exist yet. Used by
- *  the home list AND by `useGroup` when `apiGetGroupByRouteId` returns
- *  no visible polls. */
-export function buildEmptyGroup(
-  summary: GroupSummary,
-  currentUserName: string | null = getUserName(),
-): Group {
+/** Build a `Group` for a membership-only "empty group" — joined but
+ *  no polls yet. */
+export function buildEmptyGroup(summary: GroupSummary): Group {
   const groupTitleOverride = summary.title?.trim() || null;
-  // No polls → no participants we can name. The current user is filtered
-  // out by rule, so participantNames is always empty for empty groups
-  // (which feeds defaultTitle = "New Group").
-  void currentUserName; // Reserved for future extensions; intentionally unused.
   const participantNames: string[] = [];
-  const defaultTitle = 'New Group';
+  const defaultTitle = EMPTY_GROUP_TITLE;
   const title = groupTitleOverride || defaultTitle;
   const createdMs = summary.created_at
     ? new Date(summary.created_at).getTime()

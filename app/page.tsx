@@ -161,8 +161,6 @@ export default function Home() {
         // returns every poll in any group containing one of our
         // accessible questions, with results inline. Replaces the legacy
         // discoverRelatedQuestions + getAccessiblePolls pair.
-        // Empty groups (membership-only, no polls yet) are fetched in
-        // parallel by getMyGroups and surface on the home list too.
         const { polls: nextPolls, emptyGroups: nextEmptyGroups } = await getMyGroups();
         setPolls(nextPolls);
         setEmptyGroups(nextEmptyGroups);

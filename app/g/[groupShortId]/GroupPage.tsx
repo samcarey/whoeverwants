@@ -76,27 +76,18 @@ function ScrollHelperButton({
   );
 }
 
-// Inverse grid-rows clip for compact pills in the group card header:
-// full height when collapsed, 0 when expanded, animating in lockstep
-// with the heavy-content expand clip below. The pill sits directly at the
-// top of the overflow-hidden child so its text center aligns with the
-// sibling status text via the parent flex row's items-center.
 // Shared cache-driven Group rebuild for POLL_PENDING / POLL_HYDRATED /
 // POLL_FAILED setGroup updaters. Returns prev when the rebuild would produce
 // the same poll-id sequence (no placeholder swap) so identity-based memos stay
 // stable.
 //
-// `mutate` lets callers add a just-arrived poll (placeholder or real) and/or
-// drop a placeholder being replaced. Without explicit add/remove, leaving the
-// placeholder AND the real poll both in scope would yield a group containing
-// both as children of the parent.
+// `mutate.add` / `mutate.remove` let callers explicitly swap a placeholder
+// poll for the real one; without it, leaving both in scope yields a group
+// containing both as children of the same parent.
 //
-// `prev.polls` is always merged into the rebuild source. This is the
-// resilience fallback for stale `accessiblePollsCache`: the cache has a 60s
-// TTL, and the submit handler's `cacheAccessiblePolls([...getCached() ?? [],
-// new])` pattern wipes every other poll out of the cache when the cache
-// happened to be stale (idle >60s). Without prev.polls in the merge, the
-// `buildGroupFromPollDown(rootPollId, ...)` call fails to find rootPollId and
+// `prev.polls` is always merged into the rebuild source — resilience against
+// a stale `accessiblePollsCache` (60s TTL); without it,
+// `buildGroupFromPollDown` can't find rootPollId when the cache is stale and
 // the new poll never lands in the group.
 function rebuildGroupFromCacheOrPrev(
   prev: Group,
@@ -108,17 +99,15 @@ function rebuildGroupFromCacheOrPrev(
   for (const p of cached) byId.set(p.id, p);
   if (mutate?.remove) byId.delete(mutate.remove);
   if (mutate?.add) byId.set(mutate.add.id, mutate.add);
-  // Filter to polls in THIS group only — accessiblePollsCache may carry
-  // polls from other groups the user is part of, and including them
-  // here would cross-contaminate the rebuild.
+  // accessiblePollsCache may carry polls from sibling groups — filter to
+  // this group only so the rebuild doesn't cross-contaminate.
   const groupId = prev.groupId;
   const polls = Array.from(byId.values()).filter((p) =>
     groupId ? p.group_id === groupId : p.id === prev.rootPollId,
   );
   if (polls.length === 0) return prev;
-  // Empty-group transition: the previous Group has no polls (just-created
-  // via the home "+" FAB), but a placeholder/real poll was just added.
-  // Use the new poll as the anchor since there's no `prev.rootPollId`.
+  // When transitioning from empty group (no rootPollId) to populated,
+  // anchor on the just-added poll.
   const anchorPollId = prev.rootPollId ?? polls[0].id;
   const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
   const rebuilt = buildGroupFromPollDown(anchorPollId, polls, voted, abstained);
@@ -421,10 +410,8 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
           if (err instanceof ApiError && err.status === 404) { setError(true); return; }
           throw err;
         }
-        // Empty group (no visible polls) — typically just-created via the
-        // home "+" FAB. Fall back to the metadata-only summary endpoint
-        // so we can render the header + bubble bar; the user adds the
-        // first poll from there.
+        // No visible polls — fall back to the summary endpoint for header
+        // metadata so we can still render the chrome + bubble bar.
         if (polls.length === 0) {
           const summary = await apiGetGroupSummary(groupId);
           if (!summary) { setError(true); return; }
@@ -2015,10 +2002,8 @@ function GroupPageInner() {
 
   const [rootPoll, setRootPoll] = useState<Poll | null>(rootInitial);
   const [error, setError] = useState(false);
-  // True when /by-route-id resolved (group exists) but returned no visible
-  // polls — typically a freshly-created empty group, or a member whose
-  // every poll was closed before they joined. GroupContent mounts and
-  // useGroup's summary-fallback path renders the header + bubble bar.
+  // Group resolved with zero visible polls; GroupContent mounts via
+  // useGroup's summary-fallback path.
   const [isEmptyGroup, setIsEmptyGroup] = useState(false);
 
   useEffect(() => {
@@ -2052,10 +2037,9 @@ function GroupPageInner() {
           if (!cancelled) setRootPoll(root);
           return;
         }
-        // Group resolved but returned no visible polls — empty group case.
-        // Verify the group itself exists via the summary endpoint; if so,
-        // skip the per-poll fallback and let GroupContent mount in the
-        // empty-group state (useGroup's summary-fallback path).
+        // Zero visible polls but group exists — short-circuit to the empty
+        // state via the summary endpoint before falling through to per-poll
+        // lookup.
         if (Array.isArray(polls)) {
           const summary = await apiGetGroupSummary(groupShortId);
           if (summary) {
