@@ -13,7 +13,7 @@
 # Examples:
 #   bash scripts/remote-mac.sh "hostname && docker ps"
 #   bash scripts/remote-mac.sh "bash /opt/dev-server-manager.sh list"
-#   bash scripts/remote-mac.sh "docker logs whoeverwants-dev-sam-at-example-com --tail 50"
+#   bash scripts/remote-mac.sh "docker logs whoeverwants-dev-claude-migrate-foo --tail 50"
 
 set -euo pipefail
 

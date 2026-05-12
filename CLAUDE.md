@@ -79,16 +79,16 @@ The droplet is hardened with:
 
 ### Development Workflow
 
-**Full-Stack Dev Servers** (auto-deployed per-user on push):
+**Full-Stack Dev Servers** (auto-deployed per-branch on push, hosted on the Mac mini — see the "Mac Mini Dev Box" section below for the architecture):
 1. **Write code** in this environment (Claude Code sandbox)
 2. **Commit and push** to GitHub
-3. GitHub webhook creates/updates your full-stack dev server on the droplet
-4. Your dev site URL (based on `GIT_AUTHOR_EMAIL`) stays the same across all branches
+3. GitHub webhook on the Mac creates/updates the dev server for THIS branch
+4. Your dev site URL is derived from the branch name: `<branch-slug>.dev.whoeverwants.com`
 
 Each dev server gets its own:
-- **Next.js frontend** on port 3001-3005
-- **FastAPI backend** on port 8001-8005 (runs via `uv run uvicorn`, 1 worker)
-- **PostgreSQL database** (separate DB in the shared PostgreSQL container, e.g., `dev_sam_at_samcarey_com`)
+- **Next.js frontend** on port 3001-3010 (in-VM, fronted by Caddy)
+- **FastAPI backend** on port 8000 (container-internal)
+- **PostgreSQL database** (separate DB in the shared PostgreSQL container, named `dev_<branch_slug_underscored>`)
 - **All migrations from the branch** auto-applied on creation and update
 
 **Production Frontend** (Vercel):
@@ -104,34 +104,39 @@ Each dev server gets its own:
 
 You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 
-**Per-User Dev Servers** (automatic on push):
-- Every push to GitHub auto-updates your dev server via webhook (restarts both frontend and API)
-- Frontend uses `next dev` with `PYTHON_API_URL` pointing to the local API
-- API runs via `uv run uvicorn` with `DATABASE_URL` pointing to the dev database
+**Per-Branch Dev Servers** (automatic on push, hosted on the Mac mini Colima VM):
+- Every push to GitHub auto-creates/updates the dev server FOR THE PUSHED BRANCH via the Mac webhook (recreates the container so env/labels are fresh)
+- Frontend uses `next dev` with `PYTHON_API_URL` pointing to the in-container API
+- API runs via `uv run uvicorn` with `DATABASE_URL` pointing to the per-branch dev database
 - Migrations from the branch are auto-applied to the dev database on each update
-- **After pushing, wait for the dev server to be ready.** The server takes ~30-60 seconds. Question with `bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:<port>"` until it returns 200.
-- URL is based on your `GIT_AUTHOR_EMAIL`: `<email-slug>.dev.whoeverwants.com`
-  - Example: `sam@example.com` → `https://sam-at-example-com.dev.whoeverwants.com`
-- URL stays the same regardless of branch — bookmark it
-- Claude/bot emails (`*@anthropic.com`) are ignored
-- Dev servers are fully isolated — each has its own API and database
-- Auto-cleaned after 7 days of inactivity
+- **After pushing, wait for the dev server to be ready.** The server takes ~30-60 seconds (longer on first push for a brand-new branch: full git clone + `npm ci` + `uv sync`). Question with `bash scripts/remote-mac.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:<port>"` until it returns 200, or just hit the public URL.
+- URL is derived from the branch name (DNS-label-safe slug): `<branch-slug>.dev.whoeverwants.com`
+  - Example: branch `claude/migrate-foo` → `https://claude-migrate-foo.dev.whoeverwants.com`
+  - Slug rules: lowercase, non-[a-z0-9-] → `-`, runs collapsed, trimmed, truncated to 50 chars
+- URL changes per branch — switching branches means a new URL. Bookmarking your CURRENT branch's URL is fine but stale once you cut a new branch.
+- The `main` branch is explicitly skipped (it's the prod branch on the droplet; never aged out by 7d-idle, would consume resources forever).
+- Author emails are no longer used as a signal; bot-authored pushes get a dev server like any other push.
+- Dev servers are fully isolated — each has its own container, API, and database.
+- **Lifecycle**: auto-cleaned after 7 days of inactivity, OR immediately destroyed when the branch is deleted from GitHub (the `delete` event triggers `destroy <branch>`). When the branch is deleted: container + volume + Postgres DB + Caddy snippet are all torn down.
 
 ```bash
-# List active dev servers (shows frontend and API status)
-bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh list"
+# List active dev servers (one row per branch)
+bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh list"
 
-# Manually trigger a dev server update
-bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh upsert user@example.com claude/my-branch" /root 600
+# Manually trigger a dev server update for a branch
+bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh upsert claude/my-branch" / 600
 
-# Destroy a dev server (also drops its database)
-bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh destroy user-at-example-com"
+# Destroy a dev server by branch name (also drops its DB / volume / Caddy snippet)
+bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh destroy claude/my-branch"
 
-# Check dev API health
-bash scripts/remote.sh "curl -s http://localhost:<api_port>/health"
+# Destroy by raw slug (when the branch name is no longer known)
+bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh destroy-slug claude-my-branch"
 
-# Check dev API logs
-bash scripts/remote.sh "tail -50 /root/dev-servers/<slug>/api.log"
+# Check dev container logs
+bash scripts/remote-mac.sh "docker logs whoeverwants-dev-<slug> --tail 50"
+
+# Check dev API logs (inside the container's /repo volume)
+bash scripts/remote-mac.sh "docker exec whoeverwants-dev-<slug> tail -50 /repo/api.log"
 ```
 
 **Preview Environments** (per-branch API testing):
@@ -189,17 +194,17 @@ This installs Docker, Caddy, the command execution API, clones the repo, starts 
 
 ## Mac Mini Dev Box
 
-The dev-server side of the system runs on a Mac mini at home (`samcarey@mini4`, public IP `65.28.10.210`, Apple M4, 32 GB RAM, macOS 26). Production API stays on the droplet — only per-author dev servers run here.
+The dev-server side of the system runs on a Mac mini at home (`samcarey@mini4`, public IP `65.28.10.210`, Apple M4, 32 GB RAM, macOS 26). Production API stays on the droplet — only per-branch dev servers run here.
 
-**Status: dev-server-manager ported, end-to-end working.** Running:
+**Status: dev-server-manager ported + rekeyed to per-branch, end-to-end working.** Running:
 - Colima VM (Apple Virtualization Framework, 6 CPU / 12 GB / 80 GB) as Claude's sandbox
 - Per-hostname HTTPS at `*.dev.whoeverwants.com` via home-router port forwarding (80/443) → Caddy on Mac → containers in VM
 - DDNS (launchd → AWS Route 53) keeping both `mac-test.dev` and the `*.dev` wildcard A records self-healing
 - `cmd-api.dev.whoeverwants.com` — Claude→VM control endpoint, same model as droplet's cmd-api
-- `webhook.dev.whoeverwants.com` — GitHub push receiver, HMAC-verified, dispatches to `dev-server-manager.sh`
+- `webhook.dev.whoeverwants.com` — GitHub push + delete receiver, HMAC-verified, dispatches to `dev-server-manager.sh`
 - `mac-test.dev.whoeverwants.com` — placeholder serving nginx
-- Postgres 16 in VM (persistent volume, network-only) — one DB per author
-- One `whoeverwants-dev-<slug>` container per author (Next.js + uvicorn together) spawned by `dev-server-manager.sh`
+- Postgres 16 in VM (persistent volume, network-only) — one DB per branch
+- One `whoeverwants-dev-<branch-slug>` container per open branch (Next.js + uvicorn together) spawned by `dev-server-manager.sh`
 
 **Where to look:**
 - `docs/mac-mini-setup.md` — full reproduction guide
@@ -217,20 +222,26 @@ bash scripts/remote-mac.sh "hostname; docker ps"
 
 The cmd-api lives in the VM, not on the Mac host. **Mac filesystem access from the VM**: Colima auto-mounts `/Users` into the VM RW via virtiofs, so cmd-api can read/write `~/devbox/` (and `~/Library/LaunchAgents/`) by spawning a sibling container with `-v /Users:/Users`. Anything outside `/Users` (notably `/opt/homebrew/etc/Caddyfile`) is not reachable from the VM and needs a Mac-side action. `scripts/mac-deploy.sh` encapsulates the `/Users` write pattern.
 
-**Per-author dev server architecture** (Option A from the original plan):
-- Each developer = one Docker container `whoeverwants-dev-<slug>` running Next.js (port 3000) + uvicorn (port 8000) together
-- Per-author Docker volume `whoeverwants-dev-repo-<slug>` mounted at `/repo` preserves node_modules / .venv / .next across restarts
-- Per-author Postgres DB `dev_<slug>` in the shared `devbox-postgres-1` container; migrations applied by the manager
+**Per-branch dev server architecture**:
+- Each open branch = one Docker container `whoeverwants-dev-<branch-slug>` running Next.js (port 3000) + uvicorn (port 8000) together
+- Per-branch Docker volume `whoeverwants-dev-repo-<branch-slug>` mounted at `/repo` preserves node_modules / .venv / .next across restarts within a branch's lifetime
+- Per-branch Postgres DB `dev_<branch_slug_underscored>` in the shared `devbox-postgres-1` container; migrations applied by the manager from the branch's checkout
 - Container's port 3000 published to VM `127.0.0.1:<3001-3010>`; Colima auto-forwards to Mac `localhost:<same port>`
-- Caddy snippet at `~/devbox/caddy.d/<slug>.caddy` routes `<slug>.dev.whoeverwants.com` to that port; the `com.devbox.caddy-watch.plist` LaunchAgent polls the dir every 5s and runs `caddy reload`
+- Caddy snippet at `~/devbox/caddy.d/<branch-slug>.caddy` routes `<branch-slug>.dev.whoeverwants.com` to that port; the `com.devbox.caddy-watch.plist` LaunchAgent polls the dir every 5s and runs `caddy reload`
 - `dev-server-manager.sh` runs inside cmd-api OR webhook (both mount `/host-caddy.d`) and orchestrates the lifecycle. Lives at `~/devbox/scripts/dev-server-manager.sh` on the Mac, mounted at `/opt/scripts/dev-server-manager.sh` inside the containers.
-- Webhook receives the GitHub push event, extracts (email, branch), and calls `bash $MANAGER_CMD upsert <email> <branch>` in-process. Failures are logged + swallowed.
+- Webhook receives the GitHub `push` event and calls `bash $MANAGER_CMD upsert <branch>`; receives the GitHub `delete` event (or a `push` payload with `deleted: true`) and calls `bash $MANAGER_CMD destroy <branch>`. Failures are logged + swallowed. The `main` branch is filtered out on both paths (production-only; the manager double-enforces).
+- Branch-name slugification (in `branch_to_slug`): lowercase → non-`[a-z0-9-]` → `-` → collapse `-` runs → trim → truncate to 50 chars. So `claude/migrate-foo` becomes `claude-migrate-foo`; the resulting hostname is `claude-migrate-foo.dev.whoeverwants.com`.
+
+**GitHub webhook subscription**: must include BOTH `push` AND `delete` events. The legacy migration enabled only `push`; the `delete`-event branch teardown only fires when the subscription is widened (Webhooks → Edit → Individual events → "Branch or tag creation/deletion"). Without the subscription update, deleted branches age out via the 7d-idle path instead of being torn down immediately.
+
+**Cutover from per-author keying**: the per-branch manager uses the same container-name prefix (`whoeverwants-dev-`) and same volume prefix (`whoeverwants-dev-repo-`) so legacy per-author entries are visible to `list` / `destroy-all`, but their slugs no longer correspond to any branch. Run once at deploy time to wipe them: `bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh destroy-all"`. After that, the next push to each branch repopulates per-branch.
 
 **Operational commands** (via remote-mac.sh):
 ```bash
 bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh list"
-bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh destroy <slug>"
-bash scripts/remote-mac.sh "docker logs whoeverwants-dev-<slug> --tail 50"
+bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh destroy <branch>"          # by branch name
+bash scripts/remote-mac.sh "bash /opt/scripts/dev-server-manager.sh destroy-slug <slug>"      # by raw slug
+bash scripts/remote-mac.sh "docker logs whoeverwants-dev-<branch-slug> --tail 50"
 bash scripts/remote-mac.sh "docker exec devbox-postgres-1 psql -U whoeverwants -c '\\l'"
 ```
 
@@ -240,9 +251,9 @@ bash scripts/remote-mac.sh "docker exec devbox-postgres-1 psql -U whoeverwants -
 - **Recreating cmd-api kills the in-flight cmd-api request.** When `docker compose up -d cmd-api` runs from inside cmd-api, the stop step terminates the requesting process mid-flight. Workaround: launch the recreate from a detached sidecar (`docker run -d`) — the sidecar is a sibling container and survives cmd-api's restart. Wait ~15s, then verify via `hostname` (returns a fresh container hostname).
 - **`docker exec ... --format '{{ ... }}'` quoting through cmd-api eats braces.** When cmd-api hands the cmd to `subprocess.run(cmd, shell=True)`, embedded `{{ }}` survives, but single-quoted Go templates inside single-quoted shell arguments can produce empty stdout (no JSON parse → remote-mac.sh's `json.load` fails on empty body). Workaround: switch the outer quotes to `"` and pass the inner braces literally — or use `--format` with no quoting and pipe through `head -c N`.
 - **Smoke-test sidecars need the same mounts as cmd-api.** When running `dev-server-manager.sh upsert` from an ad-hoc `docker run` sidecar (for testing), include both `-v /Users:/Users` (so it can read repo state on the Mac) AND `-v /Users/sccarey/devbox/caddy.d:/host-caddy.d` (so caddy snippet writes land in the real Mac-visible dir). The production path goes through cmd-api or webhook which both have these mounts baked in via `docker-compose.yml`.
-- **Per-author volume + bootstrap-marker race on re-upsert.** The manager polls for `/repo/.dev-server-ready` to know when the dev-server is up. If a previous run left the marker file in the per-author volume, the new run sees it immediately and skips waiting. Today this is harmless because the entrypoint deletes the marker on startup and the manager's downstream steps (caddy snippet write, migration apply) are idempotent. If you add side effects that need actual "this container is up RIGHT NOW", delete the marker via a one-shot `docker run --rm -v $volume:/repo alpine rm -f /repo/.dev-server-ready` BEFORE launching, then wait for it to reappear.
+- **Per-branch volume + bootstrap-marker race on re-upsert.** The manager polls for `/repo/.dev-server-ready` to know when the dev-server is up. If a previous run left the marker file in the per-branch volume, the new run sees it immediately and skips waiting. Today this is harmless because the entrypoint deletes the marker on startup and the manager's downstream steps (caddy snippet write, migration apply) are idempotent. If you add side effects that need actual "this container is up RIGHT NOW", delete the marker via a one-shot `docker run --rm -v $volume:/repo alpine rm -f /repo/.dev-server-ready` BEFORE launching, then wait for it to reappear.
 - **Caddy `import` only supports ONE wildcard per glob.** `import /Users/*/devbox/caddy.d/*.caddy` is rejected with `Glob pattern may only contain one wildcard (*), but has others`. Hardcode the user portion: `import /Users/sccarey/devbox/caddy.d/*.caddy`. The username is fixed per Mac install anyway, so no real flexibility lost.
-- **Two GitHub webhooks during/after migration: droplet handles prod-deploy, Mac handles dev upserts.** The droplet's `dev-webhook.service` was patched in-place to short-circuit non-`main` pushes (returns `dev-side-on-mac` JSON, no upsert). The Mac webhook handles every branch including `main` (but no-ops since its `webhook.py` has no prod-deploy logic). Both webhooks fire on every push; each handles only its scope. Don't remove the droplet webhook — production auto-deploy still runs there. If the patch on the droplet ever drifts (`/root/whoeverwants/scripts/dev-webhook.py`), the patch marker is the `if branch != "main":` early-return block right after `log.info(f"Push to {branch} by {emails}")`.
+- **Two GitHub webhooks during/after migration: droplet handles prod-deploy, Mac handles dev upserts/destroys.** The droplet's `dev-webhook.service` was patched in-place to short-circuit non-`main` pushes (returns `dev-side-on-mac` JSON, no upsert). The Mac webhook explicitly SKIPS the `main` branch on both push and delete (matching the manager's `SKIP_BRANCHES`) so a push to main doesn't create a `main.dev.whoeverwants.com` dev server alongside production. Both webhooks fire on every push; each handles only its scope. Don't remove the droplet webhook — production auto-deploy still runs there. If the patch on the droplet ever drifts (`/root/whoeverwants/scripts/dev-webhook.py`), the patch marker is the `if branch != "main":` early-return block right after `log.info(f"Push to {branch} by {emails}")`.
 
 ## Tech Stack
 

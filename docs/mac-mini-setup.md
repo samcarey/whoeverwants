@@ -4,7 +4,7 @@
 
 **Migration complete; dev-server side runs on the Mac mini.**
 
-This document captures the architecture and reproduction steps for migrating the dev-server side of WhoeverWants from the DigitalOcean droplet to a Mac mini at home. The Mac is the new control plane for per-author dev servers; the droplet keeps the production API.
+This document captures the architecture and reproduction steps for migrating the dev-server side of WhoeverWants from the DigitalOcean droplet to a Mac mini at home. The Mac is the new control plane for per-branch dev servers; the droplet keeps the production API.
 
 Running today:
 - Colima VM as Claude's sandbox
@@ -13,7 +13,7 @@ Running today:
 - `cmd-api` container — Claude drives the Mac via HTTPS, same model as the droplet
 - `webhook` container — receives GitHub push events, HMAC-verifies, dispatches to `dev-server-manager.sh`
 - Postgres 16 container with persistent volume
-- Per-author dev servers: one Docker container in the VM (Next.js + uvicorn together), routed by Caddy on the Mac via auto-managed snippets at `~/devbox/caddy.d/<slug>.caddy`
+- Per-branch dev servers: one Docker container per open branch in the VM (Next.js + uvicorn together), routed by Caddy on the Mac via auto-managed snippets at `~/devbox/caddy.d/<branch-slug>.caddy`
 
 ## Architecture
 
@@ -35,9 +35,9 @@ Mac mini host
   │       ├─ docker-compose stack at /Users/<you>/devbox/docker-compose.yml
   │       │   ├─ cmd-api          — published 127.0.0.1:9090 — bearer-token auth
   │       │   ├─ webhook          — published 127.0.0.1:9091 — HMAC-verified
-  │       │   ├─ postgres         — internal only (shared by every author's DB)
+  │       │   ├─ postgres         — internal only (shared by every branch's DB)
   │       │   ├─ nginx-test       — published 127.0.0.1:8080 — placeholder
-  │       │   └─ whoeverwants-dev-<slug>  — one per author, published 127.0.0.1:<3001-3010>
+  │       │   └─ whoeverwants-dev-<branch-slug>  — one per open branch, published 127.0.0.1:<3001-3010>
   │       └─ Docker socket mounted into cmd-api & webhook so they can spawn dev-server containers
   ├─ DDNS LaunchAgent (5-min interval, AWS Route 53 UPSERT for mac-test.dev + *.dev wildcard)
   ├─ caddy-watch LaunchAgent (5-sec interval, runs `caddy reload` when ~/devbox/caddy.d/ changes)
@@ -46,7 +46,9 @@ Mac mini host
 
 **Key isolation boundary**: cmd-api lives in the VM. The Mac host runs only Colima + Caddy + DDNS + the user's pre-existing services. Colima auto-mounts `/Users` into the VM as RW (virtiofs), so cmd-api can write to `~/devbox/` on the Mac via a spawned container with `-v /Users:/Users`; everything outside `/Users` (e.g. `/opt/homebrew/etc/Caddyfile`) is not reachable and requires a Mac-side action.
 
-**Per-author dev server flow**: GitHub webhook → `webhook` container HMAC-verifies → spawns a docker:cli sidecar that runs `dev-server-manager.sh upsert <email> <branch>` → manager pulls the prebuilt `whoeverwants-devserver:latest` image, starts one container per author with a per-author Docker volume mounted at `/repo`, the entrypoint clones the repo, runs `npm ci` + `uv sync`, then starts Next.js (port 3000 in container, published to 127.0.0.1:<NNNN> on the VM) and uvicorn (port 8000, container-internal). The manager writes `~/devbox/caddy.d/<slug>.caddy` (a colima-mounted directory) which the launchd watcher picks up and reloads Caddy.
+**Per-branch dev server flow**: GitHub webhook → `webhook` container HMAC-verifies → on `push` runs `dev-server-manager.sh upsert <branch>`; on `delete` (or a `push` payload with `deleted: true`) runs `dev-server-manager.sh destroy <branch>` → on upsert the manager pulls the prebuilt `whoeverwants-devserver:latest` image, starts one container per branch with a per-branch Docker volume mounted at `/repo`, the entrypoint clones the repo, runs `npm ci` + `uv sync`, then starts Next.js (port 3000 in container, published to 127.0.0.1:<NNNN> on the VM) and uvicorn (port 8000, container-internal). The manager writes `~/devbox/caddy.d/<branch-slug>.caddy` (a colima-mounted directory) which the launchd watcher picks up and reloads Caddy.
+
+**Webhook subscription**: the GitHub webhook MUST be subscribed to BOTH `push` AND `delete` events for branch-delete teardown to fire. The original migration only enabled `push`; bring up the `delete` subscription in the same webhook (Settings → Webhooks → edit → Individual events → check "Branch or tag creation/deletion").
 
 ## Prerequisites
 
@@ -201,7 +203,7 @@ chmod 600 ~/devbox/.env
 cd ~/devbox && docker compose up -d --build
 docker compose ps   # nginx-test, cmd-api, postgres, webhook all "Up"
 
-# Build the prebuilt dev-server image (one-time; per-author containers spawn from this)
+# Build the prebuilt dev-server image (one-time; per-branch containers spawn from this)
 docker compose --profile build-only build devserver-image
 ```
 
@@ -217,7 +219,7 @@ for SUB in cmd-api webhook; do
 done
 
 # Install the Caddyfile (matches scripts/mac-mini/Caddyfile in this repo;
-# includes per-author dev-server snippet imports).
+# includes per-branch dev-server snippet imports).
 sudo cp scripts/mac-mini/Caddyfile /opt/homebrew/etc/Caddyfile
 sudo brew services restart caddy
 sleep 45  # cert provisioning
@@ -225,7 +227,7 @@ sleep 45  # cert provisioning
 
 ### 9b. Caddy snippet watcher + LaunchAgent
 
-The dev-server-manager writes per-author snippets to `~/devbox/caddy.d/`. A
+The dev-server-manager writes per-branch snippets to `~/devbox/caddy.d/`. A
 LaunchAgent polls every 5 seconds and runs `caddy reload` when the directory
 content hash changes.
 
@@ -240,7 +242,7 @@ launchctl list | grep caddy-watch   # confirm loaded
 ### 9c. Wildcard DNS record
 
 DDNS now manages a wildcard `*.dev.whoeverwants.com` A record so any
-per-author hostname resolves to the home IP without needing a per-author DNS
+per-branch hostname resolves to the home IP without needing a per-branch DNS
 edit. The launchd job (`com.devbox.ddns.plist`) calls `~/devbox/ddns.sh`
 every 5 minutes. After installing the updated script, trigger an immediate
 refresh:
