@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import RespondentCircles from "@/components/RespondentCircles";
+import GroupAvatar from "@/components/GroupAvatar";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 
 export interface GroupHeaderProps {
@@ -9,6 +9,9 @@ export interface GroupHeaderProps {
   title?: string;
   participantNames?: string[];
   anonymousCount?: number;
+  /** Migration 108: when set, the header shows the uploaded image circle
+   *  instead of the initials graphic. Null/undefined → initials fallback. */
+  imageUrl?: string | null;
   subtitle?: string;
   onTitleClick?: () => void;
   onBack?: () => void;
@@ -43,6 +46,7 @@ export default function GroupHeader({
   title,
   participantNames,
   anonymousCount,
+  imageUrl,
   subtitle,
   onTitleClick,
   onBack,
@@ -67,7 +71,8 @@ export default function GroupHeader({
   const middleContent = (
     <>
       {participantNames && (
-        <RespondentCircles
+        <GroupAvatar
+          imageUrl={imageUrl ?? null}
           names={participantNames}
           anonymousCount={anonymousCount ?? 0}
         />

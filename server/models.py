@@ -319,6 +319,12 @@ class PollResponse(BaseModel):
     # mid-deploy races where a group row briefly exists without a short_id.
     group_id: str | None = None
     group_short_id: str | None = None
+    # Migration 108: ISO timestamp of when the group's avatar image was
+    # last set/cleared. Null when no custom image is set. Doubles as the
+    # cache-buster for `/api/groups/by-route-id/<id>/image?v=<timestamp>`
+    # — every poll in the group carries the same value, so the FE knows
+    # whether to render a fallback initials avatar or the uploaded image.
+    group_image_updated_at: str | None = None
     # Poll-level results-display + ranked-choice settings (migration 098).
     min_responses: int | None = None
     show_preliminary_results: bool = True

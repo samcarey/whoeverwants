@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import { useGroup } from "@/lib/useGroup";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
-import RespondentCircles from "@/components/RespondentCircles";
+import GroupAvatar from "@/components/GroupAvatar";
 import GroupHeader from "@/components/GroupHeader";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
 import { getUserName } from "@/lib/userProfile";
@@ -73,12 +73,13 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         }
       />
 
-      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
+      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
         <div className="flex flex-col items-center text-center mb-8">
-          <RespondentCircles
+          <GroupAvatar
+            imageUrl={group.imageUrl}
             names={heroNames}
             anonymousCount={group.anonymousRespondentCount}
-            sizeClassName="w-28"
+            sizeClassName="w-[10.5rem]"
           />
           <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white break-words">
             {displayTitle}

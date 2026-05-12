@@ -1620,6 +1620,52 @@ See `docs/ios-setup.md` for the full one-time setup walkthrough.
 
 ---
 
+## Group Avatar Images
+
+Groups can have a custom uploaded image avatar that replaces the participant-initials graphic. **Storage**: inline on the `groups` row — migration 108 added `image_data BYTEA`, `image_mime_type TEXT`, `image_updated_at TIMESTAMPTZ` columns. Keeping bytes in Postgres (vs filesystem / object storage) means pg_dump captures them automatically, no second storage surface to provision per-branch on the Mac dev infrastructure, and "destroy + recreate dev DB" stays a one-step operation. Trade-off accepted for the current scale.
+
+**API**:
+- `POST /api/groups/{route_id}/image` — base64 JSON body (`{image_base64, mime_type}`); JPEG/PNG only; 5 MiB cap. No creator-secret check, same trust model as `/title`.
+- `DELETE /api/groups/{route_id}/image` — idempotent clear; returns 200 even when no image was set.
+- `GET /api/groups/by-route-id/{route_id}/image` — raw bytes with the stored MIME type and `Cache-Control: public, max-age=31536000, immutable`. The FE's `?v=<image_updated_at>` query string is the cache-buster.
+
+**`image_updated_at` propagates as a wrapper field on every `PollResponse`.** Surfaced via the same `_SELECT_POLLS_WITH_GROUP` JOIN as `group_title` / `group_short_id` (extend the constant when adding a new joined groups field, NOT a parallel SELECT). FE `Poll.group_image_updated_at` flows through `toPoll`; `Group.imageUrl` is derived in `lib/groupUtils.ts: buildGroupImageUrl(routeId, ts)` and consumed by the new `<GroupAvatar>` wrapper.
+
+**`<GroupAvatar imageUrl|names|anonymousCount|sizeClassName>`** in `components/GroupAvatar.tsx` replaces direct `<RespondentCircles>` use at every "this is the group's icon" surface: home list rows, group-page header, /info hero. When `imageUrl` is null, falls through to `RespondentCircles` for the initials graphic — same outer dimensions either way, so swapping doesn't shift layout. The image element uses `object-cover` as a safety net but the upload pipeline always feeds square-cropped bytes.
+
+**`<ImageCropModal>`** (`components/ImageCropModal.tsx`) is the drag + pinch-zoom + canvas-export cropper. Several traps learned the hard way:
+
+- **iOS WebKit (Safari + iOS Firefox) silently fails `<img src="data:image/...">` for data URLs over ~1-2 MB.** Phone photos at 5-15 MB produced an empty crop circle. The fix is `URL.createObjectURL` for the displayed source — blob URLs have no length limit. FileReader/data URLs are NOT a working substitute on mobile WebKit.
+- **Pair `URL.createObjectURL` + `URL.revokeObjectURL` + `setUrl` inside ONE `useEffect`.** First attempt put the URL in `useState(() => createObjectURL(file))` lazy init, assuming React StrictMode would re-run the initializer on the simulated remount. **It doesn't** — StrictMode preserves state across the dev mount→unmount→mount cycle; only effects re-run. So the cleanup revoked the URL while state kept pointing at it, and the img permanently displayed a dead URL. Pattern that works:
+  ```tsx
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => { URL.revokeObjectURL(u); setUrl((prev) => prev === u ? null : prev); };
+  }, [file]);
+  ```
+  The `setUrl(...)` in cleanup is load-bearing — without it the img briefly keeps `src=URL_A` after the revoke, fires onError, and sets `loadError` permanently. With it, the img unmounts cleanly between StrictMode mounts.
+- **Tailwind preflight ships `img { max-width: 100%; height: auto }` globally.** When the displayed img has explicit `width: 1737px` set inline AND its parent container is 370px, max-width caps the width at 370 BEFORE the transform: scale() runs — so the transform downscales an already-clipped width, producing an image rendered at 1/N of the expected width and positioned off-screen. The fix is `maxWidth: 'none'` (and `maxHeight: 'none'` for safety) in the inline style. **This is a browser-agnostic bug**; my Playwright tests only checked `getBoundingClientRect().width > 0`, which was true even for the 78×658-px sliver, so it slipped through. When testing image-sizing fixes, validate the rendered dims match the math.
+- **Keep the displayed `<img>` mounted across the loadError → success transition.** Earlier the JSX gated the entire crop container on `!loadError`, so an onError firing for a stale URL_A unmounted the img — the subsequent URL_B never got a chance to load. Render the img unconditionally (once `url` is set); show loading/error overlays on top. Successful onLoad sets imageDims AND clears loadError.
+- **Don't allocate per-frame in pointermove.** The hot path runs at ~60Hz on touch. Iterate `pointersRef.current.values()` directly (Map iterator) — don't `Array.from(...values())`, which allocates a fresh array each frame. Capture first/second pointer in the same loop for pinch math.
+- **Canvas export**: 512×512 JPEG at quality 0.9 → ~50-80 KB typically. Drawn from the freshly-loaded blob URL (the modal's URL stays alive until unmount).
+- **5MP+ image render limits on iOS**: not actually a hard problem in practice (modern iPhones handle 12+ MP fine). Symptoms that look like image-decode failures on mobile have always traced back to one of the items above, not actual memory limits. Don't pre-resize on the client without evidence; the canvas export already downscales.
+
+**Edit-title flow** (`app/g/[groupShortId]/edit-title/page.tsx`) defers all image + title changes to local state and commits via the Save button:
+- Picking + cropping stages a `Blob` in `pendingCroppedBlob` and a derived blob URL in `localImagePreviewUrl` for the preview avatar. No server round-trip.
+- Tapping the X badge stages `pendingImageRemoval = true` (and clears any `pendingCroppedBlob`).
+- Save runs the staged image action (upload or delete), then the title update if changed, then navigates back. Skips the DELETE entirely when `pendingImageRemoval && !group.imageUrl` (no-op on a group without an image).
+- Back checks `hasUnsavedChanges = titleChanged || imageChanged` and shows a `ConfirmationModal` ("Discard your changes?", red Discard button) if anything is staged. Confirm → navigate away without committing; cancel → stay.
+
+The X-badge / camera-badge pattern needs both to be **siblings of the avatar button** inside a single `relative` wrapper — NOT children of the same button — so their click handlers stay independent (tapping X doesn't open the file picker). The X badge only renders when `effectiveImageUrl` is truthy (no point offering to remove a non-existent image).
+
+**Template `py-6` was retired for sub-routes** (`app/template.tsx`). The page-wrapper used to apply `py-6` (24px top + bottom padding) to every route that wasn't home, settings, or `isGroupLikePage` — so `/g/<id>/info` and `/g/<id>/edit-title` got 24px of extra top space ON TOP of their inline `paddingTop: headerHeight + Xrem` for the fixed header clearance. Changed to `pb-6` (drop top). Other routes in the bucket are redirect stubs where padding is irrelevant.
+
+**Pitfall: `accessibleQuestionIds` in localStorage can carry non-UUIDs and 500 `/api/groups/mine`.** Postgres casts the parameter array to `uuid[]`, and one bad element rejects the whole call. `server/services/groups.py: group_ids_for_question_ids` now filters its input through a UUID regex before the SELECT — same defensive pattern any future endpoint reading question_ids from FE-supplied lists should adopt. The corruption can come from any past code path that ever called `addAccessibleQuestionId(poll.id_or_short_id)` instead of a question_id; CLAUDE.md already flagged this pitfall but server-side resilience guards against it persisting in long-lived sessions.
+
+**Dev-infra trap**: `scripts/mac-mini/dev-server-manager.sh`'s `INSERT INTO _migrations (filename) VALUES (:'fname')` line has been broken since the script's inception — the `:'fname'` psql variable substitution fails with `syntax error at or near ":"`, so the `_migrations` table never gets populated. Every upsert re-applies all migrations from scratch, which works on a fresh DB (migrations run in order, succeed) but fails catastrophically when any earlier migration is non-idempotent and the DB drifted into a half-migrated state. Symptom we hit repeatedly during this branch: a push triggers upsert → migration 097 (renames `polls` → `questions`, `multipolls` → `polls`) fails because `questions` already exists → the rename is rolled back → migrations 098+ that ADD COLUMNS to "polls" go to the OLD polls table (which was supposed to be renamed) → the new `polls` table (formerly multipolls) is missing the columns the server expects. Recovery: `bash /opt/scripts/dev-server-manager.sh destroy <branch>` then `upsert` again forces a clean DB. **Fix the `:'fname'` syntax is filed but not done in this branch** — it'd touch dev infrastructure orthogonal to the feature work.
+
 ## App Icons
 
 The 👋 waving-hand emoji is the canonical app icon, rendered on a black rounded-rect background. Every icon file in the project is a render of the same SVG template — keep them in sync when changing the artwork.

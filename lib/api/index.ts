@@ -44,6 +44,8 @@ export {
   apiGetGroupSummary,
   apiLeaveGroup,
   apiUpdateGroupTitle,
+  apiUploadGroupImage,
+  apiDeleteGroupImage,
 } from "./groups";
 
 export {

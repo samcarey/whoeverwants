@@ -297,7 +297,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         )}
 
         <div
-          className={`max-w-4xl mx-auto ${(pathname === '/' || isGroupLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isGroupLikePage ? '' : (isSettingsPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}
+          className={`max-w-4xl mx-auto ${(pathname === '/' || isGroupLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isGroupLikePage ? '' : (isSettingsPage || pathname === '/') ? 'pt-0.5 pb-6' : 'pb-6'}`}
           style={pathname === '/'
             // Home reserves enough room for the floating "+" FAB to clear the
             // last card.

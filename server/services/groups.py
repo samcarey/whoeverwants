@@ -16,6 +16,7 @@ rest.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -324,9 +325,15 @@ def polls_for_poll_ids(
 def group_ids_for_question_ids(conn, question_ids: list[str]) -> list[str]:
     """Resolve a list of question_ids to the set of group_ids that own them.
     Skips question_ids without a poll_id (post-Phase-4 there shouldn't be any)
-    and polls without a group_id (post-migration-100 there aren't any). Order
-    is unstable — the caller deduplicates."""
-    if not question_ids:
+    and polls without a group_id (post-migration-100 there aren't any).
+    Silently drops any non-UUID values from the caller's list before the query
+    — the FE's localStorage accessible-question list can pick up corrupted
+    entries (legacy bugs, manual edits) and one bad id used to 500 the whole
+    `/api/groups/mine` request, wedging the home page. Filtering here is
+    pragmatic resilience; the FE should also validate before sending.
+    Order is unstable — the caller deduplicates."""
+    valid_ids = [qid for qid in question_ids if _is_uuid_like(qid)]
+    if not valid_ids:
         return []
     rows = conn.execute(
         """SELECT DISTINCT mp.group_id
@@ -334,9 +341,19 @@ def group_ids_for_question_ids(conn, question_ids: list[str]) -> list[str]:
              JOIN polls mp ON p.poll_id = mp.id
             WHERE p.id = ANY(%(ids)s)
               AND mp.group_id IS NOT NULL""",
-        {"ids": question_ids},
+        {"ids": valid_ids},
     ).fetchall()
     return [str(r["group_id"]) for r in rows]
+
+
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def _is_uuid_like(value: str) -> bool:
+    return isinstance(value, str) and bool(_UUID_RE.match(value))
 
 
 def poll_ids_for_group_ids(conn, group_ids: list[str]) -> list[str]:

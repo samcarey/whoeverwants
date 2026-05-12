@@ -147,6 +147,25 @@ export interface Group {
   targetedPoll: Poll | null;
   /** Estimated count of anonymous respondents (max across polls). */
   anonymousRespondentCount: number;
+  /** Migration 108: URL of the group's uploaded avatar image, or null
+   *  when no custom image is set. When null, the FE falls back to the
+   *  initials-circles graphic (RespondentCircles). When set, the URL
+   *  includes a `?v=<timestamp>` cache-buster so the browser refetches
+   *  on every change. */
+  imageUrl: string | null;
+}
+
+/** Build the avatar image URL for a group from its route id + image-updated
+ *  timestamp. The endpoint is server-resolved to the group, so any of the
+ *  four route-id forms (groups.short_id, groups.id, polls.short_id, polls.id)
+ *  work. Returns null when no image is set on the group. */
+export function buildGroupImageUrl(
+  routeId: string | null | undefined,
+  imageUpdatedAt: string | null | undefined,
+): string | null {
+  if (!routeId || !imageUpdatedAt) return null;
+  const v = encodeURIComponent(imageUpdatedAt);
+  return `/api/groups/by-route-id/${encodeURIComponent(routeId)}/image?v=${v}`;
 }
 
 /** True iff the poll wrapper is open: not manually closed AND no
@@ -335,6 +354,14 @@ function buildGroupFromPolls(
 
   const targetedPoll = pickTargetedPoll(polls, votedQuestionIds, abstainedQuestionIds, now);
 
+  // Every poll in the group carries the same `group_image_updated_at`
+  // (sourced server-side from `groups.image_updated_at` via JOIN). Read
+  // off the latest poll for symmetry with the group_title source.
+  const imageUrl = buildGroupImageUrl(
+    latestPoll.group_short_id ?? latestPoll.group_id ?? null,
+    latestPoll.group_image_updated_at ?? null,
+  );
+
   return {
     rootQuestionId: questions[0].id,
     rootPollId: polls[0].id,
@@ -357,6 +384,7 @@ function buildGroupFromPolls(
     latestPoll,
     targetedPoll,
     anonymousRespondentCount,
+    imageUrl,
   };
 }
 
@@ -390,6 +418,10 @@ export function buildEmptyGroup(summary: GroupSummary): Group {
     latestPoll: null,
     targetedPoll: null,
     anonymousRespondentCount: 0,
+    imageUrl: buildGroupImageUrl(
+      summary.short_id ?? summary.id,
+      summary.image_updated_at ?? null,
+    ),
   };
 }
 
