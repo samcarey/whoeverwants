@@ -327,7 +327,6 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
             soonestUnvotedDeadline={group.soonestUnvotedDeadline}
             unvotedCount={group.unvotedCount}
             hasUnvoted={hasUnvoted}
-            hideRespondents={group.isEmpty}
             pressed={pressedGroupId === groupKey}
             isFirst={index === 0}
             selectionMode={selectionMode}

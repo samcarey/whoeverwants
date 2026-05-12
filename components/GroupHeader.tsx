@@ -64,18 +64,11 @@ export default function GroupHeader({
   ) : null;
 
   const middleRightPad = hasRightSlot ? 'pr-2' : 'pr-4';
-  // Render the RespondentCircles avatar only when there's actually
-  // something to show. The default `?` fallback inside RespondentCircles
-  // misrepresents an empty group (where the current-user filter wiped the
-  // names list) as a single anonymous voter.
-  const hasRespondentsToShow = participantNames && (
-    participantNames.length > 0 || (anonymousCount ?? 0) > 0
-  );
   const middleContent = (
     <>
-      {hasRespondentsToShow && (
+      {participantNames && (
         <RespondentCircles
-          names={participantNames!}
+          names={participantNames}
           anonymousCount={anonymousCount ?? 0}
         />
       )}
