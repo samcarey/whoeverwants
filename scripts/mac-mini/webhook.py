@@ -11,8 +11,8 @@ Adapted from scripts/dev-webhook.py (the droplet's version). Differences:
 - Binds 0.0.0.0 (Docker port-publishing requires this; the droplet ran on the
   host network so 127.0.0.1 was fine)
 - Secret comes from GITHUB_WEBHOOK_SECRET env var (no /etc/dev-webhook-secret)
-- MANAGER_CMD is unset until dev-server-manager is ported; trigger_upsert
-  becomes a no-op log line in the meantime
+- MANAGER_CMD env points at /opt/scripts/dev-server-manager.sh (mounted from
+  ~/devbox/scripts/ on Mac); when unset, trigger_upsert logs a no-op
 - Production-deploy logic removed (production stays on the droplet)
 """
 import hashlib, hmac, http.server, json, logging, os, subprocess, sys, threading

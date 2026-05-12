@@ -1,0 +1,36 @@
+# Image for per-author dev servers on the Mac mini.
+#
+# One container per developer; inside, both Next.js and the FastAPI server run
+# together. The repo lives in a per-author Docker volume mounted at /repo so
+# node_modules / .venv / .next survive container restarts.
+#
+# Built once by ~/devbox/docker-compose.yml on the Mac (service: devserver-image,
+# profile: build-only). dev-server-manager.sh spawns instances from this image.
+
+FROM node:20-bookworm-slim
+
+# System deps: git + bash + curl + postgres client (for ad-hoc psql from inside).
+# python3 + ca-certificates for uv installer + TLS validation.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git bash curl ca-certificates postgresql-client python3 python3-venv \
+      tini procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv (Astral's Python package manager) globally.
+# We pin /root/.local/bin on PATH so `uv` resolves without a login shell.
+RUN curl -LsSf https://astral.sh/uv/install.sh | INSTALLER_NO_MODIFY_PATH=1 sh \
+    && mv /root/.local/bin/uv /usr/local/bin/uv \
+    && mv /root/.local/bin/uvx /usr/local/bin/uvx
+
+# Copy the entrypoint
+COPY devserver-entrypoint.sh /usr/local/bin/devserver-entrypoint.sh
+RUN chmod +x /usr/local/bin/devserver-entrypoint.sh
+
+# Repo state lives on a per-author volume
+VOLUME ["/repo"]
+WORKDIR /repo
+
+EXPOSE 3000 8000
+
+# tini reaps zombies (both next dev and uvicorn fork child processes)
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/devserver-entrypoint.sh"]
