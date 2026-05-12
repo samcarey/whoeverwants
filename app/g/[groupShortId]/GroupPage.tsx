@@ -1625,7 +1625,11 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         title={group.title}
         participantNames={group.participantNames}
         anonymousCount={group.anonymousRespondentCount}
-        subtitle={`${group.questions.length} ${group.questions.length === 1 ? 'question' : 'questions'}`}
+        subtitle={
+          group.questions.length === 0
+            ? undefined
+            : `${group.questions.length} ${group.questions.length === 1 ? 'question' : 'questions'}`
+        }
         onTitleClick={() => navigateWithTransition(router, `/g/${groupId}/info`, 'forward')}
         rightSlot={<GroupShareButton routeId={groupId} title={group.title} />}
       />
