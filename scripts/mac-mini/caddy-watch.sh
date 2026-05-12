@@ -22,17 +22,15 @@ touch "$STATE_FILE"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG_FILE"; }
 
-current_hash() {
-  # Hash filenames + content of every *.caddy in the directory
-  if ls "$CADDY_DIR"/*.caddy >/dev/null 2>&1; then
-    # shellcheck disable=SC2012
-    ls "$CADDY_DIR"/*.caddy | sort | xargs cat 2>/dev/null | md5
-  else
-    echo "empty"
-  fi
+# Cheap change detector: dir-mtime + per-file mtime+name. Any add/remove/modify
+# of a *.caddy file bumps the dir's mtime; per-file mtimes catch in-place edits.
+# Reading content (cat | md5) costs ~5 processes per tick when nothing changed,
+# and this runs every 5s.
+current_sig() {
+  stat -f '%m %N' "$CADDY_DIR" "$CADDY_DIR"/*.caddy 2>/dev/null | md5
 }
 
-NEW=$(current_hash)
+NEW=$(current_sig)
 OLD=$(cat "$STATE_FILE" 2>/dev/null || echo "")
 
 if [ "$NEW" = "$OLD" ]; then

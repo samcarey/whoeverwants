@@ -18,13 +18,17 @@
 set -euo pipefail
 
 if [ -z "${MAC_API_URL:-}" ] || [ -z "${MAC_API_TOKEN:-}" ]; then
-  # Try loading from .env in project root
+  # Load only MAC_API_URL/MAC_API_TOKEN from .env. Plain read avoids `eval`
+  # (which would evaluate command-substitutions / backticks in values).
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   ENV_FILE="$SCRIPT_DIR/../.env"
   if [ -f "$ENV_FILE" ]; then
-    set +u
-    eval "$(grep -E '^MAC_API_(URL|TOKEN)=' "$ENV_FILE" | sed 's/^/export /')"
-    set -u
+    while IFS='=' read -r k v; do
+      case "$k" in
+        MAC_API_URL)   export MAC_API_URL="${MAC_API_URL:-$v}" ;;
+        MAC_API_TOKEN) export MAC_API_TOKEN="${MAC_API_TOKEN:-$v}" ;;
+      esac
+    done < "$ENV_FILE"
   fi
 fi
 

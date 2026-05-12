@@ -15,12 +15,18 @@ Adapted from scripts/dev-webhook.py (the droplet's version). Differences:
   ~/devbox/scripts/ on Mac); when unset, trigger_upsert logs a no-op
 - Production-deploy logic removed (production stays on the droplet)
 """
-import hashlib, hmac, http.server, json, logging, os, subprocess, sys, threading
+import hashlib, hmac, http.server, json, logging, os, subprocess, sys
+from concurrent.futures import ThreadPoolExecutor
 
 PORT = 9091
 SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "").encode()
 MANAGER_CMD = os.environ.get("MANAGER_CMD", "")
 IGNORE_PATTERNS = ["@anthropic.com", "noreply@github.com", "actions@github.com"]
+
+# Bound concurrent upserts so a force-push to a branch with many authors can't
+# spawn dozens of 600s subprocess.run() handlers. Per-slug serialization still
+# happens via flock inside dev-server-manager.sh.
+UPSERT_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="upsert")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("webhook")
@@ -131,7 +137,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "status": "accepted", "branch": branch, "authors": list(emails),
         }).encode())
         for e in emails:
-            threading.Thread(target=trigger_upsert, args=(e, branch), daemon=True).start()
+            UPSERT_POOL.submit(trigger_upsert, e, branch)
 
     def do_GET(self):
         if self.path == "/health":

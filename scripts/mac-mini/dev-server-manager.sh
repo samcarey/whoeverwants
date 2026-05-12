@@ -198,21 +198,24 @@ apply_dev_migrations() {
   local files
   files=$(docker exec "$container" sh -c "ls /repo/database/migrations/*_up.sql 2>/dev/null | sort")
   local pending=0
-  for f in $files; do
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
     local basename
     basename=$(basename "$f")
-    # Skip 000_ — production-only marker
-    case "$basename" in 000_*) continue ;; esac
+    case "$basename" in
+      000_*) continue ;;                      # production-only marker
+      *\'*) log "ERROR: refusing migration filename with single quote: $basename"; return 1 ;;
+    esac
     if echo "$applied" | grep -qxF "$basename"; then
       continue
     fi
     echo "  Applying: $basename" >&2
     docker exec "$container" cat "$f" \
       | docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$db_name" >/dev/null
-    docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$db_name" -c \
-      "INSERT INTO _migrations (filename) VALUES ('$basename') ON CONFLICT DO NOTHING;" >/dev/null
+    docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$db_name" -v fname="$basename" -c \
+      "INSERT INTO _migrations (filename) VALUES (:'fname') ON CONFLICT DO NOTHING;" >/dev/null
     pending=$((pending + 1))
-  done
+  done <<< "$files"
   if [ "$pending" -eq 0 ]; then
     echo "  All migrations already applied." >&2
   else

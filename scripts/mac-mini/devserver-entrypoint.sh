@@ -30,8 +30,10 @@ cd /
 
 if [ ! -d "$REPO/.git" ]; then
   log "First run: cloning $REPO_URL into $REPO"
-  # Wipe any stray state in the volume from a prior aborted run
-  rm -rf "$REPO"/{*,.[!.]*,..?*} 2>/dev/null || true
+  # Wipe any stray state in the volume from a prior aborted run. find -delete
+  # handles an empty dir cleanly; brace+glob expansions fail under set -u when
+  # the dir is empty.
+  find "$REPO" -mindepth 1 -delete 2>/dev/null || true
   git clone --depth 50 "$REPO_URL" "$REPO"
 fi
 

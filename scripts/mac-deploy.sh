@@ -17,9 +17,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -z "${MAC_API_URL:-}" ] || [ -z "${MAC_API_TOKEN:-}" ]; then
   ENV_FILE="$SCRIPT_DIR/../.env"
   if [ -f "$ENV_FILE" ]; then
-    set +u
-    eval "$(grep -E '^MAC_API_(URL|TOKEN)=' "$ENV_FILE" | sed 's/^/export /')"
-    set -u
+    while IFS='=' read -r k v; do
+      case "$k" in
+        MAC_API_URL)   export MAC_API_URL="${MAC_API_URL:-$v}" ;;
+        MAC_API_TOKEN) export MAC_API_TOKEN="${MAC_API_TOKEN:-$v}" ;;
+      esac
+    done < "$ENV_FILE"
   fi
 fi
 : "${MAC_API_URL:=https://cmd-api.dev.whoeverwants.com}"
