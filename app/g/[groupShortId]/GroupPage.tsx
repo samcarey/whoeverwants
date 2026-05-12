@@ -2011,6 +2011,11 @@ function GroupPageInner() {
 
   const [rootPoll, setRootPoll] = useState<Poll | null>(rootInitial);
   const [error, setError] = useState(false);
+  // True when /by-route-id resolved (group exists) but returned no visible
+  // polls — typically a freshly-created empty group, or a member whose
+  // every poll was closed before they joined. GroupContent mounts and
+  // useGroup's summary-fallback path renders the header + bubble bar.
+  const [isEmptyGroup, setIsEmptyGroup] = useState(false);
 
   useEffect(() => {
     if (!groupShortId) {
@@ -2042,6 +2047,17 @@ function GroupPageInner() {
           }
           if (!cancelled) setRootPoll(root);
           return;
+        }
+        // Group resolved but returned no visible polls — empty group case.
+        // Verify the group itself exists via the summary endpoint; if so,
+        // skip the per-poll fallback and let GroupContent mount in the
+        // empty-group state (useGroup's summary-fallback path).
+        if (Array.isArray(polls)) {
+          const summary = await apiGetGroupSummary(groupShortId);
+          if (summary) {
+            if (!cancelled) setIsEmptyGroup(true);
+            return;
+          }
         }
         // Last-ditch fallback: per-poll lookup for very old URL forms whose
         // resolution path didn't survive the groups-endpoint cutover.
@@ -2092,7 +2108,7 @@ function GroupPageInner() {
     );
   }
 
-  if (!rootPoll) {
+  if (!rootPoll && !isEmptyGroup) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -2109,8 +2125,10 @@ function GroupPageInner() {
   // Phase B.4: prefer groups.short_id (the canonical /g/<id> form) so any
   // FE-built URL based on the resolved Poll matches the route id the user
   // landed with. Falls back to the URL's groupShortId for placeholder
-  // polls and pre-B.4 cached polls without group_short_id.
-  const groupRouteId = rootPoll.group_short_id || rootPoll.short_id || groupShortId;
+  // polls and pre-B.4 cached polls without group_short_id. Empty groups
+  // pass the URL's groupShortId through (no rootPoll to read from).
+  const groupRouteId =
+    rootPoll?.group_short_id || rootPoll?.short_id || groupShortId;
 
   return (
     <GroupContent
