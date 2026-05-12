@@ -42,28 +42,42 @@ interface ImageDims {
 }
 
 export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
-  // Blob URL for the picked file. Created ONCE per mount instance via
-  // useState lazy init (which runs per component instance, including each
-  // React StrictMode mount) and revoked only on real unmount via an
-  // empty-deps useEffect cleanup. This avoids two pitfalls that bit
-  // earlier attempts:
+  // Blob URL for the picked file. Created+revoked inside the SAME effect
+  // so StrictMode's setup → cleanup → setup cycle pairs them correctly:
+  // mount 1 creates URL_A; cleanup revokes URL_A; mount 2 creates URL_B
+  // and writes it to state, triggering a re-render that swaps the
+  // displayed `<img src>` from the dead URL_A to the live URL_B. The
+  // first attempt at this pairing put the URL in `useState(() => ...)`
+  // lazy init — that locks the URL in state for the component's lifetime,
+  // so when StrictMode's cleanup revoked it, the setup effect couldn't
+  // create a replacement (state was already set), and the displayed img
+  // permanently pointed at a revoked URL.
   //
-  //   1. StrictMode double-mount + useEffect cleanup that revoked the
-  //      URL while the in-flight load was still running. Now the URL
-  //      is decoupled from the load effect entirely.
-  //   2. iOS Safari/WKWebView (including iOS Firefox) silently refuses
-  //      to render data URLs longer than ~1-2 MB in <img src>. Phone
-  //      photos at 5-15 MB produced an empty crop frame. Blob URLs
-  //      have no such length limit.
-  //
-  // The displayed <img> is the only loader — its onLoad reports the
-  // natural dimensions and gates the rest of the cropper UI. No
-  // separate `new Image()` probe.
-  const [url] = useState(() => URL.createObjectURL(file));
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  // Two other pitfalls this approach sidesteps:
+  //   - data URLs via FileReader are silently truncated by
+  //     iOS Safari/WKWebView (and iOS Firefox, which uses WKWebView)
+  //     beyond ~1-2 MB in `<img src>`. Phone photos at 5-15 MB
+  //     produced an empty crop frame. Blob URLs have no length limit.
+  //   - new Image() probes can mis-fire on mobile (decoded but with
+  //     naturalWidth=0 on iOS for some HEIC files); we let the
+  //     displayed `<img>` be the only loader and read dimensions from
+  //     its onLoad.
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => {
+      URL.revokeObjectURL(u);
+      // Also clear url state so a stale src isn't briefly applied to
+      // the img between cleanup and the next setup. Without this, the
+      // img would retain its src=URL_A attribute and fire onError as
+      // soon as the browser dispatches its load-fail event.
+      setUrl((prev) => (prev === u ? null : prev));
+    };
+  }, [file]);
 
   const [imageDims, setImageDims] = useState<ImageDims | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Crop frame size — derived from viewport in a layout effect so the
@@ -334,9 +348,7 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
 
       {/* Crop frame */}
       <div className="flex-1 flex items-center justify-center w-full px-4 overflow-hidden">
-        {loadError ? (
-          <p className="text-white text-sm">{loadError}</p>
-        ) : frameSize === 0 ? (
+        {frameSize === 0 ? (
           <p className="text-white text-sm">Loading image…</p>
         ) : (
           <div
@@ -353,53 +365,61 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
             onPointerCancel={handlePointerUp}
             onWheel={handleWheel}
           >
-            {/* Source image — always rendered so the browser loads it.
-                Until onLoad reports natural dimensions, the image is
-                hidden via `visibility: hidden` (so it still loads) and
-                the "Loading image…" overlay is shown on top. Once
-                imageDims is set, the inline width/height/margin/transform
-                math kicks in and the image becomes visible. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              ref={imgRef}
-              src={url}
-              alt=""
-              draggable={false}
-              onLoad={(e) => {
-                const t = e.currentTarget;
-                if (t.naturalWidth > 0 && t.naturalHeight > 0) {
-                  setImageDims({ width: t.naturalWidth, height: t.naturalHeight });
-                }
-              }}
-              onError={() => setLoadError("Couldn't read that image file")}
-              style={imageDims ? ({
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                width: imageDims.width,
-                height: imageDims.height,
-                marginLeft: -imageDims.width / 2,
-                marginTop: -imageDims.height / 2,
-                transformOrigin: 'center center',
-                userSelect: 'none',
-                WebkitUserDrag: 'none',
-              } as React.CSSProperties) : ({
-                // Pre-load: keep the img in the DOM (so it loads) but
-                // off-screen and zero-size so it doesn't affect layout
-                // or briefly flash at natural size before dimensions are
-                // captured.
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                width: 1,
-                height: 1,
-                opacity: 0,
-                pointerEvents: 'none',
-              } as React.CSSProperties)}
-            />
+            {/* Source image. Always rendered (when url is set) so the
+                browser loads it. Until onLoad reports natural dimensions,
+                the img is hidden 1×1px at top-left with opacity 0 — still
+                in the DOM, still loading. Once imageDims is set, the
+                inline width/height/margin/transform math takes over.
+                onError → loadError, but it doesn't unmount the img: a
+                src change (StrictMode mount 1 URL → mount 2 URL) will
+                trigger a fresh load attempt on the same img element, and
+                a successful onLoad both sets imageDims and clears
+                loadError. */}
+            {url && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                ref={imgRef}
+                src={url}
+                alt=""
+                draggable={false}
+                onLoad={(e) => {
+                  const t = e.currentTarget;
+                  if (t.naturalWidth > 0 && t.naturalHeight > 0) {
+                    setImageDims({
+                      width: t.naturalWidth,
+                      height: t.naturalHeight,
+                    });
+                    setLoadError(false);
+                  }
+                }}
+                onError={() => setLoadError(true)}
+                style={imageDims ? ({
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  width: imageDims.width,
+                  height: imageDims.height,
+                  marginLeft: -imageDims.width / 2,
+                  marginTop: -imageDims.height / 2,
+                  transformOrigin: 'center center',
+                  userSelect: 'none',
+                  WebkitUserDrag: 'none',
+                } as React.CSSProperties) : ({
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  width: 1,
+                  height: 1,
+                  opacity: 0,
+                  pointerEvents: 'none',
+                } as React.CSSProperties)}
+              />
+            )}
             {!imageDims && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <p className="text-white text-sm">Loading image…</p>
+                <p className="text-white text-sm">
+                  {loadError ? "Couldn't read that image file" : "Loading image…"}
+                </p>
               </div>
             )}
             {/* Circular cutout overlay: darken everything outside the circle.
@@ -445,7 +465,7 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
       <div className="w-full flex items-center justify-center px-4 py-4">
         <button
           onClick={handleConfirm}
-          disabled={!imageDims || submitting || !!loadError}
+          disabled={!imageDims || submitting}
           className="px-6 py-3 rounded-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white text-base font-semibold"
         >
           {submitting ? 'Saving…' : 'Save'}
