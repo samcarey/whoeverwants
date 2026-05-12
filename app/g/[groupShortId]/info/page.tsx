@@ -29,15 +29,13 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     else navigateWithTransition(router, `/g/${groupId}`, 'back');
   };
 
-  // The members list ALSO shows the current user (alphabetically merged
-  // with the others). The current-user filter applies to `participantNames`
-  // for the title + hero graphic ("don't list yourself in the group name
-  // or graphic"), but the list under "Members" is the canonical roster
-  // and should include the viewer like anyone else. When the user hasn't
-  // picked a name they still appear as "You" — visiting any group URL
-  // auto-joins the viewer as a member (the `grant_group_membership_inline`
-  // call on `/api/groups/by-route-id/<id>`), so omitting them would
-  // render an obviously-wrong "0 Members" on a group they just joined.
+  // /info is the canonical roster — the viewer is always a member
+  // (visiting the URL auto-joins them via the by-route-id read endpoint),
+  // so they always appear in the list. Other surfaces filter them out of
+  // `participantNames` so they don't see themselves in the group name;
+  // here we add them back in. `viewerLabel` falls back to "You" when no
+  // localStorage name is set so a freshly-joined nameless viewer doesn't
+  // see "0 Members".
   const currentUserName = getUserName()?.trim() || null;
   const viewerLabel = currentUserName ?? "You";
   const membersList = [...group.participantNames, viewerLabel].sort((a, b) =>
@@ -45,24 +43,17 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   );
   const totalCount = membersList.length;
 
-  // Solo case: when the viewer is the only member, treat the hero avatar
-  // and title the same way as the list — show the viewer as a normal
-  // member instead of the gray placeholder circle + "New Group" fallback.
-  // Other surfaces (home list, group page header) keep the
-  // filter-out-viewer behavior so the viewer doesn't see themselves in
-  // the group name elsewhere; /info is the canonical roster. When the
-  // viewer has no name, the hero falls through to its gray placeholder
-  // (RespondentCircles' empty-state) and the title stays "New Group" —
-  // we'd rather not invent a group name from a fallback label.
-  const isSoloViewer =
+  // Hero + title also surface the viewer in the solo case so the page
+  // doesn't render a gray placeholder + "New Group" fallback for a
+  // single-member group. Gated on a real name — we'd rather not invent a
+  // group name from "You".
+  const showViewerInHero =
     group.participantNames.length === 0 &&
-    group.anonymousRespondentCount === 0;
-  const heroNames =
-    isSoloViewer && currentUserName ? [currentUserName] : group.participantNames;
+    group.anonymousRespondentCount === 0 &&
+    currentUserName !== null;
+  const heroNames = showViewerInHero ? [currentUserName] : group.participantNames;
   const displayTitle =
-    isSoloViewer && currentUserName && !group.groupTitleOverride
-      ? currentUserName
-      : group.title;
+    showViewerInHero && !group.groupTitleOverride ? currentUserName : group.title;
 
   return (
     <>
