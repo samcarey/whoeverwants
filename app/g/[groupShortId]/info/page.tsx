@@ -8,6 +8,7 @@ import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupHeader from "@/components/GroupHeader";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
+import InitialBubble from "@/components/InitialBubble";
 import { getUserName } from "@/lib/userProfile";
 
 function GroupInfoInner() {
@@ -93,8 +94,9 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
           <ul className="divide-y divide-gray-200 dark:divide-gray-800">
             {membersList.map((name) => (
-              <li key={name} className="px-4 py-3 text-gray-900 dark:text-white">
-                {name}
+              <li key={name} className="flex items-center gap-3 px-4 py-3 text-gray-900 dark:text-white">
+                <InitialBubble name={name} className="shrink-0" />
+                <span className="min-w-0 break-words">{name}</span>
               </li>
             ))}
           </ul>

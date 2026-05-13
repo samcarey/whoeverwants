@@ -34,11 +34,11 @@ import {
   relativeTime,
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
-import { getUserInitials, getUserName } from "@/lib/userProfile";
+import { getUserName } from "@/lib/userProfile";
 import { getGroupHrefForPoll } from "@/lib/groupUtils";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
-import { ANONYMOUS_FALLBACK_COLOR, nameToColor } from "@/components/RespondentCircles";
+import InitialBubble from "@/components/InitialBubble";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import CompactNameField from "@/components/CompactNameField";
 import QuestionBallot, { type QuestionBallotHandle } from "@/components/QuestionBallot";
@@ -649,22 +649,15 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
     >
       {/* Poll-title row's left slot: creator's initials in a colored
-          circle (matching the page-header RespondentCircles look). The
-          explicit h-7 anchors the bubble at the top of row-2 — without it,
-          the grid item's default `align-items: stretch` would expand the
-          element to the full card height when expanded, vertically
-          centering the bubble in the middle of the card. */}
-      <div
-        className="col-start-1 row-start-2 mt-[4px] w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-xs select-none"
-        style={{
-          backgroundColor: wrapper?.creator_name?.trim()
-            ? nameToColor(wrapper.creator_name)
-            : ANONYMOUS_FALLBACK_COLOR,
-        }}
-        aria-hidden="true"
-      >
-        {getUserInitials(wrapper?.creator_name ?? null)}
-      </div>
+          circle. The explicit h-7 (from InitialBubble's BASE_CLASS)
+          anchors the bubble at the top of row-2 — without it, the grid
+          item's default `align-items: stretch` would expand the element
+          to the full card height when expanded, vertically centering
+          the bubble in the middle of the card. */}
+      <InitialBubble
+        name={wrapper?.creator_name ?? null}
+        className="col-start-1 row-start-2 mt-[4px]"
+      />
 
       {/* Row 1 used to hold the above-card status label; the label now lives
           in the card's footer row (see below). Creator + date moved to row 3
