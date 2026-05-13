@@ -721,27 +721,30 @@ export function CreateQuestionContent() {
   // target is removed from the front of the list, index-based keys would
   // shift survivors and force React to teardown + remount their bubble
   // bar subtree — exactly the kind of churn this whole effect is trying
-  // to avoid. WeakMap keeps the id alive for the lifetime of the DOM
-  // node and auto-clears when the node is gc'd.
-  const portalKeysRef = useRef<WeakMap<HTMLElement, string>>(new WeakMap());
-  const nextPortalKeyRef = useRef(0);
-  const keyForPortalTarget = (target: HTMLElement): string => {
-    let k = portalKeysRef.current.get(target);
-    if (k === undefined) {
-      k = String(++nextPortalKeyRef.current);
-      portalKeysRef.current.set(target, k);
-    }
-    return k;
-  };
-  const [draftPollPortals, setDraftPollPortals] = useState<HTMLElement[]>([]);
+  // to avoid. WeakMap + counter assign each DOM node a permanent id;
+  // assignment happens inside the effect's callback so refs aren't read
+  // during render.
+  const [draftPollPortals, setDraftPollPortals] = useState<Array<{ key: string; target: HTMLElement }>>([]);
   useEffect(() => {
-    const arraysShallowEqual = (a: HTMLElement[], b: HTMLElement[]) =>
-      a.length === b.length && a.every((el, i) => el === b[i]);
+    const keys = new WeakMap<HTMLElement, string>();
+    let nextKey = 0;
+    const keyFor = (target: HTMLElement): string => {
+      let k = keys.get(target);
+      if (k === undefined) {
+        k = String(++nextKey);
+        keys.set(target, k);
+      }
+      return k;
+    };
+    const entriesShallowEqual = (
+      a: Array<{ key: string; target: HTMLElement }>,
+      b: Array<{ key: string; target: HTMLElement }>,
+    ) => a.length === b.length && a.every((x, i) => x.target === b[i].target);
     const check = () => {
       const all = Array.from(
         document.querySelectorAll<HTMLElement>(`#${DRAFT_POLL_PORTAL_ID}`)
-      );
-      setDraftPollPortals(prev => (arraysShallowEqual(prev, all) ? prev : all));
+      ).map(target => ({ key: keyFor(target), target }));
+      setDraftPollPortals(prev => (entriesShallowEqual(prev, all) ? prev : all));
     };
     const observer = new MutationObserver(check);
     observer.observe(document.body, { childList: true, subtree: true });
@@ -1560,7 +1563,7 @@ export function CreateQuestionContent() {
 
   return (
     <div className="question-content">
-      {draftPollPortals.map((target) => createPortal(bubbleBar, target, keyForPortalTarget(target)))}
+      {draftPollPortals.map(({ key, target }) => createPortal(bubbleBar, target, key))}
 
       {/* New-poll bottom sheet — slides up from the bottom edge. Top half
           holds the question form; bottom half holds poll-level settings
