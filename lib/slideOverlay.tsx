@@ -40,6 +40,17 @@ const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 // redirect, route error). Keeps the user from being stranded behind a stuck
 // slide.
 const OVERLAY_SAFETY_TIMEOUT_MS = 4000;
+// rAF retries for the no-expand scroll-to-bottom (caps the wait if scrollHeight
+// never settles, e.g. data fetch error). 30 frames ≈ 500ms at 60fps, plenty for
+// the overlay's 380ms visible lifetime.
+const SCROLL_RETRY_FRAMES = 30;
+// Spread into the overlay's style when there's an expanded card. Collapses
+// GroupContent's header→first-card gap so the first card sits flush with the
+// header without needing overlay.scrollTop. See the overlayDivRef comment for
+// why scrollTop doesn't work here.
+const COLLAPSE_CARD_GAP_STYLE: React.CSSProperties = {
+  ["--group-card-gap" as string]: "0px",
+};
 
 /** Fire-and-forget: dispatch the slide event. Caller doesn't await anything;
  *  the host component handles the full lifecycle. Safe inside React event
@@ -73,6 +84,19 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
       unmountTimerRef.current = null;
     }
   };
+  // We can't use `overlay.scrollTop` to align cards with the header. The
+  // overlay's `contain: strict` (combined with its transform) makes
+  // `position: fixed` descendants behave like absolute-positioned within
+  // the overlay — they scroll with the overlay's scrollTop. Setting
+  // scrollTop=8 pulls the GroupHeader 8px above the viewport top
+  // ("top bar shifts down" on unmount). Instead we collapse the 0.5rem gap
+  // between header and first card via the `--group-card-gap` CSS variable
+  // that GroupContent's `.pb-2` paddingTop reads: with the gap at 0 in the
+  // overlay context, the first card sits at offsetTop = headerHeight
+  // (flush with the header) without any scroll. The real route keeps the
+  // 0.5rem default and reaches the same visual layout via window.scrollY,
+  // so the unmount is a no-op.
+  const overlayDivRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -112,6 +136,41 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
     router.push(state.href);
   }, [state?.phase, router]);
 
+  // The "no-expand" case (no `expandedQuestionId`) still needs the overlay
+  // to show the bottom of the content (the draft poll card area). For that
+  // case only, scroll the overlay to its scrollHeight — the GroupHeader
+  // riding along with that scroll is fine because the user isn't looking
+  // at it; they're looking at the bottom of the content where the draft
+  // form lives. For the targeted-card case, `--group-card-gap: 0px` (set
+  // on the overlay wrapper below) puts the first card flush with the
+  // header without needing any scroll.
+  const overlayMounted = state !== null;
+  const expandedQuestionId = state?.expandedQuestionId ?? null;
+  useLayoutEffect(() => {
+    if (!overlayMounted) return;
+    if (expandedQuestionId) return;
+    let cancelled = false;
+    let rafId: number | null = null;
+    let attempts = 0;
+    const scrollToBottom = () => {
+      rafId = null;
+      if (cancelled) return;
+      const o = overlayDivRef.current;
+      if (!o) return;
+      const target = Math.max(0, o.scrollHeight - o.clientHeight);
+      if (target === 0 && attempts++ < SCROLL_RETRY_FRAMES) {
+        rafId = requestAnimationFrame(scrollToBottom);
+        return;
+      }
+      if (o.scrollTop !== target) o.scrollTop = target;
+    };
+    scrollToBottom();
+    return () => {
+      cancelled = true;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [overlayMounted, expandedQuestionId]);
+
   // Unmount when either (a) the URL has flipped + slide duration has elapsed,
   // or (b) the safety timeout fires. One timer per slide; cleared on new
   // events via clearUnmountTimer.
@@ -132,7 +191,11 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
 
   return createPortal(
     <div
+      ref={overlayDivRef}
       aria-hidden="true"
+      // Inherit Geist sans; the template's font wrapper is inside
+      // ResponsiveScaling, outside the body portal target.
+      className="font-[family-name:var(--font-geist-sans)]"
       style={{
         position: "fixed",
         inset: 0,
@@ -149,6 +212,7 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
         willChange: "transform",
         contain: "strict",
         overflow: "hidden auto",
+        ...(state.expandedQuestionId ? COLLAPSE_CARD_GAP_STYLE : null),
       }}
     >
       {/* Mirrors template.tsx's wrappers around {children} for group routes
