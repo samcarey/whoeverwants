@@ -7,6 +7,7 @@ import { getGroupHrefForPoll } from "@/lib/groupUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupHeader from "@/components/GroupHeader";
+import GroupShareButton from "@/components/GroupShareButton";
 import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 
 export const dynamic = 'force-dynamic';
@@ -65,9 +66,32 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
     document.body.removeAttribute(GROUP_ID_ATTR);
   }, []);
 
+  // When mounted as the FAB's slide overlay, render the same header
+  // chrome (gray participant-avatar placeholder + Share button +
+  // tappable title block) that the destination `/g/<short_id>` route's
+  // GroupContent renders for a fresh empty group — without it, the
+  // header visibly grows + populates as the overlay unmounts, which
+  // reads as a layout shift. The Share button is given an empty
+  // routeId (no-op handler) and onTitleClick is a no-op; both real
+  // handlers come back online when the real route mounts behind us.
+  //
+  // The standalone `/g/` route (API-failure fallback path) keeps its
+  // bare header — there's no real group to share / open info on.
+  const headerProps = inOverlay
+    ? {
+        headerRef,
+        title: "New Group",
+        participantNames: [] as string[],
+        anonymousCount: 0,
+        imageUrl: null,
+        onTitleClick: () => {},
+        rightSlot: <GroupShareButton routeId="" title="New Group" />,
+      }
+    : { headerRef, title: "New Group" };
+
   return (
     <>
-      <GroupHeader headerRef={headerRef} title="New Group" />
+      <GroupHeader {...headerProps} />
       <div
         className="px-4"
         style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}

@@ -24,6 +24,11 @@ export default function GroupShareButton({ routeId, title }: GroupShareButtonPro
 
   const handleShare = useCallback(async () => {
     if (typeof window === "undefined") return;
+    // Empty routeId means the caller is rendering the button as a visual
+    // placeholder (e.g. the home FAB's overlay-slide before the real
+    // group id is known) — silently no-op rather than sharing a half-
+    // baked URL.
+    if (!routeId) return;
     const url = `${window.location.origin}/g/${encodeURIComponent(routeId)}`;
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
       try {
