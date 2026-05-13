@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, Suspense } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import {
   apiUpdateGroupTitle,
   apiUploadGroupImage,
   apiDeleteGroupImage,
 } from "@/lib/api";
-import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
+import { hasAppHistory } from "@/lib/viewTransitions";
+import { slideToGroupInfo } from "@/lib/slideOverlay";
 import { useGroup } from "@/lib/useGroup";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { type Group } from "@/lib/groupUtils";
@@ -24,7 +25,6 @@ import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
  * Remove clears any pending blob.
  */
 function Editor({ group, groupId }: { group: Group; groupId: string }) {
-  const router = useRouter();
   const [value, setValue] = useState<string>(group.groupTitleOverride ?? '');
   const [saving, setSaving] = useState(false);
 
@@ -61,8 +61,9 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
   const navigateAway = () => {
-    if (hasAppHistory()) navigateBackWithTransition();
-    else navigateWithTransition(router, `/g/${groupId}/info`, 'back');
+    // Slide overlay: mount info above this page and slide it in from the
+    // left. The overlay host fires router.back() (or push) in parallel.
+    slideToGroupInfo({ groupId, direction: 'back', useHistoryBack: hasAppHistory() });
   };
 
   const handleBack = () => {
@@ -236,14 +237,21 @@ function CameraPencilIcon() {
   );
 }
 
-function EditGroupTitleInner() {
-  const params = useParams();
-  const groupId = params.groupShortId as string;
+/** Prop-driven inner view. Exposed so the slide overlay can render this
+ *  view directly without going through useParams() (the overlay mounts
+ *  the component while the URL is still the source page). */
+export function GroupEditTitleView({ groupId }: { groupId: string }) {
   const { group, loading, error } = useGroup(groupId);
 
   if (loading) return <GroupLoading />;
   if (error || !group) return <GroupNotFound />;
   return <Editor group={group} groupId={groupId} />;
+}
+
+function EditGroupTitleInner() {
+  const params = useParams();
+  const groupId = params.groupShortId as string;
+  return <GroupEditTitleView groupId={groupId} />;
 }
 
 export default function EditGroupTitlePage() {

@@ -269,7 +269,7 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
           }
           // Overlay-slide: mount destination above current page + start CSS
           // slide on the same frame as the tap. router.push fires in parallel
-          // from inside GroupSlideOverlayHost. Eliminates the view-transitions
+          // from inside SlideOverlayHost. Eliminates the view-transitions
           // snapshot+commit cost (~250-300ms) before the first frame.
           const groupRouteId = getGroupRouteId(group);
           const targetPoll = group.targetedPoll;

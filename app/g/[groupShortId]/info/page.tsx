@@ -1,8 +1,9 @@
 "use client";
 
 import { Suspense } from "react";
-import { useRouter, useParams } from "next/navigation";
-import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
+import { useParams } from "next/navigation";
+import { hasAppHistory } from "@/lib/viewTransitions";
+import { slideToGroupRoot, slideToGroupEditTitle } from "@/lib/slideOverlay";
 import { useGroup } from "@/lib/useGroup";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupAvatar from "@/components/GroupAvatar";
@@ -12,9 +13,10 @@ import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 
-function GroupInfoInner() {
-  const params = useParams();
-  const groupId = params.groupShortId as string;
+/** Prop-driven inner view. Exposed so the slide overlay can render this
+ *  view directly without going through useParams() (the overlay mounts
+ *  the component while the URL is still the source page). */
+export function GroupInfoView({ groupId }: { groupId: string }) {
   const { group, loading, error } = useGroup(groupId);
 
   if (loading) return <GroupLoading />;
@@ -23,13 +25,15 @@ function GroupInfoInner() {
 }
 
 function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; groupId: string }) {
-  const router = useRouter();
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
   const myUserImageUrl = useMyUserImageUrl();
 
   const goBack = () => {
-    if (hasAppHistory()) navigateBackWithTransition();
-    else navigateWithTransition(router, `/g/${groupId}`, 'back');
+    // Slide overlay: mount the group root above the current page and slide
+    // it in from the left. router.back() (or .push if no in-app history)
+    // fires in parallel from the overlay host. Eliminates the
+    // view-transitions snapshot+commit wait before the first frame.
+    slideToGroupRoot({ groupId, direction: 'back', useHistoryBack: hasAppHistory() });
   };
 
   // /info is the canonical roster — the viewer is always a member
@@ -65,7 +69,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         onBack={goBack}
         rightSlot={
           <button
-            onClick={() => navigateWithTransition(router, `/g/${groupId}/edit-title`, 'forward')}
+            onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
             className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
             aria-label="Edit group title"
           >
@@ -121,6 +125,12 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
       </div>
     </>
   );
+}
+
+function GroupInfoInner() {
+  const params = useParams();
+  const groupId = params.groupShortId as string;
+  return <GroupInfoView groupId={groupId} />;
 }
 
 export default function GroupInfoPage() {
