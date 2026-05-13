@@ -841,43 +841,52 @@ npm run debug:react question-123 revisit   # Debug vote retrieval
 
 ---
 
-## Client Log Forwarding (Dev Sites Only)
+## Client Log Forwarding
 
-On dev/debug sites (`*.dev.whoeverwants.com`, `localhost`), the browser automatically forwards all `console.log/warn/error/info/debug` output plus unhandled errors/rejections to the server via `POST /api/client-logs`. Logs are stored in an in-memory ring buffer (last 2000 entries) on the API server.
+The browser forwards `console.*` output and unhandled errors/rejections to the API server via `POST /api/client-logs`. The endpoint is an in-memory ring buffer (last 10000 entries on the API server) — no disk writes, no persistence across restarts.
 
-**This is NOT active on production** (whoeverwants.com).
+**Activation rules (`lib/clientLogForwarder.ts: isLogForwardingEnabled`):**
+- **Dev hosts** (`*.dev.whoeverwants.com`, `localhost`, `127.0.0.1`) — forward EVERYTHING (`log/warn/error/info/debug` + unhandled events). Low traffic; devs want full context.
+- **Canary + prod** (`latest.whoeverwants.com`, `whoeverwants.com`) — forward `warn/error` only + unhandled events. Verbose `log/info/debug` from a busy session would otherwise churn the ring buffer faster than diagnostic entries can be read (the level filter lives in `isHighVolumeHost()`). The primary reason this is enabled on prod is to capture WKWebView-specific JS errors from the iOS TestFlight app, which loads `whoeverwants.com` directly and has no other diagnostic channel (Safari Web Inspector requires a wired Mac).
 
 ### When the user reports an issue
 
-**IMMEDIATELY check client logs** in addition to server-side logs. This is the fastest way to see what the browser was doing when the error occurred. The dev server's FE proxies `/api/*` to its in-container API, so the public URL works directly:
+**IMMEDIATELY check client logs** in addition to server-side logs. The host you query matches the tier the user was on:
 
 ```bash
-# Read recent client logs (most recent first) — slug = your branch's dev slug
-curl -s "https://<slug>.dev.whoeverwants.com/api/client-logs?limit=100" | python3 -m json.tool
-
-# Filter by level (error, warn, log, info, debug)
+# Dev (branch's per-branch dev server, Mac-hosted)
 curl -s "https://<slug>.dev.whoeverwants.com/api/client-logs?level=error&limit=50" | python3 -m json.tool
 
-# Search for specific text in log messages
-curl -s "https://<slug>.dev.whoeverwants.com/api/client-logs?search=failed&limit=50" | python3 -m json.tool
+# Canary (auto-deployed on push to main)
+curl -s "https://latest.whoeverwants.com/api/client-logs?level=error&limit=50" | python3 -m json.tool
 
-# Clear logs (useful before reproducing an issue)
-curl -s -X DELETE "https://<slug>.dev.whoeverwants.com/api/client-logs"
+# Prod (deployed only on GitHub Release)
+curl -s "https://whoeverwants.com/api/client-logs?level=error&limit=50" | python3 -m json.tool
+
+# Other useful queries (same per-tier hosts):
+#   ?search=<text>            substring filter in messages
+#   ?since=<unix-timestamp>   only entries received after this time
+#   ?limit=N                  cap (default 200, most-recent-first)
+# DELETE clears the buffer (handy before reproducing)
 ```
 
 ### Diagnostic checklist when user reports a bug
 
-1. **Client logs**: `curl 'https://<slug>.dev.whoeverwants.com/api/client-logs?level=error&limit=50'`
-2. **Server logs**: `bash scripts/remote-mac.sh "docker exec whoeverwants-dev-<slug> tail -50 /repo/api.log"`
-3. **Full client log dump**: `curl 'https://<slug>.dev.whoeverwants.com/api/client-logs?limit=200'` (includes info/debug for context)
+1. **Client logs** on the matching tier (see above).
+2. **Server logs**:
+   - Dev: `bash scripts/remote-mac.sh "docker exec whoeverwants-dev-<slug> tail -50 /repo/api.log"`
+   - Canary: `bash scripts/remote-latest.sh "docker compose logs --tail 100" /root/whoeverwants`
+   - Prod: `bash scripts/remote.sh "docker compose logs --tail 100" /root/whoeverwants`
+3. **Full client log dump** (`?limit=200`) on dev for info/debug-level context (canary/prod return warn/error only).
 
 ### How it works
 
-- `lib/clientLogForwarder.ts` patches `console.*` methods on dev sites only
-- Logs are batched every 2 seconds and sent via `navigator.sendBeacon` (survives page unloads)
-- Each entry includes: level, message, timestamp, page URL, user agent, session ID
-- Ring buffer auto-evicts entries beyond 2000 (no disk writes, no persistence across API restarts)
-- The forwarder is installed once in `app/template.tsx` on mount
+- `lib/clientLogForwarder.ts` patches `console.*` methods at module load via `installClientLogForwarder()` (called once from `app/template.tsx`).
+- Levels patched are gated by `isHighVolumeHost()`: dev = all 5 methods; canary/prod = `warn` + `error` only.
+- Unhandled `error` and `unhandledrejection` are captured on every tier where forwarding is enabled (their `level` is hard-coded to `'error'`, so the prod filter doesn't drop them).
+- Logs are batched every 2s and sent via `navigator.sendBeacon` (survives page unloads); fetches with `keepalive: true` is the fallback.
+- Each entry includes: level, message, timestamp, page URL, user agent, session ID.
+- Ring buffer is 10000 entries (raised from 2000 when prod activation landed).
 
 ---
 
@@ -1616,7 +1625,7 @@ bridge into the remote WebView.
 A GitHub Actions workflow (`.github/workflows/ios-build.yml`) runs on a
 self-hosted Mac mini runner (labels: `self-hosted, macos-mini`). The workflow:
 
-1. Resolves `CAP_SERVER_URL` from the pusher's email (`<slug>.dev.whoeverwants.com`) or uses the prod default when `CAP_ENV=prod`.
+1. Resolves `CAP_SERVER_URL`: dev builds point at `https://latest.whoeverwants.com` (the canary tier, auto-deployed on every push to main); prod builds leave it unset and capacitor.config.ts's `PROD_URL` fallback (`https://whoeverwants.com`) wins. `workflow_dispatch` accepts a `cap_server_url` input that overrides both.
 2. Computes bundle ID + display name based on `CAP_ENV` and `github.actor`.
 3. Patches `ios/App/App.xcodeproj/project.pbxproj` with the bundle ID (automatic signing ignores the xcodebuild command-line override). Fails loudly if the sed doesn't match the expected occurrence count.
 4. Runs `npm ci` → `npx cap sync ios` → archives with `xcodebuild` → exports signed `.ipa` → uploads with `xcrun altool`. All signing uses App Store Connect API key auth (`-allowProvisioningUpdates -authenticationKey*`) — no Xcode GUI login needed.
@@ -1670,6 +1679,12 @@ See `docs/ios-setup.md` for the full one-time setup walkthrough.
 - **UIWindow's default `backgroundColor` is black, which leaks as a bottom-of-screen bar if the WebView's frame doesn't fully cover the window.** `CAPBridgeViewController.loadView()` is `final` and assigns `view = webView` — you can't restructure the view hierarchy. Defenses: (a) `AppDelegate.didFinishLaunchingWithOptions` sets `window?.backgroundColor = .systemBackground` (window is non-nil here for non-UIScene apps with `UIMainStoryboardFile` in Info.plist), (b) a `MainViewController: CAPBridgeViewController` subclass overrides `viewDidLoad` to set `view.backgroundColor = .systemBackground`. Use `.systemBackground` (not `.white`) so dark-mode users don't see white safe-area zones against a near-black page. Capacitor already writes `webView.backgroundColor` + `scrollView.backgroundColor` from `capacitor.config.ts` (CAPBridgeViewController.swift L308-310) — don't redo those in the subclass.
 - **Adding a new `.swift` file requires hand-patching `project.pbxproj`.** `npx cap sync ios` doesn't pick up new native files — it only syncs web assets and plugins. Xcode's GUI handles file-add via PBXBuildFile + PBXFileReference + group children entries, but the headless CI build has no GUI. For small additions (1–2 short classes), colocate inside `ios/App/App/AppDelegate.swift` which is already in the build phase. Reserve new files for non-trivial code where colocation hurts readability.
 - **Storyboard `customClass` references use the Xcode target name as `customModule`.** `<viewController customClass="MainViewController" customModule="App" customModuleProvider="target"/>` resolves to the `MainViewController` Swift class in the `App` target. Verify with `grep "name = " ios/App/App.xcodeproj/project.pbxproj` — the target name is the source of truth. Capacitor's default scaffold uses `customModule="Capacitor"` because the bridge VC ships from the Capacitor SPM package; subclasses defined in the app target need `customModule="App"` and the `customModuleProvider="target"` attribute.
+- **Per-author dev URLs are dead — dev iOS builds must target the canary tier.** An earlier version of `ios-build.yml` derived `CAP_SERVER_URL` from `head_commit.author.email` (`<slug>.dev.whoeverwants.com`). That worked under per-author dev servers but broke silently when dev servers became per-branch (the `<email-slug>` URL still resolves DNS-wise via the wildcard Caddy frontend, but returns HTTP 503 `upstream connect error` because no upstream container is registered for that slug). The WebView loads the 503, renders nothing visible, and the user sees a white screen (light mode) or black screen (dark mode — the `view.backgroundColor = .systemBackground` showing through). Fix in this repo's history: workflow now hardcodes `https://latest.whoeverwants.com` for dev. If a new tier appears that requires per-bundle URLs again, key on `github.ref` (branch name) NOT email.
+- **TestFlight blank-screen diagnostic workflow.** Symptom: app launches, shows a solid white or black screen (color = light/dark mode default from `view.backgroundColor = .systemBackground`), no content. Before reaching for Safari Web Inspector, run this triage:
+  1. Curl the URL the iOS build points at (`https://whoeverwants.com` for prod TestFlight, `https://latest.whoeverwants.com` for dev TestFlight). Verify it returns 200 with a valid `<title>` and `<meta name="build-id">`. A 503 / 5xx here is the bug (see the per-author-URL pitfall above for the dev case).
+  2. Open the same URL in iPhone Safari on the same device. If Safari renders fine but the WebView is blank, the bug is WebView-specific (CSS / JS / Capacitor bridge) — proceed to step 3. If Safari ALSO blanks, the bug is in the web bundle currently served by that tier.
+  3. Compare deployed `build-id` between tiers — `curl -s https://whoeverwants.com | grep -oE 'build-id" content="[^"]+"'` vs the same against `latest.whoeverwants.com`. If they diverge AND the prod tier is older AND prod TestFlight is the one failing, the most likely fix is "cut a release" to promote the newer (fixed) bundle to prod — no new iOS build needed since the WebView reloads its URL on each app open. (Pattern we hit: prod blank screen was an overlay-slide regression in commit `8a60ff0` already fixed in subsequent main commits but never released to prod because the two-tier deploy was set up after the regression and no release had been cut.)
+  4. Check client logs on the matching tier (`/api/client-logs?level=error&limit=50`) — the forwarder captures unhandled errors and prod-host `warn/error` console output. See the "Client Log Forwarding" section.
 
 ---
 

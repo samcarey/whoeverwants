@@ -1,4 +1,10 @@
-"""Client-side log collection endpoint (dev/debug only)."""
+"""Client-side log collection endpoint.
+
+In-memory ring buffer of the most recent console output forwarded from
+the browser via lib/clientLogForwarder.ts. Active on every tier we ship to
+(dev / canary / production) so iOS TestFlight WebView errors can be
+diagnosed without a wired-Mac Safari Web Inspector session.
+"""
 
 import logging
 import time
@@ -12,8 +18,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/client-logs", tags=["client-logs"])
 
-# In-memory ring buffer: last 2000 log entries, auto-evicts oldest
-_LOG_BUFFER: deque[dict] = deque(maxlen=2000)
+# In-memory ring buffer: last 10000 log entries, auto-evicts oldest.
+# Raised from 2000 once log forwarding was enabled on prod/canary, where
+# concurrent users would otherwise churn the buffer faster than diagnostic
+# entries could be read. The clientLogForwarder on those tiers also filters
+# down to warn/error + unhandled events, so most of this headroom is for
+# bursty multi-user error scenarios rather than verbose console logging.
+_LOG_BUFFER: deque[dict] = deque(maxlen=10000)
 
 
 class ClientLogEntry(BaseModel):

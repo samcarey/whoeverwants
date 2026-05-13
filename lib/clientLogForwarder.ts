@@ -2,8 +2,12 @@
  * Client-side log forwarder — intercepts console.{log,warn,error,info,debug}
  * and sends them to the server for Claude to read when debugging issues.
  *
- * Only active on dev/debug sites (*.dev.whoeverwants.com, localhost).
- * Does NOT activate on production (whoeverwants.com).
+ * Active on every site we ship to (dev / canary / production). The server
+ * stores logs in a 2000-entry ring buffer that auto-evicts; no persistence,
+ * no PII surface beyond what the user's console already shows. The prod-site
+ * activation exists primarily to capture WKWebView-specific JS errors from
+ * the iOS TestFlight app, which loads whoeverwants.com directly and has no
+ * other diagnostic channel (Safari Web Inspector requires a wired Mac).
  */
 
 const BATCH_INTERVAL_MS = 2000;
@@ -23,14 +27,27 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionId: string | null = null;
 let installed = false;
 
-function isDevSite(): boolean {
+function isLogForwardingEnabled(): boolean {
   if (typeof window === 'undefined') return false;
   const host = window.location.hostname;
   return (
     host === 'localhost' ||
     host === '127.0.0.1' ||
-    host.endsWith('.dev.whoeverwants.com')
+    host.endsWith('.dev.whoeverwants.com') ||
+    host === 'latest.whoeverwants.com' ||
+    host === 'whoeverwants.com'
   );
+}
+
+// On canary + prod, only the warn/error stream + unhandled events get
+// forwarded. Verbose log/info/debug from a busy session would churn the
+// server's 10000-entry ring buffer fast and drown out the WKWebView errors
+// this is here to capture. Dev hosts forward everything (low traffic +
+// devs want full context).
+function isHighVolumeHost(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return host === 'latest.whoeverwants.com' || host === 'whoeverwants.com';
 }
 
 function getSessionId(): string {
@@ -105,11 +122,13 @@ function flush() {
  */
 export function installClientLogForwarder() {
   if (installed || typeof window === 'undefined') return;
-  if (!isDevSite()) return;
+  if (!isLogForwardingEnabled()) return;
 
   installed = true;
 
-  const levels = ['log', 'warn', 'error', 'info', 'debug'] as const;
+  const levels = isHighVolumeHost()
+    ? (['warn', 'error'] as const)
+    : (['log', 'warn', 'error', 'info', 'debug'] as const);
   for (const level of levels) {
     const original = console[level].bind(console);
     console[level] = (...args: unknown[]) => {
