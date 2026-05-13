@@ -189,11 +189,31 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
         overflow: "hidden auto",
       }}
     >
-      <GroupContent
-        key={state.groupId}
-        groupId={state.groupId}
-        initialExpandedQuestionId={state.expandedQuestionId}
-      />
+      {/* Mirror the wrappers that template.tsx puts around {children} on
+          group-like routes so the overlay's content has the exact same
+          horizontal extents as the destination route's GroupContent.
+          Without these, the route's cards are ~11px narrower than the
+          overlay's (5.6px shifts from each side), producing a visible
+          "shrink" at the moment the overlay unmounts. The values mirror
+          template.tsx's safe-area padding wrapper + max-w-4xl/-mx-4
+          wrapper exactly. */}
+      <div
+        style={{
+          paddingLeft: "max(0.35rem, env(safe-area-inset-left))",
+          paddingRight: "max(0.35rem, env(safe-area-inset-right))",
+        }}
+      >
+        <div
+          className="max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4"
+          style={{ paddingBottom: "4.5rem" }}
+        >
+          <GroupContent
+            key={state.groupId}
+            groupId={state.groupId}
+            initialExpandedQuestionId={state.expandedQuestionId}
+          />
+        </div>
+      </div>
     </div>,
     document.body,
   );
