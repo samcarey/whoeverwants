@@ -113,10 +113,6 @@ function TemplateInner({ children }: AppTemplateProps) {
     return () => window.removeEventListener('unhandledrejection', handleChunkError);
   }, []);
 
-  // The create-question chunk's idle preload now lives in
-  // `<PersistentCreatePollHost />` (mounted in `app/layout.tsx`) so it
-  // runs once per page load rather than re-scheduling on every navigation.
-
   // Initialize questionPageTitle synchronously from the question cache on group pages,
   // so the header shows the title on the very first paint after navigation
   // (avoids the h1 being empty during a view transition slide).

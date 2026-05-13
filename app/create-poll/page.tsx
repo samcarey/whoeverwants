@@ -717,6 +717,22 @@ export function CreateQuestionContent() {
   // arraysShallowEqual check), so typing / scrolling don't trigger
   // re-renders even though the listener fires on every body-subtree
   // mutation.
+  // Stable React keys per portal target (NOT positional indexes). When a
+  // target is removed from the front of the list, index-based keys would
+  // shift survivors and force React to teardown + remount their bubble
+  // bar subtree — exactly the kind of churn this whole effect is trying
+  // to avoid. WeakMap keeps the id alive for the lifetime of the DOM
+  // node and auto-clears when the node is gc'd.
+  const portalKeysRef = useRef<WeakMap<HTMLElement, string>>(new WeakMap());
+  const nextPortalKeyRef = useRef(0);
+  const keyForPortalTarget = (target: HTMLElement): string => {
+    let k = portalKeysRef.current.get(target);
+    if (k === undefined) {
+      k = String(++nextPortalKeyRef.current);
+      portalKeysRef.current.set(target, k);
+    }
+    return k;
+  };
   const [draftPollPortals, setDraftPollPortals] = useState<HTMLElement[]>([]);
   useEffect(() => {
     const arraysShallowEqual = (a: HTMLElement[], b: HTMLElement[]) =>
@@ -1517,17 +1533,11 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
-  // Category bubble bar JSX, portaled into every `#draft-poll-portal` in
-  // the DOM. During the slide-overlay transition there are two targets
-  // (overlay's + real-route's at the same screen position); rendering
-  // into both means the unmount of the overlay doesn't leave a one-frame
-  // gap where the bubble bar is detached.
   // pt-* is the gap above; pb-4 supplements the page's outer
   // paddingBottom (template.tsx) so iOS Safari's bottom URL bar
   // (~50–64px, overlays the viewport at max scroll) doesn't clip the
-  // last bubble row. env(safe-area-inset-bottom) isn't usable here —
-  // it returns 0 when the URL bar is visible (the case we need to
-  // handle) and feeds scrollHeight.
+  // last bubble row. env(safe-area-inset-bottom) isn't usable here — it
+  // returns 0 when the URL bar is visible (the case we need to handle).
   const bubbleBar = (
     <div className="px-3 pt-3 pb-4 flex flex-wrap justify-center gap-2">
       {BUBBLE_ENTRIES.map((entry) => (
@@ -1550,7 +1560,7 @@ export function CreateQuestionContent() {
 
   return (
     <div className="question-content">
-      {draftPollPortals.map((target, i) => createPortal(bubbleBar, target, String(i)))}
+      {draftPollPortals.map((target) => createPortal(bubbleBar, target, keyForPortalTarget(target)))}
 
       {/* New-poll bottom sheet — slides up from the bottom edge. Top half
           holds the question form; bottom half holds poll-level settings
