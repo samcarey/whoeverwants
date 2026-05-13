@@ -13,31 +13,12 @@ import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { apiCreateGroup } from '@/lib/api';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
 
-// Extract the import so it can be triggered independently for preloading.
-// When called a second time, the module cache returns the already-resolved module instantly.
-// Raw import — no recovery logic. Used for the speculative idle preload,
-// which must NOT reload on failure (on dev servers turbopack compiles
-// chunks on demand, so a 404 during idle is expected and transient).
-const importCreatePollRaw = () => import('@/app/create-poll/page');
-
-// Reload-on-chunk-error wrapper — used only for the actual lazy mount,
-// where a chunk miss means the user's cached build is stale after a
-// deploy and a full reload is the correct recovery.
-const importCreateQuestion = () =>
-  importCreatePollRaw().catch((err) => {
-    if (err?.name === 'ChunkLoadError' || err?.message?.includes('Failed to load chunk') || err?.message?.includes('Failed to fetch dynamically imported module')) {
-      // Guard against reload loops: only reload once per session.
-      if (typeof window !== 'undefined' && !sessionStorage.getItem('chunkReloadAttempted')) {
-        sessionStorage.setItem('chunkReloadAttempted', '1');
-        window.location.reload();
-      }
-    }
-    throw err;
-  });
-
-const LazyCreateQuestionContent = React.lazy(() =>
-  importCreateQuestion().then(m => ({ default: m.CreateQuestionContent }))
-);
+// `CreateQuestionContent` (the bubble-bar + create-poll-modal owner) is
+// mounted in `app/layout.tsx` via `<PersistentCreatePollHost />` so it
+// survives client-side navigation. Don't try to re-mount it here —
+// template.tsx re-instantiates on every route change, which would unmount
+// the component and cause the bubble bar's portal target to be briefly
+// cleared (visible as "buttons blink after slide").
 
 interface AppTemplateProps {
   children: React.ReactNode;
@@ -132,20 +113,10 @@ function TemplateInner({ children }: AppTemplateProps) {
     return () => window.removeEventListener('unhandledrejection', handleChunkError);
   }, []);
 
-  // Preload the create-question chunk during idle time so it's instant when the user taps "+".
-  // Uses the raw import + swallows errors — a failed speculative preload must NOT
-  // trigger a page reload (that was the cause of the dev-server refresh loop).
-  useEffect(() => {
-    const preload = () => { importCreatePollRaw().catch(() => {}); };
-    if ('requestIdleCallback' in window) {
-      const id = requestIdleCallback(preload, { timeout: 3000 });
-      return () => cancelIdleCallback(id);
-    } else {
-      const t = setTimeout(preload, 1500);
-      return () => clearTimeout(t);
-    }
-  }, []);
-  
+  // The create-question chunk's idle preload now lives in
+  // `<PersistentCreatePollHost />` (mounted in `app/layout.tsx`) so it
+  // runs once per page load rather than re-scheduling on every navigation.
+
   // Initialize questionPageTitle synchronously from the question cache on group pages,
   // so the header shows the title on the very first paint after navigation
   // (avoids the h1 being empty during a view transition slide).
@@ -313,22 +284,6 @@ function TemplateInner({ children }: AppTemplateProps) {
           {children}
         </div>
       </div>
-
-      {/* CreateQuestionContent owns the draft-poll-card portal AND the
-           question form modal. Mount it as soon as the app is hydrated so
-           the bubble bar is ready to portal into whichever
-           `#draft-poll-portal` appears — including the one inside the
-           slide-overlay's GroupContent (which mounts BEFORE the real
-           route commits). Gating on `isGroupLikePage` (pathname) made the
-           bubble bar appear only AFTER the slide finished, because
-           LazyCreateQuestionContent didn't mount until router.push had
-           flipped the pathname. The component renders nothing visible
-           when there's no portal target and no open modal. */}
-      {isMounted && (
-        <Suspense fallback={null}>
-          <LazyCreateQuestionContent />
-        </Suspense>
-      )}
 
       {/* Floating "+" FAB — home page only. Materializes a brand-new group
            in the DB (via apiCreateGroup) so the user can name it / share it /
