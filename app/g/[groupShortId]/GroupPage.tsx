@@ -5,7 +5,7 @@ import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyGroups } from "@/lib/simpleQuestionQueries";
-import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
+import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, EMPTY_GROUP_HINT, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
 import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
 import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
@@ -1731,18 +1731,11 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
             );
           })}
 
-        {/* Empty-group hint — matches the placeholder shown by the
-            home FAB's slide overlay so the handoff between overlay
-            and the real route is invisible. Only shown when no polls
-            exist yet. */}
         {group?.isEmpty && (
           <p className="px-4 pt-6 pb-4 text-base text-gray-700 dark:text-gray-300 text-center">
-            Create a question and then share the link!
+            {EMPTY_GROUP_HINT}
           </p>
         )}
-
-        {/* Render target for the in-progress draft poll card while the
-            create-poll panel is open. Filled by CreateQuestionContent. */}
         <div id={DRAFT_POLL_PORTAL_ID} />
       </div>
 

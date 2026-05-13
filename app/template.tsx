@@ -34,36 +34,17 @@ export default function Template({ children }: AppTemplateProps) {
   );
 }
 
-/** Home-page floating "+" FAB. Materializes a real group row via
- *  `apiCreateGroup` so the user can name it (title click → /info /
- *  /edit-title) and share its URL before any polls exist.
+/** Home-page floating "+" FAB. Slide begins on the same frame as the
+ *  tap via the overlay-slide mechanism — `navigateWithTransition` /
+ *  the View Transitions API would otherwise gate motion on the
+ *  destination route committing + signaling data-page-ready.
  *
- *  Slide starts on the SAME frame as the tap via the overlay-slide
- *  mechanism (lib/slideOverlay.tsx) — it portal-mounts the destination
- *  above the current page and animates with pure CSS, so the first
- *  frame moves on the next RAF without waiting for any route to
- *  commit. The actual `apiCreateGroup` round-trip runs in parallel;
- *  once it resolves we `router.push('/g/<short_id>')` (or `/g` on
- *  failure) and the overlay unmounts cleanly behind that URL.
- *
- *  Earlier iterations awaited the API before navigating (~200-500ms
- *  cross-host RTT on the `latest` tier), and a subsequent version
- *  used `navigateWithTransition` — but the View Transitions API
- *  gates animation start on the destination route committing +
- *  signaling `data-page-ready`, which itself adds ~300ms before any
- *  motion. The overlay-slide path eliminates both delays.
- *
- *  Edge cases:
- *    - API failure: user lands on `/g/` (empty placeholder); the
- *      bubble bar still lets them start a poll (mints a fresh group).
- *    - User submits a poll between tap and API resolve: in the small
- *      window before the URL replace lands a real route, the body's
- *      `data-group-id` attribute is unset, so submit mints a fresh
- *      group; the empty group we created shows up in the home list.
- *      Practically impossible since opening the create-poll modal +
- *      filling fields + submitting easily outlives any API round-trip.
- *
- *  In-flight guard via ref prevents double-creates on rapid taps. */
+ *  `apiCreateGroup` runs in parallel; on resolve we push the canonical
+ *  `/g/<short_id>`, on failure we fall back to `/g`. Body's
+ *  `data-group-id` is set inline so any submit during the overlay
+ *  window binds to the just-created group (the group page's own
+ *  mount effect re-sets the same value). In-flight ref prevents
+ *  double-creates on rapid taps. */
 function CreateGroupButton({ router }: { router: ReturnType<typeof useRouter> }) {
   const inFlight = useRef(false);
   const onClick = () => {
@@ -73,9 +54,6 @@ function CreateGroupButton({ router }: { router: ReturnType<typeof useRouter> })
     apiCreateGroup()
       .then((summary) => {
         const routeId = summary.short_id || summary.id;
-        // Bind any submit happening while still under the overlay to
-        // the new group. The group page's own mount effect re-sets
-        // this, so a redundant setAttribute is harmless.
         document.body.setAttribute(GROUP_ID_ATTR, summary.id);
         router.push(`/g/${routeId}`);
       })

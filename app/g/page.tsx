@@ -3,7 +3,7 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, Suspense } from "react";
 import { apiGetQuestionById, apiGetPollById } from "@/lib/api";
-import { getGroupHrefForPoll } from "@/lib/groupUtils";
+import { EMPTY_GROUP_HINT, getGroupHrefForPoll } from "@/lib/groupUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupHeader from "@/components/GroupHeader";
@@ -66,24 +66,17 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
     document.body.removeAttribute(GROUP_ID_ATTR);
   }, []);
 
-  // When mounted as the FAB's slide overlay, render the same header
-  // chrome (gray participant-avatar placeholder + Share button +
-  // tappable title block) that the destination `/g/<short_id>` route's
-  // GroupContent renders for a fresh empty group — without it, the
-  // header visibly grows + populates as the overlay unmounts, which
-  // reads as a layout shift. The Share button is given an empty
-  // routeId (no-op handler) and onTitleClick is a no-op; both real
-  // handlers come back online when the real route mounts behind us.
-  //
-  // The standalone `/g/` route (API-failure fallback path) keeps its
-  // bare header — there's no real group to share / open info on.
+  // Overlay variant mirrors GroupContent's empty-group header chrome
+  // (avatar bubble + Share button + tappable title) so the handoff
+  // doesn't shift. Real Share/onTitleClick handlers come online when
+  // the route commits behind the overlay; the placeholder buttons
+  // are inert.
   const headerProps = inOverlay
     ? {
         headerRef,
         title: "New Group",
         participantNames: [] as string[],
         anonymousCount: 0,
-        imageUrl: null,
         onTitleClick: () => {},
         rightSlot: <GroupShareButton routeId="" title="New Group" />,
       }
@@ -92,18 +85,14 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
   return (
     <>
       <GroupHeader {...headerProps} />
-      {/* The portal target deliberately has NO horizontal padding so the
-          bubble bar inside it gets the same effective width as the one
-          rendered into GroupContent's portal (which also has no px-*).
-          Mismatching outer padding here was the cause of the bubble bar
-          visibly rewrapping when the overlay handed off to the real
-          route. Padding moves onto the <p> instead. */}
+      {/* Portal target has NO horizontal padding so the bubble bar
+          inside it gets the same effective width as GroupContent's
+          portal — mismatched padding made the bubbles rewrap on
+          handoff. */}
       <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
         <p className="px-4 text-base text-gray-700 dark:text-gray-300 text-center">
-          Create a question and then share the link!
+          {EMPTY_GROUP_HINT}
         </p>
-        {/* Render target for the in-progress draft poll card while the
-            create-poll panel is open. Filled by CreateQuestionContent. */}
         <div id={DRAFT_POLL_PORTAL_ID} className="mt-4" />
       </div>
     </>

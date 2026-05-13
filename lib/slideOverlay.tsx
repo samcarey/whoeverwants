@@ -42,7 +42,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
-import { normalizePath } from "./questionId";
+import { isGroupRootView, normalizePath } from "./questionId";
 import {
   SLIDE_TO_GROUP_EVENT,
   type SlideToGroupDetail,
@@ -321,8 +321,8 @@ export function SlideOverlayHost(): React.ReactElement | null {
   // events via clearUnmountTimer.
   //
   // For the 'newGroup' kind the caller's final URL is dynamic
-  // (`/g/<short_id>` on success, `/g` on failure), so we prefix-match
-  // `/g[/...]` instead of requiring an exact `state.href` match.
+  // (`/g/<short_id>` on success, `/g` on failure), so we match any
+  // group root view instead of requiring exact `state.href` equality.
   useEffect(() => {
     if (state?.phase !== "shown") return;
     clearUnmountTimer();
@@ -330,7 +330,7 @@ export function SlideOverlayHost(): React.ReactElement | null {
     const current = normalizePath(pathname || "/");
     const urlMatches =
       state.kind.type === 'newGroup'
-        ? current === '/g' || current.startsWith('/g/')
+        ? isGroupRootView(current)
         : current === target;
     const delay = urlMatches ? SLIDE_DURATION_MS + 30 : OVERLAY_SAFETY_TIMEOUT_MS;
     unmountTimerRef.current = setTimeout(() => {
