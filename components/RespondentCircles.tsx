@@ -74,7 +74,7 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
         {circles.map((circle, i) => {
           const [cx, cy] = layout.centers[i];
           const r = layout.diameter / 2;
-          const fontSize = circle.label.length <= 1 ? r * 2 : circle.label.length <= 2 ? r : r * 0.8;
+          const fontSize = circle.label.length <= 1 ? r * 1.6 : circle.label.length <= 2 ? r : r * 0.8;
           return (
             <g key={i}>
               <circle cx={cx} cy={cy} r={r} fill={circle.fill} />
