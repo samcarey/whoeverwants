@@ -30,6 +30,7 @@ import type { DayTimeWindow } from "@/lib/types";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
+import { enterAdvancesFocus } from "@/lib/formNavigation";
 import * as questionBackTarget from "@/lib/questionBackTarget";
 import { cachePoll, getCachedGroupIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
@@ -1295,6 +1296,7 @@ export function CreateQuestionContent() {
           const trimmed = e.target.value.trim();
           if (trimmed !== title) setTitle(trimmed);
         }}
+        onKeyDown={enterAdvancesFocus}
         disabled={isLoading}
         maxLength={100}
         className="flex-1 min-w-0 text-base bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
@@ -1643,6 +1645,7 @@ export function CreateQuestionContent() {
                               const trimmed = e.target.value.trim();
                               if (trimmed !== forField) setForField(trimmed);
                             }}
+                            onKeyDown={enterAdvancesFocus}
                             disabled={isLoading}
                             maxLength={100}
                             placeholder={FOR_FIELD_PLACEHOLDERS[category] || ""}

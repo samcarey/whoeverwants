@@ -1,6 +1,7 @@
 'use client';
 
 import { useId } from 'react';
+import { enterAdvancesFocus } from '@/lib/formNavigation';
 
 interface CompactNameFieldProps {
   name: string;
@@ -23,6 +24,7 @@ export default function CompactNameField({ name, setName, disabled = false, maxL
         value={name}
         onChange={(e) => setName(e.target.value)}
         onBlur={() => setName(name.trim())}
+        onKeyDown={enterAdvancesFocus}
         disabled={disabled}
         maxLength={maxLength}
         className="flex-1 min-w-0 text-base bg-transparent text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"

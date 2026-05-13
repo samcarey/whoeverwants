@@ -5,6 +5,7 @@ import type { QuestionCategory, OptionsMetadata } from "@/lib/types";
 import type { SearchResult } from "@/lib/api";
 import AutocompleteInput from "@/components/AutocompleteInput";
 import { isAutocompleteCategory, isLocationLikeCategory } from "@/components/TypeFieldInput";
+import { enterAdvancesFocus } from "@/lib/formNavigation";
 
 export type { OptionsMetadata };
 
@@ -209,6 +210,7 @@ export default function OptionsInput({
                     const trimmed = e.target.value.trim();
                     if (trimmed !== option) updateOption(index, trimmed);
                   }}
+                  onKeyDown={enterAdvancesFocus}
                   disabled={isLoading}
                   maxLength={35}
                   className={inputClassName(isDuplicate)}
