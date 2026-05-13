@@ -166,7 +166,7 @@ export default function GroupListItem(props: GroupListItemProps) {
           />
         )}
 
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 -ml-[3px] pr-4">
           {/* Row 1: title (left, truncates) + draft pill / "5m ago" (right) */}
           <div className="flex items-baseline gap-2">
             <h3
