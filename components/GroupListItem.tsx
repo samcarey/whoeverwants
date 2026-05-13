@@ -28,8 +28,13 @@ export interface GroupListItemProps {
   anonymousRespondentCount: number;
   /** When set, "N min ago" appears in the metadata row; omit for drafts. */
   createdAt?: string | null;
-  /** When set, a single-unit compact countdown renders in the left column. */
+  /** When set, the left column renders a countdown to this timestamp. */
   soonestUnvotedDeadline?: string | null;
+  /** Drives the left column's display: 'response' → green compact countdown,
+   *  'prephase' → blue compact countdown (suggestion / availability timer
+   *  is ticking), 'prephase-pending' → solid blue circle (suggestions open
+   *  but timer hasn't started). undefined → empty slot. */
+  unvotedDeadlineKind?: 'prephase' | 'response' | 'prephase-pending';
   hasUnvoted?: boolean;
   pressed?: boolean;
   draftMode?: boolean;
@@ -68,6 +73,7 @@ export default function GroupListItem(props: GroupListItemProps) {
     anonymousRespondentCount,
     createdAt,
     soonestUnvotedDeadline,
+    unvotedDeadlineKind,
     hasUnvoted = false,
     pressed = false,
     draftMode = false,
@@ -105,7 +111,7 @@ export default function GroupListItem(props: GroupListItemProps) {
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         onTouchMove={onTouchMove}
-        className={`flex gap-3 ${draftMode ? 'pl-2' : 'pl-px'} pr-3 py-3 select-none relative transition-colors duration-500 ease-out ${
+        className={`flex gap-3 ${draftMode ? 'pl-2' : 'pl-[1.4px]'} pr-3 py-3 select-none relative transition-colors duration-500 ease-out ${
           pressed ? 'bg-blue-50 dark:bg-blue-900/30' : ''
         } ${
           onClick
@@ -141,24 +147,42 @@ export default function GroupListItem(props: GroupListItemProps) {
 
         {/* Fixed-width countdown column, left of the avatar. Always
             reserved when an avatar is rendered so indentation is consistent
-            whether the row has an active deadline or not. The negative
+            whether the row has an active cutoff or not. The negative
             right-margin shrinks the effective gap between this column and
-            the avatar to 1.5px (the row's gap-3 is 12px; -mr-[10.5px]
-            subtracts 10.5px). Shows a single-unit countdown to the soonest
-            unvoted deadline — replaces the older unread-count badge AND
-            the lower-right countdown that used to live inside the body. */}
+            the avatar to 1.35px (the row's gap-3 is 12px; -mr-[10.65px]
+            subtracts 10.65px). Three states driven by `unvotedDeadlineKind`:
+              - 'response':         green compact countdown (voting cutoff)
+              - 'prephase':         blue compact countdown (suggestion /
+                                    availability timer running)
+              - 'prephase-pending': solid blue dot (suggestions open, timer
+                                    not yet started — no scheduled time
+                                    to render in a single-glyph column)
+            On expiry the countdown clears to empty instead of "Expired" —
+            the parent's `isOpen` filter unmounts the row a tick later, so
+            no stray "Expired" word should flash through this slot. */}
         {!hideRespondents && (
-          <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-[10.5px]">
-            {soonestUnvotedDeadline && (
-              <span className="text-xs">
+          <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-[10.65px]">
+            {soonestUnvotedDeadline && unvotedDeadlineKind && unvotedDeadlineKind !== 'prephase-pending' && (
+              <span className="text-lg">
                 <ClientOnly fallback={null}>
                   <SimpleCountdown
                     deadline={soonestUnvotedDeadline}
                     compact
-                    colorClass="text-green-600 dark:text-green-400"
+                    blankOnExpire
+                    colorClass={
+                      unvotedDeadlineKind === 'prephase'
+                        ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-green-600 dark:text-green-400'
+                    }
                   />
                 </ClientOnly>
               </span>
+            )}
+            {unvotedDeadlineKind === 'prephase-pending' && !soonestUnvotedDeadline && (
+              <span
+                aria-label="Suggestions open"
+                className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 dark:bg-blue-400"
+              />
             )}
           </div>
         )}
