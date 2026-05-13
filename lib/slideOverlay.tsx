@@ -51,6 +51,7 @@ import {
 import { GroupContent } from "@/app/g/[groupShortId]/GroupPage";
 import { GroupInfoView } from "@/app/g/[groupShortId]/info/page";
 import { GroupEditTitleView } from "@/app/g/[groupShortId]/edit-title/page";
+import { EmptyPlaceholder } from "@/app/g/page";
 
 const SLIDE_DURATION_MS = 350; // iOS push duration. Tune here only.
 const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
@@ -132,6 +133,20 @@ export function slideToGroupEditTitle({
   });
 }
 
+/** Slide-in the "New Group" empty placeholder. Caller (the home "+" FAB)
+ *  fires `apiCreateGroup` in parallel, then `router.push('/g/<short_id>')`
+ *  on success or `router.push('/g')` on failure. The host skips its
+ *  automatic router.push for this kind so the destination URL is decided
+ *  by the caller once the API resolves. Unmount predicate prefix-matches
+ *  any `/g[/...]` path so both outcomes unmount cleanly. */
+export function slideToNewGroup(): void {
+  dispatchSlide({
+    href: '/g',
+    direction: 'forward',
+    kind: { type: 'newGroup' },
+  });
+}
+
 /** Slide-in the group root (e.g. back from /info to /g/<id>). The `back`
  *  direction is typical, but the forward variant is supported too. */
 export function slideToGroupRoot({
@@ -173,6 +188,8 @@ function renderForKind(kind: SlideOverlayKind): React.ReactNode {
       return <GroupInfoView key={kind.groupId} groupId={kind.groupId} />;
     case 'groupEditTitle':
       return <GroupEditTitleView key={kind.groupId} groupId={kind.groupId} />;
+    case 'newGroup':
+      return <EmptyPlaceholder inOverlay />;
   }
 }
 
@@ -242,8 +259,18 @@ export function SlideOverlayHost(): React.ReactElement | null {
   // Fire router.push (or router.back) once the slide has begun. Deferring
   // out of the event handler keeps the slide's first paint off the critical
   // path of router's internal commit work.
+  //
+  // Skipped for the 'newGroup' kind — the FAB fires its own router.push
+  // once `apiCreateGroup` resolves (so the URL is the real `/g/<short_id>`
+  // form rather than the placeholder `/g`). The slide still plays
+  // immediately because the overlay handles the animation; the URL just
+  // catches up a moment later.
   useEffect(() => {
     if (state?.phase !== "shown" || pushedRef.current) return;
+    if (state.kind.type === 'newGroup') {
+      pushedRef.current = true;
+      return;
+    }
     pushedRef.current = true;
     if (state.useHistoryBack) {
       router.back();
@@ -292,11 +319,19 @@ export function SlideOverlayHost(): React.ReactElement | null {
   // Unmount when either (a) the URL has flipped + slide duration has elapsed,
   // or (b) the safety timeout fires. One timer per slide; cleared on new
   // events via clearUnmountTimer.
+  //
+  // For the 'newGroup' kind the caller's final URL is dynamic
+  // (`/g/<short_id>` on success, `/g` on failure), so we prefix-match
+  // `/g[/...]` instead of requiring an exact `state.href` match.
   useEffect(() => {
     if (state?.phase !== "shown") return;
     clearUnmountTimer();
     const target = normalizePath(new URL(state.href, window.location.origin).pathname);
-    const urlMatches = normalizePath(pathname || "/") === target;
+    const current = normalizePath(pathname || "/");
+    const urlMatches =
+      state.kind.type === 'newGroup'
+        ? current === '/g' || current.startsWith('/g/')
+        : current === target;
     const delay = urlMatches ? SLIDE_DURATION_MS + 30 : OVERLAY_SAFETY_TIMEOUT_MS;
     unmountTimerRef.current = setTimeout(() => {
       unmountTimerRef.current = null;
