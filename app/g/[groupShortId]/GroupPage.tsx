@@ -1631,8 +1631,10 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         rightSlot={<GroupShareButton routeId={groupId} title={group.title} />}
       />
 
-      {/* paddingTop reserves space for the fixed header above. */}
-      <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
+      {/* paddingTop reserves space for the fixed header above. The 0.5rem
+          gap is set via the `--group-card-gap` custom property so the
+          slide overlay can collapse it to 0 — see lib/slideOverlay.tsx. */}
+      <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + var(--group-card-gap, 0.5rem))` }}>
         {groupedGroupQuestions.map((group) => {
             // Virtualized window: groups outside ±2 viewport heights of the
             // visible region render as a measured-height placeholder div. The
