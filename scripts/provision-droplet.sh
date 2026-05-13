@@ -21,10 +21,42 @@ API_TOKEN="${1:?Usage: provision-droplet.sh <API_TOKEN>}"
 DROPLET_IP=$(hostname -I | awk '{print $1}')
 DROPLET_IP_DASHED=$(echo "$DROPLET_IP" | tr '.' '-')
 
+# DROPLET_LABEL selects between deployment tiers. Same provision script for both:
+#   ""       (default) → production: api.whoeverwants.com, hooks.api.whoeverwants.com
+#   "latest"           → pre-prod canary: api.latest.whoeverwants.com, hooks.api.latest.whoeverwants.com
+# Both tiers run identical software; only the public hostnames Caddy serves differ.
+DROPLET_LABEL="${DROPLET_LABEL:-}"
+case "$DROPLET_LABEL" in
+  "")
+    API_DOMAIN="api.whoeverwants.com"
+    HOOKS_DOMAIN="hooks.api.whoeverwants.com"
+    HOSTNAME_VALUE="whoeverwants"
+    ;;
+  latest)
+    API_DOMAIN="api.latest.whoeverwants.com"
+    HOOKS_DOMAIN="hooks.api.latest.whoeverwants.com"
+    HOSTNAME_VALUE="latest"
+    ;;
+  *)
+    echo "ERROR: DROPLET_LABEL='$DROPLET_LABEL' is not recognized (use '' or 'latest')" >&2
+    exit 1
+    ;;
+esac
+
 echo "=== Provisioning WhoeverWants droplet ==="
+echo "Label: ${DROPLET_LABEL:-(prod)}"
 echo "IP: $DROPLET_IP"
 echo "sslip.io domain: ${DROPLET_IP_DASHED}.sslip.io"
+echo "API domain: $API_DOMAIN"
+echo "Hooks domain: $HOOKS_DOMAIN"
 echo ""
+
+# Set hostname so console / logs make the tier obvious.
+hostnamectl set-hostname "$HOSTNAME_VALUE" || true
+
+# Persist the deployment label so dev-webhook.py + other tooling can branch on it.
+echo "${DROPLET_LABEL}" > /etc/droplet-label
+chmod 644 /etc/droplet-label
 
 # ── 1. System updates ────────────────────────────────────────────────
 echo "=== 1a/13 System updates ==="
@@ -208,7 +240,7 @@ ${DROPLET_IP_DASHED}.sslip.io {
 	reverse_proxy 127.0.0.1:9090
 }
 
-api.whoeverwants.com {
+${API_DOMAIN} {
 	@options method OPTIONS
 	handle @options {
 		header Access-Control-Allow-Origin *
@@ -220,7 +252,7 @@ api.whoeverwants.com {
 	reverse_proxy 127.0.0.1:8000
 }
 
-hooks.api.whoeverwants.com {
+${HOOKS_DOMAIN} {
 	reverse_proxy 127.0.0.1:9091
 }
 
@@ -421,9 +453,13 @@ echo "Webhook secret (for GitHub webhook config):"
 cat /etc/dev-webhook-secret
 echo ""
 echo "DNS records needed:"
-echo "  *.dev.whoeverwants.com  A  ${DROPLET_IP}"
+echo "  ${API_DOMAIN}    A  ${DROPLET_IP}"
+echo "  ${HOOKS_DOMAIN}  A  ${DROPLET_IP}"
+if [ -z "$DROPLET_LABEL" ]; then
+  echo "  *.dev.whoeverwants.com  A  ${DROPLET_IP}  (legacy; dev servers now run on Mac mini)"
+fi
 echo ""
 echo "GitHub webhook URL:"
-echo "  https://hooks.api.whoeverwants.com/github"
+echo "  https://${HOOKS_DOMAIN}/github"
 echo ""
 echo "IMPORTANT: Never commit the API token or webhook secret to git."
