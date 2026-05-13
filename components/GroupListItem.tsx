@@ -96,7 +96,7 @@ export default function GroupListItem(props: GroupListItemProps) {
   return (
     <div
       data-group-root-id={groupRootId}
-      className={`mx-1.5 transition-colors duration-500 ease-out ${
+      className={`${draftMode ? 'mx-1.5' : 'mr-1.5'} transition-colors duration-500 ease-out ${
         showDraftChrome
           ? `${isFirst ? 'border-t' : ''} border-b border-dashed border-blue-400 dark:border-blue-500`
           : ''
@@ -107,7 +107,7 @@ export default function GroupListItem(props: GroupListItemProps) {
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         onTouchMove={onTouchMove}
-        className={`flex gap-3 pl-2 pr-3 py-3 select-none relative transition-colors duration-500 ease-out ${
+        className={`flex gap-3 ${draftMode ? 'pl-2' : ''} pr-3 py-3 select-none relative transition-colors duration-500 ease-out ${
           pressed ? 'bg-blue-50 dark:bg-blue-900/30' : ''
         } ${
           onClick
@@ -145,9 +145,9 @@ export default function GroupListItem(props: GroupListItemProps) {
             reserved when an avatar is rendered so indentation is consistent
             whether the row has unread items or not. The negative right-margin
             shrinks the effective gap between this column and the avatar to
-            3px (the row's gap-3 is 12px; -mr-[9px] subtracts 9px). */}
+            1.5px (the row's gap-3 is 12px; -mr-[10.5px] subtracts 10.5px). */}
         {!hideRespondents && (
-          <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-[9px]">
+          <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-[10.5px]">
             {hasUnvoted && unvotedCount > 0 && (
               <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
                 {unvotedCount}
