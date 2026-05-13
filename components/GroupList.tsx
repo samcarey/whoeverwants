@@ -1,15 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { GroupSummary, Poll } from "@/lib/types";
-import { buildGroups, getGroupHref, isPendingPollId, Group } from "@/lib/groupUtils";
+import { buildGroups, getGroupHref, getGroupRouteId, isPendingPollId, Group } from "@/lib/groupUtils";
 import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
 import GroupListItem from "@/components/GroupListItem";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import HeaderPortal from "@/components/HeaderPortal";
 import { usePrefetch } from "@/lib/prefetch";
-import { navigateWithTransition } from "@/lib/viewTransitions";
+import { slideToGroup } from "@/lib/slideOverlay";
 import { apiGetVotes, apiGetQuestionResults } from "@/lib/api";
 import { forgetGroup } from "@/lib/forgetQuestion";
 import { HOME_SELECTION_MODE_CHANGE_EVENT } from "@/lib/eventChannels";
@@ -35,7 +34,6 @@ interface GroupListProps {
 const LONG_PRESS_MS = 500;
 
 export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }: GroupListProps) {
-  const router = useRouter();
   const { prefetchBatch } = usePrefetch();
   // Load voted/abstained synchronously so the very first render's
   // buildGroups call sees the real voted state. Initializing these as
@@ -267,13 +265,16 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
         const handleActivate = () => {
           if (selectionMode) {
             toggleGroupSelection(groupKey);
-          } else {
-            // `getGroupHref` returns `/g/<root>?p=<target>` when the group has
-            // awaiting work, else `/g/<root>` — the URL itself encodes whether
-            // to auto-expand a poll, replacing the old `?group=1` +
-            // `suppressExpand` heuristic.
-            navigateWithTransition(router, href, 'forward');
+            return;
           }
+          // Overlay-slide: mount destination above current page + start CSS
+          // slide on the same frame as the tap. router.push fires in parallel
+          // from inside GroupSlideOverlayHost. Eliminates the view-transitions
+          // snapshot+commit cost (~250-300ms) before the first frame.
+          const groupRouteId = getGroupRouteId(group);
+          const targetPoll = group.targetedPoll;
+          const expandedQuestionId = targetPoll?.questions[0]?.id ?? null;
+          slideToGroup({ href, groupId: groupRouteId, expandedQuestionId });
         };
 
         const handleClick = () => {

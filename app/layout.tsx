@@ -5,6 +5,7 @@ import Link from "next/link";
 import "./globals.css";
 import CommitInfo from "@/components/CommitInfo";
 import ResponsiveScaling from "@/components/ResponsiveScaling";
+import { GroupSlideOverlayHost } from "@/lib/slideOverlay";
 
 
 export const metadata: Metadata = {
@@ -101,9 +102,17 @@ export default function RootLayout({
         
         {/* Header elements rendered outside scaling to maintain proper positioning */}
         <div id="header-portal"></div>
-        
+
         {/* Floating "+" FAB rendered outside scaling to maintain proper positioning */}
         <div id="floating-fab-portal"></div>
+
+        {/* iOS-style overlay-slide for instant home→group navigation.
+            Lives in the root layout (NOT template) because template.tsx
+            mounts a new instance on every navigation — that would unmount
+            the overlay the moment router.push commits. The layout
+            persists across routes, so the overlay survives the route
+            change and stays visible until its slide animation finishes. */}
+        <GroupSlideOverlayHost />
         <script
           dangerouslySetInnerHTML={{
             __html: `
