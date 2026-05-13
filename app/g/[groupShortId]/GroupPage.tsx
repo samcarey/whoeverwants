@@ -106,9 +106,23 @@ function rebuildGroupFromCacheOrPrev(
     groupId ? p.group_id === groupId : p.id === prev.rootPollId,
   );
   if (polls.length === 0) return prev;
-  // When transitioning from empty group (no rootPollId) to populated,
-  // anchor on the just-added poll.
-  const anchorPollId = prev.rootPollId ?? polls[0].id;
+  // Anchor selection: prefer the existing chain root, but fall through to
+  // `polls[0].id` when that root isn't in the rebuilt list. Two cases hit
+  // the fallback:
+  //   1. Empty group → first poll (prev.rootPollId is null).
+  //   2. The only poll in the group is being swapped (POLL_HYDRATED with
+  //      mutate.remove === prev.rootPollId): the placeholder was the
+  //      root, and the real poll is taking its place. Without the
+  //      `polls.some(...)` check we'd anchor on the just-removed
+  //      placeholder id, buildGroupFromPollDown returns null, and the
+  //      rebuild bails to prev — leaving the placeholder in group.polls
+  //      with its key dropped from mountedGroupKeys (so the card renders
+  //      as a gray spacer div). Symptom: "space appears but the poll
+  //      doesn't show up until refresh."
+  const anchorPollId =
+    prev.rootPollId && polls.some((p) => p.id === prev.rootPollId)
+      ? prev.rootPollId
+      : polls[0].id;
   const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
   const rebuilt = buildGroupFromPollDown(anchorPollId, polls, voted, abstained);
   if (!rebuilt) return prev;
