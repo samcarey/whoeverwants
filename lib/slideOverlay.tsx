@@ -369,16 +369,24 @@ export function SlideOverlayHost(): React.ReactElement | null {
           </div>
         </div>
       ) : (
-        /* Info / edit-title routes render their own fixed GroupHeader and
-            their own content max-w-4xl + paddingTop. Template only wraps them
-            with safe-area horizontal padding, so the overlay does the same. */
+        /* Info / edit-title render their own fixed GroupHeader and their own
+            content max-w-4xl + paddingTop. The destination route's template
+            ALSO wraps their content in `max-w-4xl mx-auto px-4 pb-6` (the
+            non-isGroupLikePage branch in template.tsx). Mirroring that here
+            keeps the inner `max-w-4xl mx-auto px-4` on the info/edit-title
+            content in lockstep with the real route — without it, the
+            overlay's content gets ~26px more horizontal room than the
+            destination, visible as a rightward shift on unmount as the
+            template's extra px-4 kicks in. */
         <div
           style={{
             paddingLeft: "max(0.35rem, env(safe-area-inset-left))",
             paddingRight: "max(0.35rem, env(safe-area-inset-right))",
           }}
         >
-          {renderForKind(state.kind)}
+          <div className="max-w-4xl mx-auto px-4 pb-6">
+            {renderForKind(state.kind)}
+          </div>
         </div>
       )}
     </div>,
