@@ -49,3 +49,17 @@ export const HOME_SELECTION_MODE_CHANGE_EVENT = 'homeSelectionModeChange';
 export interface HomeSelectionModeChangeDetail {
   active: boolean;
 }
+
+/** Fired by `slideToGroup()` to ask `GroupSlideOverlayHost` to mount the
+ *  destination overlay + run the slide-in animation. The host calls
+ *  `router.push(href)` in parallel so the URL/history catch up while the
+ *  CSS slide plays — see `lib/slideOverlay.tsx` for the full lifecycle. */
+export const SLIDE_TO_GROUP_EVENT = 'slideToGroup';
+export interface SlideToGroupDetail {
+  /** Canonical destination href, e.g. `/g/abc?p=xyz`. */
+  href: string;
+  /** Group route id (groups.short_id or root poll short_id). */
+  groupId: string;
+  /** Initial-expanded question id (resolved from `?p=`). */
+  expandedQuestionId: string | null;
+}

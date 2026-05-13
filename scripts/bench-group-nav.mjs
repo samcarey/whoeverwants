@@ -87,98 +87,6 @@ function normalize(path) {
   return path.replace(/\/$/, '') || '/';
 }
 
-/** Measure click→ready inside the browser. The target path is discovered
- *  from the element's onClick destination (we read it from the home page's
- *  React state via a window-side helper, but simpler: just trigger the
- *  click and observe the URL flip + data-page-ready transition). */
-async function measureClickToReady(page, clickSelector) {
-  return page.evaluate(({ clickSelector, timeoutMs }) => new Promise((resolve, reject) => {
-    const el = document.querySelector(clickSelector);
-    if (!el) { reject(new Error('element not found: ' + clickSelector)); return; }
-
-    const startPath = window.location.pathname.replace(/\/$/, '') || '/';
-    const startReady = document.documentElement.getAttribute('data-page-ready');
-    let urlFlipAt = null;
-    let readyAt = null;
-    let firstFrameAt = null;
-    let transitionStartedAt = null;
-    let transitionDoneAt = null;
-    let sawDirection = false;
-
-    const pathNow = () => window.location.pathname.replace(/\/$/, '') || '/';
-    const readyNow = () => document.documentElement.getAttribute('data-page-ready');
-    const directionNow = () => document.documentElement.getAttribute('data-nav-direction');
-
-    const tryFinish = () => {
-      const now = performance.now() - start;
-      // URL flip: pathname changed from start
-      if (urlFlipAt == null && pathNow() !== startPath) {
-        urlFlipAt = now;
-      }
-      // Ready: data-page-ready matches the new (post-flip) path
-      if (readyAt == null && urlFlipAt != null) {
-        const curPath = pathNow();
-        if (readyNow() === curPath && readyNow() !== startReady) {
-          readyAt = now;
-        }
-      }
-      // Transition done: direction attr cleared after having been set
-      if (transitionDoneAt == null) {
-        if (sawDirection && !directionNow()) {
-          transitionDoneAt = now;
-        } else if (!sawDirection && readyAt != null && now - readyAt > 50) {
-          // No transition observed; treat done as ready
-          transitionDoneAt = readyAt;
-        }
-      }
-      if (readyAt != null && transitionDoneAt != null) {
-        cleanup();
-        resolve({
-          clickToUrl: urlFlipAt,
-          clickToReady: readyAt,
-          readyAfterUrl: urlFlipAt != null ? readyAt - urlFlipAt : null,
-          clickToTransitionDone: transitionDoneAt,
-          transitionAnimation: sawDirection ? (transitionDoneAt - readyAt) : 0,
-          clickToFirstFrame: firstFrameAt,
-        });
-      }
-    };
-
-    const obs = new MutationObserver(tryFinish);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-page-ready'] });
-    const obsDir = new MutationObserver(() => {
-      if (directionNow()) {
-        sawDirection = true;
-        if (transitionStartedAt == null) transitionStartedAt = performance.now() - start;
-      }
-      tryFinish();
-    });
-    obsDir.observe(document.documentElement, { attributes: true, attributeFilter: ['data-nav-direction'] });
-    const urlPoll = setInterval(tryFinish, 25);
-
-    // Capture first painted frame after click via rAF chain
-    requestAnimationFrame(() => {
-      firstFrameAt = performance.now() - start;
-    });
-
-    const timeoutId = setTimeout(() => {
-      cleanup();
-      reject(new Error(`Timed out. startPath=${startPath} path=${pathNow()} ready=${readyNow()} dir=${directionNow()}`));
-    }, timeoutMs);
-
-    const cleanup = () => {
-      obs.disconnect();
-      obsDir.disconnect();
-      clearInterval(urlPoll);
-      clearTimeout(timeoutId);
-    };
-
-    const start = performance.now();
-    if (directionNow()) sawDirection = true;
-    el.click();
-  }), { clickSelector, timeoutMs: 30_000 });
-}
-
 function printTable(rows) {
   const cols = ['metric', 'n', 'min', 'p50', 'mean', 'p90', 'max'];
   const widths = cols.map((c) => c.length);
@@ -265,15 +173,7 @@ async function main() {
     const cards = await page.$$('[data-group-root-id]');
     if (cards.length === 0) throw new Error('No group cards visible');
     const idx = i % cards.length;
-    const handle = cards[idx];
-    const selector = `[data-group-root-id]:nth-of-type(${idx + 1})`;
-    // The home page renders GroupListItem which wraps the click handler on
-    // a div inside the [data-group-root-id] container. Click the container.
     try {
-      const m = await page.evaluate((el) => {
-        // Find the actual clickable card div (the GroupListItem container)
-        return el ? true : false;
-      }, handle);
       const measureResult = await page.evaluate(async ({ idx }) => {
         const targets = document.querySelectorAll('[data-group-root-id]');
         const el = targets[idx];

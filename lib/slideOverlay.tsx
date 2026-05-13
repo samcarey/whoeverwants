@@ -1,115 +1,100 @@
 "use client";
 
 /**
- * Overlay-slide navigation: instant-feeling iOS-style push transitions.
+ * Overlay-slide navigation for instant home→group transitions.
  *
- * Why this exists: the View Transitions API gates the animation start on the
- * destination route being committed + `data-page-ready`. Even with a warm
- * cache (which makes the destination render in <10ms), `router.push` +
- * snapshot capture costs ~250-400ms before the first frame of the slide can
- * appear. That feels like "click → pause → slide" instead of "click → slide".
- *
- * This module mounts the destination as an overlay portal-rendered above the
- * current page, slides it in from the right via a pure CSS transform (no
- * snapshot involved), and only AFTER the slide animation has started calls
- * `router.push` so the URL/history catches up in the background. The user
- * perceives the slide beginning on the same frame as their tap.
+ * The View Transitions API gates animation start on the destination route
+ * being committed + signaling `data-page-ready`; even with a warm cache that
+ * adds ~300ms of router.push + snapshot work before the first frame moves.
+ * This module renders the destination as a portal-mounted overlay above the
+ * current page and slides it in via pure CSS transform, then fires
+ * `router.push` in parallel so URL/history catch up while the slide plays.
  *
  * Lifecycle:
- *   1. Caller invokes `slideToGroup({ href, groupId, expandedQuestionId })`.
- *   2. <GroupSlideOverlayHost/> (mounted in app/template.tsx) receives the
- *      event, sets state to `{ phase: 'enter' }`, the overlay mounts with
- *      `transform: translate3d(100%, 0, 0)`.
- *   3. Next frame: phase flips to 'shown' → CSS transitions to `translate3d(0)`.
- *   4. Same tick the host calls `router.push(href)` to update URL + commit
- *      Next.js navigation in the background.
- *   5. When `usePathname()` matches the destination, the host unmounts the
- *      overlay — the real route is now the source of truth.
- *
- * The overlay's GroupContent reads from the same in-memory caches as the
- * route, so its first paint matches what the route renders. Duplicate API
- * calls during the brief overlap are deduped by the `coalesced()` helper
- * in `lib/api/_internal.ts`.
+ *   1. Caller invokes `slideToGroup(...)` (or dispatches `SLIDE_TO_GROUP_EVENT`).
+ *   2. Host receives the event, sets phase='enter' (overlay mounts at
+ *      translateX(100%), transition:none).
+ *   3. Double-rAF flips phase='shown' → CSS transition kicks in toward
+ *      translateX(0). Single rAF can land in the same paint pass as the
+ *      mount commit on some engines and skip the transition.
+ *   4. The same render pass fires `router.push(href)`.
+ *   5. Once `usePathname()` matches the destination AND the slide duration
+ *      has elapsed, the overlay unmounts — the real route is now visible
+ *      underneath with identical content (both renders read from
+ *      `questionCache`, deduped via `coalesced()`).
  */
 
 import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { normalizePath } from "./questionId";
+import {
+  SLIDE_TO_GROUP_EVENT,
+  type SlideToGroupDetail,
+} from "./eventChannels";
 import { GroupContent } from "@/app/g/[groupShortId]/GroupPage";
 
-export const SLIDE_TO_GROUP_EVENT = "__slide:to-group";
 const SLIDE_DURATION_MS = 350; // iOS push duration. Tune here only.
 const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
-
-export interface SlideToGroupOptions {
-  /** Canonical destination href, e.g. `/g/abc?p=xyz`. */
-  href: string;
-  /** Group route id (groups.short_id or root poll short_id). */
-  groupId: string;
-  /** Initial-expanded question id (resolved from `?p=`). */
-  expandedQuestionId: string | null;
-}
+// Hard upper bound on overlay lifetime if pathname never matches (unexpected
+// redirect, route error). Keeps the user from being stranded behind a stuck
+// slide.
+const OVERLAY_SAFETY_TIMEOUT_MS = 4000;
 
 /** Fire-and-forget: dispatch the slide event. Caller doesn't await anything;
- *  the host component handles the full lifecycle. Safe to call from inside
- *  React event handlers — it does not synchronously update React state. */
-export function slideToGroup(opts: SlideToGroupOptions): void {
+ *  the host component handles the full lifecycle. Safe inside React event
+ *  handlers — does not synchronously update React state. */
+export function slideToGroup(detail: SlideToGroupDetail): void {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(SLIDE_TO_GROUP_EVENT, { detail: opts }));
+  window.dispatchEvent(new CustomEvent(SLIDE_TO_GROUP_EVENT, { detail }));
 }
 
-interface OverlayState {
-  href: string;
-  groupId: string;
-  expandedQuestionId: string | null;
-  /** 'enter' = freshly mounted at translateX(100%); 'shown' = transitioning to 0;
-   *  'done' = transition complete, awaiting route commit + unmount. */
-  phase: "enter" | "shown" | "done";
+interface OverlayState extends SlideToGroupDetail {
+  phase: "enter" | "shown";
 }
 
-/** Host component that listens for slide events and renders the overlay.
- *  Mount it once at the layout/template level (above any route content). */
+/** Mount once at layout level (NOT template — template re-instances per
+ *  navigation, which would unmount the overlay mid-slide). */
 export function GroupSlideOverlayHost(): React.ReactElement | null {
   const router = useRouter();
   const pathname = usePathname();
   const [state, setState] = useState<OverlayState | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
-  // True for the brief window between firing slideToGroup and Next.js
-  // committing the new route. Holds onto the overlay until the route lands.
+  // Guards against the push effect re-firing if state.href changes while
+  // phase is still 'shown' (only happens if a new slide event arrives
+  // mid-slide; that resets phase to 'enter' first, clearing the ref).
   const pushedRef = useRef(false);
+  // Single ref-tracked timer covers both the pathname-match unmount and the
+  // safety unmount. Cleared on every new slide event so a previous slide's
+  // pending unmount can't null out the new state mid-flight.
+  const unmountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearUnmountTimer = () => {
+    if (unmountTimerRef.current !== null) {
+      clearTimeout(unmountTimerRef.current);
+      unmountTimerRef.current = null;
+    }
+  };
 
-  useEffect(() => { setIsMounted(true); }, []);
-
-  // Event listener: arm a new overlay.
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<SlideToGroupOptions>).detail;
+      const detail = (e as CustomEvent<SlideToGroupDetail>).detail;
       if (!detail) return;
-      // Reset push tracker — a previous slide that never fully resolved must
-      // not block this one.
+      clearUnmountTimer();
       pushedRef.current = false;
-      setState({
-        href: detail.href,
-        groupId: detail.groupId,
-        expandedQuestionId: detail.expandedQuestionId,
-        phase: "enter",
-      });
+      setState({ ...detail, phase: "enter" });
     };
     window.addEventListener(SLIDE_TO_GROUP_EVENT, handler);
     return () => window.removeEventListener(SLIDE_TO_GROUP_EVENT, handler);
   }, []);
 
-  // After mounting at translateX(100%), flip to 'shown' on the next frame
-  // so CSS transition fires. Two rAFs ensure the browser laid out the
-  // 'enter' frame before we change the transform (single rAF is sometimes
-  // batched into the same layout pass, skipping the transition).
+  // Double-rAF so the browser paints the 'enter' frame at translateX(100%)
+  // before we change the transform — without that gap, the transition is
+  // skipped on some engines.
   useLayoutEffect(() => {
-    if (!state || state.phase !== "enter") return;
+    if (state?.phase !== "enter") return;
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
-        setState((prev) => (prev && prev.phase === "enter" ? { ...prev, phase: "shown" } : prev));
+        setState((prev) => (prev ? { ...prev, phase: "shown" } : prev));
       });
     });
     return () => {
@@ -118,48 +103,33 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
     };
   }, [state?.phase]);
 
-  // Once the slide has started (phase=shown), fire router.push so Next.js
-  // navigation catches up. Done in an effect (not synchronously with the
-  // event) so router.push's internal commit work doesn't compete with the
-  // browser's first paint of the slide.
+  // Fire router.push once the slide has begun. Deferring out of the event
+  // handler keeps the slide's first paint off the critical path of
+  // router.push's internal commit work.
   useEffect(() => {
-    if (!state || state.phase !== "shown" || pushedRef.current) return;
+    if (state?.phase !== "shown" || pushedRef.current) return;
     pushedRef.current = true;
     router.push(state.href);
-  }, [state?.phase, state?.href, router]);
+  }, [state?.phase, router]);
 
-  // Unmount the overlay once the URL has flipped to the destination AND
-  // the slide animation has played long enough that the user perceives it
-  // as complete. Removing the overlay too early causes a visible "snap"
-  // back to the unaffected layout for one frame.
+  // Unmount when either (a) the URL has flipped + slide duration has elapsed,
+  // or (b) the safety timeout fires. One timer per slide; cleared on new
+  // events via clearUnmountTimer.
   useEffect(() => {
-    if (!state) return;
-    if (state.phase !== "shown") return;
-    const currentPath = normalizePath(pathname || "/");
-    const targetPath = normalizePath(new URL(state.href, "http://x").pathname);
-    if (currentPath !== targetPath) return;
-    // URL has flipped. Schedule unmount AT LEAST after the slide animation
-    // would have finished, so the visual handoff is seamless.
-    const timer = setTimeout(() => {
+    if (state?.phase !== "shown") return;
+    clearUnmountTimer();
+    const target = normalizePath(new URL(state.href, window.location.origin).pathname);
+    const urlMatches = normalizePath(pathname || "/") === target;
+    const delay = urlMatches ? SLIDE_DURATION_MS + 30 : OVERLAY_SAFETY_TIMEOUT_MS;
+    unmountTimerRef.current = setTimeout(() => {
+      unmountTimerRef.current = null;
       setState(null);
-    }, SLIDE_DURATION_MS + 30);
-    return () => clearTimeout(timer);
-  }, [pathname, state?.phase, state?.href]);
+    }, delay);
+    return clearUnmountTimer;
+  }, [pathname, state?.phase]);
 
-  // Safety: if router.push never causes pathname to match (e.g. an
-  // unexpected redirect), unmount the overlay after a generous timeout so
-  // we don't strand the user behind a stuck slide.
-  useEffect(() => {
-    if (!state || state.phase !== "shown") return;
-    const timer = setTimeout(() => {
-      setState(null);
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [state?.phase]);
+  if (!state || typeof document === "undefined") return null;
 
-  if (!isMounted || !state) return null;
-
-  // Always render directly to <body> so route changes don't unmount us.
   return createPortal(
     <div
       aria-hidden="true"
@@ -167,11 +137,6 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
         position: "fixed",
         inset: 0,
         zIndex: 60,
-        // The browser default for fixed elements: they paint above normal
-        // flow but BELOW elements with a higher stacking context. The
-        // template's HeaderPortal uses z-50 for the cancel button etc. —
-        // 60 places the overlay above page content but the in-overlay
-        // content can still install its own headers as needed.
         background: "var(--background, #ffffff)",
         transform:
           state.phase === "enter"
@@ -181,22 +146,16 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
           state.phase === "enter"
             ? "none"
             : `transform ${SLIDE_DURATION_MS}ms ${SLIDE_EASING}`,
-        // Promote to its own composited layer so the slide animation runs
-        // off the main thread (transform alone is enough on modern Chromium
-        // + Safari, but `will-change` makes the promotion explicit).
         willChange: "transform",
         contain: "strict",
         overflow: "hidden auto",
       }}
     >
-      {/* Mirror the wrappers that template.tsx puts around {children} on
-          group-like routes so the overlay's content has the exact same
-          horizontal extents as the destination route's GroupContent.
-          Without these, the route's cards are ~11px narrower than the
-          overlay's (5.6px shifts from each side), producing a visible
-          "shrink" at the moment the overlay unmounts. The values mirror
-          template.tsx's safe-area padding wrapper + max-w-4xl/-mx-4
-          wrapper exactly. */}
+      {/* Mirrors template.tsx's wrappers around {children} for group routes
+          (safe-area padding + max-w-4xl mx-auto -mx-4 + paddingBottom 4.5rem).
+          Without these the overlay's cards render ~11px wider than the
+          route's, producing a visible shrink at unmount. If template's wrapper
+          ever changes, update this too. */}
       <div
         style={{
           paddingLeft: "max(0.35rem, env(safe-area-inset-left))",
