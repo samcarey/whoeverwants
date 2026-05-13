@@ -111,7 +111,7 @@ export default function GroupListItem(props: GroupListItemProps) {
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         onTouchMove={onTouchMove}
-        className={`flex gap-3 ${draftMode ? 'pl-2' : 'pl-[1.4px]'} pr-3 py-3 select-none relative transition-colors duration-500 ease-out ${
+        className={`flex gap-3 ${draftMode ? 'pl-2' : 'pl-[1.68px]'} pr-3 py-3 select-none relative transition-colors duration-500 ease-out ${
           pressed ? 'bg-blue-50 dark:bg-blue-900/30' : ''
         } ${
           onClick
@@ -149,8 +149,8 @@ export default function GroupListItem(props: GroupListItemProps) {
             reserved when an avatar is rendered so indentation is consistent
             whether the row has an active cutoff or not. The negative
             right-margin shrinks the effective gap between this column and
-            the avatar to 1.35px (the row's gap-3 is 12px; -mr-[10.65px]
-            subtracts 10.65px). Three states driven by `unvotedDeadlineKind`:
+            the avatar to 1.62px (the row's gap-3 is 12px; -mr-[10.38px]
+            subtracts 10.38px). Three states driven by `unvotedDeadlineKind`:
               - 'response':         green compact countdown (voting cutoff)
               - 'prephase':         blue compact countdown (suggestion /
                                     availability timer running)
@@ -161,9 +161,9 @@ export default function GroupListItem(props: GroupListItemProps) {
             the parent's `isOpen` filter unmounts the row a tick later, so
             no stray "Expired" word should flash through this slot. */}
         {!hideRespondents && (
-          <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-[10.65px]">
+          <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-[10.38px]">
             {soonestUnvotedDeadline && unvotedDeadlineKind && unvotedDeadlineKind !== 'prephase-pending' && (
-              <span className="text-lg">
+              <span className="text-[14.4px]">
                 <ClientOnly fallback={null}>
                   <SimpleCountdown
                     deadline={soonestUnvotedDeadline}
