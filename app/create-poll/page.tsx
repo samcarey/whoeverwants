@@ -708,16 +708,19 @@ export function CreateQuestionContent() {
   // (their visual positions coincide).
   const [draftPollPortal, setDraftPollPortal] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    let scheduled = false;
+    // Run synchronously on every mutation — no rAF coalescing — so the
+    // overlay-slide handoff (overlay mounts → portal target appears;
+    // overlay unmounts → fall back to real-route's portal) lands on the
+    // same render tick as the DOM change, not one frame later. With rAF
+    // coalescing a single-frame visible "blink" of the bubble bar fired
+    // at each portal-target change. The `prev === el` short-circuit keeps
+    // setDraftPollPortal a no-op when the resolved target hasn't actually
+    // moved, so typing / scrolling don't trigger React renders even
+    // though the listener runs on every body-subtree mutation.
     const check = () => {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(() => {
-        scheduled = false;
-        const all = document.querySelectorAll<HTMLElement>(`#${DRAFT_POLL_PORTAL_ID}`);
-        const el = all.length > 0 ? all[all.length - 1] : null;
-        setDraftPollPortal(prev => (prev === el ? prev : el));
-      });
+      const all = document.querySelectorAll<HTMLElement>(`#${DRAFT_POLL_PORTAL_ID}`);
+      const el = all.length > 0 ? all[all.length - 1] : null;
+      setDraftPollPortal(prev => (prev === el ? prev : el));
     };
     const observer = new MutationObserver(check);
     observer.observe(document.body, { childList: true, subtree: true });
