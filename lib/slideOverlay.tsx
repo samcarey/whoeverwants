@@ -73,6 +73,17 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
       unmountTimerRef.current = null;
     }
   };
+  // The overlay has its own `overflow: hidden auto` scroll container, so
+  // window.scrollY changes inside the overlay's GroupContent (initial
+  // alignment of the expanded card with the header, scroll-helpers, etc.)
+  // don't move the overlay's view. Without this sync the overlay shows
+  // content at scrollTop=0 while window.scrollY ends up at the real route's
+  // target — when the overlay unmounts, the cards visually jump by that
+  // amount (the "slight shift after the slide completes" bug). The real-route
+  // scroll typically lands AFTER the router.push commit (the home document
+  // is too short to allow the target scrollY during the overlay-only phase),
+  // so a scroll listener catches that update too.
+  const overlayDivRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -112,6 +123,33 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
     router.push(state.href);
   }, [state?.phase, router]);
 
+  // Mirror window.scrollY → overlay.scrollTop ONCE the route has committed
+  // to the slide target. See the overlayDivRef declaration for the rationale.
+  // Why gate on the path match: before the commit the document is still the
+  // origin route, so window.scrollY reflects the origin's scroll history
+  // plus any in-flight relative-math scrollTo's from the overlay's own
+  // GroupContent (those use `window.scrollY + targetDelta`). Mirroring those
+  // would briefly snap the overlay to nonsensical positions. Once the real
+  // route commits, Next.js applies its scroll restoration and the real
+  // route's GroupContent computes an absolute target — at that point
+  // window.scrollY matches what the user should see, and we mirror.
+  const overlayMounted = state !== null;
+  const targetPath = state
+    ? normalizePath(new URL(state.href, window.location.origin).pathname)
+    : null;
+  const onTargetPath =
+    overlayMounted && targetPath !== null && normalizePath(pathname || "/") === targetPath;
+  useEffect(() => {
+    if (!onTargetPath) return;
+    const sync = () => {
+      const d = overlayDivRef.current;
+      if (d) d.scrollTop = window.scrollY;
+    };
+    sync();
+    window.addEventListener("scroll", sync, { passive: true });
+    return () => window.removeEventListener("scroll", sync);
+  }, [onTargetPath]);
+
   // Unmount when either (a) the URL has flipped + slide duration has elapsed,
   // or (b) the safety timeout fires. One timer per slide; cleared on new
   // events via clearUnmountTimer.
@@ -132,6 +170,7 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
 
   return createPortal(
     <div
+      ref={overlayDivRef}
       aria-hidden="true"
       style={{
         position: "fixed",
