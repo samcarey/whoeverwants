@@ -98,10 +98,10 @@ export default function GroupListItem(props: GroupListItemProps) {
   return (
     <div
       data-group-root-id={groupRootId}
-      className={`mx-1.5 transition-colors duration-500 ease-out ${isFirst ? 'border-t' : ''} border-b ${
+      className={`mx-1.5 transition-colors duration-500 ease-out ${
         showDraftChrome
-          ? 'border-dashed border-blue-400 dark:border-blue-500'
-          : 'border-solid border-gray-200 dark:border-gray-700'
+          ? `${isFirst ? 'border-t' : ''} border-b border-dashed border-blue-400 dark:border-blue-500`
+          : ''
       }`}
     >
       <div
