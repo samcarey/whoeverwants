@@ -143,13 +143,11 @@ export default function GroupListItem(props: GroupListItemProps) {
 
         {/* Fixed-width unread-counter column, left of the avatar. Always
             reserved when an avatar is rendered so indentation is consistent
-            whether the row has unread items or not. The badge is pinned to
-            the "line 3" Y position (vertical middle of the second poll-text
-            line) so it sits at the same height across rows regardless of
-            content length. The negative right-margin reduces the gap between
-            this column and the avatar to 50% of the row's gap-3 (6px). */}
+            whether the row has unread items or not. The negative right-margin
+            reduces the gap between this column and the avatar to 50% of the
+            row's gap-3 (6px). */}
         {!hideRespondents && (
-          <div className="w-7 flex justify-center shrink-0 -mr-1.5 pt-[41px]">
+          <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-1.5">
             {hasUnvoted && unvotedCount > 0 && (
               <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
                 {unvotedCount}
@@ -202,22 +200,31 @@ export default function GroupListItem(props: GroupListItemProps) {
             </div>
           )}
 
-          {/* Latest-poll body — 2-line max. The countdown floats right so
-              the text wraps around it on whichever line it lands. */}
+          {/* Latest-poll body — 2-line max. The countdown is pinned to line
+              3 of the row's content (= line 2 of the poll body) via a
+              zero-width phantom right-float on line 1 that the real
+              countdown's clear:right uses to skip down to line 2. */}
           {latestQuestionTitle && (
             <div
               className="mt-px text-sm text-gray-600 dark:text-gray-300 leading-tight"
               style={{ maxHeight: '2.55em', overflow: 'hidden' }}
             >
               {soonestUnvotedDeadline && (
-                <span className="float-right ml-2 text-xs leading-tight">
-                  <ClientOnly fallback={null}>
-                    <SimpleCountdown
-                      deadline={soonestUnvotedDeadline}
-                      colorClass="text-green-600 dark:text-green-400"
-                    />
-                  </ClientOnly>
-                </span>
+                <>
+                  <span
+                    aria-hidden="true"
+                    className="float-right w-0 invisible pointer-events-none"
+                    style={{ height: '1.25em' }}
+                  />
+                  <span className="float-right clear-right ml-2 text-xs leading-tight">
+                    <ClientOnly fallback={null}>
+                      <SimpleCountdown
+                        deadline={soonestUnvotedDeadline}
+                        colorClass="text-green-600 dark:text-green-400"
+                      />
+                    </ClientOnly>
+                  </span>
+                </>
               )}
               {latestQuestionTitle}
             </div>
