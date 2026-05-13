@@ -156,22 +156,48 @@ def deploy_production(tag: str | None = None):
         return
 
     try:
-        # 1. Update the working tree to the deploy target.
+        # 1. Update the working tree to the deploy target. We use
+        # `fetch + reset --hard` (NOT `git pull`) because:
+        #   - It's robust against local mode changes (e.g. provision-droplet.sh's
+        #     chmod +x leaves scripts/*.sh dirty per `git status`).
+        #   - It works regardless of which local branch the checkout is on.
+        #   - It avoids "Need to specify how to reconcile divergent branches"
+        #     prompts when local HEAD has commits not yet on origin/main.
+        # Equivalent CLI: git fetch origin main && git reset --hard origin/main
         if tag is None:
-            log.info("--- Pulling latest main ---")
-            result = subprocess.run(
-                ["git", "pull", "origin", "main"],
+            log.info("--- Resetting to origin/main ---")
+            fetch = subprocess.run(
+                ["git", "fetch", "origin", "main"],
                 cwd=REPO_DIR,
                 capture_output=True,
                 text=True,
                 timeout=60,
             )
-            if result.returncode != 0:
-                log.error(f"Git pull failed: {result.stderr}")
+            if fetch.returncode != 0:
+                log.error(f"Git fetch failed: {fetch.stderr}")
                 return
-            log.info(f"Git pull: {result.stdout.strip()}")
-            if "Already up to date" in result.stdout:
-                log.info("No changes, skipping rebuild")
+            # Capture pre/post SHAs so we can short-circuit no-op deploys.
+            before = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=REPO_DIR,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            reset = subprocess.run(
+                ["git", "reset", "--hard", "origin/main"],
+                cwd=REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if reset.returncode != 0:
+                log.error(f"Git reset failed: {reset.stderr}")
+                return
+            after = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=REPO_DIR,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            log.info(f"Reset {before[:8]} → {after[:8]}")
+            if before == after:
+                log.info("Already at origin/main, skipping rebuild")
                 return
         else:
             log.info(f"--- Fetching tags and checking out {tag} ---")
