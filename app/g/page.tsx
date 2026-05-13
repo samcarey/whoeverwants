@@ -92,11 +92,14 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
   return (
     <>
       <GroupHeader {...headerProps} />
-      <div
-        className="px-4"
-        style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}
-      >
-        <p className="text-base text-gray-700 dark:text-gray-300 text-center">
+      {/* The portal target deliberately has NO horizontal padding so the
+          bubble bar inside it gets the same effective width as the one
+          rendered into GroupContent's portal (which also has no px-*).
+          Mismatching outer padding here was the cause of the bubble bar
+          visibly rewrapping when the overlay handed off to the real
+          route. Padding moves onto the <p> instead. */}
+      <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
+        <p className="px-4 text-base text-gray-700 dark:text-gray-300 text-center">
           Create a question and then share the link!
         </p>
         {/* Render target for the in-progress draft poll card while the
