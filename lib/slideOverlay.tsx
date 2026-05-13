@@ -156,14 +156,24 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
         const card = o.querySelector<HTMLElement>(
           `[data-question-id="${expandedQuestionId}"]`,
         );
-        if (!header || !card || header.offsetHeight === 0) {
-          // Cards may still be loading from cache; retry next frame. Cap
-          // attempts so we don't loop forever if the targeted card never
-          // appears (data missing, etc.).
+        // Wait until GroupContent's `pb-2` content div reflects the measured
+        // headerHeight in its paddingTop. Before useMeasuredHeight's setState
+        // commits, paddingTop is just `0.5rem` (the calc fallback when
+        // headerHeight state is 0), so `card.offsetTop` is ≤ header height
+        // and the target computes to 0. Retrying until
+        // `card.offsetTop >= header.offsetHeight` skips that intermediate
+        // state. Cap attempts to avoid an infinite loop if the card never
+        // settles (data missing, render error).
+        if (
+          !header ||
+          !card ||
+          header.offsetHeight === 0 ||
+          card.offsetTop < header.offsetHeight
+        ) {
           if (attempts++ < 30) rafId = requestAnimationFrame(align);
           return;
         }
-        const target = Math.max(0, card.offsetTop - header.offsetHeight);
+        const target = card.offsetTop - header.offsetHeight;
         if (o.scrollTop !== target) o.scrollTop = target;
       } else {
         // No expand target → land at the bottom of overlay content.
