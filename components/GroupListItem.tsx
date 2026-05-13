@@ -143,9 +143,13 @@ export default function GroupListItem(props: GroupListItemProps) {
 
         {/* Fixed-width unread-counter column, left of the avatar. Always
             reserved when an avatar is rendered so indentation is consistent
-            whether the row has unread items or not. */}
+            whether the row has unread items or not. The badge is pinned to
+            the "line 3" Y position (vertical middle of the second poll-text
+            line) so it sits at the same height across rows regardless of
+            content length. The negative right-margin reduces the gap between
+            this column and the avatar to 50% of the row's gap-3 (6px). */}
         {!hideRespondents && (
-          <div className="w-7 flex items-center justify-center shrink-0 self-center">
+          <div className="w-7 flex justify-center shrink-0 -mr-1.5 pt-[41px]">
             {hasUnvoted && unvotedCount > 0 && (
               <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
                 {unvotedCount}
