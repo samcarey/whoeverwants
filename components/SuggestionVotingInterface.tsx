@@ -269,23 +269,30 @@ export default function SuggestionVotingInterface({
           </div>
         )}
 
-        {/* Add new suggestions using shared component */}
-        <div className={filteredExistingSuggestions.length > 0 ? "mt-3 pt-3 border-t border-gray-200 dark:border-gray-600" : ""}>
-          <OptionsInput
-            options={newSuggestions}
-            setOptions={setNewSuggestions}
-            isLoading={isSubmitting}
-            label={isEditingVote ? "Add new suggestions:" : "Add new suggestions:"}
-            category={question.category || 'custom'}
-            optionsMetadata={suggestionMetadata}
-            onMetadataChange={onSuggestionMetadataChange}
-            referenceLatitude={question.reference_latitude}
-            referenceLongitude={question.reference_longitude}
-            searchRadius={searchRadius}
-            hideReferenceLocationWarning
-          />
+        {/* Mirrors the options card on the create-poll form. Card shade
+            is bg-gray-50 (not bg-white as in create-poll) because the
+            ballot context sits on the page bg, not a sheet backdrop —
+            see CLAUDE.md's "Always-Visible Name Field" section. */}
+        <div className={filteredExistingSuggestions.length > 0 ? "mt-3" : ""}>
+          <h5 className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+            Suggestions
+          </h5>
+          <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
+            <OptionsInput
+              options={newSuggestions}
+              setOptions={setNewSuggestions}
+              isLoading={isSubmitting}
+              category={question.category || 'custom'}
+              optionsMetadata={suggestionMetadata}
+              onMetadataChange={onSuggestionMetadataChange}
+              referenceLatitude={question.reference_latitude}
+              referenceLongitude={question.reference_longitude}
+              searchRadius={searchRadius}
+              variant="compact"
+              hideReferenceLocationWarning
+            />
+          </section>
         </div>
-
 
         {voteError && (
           <div className="mt-3 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
