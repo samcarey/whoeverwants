@@ -39,6 +39,17 @@ function isLogForwardingEnabled(): boolean {
   );
 }
 
+// On canary + prod, only the warn/error stream + unhandled events get
+// forwarded. Verbose log/info/debug from a busy session would churn the
+// server's 10000-entry ring buffer fast and drown out the WKWebView errors
+// this is here to capture. Dev hosts forward everything (low traffic +
+// devs want full context).
+function isHighVolumeHost(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return host === 'latest.whoeverwants.com' || host === 'whoeverwants.com';
+}
+
 function getSessionId(): string {
   if (!sessionId) {
     sessionId = Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -115,7 +126,9 @@ export function installClientLogForwarder() {
 
   installed = true;
 
-  const levels = ['log', 'warn', 'error', 'info', 'debug'] as const;
+  const levels = isHighVolumeHost()
+    ? (['warn', 'error'] as const)
+    : (['log', 'warn', 'error', 'info', 'debug'] as const);
   for (const level of levels) {
     const original = console[level].bind(console);
     console[level] = (...args: unknown[]) => {
