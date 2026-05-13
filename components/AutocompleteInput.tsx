@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, apiSearchRestaurants, type SearchResult } from "@/lib/api";
 import type { QuestionCategory } from "@/lib/types";
 import { formatDistance, StarRating } from "./OptionLabel";
+import { advanceFormFocus } from "@/lib/formNavigation";
 
 interface AutocompleteInputProps {
   value: string;
@@ -122,20 +123,36 @@ export default function AutocompleteInput({
     });
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showSuggestions || suggestions.length === 0) return;
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (showSuggestions && suggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHighlightedIndex(i => Math.min(i + 1, suggestions.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHighlightedIndex(i => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' && highlightedIndex >= 0) {
+        e.preventDefault();
+        selectSuggestion(suggestions[highlightedIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowSuggestions(false);
+        return;
+      }
+    }
 
-    if (e.key === 'ArrowDown') {
+    // Enter without a highlighted suggestion: treat like Tab and advance
+    // to the next field. Hide the dropdown first so a stale suggestion list
+    // doesn't reopen if focus returns later.
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
-      setHighlightedIndex(i => Math.min(i + 1, suggestions.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHighlightedIndex(i => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && highlightedIndex >= 0) {
-      e.preventDefault();
-      selectSuggestion(suggestions[highlightedIndex]);
-    } else if (e.key === 'Escape') {
       setShowSuggestions(false);
+      advanceFormFocus(e.currentTarget);
     }
   };
 
