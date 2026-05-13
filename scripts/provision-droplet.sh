@@ -276,6 +276,21 @@ else
 fi
 
 cd /root/whoeverwants
+
+# docker-compose.yml's `api` service references `.env.api` via env_file. This
+# file is gitignored (it holds external-API secrets: TMDB / RAWG / Yelp keys)
+# so a fresh clone doesn't include it. Create an empty placeholder so `docker
+# compose up` doesn't bail out with "env file not found"; populate the real
+# keys via `scripts/remote*.sh` afterward.
+if [ ! -f .env.api ]; then
+  cat > .env.api <<'ENVEOF'
+# Place external-API secrets here, one KEY=value per line. See CLAUDE.md.
+# This file is gitignored; populate via scripts/remote*.sh after provisioning.
+ENVEOF
+  chmod 600 .env.api
+  echo "Created placeholder .env.api (no API keys)."
+fi
+
 docker compose up -d --build
 
 # Wait for database to be ready
