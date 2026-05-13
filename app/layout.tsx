@@ -6,6 +6,7 @@ import "./globals.css";
 import CommitInfo from "@/components/CommitInfo";
 import ResponsiveScaling from "@/components/ResponsiveScaling";
 import { SlideOverlayHost } from "@/lib/slideOverlay";
+import { PersistentCreatePollHost } from "@/components/PersistentCreatePollHost";
 import { THEME_KEY } from "@/lib/theme";
 
 
@@ -119,6 +120,14 @@ export default function RootLayout({
             persists across routes, so the overlay survives the route
             change and stays visible until its slide animation finishes. */}
         <SlideOverlayHost />
+
+        {/* CreateQuestionContent (category bubble bar + create-poll modal).
+            Lives in the root layout — NOT template — so it persists across
+            route changes. template.tsx re-instantiates on every navigation
+            in App Router, which would unmount + remount this component and
+            cause the bubble bar's portal target to be briefly cleared
+            (visible as "buttons blink after slide"). */}
+        <PersistentCreatePollHost />
         <script
           dangerouslySetInnerHTML={{
             __html: `

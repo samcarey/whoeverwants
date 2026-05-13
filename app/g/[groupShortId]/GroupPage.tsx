@@ -1631,10 +1631,18 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         rightSlot={<GroupShareButton routeId={groupId} title={group.title} />}
       />
 
-      {/* paddingTop reserves space for the fixed header above. The 0.5rem
-          gap is set via the `--group-card-gap` custom property so the
-          slide overlay can collapse it to 0 — see lib/slideOverlay.tsx. */}
-      <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + var(--group-card-gap, 0.5rem))` }}>
+      {/* paddingTop reserves space for the fixed header above. The card
+          sits flush with the header (gap=0) so both the slide overlay
+          and the real route render the same offsetTop without needing
+          to scroll. Earlier the default was 0.5rem with the expectation
+          that the real route's initial-scroll effect would compensate
+          by 8px — but on short-content groups (single small card)
+          docHeight equals viewport so scroll is clamped to 0, leaving
+          the card 8px lower than the overlay's. The overlay would then
+          unmount and the user saw a small downward jump. Keep the
+          `--group-card-gap` custom property — the overlay (and any
+          future callers) can still override it. */}
+      <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + var(--group-card-gap, 0px))` }}>
         {groupedGroupQuestions.map((group) => {
             // Virtualized window: groups outside ±2 viewport heights of the
             // visible region render as a measured-height placeholder div. The
