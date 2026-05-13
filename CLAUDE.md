@@ -225,16 +225,9 @@ The two-tier deploy is wired end-to-end. Status of each piece:
 | 2 | Vercel project: `productionBranch=production`, `latest.whoeverwants.com` domain with `gitBranch=main` | ✅ done (via undocumented `PATCH /v9/projects/<id>/branch` + `POST /v10/projects/<id>/domains`) |
 | 3 | `production` branch on origin (created from current main HEAD) | ✅ done |
 | 4 | `.github/workflows/release-to-production.yml` (on `release: published` → force-push tag commit to `production`) | ✅ done |
-| 5 | GitHub webhook subscribed to BOTH droplets (push + release events) | ⚠️ manual — see below |
+| 5a | GitHub webhook for the latest droplet (`hooks.api.latest.whoeverwants.com`, push + release events) | ✅ done (user added in GitHub UI) |
+| 5b | Existing prod-droplet GitHub webhook (`hooks.api.whoeverwants.com`) — confirm subscribed to **Releases** in addition to **Pushes** | ⚠️ manual check — the PAT lacks `admin:repo_hook`, so verify in the GitHub UI |
 | 6 | Prod droplet cutover (restart `dev-webhook` to pick up label-aware code) | ⚠️ manual — after PR merges; see below |
-
-**5. GitHub webhook for the latest droplet** — repo Settings → Webhooks → Add:
-- URL: `https://hooks.api.latest.whoeverwants.com/github`
-- Content type: `application/json`
-- Secret: contents of `/etc/dev-webhook-secret` on the latest droplet (`bash scripts/remote-latest.sh "cat /etc/dev-webhook-secret"`)
-- Events: tick "Let me select individual events" → enable **Pushes** AND **Releases**
-
-Also confirm the existing prod webhook (`https://hooks.api.whoeverwants.com/github`) is subscribed to **Releases** in addition to **Pushes** — if not, edit it to add Releases. The PAT we use lacks `admin:repo_hook`, so this must be done in the GitHub UI.
 
 **6. Prod droplet cutover** — the prod droplet's `dev-webhook.service` is still running the OLD code (pre-this-PR) which deploys on every push to main. After this branch merges:
 1. The prod webhook will deploy main one last time using its old behavior — this lands the new `dev-webhook.py` (label-aware) on disk at `/root/whoeverwants/scripts/dev-webhook.py`, but the systemd service is still running the old code in memory.
