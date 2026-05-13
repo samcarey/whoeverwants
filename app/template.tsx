@@ -315,11 +315,16 @@ function TemplateInner({ children }: AppTemplateProps) {
       </div>
 
       {/* CreateQuestionContent owns the draft-poll-card portal AND the
-           question form modal. Mount it on every group-like page so the
-           draft card appears whenever drafts exist (even after navigation
-           with the modal closed). The component renders nothing visible
-           when there are no drafts and the form modal is closed. */}
-      {isMounted && isGroupLikePage && (
+           question form modal. Mount it as soon as the app is hydrated so
+           the bubble bar is ready to portal into whichever
+           `#draft-poll-portal` appears — including the one inside the
+           slide-overlay's GroupContent (which mounts BEFORE the real
+           route commits). Gating on `isGroupLikePage` (pathname) made the
+           bubble bar appear only AFTER the slide finished, because
+           LazyCreateQuestionContent didn't mount until router.push had
+           flipped the pathname. The component renders nothing visible
+           when there's no portal target and no open modal. */}
+      {isMounted && (
         <Suspense fallback={null}>
           <LazyCreateQuestionContent />
         </Suspense>

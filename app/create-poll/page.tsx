@@ -694,8 +694,18 @@ export function CreateQuestionContent() {
   // self-disconnecting observer can leave us holding a stale reference
   // pointing at a detached node and the draft card stops rendering.
   // The mutation callback is coalesced into one rAF per frame, so the
-  // always-on listener doesn't run getElementById hundreds of times during
-  // typing / scroll / animation.
+  // always-on listener doesn't run hundreds of times during typing /
+  // scroll / animation.
+  //
+  // Prefer the LAST `#draft-poll-portal` in DOM order. During a slide-
+  // overlay transition there can be TWO targets at once: the real route's
+  // (inside #__next) and the overlay's (createPortal'd directly under
+  // <body>, so it appears later in DOM order). `getElementById` returns
+  // the first match, which is the real route's — hidden behind the
+  // overlay's z=60 layer, so the bubble bar would be invisible until the
+  // overlay unmounted. The last-match rule picks the overlay's during the
+  // slide and seamlessly falls back to the real route's once it unmounts
+  // (their visual positions coincide).
   const [draftPollPortal, setDraftPollPortal] = useState<HTMLElement | null>(null);
   useEffect(() => {
     let scheduled = false;
@@ -704,7 +714,8 @@ export function CreateQuestionContent() {
       scheduled = true;
       requestAnimationFrame(() => {
         scheduled = false;
-        const el = document.getElementById(DRAFT_POLL_PORTAL_ID);
+        const all = document.querySelectorAll<HTMLElement>(`#${DRAFT_POLL_PORTAL_ID}`);
+        const el = all.length > 0 ? all[all.length - 1] : null;
         setDraftPollPortal(prev => (prev === el ? prev : el));
       });
     };
