@@ -26,7 +26,6 @@ export interface GroupListItemProps {
   latestQuestionTitle: string;
   participantNames: string[];
   anonymousRespondentCount: number;
-  questionCount: number;
   /** When set, "N min ago" appears in the metadata row; omit for drafts. */
   createdAt?: string | null;
   /** When set, a colored countdown shows on the right. */
@@ -68,7 +67,6 @@ export default function GroupListItem(props: GroupListItemProps) {
     latestQuestionTitle,
     participantNames,
     anonymousRespondentCount,
-    questionCount,
     createdAt,
     soonestUnvotedDeadline,
     unvotedCount = 0,
@@ -154,7 +152,8 @@ export default function GroupListItem(props: GroupListItemProps) {
         )}
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
+          {/* Row 1: title (left, truncates) + draft pill / "5m ago" (right) */}
+          <div className="flex items-baseline gap-2">
             <h3
               className={`font-semibold text-base truncate flex-1 transition-colors duration-500 ease-out ${
                 titleEmphasized ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
@@ -162,53 +161,56 @@ export default function GroupListItem(props: GroupListItemProps) {
             >
               {title}
             </h3>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {/* DRAFT pill — collapses out via opacity + width on finalize. */}
-              {draftMode && (
-                <span
-                  className={`inline-flex items-center justify-center h-5 rounded-full bg-blue-500 text-white text-xs font-bold uppercase tracking-wide overflow-hidden whitespace-nowrap transition-[opacity,max-width,padding] duration-300 ease-out ${
-                    finalizing ? 'opacity-0 max-w-0 px-0' : 'opacity-100 max-w-[80px] px-2'
-                  }`}
-                >
-                  draft
-                </span>
-              )}
-              {hasUnvoted && unvotedCount > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
-                  {unvotedCount}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {latestQuestionTitle && (
-            <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-0.5">
-              {latestQuestionTitle}
-            </p>
-          )}
-
-          <div className="flex items-center justify-between mt-1">
-            <div className="text-xs text-gray-400 dark:text-gray-500">
-              <ClientOnly fallback={null}>
-                <>
-                  {questionCount > 1 && <>{questionCount} questions &middot; </>}
-                  {createdAt
-                    ? relativeTime(createdAt)
-                    : statusBadge ?? null}
-                </>
-              </ClientOnly>
-            </div>
-            {soonestUnvotedDeadline && (
-              <div className="text-xs">
-                <ClientOnly fallback={null}>
-                  <SimpleCountdown
-                    deadline={soonestUnvotedDeadline}
-                    colorClass="text-green-600 dark:text-green-400"
-                  />
-                </ClientOnly>
+            {/* DRAFT pill — collapses out via opacity + width on finalize. */}
+            {draftMode && (
+              <span
+                className={`inline-flex items-center justify-center h-5 rounded-full bg-blue-500 text-white text-xs font-bold uppercase tracking-wide overflow-hidden whitespace-nowrap transition-[opacity,max-width,padding] duration-300 ease-out shrink-0 ${
+                  finalizing ? 'opacity-0 max-w-0 px-0' : 'opacity-100 max-w-[80px] px-2'
+                }`}
+              >
+                draft
+              </span>
+            )}
+            {createdAt && (
+              <div className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
+                <ClientOnly fallback={null}>{relativeTime(createdAt)}</ClientOnly>
               </div>
             )}
           </div>
+
+          {/* Empty-group status row (only when no createdAt) */}
+          {!createdAt && statusBadge && (
+            <div className="mt-px text-xs text-gray-400 dark:text-gray-500">
+              <ClientOnly fallback={null}>{statusBadge}</ClientOnly>
+            </div>
+          )}
+
+          {/* Latest-poll body — 2-line max. Floats reserve right-edge space
+              so line 1 wraps around the unread badge (vertically near the
+              avatar's center) and line 2 wraps around the countdown. */}
+          {latestQuestionTitle && (
+            <div
+              className="mt-px text-sm text-gray-600 dark:text-gray-300 leading-tight"
+              style={{ maxHeight: '2.55em', overflow: 'hidden' }}
+            >
+              {hasUnvoted && unvotedCount > 0 && (
+                <span className="float-right ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
+                  {unvotedCount}
+                </span>
+              )}
+              {soonestUnvotedDeadline && (
+                <span className="float-right clear-right ml-2 text-xs leading-tight">
+                  <ClientOnly fallback={null}>
+                    <SimpleCountdown
+                      deadline={soonestUnvotedDeadline}
+                      colorClass="text-green-600 dark:text-green-400"
+                    />
+                  </ClientOnly>
+                </span>
+              )}
+              {latestQuestionTitle}
+            </div>
+          )}
         </div>
       </div>
     </div>
