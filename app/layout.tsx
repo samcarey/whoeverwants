@@ -5,7 +5,7 @@ import Link from "next/link";
 import "./globals.css";
 import CommitInfo from "@/components/CommitInfo";
 import ResponsiveScaling from "@/components/ResponsiveScaling";
-import { GroupSlideOverlayHost } from "@/lib/slideOverlay";
+import { SlideOverlayHost } from "@/lib/slideOverlay";
 import { THEME_KEY } from "@/lib/theme";
 
 
@@ -118,7 +118,7 @@ export default function RootLayout({
             the overlay the moment router.push commits. The layout
             persists across routes, so the overlay survives the route
             change and stays visible until its slide animation finishes. */}
-        <GroupSlideOverlayHost />
+        <SlideOverlayHost />
         <script
           dangerouslySetInnerHTML={{
             __html: `

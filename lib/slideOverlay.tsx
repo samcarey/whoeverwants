@@ -252,20 +252,18 @@ export function SlideOverlayHost(): React.ReactElement | null {
     }
   }, [state?.phase, router]);
 
-  // The "no-expand" case (no `expandedQuestionId` on a group destination)
-  // still needs the overlay to show the bottom of the content (the draft
-  // poll card area). For that case only, scroll the overlay to its
-  // scrollHeight — the GroupHeader riding along with that scroll is fine
-  // because the user isn't looking at it; they're looking at the bottom of
-  // the content where the draft form lives. For the targeted-card case,
+  // Group destinations without an expanded card scroll to the bottom of
+  // their content (the draft poll card area). For the targeted-card case,
   // `--group-card-gap: 0px` (set on the overlay wrapper below) puts the
-  // first card flush with the header without needing any scroll.
+  // first card flush with the header without needing any scroll. See the
+  // overlayDivRef comment above for why scrollTop doesn't work as an
+  // alignment tool here.
   //
   // Only applies to `group` kind — info/edit-title pages don't have a
   // bottom-anchored scrolling element.
   const overlayMounted = state !== null;
   const isGroupNoExpand =
-    state?.kind.type === 'group' && state.kind.expandedQuestionId == null;
+    state?.kind.type === 'group' && state.kind.expandedQuestionId === null;
   useLayoutEffect(() => {
     if (!overlayMounted) return;
     if (!isGroupNoExpand) return;
@@ -309,17 +307,26 @@ export function SlideOverlayHost(): React.ReactElement | null {
 
   if (!state || typeof document === "undefined") return null;
 
-  // Forward enters from the right; back from the left. The 'shown' phase
-  // animates to translate3d(0) for both.
+  // Forward enters from the right; back from the left.
   const enterTransform =
     state.direction === 'back'
       ? "translate3d(-100%, 0, 0)"
       : "translate3d(100%, 0, 0)";
-  // Group kind needs the safe-area wrappers that template.tsx applies for
-  // group routes; info/edit-title render their own fixed header + their own
-  // content padding so they only need the safe-area horizontal padding (the
-  // page itself handles max-w + paddingBottom).
   const isGroupKind = state.kind.type === 'group';
+  // Inner wrapper class must match what the destination route gets from
+  // template.tsx around {children}. Group routes get the negative-margin
+  // layout (max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4 + paddingBottom
+  // 4.5rem); info/edit-title get the standard layout (max-w-4xl mx-auto
+  // px-4 pb-6) — without matching this, the page's own inner
+  // `max-w-4xl mx-auto px-4` is the only padding layer the overlay has,
+  // and the unmount shifts the content inward as template's extra px-4
+  // kicks in. If template.tsx's wrapper ever changes, update this too.
+  const innerClass = isGroupKind
+    ? "max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4"
+    : "max-w-4xl mx-auto px-4 pb-6";
+  const innerStyle: React.CSSProperties | undefined = isGroupKind
+    ? { paddingBottom: "4.5rem" }
+    : undefined;
 
   return createPortal(
     <div
@@ -344,57 +351,24 @@ export function SlideOverlayHost(): React.ReactElement | null {
         willChange: "transform",
         contain: "strict",
         overflow: "hidden auto",
-        ...(isGroupKind && state.kind.type === 'group' && state.kind.expandedQuestionId
+        // TypeScript narrows state.kind to the 'group' variant inside this
+        // check; needed to access .expandedQuestionId on the union.
+        ...(state.kind.type === 'group' && state.kind.expandedQuestionId !== null
           ? COLLAPSE_CARD_GAP_STYLE
           : null),
       }}
     >
-      {isGroupKind ? (
-        /* Mirrors template.tsx's wrappers around {children} for group routes
-            (safe-area padding + max-w-4xl mx-auto -mx-4 + paddingBottom 4.5rem).
-            Without these the overlay's cards render ~11px wider than the
-            route's, producing a visible shrink at unmount. If template's wrapper
-            ever changes, update this too. */
-        <div
-          style={{
-            paddingLeft: "max(0.35rem, env(safe-area-inset-left))",
-            paddingRight: "max(0.35rem, env(safe-area-inset-right))",
-          }}
-        >
-          <div
-            className="max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4"
-            style={{ paddingBottom: "4.5rem" }}
-          >
-            {renderForKind(state.kind)}
-          </div>
+      <div
+        style={{
+          paddingLeft: "max(0.35rem, env(safe-area-inset-left))",
+          paddingRight: "max(0.35rem, env(safe-area-inset-right))",
+        }}
+      >
+        <div className={innerClass} style={innerStyle}>
+          {renderForKind(state.kind)}
         </div>
-      ) : (
-        /* Info / edit-title render their own fixed GroupHeader and their own
-            content max-w-4xl + paddingTop. The destination route's template
-            ALSO wraps their content in `max-w-4xl mx-auto px-4 pb-6` (the
-            non-isGroupLikePage branch in template.tsx). Mirroring that here
-            keeps the inner `max-w-4xl mx-auto px-4` on the info/edit-title
-            content in lockstep with the real route — without it, the
-            overlay's content gets ~26px more horizontal room than the
-            destination, visible as a rightward shift on unmount as the
-            template's extra px-4 kicks in. */
-        <div
-          style={{
-            paddingLeft: "max(0.35rem, env(safe-area-inset-left))",
-            paddingRight: "max(0.35rem, env(safe-area-inset-right))",
-          }}
-        >
-          <div className="max-w-4xl mx-auto px-4 pb-6">
-            {renderForKind(state.kind)}
-          </div>
-        </div>
-      )}
+      </div>
     </div>,
     document.body,
   );
 }
-
-/** Backwards-compat alias — `GroupSlideOverlayHost` was the original name
- *  when the host only handled group destinations. Kept so layout.tsx
- *  import stays valid through this rollout. */
-export { SlideOverlayHost as GroupSlideOverlayHost };
