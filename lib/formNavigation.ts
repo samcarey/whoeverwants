@@ -28,8 +28,8 @@ export function advanceFormFocus(current: HTMLElement): boolean {
 
 /**
  * Convenience onKeyDown handler. Intercepts Enter, prevents the default form
- * submission, and advances to the next focusable field. Returns false from
- * onKeyDown semantics — use as `onKeyDown={enterAdvancesFocus}` directly.
+ * submission, and advances to the next focusable field. Use directly as
+ * `onKeyDown={enterAdvancesFocus}`.
  */
 export function enterAdvancesFocus(e: React.KeyboardEvent<HTMLElement>) {
   if (e.key !== 'Enter' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
