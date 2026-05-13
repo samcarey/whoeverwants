@@ -50,16 +50,30 @@ export interface HomeSelectionModeChangeDetail {
   active: boolean;
 }
 
-/** Fired by `slideToGroup()` to ask `GroupSlideOverlayHost` to mount the
- *  destination overlay + run the slide-in animation. The host calls
- *  `router.push(href)` in parallel so the URL/history catch up while the
- *  CSS slide plays — see `lib/slideOverlay.tsx` for the full lifecycle. */
+/** Fired by `slideToGroup()` / `slideToGroupInfo()` / `slideToGroupEditTitle()`
+ *  / `slideToGroupRoot()` to ask `SlideOverlayHost` to mount the destination
+ *  overlay + run the slide-in animation. The host calls `router.push(href)`
+ *  (or `router.back()` when `useHistoryBack` is true) in parallel so the
+ *  URL/history catch up while the CSS slide plays — see `lib/slideOverlay.tsx`
+ *  for the full lifecycle. */
 export const SLIDE_TO_GROUP_EVENT = 'slideToGroup';
+
+export type SlideOverlayKind =
+  | { type: 'group'; groupId: string; expandedQuestionId: string | null }
+  | { type: 'groupInfo'; groupId: string }
+  | { type: 'groupEditTitle'; groupId: string };
+
 export interface SlideToGroupDetail {
   /** Canonical destination href, e.g. `/g/abc?p=xyz`. */
   href: string;
-  /** Group route id (groups.short_id or root poll short_id). */
-  groupId: string;
-  /** Initial-expanded question id (resolved from `?p=`). */
-  expandedQuestionId: string | null;
+  /** Slide direction. `forward` enters from the right (translateX(100%) → 0);
+   *  `back` enters from the left (translateX(-100%) → 0). */
+  direction: 'forward' | 'back';
+  /** When true, the host calls `router.back()` instead of `router.push(href)`
+   *  to advance the URL. Used by in-app back navs that have a real history
+   *  entry to pop, so the existing history stack isn't extended pointlessly. */
+  useHistoryBack?: boolean;
+  /** Discriminated union of the destination's page kind + payload. The
+   *  overlay renders the matching prop-driven view component. */
+  kind: SlideOverlayKind;
 }

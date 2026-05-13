@@ -28,7 +28,7 @@ import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
 import { usePrefetch } from "@/lib/prefetch";
-import { navigateWithTransition } from "@/lib/viewTransitions";
+import { slideToGroupInfo } from "@/lib/slideOverlay";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { type QuestionBallotHandle } from "@/components/QuestionBallot";
@@ -1627,7 +1627,7 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
             ? undefined
             : `${group.questions.length} ${group.questions.length === 1 ? 'question' : 'questions'}`
         }
-        onTitleClick={() => navigateWithTransition(router, `/g/${groupId}/info`, 'forward')}
+        onTitleClick={() => slideToGroupInfo({ groupId })}
         rightSlot={<GroupShareButton routeId={groupId} title={group.title} />}
       />
 
