@@ -61,7 +61,14 @@ export const SLIDE_TO_GROUP_EVENT = 'slideToGroup';
 export type SlideOverlayKind =
   | { type: 'group'; groupId: string; expandedQuestionId: string | null }
   | { type: 'groupInfo'; groupId: string }
-  | { type: 'groupEditTitle'; groupId: string };
+  | { type: 'groupEditTitle'; groupId: string }
+  // Empty "New Group" placeholder, used by the home "+" FAB. The overlay
+  // renders the same content as `/g/`'s EmptyPlaceholder; the actual group
+  // is created via `apiCreateGroup` in parallel, and the caller fires
+  // `router.push('/g/<short_id>')` once it resolves (or `/g` on failure).
+  // The host skips its automatic `router.push(href)` for this kind so the
+  // caller owns the navigation.
+  | { type: 'newGroup' };
 
 export interface SlideToGroupDetail {
   /** Canonical destination href, e.g. `/g/abc?p=xyz`. */

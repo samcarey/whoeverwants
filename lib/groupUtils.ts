@@ -25,6 +25,10 @@ import { getUserName } from './userProfile';
  *  out the current user. */
 export const EMPTY_GROUP_TITLE = 'New Group';
 
+/** Hint rendered above the bubble bar on empty groups (both the home
+ *  FAB's slide overlay and the real `/g/<short_id>` route show this). */
+export const EMPTY_GROUP_HINT = 'Create a question and then share the link!';
+
 /** Trimmed + case-insensitive name equality. Collapses different casings
  *  of the same name so the viewer doesn't appear twice in respondent
  *  lists when a sibling poll's `voter_names` carries a variant spelling. */

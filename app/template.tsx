@@ -8,9 +8,11 @@ import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
+import { slideToNewGroup } from '@/lib/slideOverlay';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { apiCreateGroup } from '@/lib/api';
+import { GROUP_ID_ATTR } from '@/lib/groupDomMarkers';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
 
 // `CreateQuestionContent` (the bubble-bar + create-poll-modal owner) is
@@ -32,33 +34,35 @@ export default function Template({ children }: AppTemplateProps) {
   );
 }
 
-/** Home-page floating "+" FAB. Calls `apiCreateGroup` on tap so a real
- *  group row materializes BEFORE the user adds any polls — that way the
- *  user can name the group (title click → /info / /edit-title) and
- *  share its URL before there's any content. Falls back to navigating
- *  to the legacy /g/ empty placeholder on API failure so the flow still
- *  produces a usable destination.
+/** Home-page floating "+" FAB. Slide begins on the same frame as the
+ *  tap via the overlay-slide mechanism — `navigateWithTransition` /
+ *  the View Transitions API would otherwise gate motion on the
+ *  destination route committing + signaling data-page-ready.
  *
- *  In-flight guard via ref prevents double-creates on rapid taps (which
- *  would mint two empty groups via two simultaneous POSTs). */
+ *  `apiCreateGroup` runs in parallel; on resolve we push the canonical
+ *  `/g/<short_id>`, on failure we fall back to `/g`. Body's
+ *  `data-group-id` is set inline so any submit during the overlay
+ *  window binds to the just-created group (the group page's own
+ *  mount effect re-sets the same value). In-flight ref prevents
+ *  double-creates on rapid taps. */
 function CreateGroupButton({ router }: { router: ReturnType<typeof useRouter> }) {
   const inFlight = useRef(false);
-  const onClick = async () => {
+  const onClick = () => {
     if (inFlight.current) return;
     inFlight.current = true;
-    try {
-      const summary = await apiCreateGroup();
-      const routeId = summary.short_id || summary.id;
-      // Forward navigation with the standard slide transition. Group
-      // page mounts an empty group via useGroup's summary-fallback path.
-      navigateWithTransition(router, `/g/${routeId}`, 'forward');
-    } catch {
-      // Network or 400 from the create endpoint — fall back to the
-      // legacy empty placeholder so the user can still start a poll.
-      navigateWithTransition(router, '/g', 'forward');
-    } finally {
-      inFlight.current = false;
-    }
+    slideToNewGroup();
+    apiCreateGroup()
+      .then((summary) => {
+        const routeId = summary.short_id || summary.id;
+        document.body.setAttribute(GROUP_ID_ATTR, summary.id);
+        router.push(`/g/${routeId}`);
+      })
+      .catch(() => {
+        router.push('/g');
+      })
+      .finally(() => {
+        inFlight.current = false;
+      });
   };
   return (
     <button

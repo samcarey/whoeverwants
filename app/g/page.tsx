@@ -3,10 +3,11 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, Suspense } from "react";
 import { apiGetQuestionById, apiGetPollById } from "@/lib/api";
-import { getGroupHrefForPoll } from "@/lib/groupUtils";
+import { EMPTY_GROUP_HINT, getGroupHrefForPoll } from "@/lib/groupUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupHeader from "@/components/GroupHeader";
+import GroupShareButton from "@/components/GroupShareButton";
 import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 
 export const dynamic = 'force-dynamic';
@@ -47,30 +48,51 @@ function GroupRoot() {
   return <EmptyPlaceholder />;
 }
 
-function EmptyPlaceholder() {
-  usePageReady(true);
+export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } = {}) {
+  // Inside the slideOverlay, the underlying route hasn't changed yet
+  // (we're still on `/`), so writing `data-page-ready=/g` would lie to
+  // any other in-flight view-transition. Skip the signal when mounted
+  // as the FAB's overlay; the real route mount fires it after router.push.
+  usePageReady(!inOverlay);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
   // Defense against stale `<body data-group-id>` from a prior group
   // page — the create-poll submit handler reads it as the group to
   // attach the new poll to, so a missed cleanup would bind new groups
-  // to whichever was previously viewed.
+  // to whichever was previously viewed. In the overlay variant the
+  // caller restores this attribute as soon as `apiCreateGroup` resolves
+  // so an early submit still binds to the right group.
   useEffect(() => {
     document.body.removeAttribute(GROUP_ID_ATTR);
   }, []);
 
+  // Overlay variant mirrors GroupContent's empty-group header chrome
+  // (avatar bubble + Share button + tappable title) so the handoff
+  // doesn't shift. Real Share/onTitleClick handlers come online when
+  // the route commits behind the overlay; the placeholder buttons
+  // are inert.
+  const headerProps = inOverlay
+    ? {
+        headerRef,
+        title: "New Group",
+        participantNames: [] as string[],
+        anonymousCount: 0,
+        onTitleClick: () => {},
+        rightSlot: <GroupShareButton routeId="" title="New Group" />,
+      }
+    : { headerRef, title: "New Group" };
+
   return (
     <>
-      <GroupHeader headerRef={headerRef} title="New Group" />
-      <div
-        className="px-4"
-        style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}
-      >
-        <p className="text-base text-gray-700 dark:text-gray-300 text-center">
-          Create a question and then share the link!
+      <GroupHeader {...headerProps} />
+      {/* Portal target has NO horizontal padding so the bubble bar
+          inside it gets the same effective width as GroupContent's
+          portal — mismatched padding made the bubbles rewrap on
+          handoff. */}
+      <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
+        <p className="px-4 text-base text-gray-700 dark:text-gray-300 text-center">
+          {EMPTY_GROUP_HINT}
         </p>
-        {/* Render target for the in-progress draft poll card while the
-            create-poll panel is open. Filled by CreateQuestionContent. */}
         <div id={DRAFT_POLL_PORTAL_ID} className="mt-4" />
       </div>
     </>
