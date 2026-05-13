@@ -686,41 +686,46 @@ export function CreateQuestionContent() {
     };
   }, [isModalOpen, closeKeepState]);
 
-  // Portal target for the in-progress draft poll card, rendered in the page
-  // body by the group / empty-group routes. Re-queried via a
-  // MutationObserver that stays armed for the full component lifetime —
-  // page navigations swap the portal target node (and the loading-spinner
-  // early-return inside GroupContent unmounts it transiently), so a
-  // self-disconnecting observer can leave us holding a stale reference
-  // pointing at a detached node and the draft card stops rendering.
-  // The mutation callback is coalesced into one rAF per frame, so the
-  // always-on listener doesn't run hundreds of times during typing /
-  // scroll / animation.
+  // Portal targets for the in-progress draft poll card. Rendered in the
+  // page body by the group / empty-group routes (one per route instance).
+  // Re-queried via a MutationObserver that stays armed for the full
+  // component lifetime — page navigations swap the portal target node
+  // (and the loading-spinner early-return inside GroupContent unmounts it
+  // transiently), so a self-disconnecting observer can leave us holding
+  // a stale reference pointing at a detached node.
   //
-  // Prefer the LAST `#draft-poll-portal` in DOM order. During a slide-
-  // overlay transition there can be TWO targets at once: the real route's
-  // (inside #__next) and the overlay's (createPortal'd directly under
-  // <body>, so it appears later in DOM order). `getElementById` returns
-  // the first match, which is the real route's — hidden behind the
-  // overlay's z=60 layer, so the bubble bar would be invisible until the
-  // overlay unmounted. The last-match rule picks the overlay's during the
-  // slide and seamlessly falls back to the real route's once it unmounts
-  // (their visual positions coincide).
-  const [draftPollPortal, setDraftPollPortal] = useState<HTMLElement | null>(null);
+  // We render into EVERY `#draft-poll-portal` in the DOM, not just the
+  // last one. During a slide-overlay transition there are two
+  // simultaneously: the real route's (inside #__next) and the overlay's
+  // (createPortal'd directly under <body>, so it appears later in DOM
+  // order). Both sit at the same screen position; the overlay's z=60
+  // layer covers the real-route one during the slide. Rendering into
+  // both means:
+  //   - During the slide: user sees the overlay copy slide in (the real-
+  //     route copy underneath is hidden by the overlay's opaque layer).
+  //   - When the overlay unmounts, the real-route copy is already there
+  //     — no portal-target swap, no React commit gap, no blink.
+  // Without this, the unmount of the overlay's portal target would force
+  // a setState → render → commit cycle to move the bubble bar from the
+  // (now-detached) overlay portal to the real-route portal, producing
+  // one frame where the bubble bar is rendered into a detached node and
+  // thus invisible.
+  //
+  // The listener runs synchronously on every mutation (no rAF
+  // coalescing). React still no-op-renders when the list of portal
+  // targets is unchanged (reference-equality on every entry via the
+  // arraysShallowEqual check), so typing / scrolling don't trigger
+  // re-renders even though the listener fires on every body-subtree
+  // mutation.
+  const [draftPollPortals, setDraftPollPortals] = useState<HTMLElement[]>([]);
   useEffect(() => {
-    // Run synchronously on every mutation — no rAF coalescing — so the
-    // overlay-slide handoff (overlay mounts → portal target appears;
-    // overlay unmounts → fall back to real-route's portal) lands on the
-    // same render tick as the DOM change, not one frame later. With rAF
-    // coalescing a single-frame visible "blink" of the bubble bar fired
-    // at each portal-target change. The `prev === el` short-circuit keeps
-    // setDraftPollPortal a no-op when the resolved target hasn't actually
-    // moved, so typing / scrolling don't trigger React renders even
-    // though the listener runs on every body-subtree mutation.
+    const arraysShallowEqual = (a: HTMLElement[], b: HTMLElement[]) =>
+      a.length === b.length && a.every((el, i) => el === b[i]);
     const check = () => {
-      const all = document.querySelectorAll<HTMLElement>(`#${DRAFT_POLL_PORTAL_ID}`);
-      const el = all.length > 0 ? all[all.length - 1] : null;
-      setDraftPollPortal(prev => (prev === el ? prev : el));
+      const all = Array.from(
+        document.querySelectorAll<HTMLElement>(`#${DRAFT_POLL_PORTAL_ID}`)
+      );
+      setDraftPollPortals(prev => (arraysShallowEqual(prev, all) ? prev : all));
     };
     const observer = new MutationObserver(check);
     observer.observe(document.body, { childList: true, subtree: true });
@@ -1512,37 +1517,40 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
+  // Category bubble bar JSX, portaled into every `#draft-poll-portal` in
+  // the DOM. During the slide-overlay transition there are two targets
+  // (overlay's + real-route's at the same screen position); rendering
+  // into both means the unmount of the overlay doesn't leave a one-frame
+  // gap where the bubble bar is detached.
+  // pt-* is the gap above; pb-4 supplements the page's outer
+  // paddingBottom (template.tsx) so iOS Safari's bottom URL bar
+  // (~50–64px, overlays the viewport at max scroll) doesn't clip the
+  // last bubble row. env(safe-area-inset-bottom) isn't usable here —
+  // it returns 0 when the URL bar is visible (the case we need to
+  // handle) and feeds scrollHeight.
+  const bubbleBar = (
+    <div className="px-3 pt-3 pb-4 flex flex-wrap justify-center gap-2">
+      {BUBBLE_ENTRIES.map((entry) => (
+        <button
+          key={entry.value}
+          type="button"
+          onClick={() => openModalFor(entry.value)}
+          disabled={isLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
+          aria-label={`Add ${entry.label} question`}
+        >
+          {entry.icon && (
+            <span className="text-base leading-none" aria-hidden>{entry.icon}</span>
+          )}
+          <span>{entry.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="question-content">
-      {draftPollPortal && createPortal(
-        <>
-          {/* Category bubble bar — pt-* is the gap above; pb-4 supplements
-              the page's outer paddingBottom (template.tsx) so iOS Safari's
-              bottom URL bar (~50–64px, overlays the viewport at max scroll)
-              doesn't clip the last bubble row. env(safe-area-inset-bottom)
-              isn't usable here — it returns 0 when the URL bar is visible
-              (the case we need to handle) and feeds scrollHeight. */}
-          <div className="px-3 pt-3 pb-4 flex flex-wrap justify-center gap-2">
-            {BUBBLE_ENTRIES.map((entry) => (
-              <button
-                key={entry.value}
-                type="button"
-                onClick={() => openModalFor(entry.value)}
-                disabled={isLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
-                aria-label={`Add ${entry.label} question`}
-              >
-                {entry.icon && (
-                  <span className="text-base leading-none" aria-hidden>{entry.icon}</span>
-                )}
-                <span>{entry.label}</span>
-              </button>
-            ))}
-          </div>
-
-        </>,
-        draftPollPortal
-      )}
+      {draftPollPortals.map((target, i) => createPortal(bubbleBar, target, String(i)))}
 
       {/* New-poll bottom sheet — slides up from the bottom edge. Top half
           holds the question form; bottom half holds poll-level settings
