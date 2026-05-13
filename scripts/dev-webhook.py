@@ -176,11 +176,21 @@ def deploy_production(tag: str | None = None):
             if fetch.returncode != 0:
                 log.error(f"Git fetch failed: {fetch.stderr}")
                 return
-            # Capture pre/post SHAs so we can short-circuit no-op deploys.
+            # Compare current HEAD to origin/main before resetting. If they
+            # match, nothing changed → skip the docker rebuild. `git reset
+            # --hard origin/main` makes HEAD == origin/main by definition,
+            # so no second rev-parse is needed afterward.
             before = subprocess.run(
                 ["git", "rev-parse", "HEAD"], cwd=REPO_DIR,
                 capture_output=True, text=True,
             ).stdout.strip()
+            target = subprocess.run(
+                ["git", "rev-parse", "origin/main"], cwd=REPO_DIR,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            if before == target:
+                log.info(f"Already at origin/main ({before[:8]}), skipping rebuild")
+                return
             reset = subprocess.run(
                 ["git", "reset", "--hard", "origin/main"],
                 cwd=REPO_DIR,
@@ -191,14 +201,7 @@ def deploy_production(tag: str | None = None):
             if reset.returncode != 0:
                 log.error(f"Git reset failed: {reset.stderr}")
                 return
-            after = subprocess.run(
-                ["git", "rev-parse", "HEAD"], cwd=REPO_DIR,
-                capture_output=True, text=True,
-            ).stdout.strip()
-            log.info(f"Reset {before[:8]} → {after[:8]}")
-            if before == after:
-                log.info("Already at origin/main, skipping rebuild")
-                return
+            log.info(f"Reset {before[:8]} → {target[:8]}")
         else:
             log.info(f"--- Fetching tags and checking out {tag} ---")
             fetch = subprocess.run(
@@ -223,8 +226,7 @@ def deploy_production(tag: str | None = None):
                 return
             log.info(f"Checked out tag {tag}")
 
-        # 2. Check if server/ files changed (optimize: skip rebuild if only frontend changed)
-        # Always rebuild to be safe — Docker layer caching makes no-op rebuilds fast
+        # 2. Always rebuild — Docker layer caching makes no-op rebuilds fast.
         log.info("--- Rebuilding and restarting Docker services ---")
         result = subprocess.run(
             ["docker", "compose", "up", "-d", "--build"],
@@ -279,6 +281,13 @@ def deploy_production(tag: str | None = None):
 
 
 class WebhookHandler(http.server.BaseHTTPRequestHandler):
+    def _respond_json(self, status: int, body: dict) -> None:
+        """Write a JSON HTTP response. Used by every webhook reply path."""
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(body).encode())
+
     def do_POST(self):
         if self.path != "/github":
             self.send_error(404)
@@ -302,9 +311,7 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
         event = self.headers.get("X-GitHub-Event", "")
         if event == "ping":
             log.info("Received ping event")
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "pong"}')
+            self._respond_json(200, {"status": "pong"})
             return
 
         # Parse JSON body once (push and release events both use JSON).
@@ -318,34 +325,29 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
         if event == "release":
             if DROPLET_LABEL == "latest":
                 log.info("Release event ignored on latest tier")
-                self.send_response(200); self.end_headers()
-                self.wfile.write(b'{"status": "release ignored on latest"}')
+                self._respond_json(200, {"status": "release ignored on latest"})
                 return
             action = payload.get("action", "")
             if action != "published":
                 log.info(f"Release event with action={action!r}, ignoring (only 'published' triggers deploy)")
-                self.send_response(200); self.end_headers()
-                self.wfile.write(b'{"status": "release action ignored"}')
+                self._respond_json(200, {"status": "release action ignored"})
                 return
             release = payload.get("release", {}) or {}
             if release.get("draft") or release.get("prerelease"):
                 log.info("Release is draft/prerelease, ignoring")
-                self.send_response(200); self.end_headers()
-                self.wfile.write(b'{"status": "draft/prerelease ignored"}')
+                self._respond_json(200, {"status": "draft/prerelease ignored"})
                 return
             tag = release.get("tag_name") or ""
             if not tag:
                 log.warning("Release published event has no tag_name; ignoring")
-                self.send_response(400); self.end_headers()
-                self.wfile.write(b'{"status": "no tag_name"}')
+                self._respond_json(400, {"status": "no tag_name"})
                 return
             log.info(f"Release published: tag={tag}")
-            self.send_response(202); self.end_headers()
-            self.wfile.write(json.dumps({
+            self._respond_json(202, {
                 "status": "accepted",
                 "action": "production_deploy",
                 "tag": tag,
-            }).encode())
+            })
             t = threading.Thread(target=deploy_production, kwargs={"tag": tag})
             t.daemon = True
             t.start()
@@ -353,25 +355,19 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
 
         if event != "push":
             log.info(f"Ignoring event type: {event}")
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "ignored"}')
+            self._respond_json(200, {"status": "ignored"})
             return
 
         branch = get_branch(payload)
         if not branch:
             log.info("Push event without branch ref, ignoring")
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "no branch"}')
+            self._respond_json(200, {"status": "no branch"})
             return
 
         # Skip deleted branches
         if payload.get("deleted", False):
             log.info(f"Branch {branch} deleted, ignoring")
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "branch deleted"}')
+            self._respond_json(200, {"status": "branch deleted"})
             return
 
         # Extract author emails (for logging only; we no longer spawn dev
@@ -379,42 +375,36 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
         emails = extract_author_emails(payload)
         log.info(f"Push to {branch} by {emails or '(no non-bot authors)'}")
 
-        # Respond immediately, process in background
-        self.send_response(202)
-        self.end_headers()
-
         # Push to main → deploy ONLY on the latest tier. Prod waits for a
         # release event instead.
         if branch == "main":
             if DROPLET_LABEL == "latest":
-                self.wfile.write(json.dumps({
+                self._respond_json(202, {
                     "status": "accepted",
                     "branch": branch,
                     "action": "latest_deploy",
-                }).encode())
+                })
                 t = threading.Thread(target=deploy_production)
                 t.daemon = True
                 t.start()
                 return
-            self.wfile.write(json.dumps({
+            self._respond_json(202, {
                 "status": "ignored",
                 "branch": branch,
                 "reason": "prod tier deploys on release event, not push to main",
-            }).encode())
+            })
             return
 
         # Non-main pushes: dev servers live on the Mac mini now; nothing to do.
-        self.wfile.write(json.dumps({
+        self._respond_json(202, {
             "status": "accepted",
             "branch": branch,
             "action": "ignored (dev servers run on Mac mini)",
-        }).encode())
+        })
 
     def do_GET(self):
         if self.path == "/health":
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "ok"}')
+            self._respond_json(200, {"status": "ok"})
             return
         self.send_error(404)
 

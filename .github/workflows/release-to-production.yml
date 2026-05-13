@@ -45,7 +45,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.resolve.outputs.tag }}
-          fetch-depth: 0
+          # Single-commit clone is enough: the only git operation below is
+          # a force-push of HEAD to refs/heads/production.
+          fetch-depth: 1
 
       - name: Force-push tag commit to production branch
         run: |

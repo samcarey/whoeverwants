@@ -61,7 +61,13 @@ chmod 644 /etc/droplet-label
 # ── 1. System updates ────────────────────────────────────────────────
 echo "=== 1a/13 System updates ==="
 apt-get update -qq
-apt-get upgrade -y -qq
+# Skip upgrade when there's nothing to do — re-running the provision script on
+# an already-set-up droplet is otherwise dominated by a no-op apt-get upgrade.
+if apt list --upgradable 2>/dev/null | grep -q upgradable; then
+  apt-get upgrade -y -qq
+else
+  echo "System packages already up to date"
+fi
 
 # ── 1b. Firewall (UFW) ───────────────────────────────────────────────
 echo "=== 1b/13 Configuring firewall ==="
