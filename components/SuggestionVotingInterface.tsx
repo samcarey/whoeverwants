@@ -269,21 +269,28 @@ export default function SuggestionVotingInterface({
           </div>
         )}
 
-        {/* Add new suggestions using shared component */}
-        <div className={filteredExistingSuggestions.length > 0 ? "mt-3 pt-3 border-t border-gray-200 dark:border-gray-600" : ""}>
-          <OptionsInput
-            options={newSuggestions}
-            setOptions={setNewSuggestions}
-            isLoading={isSubmitting}
-            label={isEditingVote ? "Add new suggestions:" : "Add new suggestions:"}
-            category={question.category || 'custom'}
-            optionsMetadata={suggestionMetadata}
-            onMetadataChange={onSuggestionMetadataChange}
-            referenceLatitude={question.reference_latitude}
-            referenceLongitude={question.reference_longitude}
-            searchRadius={searchRadius}
-            hideReferenceLocationWarning
-          />
+        {/* Add new suggestions using shared component — mirrors the
+            options card on the create-poll form: external left-justified
+            label above a rounded card hosting the compact OptionsInput. */}
+        <div className={filteredExistingSuggestions.length > 0 ? "mt-3" : ""}>
+          <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+            Suggestions
+          </label>
+          <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
+            <OptionsInput
+              options={newSuggestions}
+              setOptions={setNewSuggestions}
+              isLoading={isSubmitting}
+              category={question.category || 'custom'}
+              optionsMetadata={suggestionMetadata}
+              onMetadataChange={onSuggestionMetadataChange}
+              referenceLatitude={question.reference_latitude}
+              referenceLongitude={question.reference_longitude}
+              searchRadius={searchRadius}
+              variant="compact"
+              hideReferenceLocationWarning
+            />
+          </section>
         </div>
 
 
