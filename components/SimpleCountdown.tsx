@@ -16,6 +16,11 @@ interface SimpleCountdownProps {
    *  unmounts / hides the row once the deadline passes, so the brief
    *  cross-zero tick shouldn't flash a stray "Expired" label. */
   blankOnExpire?: boolean;
+  /** Class string applied to the countdown number span. Default is
+   *  `'font-mono font-semibold'` — fixed-width digits prevent layout shimmer
+   *  as the count ticks. Callers in tight columns can pass a tighter /
+   *  bolder stack instead (e.g. `'font-bold tracking-tighter'`). */
+  numberClass?: string;
 }
 
 /** Ticks countdown text via a ref + textContent to avoid a per-second React
@@ -28,6 +33,7 @@ export default function SimpleCountdown({
   colorClass = "text-blue-600 dark:text-blue-400",
   compact = false,
   blankOnExpire = false,
+  numberClass = "font-mono font-semibold",
 }: SimpleCountdownProps) {
   const spanRef = useRef<HTMLSpanElement>(null);
 
@@ -48,5 +54,5 @@ export default function SimpleCountdown({
     return () => clearInterval(interval);
   }, [deadline, compact, blankOnExpire]);
 
-  return <>{label ? `${label}: ` : null}<span ref={spanRef} className={`font-mono font-semibold ${colorClass}`} /></>;
+  return <>{label ? `${label}: ` : null}<span ref={spanRef} className={`${numberClass} ${colorClass}`} /></>;
 }
