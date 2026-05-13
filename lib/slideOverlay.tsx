@@ -32,9 +32,9 @@
  * in `lib/api/_internal.ts`.
  */
 
-import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
+import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { normalizePath } from "./questionId";
 import { GroupContent } from "@/app/g/[groupShortId]/GroupPage";
 
@@ -73,7 +73,6 @@ interface OverlayState {
 export function GroupSlideOverlayHost(): React.ReactElement | null {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [state, setState] = useState<OverlayState | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   // True for the brief window between firing slideToGroup and Next.js

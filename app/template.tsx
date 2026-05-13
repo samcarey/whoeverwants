@@ -8,7 +8,6 @@ import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
-import { GroupSlideOverlayHost } from '@/lib/slideOverlay';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { apiCreateGroup } from '@/lib/api';
@@ -355,14 +354,6 @@ function TemplateInner({ children }: AppTemplateProps) {
         )}
 
       </HeaderPortal>
-
-      {/* iOS-style overlay-slide for home → group navigation. The overlay
-          renders the destination above the current route + slides in from
-          right via pure CSS transform; router.push fires in parallel so the
-          URL catches up. Cuts perceived navigation latency from ~300ms (the
-          view-transitions snapshot + router.push commit) to a single frame
-          since the slide starts on the same RAF as the tap. */}
-      <GroupSlideOverlayHost />
     </>
   );
 }
