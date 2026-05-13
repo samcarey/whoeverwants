@@ -74,15 +74,15 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
     }
   };
   // The overlay has its own `overflow: hidden auto` scroll container, so
-  // window.scrollY changes inside the overlay's GroupContent (initial
-  // alignment of the expanded card with the header, scroll-helpers, etc.)
-  // don't move the overlay's view. Without this sync the overlay shows
-  // content at scrollTop=0 while window.scrollY ends up at the real route's
-  // target — when the overlay unmounts, the cards visually jump by that
-  // amount (the "slight shift after the slide completes" bug). The real-route
-  // scroll typically lands AFTER the router.push commit (the home document
-  // is too short to allow the target scrollY during the overlay-only phase),
-  // so a scroll listener catches that update too.
+  // window.scrollY changes inside the overlay's GroupContent don't move the
+  // overlay's view — and the overlay's scrollTop stays at 0 by default.
+  // Without alignment the cards visibly shift by `card.offsetTop -
+  // headerHeight` (typically 8px for the first card) the moment the
+  // overlay unmounts and reveals the real route, which has already
+  // scrolled into position. We compute that target ourselves from the
+  // overlay's DOM and apply it BEFORE the slide animation starts; the
+  // visible state during the slide matches what the user sees after
+  // unmount, so the handoff is seamless.
   const overlayDivRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -123,32 +123,72 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
     router.push(state.href);
   }, [state?.phase, router]);
 
-  // Mirror window.scrollY → overlay.scrollTop ONCE the route has committed
-  // to the slide target. See the overlayDivRef declaration for the rationale.
-  // Why gate on the path match: before the commit the document is still the
-  // origin route, so window.scrollY reflects the origin's scroll history
-  // plus any in-flight relative-math scrollTo's from the overlay's own
-  // GroupContent (those use `window.scrollY + targetDelta`). Mirroring those
-  // would briefly snap the overlay to nonsensical positions. Once the real
-  // route commits, Next.js applies its scroll restoration and the real
-  // route's GroupContent computes an absolute target — at that point
-  // window.scrollY matches what the user should see, and we mirror.
+  // Align the overlay's internal scroll so the expanded card sits flush with
+  // the bottom of the fixed header — matching what GroupContent's
+  // `initial-load scroll (path 1)` does for the real route. See the
+  // overlayDivRef declaration for the broader rationale. Computing the
+  // target from the overlay's own DOM (rather than mirroring window.scrollY)
+  // means it's applied within the first frame of the overlay's mount,
+  // before the slide animation starts, so the user never sees the
+  // pre-alignment position. The same target value will be reached by the
+  // real route's GroupContent after router.push commits, so the unmount
+  // is a no-op visually.
+  //
+  // Subsequent scroll events on the window (from real-route smooth-scroll
+  // / scroll-helpers / applyScrollAdjustmentRef) get mirrored to keep the
+  // overlay in sync for the rest of its lifetime.
   const overlayMounted = state !== null;
-  const targetPath = state
-    ? normalizePath(new URL(state.href, window.location.origin).pathname)
-    : null;
-  const onTargetPath =
-    overlayMounted && targetPath !== null && normalizePath(pathname || "/") === targetPath;
-  useEffect(() => {
-    if (!onTargetPath) return;
-    const sync = () => {
-      const d = overlayDivRef.current;
-      if (d) d.scrollTop = window.scrollY;
+  const expandedQuestionId = state?.expandedQuestionId ?? null;
+  useLayoutEffect(() => {
+    if (!overlayMounted) return;
+    let cancelled = false;
+    let rafId: number | null = null;
+    let attempts = 0;
+    const align = () => {
+      rafId = null;
+      if (cancelled) return;
+      const o = overlayDivRef.current;
+      if (!o) return;
+      const header = o.querySelector<HTMLElement>("[data-group-header]");
+      // When `expandedQuestionId` is set, align that specific card. Otherwise
+      // GroupContent's else-branch scrolls to scrollHeight; we mirror that.
+      if (expandedQuestionId) {
+        const card = o.querySelector<HTMLElement>(
+          `[data-question-id="${expandedQuestionId}"]`,
+        );
+        if (!header || !card || header.offsetHeight === 0) {
+          // Cards may still be loading from cache; retry next frame. Cap
+          // attempts so we don't loop forever if the targeted card never
+          // appears (data missing, etc.).
+          if (attempts++ < 30) rafId = requestAnimationFrame(align);
+          return;
+        }
+        const target = Math.max(0, card.offsetTop - header.offsetHeight);
+        if (o.scrollTop !== target) o.scrollTop = target;
+      } else {
+        // No expand target → land at the bottom of overlay content.
+        const target = Math.max(0, o.scrollHeight - o.clientHeight);
+        if (o.scrollTop !== target) o.scrollTop = target;
+      }
     };
-    sync();
+    align();
+    // Mirror subsequent window scrolls so any post-commit scroll
+    // adjustments by the real route stay in sync. The capture phase isn't
+    // necessary — bubble fires synchronously enough on the same frame.
+    const sync = () => {
+      const o = overlayDivRef.current;
+      if (o) o.scrollTop = window.scrollY;
+    };
     window.addEventListener("scroll", sync, { passive: true });
-    return () => window.removeEventListener("scroll", sync);
-  }, [onTargetPath]);
+    return () => {
+      cancelled = true;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener("scroll", sync);
+    };
+    // expandedQuestionId is the only mount-time param that affects the
+    // target; including it covers the edge case where a second slide event
+    // (different target) arrives while still on the same path.
+  }, [overlayMounted, expandedQuestionId]);
 
   // Unmount when either (a) the URL has flipped + slide duration has elapsed,
   // or (b) the safety timeout fires. One timer per slide; cleared on new
