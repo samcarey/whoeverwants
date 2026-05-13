@@ -269,13 +269,14 @@ export default function SuggestionVotingInterface({
           </div>
         )}
 
-        {/* Add new suggestions using shared component — mirrors the
-            options card on the create-poll form: external left-justified
-            label above a rounded card hosting the compact OptionsInput. */}
+        {/* Mirrors the options card on the create-poll form. Card shade
+            is bg-gray-50 (not bg-white as in create-poll) because the
+            ballot context sits on the page bg, not a sheet backdrop —
+            see CLAUDE.md's "Always-Visible Name Field" section. */}
         <div className={filteredExistingSuggestions.length > 0 ? "mt-3" : ""}>
-          <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+          <h5 className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
             Suggestions
-          </label>
+          </h5>
           <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
             <OptionsInput
               options={newSuggestions}
@@ -292,7 +293,6 @@ export default function SuggestionVotingInterface({
             />
           </section>
         </div>
-
 
         {voteError && (
           <div className="mt-3 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
