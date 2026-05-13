@@ -16,39 +16,48 @@ The Supabase-to-Python migration and infrastructure improvements (Phases 1-10) a
 
 > **Historical note on What/When/Where:** Earlier iterations of the redesign shipped a 3-bubble bar (What/When/Where) that preselected via `?mode=time` / `?category=restaurant`. That trichotomy was eliminated; references to "What/When/Where" in Phase 2.3 / Navigation Layout / Always-On Draft Poll Card sections below are historical context, NOT the current UI. The current bar is per-category.
 
-## DigitalOcean Droplet (Production Server)
+## DigitalOcean Droplets — Two-Tier Deploy
 
-The production server is a DigitalOcean droplet that Claude manages remotely. **You have full control of this server.**
+WhoeverWants runs on **two** DigitalOcean droplets that are software-identical (same `scripts/provision-droplet.sh`, same Docker stack, same migrations). Only the public hostnames and deploy trigger differ — see "Development Workflow" below for the gating.
 
-### Server Specs
+- **`whoeverwants` (prod)** — `142.93.60.29`, fronts `api.whoeverwants.com` + `hooks.api.whoeverwants.com`. Deploys when a GitHub Release is published, pinned to the release's tag.
+- **`latest` (pre-prod canary)** — `67.207.94.93`, fronts `api.latest.whoeverwants.com` + `hooks.api.latest.whoeverwants.com`. Deploys on every push to `main` so the latest code is exercised in its final configuration (release-mode build, droplet, Caddy, Postgres) before a production release.
+
+Behavior is driven by `/etc/droplet-label` on each droplet (`""` = prod, `"latest"` = canary). `scripts/dev-webhook.py` reads it at startup. `scripts/provision-droplet.sh` accepts `DROPLET_LABEL=latest` to provision a canary; default behavior is prod.
+
+### Server Specs (both droplets — match exactly)
 | Property | Value |
 |----------|-------|
-| Hostname | `whoeverwants` |
-| IP | `142.93.60.29` |
-| OS | Ubuntu 24.04 LTS |
-| RAM | 1 GB |
-| Disk | 24 GB |
+| Image | Ubuntu 24.04 LTS |
+| Size | s-1vcpu-1gb (1 GB RAM, 24 GB SSD) |
+| Region | nyc1 |
 | User | `root` |
-| Purpose | Hosts the Python API server and PostgreSQL (API-only; frontend on Vercel) |
+
+| Hostname | IP | Tier | Public hosts |
+|----------|----|----|--------------|
+| `whoeverwants` | `142.93.60.29` | prod | `api.whoeverwants.com`, `hooks.api.whoeverwants.com` |
+| `latest` | `67.207.94.93` | canary | `api.latest.whoeverwants.com`, `hooks.api.latest.whoeverwants.com` |
 
 ### Remote Command Execution
 
-Run commands on the droplet from this environment using `scripts/remote.sh`:
+Both droplets are reachable over their own sslip.io URL via a sibling pair of helpers:
 
 ```bash
-# Basic usage
+# Prod droplet
 bash scripts/remote.sh "command" [working_dir] [timeout_seconds]
 
-# Examples
-bash scripts/remote.sh "hostname && uptime"
-bash scripts/remote.sh "git pull" /root/whoeverwants
-bash scripts/remote.sh "docker compose up -d" /root/whoeverwants 180
-bash scripts/remote.sh "docker compose logs --tail 50" /root/whoeverwants
-bash scripts/remote.sh "systemctl status nginx"
-bash scripts/remote.sh "psql -U postgres -c 'SELECT 1'"
+# Latest (canary) droplet
+bash scripts/remote-latest.sh "command" [working_dir] [timeout_seconds]
 ```
 
-The script reads `DROPLET_API_URL` and `DROPLET_API_TOKEN` from environment variables (preferred) or falls back to `.env`.
+Both honor the same JSON protocol; only the env vars differ. Examples:
+
+```bash
+bash scripts/remote.sh "hostname && uptime"                  # prod
+bash scripts/remote-latest.sh "hostname && uptime"           # latest
+bash scripts/remote.sh "docker compose logs --tail 50" /root/whoeverwants
+bash scripts/remote-latest.sh "cat /etc/droplet-label"       # should print "latest"
+```
 
 ### Required Environment Variables
 
@@ -57,13 +66,18 @@ The following environment variables must be available. In the Claude Code web en
 ```
 DROPLET_API_URL=https://142-93-60-29.sslip.io
 DROPLET_API_TOKEN=<bearer token>
+LATEST_DROPLET_API_URL=https://67-207-94-93.sslip.io
+LATEST_DROPLET_API_TOKEN=<bearer token for latest droplet>
+DIGITAL_OCEAN_TOKEN=<DO API v2 token>
 VERCEL_API_TOKEN=<vercel api token>
 GITHUB_API_TOKEN=<github fine-grained PAT>
 ```
 
-- `DROPLET_API_URL` / `DROPLET_API_TOKEN` — Authenticate requests to the droplet's command execution API (via sslip.io for TLS). Used by `scripts/remote.sh`.
+- `DROPLET_API_URL` / `DROPLET_API_TOKEN` — Prod droplet cmd-api. Used by `scripts/remote.sh`.
+- `LATEST_DROPLET_API_URL` / `LATEST_DROPLET_API_TOKEN` — Latest (canary) droplet cmd-api. Used by `scripts/remote-latest.sh`.
+- `DIGITAL_OCEAN_TOKEN` — DigitalOcean API token. Used when creating / managing droplets (e.g. spinning up a fresh latest droplet via cloud-init).
 - `VERCEL_API_TOKEN` — Authenticate requests to the [Vercel REST API](https://vercel.com/docs/rest-api) for managing frontend deployments.
-- `GITHUB_API_TOKEN` — GitHub fine-grained Personal Access Token scoped to `samcarey/whoeverwants`. Permissions: Pull Requests (R/W), Issues (Read), Contents (R/W), Commit Statuses (Read), Actions (Read). Used for creating PRs, reading issues, and checking CI status via the GitHub REST API.
+- `GITHUB_API_TOKEN` — GitHub fine-grained Personal Access Token scoped to `samcarey/whoeverwants`. Permissions: Pull Requests (R/W), Issues (Read), Contents (R/W), Commit Statuses (Read), Actions (Read). Used for creating PRs, reading issues, and checking CI status via the GitHub REST API. Note: webhook admin is NOT in the scope, so adding/editing GitHub webhooks must be done manually in the GitHub UI.
 
 > **SECURITY**: These tokens must NEVER be committed to git — not in CLAUDE.md, `.env`, or any tracked file. Store them only in environment variables. The droplet token was previously leaked via a git commit (fa805e7), leading to a Kinsing cryptominer compromise that required a full droplet rebuild (old IP 157.245.129.162 → current 142.93.60.29).
 
@@ -91,14 +105,24 @@ Each dev server gets its own:
 - **PostgreSQL database** (separate DB in the shared PostgreSQL container, named `dev_<branch_slug_underscored>`)
 - **All migrations from the branch** auto-applied on creation and update
 
-**Production Frontend** (Vercel):
-- Vercel auto-deploys on push to `main` → `whoeverwants.com`
+**Frontend** (Vercel):
+- Single Vercel project (`prj_07PAXGI2wG74cGRKREB0BiIDUWSn`); same build artifact serves both tiers.
+- Push to `main` → Vercel builds + aliases the deployment to `latest.whoeverwants.com`.
+- Publishing a GitHub Release → Vercel alias for `whoeverwants.com` is moved to that build (release deployment promoted to prod).
+- API destination is selected at request time via `host`-conditional rewrites in `next.config.ts`: `latest.whoeverwants.com` → `api.latest.whoeverwants.com`; everything else → `api.whoeverwants.com` (or branch preview for non-main builds).
 
-**Production Backend** (Python API on droplet — auto-deployed on push to main):
-- Merging/pushing to `main` auto-triggers: git pull → Docker rebuild → migration check → health verify
+**Latest tier — canary backend** (Python API on `latest` droplet, auto-deployed on push to `main`):
+- Push to `main` fires the GitHub webhook → `hooks.api.latest.whoeverwants.com` → `scripts/dev-webhook.py` (reads `/etc/droplet-label=latest`) → `git pull origin main` → `docker compose up -d --build` → apply pending migrations → `/health` verify.
+- Deploy logs: `bash scripts/remote-latest.sh "tail -50 /var/log/dev-webhook.log" /root`
+- Manual rebuild: `bash scripts/remote-latest.sh "docker compose up -d --build" /root/whoeverwants`
+- API logs: `bash scripts/remote-latest.sh "docker compose logs --tail 100" /root/whoeverwants`
+
+**Production backend** (Python API on `whoeverwants` droplet, auto-deployed only on GitHub Release):
+- Publishing a non-draft / non-prerelease GitHub Release fires the webhook → `hooks.api.whoeverwants.com` → `scripts/dev-webhook.py` (reads `/etc/droplet-label=""`) → `git fetch --tags && git checkout tags/<release-tag>` → `docker compose up -d --build` → apply pending migrations → `/health` verify. Push events to `main` are explicitly ignored on this tier.
 - Deploy logs: `bash scripts/remote.sh "tail -50 /var/log/dev-webhook.log" /root`
 - Manual rebuild: `bash scripts/remote.sh "docker compose up -d --build" /root/whoeverwants`
 - API logs: `bash scripts/remote.sh "docker compose logs --tail 100" /root/whoeverwants`
+- **To ship**: cut a GitHub Release. The release's tag must exist on `main` (or any branch — but the convention is to publish from a `main` commit that's already running cleanly on `latest.whoeverwants.com`).
 - **Auto-deploy can silently fail on uncommitted local mods.** The webhook does a plain `git pull`; if the droplet's `/root/whoeverwants` checkout has any unstaged file (typically `scripts/dev-server-manager.sh` after a hotfix), the pull aborts with `error: Your local changes to the following files would be overwritten by merge`, the webhook logs the failure but the deploy "completes" with no rebuild. Vercel meanwhile auto-deploys the new FE → FE/API contract drift. Symptom from a recent occurrence (#290 deploy stuck): every `POST /api/polls` with `group_id: <uuid>` came back with a brand-new group_id in the response — the old server didn't read `group_id` at all (still expected the retired `follow_up_to` field), so polls "disappeared" into freshly-minted groups. Diagnostic: `tail /var/log/dev-webhook.log | grep -A3 'Git pull failed'` to spot the blocking file; on the droplet, `cd /root/whoeverwants && git status` to confirm; `git log --oneline -3` to confirm the actual deployed commit. Fix: stash the local diff, `git pull`, apply any pending migrations, `docker compose up -d --build`. Recovery for orphaned data: any group minted while the deploy was stale needs to be merged into its intended group (`UPDATE polls SET group_id = <real> WHERE group_id = <orphan>`, then `DELETE FROM groups WHERE id = <orphan>`).
 - **Defensive log when requested `group_id` is unknown.** `_resolve_or_create_group` in `server/routers/polls.py` emits a `WARNING` when `req.group_id` is provided but no matching `groups` row exists. The mint-fresh-group fallback is intentional (per the function's docstring) but a sustained stream of these warnings is a tripwire for: (a) a stale deploy missing a schema migration, (b) the FE sending a stale/cached group_id from before a forget+re-discover cycle, (c) cross-group races. Surface via `bash scripts/remote.sh "docker compose logs --tail 200 api | grep 'group_id'"` when investigating "polls landing in the wrong group" reports.
 
@@ -187,10 +211,36 @@ ssh root@<DROPLET_IP> 'bash -s' < scripts/provision-droplet.sh <API_TOKEN>
 This installs Docker, Caddy, the command execution API, clones the repo, starts all services, and applies database migrations.
 
 ### Important Notes
-- The droplet has its own clone of this repo at `/root/whoeverwants`
-- Never transfer files manually — commit here, pull there
+- Each droplet has its own clone of this repo at `/root/whoeverwants`. Never transfer files manually — commit here, pull there. Different deploy triggers per tier (push to main vs release published).
 - The remote execution API has a configurable timeout (default 120s, max via 3rd arg)
 - The API returns stdout, stderr, and exit code for every command
+
+### Latest-Tier Rollout — Remaining Manual Steps
+
+`scripts/dev-webhook.py` and `next.config.ts` are already coded for the two-tier model; the new `latest` droplet runs the new code from day one (cloud-init clones the feature branch and `provision-droplet.sh` writes `/etc/droplet-label=latest`). The remaining setup is split between Route 53, Vercel, GitHub, and the existing prod droplet:
+
+1. **DNS (Route 53)** — Add two A records pointing at the new droplet's IP (`67.207.94.93`):
+   - `api.latest.whoeverwants.com  A  67.207.94.93`
+   - `hooks.api.latest.whoeverwants.com  A  67.207.94.93`
+   - One CNAME for the FE host: `latest.whoeverwants.com  CNAME  cname.vercel-dns.com`
+
+2. **Vercel — `latest.whoeverwants.com`** — Add the domain to the existing `whoeverwants` project (Vercel UI → Settings → Domains → Add `latest.whoeverwants.com`). For the desired "main → latest, release → prod" gating, either:
+   - **Option A (simplest, recommended):** Change the project's `productionBranch` from `main` to a new `production` branch (Vercel UI → Settings → Git → Production Branch). Create the `production` branch in GitHub. Push to main keeps deploying as PREVIEWs; bind `latest.whoeverwants.com` to PREVIEWs of `main` (Vercel UI → Settings → Domains → set the domain's "Git Branch" filter to `main`). Production whoeverwants.com only updates when something pushes to the `production` branch.
+   - **Option B (GitHub Action–driven):** Keep `main` as productionBranch. After every Vercel main-deploy completes, a GitHub Action calls Vercel API `POST /v2/aliases` to alias the deployment to `latest.whoeverwants.com`. On release, a different Action calls the API to alias the released-tag's deployment to `whoeverwants.com`. More moving parts but no production-branch dance.
+
+3. **Release → Production glue (GitHub Action)** — Whichever Vercel option above is chosen, add a workflow that fires on `release: published` and:
+   - **Option A:** `git push origin <release-tag>:production --force` so Vercel picks it up as a production deploy AND notifies the prod droplet via the webhook below.
+   - **Option B:** Call the Vercel API to move the prod alias.
+   - Either way, the prod droplet's webhook (see step 5) sees the `release` event from GitHub and pulls the tagged commit.
+
+4. **GitHub webhook → latest droplet** — Currently a single GitHub webhook targets `https://hooks.api.whoeverwants.com/github` (prod droplet). Add a second webhook in the same repo settings, configured identically (`push` AND `release` events, same secret, JSON content type), pointing at `https://hooks.api.latest.whoeverwants.com/github`. The fine-grained PAT we use here lacks the `admin:repo_hook` scope, so this must be done via the GitHub UI. The webhook secret is in `/etc/dev-webhook-secret` on the latest droplet (`bash scripts/remote-latest.sh "cat /etc/dev-webhook-secret"`).
+
+5. **Prod droplet cutover** — The prod droplet's `dev-webhook.service` is still running OLD code (pre-this-PR). After this branch merges:
+   1. Push to main triggers prod's old webhook, which `git pull`s + rebuilds prod ONE LAST TIME using the old "push → deploy" behavior. This deploys the new code to `/root/whoeverwants` (but the systemd service still holds the OLD code in memory).
+   2. From the dev env: `bash scripts/remote.sh "test -f /etc/droplet-label || (touch /etc/droplet-label && chmod 644 /etc/droplet-label)"` — ensure the empty-label marker exists so the new webhook code knows it's prod.
+   3. `bash scripts/remote.sh "systemctl restart dev-webhook"` — picks up the new release-event-gated behavior. From here on, push to main DOES NOT deploy to prod; only release events do.
+
+6. **Webhook subscription** — Confirm BOTH webhooks (latest + prod) are subscribed to `push` AND `release` events. The prod droplet's new behavior is `release: published` → deploy; the latest droplet's is `push` to main → deploy.
 
 ## Mac Mini Dev Box
 

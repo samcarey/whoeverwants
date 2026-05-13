@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 import { branchToSlug } from "./lib/slug";
 
-// Determine the backend API origin for rewrites.
+// Default backend API origin (production / branch previews). Latest-tier
+// routing is layered on top via host-conditional rewrites — see
+// `latestRewriteRules` below.
 function getApiRewriteDestination(): string {
   const branch = process.env.VERCEL_GIT_COMMIT_REF || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF;
   if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
@@ -11,6 +13,42 @@ function getApiRewriteDestination(): string {
     return 'https://api.whoeverwants.com';
   }
   return process.env.PYTHON_API_URL || 'http://localhost:8000';
+}
+
+// The "latest" tier (pre-prod canary) lives at latest.whoeverwants.com and is
+// fronted by the latest droplet's API at api.latest.whoeverwants.com. Both
+// hostnames serve from the same Vercel deployment artifact; the upstream API
+// is selected at request time via the `host` header.
+const LATEST_HOST = 'latest.whoeverwants.com';
+const LATEST_API_DEST = 'https://api.latest.whoeverwants.com';
+
+// Emit the full set of /api/* rewrite rules pointed at `dest`. When `host` is
+// passed, the rules only match requests with that Host header (Next.js host
+// rewrites are evaluated at request time on Vercel).
+function apiRewriteRules(dest: string, host?: string) {
+  const has = host ? [{ type: 'host' as const, value: host }] : undefined;
+  const paths: Array<[string, string]> = [
+    ['/api/questions', '/api/questions'],
+    ['/api/questions/', '/api/questions'],
+    ['/api/questions/:path*', '/api/questions/:path*'],
+    ['/api/polls', '/api/polls'],
+    ['/api/polls/', '/api/polls'],
+    ['/api/polls/:path*', '/api/polls/:path*'],
+    ['/api/groups', '/api/groups'],
+    ['/api/groups/', '/api/groups'],
+    ['/api/groups/:path*', '/api/groups/:path*'],
+    ['/api/users', '/api/users'],
+    ['/api/users/', '/api/users'],
+    ['/api/users/:path*', '/api/users/:path*'],
+    ['/api/search/:path*', '/api/search/:path*'],
+    ['/api/client-logs', '/api/client-logs'],
+    ['/api/client-logs/', '/api/client-logs'],
+  ];
+  return paths.map(([source, destPath]) => ({
+    source,
+    destination: `${dest}${destPath}`,
+    ...(has ? { has } : {}),
+  }));
 }
 
 const nextConfig: NextConfig = {
@@ -41,71 +79,17 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
 } else {
   const apiDest = getApiRewriteDestination();
 
-  // Proxy /api/questions to the backend API (same-origin for Safari ITP compatibility)
+  // Proxy /api/* to the backend API (same-origin for Safari ITP compatibility).
+  // Latest-host rules first so they win over the default rules (Next.js
+  // evaluates rewrites top-to-bottom). API rewrites live in `beforeFiles` so
+  // they take priority over the trailingSlash redirect (which otherwise 308s
+  // API POST requests and drops the body).
   nextConfig.rewrites = async () => ({
     beforeFiles: [
-      // API rewrites must be in beforeFiles so they take priority over
-      // the trailingSlash redirect (which otherwise 308s API POST requests)
-      {
-        source: '/api/questions',
-        destination: `${apiDest}/api/questions`,
-      },
-      {
-        source: '/api/questions/',
-        destination: `${apiDest}/api/questions`,
-      },
-      {
-        source: '/api/questions/:path*',
-        destination: `${apiDest}/api/questions/:path*`,
-      },
-      {
-        source: '/api/polls',
-        destination: `${apiDest}/api/polls`,
-      },
-      {
-        source: '/api/polls/',
-        destination: `${apiDest}/api/polls`,
-      },
-      {
-        source: '/api/polls/:path*',
-        destination: `${apiDest}/api/polls/:path*`,
-      },
-      {
-        source: '/api/groups',
-        destination: `${apiDest}/api/groups`,
-      },
-      {
-        source: '/api/groups/',
-        destination: `${apiDest}/api/groups`,
-      },
-      {
-        source: '/api/groups/:path*',
-        destination: `${apiDest}/api/groups/:path*`,
-      },
-      {
-        source: '/api/users',
-        destination: `${apiDest}/api/users`,
-      },
-      {
-        source: '/api/users/',
-        destination: `${apiDest}/api/users`,
-      },
-      {
-        source: '/api/users/:path*',
-        destination: `${apiDest}/api/users/:path*`,
-      },
-      {
-        source: '/api/search/:path*',
-        destination: `${apiDest}/api/search/:path*`,
-      },
-      {
-        source: '/api/client-logs',
-        destination: `${apiDest}/api/client-logs`,
-      },
-      {
-        source: '/api/client-logs/',
-        destination: `${apiDest}/api/client-logs`,
-      },
+      // latest.whoeverwants.com → api.latest.whoeverwants.com
+      ...apiRewriteRules(LATEST_API_DEST, LATEST_HOST),
+      // Default (whoeverwants.com + branch previews) → existing logic
+      ...apiRewriteRules(apiDest),
     ],
     afterFiles: [],
     fallback: [],
