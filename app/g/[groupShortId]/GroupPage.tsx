@@ -106,9 +106,14 @@ function rebuildGroupFromCacheOrPrev(
     groupId ? p.group_id === groupId : p.id === prev.rootPollId,
   );
   if (polls.length === 0) return prev;
-  // When transitioning from empty group (no rootPollId) to populated,
-  // anchor on the just-added poll.
-  const anchorPollId = prev.rootPollId ?? polls[0].id;
+  // Fall through to polls[0] when prev.rootPollId is null (empty → first
+  // poll) OR was just removed in this rebuild (POLL_HYDRATED swapping the
+  // lone placeholder root for the real poll). Anchoring on a missing id
+  // makes buildGroupFromPollDown return null and the rebuild bails to prev.
+  const anchorPollId =
+    prev.rootPollId && polls.some((p) => p.id === prev.rootPollId)
+      ? prev.rootPollId
+      : polls[0].id;
   const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
   const rebuilt = buildGroupFromPollDown(anchorPollId, polls, voted, abstained);
   if (!rebuilt) return prev;
