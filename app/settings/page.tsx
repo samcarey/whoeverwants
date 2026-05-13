@@ -1,11 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getUserName, saveUserName, clearUserName, getUserLocation, saveUserLocation, clearUserLocation, type UserLocation } from "@/lib/userProfile";
-import { apiGeocode } from "@/lib/api";
+import {
+  apiGeocode,
+  apiGetMyUserProfile,
+  apiUploadMyUserImage,
+  apiDeleteMyUserImage,
+  buildUserImageUrl,
+  cacheMyUserProfile,
+  getCachedMyUserProfile,
+  clearCachedMyUserProfile,
+} from "@/lib/api";
 import { usePageReady } from "@/lib/usePageReady";
 import CompactNameField from "@/components/CompactNameField";
+import InitialBubble from "@/components/InitialBubble";
+import ImageCropModal from "@/components/ImageCropModal";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import { getStoredTheme, saveTheme, type ThemePreference } from "@/lib/theme";
 
 const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; icon: React.ReactNode }> = [
@@ -51,6 +63,25 @@ export default function SettingsPage() {
   const [isGeolocating, setIsGeolocating] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
+  // Profile-image state mirrors the staging pattern from /edit-title:
+  // pendingCroppedBlob (new upload pending Save) vs pendingImageRemoval
+  // (clear pending Save). The current server image is read into
+  // `serverImageUrl` once on mount via apiGetMyUserProfile.
+  const [pickedFile, setPickedFile] = useState<File | null>(null);
+  const [pendingCroppedBlob, setPendingCroppedBlob] = useState<Blob | null>(null);
+  const [pendingImageRemoval, setPendingImageRemoval] = useState(false);
+  const [localImagePreviewUrl, setLocalImagePreviewUrl] = useState<string | null>(null);
+  const [serverImageUrl, setServerImageUrl] = useState<string | null>(() => {
+    // Synchronous seed from the localStorage cache so first paint
+    // already shows the image (no flash from initials → image).
+    if (typeof window === 'undefined') return null;
+    const cached = getCachedMyUserProfile();
+    return buildUserImageUrl(cached?.browser_id ?? null, cached?.image_updated_at ?? null);
+  });
+  const [imageSaving, setImageSaving] = useState(false);
+  const [showDiscardImageConfirm, setShowDiscardImageConfirm] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   useEffect(() => {
     const savedName = getUserName();
     if (savedName) {
@@ -61,11 +92,112 @@ export default function SettingsPage() {
       setSavedLocation(loc);
     }
     setTheme(getStoredTheme());
+
+    // Sync the cached profile with the server. Updates `serverImageUrl`
+    // if the server's timestamp is newer than the local cache (e.g.
+    // image was set from another device with the same browser_id —
+    // shouldn't happen since browser_id is per-browser, but the round
+    // trip also serves as the first-time-on-this-device sync.)
+    apiGetMyUserProfile()
+      .then((profile) => {
+        cacheMyUserProfile(profile);
+        setServerImageUrl(buildUserImageUrl(profile.browser_id, profile.image_updated_at));
+      })
+      .catch(() => {
+        // Network blip — the cached value is still authoritative.
+      });
   }, []);
+
+  // Object-URL lifecycle for the cropped preview blob.
+  useEffect(() => {
+    if (!pendingCroppedBlob) {
+      setLocalImagePreviewUrl(null);
+      return;
+    }
+    const u = URL.createObjectURL(pendingCroppedBlob);
+    setLocalImagePreviewUrl(u);
+    return () => {
+      URL.revokeObjectURL(u);
+    };
+  }, [pendingCroppedBlob]);
+
+  const effectiveImageUrl = pendingCroppedBlob
+    ? localImagePreviewUrl
+    : pendingImageRemoval
+      ? null
+      : serverImageUrl;
+
+  const hasPendingImageChange = pendingCroppedBlob !== null || pendingImageRemoval;
 
   const handleThemeChange = (next: ThemePreference) => {
     setTheme(next);
     saveTheme(next);
+  };
+
+  const openFilePicker = () => {
+    if (imageSaving) return;
+    fileInputRef.current?.click();
+  };
+
+  const onFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setPickedFile(file);
+  };
+
+  const onCropConfirm = (croppedBlob: Blob) => {
+    setPendingCroppedBlob(croppedBlob);
+    setPendingImageRemoval(false);
+    setPickedFile(null);
+  };
+
+  const onRemoveImage = () => {
+    if (imageSaving) return;
+    // If a new crop is staged but not saved, just drop it. Otherwise
+    // stage a removal of the existing server image.
+    if (pendingCroppedBlob) {
+      setPendingCroppedBlob(null);
+      return;
+    }
+    if (serverImageUrl) {
+      setPendingImageRemoval(true);
+    }
+  };
+
+  // Apply whichever image change is pending. Caller owns the loading
+  // flag + user-visible status message; this just runs the network
+  // calls + state writes. Returns when there's nothing to do.
+  const commitPendingImageChange = async (): Promise<void> => {
+    if (pendingCroppedBlob) {
+      const profile = await apiUploadMyUserImage(pendingCroppedBlob);
+      setServerImageUrl(buildUserImageUrl(profile.browser_id, profile.image_updated_at));
+      setPendingCroppedBlob(null);
+    } else if (pendingImageRemoval) {
+      await apiDeleteMyUserImage();
+      setServerImageUrl(null);
+      setPendingImageRemoval(false);
+    }
+  };
+
+  const saveImageChange = async () => {
+    if (imageSaving || !hasPendingImageChange) return;
+    setImageSaving(true);
+    setMessage(null);
+    try {
+      await commitPendingImageChange();
+      setMessage({ type: 'success', text: 'Photo updated!' });
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to update photo' });
+    } finally {
+      setImageSaving(false);
+    }
+  };
+
+  const discardImageChange = () => {
+    setShowDiscardImageConfirm(false);
+    setPendingCroppedBlob(null);
+    setPendingImageRemoval(false);
   };
 
   const handleSave = async () => {
@@ -94,6 +226,10 @@ export default function SettingsPage() {
         }
       }
 
+      if (hasPendingImageChange) {
+        await commitPendingImageChange();
+      }
+
       setMessage({ type: 'success', text: 'Settings saved!' });
       setTimeout(() => {
         router.back();
@@ -118,7 +254,6 @@ export default function SettingsPage() {
       async (position) => {
         try {
           const { latitude, longitude } = position.coords;
-          // Reverse geocode to get a label
           const result = await apiGeocode(`${latitude}, ${longitude}`);
           const label = result?.label || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
           const loc: UserLocation = { latitude, longitude, label };
@@ -140,22 +275,106 @@ export default function SettingsPage() {
     );
   };
 
-  const handleClearAll = () => {
-    if (confirm('Are you sure you want to clear your settings?')) {
-      clearUserName();
-      clearUserLocation();
-      setName("");
-      setSavedLocation(null);
-      setLocationInput("");
-      setMessage({ type: 'success', text: 'Settings cleared!' });
-      setTimeout(() => {
-        router.push('/');
-      }, 1000);
+  const handleClearAll = async () => {
+    if (!confirm('Are you sure you want to clear your settings?')) return;
+    clearUserName();
+    clearUserLocation();
+    setName("");
+    setSavedLocation(null);
+    setLocationInput("");
+    // Also clear any uploaded profile image — "clear my settings" is
+    // an everything-on-this-browser wipe, so the image goes too. Server
+    // delete is fire-and-forget; the local cache is cleared either way
+    // so the FE state is consistent immediately.
+    try {
+      await apiDeleteMyUserImage();
+    } catch {
+      // ignore — server may be unreachable, the cache clear below still
+      // owns the FE state
     }
+    clearCachedMyUserProfile();
+    setServerImageUrl(null);
+    setPendingCroppedBlob(null);
+    setPendingImageRemoval(false);
+    setMessage({ type: 'success', text: 'Settings cleared!' });
+    setTimeout(() => {
+      router.push('/');
+    }, 1000);
   };
 
   return (
     <div className="question-content">
+      {/* Profile photo section — sits at the top of the page since the
+          avatar reads as the "you" identity for everything else below.
+          Tap the avatar (or the camera badge) to open the file picker;
+          the X badge stages a removal of an existing image. */}
+      <div className="mb-6 flex flex-col items-center">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={openFilePicker}
+            disabled={imageSaving}
+            aria-label="Change profile photo"
+            className="block outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-full disabled:opacity-60"
+          >
+            <InitialBubble
+              imageUrl={effectiveImageUrl}
+              name={name}
+              sizeClassName="w-28 h-28"
+              textSizeClassName="text-2xl"
+            />
+            <span
+              className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-md ring-2 ring-white dark:ring-gray-900"
+              aria-hidden
+            >
+              <CameraPencilIcon />
+            </span>
+          </button>
+          {effectiveImageUrl && !imageSaving && (
+            <button
+              type="button"
+              onClick={onRemoveImage}
+              aria-label="Remove profile photo"
+              className="absolute top-0 right-0 w-7 h-7 rounded-full bg-gray-500 dark:bg-gray-600 text-white flex items-center justify-center shadow-md ring-2 ring-white dark:ring-gray-900 hover:bg-gray-600 dark:hover:bg-gray-500 active:scale-95 transition-transform"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={onFileChosen}
+          className="hidden"
+        />
+        {hasPendingImageChange && (
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={saveImageChange}
+              disabled={imageSaving}
+              className="px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
+            >
+              {imageSaving ? 'Saving…' : pendingImageRemoval ? 'Save (remove photo)' : 'Save photo'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDiscardImageConfirm(true)}
+              disabled={imageSaving}
+              className="px-3 py-1.5 rounded-full border border-gray-300 dark:border-gray-600 text-sm font-medium disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+          Shown wherever your name appears
+        </p>
+      </div>
+
       {/* Name Input Section */}
       <div className="mb-6">
         <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
@@ -275,7 +494,7 @@ export default function SettingsPage() {
 
       <button
         onClick={handleSave}
-        disabled={isLoading || (!name.trim() && !locationInput.trim())}
+        disabled={isLoading || (!name.trim() && !locationInput.trim() && !hasPendingImageChange)}
         className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed mb-6"
       >
         {isLoading ? 'Saving...' : 'Save'}
@@ -290,7 +509,7 @@ export default function SettingsPage() {
           Clear Settings
         </button>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
-          Remove your saved name and location from this browser
+          Remove your saved name, location, and profile photo from this browser
         </p>
       </div>
 
@@ -323,6 +542,32 @@ export default function SettingsPage() {
           View on GitHub
         </a>
       </div>
+
+      {pickedFile && (
+        <ImageCropModal
+          file={pickedFile}
+          onCancel={() => setPickedFile(null)}
+          onConfirm={onCropConfirm}
+        />
+      )}
+
+      <ConfirmationModal
+        isOpen={showDiscardImageConfirm}
+        message="Discard photo changes?"
+        confirmText="Discard"
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        onConfirm={discardImageChange}
+        onCancel={() => setShowDiscardImageConfirm(false)}
+      />
     </div>
+  );
+}
+
+function CameraPencilIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h3l2-3h6l2 3h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </svg>
   );
 }

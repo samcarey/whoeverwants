@@ -83,6 +83,18 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
         destination: `${apiDest}/api/groups/:path*`,
       },
       {
+        source: '/api/users',
+        destination: `${apiDest}/api/users`,
+      },
+      {
+        source: '/api/users/',
+        destination: `${apiDest}/api/users`,
+      },
+      {
+        source: '/api/users/:path*',
+        destination: `${apiDest}/api/users/:path*`,
+      },
+      {
         source: '/api/search/:path*',
         destination: `${apiDest}/api/search/:path*`,
       },
