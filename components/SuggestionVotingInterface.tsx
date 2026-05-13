@@ -296,9 +296,9 @@ export default function SuggestionVotingInterface({
 
       {!wrapperHandlesSubmit && (
         <>
-          <div className="mb-3">
+          <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
             <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} />
-          </div>
+          </section>
 
           {/* Submit Button */}
           <button

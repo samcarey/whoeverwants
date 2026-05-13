@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getUserName, saveUserName, clearUserName, getUserLocation, saveUserLocation, clearUserLocation, type UserLocation } from "@/lib/userProfile";
 import { apiGeocode } from "@/lib/api";
 import { usePageReady } from "@/lib/usePageReady";
+import CompactNameField from "@/components/CompactNameField";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -117,20 +118,9 @@ export default function SettingsPage() {
     <div className="question-content">
       {/* Name Input Section */}
       <div className="mb-6">
-        <label htmlFor="name" className="block text-sm font-medium mb-1">
-          Your Name
-        </label>
-        <input
-          type="text"
-          id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={(e) => setName(e.target.value.trim())}
-          placeholder="Enter your name..."
-          maxLength={50}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
-          disabled={isLoading}
-        />
+        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
+          <CompactNameField name={name} setName={setName} disabled={isLoading} />
+        </section>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           This name will be automatically filled in voting forms
         </p>

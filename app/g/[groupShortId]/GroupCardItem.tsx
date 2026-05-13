@@ -972,7 +972,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                           onTouchEnd={stopBubble}
                           onTouchMove={stopBubble}
                         >
-                          <div className="mb-3">
+                          <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
                             <CompactNameField
                               name={voterNameVal}
                               setName={(name: string) =>
@@ -981,7 +981,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                               disabled={submitting}
                               maxLength={30}
                             />
-                          </div>
+                          </section>
                           {submitError && (
                             <div className="mb-3 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded text-sm">
                               {submitError}
@@ -1057,7 +1057,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                           onTouchEnd={stopBubble}
                           onTouchMove={stopBubble}
                         >
-                          <div className="mb-3">
+                          <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
                             <CompactNameField
                               name={voterNameVal}
                               setName={(name: string) =>
@@ -1065,7 +1065,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                               }
                               maxLength={30}
                             />
-                          </div>
+                          </section>
                           <button
                             type="button"
                             onClick={() => {

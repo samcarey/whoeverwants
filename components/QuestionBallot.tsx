@@ -1308,9 +1308,9 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                     )}
                   </div>
 
-                  <div className="mb-4">
+                  <section className="mb-4 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
                     <CompactNameField name={voterName} setName={setVoterName} />
-                  </div>
+                  </section>
 
                   <button
                     onClick={handleVoteClick}
