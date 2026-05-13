@@ -141,6 +141,19 @@ export default function GroupListItem(props: GroupListItemProps) {
           </div>
         )}
 
+        {/* Fixed-width unread-counter column, left of the avatar. Always
+            reserved when an avatar is rendered so indentation is consistent
+            whether the row has unread items or not. */}
+        {!hideRespondents && (
+          <div className="w-7 flex items-center justify-center shrink-0 self-center">
+            {hasUnvoted && unvotedCount > 0 && (
+              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
+                {unvotedCount}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Drafts skip this entirely so the "?" placeholder doesn't appear
             before anyone has actually voted. */}
         {!hideRespondents && (
@@ -185,21 +198,15 @@ export default function GroupListItem(props: GroupListItemProps) {
             </div>
           )}
 
-          {/* Latest-poll body — 2-line max. Floats reserve right-edge space
-              so line 1 wraps around the unread badge (vertically near the
-              avatar's center) and line 2 wraps around the countdown. */}
+          {/* Latest-poll body — 2-line max. The countdown floats right so
+              the text wraps around it on whichever line it lands. */}
           {latestQuestionTitle && (
             <div
               className="mt-px text-sm text-gray-600 dark:text-gray-300 leading-tight"
               style={{ maxHeight: '2.55em', overflow: 'hidden' }}
             >
-              {hasUnvoted && unvotedCount > 0 && (
-                <span className="float-right ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
-                  {unvotedCount}
-                </span>
-              )}
               {soonestUnvotedDeadline && (
-                <span className="float-right clear-right ml-2 text-xs leading-tight">
+                <span className="float-right ml-2 text-xs leading-tight">
                   <ClientOnly fallback={null}>
                     <SimpleCountdown
                       deadline={soonestUnvotedDeadline}
