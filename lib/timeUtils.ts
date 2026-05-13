@@ -46,6 +46,26 @@ export function formatCountdownTime(diffMs: number): string {
   return `${seconds}s`;
 }
 
+/** Single-unit compact countdown — promotes to the next larger unit only when
+ *  that unit's count would be >= 2 (so 0s–119s show in seconds, 2m–119m in
+ *  minutes, 2h–47h in hours, etc.). Mirrors `compactDurationSince` in shape
+ *  but for a remaining-time delta. */
+export function formatCompactCountdown(diffMs: number): string {
+  if (diffMs <= 0) return 'Expired';
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 120) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 120) return `${minutes}m`;
+  const hours = Math.floor(seconds / 3600);
+  if (hours < 48) return `${hours}h`;
+  const days = Math.floor(seconds / 86400);
+  if (days < 14) return `${days}d`;
+  if (days < 60) return `${Math.floor(days / 7)}w`;
+  const months = Math.floor(days / 30);
+  if (months < 24) return `${months}mo`;
+  return `${Math.floor(days / 365)}y`;
+}
+
 /** Format "label (clock time)" showing the absolute time `minutes` from now.
  *  Returns just the label on the server or when minutes <= 0. */
 export function formatDeadlineLabel(minutes: number, label: string): string {
