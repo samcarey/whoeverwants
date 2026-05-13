@@ -34,8 +34,10 @@ import {
   relativeTime,
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
-import { getUserName } from "@/lib/userProfile";
+import { getUserName, isCurrentUserName } from "@/lib/userProfile";
+import { isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
 import { getGroupHrefForPoll } from "@/lib/groupUtils";
+import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
 import InitialBubble from "@/components/InitialBubble";
@@ -239,6 +241,24 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   const question = group.anchor;
   const isMultiGroup = group.subQuestions.length > 1;
   const wrapper = group.poll;
+
+  // Swap the creator-initials bubble for the user's profile image when
+  // this poll is the current browser's. The canonical signal is the
+  // localStorage creator_secret (written when the FE creates a poll —
+  // see `recordQuestionCreation`). Name-based matching is a fallback
+  // for polls created from a different browser that share the user's
+  // saved name. The secret check is robust to: (a) polls with empty
+  // creator_name (the user uploaded an image but never typed a name),
+  // (b) polls where the user typed a slightly different name (e.g.
+  // "Sam C." vs "Sam Carey"). Other names render as initials (per the
+  // "show only on new participations" scope: we don't lookup other
+  // browsers' profile images).
+  const myUserImageUrl = useMyUserImageUrl();
+  const firstQuestionId = group.subQuestions[0]?.id ?? null;
+  const creatorIsMe =
+    (firstQuestionId !== null && isCreatedByThisBrowser(firstQuestionId)) ||
+    isCurrentUserName(wrapper?.creator_name);
+  const creatorImageUrl = creatorIsMe ? myUserImageUrl : null;
 
   // First-time votes on single-question polls submit directly so a stray
   // tap on a vote-change still hits the confirmation modal.
@@ -648,14 +668,16 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       ref={setCardEl}
       className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
     >
-      {/* Poll-title row's left slot: creator's initials in a colored
-          circle. The explicit h-7 (from InitialBubble's BASE_CLASS)
-          anchors the bubble at the top of row-2 — without it, the grid
-          item's default `align-items: stretch` would expand the element
-          to the full card height when expanded, vertically centering
-          the bubble in the middle of the card. */}
+      {/* Poll-title row's left slot: the creator's avatar (image when
+          this poll is the current browser's AND a profile image is set,
+          initials otherwise). The explicit h-7 (from InitialBubble's
+          BASE_CLASS) anchors the bubble at the top of row-2 — without
+          it, the grid item's default `align-items: stretch` would
+          expand the element to the full card height when expanded,
+          vertically centering the bubble in the middle of the card. */}
       <InitialBubble
         name={wrapper?.creator_name ?? null}
+        imageUrl={creatorImageUrl}
         className="col-start-1 row-start-2 mt-[4px]"
       />
 

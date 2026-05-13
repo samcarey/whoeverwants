@@ -7,9 +7,10 @@ import { useGroup } from "@/lib/useGroup";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupHeader from "@/components/GroupHeader";
-import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
 import InitialBubble from "@/components/InitialBubble";
-import { getUserName } from "@/lib/userProfile";
+import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
+import { getUserName, isCurrentUserName } from "@/lib/userProfile";
+import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 
 function GroupInfoInner() {
   const params = useParams();
@@ -24,6 +25,7 @@ function GroupInfoInner() {
 function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; groupId: string }) {
   const router = useRouter();
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
+  const myUserImageUrl = useMyUserImageUrl();
 
   const goBack = () => {
     if (hasAppHistory()) navigateBackWithTransition();
@@ -93,12 +95,27 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
 
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
           <ul className="divide-y divide-gray-200 dark:divide-gray-800">
-            {membersList.map((name) => (
-              <li key={name} className="flex items-center gap-3 px-4 py-3 text-gray-900 dark:text-white">
-                <InitialBubble name={name} className="shrink-0" />
-                <span className="min-w-0 break-words">{name}</span>
-              </li>
-            ))}
+            {membersList.map((name) => {
+              // Viewer row resolves either as the literal "You" label
+              // (no saved name) or as a real-name row matching the
+              // current saved name. `name === "You"` passes `null` to
+              // the bubble so it falls through to the gray anonymous
+              // fallback instead of rendering a "Y" initial.
+              const isViewer = name === viewerLabel || isCurrentUserName(name);
+              const imageUrl = isViewer ? myUserImageUrl : null;
+              const bubbleName = name === "You" ? null : name;
+              return (
+                <li key={name} className="flex items-center gap-3 px-4 py-3 text-gray-900 dark:text-white">
+                  <InitialBubble
+                    name={bubbleName}
+                    imageUrl={imageUrl}
+                    sizeClassName="w-8 h-8"
+                    className="shrink-0"
+                  />
+                  <span className="min-w-0 break-words">{name}</span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </div>

@@ -49,6 +49,19 @@ export {
 } from "./groups";
 
 export {
+  apiGetMyUserProfile,
+  apiUploadMyUserImage,
+  apiDeleteMyUserImage,
+  buildUserImageUrl,
+  cacheMyUserProfile,
+  getCachedMyUserProfile,
+  clearCachedMyUserProfile,
+  getMyUserImageUrl,
+  USER_PROFILE_CHANGED_EVENT,
+} from "./users";
+export type { UserProfile } from "./users";
+
+export {
   apiSearchLocations,
   apiSearchRestaurants,
   apiGeocode,

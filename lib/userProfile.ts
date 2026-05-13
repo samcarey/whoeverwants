@@ -61,6 +61,23 @@ export function getUserMinResponses(): number | null {
   return isNaN(num) ? null : num;
 }
 
+/**
+ * True iff `name` matches the current user's saved name (case-
+ * insensitive, trimmed). Used to decide whether a name-keyed bubble
+ * should render the current user's profile image instead of initials.
+ *
+ * Returns false when the user hasn't saved a name yet — there's
+ * nothing meaningful to compare against and we don't want every
+ * anonymous name bubble to suddenly inherit the current browser's
+ * profile photo.
+ */
+export function isCurrentUserName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const mine = getUserName();
+  if (!mine) return false;
+  return name.trim().toLowerCase() === mine.trim().toLowerCase();
+}
+
 export function getUserInitials(name: string | null): string {
   if (!name || !name.trim()) return '?';
 
