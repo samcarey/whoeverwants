@@ -6,6 +6,39 @@ import { getUserName, saveUserName, clearUserName, getUserLocation, saveUserLoca
 import { apiGeocode } from "@/lib/api";
 import { usePageReady } from "@/lib/usePageReady";
 import CompactNameField from "@/components/CompactNameField";
+import { getStoredTheme, saveTheme, type ThemePreference } from "@/lib/theme";
+
+const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; icon: React.ReactNode }> = [
+  {
+    value: "light",
+    label: "Light",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4" />
+        <path strokeLinecap="round" d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+      </svg>
+    ),
+  },
+  {
+    value: "dark",
+    label: "Dark",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z" />
+      </svg>
+    ),
+  },
+  {
+    value: "system",
+    label: "System",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="12" rx="2" />
+        <path strokeLinecap="round" d="M8 20h8M12 16v4" />
+      </svg>
+    ),
+  },
+];
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -13,6 +46,7 @@ export default function SettingsPage() {
   const [name, setName] = useState("");
   const [locationInput, setLocationInput] = useState("");
   const [savedLocation, setSavedLocation] = useState<UserLocation | null>(null);
+  const [theme, setTheme] = useState<ThemePreference>("system");
   const [isLoading, setIsLoading] = useState(false);
   const [isGeolocating, setIsGeolocating] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -26,7 +60,13 @@ export default function SettingsPage() {
     if (loc) {
       setSavedLocation(loc);
     }
+    setTheme(getStoredTheme());
   }, []);
+
+  const handleThemeChange = (next: ThemePreference) => {
+    setTheme(next);
+    saveTheme(next);
+  };
 
   const handleSave = async () => {
     setIsLoading(true);
@@ -178,6 +218,48 @@ export default function SettingsPage() {
         </div>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           Used as the reference point for calculating distance in location-based questions
+        </p>
+      </div>
+
+      {/* Theme Section */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium mb-1">Theme</label>
+        <div
+          role="radiogroup"
+          aria-label="Theme"
+          className="relative grid grid-cols-3 p-1 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+        >
+          <span
+            aria-hidden="true"
+            className="absolute top-1 bottom-1 left-1 rounded-full bg-white dark:bg-gray-900 shadow-sm border border-gray-200 dark:border-gray-700 transition-transform duration-200 ease-out"
+            style={{
+              width: "calc((100% - 0.5rem) / 3)",
+              transform: `translateX(${THEME_OPTIONS.findIndex((o) => o.value === theme) * 100}%)`,
+            }}
+          />
+          {THEME_OPTIONS.map((opt) => {
+            const selected = theme === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => handleThemeChange(opt.value)}
+                className={`relative z-10 flex items-center justify-center gap-2 h-10 rounded-full transition-colors ${
+                  selected
+                    ? "text-blue-700 dark:text-blue-300"
+                    : "text-gray-600 dark:text-gray-400"
+                }`}
+              >
+                {opt.icon}
+                <span className="text-sm font-medium">{opt.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          System follows your device&apos;s appearance setting
         </p>
       </div>
 
