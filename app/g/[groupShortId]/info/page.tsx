@@ -8,8 +8,8 @@ import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupHeader from "@/components/GroupHeader";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
-import { nameToColor } from "@/components/RespondentCircles";
-import { getUserInitials, getUserName } from "@/lib/userProfile";
+import InitialBubble from "@/components/InitialBubble";
+import { getUserName } from "@/lib/userProfile";
 
 function GroupInfoInner() {
   const params = useParams();
@@ -95,13 +95,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           <ul className="divide-y divide-gray-200 dark:divide-gray-800">
             {membersList.map((name) => (
               <li key={name} className="flex items-center gap-3 px-4 py-3 text-gray-900 dark:text-white">
-                <span
-                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-white"
-                  style={{ backgroundColor: nameToColor(name) }}
-                  aria-hidden="true"
-                >
-                  {getUserInitials(name)}
-                </span>
+                <InitialBubble name={name} className="shrink-0" />
                 <span className="min-w-0 break-words">{name}</span>
               </li>
             ))}
