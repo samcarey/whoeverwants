@@ -130,12 +130,14 @@ jobs:
             URL="${{ github.event.inputs.cap_server_url }}"
           elif [[ "$CAP_ENV" == "prod" ]]; then
             URL=""  # capacitor.config.ts defaults to prod when unset
-          elif [[ -n "${{ github.event.head_commit.author.email }}" ]]; then
-            EMAIL="${{ github.event.head_commit.author.email }}"
-            SLUG=$(echo "$EMAIL" | tr '[:upper:]' '[:lower:]' | sed -e 's/@/-at-/g' -e 's/[^a-z0-9-]/-/g')
-            URL="https://$SLUG.dev.whoeverwants.com"
           else
-            URL=""  # No push email (workflow_dispatch without override) → fall through to prod
+            # Dev builds point at the canary "latest" tier (auto-deployed on
+            # every push to main). Per-author dev URLs no longer work: dev
+            # servers are per-branch now, so a per-author email slug doesn't
+            # resolve unless that same person happens to be pushing the
+            # currently-active branch. The latest tier is the stable "code
+            # is exactly what'll ship next" target for TestFlight diagnosis.
+            URL="https://latest.whoeverwants.com"
           fi
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           [[ -n "$URL" ]] && echo "WebView URL: $URL" || echo "WebView URL: (prod default)"

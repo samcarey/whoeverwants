@@ -1,11 +1,12 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 // The native WebView loads whichever URL wins this precedence chain:
-//   1. CAP_SERVER_URL — explicit override (CI sets this per-developer).
-//   2. Production site — the default fallback.
-// `CAP_ENV=dev` alone is no longer meaningful; the workflow translates
-// it into a real URL (e.g., <email-slug>.dev.whoeverwants.com) and
-// exports CAP_SERVER_URL before running `cap sync`.
+//   1. CAP_SERVER_URL — explicit override exported by the CI workflow.
+//   2. Production site (https://whoeverwants.com) — the default fallback.
+// The CI workflow (`.github/workflows/ios-build.yml`) sets CAP_SERVER_URL
+// to `https://latest.whoeverwants.com` for dev builds (the canary tier
+// auto-deployed on every push to main) and leaves it unset for prod
+// builds so the fallback kicks in.
 const PROD_URL = 'https://whoeverwants.com';
 const serverUrl = process.env.CAP_SERVER_URL || PROD_URL;
 

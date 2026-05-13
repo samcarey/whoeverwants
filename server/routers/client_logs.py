@@ -1,4 +1,10 @@
-"""Client-side log collection endpoint (dev/debug only)."""
+"""Client-side log collection endpoint.
+
+In-memory ring buffer of the most recent console output forwarded from
+the browser via lib/clientLogForwarder.ts. Active on every tier we ship to
+(dev / canary / production) so iOS TestFlight WebView errors can be
+diagnosed without a wired-Mac Safari Web Inspector session.
+"""
 
 import logging
 import time
