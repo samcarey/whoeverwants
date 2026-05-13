@@ -1426,19 +1426,26 @@ export function CreateQuestionContent() {
   const questionFormBody = (
     <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className={`space-y-4${formHasContent ? ' border-t border-gray-200 dark:border-gray-700 py-3' : ''}`}>
       {isLocationLikeCategory(category) && (
-        <ReferenceLocationInput
-          latitude={refLatitude}
-          longitude={refLongitude}
-          label={refLocationLabel}
-          onLocationChange={(lat, lng, lbl) => {
-            setRefLatitude(lat);
-            setRefLongitude(lng);
-            setRefLocationLabel(lbl);
-          }}
-          searchRadius={searchRadius}
-          onSearchRadiusChange={setSearchRadius}
-          disabled={isLoading}
-        />
+        <div>
+          <ReferenceLocationInput
+            latitude={refLatitude}
+            longitude={refLongitude}
+            label={refLocationLabel}
+            onLocationChange={(lat, lng, lbl) => {
+              setRefLatitude(lat);
+              setRefLongitude(lng);
+              setRefLocationLabel(lbl);
+            }}
+            searchRadius={searchRadius}
+            onSearchRadiusChange={setSearchRadius}
+            disabled={isLoading}
+          />
+          {(refLatitude === undefined || refLongitude === undefined) && (
+            <p className="mt-2 text-sm text-orange-600 dark:text-orange-400">
+              Choose a reference location above to enable search.
+            </p>
+          )}
+        </div>
       )}
 
       {showTimeFields && (
@@ -1483,6 +1490,7 @@ export function CreateQuestionContent() {
           referenceLongitude={refLongitude}
           searchRadius={searchRadius}
           variant="compact"
+          hideReferenceLocationWarning
         />
       </section>
     </div>
