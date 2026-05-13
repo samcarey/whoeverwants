@@ -1450,8 +1450,17 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   // Sync `?p=` to the expanded card via shallow replaceState — sharing the
   // URL reopens the same card. Collapse leaves `?p=` on the just-collapsed
   // poll so refresh doesn't surprise-collapse what the user was viewing.
+  //
+  // Pathname guard: GroupContent is ALSO mounted inside the slide-overlay
+  // (lib/slideOverlay.tsx) BEFORE router.push commits — at that moment the
+  // browser URL is still the source page (e.g. `/`). Writing `?p=` to that
+  // URL pollutes the source's history entry, so back-nav lands on `/?p=…`
+  // instead of `/`. Only sync when the current path is actually a `/g/...`
+  // route — i.e. this GroupContent is the real route, not a transient
+  // overlay copy.
   useEffect(() => {
     if (typeof window === 'undefined' || !group || !expandedQuestionId) return;
+    if (!window.location.pathname.startsWith('/g/')) return;
     const wrapper = pollByQuestionId.get(expandedQuestionId) ?? null;
     const routeId = wrapper?.short_id || expandedQuestionId;
     const params = new URLSearchParams(window.location.search);
