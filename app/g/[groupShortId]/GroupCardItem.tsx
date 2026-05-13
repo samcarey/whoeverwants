@@ -646,7 +646,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   return (
     <div
       ref={setCardEl}
-      data-question-id={question.id}
       className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
     >
       {/* Poll-title row's left slot: creator's initials in a colored

@@ -40,6 +40,17 @@ const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 // redirect, route error). Keeps the user from being stranded behind a stuck
 // slide.
 const OVERLAY_SAFETY_TIMEOUT_MS = 4000;
+// rAF retries for the no-expand scroll-to-bottom (caps the wait if scrollHeight
+// never settles, e.g. data fetch error). 30 frames ≈ 500ms at 60fps, plenty for
+// the overlay's 380ms visible lifetime.
+const SCROLL_RETRY_FRAMES = 30;
+// Spread into the overlay's style when there's an expanded card. Collapses
+// GroupContent's header→first-card gap so the first card sits flush with the
+// header without needing overlay.scrollTop. See the overlayDivRef comment for
+// why scrollTop doesn't work here.
+const COLLAPSE_CARD_GAP_STYLE: React.CSSProperties = {
+  ["--group-card-gap" as string]: "0px",
+};
 
 /** Fire-and-forget: dispatch the slide event. Caller doesn't await anything;
  *  the host component handles the full lifecycle. Safe inside React event
@@ -147,7 +158,7 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
       const o = overlayDivRef.current;
       if (!o) return;
       const target = Math.max(0, o.scrollHeight - o.clientHeight);
-      if (target === 0 && attempts++ < 30) {
+      if (target === 0 && attempts++ < SCROLL_RETRY_FRAMES) {
         rafId = requestAnimationFrame(scrollToBottom);
         return;
       }
@@ -182,14 +193,8 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
     <div
       ref={overlayDivRef}
       aria-hidden="true"
-      // `font-[family-name:...]` matches the wrapper inside ResponsiveScaling
-      // in app/layout.tsx so the overlay inherits the Geist sans variable
-      // instead of falling through to body's Arial/Helvetica default.
-      // `--group-card-gap: 0px` collapses the gap between GroupHeader and
-      // the first card so the first card sits flush with the header
-      // without needing overlay.scrollTop (which would also pull the
-      // contain:strict header off the viewport — see the overlayDivRef
-      // declaration).
+      // Inherit Geist sans; the template's font wrapper is inside
+      // ResponsiveScaling, outside the body portal target.
       className="font-[family-name:var(--font-geist-sans)]"
       style={{
         position: "fixed",
@@ -207,9 +212,7 @@ export function GroupSlideOverlayHost(): React.ReactElement | null {
         willChange: "transform",
         contain: "strict",
         overflow: "hidden auto",
-        ...(state.expandedQuestionId
-          ? ({ ["--group-card-gap" as string]: "0px" } as React.CSSProperties)
-          : {}),
+        ...(state.expandedQuestionId ? COLLAPSE_CARD_GAP_STYLE : null),
       }}
     >
       {/* Mirrors template.tsx's wrappers around {children} for group routes
