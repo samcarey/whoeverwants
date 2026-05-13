@@ -11,6 +11,7 @@ import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } fro
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { apiCreateGroup } from '@/lib/api';
+import { GROUP_ID_ATTR } from '@/lib/groupDomMarkers';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
 
 // `CreateQuestionContent` (the bubble-bar + create-poll-modal owner) is
@@ -32,33 +33,51 @@ export default function Template({ children }: AppTemplateProps) {
   );
 }
 
-/** Home-page floating "+" FAB. Calls `apiCreateGroup` on tap so a real
- *  group row materializes BEFORE the user adds any polls — that way the
- *  user can name the group (title click → /info / /edit-title) and
- *  share its URL before there's any content. Falls back to navigating
- *  to the legacy /g/ empty placeholder on API failure so the flow still
- *  produces a usable destination.
+/** Home-page floating "+" FAB. Materializes a real group row via
+ *  `apiCreateGroup` so the user can name it (title click → /info /
+ *  /edit-title) and share its URL before any polls exist.
  *
- *  In-flight guard via ref prevents double-creates on rapid taps (which
- *  would mint two empty groups via two simultaneous POSTs). */
+ *  Navigation starts on the SAME frame as the tap — we slide to the
+ *  empty placeholder `/g/` immediately rather than awaiting the API
+ *  round-trip. The actual create runs in parallel; once it resolves
+ *  we `router.replace` the URL with the canonical `/g/<short_id>` form.
+ *  Visual content is identical to the placeholder (both render the
+ *  "New Group" header + bubble bar), so the replace is invisible.
+ *  Previously the FAB awaited the API before navigating, which on the
+ *  `latest` tier (cross-host API call) added a visible ~200-500ms gap
+ *  between tap and slide start.
+ *
+ *  Edge cases:
+ *    - API failure: user stays on `/g/`; the bubble bar still lets
+ *      them start a poll (it just mints a fresh group on submit).
+ *    - User submits a poll between tap and API resolve: the placeholder
+ *      doesn't carry a group_id, so submit mints a fresh group anyway
+ *      (the empty group we created shows up in the home list — same
+ *      shape as "user opened the FAB then walked away").
+ *
+ *  In-flight guard via ref prevents double-creates on rapid taps. */
 function CreateGroupButton({ router }: { router: ReturnType<typeof useRouter> }) {
   const inFlight = useRef(false);
-  const onClick = async () => {
+  const onClick = () => {
     if (inFlight.current) return;
     inFlight.current = true;
-    try {
-      const summary = await apiCreateGroup();
-      const routeId = summary.short_id || summary.id;
-      // Forward navigation with the standard slide transition. Group
-      // page mounts an empty group via useGroup's summary-fallback path.
-      navigateWithTransition(router, `/g/${routeId}`, 'forward');
-    } catch {
-      // Network or 400 from the create endpoint — fall back to the
-      // legacy empty placeholder so the user can still start a poll.
-      navigateWithTransition(router, '/g', 'forward');
-    } finally {
-      inFlight.current = false;
-    }
+    navigateWithTransition(router, '/g', 'forward');
+    apiCreateGroup()
+      .then((summary) => {
+        const routeId = summary.short_id || summary.id;
+        // Bind any submit while still on `/g/` to the new group, in the
+        // narrow window before the URL replace lands a real route. The
+        // group page's own effect re-sets this on mount, so a redundant
+        // setAttribute is harmless.
+        document.body.setAttribute(GROUP_ID_ATTR, summary.id);
+        router.replace(`/g/${routeId}`);
+      })
+      .catch(() => {
+        // Stay on `/g/` — fallback path keeps the flow usable.
+      })
+      .finally(() => {
+        inFlight.current = false;
+      });
   };
   return (
     <button
