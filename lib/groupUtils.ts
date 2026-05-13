@@ -337,6 +337,16 @@ function buildGroupFromPolls(
     );
     if (hasRespondedToAnySub) continue;
     unvotedCount++;
+    // Surface the soonest of (active prephase_deadline, response_deadline)
+    // so the home-list compact countdown also reflects suggestion / time
+    // availability cutoffs once their timer has started. Deferred prephases
+    // (prephase_deadline_minutes set but prephase_deadline null) contribute
+    // no countdown — the home list can't predict when the timer will start.
+    if (mp.prephase_deadline && new Date(mp.prephase_deadline) > now) {
+      if (!soonestUnvotedDeadline || mp.prephase_deadline < soonestUnvotedDeadline) {
+        soonestUnvotedDeadline = mp.prephase_deadline;
+      }
+    }
     if (mp.response_deadline) {
       if (!soonestUnvotedDeadline || mp.response_deadline < soonestUnvotedDeadline) {
         soonestUnvotedDeadline = mp.response_deadline;
