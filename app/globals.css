@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* Theme override: `dark:` utilities match when html[data-theme="dark"] is
+   set OR when no override is set and the system preference is dark.
+   Setting data-theme="light" forces light mode and suppresses dark:. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:not([data-theme="light"], [data-theme="light"] *, [data-theme="dark"], [data-theme="dark"] *)) {
+      @slot;
+    }
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -17,6 +31,18 @@
     --background: #0a0a0a;
     --foreground: #ededed;
   }
+}
+
+[data-theme="light"] {
+  --background: #ffffff;
+  --foreground: #171717;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  color-scheme: dark;
 }
 
 html {

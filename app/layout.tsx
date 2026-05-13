@@ -6,6 +6,7 @@ import "./globals.css";
 import CommitInfo from "@/components/CommitInfo";
 import ResponsiveScaling from "@/components/ResponsiveScaling";
 import { GroupSlideOverlayHost } from "@/lib/slideOverlay";
+import { THEME_KEY } from "@/lib/theme";
 
 
 export const metadata: Metadata = {
@@ -76,6 +77,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('${THEME_KEY}');if(t==='light'||t==='dark'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();`,
+          }}
+        />
         <meta name="build-id" content={process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || 'dev'} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
