@@ -1,8 +1,15 @@
 # Droplet Setup Guide
 
-This document describes how to provision a new DigitalOcean droplet for WhoeverWants from scratch. The droplet serves the **API** (Python/FastAPI + PostgreSQL) and **per-user dev servers** (Next.js). The **production frontend** is hosted on Vercel.
+This document describes how to provision a DigitalOcean droplet for WhoeverWants from scratch. The same provisioning script (`scripts/provision-droplet.sh`) handles both tiers — controlled by the `DROPLET_LABEL` env var:
 
-**Last verified**: 2026-03-20
+| `DROPLET_LABEL` | Tier | Public hosts | Deploy trigger |
+|---|---|---|---|
+| `""` (default) | prod | `api.whoeverwants.com`, `hooks.api.whoeverwants.com` | GitHub Release published |
+| `latest` | pre-prod canary | `api.latest.whoeverwants.com`, `hooks.api.latest.whoeverwants.com` | push to `main` |
+
+The **production frontend** is hosted on Vercel. The same Vercel project serves both `latest.whoeverwants.com` (alias updated on every push to main) and `whoeverwants.com` (alias updated when a release is published) — see `next.config.ts` for the host-conditional API rewrites.
+
+**Last verified**: 2026-05-13
 
 ---
 
@@ -24,41 +31,91 @@ Note the IP address (e.g., `142.93.60.29`).
 
 ## 2. DNS Requirements
 
+### Prod droplet (`whoeverwants`, 142.93.60.29)
+
 | Record | Type | Value | Purpose |
 |--------|------|-------|---------|
-| `api.whoeverwants.com` | A | `<droplet IP>` | Production API |
-| `*.api.whoeverwants.com` | A | `<droplet IP>` | Preview API environments + webhook handler |
-| `*.dev.whoeverwants.com` | A | `<droplet IP>` | Per-user dev frontend servers |
+| `api.whoeverwants.com` | A | `142.93.60.29` | Production API |
+| `*.api.whoeverwants.com` | A | `142.93.60.29` | Preview API environments + webhook handler (`hooks.api.whoeverwants.com`) |
 | `whoeverwants.com` | CNAME | `cname.vercel-dns.com` (or Vercel IP) | Production frontend |
 
-The wildcard `*.api.whoeverwants.com` record enables per-branch preview API instances (e.g., `fix-voting-abc123.api.whoeverwants.com`) and the GitHub webhook handler (`hooks.api.whoeverwants.com`).
+### Latest droplet (`latest`, 67.207.94.93)
 
-The wildcard `*.dev.whoeverwants.com` record enables per-user dev servers (e.g., `sam-at-example-com.dev.whoeverwants.com`).
+| Record | Type | Value | Purpose |
+|--------|------|-------|---------|
+| `api.latest.whoeverwants.com` | A | `67.207.94.93` | Latest-tier API |
+| `hooks.api.latest.whoeverwants.com` | A | `67.207.94.93` | Latest-tier GitHub webhook handler |
+| `latest.whoeverwants.com` | CNAME | `cname.vercel-dns.com` | Latest-tier frontend (Vercel alias) |
 
-The sslip.io subdomain (`<ip-dashed>.sslip.io`) works automatically with no DNS configuration.
+### Mac mini dev box
+
+See `docs/mac-mini-setup.md` — uses `*.dev.whoeverwants.com` wildcard via DDNS to Route 53. Not on either droplet.
+
+The sslip.io subdomain (`<ip-dashed>.sslip.io`) works automatically with no DNS configuration on both droplets and is the bootstrap entry point for `scripts/remote.sh` / `scripts/remote-latest.sh`.
 
 ---
 
 ## 3. Provision the Server
 
-### Automated Setup
+### Path A — Bootstrap via cloud-init (no SSH key required)
 
-From the development environment (where you have this repo checked out):
+The DigitalOcean API can spawn a droplet whose `user_data` runs `provision-droplet.sh` automatically on first boot. This is how the `latest` droplet was created — no SSH keys ever touched it.
 
-```bash
-# Set the droplet IP and desired API token
-export DROPLET_IP="142.93.60.29"
-export NEW_API_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-
-# SSH into the droplet and run the provisioning script
-ssh root@$DROPLET_IP 'bash -s' < scripts/provision-droplet.sh "$NEW_API_TOKEN"
+```python
+# Pseudocode for re-creation; see this PR's session transcript for the actual call.
+import json, secrets, urllib.request, os
+API_TOKEN = secrets.token_urlsafe(32)
+user_data = f"""#!/bin/bash
+set -euxo pipefail
+exec > >(tee /var/log/cloud-init-provision.log) 2>&1
+apt-get update -qq && apt-get install -y -qq git curl ca-certificates
+git clone https://github.com/samcarey/whoeverwants.git /root/whoeverwants
+cd /root/whoeverwants
+DROPLET_LABEL=latest bash scripts/provision-droplet.sh '{API_TOKEN}'
+touch /var/log/cloud-init-provision.done
+"""
+body = {
+    "name": "whoeverwants-latest",
+    "region": "nyc1",
+    "size": "s-1vcpu-1gb",
+    "image": "ubuntu-24-04-x64",
+    "tags": ["whoeverwants", "latest"],
+    "user_data": user_data,
+}
+req = urllib.request.Request(
+    "https://api.digitalocean.com/v2/droplets",
+    data=json.dumps(body).encode(),
+    headers={"Authorization": f"Bearer {os.environ['DIGITAL_OCEAN_TOKEN']}",
+             "Content-Type": "application/json"},
+)
+print(urllib.request.urlopen(req).read())
 ```
 
-After provisioning completes, set the environment variables for `scripts/remote.sh`:
+Provisioning takes 5-10 min on a fresh 1 GB droplet (system updates + Docker + Caddy + uv + repo clone + Docker build + migrations). Question for completion with `curl -s -o /dev/null -w '%{http_code}' https://<ip-dashed>.sslip.io` — returns `200` once cmd-api is up.
+
+For prod, omit `DROPLET_LABEL=latest` from the user_data (or set it to `""`).
+
+### Path B — Bootstrap via SSH (existing key)
+
+From a host that has SSH access to the new droplet:
 
 ```bash
+export DROPLET_IP="..."
+export DROPLET_LABEL=""       # or "latest"
+export NEW_API_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+ssh root@$DROPLET_IP DROPLET_LABEL=$DROPLET_LABEL 'bash -s' < scripts/provision-droplet.sh "$NEW_API_TOKEN"
+```
+
+After provisioning completes, set the environment variables for `scripts/remote.sh` (or `scripts/remote-latest.sh`):
+
+```bash
+# Prod
 export DROPLET_API_URL="https://${DROPLET_IP//./-}.sslip.io"
 export DROPLET_API_TOKEN="$NEW_API_TOKEN"
+
+# Latest
+export LATEST_DROPLET_API_URL="https://${DROPLET_IP//./-}.sslip.io"
+export LATEST_DROPLET_API_TOKEN="$NEW_API_TOKEN"
 ```
 
 ### Manual Steps

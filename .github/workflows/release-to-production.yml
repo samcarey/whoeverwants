@@ -1,0 +1,58 @@
+name: Release to production
+
+# When a non-draft / non-prerelease GitHub Release is published, force-push the
+# tag's commit to the `production` branch. Vercel's production branch is set to
+# `production`, so this push triggers a production deployment for the FE
+# (whoeverwants.com alias). The prod API droplet picks up the same release event
+# via its own GitHub webhook (hooks.api.whoeverwants.com → scripts/dev-webhook.py)
+# and pins to the tag via `git checkout tags/<tag>`. FE + API redeploy in
+# parallel; there is no strict ordering guarantee, which matches the prior
+# auto-deploy-on-main flow.
+#
+# Triggering manually via workflow_dispatch is also supported for re-promoting
+# an existing tag (e.g. if a release was published before this workflow landed).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to promote to production (must already exist on origin)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    # release.draft and release.prerelease are unset for workflow_dispatch, so
+    # the gate only fires on the release event.
+    if: github.event_name == 'workflow_dispatch' || (!github.event.release.draft && !github.event.release.prerelease)
+    steps:
+      - name: Resolve target tag
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.resolve.outputs.tag }}
+          # Single-commit clone is enough: the only git operation below is
+          # a force-push of HEAD to refs/heads/production.
+          fetch-depth: 1
+
+      - name: Force-push tag commit to production branch
+        run: |
+          set -euxo pipefail
+          # Force-push so the production branch tracks the tag exactly, even if
+          # a previous release left it pointing elsewhere (or behind).
+          git push origin HEAD:refs/heads/production --force
+          echo "production now points at $(git rev-parse HEAD) (tag ${{ steps.resolve.outputs.tag }})"

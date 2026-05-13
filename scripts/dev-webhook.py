@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
 """
-GitHub webhook handler for the WhoeverWants droplet.
+GitHub webhook handler for the WhoeverWants droplets.
 
-Handles two types of push events:
-1. Push to `main` → auto-deploy production backend (git pull + docker compose rebuild)
-2. Push to any branch → update per-user dev servers based on commit author email
+One service runs on both the prod droplet and the "latest" (pre-prod canary)
+droplet. Behavior is gated by the deployment label in /etc/droplet-label:
 
-Runs as a systemd service on the droplet, listening on port 9091.
-Caddy proxies hooks.api.whoeverwants.com -> localhost:9091.
+  label = "latest" → push to main triggers a deploy from main HEAD;
+                     release events are ignored.
+  label = ""       → release events (action="published") trigger a deploy
+                     pinned to the released tag's commit;
+                     push to main is ignored.
+
+In both cases:
+- Non-main pushes are ignored (dev servers now run on the Mac mini, which
+  has its own webhook).
+- Deleted branches are ignored.
+- Ping events return pong.
+
+Runs as a systemd service, listening on port 9091. Caddy proxies the
+public hooks.* hostname to 127.0.0.1:9091.
 
 Security: Verifies GitHub webhook signatures (HMAC-SHA256).
 """
@@ -24,7 +35,7 @@ import threading
 
 PORT = 9091
 SECRET_FILE = "/etc/dev-webhook-secret"
-MANAGER_SCRIPT = "/root/whoeverwants/scripts/dev-server-manager.sh"
+LABEL_FILE = "/etc/droplet-label"
 REPO_DIR = "/root/whoeverwants"
 DEPLOY_LOCK = "/tmp/production-deploy.lock"
 
@@ -58,6 +69,23 @@ def load_secret() -> bytes:
 
 
 SECRET = load_secret()
+
+
+def load_droplet_label() -> str:
+    """Read /etc/droplet-label. Empty / missing → prod. 'latest' → pre-prod canary."""
+    try:
+        with open(LABEL_FILE, "r") as f:
+            label = f.read().strip()
+    except FileNotFoundError:
+        return ""
+    if label not in ("", "latest"):
+        log.warning(f"Unknown droplet label {label!r}; treating as prod")
+        return ""
+    return label
+
+
+DROPLET_LABEL = load_droplet_label()
+log.info(f"Droplet label: {DROPLET_LABEL!r} ({'latest canary' if DROPLET_LABEL == 'latest' else 'production'})")
 
 
 def verify_signature(payload: bytes, signature: str) -> bool:
@@ -107,62 +135,98 @@ def get_branch(payload: dict) -> str | None:
     return None
 
 
-def trigger_upsert(email: str, branch: str):
-    """Run dev-server-manager.sh upsert in background."""
-    log.info(f"Triggering upsert: email={email}, branch={branch}")
-    try:
-        result = subprocess.run(
-            ["bash", MANAGER_SCRIPT, "upsert", email, branch],
-            capture_output=True,
-            text=True,
-            timeout=600,  # 10 minute timeout for npm ci + build
-        )
-        if result.returncode == 0:
-            log.info(f"Upsert succeeded for {email}: {result.stdout[-200:] if result.stdout else '(no output)'}")
-        else:
-            log.error(f"Upsert failed for {email}: {result.stderr[-500:] if result.stderr else '(no stderr)'}")
-    except subprocess.TimeoutExpired:
-        log.error(f"Upsert timed out for {email}")
-    except Exception as e:
-        log.error(f"Upsert error for {email}: {e}")
+def deploy_production(tag: str | None = None):
+    """Pull and rebuild the backend.
 
-
-def deploy_production():
-    """Pull latest main and rebuild production backend."""
+    tag=None  → fast-forward `main` (latest-canary behavior).
+    tag=<v*>  → fetch tags and `git checkout <tag>` so the deploy is pinned
+                to the exact released commit (prod release behavior).
+    """
     import fcntl
 
-    log.info("=== Production deploy triggered (push to main) ===")
+    label = "release" if tag else "main"
+    log.info(f"=== Deploy triggered (label={DROPLET_LABEL or 'prod'}, source={label}, tag={tag}) ===")
 
     # Acquire lock to prevent concurrent deploys
     try:
         lock_fd = open(DEPLOY_LOCK, "w")
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except (IOError, OSError):
-        log.info("Production deploy already in progress, skipping")
+        log.info("Deploy already in progress, skipping")
         return
 
     try:
-        # 1. Git pull
-        log.info("--- Pulling latest main ---")
-        result = subprocess.run(
-            ["git", "pull", "origin", "main"],
-            cwd=REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        if result.returncode != 0:
-            log.error(f"Git pull failed: {result.stderr}")
-            return
-        log.info(f"Git pull: {result.stdout.strip()}")
+        # 1. Update the working tree to the deploy target. We use
+        # `fetch + reset --hard` (NOT `git pull`) because:
+        #   - It's robust against local mode changes (e.g. provision-droplet.sh's
+        #     chmod +x leaves scripts/*.sh dirty per `git status`).
+        #   - It works regardless of which local branch the checkout is on.
+        #   - It avoids "Need to specify how to reconcile divergent branches"
+        #     prompts when local HEAD has commits not yet on origin/main.
+        # Equivalent CLI: git fetch origin main && git reset --hard origin/main
+        if tag is None:
+            log.info("--- Resetting to origin/main ---")
+            fetch = subprocess.run(
+                ["git", "fetch", "origin", "main"],
+                cwd=REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if fetch.returncode != 0:
+                log.error(f"Git fetch failed: {fetch.stderr}")
+                return
+            # Compare current HEAD to origin/main before resetting. If they
+            # match, nothing changed → skip the docker rebuild. `git reset
+            # --hard origin/main` makes HEAD == origin/main by definition,
+            # so no second rev-parse is needed afterward.
+            before = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=REPO_DIR,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            target = subprocess.run(
+                ["git", "rev-parse", "origin/main"], cwd=REPO_DIR,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            if before == target:
+                log.info(f"Already at origin/main ({before[:8]}), skipping rebuild")
+                return
+            reset = subprocess.run(
+                ["git", "reset", "--hard", "origin/main"],
+                cwd=REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if reset.returncode != 0:
+                log.error(f"Git reset failed: {reset.stderr}")
+                return
+            log.info(f"Reset {before[:8]} → {target[:8]}")
+        else:
+            log.info(f"--- Fetching tags and checking out {tag} ---")
+            fetch = subprocess.run(
+                ["git", "fetch", "--tags", "--force", "origin"],
+                cwd=REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if fetch.returncode != 0:
+                log.error(f"Git fetch failed: {fetch.stderr}")
+                return
+            checkout = subprocess.run(
+                ["git", "checkout", "--force", f"tags/{tag}"],
+                cwd=REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if checkout.returncode != 0:
+                log.error(f"Git checkout {tag} failed: {checkout.stderr}")
+                return
+            log.info(f"Checked out tag {tag}")
 
-        # If nothing changed, skip rebuild
-        if "Already up to date" in result.stdout:
-            log.info("No changes, skipping rebuild")
-            return
-
-        # 2. Check if server/ files changed (optimize: skip rebuild if only frontend changed)
-        # Always rebuild to be safe — Docker layer caching makes no-op rebuilds fast
+        # 2. Always rebuild — Docker layer caching makes no-op rebuilds fast.
         log.info("--- Rebuilding and restarting Docker services ---")
         result = subprocess.run(
             ["docker", "compose", "up", "-d", "--build"],
@@ -197,16 +261,16 @@ def deploy_production():
         try:
             resp = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=10)
             if resp.status == 200:
-                log.info("=== Production deploy complete — health check OK ===")
+                log.info(f"=== Deploy complete (label={DROPLET_LABEL or 'prod'}, source={label}) — health OK ===")
             else:
                 log.error(f"Health check returned {resp.status}")
         except Exception as e:
             log.error(f"Health check failed: {e}")
 
     except subprocess.TimeoutExpired as e:
-        log.error(f"Production deploy timed out: {e}")
+        log.error(f"Deploy timed out: {e}")
     except Exception as e:
-        log.error(f"Production deploy error: {e}")
+        log.error(f"Deploy error: {e}")
     finally:
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
@@ -217,6 +281,13 @@ def deploy_production():
 
 
 class WebhookHandler(http.server.BaseHTTPRequestHandler):
+    def _respond_json(self, status: int, body: dict) -> None:
+        """Write a JSON HTTP response. Used by every webhook reply path."""
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(body).encode())
+
     def do_POST(self):
         if self.path != "/github":
             self.send_error(404)
@@ -240,85 +311,100 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
         event = self.headers.get("X-GitHub-Event", "")
         if event == "ping":
             log.info("Received ping event")
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "pong"}')
+            self._respond_json(200, {"status": "pong"})
             return
 
-        if event != "push":
-            log.info(f"Ignoring event type: {event}")
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "ignored"}')
-            return
-
-        # Parse push event
+        # Parse JSON body once (push and release events both use JSON).
         try:
             payload = json.loads(body)
         except json.JSONDecodeError:
             self.send_error(400, "Invalid JSON")
             return
 
+        # ── Release events (prod tier only) ──────────────────────────
+        if event == "release":
+            if DROPLET_LABEL == "latest":
+                log.info("Release event ignored on latest tier")
+                self._respond_json(200, {"status": "release ignored on latest"})
+                return
+            action = payload.get("action", "")
+            if action != "published":
+                log.info(f"Release event with action={action!r}, ignoring (only 'published' triggers deploy)")
+                self._respond_json(200, {"status": "release action ignored"})
+                return
+            release = payload.get("release", {}) or {}
+            if release.get("draft") or release.get("prerelease"):
+                log.info("Release is draft/prerelease, ignoring")
+                self._respond_json(200, {"status": "draft/prerelease ignored"})
+                return
+            tag = release.get("tag_name") or ""
+            if not tag:
+                log.warning("Release published event has no tag_name; ignoring")
+                self._respond_json(400, {"status": "no tag_name"})
+                return
+            log.info(f"Release published: tag={tag}")
+            self._respond_json(202, {
+                "status": "accepted",
+                "action": "production_deploy",
+                "tag": tag,
+            })
+            t = threading.Thread(target=deploy_production, kwargs={"tag": tag})
+            t.daemon = True
+            t.start()
+            return
+
+        if event != "push":
+            log.info(f"Ignoring event type: {event}")
+            self._respond_json(200, {"status": "ignored"})
+            return
+
         branch = get_branch(payload)
         if not branch:
             log.info("Push event without branch ref, ignoring")
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "no branch"}')
+            self._respond_json(200, {"status": "no branch"})
             return
 
         # Skip deleted branches
         if payload.get("deleted", False):
             log.info(f"Branch {branch} deleted, ignoring")
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "branch deleted"}')
+            self._respond_json(200, {"status": "branch deleted"})
             return
 
-        # Extract author emails
+        # Extract author emails (for logging only; we no longer spawn dev
+        # servers from the droplet — those run on the Mac mini).
         emails = extract_author_emails(payload)
-        if not emails:
-            log.info(f"No non-bot author emails in push to {branch}")
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "no authors"}')
-            return
+        log.info(f"Push to {branch} by {emails or '(no non-bot authors)'}")
 
-        log.info(f"Push to {branch} by {emails}")
-
-        # Respond immediately, process in background
-        self.send_response(202)
-        self.end_headers()
-
-        # Push to main → deploy production backend
+        # Push to main → deploy ONLY on the latest tier. Prod waits for a
+        # release event instead.
         if branch == "main":
-            self.wfile.write(json.dumps({
-                "status": "accepted",
+            if DROPLET_LABEL == "latest":
+                self._respond_json(202, {
+                    "status": "accepted",
+                    "branch": branch,
+                    "action": "latest_deploy",
+                })
+                t = threading.Thread(target=deploy_production)
+                t.daemon = True
+                t.start()
+                return
+            self._respond_json(202, {
+                "status": "ignored",
                 "branch": branch,
-                "action": "production_deploy",
-            }).encode())
-            t = threading.Thread(target=deploy_production)
-            t.daemon = True
-            t.start()
+                "reason": "prod tier deploys on release event, not push to main",
+            })
             return
 
-        self.wfile.write(json.dumps({
+        # Non-main pushes: dev servers live on the Mac mini now; nothing to do.
+        self._respond_json(202, {
             "status": "accepted",
             "branch": branch,
-            "authors": list(emails),
-        }).encode())
-
-        # Trigger upsert for each author in background groups
-        for email in emails:
-            t = threading.Thread(target=trigger_upsert, args=(email, branch))
-            t.daemon = True
-            t.start()
+            "action": "ignored (dev servers run on Mac mini)",
+        })
 
     def do_GET(self):
         if self.path == "/health":
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "ok"}')
+            self._respond_json(200, {"status": "ok"})
             return
         self.send_error(404)
 
