@@ -223,8 +223,13 @@ apply_dev_migrations() {
     echo "  Applying: $basename" >&2
     docker exec "$container" cat "$f" \
       | docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$db_name" >/dev/null
-    docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$db_name" -v fname="$basename" -c \
-      "INSERT INTO _migrations (filename) VALUES (:'fname') ON CONFLICT DO NOTHING;" >/dev/null
+    # The `:'fname'` psql variable expansion fails inside `-c` (psql parses
+    # the SQL server-side without expanding variables), so just interpolate
+    # the basename into the SQL directly. `$basename` was validated against
+    # single quotes upstream (line 218 above), so direct interpolation is
+    # safe — no injection vector.
+    docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$db_name" -c \
+      "INSERT INTO _migrations (filename) VALUES ('$basename') ON CONFLICT DO NOTHING;" >/dev/null
     pending=$((pending + 1))
   done <<< "$files"
   if [ "$pending" -eq 0 ]; then
