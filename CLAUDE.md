@@ -215,32 +215,38 @@ This installs Docker, Caddy, the command execution API, clones the repo, starts 
 - The remote execution API has a configurable timeout (default 120s, max via 3rd arg)
 - The API returns stdout, stderr, and exit code for every command
 
-### Latest-Tier Rollout — Remaining Manual Steps
+### Latest-Tier Rollout — Status
 
-`scripts/dev-webhook.py` and `next.config.ts` are already coded for the two-tier model; the new `latest` droplet runs the new code from day one (cloud-init clones the feature branch and `provision-droplet.sh` writes `/etc/droplet-label=latest`). The remaining setup is split between Route 53, Vercel, GitHub, and the existing prod droplet:
+The two-tier deploy is wired end-to-end. Status of each piece:
 
-1. **DNS (Route 53)** — Add two A records pointing at the new droplet's IP (`67.207.94.93`):
-   - `api.latest.whoeverwants.com  A  67.207.94.93`
-   - `hooks.api.latest.whoeverwants.com  A  67.207.94.93`
-   - One CNAME for the FE host: `latest.whoeverwants.com  CNAME  cname.vercel-dns.com`
+| Step | What | Status |
+|------|------|--------|
+| 1 | DNS for `api.latest.whoeverwants.com`, `hooks.api.latest.whoeverwants.com`, `latest.whoeverwants.com` | ✅ done (Route 53) |
+| 2 | Vercel project: `productionBranch=production`, `latest.whoeverwants.com` domain with `gitBranch=main` | ✅ done (via undocumented `PATCH /v9/projects/<id>/branch` + `POST /v10/projects/<id>/domains`) |
+| 3 | `production` branch on origin (created from current main HEAD) | ✅ done |
+| 4 | `.github/workflows/release-to-production.yml` (on `release: published` → force-push tag commit to `production`) | ✅ done |
+| 5 | GitHub webhook subscribed to BOTH droplets (push + release events) | ⚠️ manual — see below |
+| 6 | Prod droplet cutover (restart `dev-webhook` to pick up label-aware code) | ⚠️ manual — after PR merges; see below |
 
-2. **Vercel — `latest.whoeverwants.com`** — Add the domain to the existing `whoeverwants` project (Vercel UI → Settings → Domains → Add `latest.whoeverwants.com`). For the desired "main → latest, release → prod" gating, either:
-   - **Option A (simplest, recommended):** Change the project's `productionBranch` from `main` to a new `production` branch (Vercel UI → Settings → Git → Production Branch). Create the `production` branch in GitHub. Push to main keeps deploying as PREVIEWs; bind `latest.whoeverwants.com` to PREVIEWs of `main` (Vercel UI → Settings → Domains → set the domain's "Git Branch" filter to `main`). Production whoeverwants.com only updates when something pushes to the `production` branch.
-   - **Option B (GitHub Action–driven):** Keep `main` as productionBranch. After every Vercel main-deploy completes, a GitHub Action calls Vercel API `POST /v2/aliases` to alias the deployment to `latest.whoeverwants.com`. On release, a different Action calls the API to alias the released-tag's deployment to `whoeverwants.com`. More moving parts but no production-branch dance.
+**5. GitHub webhook for the latest droplet** — repo Settings → Webhooks → Add:
+- URL: `https://hooks.api.latest.whoeverwants.com/github`
+- Content type: `application/json`
+- Secret: contents of `/etc/dev-webhook-secret` on the latest droplet (`bash scripts/remote-latest.sh "cat /etc/dev-webhook-secret"`)
+- Events: tick "Let me select individual events" → enable **Pushes** AND **Releases**
 
-3. **Release → Production glue (GitHub Action)** — Whichever Vercel option above is chosen, add a workflow that fires on `release: published` and:
-   - **Option A:** `git push origin <release-tag>:production --force` so Vercel picks it up as a production deploy AND notifies the prod droplet via the webhook below.
-   - **Option B:** Call the Vercel API to move the prod alias.
-   - Either way, the prod droplet's webhook (see step 5) sees the `release` event from GitHub and pulls the tagged commit.
+Also confirm the existing prod webhook (`https://hooks.api.whoeverwants.com/github`) is subscribed to **Releases** in addition to **Pushes** — if not, edit it to add Releases. The PAT we use lacks `admin:repo_hook`, so this must be done in the GitHub UI.
 
-4. **GitHub webhook → latest droplet** — Currently a single GitHub webhook targets `https://hooks.api.whoeverwants.com/github` (prod droplet). Add a second webhook in the same repo settings, configured identically (`push` AND `release` events, same secret, JSON content type), pointing at `https://hooks.api.latest.whoeverwants.com/github`. The fine-grained PAT we use here lacks the `admin:repo_hook` scope, so this must be done via the GitHub UI. The webhook secret is in `/etc/dev-webhook-secret` on the latest droplet (`bash scripts/remote-latest.sh "cat /etc/dev-webhook-secret"`).
+**6. Prod droplet cutover** — the prod droplet's `dev-webhook.service` is still running the OLD code (pre-this-PR) which deploys on every push to main. After this branch merges:
+1. The prod webhook will deploy main one last time using its old behavior — this lands the new `dev-webhook.py` (label-aware) on disk at `/root/whoeverwants/scripts/dev-webhook.py`, but the systemd service is still running the old code in memory.
+2. From the dev env: `bash scripts/remote.sh "touch /etc/droplet-label && chmod 644 /etc/droplet-label && systemctl restart dev-webhook"` — creates the empty label marker (prod tier = empty string) and restarts the service. From here on, push to main is ignored on prod; only `release: published` events deploy.
 
-5. **Prod droplet cutover** — The prod droplet's `dev-webhook.service` is still running OLD code (pre-this-PR). After this branch merges:
-   1. Push to main triggers prod's old webhook, which `git pull`s + rebuilds prod ONE LAST TIME using the old "push → deploy" behavior. This deploys the new code to `/root/whoeverwants` (but the systemd service still holds the OLD code in memory).
-   2. From the dev env: `bash scripts/remote.sh "test -f /etc/droplet-label || (touch /etc/droplet-label && chmod 644 /etc/droplet-label)"` — ensure the empty-label marker exists so the new webhook code knows it's prod.
-   3. `bash scripts/remote.sh "systemctl restart dev-webhook"` — picks up the new release-event-gated behavior. From here on, push to main DOES NOT deploy to prod; only release events do.
+### How a release will flow once the cutover is complete
 
-6. **Webhook subscription** — Confirm BOTH webhooks (latest + prod) are subscribed to `push` AND `release` events. The prod droplet's new behavior is `release: published` → deploy; the latest droplet's is `push` to main → deploy.
+1. Tag a commit on `main` (or wherever) and publish a non-draft / non-prerelease GitHub Release.
+2. The `release-to-production.yml` workflow fires → force-pushes the tag's commit to the `production` branch.
+3. Vercel sees a push to `production` → builds a production deployment → moves the `whoeverwants.com` alias to it (since `productionBranch=production`, that's the prod alias target).
+4. In parallel, the prod droplet's `dev-webhook` receives the `release.published` event from GitHub → `git fetch --tags && git checkout tags/<tag>` → `docker compose up -d --build` → applies pending migrations → `/health` check.
+5. The `latest` droplet ignores the release event (its label is `latest`). It only redeploys on push to `main`; this push, the next push, every push.
 
 ## Mac Mini Dev Box
 
