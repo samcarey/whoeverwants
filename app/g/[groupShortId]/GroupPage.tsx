@@ -187,23 +187,16 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   // polls to this group (Migration 105: group_id is the addressable
   // unit; the legacy follow_up_to chain pointer is gone).
   //
-  // No removeAttribute cleanup. The slide-overlay handoff briefly mounts
-  // two GroupContent instances for the same group (one in the overlay,
-  // one in the real route) for ~380ms; a cleanup that unconditionally
-  // removes the attribute fires when the overlay unmounts, even though
-  // the real-route instance is still active — leaving body.data-group-id
-  // null while the user is still on /g/<id>. The next submit then sees
-  // requestGroupId=null and the server mints a fresh group for the
-  // orphan poll. Defensive cleanup happens at /g/page.tsx (the empty
-  // placeholder), which is the only non-/g/<id> page that reads the
-  // body attr for poll attachment. Navigating from /g/<id> to /home or
-  // /settings leaves a stale attr, but neither page has a submit path
-  // that reads it.
+  // No removeAttribute cleanup: the slide-overlay handoff briefly mounts
+  // two GroupContent instances for the same group; the overlay's unmount
+  // cleanup would otherwise null body.data-group-id while the real-route
+  // instance is still active, and the next submit would mint a fresh
+  // group. See CLAUDE.md "overlay-slide unmount cleanups" pitfall.
   useEffect(() => {
     if (group?.groupId) {
       document.body.setAttribute(GROUP_ID_ATTR, group.groupId);
     }
-  }, [group]);
+  }, [group?.groupId]);
 
   // Signal to the view transition helper that this page's content is
   // rendered AND its initial scroll position has been applied. Without the
