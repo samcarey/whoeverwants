@@ -186,12 +186,17 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   // Set data attribute on body so the create-poll form attaches new
   // polls to this group (Migration 105: group_id is the addressable
   // unit; the legacy follow_up_to chain pointer is gone).
+  //
+  // No removeAttribute cleanup: the slide-overlay handoff briefly mounts
+  // two GroupContent instances for the same group; the overlay's unmount
+  // cleanup would otherwise null body.data-group-id while the real-route
+  // instance is still active, and the next submit would mint a fresh
+  // group. See CLAUDE.md "overlay-slide unmount cleanups" pitfall.
   useEffect(() => {
     if (group?.groupId) {
       document.body.setAttribute(GROUP_ID_ATTR, group.groupId);
     }
-    return () => { document.body.removeAttribute(GROUP_ID_ATTR); };
-  }, [group]);
+  }, [group?.groupId]);
 
   // Signal to the view transition helper that this page's content is
   // rendered AND its initial scroll position has been applied. Without the
