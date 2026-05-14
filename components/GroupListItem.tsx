@@ -146,34 +146,6 @@ export default function GroupListItem(props: GroupListItemProps) {
           </div>
         )}
 
-        {/* Countdown column — w-7 reserved slot left of the avatar. See
-            CLAUDE.md "Group list row layout" for state matrix + sizing math. */}
-        {!hideRespondents && (
-          <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-[4.224px]">
-            {soonestUnvotedDeadline && unvotedDeadlineKind && unvotedDeadlineKind !== 'prephase-pending' && (
-              <ClientOnly fallback={null}>
-                <SimpleCountdown
-                  deadline={soonestUnvotedDeadline}
-                  compact
-                  blankOnExpire
-                  numberClass="text-[15.84px] font-bold tracking-tighter"
-                  colorClass={
-                    unvotedDeadlineKind === 'prephase'
-                      ? 'text-blue-600 dark:text-blue-400'
-                      : 'text-green-600 dark:text-green-400'
-                  }
-                />
-              </ClientOnly>
-            )}
-            {unvotedDeadlineKind === 'prephase-pending' && !soonestUnvotedDeadline && (
-              <span
-                aria-label="Suggestions open"
-                className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 dark:bg-blue-400"
-              />
-            )}
-          </div>
-        )}
-
         {/* Drafts skip this entirely so the "?" placeholder doesn't appear
             before anyone has actually voted. */}
         {!hideRespondents && (
@@ -184,7 +156,7 @@ export default function GroupListItem(props: GroupListItemProps) {
           />
         )}
 
-        <div className="flex-1 min-w-0 -ml-[3px] pr-4">
+        <div className="flex-1 min-w-0 -ml-[3px]">
           {/* Row 1: title (left, truncates) + draft pill / "5m ago" (right) */}
           <div className="flex items-baseline gap-2">
             <h3
@@ -228,6 +200,34 @@ export default function GroupListItem(props: GroupListItemProps) {
             </div>
           )}
         </div>
+
+        {/* Countdown column — w-7 reserved slot at the right edge of the row.
+            See CLAUDE.md "Group list row layout" for state matrix + sizing math. */}
+        {!hideRespondents && (
+          <div className="w-7 flex items-center justify-center shrink-0 self-center -ml-[4.224px]">
+            {soonestUnvotedDeadline && unvotedDeadlineKind && unvotedDeadlineKind !== 'prephase-pending' && (
+              <ClientOnly fallback={null}>
+                <SimpleCountdown
+                  deadline={soonestUnvotedDeadline}
+                  compact
+                  blankOnExpire
+                  numberClass="text-[15.84px] font-bold tracking-tighter"
+                  colorClass={
+                    unvotedDeadlineKind === 'prephase'
+                      ? 'text-blue-600 dark:text-blue-400'
+                      : 'text-green-600 dark:text-green-400'
+                  }
+                />
+              </ClientOnly>
+            )}
+            {unvotedDeadlineKind === 'prephase-pending' && !soonestUnvotedDeadline && (
+              <span
+                aria-label="Suggestions open"
+                className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 dark:bg-blue-400"
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
