@@ -162,7 +162,7 @@ export async function ensurePushSubscription(): Promise<string | null> {
     const existingKey = subscription.options.applicationServerKey;
     const matches =
       existingKey instanceof ArrayBuffer &&
-      arrayBuffersEqual(existingKey, appServerKey.buffer);
+      arrayBuffersEqual(existingKey, appServerKey.buffer as ArrayBuffer);
     if (!matches) {
       await subscription.unsubscribe();
       subscription = null;
@@ -171,7 +171,10 @@ export async function ensurePushSubscription(): Promise<string | null> {
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: appServerKey,
+      // Cast: lib.dom typing for applicationServerKey is BufferSource,
+      // but Uint8Array<ArrayBufferLike> doesn't satisfy that union under
+      // recent TS. Runtime accepts the Uint8Array exactly.
+      applicationServerKey: appServerKey as unknown as BufferSource,
     });
   }
 
