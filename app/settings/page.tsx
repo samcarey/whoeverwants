@@ -129,6 +129,8 @@ export default function SettingsPage() {
 
   const hasPendingImageChange = pendingCroppedBlob !== null || pendingImageRemoval;
 
+  const selectedTheme = THEME_OPTIONS.find((o) => o.value === theme);
+
   const handleThemeChange = (next: ThemePreference) => {
     setTheme(next);
     saveTheme(next);
@@ -440,43 +442,40 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Theme Section */}
       <div className="mb-6">
-        <label className="block text-sm font-medium mb-1">Theme</label>
-        <div
-          role="radiogroup"
-          aria-label="Theme"
-          className="relative grid grid-cols-3 p-1 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
-        >
-          <span
-            aria-hidden="true"
-            className="absolute top-1 bottom-1 left-1 rounded-full bg-white dark:bg-gray-900 shadow-sm border border-gray-200 dark:border-gray-700 transition-transform duration-200 ease-out"
-            style={{
-              width: "calc((100% - 0.5rem) / 3)",
-              transform: `translateX(${THEME_OPTIONS.findIndex((o) => o.value === theme) * 100}%)`,
-            }}
-          />
-          {THEME_OPTIONS.map((opt) => {
-            const selected = theme === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => handleThemeChange(opt.value)}
-                className={`relative z-10 flex items-center justify-center gap-2 h-10 rounded-full transition-colors ${
-                  selected
-                    ? "text-blue-700 dark:text-blue-300"
-                    : "text-gray-600 dark:text-gray-400"
-                }`}
+        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
+          <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
+            <span className="text-base font-normal shrink-0">Theme</span>
+            <span className="relative inline-flex items-center gap-1.5 text-base font-normal text-blue-600 dark:text-blue-400">
+              {selectedTheme?.icon}
+              {selectedTheme?.label}
+              <svg
+                aria-hidden="true"
+                className="w-4 h-4 shrink-0"
+                viewBox="0 0 20 20"
+                fill="currentColor"
               >
-                {opt.icon}
-                <span className="text-sm font-medium">{opt.label}</span>
-              </button>
-            );
-          })}
-        </div>
+                <path
+                  fillRule="evenodd"
+                  d="M10 3a.75.75 0 01.55.24l3.25 3.5a.75.75 0 11-1.1 1.02L10 4.852 7.3 7.76a.75.75 0 01-1.1-1.02l3.25-3.5A.75.75 0 0110 3zm-3.76 9.2a.75.75 0 011.06.04L10 15.148l2.7-2.908a.75.75 0 111.1 1.02l-3.25 3.5a.75.75 0 01-1.1 0l-3.25-3.5a.75.75 0 01.04-1.06z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <select
+                value={theme}
+                onChange={(e) => handleThemeChange(e.target.value as ThemePreference)}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+                aria-label="Theme"
+              >
+                {THEME_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </label>
+        </section>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           System follows your device&apos;s appearance setting
         </p>
