@@ -175,3 +175,104 @@ bash scripts/ios/logs.sh --failed-only 12345678
 - `scripts/ios/logs.sh` — fetch CI logs (full run or `--failed-only`).
 - `scripts/ios/mac-bootstrap.sh` — one-time Mac mini setup.
 - `ios/` — generated Xcode project (committed by CI on first run).
+
+## Push notifications (APNS)
+
+The "New Poll" toggle on each group's info page registers the device for
+push notifications. On the iOS app this routes through APNS (Apple's
+Push Notification service); on web/PWA platforms it uses Web Push
+(VAPID). Web Push works out of the box once the API is deployed —
+APNS requires the following one-time setup.
+
+### 1. Generate an APNS Auth Key in Apple Developer Portal
+
+1. Open https://developer.apple.com/account/resources/authkeys/list
+2. Click the **+** to create a new key.
+3. Name it `WhoeverWants APNS` (or similar).
+4. Check **Apple Push Notifications service (APNs)**.
+5. Click **Continue → Register → Download**. You'll get an `.p8` file —
+   download it now, you can't re-download it later.
+6. Note the **Key ID** (10 chars, shown on the key's detail page) and
+   your **Team ID** (top-right of the developer portal).
+
+### 2. Enable Push Notifications capability on the iOS app
+
+In the Apple Developer Portal:
+1. Go to **Identifiers** → find `com.whoeverwants.app` (or your dev
+   bundle ID, e.g. `com.whoeverwants.app.dev.<github-actor>`).
+2. Enable **Push Notifications** under the capabilities list. Save.
+3. Repeat for every bundle ID you build (prod + per-dev).
+
+In the iOS project:
+1. The `aps-environment` entitlement needs to be present in
+   `ios/App/App/App.entitlements`. After running `npx cap sync ios`
+   following the `@capacitor/push-notifications` plugin install, Xcode
+   may or may not add this automatically. If TestFlight uploads fail
+   with `Missing Push Notification Entitlement`, add manually:
+   ```xml
+   <key>aps-environment</key>
+   <string>production</string>
+   ```
+   Use `development` for dev builds if you want to use the APNS sandbox.
+
+### 3. Set the API server's APNS env vars
+
+On each droplet (prod + canary), append to `/root/whoeverwants/.env`:
+
+```bash
+APNS_KEY_ID=ABCD123456
+APNS_TEAM_ID=YOURTEAMID
+APNS_AUTH_KEY_P8=<base64 of the .p8 file contents, single line>
+# Set to 1 to send via APNS sandbox (api.sandbox.push.apple.com).
+# Leave unset for production (api.push.apple.com).
+APNS_USE_SANDBOX=
+```
+
+To compute `APNS_AUTH_KEY_P8`:
+
+```bash
+base64 -i AuthKey_ABCD123456.p8 | tr -d '\n'
+```
+
+Restart the API to pick up the new env: `bash scripts/remote.sh "docker
+compose up -d --force-recreate api" /root/whoeverwants` (and the same on
+the latest droplet via `remote-latest.sh`).
+
+To verify: `curl https://api.whoeverwants.com/api/notifications/config`
+should return `{"vapid_public_key": "...", "apns_supported": true}`.
+
+### 4. Capacitor plugin installation in the iOS project
+
+The FE depends on `@capacitor/push-notifications`. After
+`npm install` runs, `npx cap sync ios` (which the CI build step does
+automatically) updates the iOS project to include the native plugin.
+The plugin handles the `application:didRegisterForRemoteNotifications`
+callback and routes the resulting APNS token to the JS layer, which the
+FE then POSTs to `/api/notifications/subscriptions` with kind=`apns`.
+
+If you've installed the plugin manually outside the CI pipeline, run:
+
+```bash
+cd /path/to/repo
+npm install
+npx cap sync ios
+```
+
+Then commit the resulting changes under `ios/`.
+
+### Diagnostics
+
+- **Tap notification → app doesn't open the right page**: check
+  `ios/App/App/AppDelegate.swift` for a handler reading the
+  `notification.request.content.userInfo["url"]` key. Capacitor's plugin
+  surfaces the payload through `PushNotifications.addListener(
+  'pushNotificationActionPerformed', ...)`; the WhoeverWants FE doesn't
+  wire this listener today — pull requests welcome to route taps into
+  `router.push(notification.data.url)`.
+- **`BadDeviceToken`** in API logs: token was registered against the
+  wrong APNS environment. Flip `APNS_USE_SANDBOX` to match the build's
+  `aps-environment` entitlement.
+- **`InvalidProviderToken`**: the JWT signed against `APNS_AUTH_KEY_P8`
+  doesn't match the Team ID. Confirm `APNS_TEAM_ID` and `APNS_KEY_ID`
+  exactly match the values from the Auth Key's page in the developer
+  portal.

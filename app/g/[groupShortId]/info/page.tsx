@@ -9,6 +9,7 @@ import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupHeader from "@/components/GroupHeader";
 import InitialBubble from "@/components/InitialBubble";
+import NotificationSettingsCard from "@/components/NotificationSettingsCard";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
@@ -122,6 +123,8 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
             })}
           </ul>
         </div>
+
+        <NotificationSettingsCard groupRouteId={groupId} />
       </div>
     </>
   );

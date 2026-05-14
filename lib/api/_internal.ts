@@ -38,6 +38,7 @@ export const POLL_BASE = getApiEndpoint('polls');
 export const GROUP_BASE = getApiEndpoint('groups');
 export const USER_BASE = getApiEndpoint('users');
 export const SEARCH_BASE = getApiEndpoint('search');
+export const NOTIFICATIONS_BASE = getApiEndpoint('notifications');
 
 const BROWSER_ID_HEADER = 'X-Browser-Id';
 
@@ -98,6 +99,10 @@ export function groupFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function userFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return fetchWithBase<T>(USER_BASE, path, options);
+}
+
+export function notificationsFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  return fetchWithBase<T>(NOTIFICATIONS_BASE, path, options);
 }
 
 /**
