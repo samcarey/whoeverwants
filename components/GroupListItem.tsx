@@ -201,7 +201,7 @@ export default function GroupListItem(props: GroupListItemProps) {
         {!hideRespondents && (
           <div className="flex flex-col items-end justify-start shrink-0 self-stretch -ml-[4.224px] gap-0.5">
             {createdAt && (
-              <div className="text-xs text-gray-400 dark:text-gray-500">
+              <div className="text-xs text-gray-400 dark:text-gray-500 mt-[5px]">
                 <ClientOnly fallback={null}>{relativeTime(createdAt)}</ClientOnly>
               </div>
             )}
