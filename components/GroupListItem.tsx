@@ -5,6 +5,7 @@ import ClientOnly from "@/components/ClientOnly";
 import GroupAvatar from "@/components/GroupAvatar";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { relativeTime } from "@/lib/questionListUtils";
+import type { DeadlineKind } from "@/lib/groupUtils";
 
 /**
  * Shared row used by both the home/group poll list and the in-progress
@@ -34,7 +35,7 @@ export interface GroupListItemProps {
    *  'prephase' → blue compact countdown (suggestion / availability timer
    *  is ticking), 'prephase-pending' → solid blue circle (suggestions open
    *  but timer hasn't started). undefined → empty slot. */
-  unvotedDeadlineKind?: 'prephase' | 'response' | 'prephase-pending';
+  unvotedDeadlineKind?: DeadlineKind;
   hasUnvoted?: boolean;
   pressed?: boolean;
   draftMode?: boolean;
@@ -145,39 +146,24 @@ export default function GroupListItem(props: GroupListItemProps) {
           </div>
         )}
 
-        {/* Fixed-width countdown column, left of the avatar. Always
-            reserved when an avatar is rendered so indentation is consistent
-            whether the row has an active cutoff or not. The negative
-            right-margin shrinks the effective gap between this column and
-            the avatar to 7.776px (the row's gap-3 is 12px; -mr-[4.224px]
-            subtracts 4.224px). Three states driven by `unvotedDeadlineKind`:
-              - 'response':         green compact countdown (voting cutoff)
-              - 'prephase':         blue compact countdown (suggestion /
-                                    availability timer running)
-              - 'prephase-pending': solid blue dot (suggestions open, timer
-                                    not yet started — no scheduled time
-                                    to render in a single-glyph column)
-            On expiry the countdown clears to empty instead of "Expired" —
-            the parent's `isOpen` filter unmounts the row a tick later, so
-            no stray "Expired" word should flash through this slot. */}
+        {/* Countdown column — w-7 reserved slot left of the avatar. See
+            CLAUDE.md "Group list row layout" for state matrix + sizing math. */}
         {!hideRespondents && (
           <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-[4.224px]">
             {soonestUnvotedDeadline && unvotedDeadlineKind && unvotedDeadlineKind !== 'prephase-pending' && (
-              <span className="text-[15.84px]">
-                <ClientOnly fallback={null}>
-                  <SimpleCountdown
-                    deadline={soonestUnvotedDeadline}
-                    compact
-                    blankOnExpire
-                    numberClass="font-bold tracking-tighter"
-                    colorClass={
-                      unvotedDeadlineKind === 'prephase'
-                        ? 'text-blue-600 dark:text-blue-400'
-                        : 'text-green-600 dark:text-green-400'
-                    }
-                  />
-                </ClientOnly>
-              </span>
+              <ClientOnly fallback={null}>
+                <SimpleCountdown
+                  deadline={soonestUnvotedDeadline}
+                  compact
+                  blankOnExpire
+                  numberClass="text-[15.84px] font-bold tracking-tighter"
+                  colorClass={
+                    unvotedDeadlineKind === 'prephase'
+                      ? 'text-blue-600 dark:text-blue-400'
+                      : 'text-green-600 dark:text-green-400'
+                  }
+                />
+              </ClientOnly>
             )}
             {unvotedDeadlineKind === 'prephase-pending' && !soonestUnvotedDeadline && (
               <span

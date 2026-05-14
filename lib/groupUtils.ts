@@ -89,6 +89,10 @@ export function findChainRoot(polls: Poll[]): Poll | null {
   return root;
 }
 
+/** State of a group's leading unvoted-poll cutoff, driving the home-list
+ *  compact countdown column's color + style. See `Group.unvotedDeadlineKind`. */
+export type DeadlineKind = 'prephase' | 'response' | 'prephase-pending';
+
 export interface Group {
   /** ID of the root question (first question of the chain's earliest poll).
    *  Null for empty groups (no questions yet). */
@@ -144,7 +148,7 @@ export interface Group {
    *  Within one poll, an active prephase always wins over response_deadline
    *  (we don't surface a voting deadline while suggestions are still being
    *  collected); across polls, the soonest deadline wins regardless of kind. */
-  unvotedDeadlineKind?: 'prephase' | 'response' | 'prephase-pending';
+  unvotedDeadlineKind?: DeadlineKind;
   /** Pre-computed ms timestamp of latest poll created_at for sorting,
    *  or the group's `created_at` for empty groups. */
   latestActivityMs: number;
@@ -340,14 +344,11 @@ function buildGroupFromPolls(
   const now = new Date();
   let unvotedCount = 0;
   let soonestUnvotedDeadline: string | undefined;
-  let unvotedDeadlineKind: 'prephase' | 'response' | 'prephase-pending' | undefined;
+  let unvotedDeadlineKind: DeadlineKind | undefined;
   let anyPendingPrephase = false;
 
   for (const mp of polls) {
-    const isOpen = mp.response_deadline
-      ? new Date(mp.response_deadline) > now && !mp.is_closed
-      : !mp.is_closed;
-    if (!isOpen) continue;
+    if (!isPollOpen(mp, now)) continue;
     const hasRespondedToAnySub = mp.questions.some(
       sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
     );
