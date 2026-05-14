@@ -101,23 +101,30 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
     const isDev = process.env.NODE_ENV === 'development';
 
     return [
+      // Non-cache headers for every response (tunnel compat + CORS).
       {
         source: '/(.*)',
         headers: [
-          {
-            key: 'X-Forwarded-Proto',
-            value: 'https'
-          },
-          {
-            key: 'Access-Control-Allow-Origin',
-            value: '*'
-          },
-          // Cache control for pages
+          { key: 'X-Forwarded-Proto', value: 'https' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+        ],
+      },
+      // Page caching. Scoped via negative lookahead to EXCLUDE /api/* and
+      // /_next/static/* — those have their own rules below (immutable for
+      // static assets) or want the upstream's Cache-Control to pass through
+      // (API). The previous blanket `/(.*)` Cache-Control rule applied to
+      // /api/* too, making identity-dependent endpoints (e.g.
+      // /api/groups/by-route-id/{id}) cacheable by URL alone — surfaced as
+      // "iOS user creates poll → group page shows empty for hours" because
+      // the WKWebView cache pinned the pre-poll `[]` response.
+      {
+        source: '/((?!api/|_next/static/).*)',
+        headers: [
           {
             key: 'Cache-Control',
             value: isDev
               ? 'no-cache, no-store, must-revalidate, max-age=0'
-              : 'public, max-age=3600, stale-while-revalidate=3600'
+              : 'public, max-age=3600, stale-while-revalidate=3600',
           },
         ],
       },
@@ -130,26 +137,18 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
               ? 'no-cache, no-store, must-revalidate, max-age=0'
               : 'public, max-age=31536000, immutable',
           },
-          {
-            key: 'Access-Control-Allow-Origin',
-            value: '*'
-          },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
         ],
       },
-      // API routes: pass the upstream's Cache-Control through unchanged.
-      // Most endpoints are identity-dependent — the visibility filter on
-      // /api/groups/by-route-id/{id} etc. partitions by the X-Browser-Id
-      // request header, so a single response is NOT shareable across
-      // requesters. The previous `public, max-age=3600,
-      // stale-while-revalidate=3600` rule made any cache (Vercel edge,
-      // iOS WebView's WKWebView cache) serve the same response by URL
-      // alone, surfacing as "the poll I just created isn't visible in
-      // the group on iOS" — an empty `[]` from before the poll existed
-      // would pin for up to 2 hours. Endpoints that ARE safe to cache
-      // (image bytes) set Cache-Control: public, max-age=31536000,
-      // immutable explicitly on the upstream response; with no override
-      // here, those pass through correctly. Everything else gets no
-      // Cache-Control and is fetched fresh.
+      // /api/* intentionally has NO Cache-Control rule here. The upstream
+      // FastAPI sets `public, max-age=31536000, immutable` on image bytes
+      // endpoints (groups + users image GETs); those pass through unchanged.
+      // Every other API endpoint is identity-dependent (filtered by the
+      // X-Browser-Id request header) or mutation-sensitive, so the response
+      // is fetched fresh on every request — which is the behavior absent a
+      // Cache-Control header. Don't reintroduce a blanket Cache-Control
+      // here without `Vary: X-Browser-Id`, and even then per-browser cache
+      // partitions explode to one entry per visitor with no real reuse.
     ];
   };
 }
