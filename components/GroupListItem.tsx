@@ -205,7 +205,7 @@ export default function GroupListItem(props: GroupListItemProps) {
                 <ClientOnly fallback={null}>{relativeTime(createdAt)}</ClientOnly>
               </div>
             )}
-            {soonestUnvotedDeadline && unvotedDeadlineKind && unvotedDeadlineKind !== 'prephase-pending' && (
+            {soonestUnvotedDeadline && unvotedDeadlineKind && unvotedDeadlineKind !== 'prephase-pending' && unvotedDeadlineKind !== 'response-pending' && (
               <ClientOnly fallback={null}>
                 <SimpleCountdown
                   deadline={soonestUnvotedDeadline}
@@ -224,6 +224,12 @@ export default function GroupListItem(props: GroupListItemProps) {
               <span
                 aria-label="Suggestions open"
                 className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 dark:bg-blue-400 mt-0.5"
+              />
+            )}
+            {unvotedDeadlineKind === 'response-pending' && !soonestUnvotedDeadline && (
+              <span
+                aria-label="Awaiting your response"
+                className="inline-block w-2.5 h-2.5 rounded-full bg-green-500 dark:bg-green-400 mt-0.5"
               />
             )}
           </div>

@@ -91,8 +91,10 @@ export function findChainRoot(polls: Poll[]): Poll | null {
 }
 
 /** State of a group's leading unvoted-poll cutoff, driving the home-list
- *  compact countdown column's color + style. See `Group.unvotedDeadlineKind`. */
-export type DeadlineKind = 'prephase' | 'response' | 'prephase-pending';
+ *  compact countdown column's color + style. See `Group.unvotedDeadlineKind`.
+ *  `*-pending` variants render as a solid colored dot when no concrete
+ *  deadline exists but the viewer still has un-actioned work. */
+export type DeadlineKind = 'prephase' | 'response' | 'prephase-pending' | 'response-pending';
 
 export interface Group {
   /** ID of the root question (first question of the chain's earliest poll).
@@ -387,6 +389,13 @@ function buildGroupFromPolls(
   // Pending prephase indicator only surfaces when no concrete deadline won.
   if (!unvotedDeadlineKind && anyPendingPrephase) {
     unvotedDeadlineKind = 'prephase-pending';
+  }
+  // Awaiting-response indicator: viewer has un-actioned voting work, no
+  // concrete deadline anywhere AND nothing surfaced by prephase-pending.
+  // Renders as a solid green dot so the right edge is never blank when
+  // there's something to do.
+  if (!unvotedDeadlineKind && unvotedCount > 0) {
+    unvotedDeadlineKind = 'response-pending';
   }
 
   // Anonymous respondent count: max across polls (each wrapper's
