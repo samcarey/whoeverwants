@@ -129,6 +129,8 @@ export default function SettingsPage() {
 
   const hasPendingImageChange = pendingCroppedBlob !== null || pendingImageRemoval;
 
+  const selectedTheme = THEME_OPTIONS.find((o) => o.value === theme);
+
   const handleThemeChange = (next: ThemePreference) => {
     setTheme(next);
     saveTheme(next);
@@ -440,19 +442,16 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Theme Section */}
       <div className="mb-6">
         <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
           <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
             <span className="text-base font-normal shrink-0">Theme</span>
-            <span className="relative inline-flex items-center gap-1.5">
-              <span className="inline-flex items-center gap-1.5 text-base font-normal text-blue-600 dark:text-blue-400">
-                {THEME_OPTIONS.find((o) => o.value === theme)?.icon}
-                {THEME_OPTIONS.find((o) => o.value === theme)?.label}
-              </span>
+            <span className="relative inline-flex items-center gap-1.5 text-base font-normal text-blue-600 dark:text-blue-400">
+              {selectedTheme?.icon}
+              {selectedTheme?.label}
               <svg
                 aria-hidden="true"
-                className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0"
+                className="w-4 h-4 shrink-0"
                 viewBox="0 0 20 20"
                 fill="currentColor"
               >
