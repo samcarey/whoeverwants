@@ -157,7 +157,7 @@ export default function GroupListItem(props: GroupListItemProps) {
         )}
 
         <div className="flex-1 min-w-0 -ml-[3px]">
-          {/* Row 1: title (left, truncates) + draft pill / "5m ago" (right) */}
+          {/* Row 1: title (left, truncates) + draft pill */}
           <div className="flex items-baseline gap-2">
             <h3
               className={`font-semibold text-base truncate flex-1 transition-colors duration-500 ease-out ${
@@ -175,11 +175,6 @@ export default function GroupListItem(props: GroupListItemProps) {
               >
                 draft
               </span>
-            )}
-            {createdAt && (
-              <div className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
-                <ClientOnly fallback={null}>{relativeTime(createdAt)}</ClientOnly>
-              </div>
             )}
           </div>
 
@@ -201,10 +196,15 @@ export default function GroupListItem(props: GroupListItemProps) {
           )}
         </div>
 
-        {/* Countdown column — w-7 reserved slot at the right edge of the row.
+        {/* Right rail: age stamp (upper-right) above the countdown indicator.
             See CLAUDE.md "Group list row layout" for state matrix + sizing math. */}
         {!hideRespondents && (
-          <div className="w-7 flex items-center justify-center shrink-0 self-center -ml-[4.224px]">
+          <div className="flex flex-col items-end justify-start shrink-0 self-stretch -ml-[4.224px] gap-0.5">
+            {createdAt && (
+              <div className="text-xs text-gray-400 dark:text-gray-500">
+                <ClientOnly fallback={null}>{relativeTime(createdAt)}</ClientOnly>
+              </div>
+            )}
             {soonestUnvotedDeadline && unvotedDeadlineKind && unvotedDeadlineKind !== 'prephase-pending' && (
               <ClientOnly fallback={null}>
                 <SimpleCountdown
@@ -223,7 +223,7 @@ export default function GroupListItem(props: GroupListItemProps) {
             {unvotedDeadlineKind === 'prephase-pending' && !soonestUnvotedDeadline && (
               <span
                 aria-label="Suggestions open"
-                className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 dark:bg-blue-400"
+                className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 dark:bg-blue-400 mt-0.5"
               />
             )}
           </div>
