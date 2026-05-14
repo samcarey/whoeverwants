@@ -157,8 +157,13 @@ export default function GroupListItem(props: GroupListItemProps) {
         )}
 
         <div className="flex-1 min-w-0 -ml-[3px]">
-          {/* Row 1: title (left, truncates) + draft pill / "5m ago" (right) */}
+          {/* Row 1: "5m ago" (left) + title (truncates) + draft pill */}
           <div className="flex items-baseline gap-2">
+            {createdAt && (
+              <div className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
+                <ClientOnly fallback={null}>{relativeTime(createdAt)}</ClientOnly>
+              </div>
+            )}
             <h3
               className={`font-semibold text-base truncate flex-1 transition-colors duration-500 ease-out ${
                 titleEmphasized ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
@@ -175,11 +180,6 @@ export default function GroupListItem(props: GroupListItemProps) {
               >
                 draft
               </span>
-            )}
-            {createdAt && (
-              <div className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
-                <ClientOnly fallback={null}>{relativeTime(createdAt)}</ClientOnly>
-              </div>
             )}
           </div>
 
