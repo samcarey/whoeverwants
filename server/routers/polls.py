@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from algorithms.poll_title import generate_poll_title
 from database import get_db
@@ -25,6 +25,7 @@ from models import (
     VoteResponse,
 )
 from services.memberships import join_group, join_group_for_poll
+from services.push import fan_out_new_poll
 from services.questions import (
     _edit_vote_on_question,
     _finalize_suggestion_options,
@@ -425,7 +426,9 @@ def _compute_poll_voter_data(conn, poll_id: str) -> tuple[list[str], int]:
 
 
 @router.post("", response_model=PollResponse, status_code=201)
-def create_poll(req: CreatePollRequest, request: Request):
+def create_poll(
+    req: CreatePollRequest, request: Request, background_tasks: BackgroundTasks
+):
     _validate_request(req)
 
     # questions.title is NOT NULL, so each question row needs a value even though
@@ -449,12 +452,35 @@ def create_poll(req: CreatePollRequest, request: Request):
             for index, sub in enumerate(req.questions)
         ]
 
+    creator_browser_id = _browser_id(request)
+    group_id = str(poll_row["group_id"]) if poll_row.get("group_id") else None
+
     # Phase C.2: creator auto-joins the group. Runs after the create
     # commits — root polls' group_id only exists post-`_insert_poll`.
-    join_group(
-        str(poll_row["group_id"]) if poll_row.get("group_id") else None,
-        _browser_id(request),
-    )
+    join_group(group_id, creator_browser_id)
+
+    # Fan-out "new poll" push notifications to other group members whose
+    # preference is on (default ON, missing-row-is-on). Decoupled from
+    # the create response: BackgroundTasks runs after the response is
+    # serialized + sent so a slow push service can't block the user.
+    if group_id:
+        # Build the notification payload from the freshly-created poll.
+        # Prefer the explicit title; fall back to the auto-generated one
+        # already computed above.
+        poll_title = poll_row.get("title") or question_title or "New poll"
+        group_route_id = poll_row.get("group_short_id") or group_id
+        background_tasks.add_task(
+            fan_out_new_poll,
+            group_id,
+            creator_browser_id,
+            {
+                "title": "New poll",
+                "body": poll_title,
+                "url": f"/g/{group_route_id}?p={poll_row.get('short_id') or ''}",
+                "group_id": group_route_id,
+                "tag": f"new-poll-{poll_row.get('id')}",
+            },
+        )
 
     # Newly-created poll has no votes yet — skip the voter aggregation.
     return _row_to_poll(poll_row, question_rows)
