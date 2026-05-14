@@ -138,7 +138,7 @@ export interface Group {
   soonestUnvotedDeadline?: string;
   /** Pre-computed ms timestamp of soonestUnvotedDeadline for sorting. */
   soonestUnvotedDeadlineMs?: number;
-  /** Drives the home-list compact countdown column's color + style:
+  /** Drives the home-list right-rail indicator's color + style:
    *   - `'prephase'`: an active suggestion / time-availability cutoff is the
    *     winning deadline → blue compact countdown.
    *   - `'response'`: the voting deadline is the winning deadline → green
@@ -147,10 +147,15 @@ export interface Group {
    *     unvoted poll is in a deferred prephase (suggestion / availability
    *     timer not started — fires on first response) → solid blue circle,
    *     no countdown.
-   *   - `undefined`: nothing to show (no deadline AND no pending prephase).
+   *   - `'response-pending'`: viewer has unvoted polls but NO deadline is
+   *     set anywhere AND nothing surfaced as `prephase-pending` → solid
+   *     green circle. Without this, the right edge would render blank when
+   *     there's still work to do.
+   *   - `undefined`: nothing to show (no unvoted polls at all).
    *  Within one poll, an active prephase always wins over response_deadline
    *  (we don't surface a voting deadline while suggestions are still being
-   *  collected); across polls, the soonest deadline wins regardless of kind. */
+   *  collected); across polls, the soonest deadline wins regardless of kind.
+   *  Pending variants only surface as fallbacks when no concrete deadline won. */
   unvotedDeadlineKind?: DeadlineKind;
   /** Pre-computed ms timestamp of latest poll created_at for sorting,
    *  or the group's `created_at` for empty groups. */
