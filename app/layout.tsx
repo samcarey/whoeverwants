@@ -7,6 +7,7 @@ import CommitInfo from "@/components/CommitInfo";
 import ResponsiveScaling from "@/components/ResponsiveScaling";
 import { SlideOverlayHost } from "@/lib/slideOverlay";
 import { PersistentCreatePollHost } from "@/components/PersistentCreatePollHost";
+import { UniversalLinksHandler } from "@/components/UniversalLinksHandler";
 import { THEME_KEY } from "@/lib/theme";
 
 
@@ -128,6 +129,13 @@ export default function RootLayout({
             cause the bubble bar's portal target to be briefly cleared
             (visible as "buttons blink after slide"). */}
         <PersistentCreatePollHost />
+
+        {/* iOS Universal Links — converts an `appUrlOpen` event from the
+            Capacitor shell into a Next.js client-side navigation. Inert
+            on non-native platforms. Lives in the layout so the listener
+            survives client-side route changes (template re-instantiates
+            per route and would tear it down). */}
+        <UniversalLinksHandler />
         <script
           dangerouslySetInnerHTML={{
             __html: `
