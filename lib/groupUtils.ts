@@ -89,6 +89,10 @@ export function findChainRoot(polls: Poll[]): Poll | null {
   return root;
 }
 
+/** State of a group's leading unvoted-poll cutoff, driving the home-list
+ *  compact countdown column's color + style. See `Group.unvotedDeadlineKind`. */
+export type DeadlineKind = 'prephase' | 'response' | 'prephase-pending';
+
 export interface Group {
   /** ID of the root question (first question of the chain's earliest poll).
    *  Null for empty groups (no questions yet). */
@@ -131,6 +135,20 @@ export interface Group {
   soonestUnvotedDeadline?: string;
   /** Pre-computed ms timestamp of soonestUnvotedDeadline for sorting. */
   soonestUnvotedDeadlineMs?: number;
+  /** Drives the home-list compact countdown column's color + style:
+   *   - `'prephase'`: an active suggestion / time-availability cutoff is the
+   *     winning deadline → blue compact countdown.
+   *   - `'response'`: the voting deadline is the winning deadline → green
+   *     compact countdown.
+   *   - `'prephase-pending'`: no concrete deadline yet, but at least one
+   *     unvoted poll is in a deferred prephase (suggestion / availability
+   *     timer not started — fires on first response) → solid blue circle,
+   *     no countdown.
+   *   - `undefined`: nothing to show (no deadline AND no pending prephase).
+   *  Within one poll, an active prephase always wins over response_deadline
+   *  (we don't surface a voting deadline while suggestions are still being
+   *  collected); across polls, the soonest deadline wins regardless of kind. */
+  unvotedDeadlineKind?: DeadlineKind;
   /** Pre-computed ms timestamp of latest poll created_at for sorting,
    *  or the group's `created_at` for empty groups. */
   latestActivityMs: number;
@@ -326,22 +344,48 @@ function buildGroupFromPolls(
   const now = new Date();
   let unvotedCount = 0;
   let soonestUnvotedDeadline: string | undefined;
+  let unvotedDeadlineKind: DeadlineKind | undefined;
+  let anyPendingPrephase = false;
 
   for (const mp of polls) {
-    const isOpen = mp.response_deadline
-      ? new Date(mp.response_deadline) > now && !mp.is_closed
-      : !mp.is_closed;
-    if (!isOpen) continue;
+    if (!isPollOpen(mp, now)) continue;
     const hasRespondedToAnySub = mp.questions.some(
       sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
     );
     if (hasRespondedToAnySub) continue;
     unvotedCount++;
-    if (mp.response_deadline) {
-      if (!soonestUnvotedDeadline || mp.response_deadline < soonestUnvotedDeadline) {
-        soonestUnvotedDeadline = mp.response_deadline;
+
+    // Per-poll state: an active prephase deadline ALWAYS wins over the
+    // voting deadline within the same poll — we don't surface the voting
+    // deadline while suggestions / availability are still being collected.
+    // Deferred prephases (`prephase_deadline_minutes` set, `prephase_deadline`
+    // null) contribute no countdown of their own; they flag `anyPendingPrephase`
+    // so the home list can show a solid blue circle when no other poll in
+    // the group has a concrete deadline.
+    let pollDeadline: string | undefined;
+    let pollKind: 'prephase' | 'response' | undefined;
+    if (mp.prephase_deadline && new Date(mp.prephase_deadline) > now) {
+      pollDeadline = mp.prephase_deadline;
+      pollKind = 'prephase';
+    } else if (mp.response_deadline) {
+      pollDeadline = mp.response_deadline;
+      pollKind = 'response';
+    }
+    if (!mp.prephase_deadline && mp.prephase_deadline_minutes) {
+      anyPendingPrephase = true;
+    }
+
+    if (pollDeadline && pollKind) {
+      if (!soonestUnvotedDeadline || pollDeadline < soonestUnvotedDeadline) {
+        soonestUnvotedDeadline = pollDeadline;
+        unvotedDeadlineKind = pollKind;
       }
     }
+  }
+
+  // Pending prephase indicator only surfaces when no concrete deadline won.
+  if (!unvotedDeadlineKind && anyPendingPrephase) {
+    unvotedDeadlineKind = 'prephase-pending';
   }
 
   // Anonymous respondent count: max across polls (each wrapper's
@@ -382,6 +426,7 @@ function buildGroupFromPolls(
     soonestUnvotedDeadlineMs: soonestUnvotedDeadline
       ? new Date(soonestUnvotedDeadline).getTime()
       : undefined,
+    unvotedDeadlineKind,
     latestActivityMs,
     isEmpty: false,
     latestQuestion: questions[questions.length - 1],
@@ -416,6 +461,7 @@ export function buildEmptyGroup(summary: GroupSummary): Group {
     unvotedCount: 0,
     soonestUnvotedDeadline: undefined,
     soonestUnvotedDeadlineMs: undefined,
+    unvotedDeadlineKind: undefined,
     latestActivityMs: createdMs,
     isEmpty: true,
     latestQuestion: null,

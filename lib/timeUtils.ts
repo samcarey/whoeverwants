@@ -46,6 +46,29 @@ export function formatCountdownTime(diffMs: number): string {
   return `${seconds}s`;
 }
 
+/** Single-unit compact countdown — promotes to the next larger unit at the
+ *  unit boundary itself (0s–59s show in seconds, 1m–59m in minutes, 1h–23h
+ *  in hours, 1d–6d in days, 1w–3w in weeks, 1mo–11mo in months, then years).
+ *  Differs from `compactDurationSince` which uses a ≥ 2 threshold (e.g. 1m
+ *  there reads "1m ago", but here we'd already be in seconds — countdowns
+ *  want the larger unit as soon as it crosses 1 so the displayed glyph
+ *  matches user-typed deadline durations like "Suggestions cutoff in 1h"). */
+export function formatCompactCountdown(diffMs: number): string {
+  if (diffMs <= 0) return 'Expired';
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(seconds / 3600);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(seconds / 86400);
+  if (days < 7) return `${days}d`;
+  if (days < 30) return `${Math.floor(days / 7)}w`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo`;
+  return `${Math.floor(days / 365)}y`;
+}
+
 /** Format "label (clock time)" showing the absolute time `minutes` from now.
  *  Returns just the label on the server or when minutes <= 0. */
 export function formatDeadlineLabel(minutes: number, label: string): string {

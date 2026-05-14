@@ -5,6 +5,7 @@ import ClientOnly from "@/components/ClientOnly";
 import GroupAvatar from "@/components/GroupAvatar";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { relativeTime } from "@/lib/questionListUtils";
+import type { DeadlineKind } from "@/lib/groupUtils";
 
 /**
  * Shared row used by both the home/group poll list and the in-progress
@@ -28,9 +29,13 @@ export interface GroupListItemProps {
   anonymousRespondentCount: number;
   /** When set, "N min ago" appears in the metadata row; omit for drafts. */
   createdAt?: string | null;
-  /** When set, a colored countdown shows on the right. */
+  /** When set, the left column renders a countdown to this timestamp. */
   soonestUnvotedDeadline?: string | null;
-  unvotedCount?: number;
+  /** Drives the left column's display: 'response' → green compact countdown,
+   *  'prephase' → blue compact countdown (suggestion / availability timer
+   *  is ticking), 'prephase-pending' → solid blue circle (suggestions open
+   *  but timer hasn't started). undefined → empty slot. */
+  unvotedDeadlineKind?: DeadlineKind;
   hasUnvoted?: boolean;
   pressed?: boolean;
   draftMode?: boolean;
@@ -69,7 +74,7 @@ export default function GroupListItem(props: GroupListItemProps) {
     anonymousRespondentCount,
     createdAt,
     soonestUnvotedDeadline,
-    unvotedCount = 0,
+    unvotedDeadlineKind,
     hasUnvoted = false,
     pressed = false,
     draftMode = false,
@@ -107,7 +112,7 @@ export default function GroupListItem(props: GroupListItemProps) {
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         onTouchMove={onTouchMove}
-        className={`flex gap-3 ${draftMode ? 'pl-2' : 'pl-px'} pr-3 py-3 select-none relative transition-colors duration-500 ease-out ${
+        className={`flex gap-3 ${draftMode ? 'pl-2' : 'pl-[8.064px]'} pr-3 py-3 select-none relative transition-colors duration-500 ease-out ${
           pressed ? 'bg-blue-50 dark:bg-blue-900/30' : ''
         } ${
           onClick
@@ -141,17 +146,30 @@ export default function GroupListItem(props: GroupListItemProps) {
           </div>
         )}
 
-        {/* Fixed-width unread-counter column, left of the avatar. Always
-            reserved when an avatar is rendered so indentation is consistent
-            whether the row has unread items or not. The negative right-margin
-            shrinks the effective gap between this column and the avatar to
-            1.5px (the row's gap-3 is 12px; -mr-[10.5px] subtracts 10.5px). */}
+        {/* Countdown column — w-7 reserved slot left of the avatar. See
+            CLAUDE.md "Group list row layout" for state matrix + sizing math. */}
         {!hideRespondents && (
-          <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-[10.5px]">
-            {hasUnvoted && unvotedCount > 0 && (
-              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
-                {unvotedCount}
-              </span>
+          <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-[4.224px]">
+            {soonestUnvotedDeadline && unvotedDeadlineKind && unvotedDeadlineKind !== 'prephase-pending' && (
+              <ClientOnly fallback={null}>
+                <SimpleCountdown
+                  deadline={soonestUnvotedDeadline}
+                  compact
+                  blankOnExpire
+                  numberClass="text-[15.84px] font-bold tracking-tighter"
+                  colorClass={
+                    unvotedDeadlineKind === 'prephase'
+                      ? 'text-blue-600 dark:text-blue-400'
+                      : 'text-green-600 dark:text-green-400'
+                  }
+                />
+              </ClientOnly>
+            )}
+            {unvotedDeadlineKind === 'prephase-pending' && !soonestUnvotedDeadline && (
+              <span
+                aria-label="Suggestions open"
+                className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 dark:bg-blue-400"
+              />
             )}
           </div>
         )}
@@ -200,32 +218,12 @@ export default function GroupListItem(props: GroupListItemProps) {
             </div>
           )}
 
-          {/* Latest-poll body — 2-line max. The countdown is pinned to line
-              3 of the row's content (= line 2 of the poll body) via a
-              zero-width phantom right-float on line 1 that the real
-              countdown's clear:right uses to skip down to line 2. */}
+          {/* Latest-poll body — 2-line max. */}
           {latestQuestionTitle && (
             <div
               className="mt-px text-sm text-gray-600 dark:text-gray-300 leading-tight"
               style={{ maxHeight: '2.55em', overflow: 'hidden' }}
             >
-              {soonestUnvotedDeadline && (
-                <>
-                  <span
-                    aria-hidden="true"
-                    className="float-right w-0 invisible pointer-events-none"
-                    style={{ height: '1.25em' }}
-                  />
-                  <span className="float-right clear-right ml-2 text-xs leading-tight">
-                    <ClientOnly fallback={null}>
-                      <SimpleCountdown
-                        deadline={soonestUnvotedDeadline}
-                        colorClass="text-green-600 dark:text-green-400"
-                      />
-                    </ClientOnly>
-                  </span>
-                </>
-              )}
               {latestQuestionTitle}
             </div>
           )}
