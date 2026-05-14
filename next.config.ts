@@ -136,18 +136,20 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
           },
         ],
       },
-      // API routes caching
-      {
-        source: '/api/(.*)',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: isDev
-              ? 'no-cache, no-store, must-revalidate, max-age=0'
-              : 'public, max-age=3600, stale-while-revalidate=3600'
-          },
-        ],
-      },
+      // API routes: pass the upstream's Cache-Control through unchanged.
+      // Most endpoints are identity-dependent — the visibility filter on
+      // /api/groups/by-route-id/{id} etc. partitions by the X-Browser-Id
+      // request header, so a single response is NOT shareable across
+      // requesters. The previous `public, max-age=3600,
+      // stale-while-revalidate=3600` rule made any cache (Vercel edge,
+      // iOS WebView's WKWebView cache) serve the same response by URL
+      // alone, surfacing as "the poll I just created isn't visible in
+      // the group on iOS" — an empty `[]` from before the poll existed
+      // would pin for up to 2 hours. Endpoints that ARE safe to cache
+      // (image bytes) set Cache-Control: public, max-age=31536000,
+      // immutable explicitly on the upstream response; with no override
+      // here, those pass through correctly. Everything else gets no
+      // Cache-Control and is fetched fresh.
     ];
   };
 }
