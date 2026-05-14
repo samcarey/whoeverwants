@@ -112,7 +112,7 @@ export default function GroupListItem(props: GroupListItemProps) {
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         onTouchMove={onTouchMove}
-        className={`flex gap-3 ${draftMode ? 'pl-2' : 'pl-[8.064px]'} pr-3 py-3 select-none relative transition-colors duration-500 ease-out ${
+        className={`flex gap-3 ${draftMode ? 'pl-2' : 'pl-[8.064px]'} pr-3 py-[9.6px] select-none relative transition-colors duration-500 ease-out ${
           pressed ? 'bg-blue-50 dark:bg-blue-900/30' : ''
         } ${
           onClick
