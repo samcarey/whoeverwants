@@ -99,53 +99,41 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
   // (not supported with static export)
   nextConfig.headers = async () => {
     const isDev = process.env.NODE_ENV === 'development';
+    const pageCache = isDev
+      ? 'no-cache, no-store, must-revalidate, max-age=0'
+      : 'public, max-age=3600, stale-while-revalidate=3600';
+    const staticCache = isDev
+      ? 'no-cache, no-store, must-revalidate, max-age=0'
+      : 'public, max-age=31536000, immutable';
 
     return [
       {
         source: '/(.*)',
         headers: [
-          {
-            key: 'X-Forwarded-Proto',
-            value: 'https'
-          },
-          {
-            key: 'Access-Control-Allow-Origin',
-            value: '*'
-          },
-          // Cache control for pages
-          {
-            key: 'Cache-Control',
-            value: isDev
-              ? 'no-cache, no-store, must-revalidate, max-age=0'
-              : 'public, max-age=3600, stale-while-revalidate=3600'
-          },
+          { key: 'X-Forwarded-Proto', value: 'https' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
         ],
+      },
+      // Page cache scoped to exclude /api/* and /_next/static/* — those
+      // have their own rules below or pass the upstream Cache-Control
+      // through (API). /api/* intentionally has NO rule: the upstream
+      // FastAPI sets `immutable` on image bytes endpoints, and every
+      // other API endpoint is identity-dependent (filtered by
+      // X-Browser-Id) or mutation-sensitive — caching by URL alone
+      // surfaced as "iOS user creates poll → group page shows empty"
+      // because the WKWebView cache pinned the pre-poll `[]` response.
+      // Don't reintroduce a blanket `/api/*` Cache-Control without
+      // `Vary: X-Browser-Id`, and even then per-browser cache partitions
+      // explode to one entry per visitor with no real reuse.
+      {
+        source: '/((?!api/|_next/static/).*)',
+        headers: [{ key: 'Cache-Control', value: pageCache }],
       },
       {
         source: '/_next/static/(.*)',
         headers: [
-          {
-            key: 'Cache-Control',
-            value: isDev
-              ? 'no-cache, no-store, must-revalidate, max-age=0'
-              : 'public, max-age=31536000, immutable',
-          },
-          {
-            key: 'Access-Control-Allow-Origin',
-            value: '*'
-          },
-        ],
-      },
-      // API routes caching
-      {
-        source: '/api/(.*)',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: isDev
-              ? 'no-cache, no-store, must-revalidate, max-age=0'
-              : 'public, max-age=3600, stale-while-revalidate=3600'
-          },
+          { key: 'Cache-Control', value: staticCache },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
         ],
       },
     ];
