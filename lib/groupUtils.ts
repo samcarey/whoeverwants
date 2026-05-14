@@ -17,6 +17,7 @@ import {
   getCachedQuestionById,
   getCachedAccessiblePolls,
   getCachedPollByShortId,
+  getCachedGroupSummary,
 } from './questionCache';
 import { isUuidLike } from './questionId';
 import { getUserName } from './userProfile';
@@ -595,34 +596,45 @@ export function buildGroupSyncFromCache(
 ): Group | null {
   if (typeof window === 'undefined') return null;
   const polls = getCachedAccessiblePolls();
-  if (!polls) return null;
   let anchorPollId: string | null = null;
-  if (isUuidLike(groupId)) {
-    // groupId may be a group uuid, a poll uuid, or a question uuid.
-    const byGroup = polls.find(mp => mp.group_id === groupId);
-    if (byGroup) {
-      anchorPollId = byGroup.id;
-    } else {
-      const direct = polls.find(mp => mp.id === groupId);
-      if (direct) {
-        anchorPollId = direct.id;
+  if (polls) {
+    if (isUuidLike(groupId)) {
+      // groupId may be a group uuid, a poll uuid, or a question uuid.
+      const byGroup = polls.find(mp => mp.group_id === groupId);
+      if (byGroup) {
+        anchorPollId = byGroup.id;
       } else {
-        const question = getCachedQuestionById(groupId);
-        anchorPollId = question?.poll_id ?? null;
+        const direct = polls.find(mp => mp.id === groupId);
+        if (direct) {
+          anchorPollId = direct.id;
+        } else {
+          const question = getCachedQuestionById(groupId);
+          anchorPollId = question?.poll_id ?? null;
+        }
+      }
+    } else {
+      // Phase B.4 preferred path: routeId is a groups.short_id. Any poll
+      // matching gives us the group; pick the oldest as the anchor so
+      // buildGroupFromPollDown collects every sibling.
+      const matches = polls.filter(mp => mp.group_short_id === groupId);
+      if (matches.length > 0) {
+        anchorPollId = sortByCreatedAt(matches)[0].id;
+      } else {
+        const mp = getCachedPollByShortId(groupId);
+        anchorPollId = mp?.id ?? null;
       }
     }
-  } else {
-    // Phase B.4 preferred path: routeId is a groups.short_id. Any poll
-    // matching gives us the group; pick the oldest as the anchor so
-    // buildGroupFromPollDown collects every sibling.
-    const matches = polls.filter(mp => mp.group_short_id === groupId);
-    if (matches.length > 0) {
-      anchorPollId = sortByCreatedAt(matches)[0].id;
-    } else {
-      const mp = getCachedPollByShortId(groupId);
-      anchorPollId = mp?.id ?? null;
-    }
   }
-  if (!anchorPollId) return null;
-  return buildGroupFromPollDown(anchorPollId, polls, voted, abstained);
+  if (anchorPollId && polls) {
+    return buildGroupFromPollDown(anchorPollId, polls, voted, abstained);
+  }
+  // No poll matched — but the group itself may be a membership-only empty
+  // group (just-created via the home "+" FAB, or every poll closed before
+  // the viewer joined). The group-summary cache resolves both `groups.id`
+  // and `groups.short_id`, so a cached summary here means we can render
+  // the empty-group chrome synchronously without an API round-trip — which
+  // is what prevents the slide-overlay handoff from unmounting onto a
+  // loading spinner.
+  const summary = getCachedGroupSummary(groupId);
+  return summary ? buildEmptyGroup(summary) : null;
 }

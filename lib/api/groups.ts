@@ -25,10 +25,13 @@
 
 import type { GroupSummary, Poll } from "@/lib/types";
 import {
+  cacheGroupSummary,
   cachePoll,
   cacheQuestionResults,
   getCachedAccessiblePolls,
+  getCachedGroupSummary,
   invalidateAccessibleQuestions,
+  invalidateGroupSummary,
   invalidatePoll,
 } from "@/lib/questionCache";
 import { groupFetch, toPoll, toQuestionResults } from "./_internal";
@@ -95,10 +98,17 @@ export async function apiGetGroupByRouteId(
 /** Create a brand-new empty group and auto-join the caller as a member.
  *  Used by the home "+" FAB. The next `getMyGroups()` call picks up the
  *  new group via the always-fresh `/api/groups/empty` parallel fetch;
- *  the polls cache is unaffected since this group has no polls. */
+ *  the polls cache is unaffected since this group has no polls.
+ *
+ *  Caches the returned summary so `buildGroupSyncFromCache` can synthesize
+ *  the empty `Group` on first render at `/g/<short_id>` — without it, the
+ *  slide-overlay unmounts onto a loading spinner ("page disappears and
+ *  reappears"). */
 export async function apiCreateGroup(): Promise<GroupSummary> {
   const data = await groupFetch<any>('', { method: 'POST' });
-  return toGroupSummary(data);
+  const summary = toGroupSummary(data);
+  cacheGroupSummary(summary);
+  return summary;
 }
 
 /** Empty groups the caller is a member of (joined, zero polls). Returns
@@ -114,13 +124,22 @@ export async function apiGetMyEmptyGroups(): Promise<GroupSummary[]> {
 }
 
 /** Group metadata (no polls, no auto-join). Safe from any read-only
- *  context; returns null on resolution failure. */
+ *  context; returns null on resolution failure.
+ *
+ *  Short-circuits on cache hit so the FAB-create → empty-group destination
+ *  doesn't fire a redundant round-trip: `apiCreateGroup` already cached the
+ *  summary, and the destination's fetchGroup fallback would otherwise
+ *  refetch the same payload to render the same empty group. */
 export async function apiGetGroupSummary(routeId: string): Promise<GroupSummary | null> {
+  const cached = getCachedGroupSummary(routeId);
+  if (cached) return cached;
   try {
     const data = await groupFetch<any>(
       `/by-route-id/${encodeURIComponent(routeId)}/summary`,
     );
-    return toGroupSummary(data);
+    const summary = toGroupSummary(data);
+    cacheGroupSummary(summary);
+    return summary;
   } catch {
     return null;
   }
@@ -181,6 +200,7 @@ export async function apiUpdateGroupTitle(
     if (mp.group_id === result.group_id) invalidatePoll(mp.id);
   }
   invalidateAccessibleQuestions();
+  invalidateGroupSummary(result.group_id);
   return result;
 }
 
@@ -240,6 +260,7 @@ function invalidateGroupPolls(groupId: string) {
     if (mp.group_id === groupId) invalidatePoll(mp.id);
   }
   invalidateAccessibleQuestions();
+  invalidateGroupSummary(groupId);
 }
 
 /** Encode an ArrayBuffer as base64. Chunked to avoid the `apply()`

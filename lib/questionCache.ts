@@ -22,7 +22,7 @@
  * and the FE only needs an "anchor question" for group building.
  */
 
-import type { Poll, Question, QuestionResults } from './types';
+import type { GroupSummary, Poll, Question, QuestionResults } from './types';
 import type { ApiVote, ApiRankedChoiceRound } from './api';
 import { isUuidLike } from './questionId';
 
@@ -54,6 +54,15 @@ const votesCache = new Map<string, CacheEntry<ApiVote[]>>();
 // a poll fetch. See docs/poll-phasing.md (Phase 2.1).
 const pollById = new Map<string, CacheEntry<Poll>>();
 const pollByShortId = new Map<string, CacheEntry<Poll>>();
+
+// Group summary cache. Keyed by both `groups.id` and `groups.short_id` so
+// that route-id lookups in either form resolve. Used by the home "+" FAB
+// path: `apiCreateGroup` caches the just-minted summary so the destination
+// route's synchronous cache-read paths can build an empty `Group` on first
+// render — avoiding the loading-spinner flash between the slide-overlay
+// unmount and the async fetch resolving.
+const groupSummaryById = new Map<string, CacheEntry<GroupSummary>>();
+const groupSummaryByShortId = new Map<string, CacheEntry<GroupSummary>>();
 
 function isValid(entry: CacheEntry<unknown>, ttl = CACHE_TTL_MS): boolean {
   return Date.now() - entry.storedAt < ttl;
@@ -232,4 +241,27 @@ export function invalidatePoll(id: string): void {
     for (const sub of entry.value.questions) invalidateQuestion(sub.id);
   }
   accessiblePollsCache = null;
+}
+
+/** Cache a group summary under both id and short_id (when set). */
+export function cacheGroupSummary(summary: GroupSummary): void {
+  setLru(groupSummaryById, summary.id, summary);
+  if (summary.short_id) setLru(groupSummaryByShortId, summary.short_id, summary);
+}
+
+/** Resolve a route id (`groups.short_id` or `groups.id`) to a cached
+ *  `GroupSummary`. Returns null on cache miss or expiration. */
+export function getCachedGroupSummary(routeId: string): GroupSummary | null {
+  const map = isUuidLike(routeId) ? groupSummaryById : groupSummaryByShortId;
+  const entry = map.get(routeId);
+  return entry && isValid(entry) ? entry.value : null;
+}
+
+/** Drop a group summary from the cache (by group id). */
+export function invalidateGroupSummary(groupId: string): void {
+  const entry = groupSummaryById.get(groupId);
+  if (entry) {
+    groupSummaryById.delete(groupId);
+    if (entry.value.short_id) groupSummaryByShortId.delete(entry.value.short_id);
+  }
 }

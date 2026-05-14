@@ -12,7 +12,7 @@ import type { Poll } from "@/lib/types";
 import { useGroupVoting } from "@/lib/useGroupVoting";
 import type { QuestionResults } from "@/lib/types";
 import { addAccessibleQuestionId, getCreatorSecret } from "@/lib/browserQuestionAccess";
-import { getCachedAccessiblePolls, getCachedPollById, getCachedPollByShortId, getCachedPollForShortId } from "@/lib/questionCache";
+import { getCachedAccessiblePolls, getCachedGroupSummary, getCachedPollById, getCachedPollByShortId, getCachedPollForShortId } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
@@ -2032,7 +2032,15 @@ function GroupPageInner() {
   const [error, setError] = useState(false);
   // Group resolved with zero visible polls; GroupContent mounts via
   // useGroup's summary-fallback path.
-  const [isEmptyGroup, setIsEmptyGroup] = useState(false);
+  //
+  // When the home "+" FAB just minted this group, `apiCreateGroup` cached
+  // the summary — read it synchronously so the wrapper skips the loading
+  // spinner entirely and `GroupContent` mounts on first paint. Without
+  // this, the slide overlay unmounts onto a brief spinner before the
+  // async fetch resolves ("page disappears and reappears").
+  const [isEmptyGroup, setIsEmptyGroup] = useState(
+    () => !rootInitial && !!groupShortId && !!getCachedGroupSummary(groupShortId),
+  );
 
   useEffect(() => {
     if (!groupShortId) {
