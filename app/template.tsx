@@ -14,6 +14,9 @@ import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { apiCreateGroup } from '@/lib/api';
 import { GROUP_ID_ATTR } from '@/lib/groupDomMarkers';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
+import { Capacitor } from '@capacitor/core';
+
+const IS_CAPACITOR_NATIVE = typeof window !== 'undefined' && Capacitor.isNativePlatform();
 
 // `CreateQuestionContent` (the bubble-bar + create-poll-modal owner) is
 // mounted in `app/layout.tsx` via `<PersistentCreatePollHost />` so it
@@ -70,7 +73,7 @@ function CreateGroupButton({ router }: { router: ReturnType<typeof useRouter> })
       className="fixed z-50 h-12 px-3 rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
       style={{
         right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
-        bottom: '1rem',
+        bottom: IS_CAPACITOR_NATIVE ? '1.75rem' : '1rem',
       }}
       aria-label="Create new group"
     >
