@@ -91,8 +91,10 @@ export function findChainRoot(polls: Poll[]): Poll | null {
 }
 
 /** State of a group's leading unvoted-poll cutoff, driving the home-list
- *  compact countdown column's color + style. See `Group.unvotedDeadlineKind`. */
-export type DeadlineKind = 'prephase' | 'response' | 'prephase-pending';
+ *  compact countdown column's color + style. See `Group.unvotedDeadlineKind`.
+ *  `*-pending` variants render as a solid colored dot when no concrete
+ *  deadline exists but the viewer still has un-actioned work. */
+export type DeadlineKind = 'prephase' | 'response' | 'prephase-pending' | 'response-pending';
 
 export interface Group {
   /** ID of the root question (first question of the chain's earliest poll).
@@ -136,7 +138,7 @@ export interface Group {
   soonestUnvotedDeadline?: string;
   /** Pre-computed ms timestamp of soonestUnvotedDeadline for sorting. */
   soonestUnvotedDeadlineMs?: number;
-  /** Drives the home-list compact countdown column's color + style:
+  /** Drives the home-list right-rail indicator's color + style:
    *   - `'prephase'`: an active suggestion / time-availability cutoff is the
    *     winning deadline → blue compact countdown.
    *   - `'response'`: the voting deadline is the winning deadline → green
@@ -145,10 +147,15 @@ export interface Group {
    *     unvoted poll is in a deferred prephase (suggestion / availability
    *     timer not started — fires on first response) → solid blue circle,
    *     no countdown.
-   *   - `undefined`: nothing to show (no deadline AND no pending prephase).
+   *   - `'response-pending'`: viewer has unvoted polls but NO deadline is
+   *     set anywhere AND nothing surfaced as `prephase-pending` → solid
+   *     green circle. Without this, the right edge would render blank when
+   *     there's still work to do.
+   *   - `undefined`: nothing to show (no unvoted polls at all).
    *  Within one poll, an active prephase always wins over response_deadline
    *  (we don't surface a voting deadline while suggestions are still being
-   *  collected); across polls, the soonest deadline wins regardless of kind. */
+   *  collected); across polls, the soonest deadline wins regardless of kind.
+   *  Pending variants only surface as fallbacks when no concrete deadline won. */
   unvotedDeadlineKind?: DeadlineKind;
   /** Pre-computed ms timestamp of latest poll created_at for sorting,
    *  or the group's `created_at` for empty groups. */
@@ -387,6 +394,13 @@ function buildGroupFromPolls(
   // Pending prephase indicator only surfaces when no concrete deadline won.
   if (!unvotedDeadlineKind && anyPendingPrephase) {
     unvotedDeadlineKind = 'prephase-pending';
+  }
+  // Awaiting-response indicator: viewer has un-actioned voting work, no
+  // concrete deadline anywhere AND nothing surfaced by prephase-pending.
+  // Renders as a solid green dot so the right edge is never blank when
+  // there's something to do.
+  if (!unvotedDeadlineKind && unvotedCount > 0) {
+    unvotedDeadlineKind = 'response-pending';
   }
 
   // Anonymous respondent count: max across polls (each wrapper's

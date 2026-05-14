@@ -7,6 +7,11 @@ import SimpleCountdown from "@/components/SimpleCountdown";
 import { relativeTime } from "@/lib/questionListUtils";
 import type { DeadlineKind } from "@/lib/groupUtils";
 
+const PENDING_DOT: Partial<Record<DeadlineKind, { label: string; bg: string }>> = {
+  'prephase-pending':  { label: 'Suggestions open',       bg: 'bg-blue-500 dark:bg-blue-400' },
+  'response-pending':  { label: 'Awaiting your response', bg: 'bg-green-500 dark:bg-green-400' },
+};
+
 /**
  * Shared row used by both the home/group poll list and the in-progress
  * "Draft Poll" card in the create-poll flow. Keeping the structure unified
@@ -112,7 +117,7 @@ export default function GroupListItem(props: GroupListItemProps) {
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         onTouchMove={onTouchMove}
-        className={`flex gap-3 ${draftMode ? 'pl-2' : 'pl-[8.064px]'} pr-3 py-3 select-none relative transition-colors duration-500 ease-out ${
+        className={`flex gap-3 ${draftMode ? 'pl-2' : 'pl-[8.064px]'} pr-3 py-[9.6px] select-none relative transition-colors duration-500 ease-out ${
           pressed ? 'bg-blue-50 dark:bg-blue-900/30' : ''
         } ${
           onClick
@@ -146,34 +151,6 @@ export default function GroupListItem(props: GroupListItemProps) {
           </div>
         )}
 
-        {/* Countdown column — w-7 reserved slot left of the avatar. See
-            CLAUDE.md "Group list row layout" for state matrix + sizing math. */}
-        {!hideRespondents && (
-          <div className="w-7 flex items-center justify-center shrink-0 self-center -mr-[4.224px]">
-            {soonestUnvotedDeadline && unvotedDeadlineKind && unvotedDeadlineKind !== 'prephase-pending' && (
-              <ClientOnly fallback={null}>
-                <SimpleCountdown
-                  deadline={soonestUnvotedDeadline}
-                  compact
-                  blankOnExpire
-                  numberClass="text-[15.84px] font-bold tracking-tighter"
-                  colorClass={
-                    unvotedDeadlineKind === 'prephase'
-                      ? 'text-blue-600 dark:text-blue-400'
-                      : 'text-green-600 dark:text-green-400'
-                  }
-                />
-              </ClientOnly>
-            )}
-            {unvotedDeadlineKind === 'prephase-pending' && !soonestUnvotedDeadline && (
-              <span
-                aria-label="Suggestions open"
-                className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 dark:bg-blue-400"
-              />
-            )}
-          </div>
-        )}
-
         {/* Drafts skip this entirely so the "?" placeholder doesn't appear
             before anyone has actually voted. */}
         {!hideRespondents && (
@@ -184,8 +161,8 @@ export default function GroupListItem(props: GroupListItemProps) {
           />
         )}
 
-        <div className="flex-1 min-w-0 -ml-[3px] pr-4">
-          {/* Row 1: title (left, truncates) + draft pill / "5m ago" (right) */}
+        <div className="flex-1 min-w-0 -ml-[3px]">
+          {/* Row 1: title (left, truncates) + draft pill */}
           <div className="flex items-baseline gap-2">
             <h3
               className={`font-semibold text-base truncate flex-1 transition-colors duration-500 ease-out ${
@@ -203,11 +180,6 @@ export default function GroupListItem(props: GroupListItemProps) {
               >
                 draft
               </span>
-            )}
-            {createdAt && (
-              <div className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
-                <ClientOnly fallback={null}>{relativeTime(createdAt)}</ClientOnly>
-              </div>
             )}
           </div>
 
@@ -228,6 +200,37 @@ export default function GroupListItem(props: GroupListItemProps) {
             </div>
           )}
         </div>
+
+        {!hideRespondents && (
+          <div className="flex flex-col items-end justify-start shrink-0 self-stretch -ml-[4.224px] gap-0.5">
+            {createdAt && (
+              <div className="text-xs text-gray-400 dark:text-gray-500 mt-[5px]">
+                <ClientOnly fallback={null}>{relativeTime(createdAt)}</ClientOnly>
+              </div>
+            )}
+            {soonestUnvotedDeadline && (unvotedDeadlineKind === 'prephase' || unvotedDeadlineKind === 'response') && (
+              <ClientOnly fallback={null}>
+                <SimpleCountdown
+                  deadline={soonestUnvotedDeadline}
+                  compact
+                  blankOnExpire
+                  numberClass="text-[15.84px] font-bold tracking-tighter"
+                  colorClass={
+                    unvotedDeadlineKind === 'prephase'
+                      ? 'text-blue-600 dark:text-blue-400'
+                      : 'text-green-600 dark:text-green-400'
+                  }
+                />
+              </ClientOnly>
+            )}
+            {!soonestUnvotedDeadline && unvotedDeadlineKind && PENDING_DOT[unvotedDeadlineKind] && (
+              <span
+                aria-label={PENDING_DOT[unvotedDeadlineKind]!.label}
+                className={`inline-block w-4 h-4 rounded-full mt-0.5 mr-1 ${PENDING_DOT[unvotedDeadlineKind]!.bg}`}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
