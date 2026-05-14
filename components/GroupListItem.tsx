@@ -223,13 +223,13 @@ export default function GroupListItem(props: GroupListItemProps) {
             {unvotedDeadlineKind === 'prephase-pending' && !soonestUnvotedDeadline && (
               <span
                 aria-label="Suggestions open"
-                className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 dark:bg-blue-400 mt-0.5"
+                className="inline-block w-4 h-4 rounded-full bg-blue-500 dark:bg-blue-400 mt-0.5 mr-2"
               />
             )}
             {unvotedDeadlineKind === 'response-pending' && !soonestUnvotedDeadline && (
               <span
                 aria-label="Awaiting your response"
-                className="inline-block w-2.5 h-2.5 rounded-full bg-green-500 dark:bg-green-400 mt-0.5"
+                className="inline-block w-4 h-4 rounded-full bg-green-500 dark:bg-green-400 mt-0.5 mr-2"
               />
             )}
           </div>
