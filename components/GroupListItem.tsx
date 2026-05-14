@@ -7,6 +7,11 @@ import SimpleCountdown from "@/components/SimpleCountdown";
 import { relativeTime } from "@/lib/questionListUtils";
 import type { DeadlineKind } from "@/lib/groupUtils";
 
+const PENDING_DOT: Partial<Record<DeadlineKind, { label: string; bg: string }>> = {
+  'prephase-pending':  { label: 'Suggestions open',       bg: 'bg-blue-500 dark:bg-blue-400' },
+  'response-pending':  { label: 'Awaiting your response', bg: 'bg-green-500 dark:bg-green-400' },
+};
+
 /**
  * Shared row used by both the home/group poll list and the in-progress
  * "Draft Poll" card in the create-poll flow. Keeping the structure unified
@@ -196,8 +201,6 @@ export default function GroupListItem(props: GroupListItemProps) {
           )}
         </div>
 
-        {/* Right rail: age stamp (upper-right) above the countdown indicator.
-            See CLAUDE.md "Group list row layout" for state matrix + sizing math. */}
         {!hideRespondents && (
           <div className="flex flex-col items-end justify-start shrink-0 self-stretch -ml-[4.224px] gap-0.5">
             {createdAt && (
@@ -205,7 +208,7 @@ export default function GroupListItem(props: GroupListItemProps) {
                 <ClientOnly fallback={null}>{relativeTime(createdAt)}</ClientOnly>
               </div>
             )}
-            {soonestUnvotedDeadline && unvotedDeadlineKind && unvotedDeadlineKind !== 'prephase-pending' && unvotedDeadlineKind !== 'response-pending' && (
+            {soonestUnvotedDeadline && (unvotedDeadlineKind === 'prephase' || unvotedDeadlineKind === 'response') && (
               <ClientOnly fallback={null}>
                 <SimpleCountdown
                   deadline={soonestUnvotedDeadline}
@@ -220,16 +223,10 @@ export default function GroupListItem(props: GroupListItemProps) {
                 />
               </ClientOnly>
             )}
-            {unvotedDeadlineKind === 'prephase-pending' && !soonestUnvotedDeadline && (
+            {!soonestUnvotedDeadline && unvotedDeadlineKind && PENDING_DOT[unvotedDeadlineKind] && (
               <span
-                aria-label="Suggestions open"
-                className="inline-block w-4 h-4 rounded-full bg-blue-500 dark:bg-blue-400 mt-0.5 mr-1"
-              />
-            )}
-            {unvotedDeadlineKind === 'response-pending' && !soonestUnvotedDeadline && (
-              <span
-                aria-label="Awaiting your response"
-                className="inline-block w-4 h-4 rounded-full bg-green-500 dark:bg-green-400 mt-0.5 mr-1"
+                aria-label={PENDING_DOT[unvotedDeadlineKind]!.label}
+                className={`inline-block w-4 h-4 rounded-full mt-0.5 mr-1 ${PENDING_DOT[unvotedDeadlineKind]!.bg}`}
               />
             )}
           </div>
