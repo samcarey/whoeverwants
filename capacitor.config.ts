@@ -4,9 +4,9 @@ import type { CapacitorConfig } from '@capacitor/cli';
 //   1. CAP_SERVER_URL — explicit override exported by the CI workflow.
 //   2. Production site (https://whoeverwants.com) — the default fallback.
 // The CI workflow (`.github/workflows/ios-build.yml`) sets CAP_SERVER_URL
-// to `https://latest.whoeverwants.com` for dev builds (the canary tier
-// auto-deployed on every push to main) and leaves it unset for prod
-// builds so the fallback kicks in.
+// to `https://latest.whoeverwants.com` for the `latest` build env (the
+// canary tier auto-deployed on every push to main) and leaves it unset
+// for the `prod` env so the fallback kicks in.
 const PROD_URL = 'https://whoeverwants.com';
 const serverUrl = process.env.CAP_SERVER_URL || PROD_URL;
 
