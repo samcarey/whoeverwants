@@ -19,6 +19,11 @@ const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
   },
 ];
 
+// Per-N scale that snugs each tessellation inside the bounding circle of
+// diameter 83 (matching the image-avatar disc in GroupAvatar). The factor
+// is `41.5 / max(distance_from_50_50 + r)` over each layout's children.
+const BOUNDING_SCALE = [1.0, 1.0, 0.9222, 0.7651, 0.7554, 0.7268, 0.8254, 0.8805];
+
 const MAX_NAMED = 6;
 
 export const ANONYMOUS_FALLBACK_COLOR = '#9CA3AF';
@@ -87,7 +92,20 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
 
   const n = Math.min(circles.length, LAYOUTS.length - 1);
   const layout = LAYOUTS[n];
+  // Snug each tessellation into a diameter-83 bounding circle so the
+  // multi-circle layouts visually match the image-avatar disc size.
+  const scale = BOUNDING_SCALE[n] ?? 1;
+  const layoutCenters: [number, number][] = layout.centers.map(([cx, cy]) => [
+    50 + (cx - 50) * scale,
+    50 + (cy - 50) * scale,
+  ]);
+  const layoutRadius = (layout.diameter * scale) / 2;
   const hasAnyImage = circles.some(c => !!c.imageUrl);
+  // Bounding-circle backdrop sits behind the tessellation at diameter 83
+  // (matching GroupAvatar's image disc). Subtle off-bg fill via
+  // `fill-gray-100 dark:fill-gray-800` so it reads as a quiet container
+  // shape rather than another colored avatar.
+  const showBackdrop = !isPlaceholder;
 
   return (
     <div className={`${sizeClassName} aspect-square flex-shrink-0 self-center`}>
@@ -96,19 +114,26 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
           <defs>
             {circles.map((circle, i) => {
               if (!circle.imageUrl) return null;
-              const [cx, cy] = layout.centers[i];
-              const r = layout.diameter / 2;
+              const [cx, cy] = layoutCenters[i];
               return (
                 <clipPath id={`${reactId}-clip-${i}`} key={i}>
-                  <circle cx={cx} cy={cy} r={r} />
+                  <circle cx={cx} cy={cy} r={layoutRadius} />
                 </clipPath>
               );
             })}
           </defs>
         )}
+        {showBackdrop && (
+          <circle
+            cx={50}
+            cy={50}
+            r={41.5}
+            className="fill-gray-100 dark:fill-gray-800"
+          />
+        )}
         {circles.map((circle, i) => {
-          const [cx, cy] = layout.centers[i];
-          const r = layout.diameter / 2;
+          const [cx, cy] = layoutCenters[i];
+          const r = layoutRadius;
           if (circle.imageUrl) {
             // Image-backed circle: an SVG <image> clipped to the disc.
             // `preserveAspectRatio="xMidYMid slice"` mimics CSS
