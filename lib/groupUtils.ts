@@ -170,11 +170,6 @@ export interface Group {
    *  wrapper-level fields like is_closed / response_deadline). Null for
    *  empty groups. */
   latestPoll: Poll | null;
-  /** The poll the group URL should target — oldest open poll with at least
-   *  one not-yet-responded question (matches the per-question gold-outline
-   *  rule), falling back to the newest poll when nothing is awaiting. Null
-   *  for empty groups (no polls to target). */
-  targetedPoll: Poll | null;
   /** Estimated count of anonymous respondents (max across polls). */
   anonymousRespondentCount: number;
   /** Migration 108: URL of the group's uploaded avatar image, or null
@@ -204,53 +199,6 @@ export function isPollOpen(poll: Poll, now: Date = new Date()): boolean {
   if (poll.is_closed) return false;
   if (!poll.response_deadline) return true;
   return new Date(poll.response_deadline) > now;
-}
-
-/** True iff the poll is open AND at least one of its sub-questions is
- *  un-responded by the viewer — the poll-level analogue of the per-question
- *  gold-outline rule. */
-export function pollHasAwaitingQuestion(
-  poll: Poll,
-  votedQuestionIds: Set<string>,
-  abstainedQuestionIds: Set<string>,
-  now: Date = new Date(),
-): boolean {
-  if (!isPollOpen(poll, now)) return false;
-  return poll.questions.some(
-    sp => !votedQuestionIds.has(sp.id) && !abstainedQuestionIds.has(sp.id),
-  );
-}
-
-/**
- * Pick the poll a group's URL should target. Mirrors the per-question
- * gold-outline rule (open poll + at least one question the user hasn't
- * voted on or abstained from). Among those, picks the oldest by
- * created_at so the user lands on the question that's been waiting longest.
- * Falls back to the newest poll in the group when nothing is awaiting.
- */
-function pickTargetedPoll(
-  polls: Poll[],
-  votedQuestionIds: Set<string>,
-  abstainedQuestionIds: Set<string>,
-  now: Date,
-): Poll {
-  let oldestAwaiting: Poll | null = null;
-  let oldestAwaitingMs = Infinity;
-  let newest: Poll = polls[0];
-  let newestMs = -Infinity;
-  for (const mp of polls) {
-    const createdMs = new Date(mp.created_at).getTime();
-    if (createdMs > newestMs) {
-      newestMs = createdMs;
-      newest = mp;
-    }
-    if (!pollHasAwaitingQuestion(mp, votedQuestionIds, abstainedQuestionIds, now)) continue;
-    if (createdMs < oldestAwaitingMs) {
-      oldestAwaitingMs = createdMs;
-      oldestAwaiting = mp;
-    }
-  }
-  return oldestAwaiting ?? newest;
 }
 
 function sortByCreatedAt(polls: Poll[]): Poll[] {
@@ -415,8 +363,6 @@ function buildGroupFromPolls(
     0,
   );
 
-  const targetedPoll = pickTargetedPoll(polls, votedQuestionIds, abstainedQuestionIds, now);
-
   // Every poll in the group carries the same `group_image_updated_at`
   // (sourced server-side from `groups.image_updated_at` via JOIN). Read
   // off the latest poll for symmetry with the group_title source.
@@ -446,7 +392,6 @@ function buildGroupFromPolls(
     isEmpty: false,
     latestQuestion: questions[questions.length - 1],
     latestPoll,
-    targetedPoll,
     anonymousRespondentCount,
     imageUrl,
   };
@@ -481,7 +426,6 @@ export function buildEmptyGroup(summary: GroupSummary): Group {
     isEmpty: true,
     latestQuestion: null,
     latestPoll: null,
-    targetedPoll: null,
     anonymousRespondentCount: 0,
     imageUrl: buildGroupImageUrl(
       summary.short_id ?? summary.id,
@@ -549,22 +493,9 @@ export function getGroupHrefForPoll(poll: Poll): string {
   return `/g/${rootRouteId}?${POLL_QUERY_PARAM}=${pollShortId}`;
 }
 
-/** Build the URL for a group.
- *
- * - `/g/<root>?p=<target>` when the user has awaiting work — the poll is
- *   auto-expanded and scrolled-to on landing.
- * - `/g/<root>` when nothing is awaiting OR the group is empty — the page
- *   scrolls to bottom (draft form area), inviting the user to start a
- *   new poll.
- */
+/** Build the URL for a group's root view. */
 export function getGroupHref(group: Group): string {
-  const rootRouteId = getGroupRouteId(group);
-  if (group.isEmpty || group.unvotedCount === 0 || !group.targetedPoll) {
-    return `/g/${rootRouteId}`;
-  }
-  const target = group.targetedPoll;
-  const targetRouteId = target.short_id || target.questions[0]?.id || group.rootQuestionId || '';
-  return `/g/${rootRouteId}?${POLL_QUERY_PARAM}=${targetRouteId}`;
+  return `/g/${getGroupRouteId(group)}`;
 }
 
 /**
