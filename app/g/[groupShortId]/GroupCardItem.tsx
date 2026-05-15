@@ -41,7 +41,7 @@ import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
 import InitialBubble from "@/components/InitialBubble";
-import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
+import PollShareButton from "@/components/PollShareButton";
 import CompactNameField from "@/components/CompactNameField";
 import QuestionBallot, { type QuestionBallotHandle } from "@/components/QuestionBallot";
 import QuestionDetails from "@/components/QuestionDetails";
@@ -758,7 +758,8 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                 onTouchEnd={stopBubble}
                 onTouchMove={stopBubble}
               >
-                <FloatingCopyLinkButton
+                <PollShareButton
+                  title={question.title}
                   url={(() => {
                     if (typeof window === "undefined") return "";
                     // Canonical share URL — uses `group_short_id` from the
