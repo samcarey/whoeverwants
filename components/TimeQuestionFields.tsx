@@ -142,6 +142,7 @@ export default function TimeQuestionFields({
               disabled={disabled}
               questionWindows={questionDayTimeWindows?.find(p => p.day === dayTimeWindow.day)?.windows}
               minDurationMinutes={minDurationMinutes}
+              allDays={dayTimeWindows}
             />
           ))}
 

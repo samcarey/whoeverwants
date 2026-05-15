@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import TimeGridModal from './TimeGridModal';
-import { windowDurationMinutes, formatDayLabel } from '@/lib/timeUtils';
+import { windowDurationMinutes, formatDayLabel, pickNextTimeWindow } from '@/lib/timeUtils';
 
 interface TimeWindow {
   min: string; // HH:MM format
@@ -18,6 +18,10 @@ interface DayTimeWindowsInputProps {
   disabled?: boolean;
   questionWindows?: TimeWindow[]; // Creator's windows for this day (constrains voter edits)
   minDurationMinutes?: number | null; // Minimum duration in minutes for validation
+  // Full day list across the form. The + button reads this to copy the
+  // latest non-intersecting slot from a neighbouring day instead of
+  // opening the time-grid modal. Pass `dayTimeWindows` from the parent.
+  allDays?: { day: string; windows: TimeWindow[] }[];
   // When true, omit the outer bg/border/padding chrome so the row composes
   // cleanly inside a parent card's `divide-y` layout. Used by the create-poll
   // "Time Windows" card; default usage keeps the standalone-strip look.
@@ -63,14 +67,19 @@ export default function DayTimeWindowsInput({
   disabled = false,
   questionWindows,
   minDurationMinutes,
+  allDays,
   borderless = false,
 }: DayTimeWindowsInputProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
+  // Add a slot directly without opening the modal: copy the latest
+  // non-intersecting slot from the immediately previous day in the list,
+  // falling back to following days then a default 8 AM – 5 PM range.
   const handleAddWindow = () => {
-    setEditingIndex(null);
-    setIsModalOpen(true);
+    const days = allDays ?? [{ day, windows }];
+    const next = pickNextTimeWindow(day, days);
+    onChange([...windows, next]);
   };
 
   const handleEditWindow = (index: number) => {
@@ -79,17 +88,11 @@ export default function DayTimeWindowsInput({
   };
 
   const handleModalApply = (min: string | null, max: string | null) => {
-    if (min && max) {
-      if (editingIndex !== null) {
-        // Update existing window
-        const updated = windows.map((w, i) =>
-          i === editingIndex ? { min, max } : w
-        );
-        onChange(updated);
-      } else {
-        // Add new window
-        onChange([...windows, { min, max }]);
-      }
+    if (min && max && editingIndex !== null) {
+      const updated = windows.map((w, i) =>
+        i === editingIndex ? { min, max } : w
+      );
+      onChange(updated);
     }
   };
 

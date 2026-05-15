@@ -1741,6 +1741,7 @@ export function CreateQuestionContent() {
                               onDelete={() => handleDeleteDay(dtw.day)}
                               disabled={isLoading}
                               minDurationMinutes={minDurationMinutesForWindows}
+                              allDays={dayTimeWindows}
                               borderless
                             />
                           ))}
