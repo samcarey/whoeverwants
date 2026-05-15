@@ -187,7 +187,13 @@ jobs:
           set -euo pipefail
           # Prod uses the canonical bundle ID; the canary (latest) tier uses
           # a single shared `.latest` suffix so AASA + Apple Developer portal
-          # only have to register one non-prod bundle.
+          # only have to register one non-prod bundle. Both bundles MUST be
+          # registered separately in Apple Developer Portal (Identifiers,
+          # with Push Notifications + Associated Domains capabilities) AND
+          # in App Store Connect (a New App record per bundle) before
+          # `xcrun altool --upload-app` can find them — otherwise the
+          # upload step fails with "Cannot determine the Apple ID from
+          # Bundle ID ... (12)".
           if [[ "$CAP_ENV" == "prod" ]]; then
             BUNDLE_ID="com.whoeverwants.app"
             DISPLAY_NAME="WhoeverWants"
