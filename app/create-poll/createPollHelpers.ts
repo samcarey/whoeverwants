@@ -96,6 +96,18 @@ export function anyDraftUsesPrephase(drafts: QuestionDraft[]): boolean {
   return drafts.some(d => draftDbQuestionType(d) === 'time' || draftIsSuggestionMode(d));
 }
 
+/** True when at least one draft is a time question. */
+export function anyDraftIsTime(drafts: QuestionDraft[]): boolean {
+  return drafts.some(d => draftDbQuestionType(d) === 'time');
+}
+
+/** True when at least one draft is in suggestion mode (ranked_choice with no
+ *  options yet). Distinct from `anyDraftIsTime` so the cutoff label can pick
+ *  the correct phrasing per poll composition. */
+export function anyDraftHasSuggestion(drafts: QuestionDraft[]): boolean {
+  return drafts.some(d => draftIsSuggestionMode(d));
+}
+
 /** True when at least one draft is a ranked_choice question — these are
  *  the only ones for which "min responses to show preliminary results" is
  *  meaningful (yes/no shows results immediately, time questions don't have

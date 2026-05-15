@@ -56,6 +56,8 @@ import {
   draftDbQuestionType,
   draftToQuestionParams,
   anyDraftUsesPrephase,
+  anyDraftIsTime,
+  anyDraftHasSuggestion,
   anyDraftIsRankedChoice,
   sharedDraftContext,
   synthesizePlaceholderPoll,
@@ -430,10 +432,16 @@ export function CreateQuestionContent() {
   // category='custom', no options) which would otherwise look like
   // "suggestion mode" and wrongly surface the prephase fields after
   // every staged draft.
-  const inlineFormUsesPrephase = isModalOpen && (
-    isSuggestionMode || questionType === 'time' || category === 'time'
-  );
-  const pollHasPrephase = anyDraftUsesPrephase(drafts) || inlineFormUsesPrephase;
+  const inlineFormHasTime = isModalOpen && (questionType === 'time' || category === 'time');
+  const inlineFormHasSuggestion = isModalOpen && isSuggestionMode;
+  const pollHasTime = anyDraftIsTime(drafts) || inlineFormHasTime;
+  const pollHasSuggestion = anyDraftHasSuggestion(drafts) || inlineFormHasSuggestion;
+  const pollHasPrephase = pollHasTime || pollHasSuggestion;
+  const cutoffLabel = pollHasTime && pollHasSuggestion
+    ? "Suggestion/Availability Cutoff"
+    : pollHasTime
+      ? "Availability Cutoff"
+      : "Suggestion Cutoff";
 
   // Migration 098: poll-level results-display + ranked-choice settings.
   // The min-responses + show-results pair is meaningful iff the poll
@@ -1350,7 +1358,7 @@ export function CreateQuestionContent() {
   const suggestionCutoffField = (
     <div>
       <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
-        <span className="text-base font-normal">Suggestion/Availability Cutoff</span>
+        <span className="text-base font-normal">{cutoffLabel}</span>
         <span className="relative inline-flex">
           <span className="text-base font-normal text-gray-500 dark:text-gray-500 text-right">
             {(() => {
