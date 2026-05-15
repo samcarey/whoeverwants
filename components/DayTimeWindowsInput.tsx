@@ -121,12 +121,23 @@ export default function DayTimeWindowsInput({
           : 'flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
       }
     >
-      {/* Left: dedicated + button column (creator form only). Left-justified
-          at the row's start so its X position is identical across every day
-          regardless of how wide the date label gets. Diameter matches the
-          time-pill height (34px = text-sm line + py-1.5 padding + 1px
-          border each side); `self-start` keeps the circle at the top of the
-          row, so its center vertically aligns with the topmost time pill. */}
+      {/* Day display. Fixed width (w-28 = 112 px) so the +-button column to
+          its right lands at the same X position on every row regardless of
+          how wide each day's relative-day label is. */}
+      <div className="w-28 self-start">
+        <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          {formatDayLabel(day)}
+        </div>
+        <div className="text-xs text-blue-500 dark:text-blue-400">
+          {getRelativeDay(day)}
+        </div>
+      </div>
+
+      {/* Dedicated + button column (creator form only), positioned just to
+          the right of the date. Diameter matches the time-pill height
+          (34 px = text-sm line + py-1.5 padding + 1 px border each side);
+          `self-start` keeps the circle at the top of the row so its center
+          vertically aligns with the topmost time pill. */}
       {!isVoterForm && (
         <button
           type="button"
@@ -140,19 +151,6 @@ export default function DayTimeWindowsInput({
           </svg>
         </button>
       )}
-
-      {/* Day display. min-w keeps short labels from collapsing the column
-          but allows growth for longer relative-day strings; the + column
-          on the left is independent of this width so its X position stays
-          consistent regardless. */}
-      <div className="min-w-[100px] self-start">
-        <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          {formatDayLabel(day)}
-        </div>
-        <div className="text-xs text-blue-500 dark:text-blue-400">
-          {getRelativeDay(day)}
-        </div>
-      </div>
 
       {/* Right: Time windows stacked vertically. Trash sits on the LEFT of
           each pill (matches voter-form checkbox placement). The last
