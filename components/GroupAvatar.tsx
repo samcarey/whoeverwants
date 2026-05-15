@@ -1,23 +1,15 @@
 "use client";
 
-import RespondentCircles from '@/components/RespondentCircles';
+import { useId } from 'react';
+import RespondentCircles, {
+  BOUNDING_DIAMETER,
+  BOUNDING_OFFSET,
+  BOUNDING_RADIUS,
+} from '@/components/RespondentCircles';
 
-/**
- * Group avatar — image-or-initials wrapper.
- *
- * When `imageUrl` is set, renders the uploaded image circle-clipped. When
- * null, falls through to `RespondentCircles` (the multi-circle initials
- * graphic). Same outer dimensions either way, so swapping at render time
- * doesn't cause layout shift.
- *
- * Migration 108 added the image data; `Group.imageUrl` is the derived URL
- * (already includes the `?v=<image_updated_at>` cache-buster, so changes
- * propagate without explicit cache invalidation in the browser).
- *
- * The image is rendered with `object-fit: cover` so non-square sources
- * still fill the circle, BUT the upload flow always crops to a square
- * before sending, so this is just a safety net.
- */
+// Group avatar — uploaded-image variant uses the same SVG-clipped disc
+// geometry as RespondentCircles's bounding circle so image and initials
+// variants render at identical size.
 interface GroupAvatarProps {
   imageUrl: string | null;
   names: string[];
@@ -31,18 +23,28 @@ export default function GroupAvatar({
   anonymousCount,
   sizeClassName = 'w-16',
 }: GroupAvatarProps) {
+  const reactId = useId();
   if (imageUrl) {
+    const clipId = `${reactId}-clip`;
     return (
-      <div
-        className={`${sizeClassName} aspect-square flex-shrink-0 self-center rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700`}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={imageUrl}
-          alt=""
-          className="w-full h-full object-cover"
-          draggable={false}
-        />
+      <div className={`${sizeClassName} aspect-square flex-shrink-0 self-center`}>
+        <svg viewBox="0 0 100 100" className="w-full h-full" aria-hidden="true">
+          <defs>
+            <clipPath id={clipId}>
+              <circle cx="50" cy="50" r={BOUNDING_RADIUS} />
+            </clipPath>
+          </defs>
+          <circle cx="50" cy="50" r={BOUNDING_RADIUS} fill="#E5E7EB" />
+          <image
+            href={imageUrl}
+            x={BOUNDING_OFFSET}
+            y={BOUNDING_OFFSET}
+            width={BOUNDING_DIAMETER}
+            height={BOUNDING_DIAMETER}
+            preserveAspectRatio="xMidYMid slice"
+            clipPath={`url(#${clipId})`}
+          />
+        </svg>
       </div>
     );
   }

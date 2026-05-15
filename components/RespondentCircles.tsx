@@ -4,12 +4,20 @@ import React, { useId } from 'react';
 import { getUserInitials, isCurrentUserName } from '@/lib/userProfile';
 import { useMyUserImageUrl } from '@/lib/useMyUserImageUrl';
 
+// Shared bounding-disc geometry. The avatar's outer SVG is a 100×100
+// viewBox; everything inside fits inside a centered disc of diameter
+// BOUNDING_DIAMETER so the image variant in GroupAvatar matches the
+// initials tessellation pixel-for-pixel.
+export const BOUNDING_RADIUS = 41.5;
+export const BOUNDING_DIAMETER = BOUNDING_RADIUS * 2;
+export const BOUNDING_OFFSET = 50 - BOUNDING_RADIUS;
+
 // Pre-computed circle packing layouts in SVG viewBox units (0-100)
 const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
   /* 0 */ { centers: [], diameter: 0 },
   /* 1 */ { centers: [[50, 50]], diameter: 83 },
   /* 2 */ { centers: [[27, 50], [73, 50]], diameter: 44 },
-  /* 3 */ { centers: [[50, 26], [27, 74], [73, 74]], diameter: 42 },
+  /* 3 */ { centers: [[50, 22.708], [26.364, 63.646], [73.636, 63.646]], diameter: 42 },
   /* 4 */ { centers: [[26, 26], [74, 26], [26, 74], [74, 74]], diameter: 42 },
   /* 5 */ { centers: [[22, 22], [78, 22], [50, 50], [22, 78], [78, 78]], diameter: 35 },
   /* 6 */ { centers: [[18, 34], [50, 34], [82, 34], [18, 66], [50, 66], [82, 66]], diameter: 29 },
@@ -18,6 +26,16 @@ const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
     diameter: 26,
   },
 ];
+
+// Per-N scale that snugs each tessellation inside the bounding disc.
+// Computed from each layout's outermost reach so layout edits stay in
+// sync without a hand-tuned parallel array.
+const BOUNDING_SCALE = LAYOUTS.map(({ centers, diameter }) => {
+  if (centers.length === 0) return 1;
+  const r = diameter / 2;
+  const maxReach = Math.max(...centers.map(([cx, cy]) => Math.hypot(cx - 50, cy - 50) + r));
+  return BOUNDING_RADIUS / maxReach;
+});
 
 const MAX_NAMED = 6;
 
@@ -87,6 +105,14 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
 
   const n = Math.min(circles.length, LAYOUTS.length - 1);
   const layout = LAYOUTS[n];
+  // Snug each tessellation into a diameter-83 bounding circle so the
+  // multi-circle layouts visually match the image-avatar disc size.
+  const scale = BOUNDING_SCALE[n] ?? 1;
+  const layoutCenters: [number, number][] = layout.centers.map(([cx, cy]) => [
+    50 + (cx - 50) * scale,
+    50 + (cy - 50) * scale,
+  ]);
+  const layoutRadius = (layout.diameter * scale) / 2;
   const hasAnyImage = circles.some(c => !!c.imageUrl);
 
   return (
@@ -96,19 +122,26 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
           <defs>
             {circles.map((circle, i) => {
               if (!circle.imageUrl) return null;
-              const [cx, cy] = layout.centers[i];
-              const r = layout.diameter / 2;
+              const [cx, cy] = layoutCenters[i];
               return (
                 <clipPath id={`${reactId}-clip-${i}`} key={i}>
-                  <circle cx={cx} cy={cy} r={r} />
+                  <circle cx={cx} cy={cy} r={layoutRadius} />
                 </clipPath>
               );
             })}
           </defs>
         )}
+        {!isPlaceholder && (
+          <circle
+            cx={50}
+            cy={50}
+            r={BOUNDING_RADIUS}
+            className="fill-gray-100 dark:fill-gray-800"
+          />
+        )}
         {circles.map((circle, i) => {
-          const [cx, cy] = layout.centers[i];
-          const r = layout.diameter / 2;
+          const [cx, cy] = layoutCenters[i];
+          const r = layoutRadius;
           if (circle.imageUrl) {
             // Image-backed circle: an SVG <image> clipped to the disc.
             // `preserveAspectRatio="xMidYMid slice"` mimics CSS
