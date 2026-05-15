@@ -275,7 +275,7 @@ export default function SuggestionVotingInterface({
             ballot context sits on the page bg, not a sheet backdrop —
             see CLAUDE.md's "Always-Visible Name Field" section. */}
         <div className={filteredExistingSuggestions.length > 0 ? "mt-3" : ""}>
-          <h5 className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+          <h5 className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
             Suggestions
           </h5>
           <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
