@@ -121,8 +121,9 @@ export default function DayTimeWindowsInput({
           : 'flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
       }
     >
-      {/* Left: Day display */}
-      <div className="min-w-[100px] self-start">
+      {/* Left: Day display — fixed width so the +-button column lands at
+          the same X position across rows regardless of label length. */}
+      <div className="w-28 self-start">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayLabel(day)}
         </div>
@@ -131,21 +132,39 @@ export default function DayTimeWindowsInput({
         </div>
       </div>
 
-      {/* Right: Time windows */}
+      {/* Middle: dedicated + button column (creator form only). Top-aligned
+          so it stays adjacent to the topmost slot regardless of slot count;
+          its X position is stable across every day in the list. */}
+      {!isVoterForm && (
+        <button
+          type="button"
+          onClick={handleAddWindow}
+          disabled={disabled}
+          className="self-start w-7 h-7 flex items-center justify-center rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          aria-label="Add time window"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      )}
+
+      {/* Right: Time windows stacked vertically. Trash sits on the LEFT of
+          each pill (matches voter-form checkbox placement). The last
+          remaining slot in a day omits its trash so the day can never
+          drop to zero windows. */}
       <div className="flex-1 flex flex-col gap-2 items-end">
         {windows.map((window, index) => {
           const isEnabled = window.enabled !== false;
           const duration = windowDurationMinutes(window);
           const isTooShort = isEnabled && minDurationMinutes != null && minDurationMinutes > 0 && duration < minDurationMinutes;
-          const isLast = index === windows.length - 1;
           const showTrash = !isVoterForm && windows.length > 1;
           return (
             <div
               key={index}
               className="flex items-center gap-2"
             >
-              {/* Voter form: enable/disable checkbox stays on the left. */}
-              {isVoterForm && (
+              {isVoterForm ? (
                 <label className="flex items-center p-1 cursor-pointer">
                   <input
                     type="checkbox"
@@ -155,25 +174,19 @@ export default function DayTimeWindowsInput({
                     className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 cursor-pointer"
                   />
                 </label>
-              )}
-              {/* Creator form: + button only on the bottom-most slot. */}
-              {!isVoterForm && isLast ? (
+              ) : showTrash ? (
                 <button
                   type="button"
-                  onClick={handleAddWindow}
+                  onClick={() => handleDeleteWindow(index)}
                   disabled={disabled}
-                  className="w-7 h-7 flex items-center justify-center rounded-full text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  aria-label="Add time window"
+                  className="p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Delete time window"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
                 </button>
-              ) : (
-                /* Reserve the + slot's width on non-last rows so pills stay
-                   right-aligned with consistent positioning. */
-                !isVoterForm && <div className="w-7 h-7" aria-hidden="true" />
-              )}
+              ) : null}
               <button
                 type="button"
                 onClick={() => isEnabled && handleEditWindow(index)}
@@ -210,36 +223,9 @@ export default function DayTimeWindowsInput({
                   );
                 })()}
               </button>
-              {showTrash && (
-                <button
-                  type="button"
-                  onClick={() => handleDeleteWindow(index)}
-                  disabled={disabled}
-                  className="p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                  aria-label="Delete time window"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              )}
             </div>
           );
         })}
-
-        {/* Fallback "+ Time" pill when the day has no windows — should not
-            normally happen now that new days inherit windows, but kept for
-            resilience against legacy/empty data. Hidden on voter ballots. */}
-        {!isVoterForm && windows.length === 0 && (
-          <button
-            type="button"
-            onClick={handleAddWindow}
-            disabled={disabled}
-            className="w-[168px] py-1.5 rounded-full text-sm font-medium border bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-center"
-          >
-            + Time
-          </button>
-        )}
       </div>
 
       {/* Time Grid Modal */}
