@@ -1632,11 +1632,6 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         participantNames={group.participantNames}
         anonymousCount={group.anonymousRespondentCount}
         imageUrl={group.imageUrl}
-        subtitle={
-          group.questions.length === 0
-            ? undefined
-            : `${group.questions.length} ${group.questions.length === 1 ? 'question' : 'questions'}`
-        }
         onTitleClick={() => slideToGroupInfo({ groupId })}
         rightSlot={<GroupShareButton routeId={groupId} title={group.title} />}
       />
