@@ -1633,16 +1633,16 @@ export function CreateQuestionContent() {
                   breathing room above the sheet edge that the bubbles
                   have above the screen edge. */}
               <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-3">
-                <div className="text-center px-2 pt-1 break-words min-h-[1.75rem] flex items-center justify-center">
+                <div className="text-center px-2 pt-1 break-words h-7 flex items-center justify-center">
                   {title.trim() ? (
                     <span
-                      className="text-xl font-bold text-blue-600 dark:text-blue-400"
+                      className="text-xl font-bold leading-7 text-blue-600 dark:text-blue-400"
                       style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
                     >
                       {title.trim()}
                     </span>
                   ) : (
-                    <span className="text-[0.9375rem] italic text-gray-500 dark:text-gray-400">
+                    <span className="text-[0.9375rem] leading-7 italic text-gray-500 dark:text-gray-400">
                       Enter a Category, Context, and/or Options
                     </span>
                   )}
