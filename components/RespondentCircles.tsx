@@ -9,7 +9,7 @@ const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
   /* 0 */ { centers: [], diameter: 0 },
   /* 1 */ { centers: [[50, 50]], diameter: 83 },
   /* 2 */ { centers: [[27, 50], [73, 50]], diameter: 44 },
-  /* 3 */ { centers: [[50, 26], [27, 74], [73, 74]], diameter: 42 },
+  /* 3 */ { centers: [[50, 22.708], [26.364, 63.646], [73.636, 63.646]], diameter: 42 },
   /* 4 */ { centers: [[26, 26], [74, 26], [26, 74], [74, 74]], diameter: 42 },
   /* 5 */ { centers: [[22, 22], [78, 22], [50, 50], [22, 78], [78, 78]], diameter: 35 },
   /* 6 */ { centers: [[18, 34], [50, 34], [82, 34], [18, 66], [50, 66], [82, 66]], diameter: 29 },
@@ -22,7 +22,7 @@ const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
 // Per-N scale that snugs each tessellation inside the bounding circle of
 // diameter 83 (matching the image-avatar disc in GroupAvatar). The factor
 // is `41.5 / max(distance_from_50_50 + r)` over each layout's children.
-const BOUNDING_SCALE = [1.0, 1.0, 0.9222, 0.7651, 0.7554, 0.7268, 0.8254, 0.8805];
+const BOUNDING_SCALE = [1.0, 1.0, 0.9222, 0.8594, 0.7554, 0.7268, 0.8254, 0.8805];
 
 const MAX_NAMED = 6;
 
