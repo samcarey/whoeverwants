@@ -37,11 +37,9 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
   const { prefetchBatch } = usePrefetch();
   // Load voted/abstained synchronously so the very first render's
   // buildGroups call sees the real voted state. Initializing these as
-  // empty Sets and loading via useEffect made `pickTargetedPoll` treat
-  // every question as awaiting on first render, so getGroupRouteId
-  // pointed at the chronologically oldest poll (the group root) instead
-  // of the oldest unresponded open poll — clicks and prefetches that
-  // raced React's post-effect re-render landed on the root URL.
+  // empty Sets and loading via useEffect would make every question look
+  // awaiting on first render — wrong sort order in sortGroupsForHome,
+  // golden borders briefly on already-voted cards.
   const [{ votedQuestionIds, abstainedQuestionIds }] = useState(() => {
     if (typeof window === 'undefined') {
       return { votedQuestionIds: new Set<string>(), abstainedQuestionIds: new Set<string>() };
@@ -271,10 +269,9 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
           // from inside SlideOverlayHost. Eliminates the view-transitions
           // snapshot+commit cost (~250-300ms) before the first frame.
           //
-          // All cards land collapsed — the user taps to expand. Earlier
-          // iterations auto-expanded the awaiting poll, but the slide-overlay
-          // handoff could race with the real-route's targetPoll cache lookup,
-          // briefly collapsing the card just after the slide settled.
+          // expandedQuestionId stays null — the slide-overlay handoff can
+          // race with the real-route's `?p=` cache lookup and collapse a
+          // pre-expanded card just after the slide settles.
           const groupRouteId = getGroupRouteId(group);
           slideToGroup({ href, groupId: groupRouteId, expandedQuestionId: null });
         };
