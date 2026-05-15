@@ -59,6 +59,28 @@ function getRelativeDay(dateStr: string): string {
   return `${years}y away`;
 }
 
+// Pill className per state. Layout-stable across states because every
+// variant has `border` set — non-outlined states use border-transparent
+// so 1 px of border space is reserved on every pill regardless of state.
+const PILL_BASE = 'w-[154px] py-1.5 rounded-full text-sm font-medium border transition-colors text-center disabled:cursor-not-allowed';
+const PILL_STATE_CLASSES = {
+  disabled: 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border-transparent cursor-default opacity-50',
+  tooShort: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-400 dark:border-red-500 hover:bg-red-100 dark:hover:bg-red-900/50',
+  intersecting: 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-orange-400 dark:border-orange-500 hover:bg-gray-200 dark:hover:bg-gray-600',
+  normal: 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-transparent hover:bg-gray-200 dark:hover:bg-gray-600',
+} as const;
+
+function pillVariant(
+  isEnabled: boolean,
+  isTooShort: boolean,
+  intersectsPrev: boolean,
+): keyof typeof PILL_STATE_CLASSES {
+  if (!isEnabled) return 'disabled';
+  if (isTooShort) return 'tooShort';
+  if (intersectsPrev) return 'intersecting';
+  return 'normal';
+}
+
 export default function DayTimeWindowsInput({
   day,
   windows,
@@ -73,12 +95,8 @@ export default function DayTimeWindowsInput({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
-  // Add a slot directly without opening the modal: copy the latest
-  // non-intersecting slot from the immediately previous day in the list,
-  // falling back to following days then a default 8 AM – 5 PM range.
   const handleAddWindow = () => {
-    const days = allDays ?? [{ day, windows }];
-    const next = pickNextTimeWindow(day, days);
+    const next = pickNextTimeWindow(day, allDays ?? [{ day, windows }]);
     onChange([...windows, next]);
   };
 
@@ -87,13 +105,9 @@ export default function DayTimeWindowsInput({
     setIsModalOpen(true);
   };
 
-  const handleModalApply = (min: string | null, max: string | null) => {
-    if (min && max && editingIndex !== null) {
-      const updated = windows.map((w, i) =>
-        i === editingIndex ? { min, max } : w
-      );
-      onChange(updated);
-    }
+  const handleEditApply = (min: string | null, max: string | null) => {
+    if (!min || !max || editingIndex === null) return;
+    onChange(windows.map((w, i) => i === editingIndex ? { min, max } : w));
   };
 
   const handleDeleteWindow = (index: number) => {
@@ -124,13 +138,9 @@ export default function DayTimeWindowsInput({
           : 'flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
       }
     >
-      {/* Day display. Fixed width (88 px) sized to the upper bound of the
-          date / relative-day label widths in Geist Sans. After the
-          relative-day strings were abbreviated to e.g. "23mo away", the
-          date line ("Wed, Sep 30" ≈ 81 px) becomes the binding upper
-          bound — 88 px leaves a small buffer. Fixed width keeps the +
-          button to the right at the same X position on every row
-          regardless of how short the row's labels happen to be. */}
+      {/* Fixed-width date column so the + button to its right lands at the
+          same X on every row. 88 px fits the widest expected label in
+          Geist Sans (date line ~81 px; abbreviated relative ~50 px). */}
       <div className="w-[88px] self-start">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayLabel(day)}
@@ -140,11 +150,9 @@ export default function DayTimeWindowsInput({
         </div>
       </div>
 
-      {/* Dedicated + button column (creator form only), positioned just to
-          the right of the date. `shrink-0` keeps it a perfect circle even
-          when trashcans appear in the slots column and pressure the row.
-          Diameter matches the time-pill height (34 px); `self-start`
-          aligns the circle's center with the topmost time pill. */}
+      {/* Diameter matches the pill height (34 px); shrink-0 prevents
+          flex pressure from squishing it; self-start centers it with the
+          topmost pill regardless of slot count. */}
       {!isVoterForm && (
         <button
           type="button"
@@ -159,20 +167,16 @@ export default function DayTimeWindowsInput({
         </button>
       )}
 
-      {/* Right: Time windows stacked vertically. Trash sits on the LEFT of
-          each pill (matches voter-form checkbox placement). The last
-          remaining slot in a day omits its trash so the day can never
-          drop to zero windows. */}
+      {/* The last remaining slot in a day omits its delete control so the
+          day can never drop to zero windows (use the day picker to remove
+          the whole day). Windows arrive pre-sorted from
+          useDayTimeWindowsState, so a slot intersects-or-touches its
+          predecessor iff its start time is <= the previous end time. */}
       <div className="flex-1 flex flex-col gap-2 items-end">
         {windows.map((window, index) => {
           const isEnabled = window.enabled !== false;
           const duration = windowDurationMinutes(window);
           const isTooShort = isEnabled && minDurationMinutes != null && minDurationMinutes > 0 && duration < minDurationMinutes;
-          // Soft warning: a slot overlaps OR runs up against the previous
-          // slot in sorted order (start time <= previous end time). Doesn't
-          // block submission — just renders an orange outline. Windows
-          // arrive pre-sorted from useDayTimeWindowsState so index N's
-          // predecessor is windows[N-1].
           const prev = index > 0 ? windows[index - 1] : null;
           const intersectsPrev = isEnabled && !!prev && window.min <= prev.max;
           const showTrash = !isVoterForm && windows.length > 1;
@@ -208,15 +212,7 @@ export default function DayTimeWindowsInput({
                 type="button"
                 onClick={() => isEnabled && handleEditWindow(index)}
                 disabled={disabled || !isEnabled}
-                className={`w-[154px] py-1.5 rounded-full text-sm font-medium border transition-colors text-center ${
-                  !isEnabled
-                    ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border-transparent cursor-default opacity-50'
-                    : isTooShort
-                      ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-400 dark:border-red-500 hover:bg-red-100 dark:hover:bg-red-900/50'
-                      : intersectsPrev
-                        ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-orange-400 dark:border-orange-500 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-transparent hover:bg-gray-200 dark:hover:bg-gray-600'
-                } disabled:cursor-not-allowed`}
+                className={`${PILL_BASE} ${PILL_STATE_CLASSES[pillVariant(isEnabled, isTooShort, intersectsPrev)]}`}
               >
                 {(() => {
                   const minFormatted = formatTime12Hour(window.min);
@@ -256,7 +252,7 @@ export default function DayTimeWindowsInput({
         }}
         minValue={editingIndex !== null && windows[editingIndex] ? windows[editingIndex].min : "09:00"}
         maxValue={editingIndex !== null && windows[editingIndex] ? windows[editingIndex].max : "17:00"}
-        onApply={handleModalApply}
+        onApply={handleEditApply}
         constraintMin={questionWindows && editingIndex !== null && questionWindows[editingIndex] ? questionWindows[editingIndex].min : undefined}
         constraintMax={questionWindows && editingIndex !== null && questionWindows[editingIndex] ? questionWindows[editingIndex].max : undefined}
         minDurationMinutes={minDurationMinutes}

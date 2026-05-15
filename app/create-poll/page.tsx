@@ -28,7 +28,7 @@ import DaysSelector from "@/components/DaysSelector";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
-import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
+import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, DEFAULT_TIME_WINDOW } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import { enterAdvancesFocus } from "@/lib/formNavigation";
 import * as questionBackTarget from "@/lib/questionBackTarget";
@@ -818,7 +818,7 @@ export function CreateQuestionContent() {
         const month = String(today.getMonth() + 1).padStart(2, '0');
         const day = String(today.getDate()).padStart(2, '0');
         const todayStr = `${year}-${month}-${day}`;
-        setDayTimeWindows([{ day: todayStr, windows: [{ min: '08:00', max: '17:00' }] }]);
+        setDayTimeWindows([{ day: todayStr, windows: [{ ...DEFAULT_TIME_WINDOW }] }]);
       }
     }
   }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam]);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef } from "react";
+import { DEFAULT_TIME_WINDOW } from "@/lib/timeUtils";
 import type { DayTimeWindow, TimeWindow } from "@/lib/types";
 
 // Shared add/remove/edit logic for a controlled day-time-windows list,
@@ -45,7 +46,7 @@ export function useDayTimeWindowsState(
         .pop();
       const inheritedWindows: TimeWindow[] = prev
         ? prev.windows.map(w => ({ min: w.min, max: w.max }))
-        : [{ min: "08:00", max: "17:00" }];
+        : [{ ...DEFAULT_TIME_WINDOW }];
       working.push({ day: d, windows: inheritedWindows });
     }
     working.sort((a, b) => a.day.localeCompare(b.day));
