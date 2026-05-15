@@ -69,7 +69,7 @@ export default function TimeSlotBubbles({
             <div>{monthDay}</div>
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap justify-center gap-1.5 flex-1">
             {slots.map((slot, idx) => {
               const state = getState(slot);
               const { time, period } = getBubbleLabel(slot, idx > 0 ? slots[idx - 1] : null);

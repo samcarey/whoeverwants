@@ -287,7 +287,7 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
                     <div>{monthDay}</div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap justify-center gap-2 flex-1">
                     {slots.map((slot, idx) => {
                       const { time, period } = getBubbleLabel(slot, idx > 0 ? slots[idx - 1] : null);
                       const periodClass = period
