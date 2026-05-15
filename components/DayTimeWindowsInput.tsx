@@ -50,13 +50,13 @@ function getRelativeDay(dateStr: string): string {
 
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return 'Tomorrow';
-  if (diffDays < 14) return `${diffDays} days away`;
+  if (diffDays < 14) return `${diffDays}d away`;
   const weeks = Math.floor(diffDays / 7);
-  if (weeks < 8) return `${weeks} week${weeks === 1 ? '' : 's'} away`;
+  if (weeks < 8) return `${weeks}w away`;
   const months = Math.floor(diffDays / 30.44);
-  if (months < 24) return `${months} month${months === 1 ? '' : 's'} away`;
+  if (months < 24) return `${months}mo away`;
   const years = Math.floor(diffDays / 365.25);
-  return `${years} year${years === 1 ? '' : 's'} away`;
+  return `${years}y away`;
 }
 
 export default function DayTimeWindowsInput({
@@ -124,13 +124,14 @@ export default function DayTimeWindowsInput({
           : 'flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
       }
     >
-      {/* Day display. Fixed width (w-24 = 96 px) sized to the upper bound
-          of the date / relative-day label widths in Geist Sans (longest
-          observed: "Wed, Sep 30" ≈ 81 px, "23 months away" ≈ 87 px). With a
-          fixed width, the + button to the right lands at the same X
-          position on every row regardless of how short the row's labels
-          happen to be ("Today" vs "Tomorrow" no longer offsets the +). */}
-      <div className="w-24 self-start">
+      {/* Day display. Fixed width (88 px) sized to the upper bound of the
+          date / relative-day label widths in Geist Sans. After the
+          relative-day strings were abbreviated to e.g. "23mo away", the
+          date line ("Wed, Sep 30" ≈ 81 px) becomes the binding upper
+          bound — 88 px leaves a small buffer. Fixed width keeps the +
+          button to the right at the same X position on every row
+          regardless of how short the row's labels happen to be. */}
+      <div className="w-[88px] self-start">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayLabel(day)}
         </div>
