@@ -27,7 +27,7 @@ export default function CompactNameField({ name, setName, disabled = false, maxL
         onKeyDown={enterAdvancesFocus}
         disabled={disabled}
         maxLength={maxLength}
-        className="flex-1 min-w-0 text-base bg-transparent text-gray-600 dark:text-gray-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex-1 min-w-0 text-base bg-transparent text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
       />
     </div>
   );

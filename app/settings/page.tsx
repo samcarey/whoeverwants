@@ -446,7 +446,7 @@ export default function SettingsPage() {
         <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
           <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
             <span className="text-base font-normal shrink-0">Theme</span>
-            <span className="relative inline-flex items-center gap-1.5 text-base font-normal text-gray-600 dark:text-gray-400">
+            <span className="relative inline-flex items-center gap-1.5 text-base font-normal text-gray-500 dark:text-gray-500">
               {selectedTheme?.icon}
               {selectedTheme?.label}
               <svg

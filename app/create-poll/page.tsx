@@ -1337,7 +1337,7 @@ export function CreateQuestionContent() {
         onKeyDown={enterAdvancesFocus}
         disabled={isLoading}
         maxLength={100}
-        className="flex-1 min-w-0 text-base bg-transparent text-gray-600 dark:text-gray-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
+        className="flex-1 min-w-0 text-base bg-transparent text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
         placeholder={isAutoTitle ? "auto" : "Enter your title..."}
         required={!isAutoTitle}
       />
@@ -1352,7 +1352,7 @@ export function CreateQuestionContent() {
       <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
         <span className="text-base font-normal">Suggestion/Availability Cutoff</span>
         <span className="relative inline-flex">
-          <span className="text-base font-normal text-gray-600 dark:text-gray-400 text-right">
+          <span className="text-base font-normal text-gray-500 dark:text-gray-500 text-right">
             {(() => {
               if (suggestionCutoff === 'custom') return 'Custom';
               const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
@@ -1690,7 +1690,7 @@ export function CreateQuestionContent() {
                             disabled={isLoading}
                             maxLength={100}
                             placeholder={FOR_FIELD_PLACEHOLDERS[category] || ""}
-                            className="flex-1 min-w-0 text-base bg-transparent text-gray-600 dark:text-gray-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
+                            className="flex-1 min-w-0 text-base bg-transparent text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
                           />
                         </div>
                       )}
@@ -1818,7 +1818,7 @@ export function CreateQuestionContent() {
                         type="button"
                         onClick={() => setShowMinParticipationModal(true)}
                         disabled={isLoading}
-                        className="text-base font-normal text-gray-600 dark:text-gray-400 disabled:opacity-50"
+                        className="text-base font-normal text-gray-500 dark:text-gray-500 disabled:opacity-50"
                         aria-label="Adjust minimum availability percentage"
                       >
                         {minimumParticipation}%

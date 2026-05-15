@@ -43,14 +43,14 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
             onBlur={() => setIsEditing(false)}
             onKeyDown={(e) => { if (e.key === 'Enter') setIsEditing(false); }}
             disabled={disabled}
-            className="w-16 text-base bg-transparent text-gray-600 dark:text-gray-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-16 text-base bg-transparent text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
           />
         ) : (
           <button
             type="button"
             onClick={() => setIsEditing(true)}
             disabled={disabled}
-            className="text-base font-normal text-gray-600 dark:text-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-base font-normal text-gray-500 dark:text-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {value}
           </button>
