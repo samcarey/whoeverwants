@@ -94,7 +94,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
             {displayTitle}
           </h1>
           <div className="mt-[1.7px]">
-            <GroupShareButton routeId={groupId} title={group.title} large />
+            <GroupShareButton routeId={groupId} title={group.title} />
           </div>
         </div>
 
