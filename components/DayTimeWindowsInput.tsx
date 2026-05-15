@@ -117,14 +117,14 @@ export default function DayTimeWindowsInput({
     <div
       className={
         borderless
-          ? 'flex items-center gap-3 min-h-12 py-2'
-          : 'flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
+          ? 'flex items-center gap-2 min-h-12 py-2'
+          : 'flex items-center gap-2 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
       }
     >
-      {/* Day display. Fixed width (w-28 = 112 px) so the +-button column to
-          its right lands at the same X position on every row regardless of
-          how wide each day's relative-day label is. */}
-      <div className="w-28 self-start">
+      {/* Day display. Natural width with `shrink-0` so the date never
+          collapses under flex pressure; the gap to the + button is the
+          outer flex's `gap-2` (8 px) — small and identical on every row. */}
+      <div className="shrink-0 self-start">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayLabel(day)}
         </div>
@@ -134,16 +134,16 @@ export default function DayTimeWindowsInput({
       </div>
 
       {/* Dedicated + button column (creator form only), positioned just to
-          the right of the date. Diameter matches the time-pill height
-          (34 px = text-sm line + py-1.5 padding + 1 px border each side);
-          `self-start` keeps the circle at the top of the row so its center
-          vertically aligns with the topmost time pill. */}
+          the right of the date. `shrink-0` keeps it a perfect circle even
+          when trashcans appear in the slots column and pressure the row.
+          Diameter matches the time-pill height (34 px); `self-start`
+          aligns the circle's center with the topmost time pill. */}
       {!isVoterForm && (
         <button
           type="button"
           onClick={handleAddWindow}
           disabled={disabled}
-          className="self-start w-[34px] h-[34px] flex items-center justify-center rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="shrink-0 self-start w-[34px] h-[34px] flex items-center justify-center rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           aria-label="Add time window"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
