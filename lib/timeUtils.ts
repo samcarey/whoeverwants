@@ -166,6 +166,23 @@ export function groupSlotsByDay(options: string[]): [string, string[]][] {
   return Array.from(map.entries());
 }
 
+/** Split a day's slots into rows, breaking on every hour change. Order
+ *  within each row is preserved. */
+export function groupSlotsByHour(slots: string[]): string[][] {
+  const rows: string[][] = [];
+  let currentHour = -1;
+  for (const slot of slots) {
+    const { h } = parseSlotStart(slot);
+    if (h !== currentHour) {
+      rows.push([slot]);
+      currentHour = h;
+    } else {
+      rows[rows.length - 1].push(slot);
+    }
+  }
+  return rows;
+}
+
 /** Check whether a voter's day_time_windows fully cover the given slot.
  *  Mirrors the backend `_voter_available_at` in `server/algorithms/time_slots.py`.
  *  Handles cross-midnight windows where `w.max <= w.min`.

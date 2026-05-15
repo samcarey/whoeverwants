@@ -10,6 +10,7 @@ import {
   formatTimeSlot,
   getBubbleLabel,
   groupSlotsByDay,
+  groupSlotsByHour,
   parseSlotDate,
   parseSlotStart,
 } from "@/lib/timeUtils";
@@ -287,54 +288,65 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
                     <div>{monthDay}</div>
                   </div>
 
-                  <div className="flex flex-wrap justify-center gap-2 flex-1">
-                    {slots.map((slot, idx) => {
-                      const { time, period } = getBubbleLabel(slot, idx > 0 ? slots[idx - 1] : null);
-                      const periodClass = period
-                        ? period === "AM"
-                          ? "text-orange-500 dark:text-orange-400"
-                          : "text-purple-600 dark:text-purple-400"
-                        : "";
-                      const likes = likeCounts?.[slot] ?? 0;
-                      const dislikes = dislikeCounts?.[slot] ?? 0;
-                      const unavailable =
-                        maxAvail != null && availCounts?.[slot] != null
-                          ? maxAvail - availCounts[slot]
-                          : 0;
-                      const isWinner = slot === winner;
-
-                      return (
-                        <div
-                          key={slot}
-                          title={formatTimeSlot(slot)}
-                          className={[
-                            "relative min-w-12 h-8 px-2 flex items-center justify-center rounded-full text-[0.9rem] font-medium tabular-nums leading-none whitespace-nowrap bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
-                            isWinner
-                              ? "border-2 border-green-500 shadow-sm"
-                              : "border border-gray-300 dark:border-gray-600",
-                          ].join(" ")}
-                        >
-                          <span className="block cap-height-text">
-                            {time}
-                            {period && (
-                              <span className={`ml-0.5 ${periodClass}`}>{period}</span>
+                  <div className="flex flex-col gap-2 flex-1">
+                    {groupSlotsByHour(slots).map((hourRow) => {
+                      const renderBubble = (slot: string) => {
+                        const flatIdx = slots.indexOf(slot);
+                        const { time, period } = getBubbleLabel(slot, flatIdx > 0 ? slots[flatIdx - 1] : null);
+                        const periodClass = period
+                          ? period === "AM"
+                            ? "text-orange-500 dark:text-orange-400"
+                            : "text-purple-600 dark:text-purple-400"
+                          : "";
+                        const likes = likeCounts?.[slot] ?? 0;
+                        const dislikes = dislikeCounts?.[slot] ?? 0;
+                        const unavailable =
+                          maxAvail != null && availCounts?.[slot] != null
+                            ? maxAvail - availCounts[slot]
+                            : 0;
+                        const isWinner = slot === winner;
+                        return (
+                          <div
+                            key={slot}
+                            title={formatTimeSlot(slot)}
+                            className={[
+                              "relative min-w-12 h-8 px-2 flex items-center justify-center rounded-full text-[0.9rem] font-medium tabular-nums leading-none whitespace-nowrap bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
+                              isWinner
+                                ? "border-2 border-green-500 shadow-sm"
+                                : "border border-gray-300 dark:border-gray-600",
+                            ].join(" ")}
+                          >
+                            <span className="block cap-height-text">
+                              {time}
+                              {period && (
+                                <span className={`ml-0.5 ${periodClass}`}>{period}</span>
+                              )}
+                            </span>
+                            {likes > 0 && (
+                              <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                                {likes}
+                              </span>
                             )}
-                          </span>
-                          {likes > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
-                              {likes}
-                            </span>
-                          )}
-                          {dislikes > 0 && (
-                            <span className="absolute -top-1.5 -left-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
-                              {dislikes}
-                            </span>
-                          )}
-                          {unavailable > 0 && (
-                            <span className="absolute -bottom-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
-                              {unavailable}
-                            </span>
-                          )}
+                            {dislikes > 0 && (
+                              <span className="absolute -top-1.5 -left-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                                {dislikes}
+                              </span>
+                            )}
+                            {unavailable > 0 && (
+                              <span className="absolute -bottom-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                                {unavailable}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      };
+                      const [first, ...rest] = hourRow;
+                      return (
+                        <div key={first} className="grid grid-cols-[auto_1fr] gap-2 items-start">
+                          {renderBubble(first)}
+                          <div className="flex flex-wrap gap-2">
+                            {rest.map(renderBubble)}
+                          </div>
                         </div>
                       );
                     })}
