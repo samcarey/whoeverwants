@@ -33,7 +33,6 @@ import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { type QuestionBallotHandle } from "@/components/QuestionBallot";
 import GroupHeader from "@/components/GroupHeader";
-import GroupShareButton from "@/components/GroupShareButton";
 import { forgetQuestion } from "@/lib/forgetQuestion";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
 import { GroupCardItem, type SwipeState, type GroupCardGroup } from "./GroupCardItem";
@@ -1648,7 +1647,6 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         anonymousCount={group.anonymousRespondentCount}
         imageUrl={group.imageUrl}
         onTitleClick={() => slideToGroupInfo({ groupId })}
-        rightSlot={<GroupShareButton routeId={groupId} title={group.title} />}
       />
 
       {/* paddingTop reserves space for the fixed header above. The card

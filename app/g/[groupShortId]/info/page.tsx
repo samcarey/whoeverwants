@@ -8,6 +8,7 @@ import { useGroup } from "@/lib/useGroup";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupHeader from "@/components/GroupHeader";
+import GroupShareButton from "@/components/GroupShareButton";
 import InitialBubble from "@/components/InitialBubble";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
@@ -82,7 +83,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
       />
 
       <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
-        <div className="flex flex-col items-center text-center mb-8">
+        <div className="flex flex-col items-center text-center mb-[3.2px]">
           <GroupAvatar
             imageUrl={group.imageUrl}
             names={heroNames}
@@ -92,6 +93,9 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white break-words">
             {displayTitle}
           </h1>
+          <div className="mt-[1.7px]">
+            <GroupShareButton routeId={groupId} title={group.title} />
+          </div>
         </div>
 
         <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">

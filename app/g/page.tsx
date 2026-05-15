@@ -7,7 +7,6 @@ import { EMPTY_GROUP_HINT, getGroupHrefForPoll } from "@/lib/groupUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupHeader from "@/components/GroupHeader";
-import GroupShareButton from "@/components/GroupShareButton";
 import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 
 export const dynamic = 'force-dynamic';
@@ -67,10 +66,9 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
   }, []);
 
   // Overlay variant mirrors GroupContent's empty-group header chrome
-  // (avatar bubble + Share button + tappable title) so the handoff
-  // doesn't shift. Real Share/onTitleClick handlers come online when
-  // the route commits behind the overlay; the placeholder buttons
-  // are inert.
+  // (avatar bubble + tappable title) so the handoff doesn't shift.
+  // Real onTitleClick handler comes online when the route commits
+  // behind the overlay; the placeholder is inert.
   const headerProps = inOverlay
     ? {
         headerRef,
@@ -78,7 +76,6 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
         participantNames: [] as string[],
         anonymousCount: 0,
         onTitleClick: () => {},
-        rightSlot: <GroupShareButton routeId="" title="New Group" />,
       }
     : { headerRef, title: "New Group" };
 
