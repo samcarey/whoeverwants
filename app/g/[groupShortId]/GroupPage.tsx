@@ -934,7 +934,7 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   //    - URL targets a specific poll → scroll its expanded card's top
   //      flush with the bottom of the fixed header.
   //    - URL is the empty group route → land at the document bottom
-  //      so the always-on draft poll form is visible.
+  //      so the category bubble bar is visible.
   //    Runs synchronously before paint via a fire-once `useRef` guard so
   //    the first painted frame is already at the destination — never an
   //    "in-place then scroll" two-frame flicker. Cleanup intentionally
@@ -948,7 +948,7 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   //    touchstart, keydown), each layout settling re-applies the path-1
   //    target. Without this, cards above the URL anchor mounting from
   //    placeholder→card with a different actual height would slide the
-  //    anchor away from the top, and async content (draft form, fonts)
+  //    anchor away from the top, and async content (bubble bar, fonts)
   //    would shift the bottom-pin'd page off the bottom. Gating on user
   //    interaction (rather than scrollY deltas) avoids fighting the
   //    browser's silent scrollY clamp when the doc shrinks — that clamp
@@ -1008,10 +1008,10 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         }
       }
     } else {
-      // No expand → land at the bottom of the document so the draft poll
-      // form is in view. With the group-like content paddingBottom trimmed
-      // to 0.5rem the bottom scroll position leaves only a thin margin below
-      // the form.
+      // No expand → land at the bottom of the document so the category
+      // bubble bar is in view. With the group-like content paddingBottom
+      // trimmed to 0.5rem the bottom scroll position leaves only a thin
+      // margin below the bubbles.
       window.scrollTo(0, document.documentElement.scrollHeight);
     }
     setInitialScrollApplied(true);
@@ -1343,7 +1343,7 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         layoutDirty = true;
       }
       // Re-apply scroll adjustment on layout-only changes (async content
-      // filling cards, draft form mounting, fonts/images settling). Without
+      // filling cards, bubble bar mounting, fonts/images settling). Without
       // this, neither bottom-pin nor card-anchor compensation re-fires when
       // doc size changes outside React's render cycle.
       if (layoutDirty) {
@@ -1354,7 +1354,7 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
     cardRefs.current.forEach(el => {
       if (el.dataset.groupKey) ro.observe(el);
     });
-    // Also observe the document element so post-card growth (the draft poll
+    // Also observe the document element so post-card growth (the bubble bar
     // portal filling in, async-mounted images, fonts loading) triggers
     // bottom-pin re-application even though those don't go through cards.
     const docEl = document.documentElement;
@@ -1378,7 +1378,7 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   //
   // - Bottom-pin mode (initialExpandedQuestionId null, suppressExpand):
   //   as the doc grows, keep scrollY at max so the user lands on the
-  //   draft form. The pin disables once the user scrolls >50px above
+  //   bubble bar. The pin disables once the user scrolls >50px above
   //   bottom.
   // ===================================================================
   const applyScrollAdjustmentRef = useRef<() => void>(() => {});
