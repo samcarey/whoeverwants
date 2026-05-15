@@ -191,6 +191,66 @@ class TestGroupByRouteId:
         assert polls[0]["questions"][0].get("results") is None
 
 
+class TestGroupPreview:
+    """The link-preview endpoint must surface the poll's REAL title (e.g.
+    a user-typed yes_no prompt) — not the generic category name. Earlier
+    the endpoint built the title purely from `generate_poll_title` using
+    categories/contexts, so a yes_no poll titled "Should we get pizza?"
+    rendered as "Yes/No?" in iMessage / Slack / Twitter previews."""
+
+    def test_yes_no_user_typed_title_is_used(
+        self, client, creator_secret, browser_id,
+    ):
+        poll = create_poll(
+            client,
+            creator_secret,
+            browser_id=browser_id,
+            title="Should we get pizza tonight?",
+        )
+        resp = client.get(f"/api/groups/by-route-id/{poll['short_id']}/preview")
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "Should we get pizza tonight?"
+
+    def test_group_title_override_is_bypassed(
+        self, client, creator_secret, browser_id,
+    ):
+        """`groups.title` overrides are a group-name override (often a
+        participant-name string like "Alice, Bob") and would mislead a
+        link-preview consumer. The poll's actual subject must win."""
+        poll = create_poll(
+            client,
+            creator_secret,
+            browser_id=browser_id,
+            title="Should we get pizza tonight?",
+            group_title="Alice, Bob",
+        )
+        resp = client.get(f"/api/groups/by-route-id/{poll['short_id']}/preview")
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "Should we get pizza tonight?"
+
+    def test_falls_back_to_auto_title_when_question_title_missing(
+        self, client, creator_secret, browser_id,
+    ):
+        """A poll created with no explicit title still gets an
+        auto-generated one stamped on `questions[0].title` at create time
+        (see `_resolve_question_title` in routers/polls.py). The preview
+        surfaces THAT — never reaches the inner `generate_poll_title`
+        fallback in normal flow. This test just confirms preview returns
+        SOMETHING reasonable when no title is supplied (i.e. the stamped
+        auto-title)."""
+        poll = create_poll(
+            client,
+            creator_secret,
+            browser_id=browser_id,
+        )
+        resp = client.get(f"/api/groups/by-route-id/{poll['short_id']}/preview")
+        assert resp.status_code == 200
+        title = resp.json()["title"]
+        # Auto-titled for a single yes_no question, but the only invariant
+        # we care about: not empty.
+        assert title
+
+
 class TestBrowserIdMiddleware:
     def test_response_carries_browser_id_header(self, client, creator_secret):
         """First-visit case: client sends no header; server mints + echoes one."""

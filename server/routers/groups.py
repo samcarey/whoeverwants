@@ -324,9 +324,13 @@ def get_group_preview(route_id: str, p: str | None = None):
     them on visibility would 404 every share. Returning only title +
     description (no votes, no question contents) keeps this safe.
 
-    Title is the poll's auto-generated title; the `group_title`
-    override is deliberately ignored so a custom group name (often a
-    participant-name string) doesn't replace the poll's actual subject.
+    Title mirrors the in-app `_compute_display_title` (questions[0].title
+    when set — preserves user-typed yes_no prompts and the wrapper title
+    stamped at create time for any other category — falling back to the
+    auto-generated title from categories/contexts). The `group_title`
+    override is deliberately bypassed so a custom group name (often a
+    participant-name string like "Alice, Bob") doesn't replace the
+    poll's actual subject.
 
     Description: comma-joined options across the poll's questions; else
     the `details` (Notes) field; else null. Capped at 200 chars.
@@ -362,19 +366,26 @@ def get_group_preview(route_id: str, p: str | None = None):
             raise HTTPException(status_code=404, detail="Group not found")
 
         question_rows = conn.execute(
-            """SELECT category, question_type, details, options
+            """SELECT title, category, question_type, details, options
                  FROM questions
                 WHERE poll_id = %(pid)s
                 ORDER BY question_index NULLS LAST, created_at""",
             {"pid": str(target["id"])},
         ).fetchall()
 
-        categories = [_category_for_title(dict(q)) for q in question_rows]
-        contexts = [q.get("details") for q in question_rows]
-        title = (
-            generate_poll_title(categories, target.get("context"), contexts)
-            or "WhoeverWants"
-        )
+        primary_title = ""
+        if question_rows:
+            primary_title = (question_rows[0].get("title") or "").strip()
+
+        if primary_title:
+            title = primary_title
+        else:
+            categories = [_category_for_title(dict(q)) for q in question_rows]
+            contexts = [q.get("details") for q in question_rows]
+            title = (
+                generate_poll_title(categories, target.get("context"), contexts)
+                or "WhoeverWants"
+            )
 
         option_strs: list[str] = []
         seen: set[str] = set()
