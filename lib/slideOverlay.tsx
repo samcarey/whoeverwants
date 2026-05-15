@@ -43,6 +43,7 @@ import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { isGroupRootView, normalizePath } from "./questionId";
+import { GROUP_HEADER_ATTR } from "./groupDomMarkers";
 import {
   SLIDE_TO_GROUP_EVENT,
   type SlideToGroupDetail,
@@ -286,6 +287,18 @@ export function SlideOverlayHost(): React.ReactElement | null {
   // overlayDivRef comment above for why scrollTop doesn't work as an
   // alignment tool here.
   //
+  // The position:fixed GroupHeader inside this contain:strict + transform
+  // overlay scrolls WITH the overlay's content (the documented trap), so a
+  // raw scrollTop pulls the header up by `target` px during the slide,
+  // visibly snapping back down to top:0 once the overlay unmounts (the
+  // real route's window.scrollY does NOT affect its position:fixed
+  // header). Mostly invisible on tall groups (target > headerHeight so the
+  // header is fully offscreen), but on short groups (target < headerHeight)
+  // the header sits partially above the viewport and the user sees a
+  // small downward jump on unmount — especially noticeable on iOS Firefox.
+  // Counter-translate the header by `target` so it stays pinned to
+  // viewport top during the slide, matching the real route's final state.
+  //
   // Only applies to `group` kind — info/edit-title pages don't have a
   // bottom-anchored scrolling element.
   const overlayMounted = state !== null;
@@ -308,6 +321,11 @@ export function SlideOverlayHost(): React.ReactElement | null {
         return;
       }
       if (o.scrollTop !== target) o.scrollTop = target;
+      const headerEl = o.querySelector<HTMLElement>(`[${GROUP_HEADER_ATTR}]`);
+      if (headerEl) {
+        headerEl.style.transform =
+          target > 0 ? `translate3d(0, ${target}px, 0)` : '';
+      }
     };
     scrollToBottom();
     return () => {
