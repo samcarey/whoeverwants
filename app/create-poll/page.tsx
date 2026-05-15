@@ -28,7 +28,7 @@ import DaysSelector from "@/components/DaysSelector";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
-import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
+import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, DEFAULT_TIME_WINDOW } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import { enterAdvancesFocus } from "@/lib/formNavigation";
 import * as questionBackTarget from "@/lib/questionBackTarget";
@@ -809,14 +809,16 @@ export function CreateQuestionContent() {
     if (!followUpToParam && !duplicateOfParam && !voteFromSuggestionParam) {
       const savedFormState = loadFormState();
 
-      // Initialize dayTimeWindows with today if no saved form state has them
+      // Initialize dayTimeWindows with today if no saved form state has them.
+      // Default to a single 8 AM – 5 PM window so the "first day" rule lands
+      // even when the day is auto-added by opening the time-bubble modal.
       if (!savedFormState || !savedFormState.dayTimeWindows || savedFormState.dayTimeWindows.length === 0) {
         const today = new Date();
         const year = today.getFullYear();
         const month = String(today.getMonth() + 1).padStart(2, '0');
         const day = String(today.getDate()).padStart(2, '0');
         const todayStr = `${year}-${month}-${day}`;
-        setDayTimeWindows([{ day: todayStr, windows: [] }]);
+        setDayTimeWindows([{ day: todayStr, windows: [{ ...DEFAULT_TIME_WINDOW }] }]);
       }
     }
   }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam]);
@@ -1728,7 +1730,7 @@ export function CreateQuestionContent() {
                       </button>
                     </div>
                     {dayTimeWindows.length > 0 && (
-                      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+                      <section className="rounded-3xl bg-white dark:bg-gray-800 pl-4 pr-3">
                         <div className="divide-y divide-gray-200 dark:divide-gray-700">
                           {dayTimeWindows.map((dtw) => (
                             <DayTimeWindowsInput
@@ -1739,6 +1741,7 @@ export function CreateQuestionContent() {
                               onDelete={() => handleDeleteDay(dtw.day)}
                               disabled={isLoading}
                               minDurationMinutes={minDurationMinutesForWindows}
+                              allDays={dayTimeWindows}
                               borderless
                             />
                           ))}

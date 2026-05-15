@@ -10,6 +10,7 @@ import { CreatePollParams, CreateQuestionParams } from "@/lib/api";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { buildPollMap } from "@/lib/groupUtils";
 import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
+import { DEFAULT_TIME_WINDOW } from "@/lib/timeUtils";
 import type { DayTimeWindow, OptionsMetadata, Poll, Question } from "@/lib/types";
 
 /**
@@ -70,7 +71,9 @@ export function emptyDraft(
     durationMaxValue: 2,
     durationMinEnabled: true,
     durationMaxEnabled: true,
-    dayTimeWindows: isTime ? [{ day: todayStr, windows: [] }] : [],
+    dayTimeWindows: isTime
+      ? [{ day: todayStr, windows: [{ ...DEFAULT_TIME_WINDOW }] }]
+      : [],
     minimumParticipation: 95,
   };
 }

@@ -208,3 +208,57 @@ export function formatTimeSlot(slot: string): string {
     return slot;
   }
 }
+
+/** Default time window used when no neighbouring day yields a usable slot. */
+export const DEFAULT_TIME_WINDOW = { min: '08:00', max: '17:00' } as const;
+
+/** Return true if two intra-day windows share any minute of the day. Both
+ *  inputs are assumed non-cross-midnight (max > min). */
+function windowsIntersect(
+  a: { min: string; max: string },
+  b: { min: string; max: string },
+): boolean {
+  return a.min < b.max && b.min < a.max;
+}
+
+/** Try to pick the latest-starting window from `candidates` that doesn't
+ *  intersect any window in `existing`. Returns a fresh copy or null. */
+function pickNonIntersectingLatest(
+  candidates: { min: string; max: string }[],
+  existing: { min: string; max: string }[],
+): { min: string; max: string } | null {
+  const sorted = [...candidates].sort((a, b) => b.min.localeCompare(a.min));
+  for (const w of sorted) {
+    if (!existing.some(e => windowsIntersect(w, e))) {
+      return { min: w.min, max: w.max };
+    }
+  }
+  return null;
+}
+
+/** Smart-pick the next time window to add to `targetDay`:
+ *    1. Walk previous days (chronologically reverse) — for each, copy its
+ *       latest slot that doesn't overlap any existing slot on `targetDay`.
+ *    2. If no previous day yields a usable slot, walk following days
+ *       (chronologically forward) and apply the same rule.
+ *    3. Fall back to {@link DEFAULT_TIME_WINDOW} when neither side has
+ *       anything that fits.
+ *  Used by the day-time-windows + button so it can add a slot directly
+ *  without opening the time-grid modal. */
+export function pickNextTimeWindow(
+  targetDay: string,
+  allDays: { day: string; windows: { min: string; max: string }[] }[],
+): { min: string; max: string } {
+  const sortedDays = [...allDays].sort((a, b) => a.day.localeCompare(b.day));
+  const idx = sortedDays.findIndex(d => d.day === targetDay);
+  const existing = idx >= 0 ? sortedDays[idx].windows : [];
+  for (let i = idx - 1; i >= 0; i--) {
+    const candidate = pickNonIntersectingLatest(sortedDays[i].windows, existing);
+    if (candidate) return candidate;
+  }
+  for (let i = idx + 1; i < sortedDays.length; i++) {
+    const candidate = pickNonIntersectingLatest(sortedDays[i].windows, existing);
+    if (candidate) return candidate;
+  }
+  return { ...DEFAULT_TIME_WINDOW };
+}

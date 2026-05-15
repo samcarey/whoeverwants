@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef } from "react";
+import { DEFAULT_TIME_WINDOW } from "@/lib/timeUtils";
 import type { DayTimeWindow, TimeWindow } from "@/lib/types";
 
 // Shared add/remove/edit logic for a controlled day-time-windows list,
@@ -25,22 +26,40 @@ export function useDayTimeWindowsState(
       if (dtw && dtw.windows.length > 0) cacheRef.current[d] = dtw.windows;
     }
     const addedDays = newDays.filter(d => !existingDays.includes(d));
-    const newEntries: DayTimeWindow[] = addedDays.map(d => {
+
+    // Iteratively place each new day into the working list so later
+    // additions can inherit from earlier ones we just placed.
+    const working: DayTimeWindow[] = value.filter(dtw => !removedDays.includes(dtw.day));
+    const sortedAddedDays = [...addedDays].sort();
+    for (const d of sortedAddedDays) {
       const cached = cacheRef.current[d];
-      if (cached) delete cacheRef.current[d];
-      return { day: d, windows: cached || [] };
-    });
-    const updated = [
-      ...value.filter(dtw => !removedDays.includes(dtw.day)),
-      ...newEntries,
-    ];
-    updated.sort((a, b) => a.day.localeCompare(b.day));
-    onChange(updated);
+      if (cached) {
+        delete cacheRef.current[d];
+        working.push({ day: d, windows: cached });
+        continue;
+      }
+      // Inherit windows from the chronologically previous day in the
+      // working list; fall back to 8am–5pm when there is no prior day.
+      const prev = working
+        .filter(x => x.day < d && x.windows.length > 0)
+        .sort((a, b) => a.day.localeCompare(b.day))
+        .pop();
+      const inheritedWindows: TimeWindow[] = prev
+        ? prev.windows.map(w => ({ min: w.min, max: w.max }))
+        : [{ ...DEFAULT_TIME_WINDOW }];
+      working.push({ day: d, windows: inheritedWindows });
+    }
+    working.sort((a, b) => a.day.localeCompare(b.day));
+    onChange(working);
   };
 
   const onWindowsChange = (day: string, windows: TimeWindow[]) => {
     if (!onChange) return;
-    onChange(value.map(dtw => dtw.day === day ? { ...dtw, windows } : dtw));
+    // Always keep a day's windows sorted by start time so the UI renders
+    // chronologically and the "intersects previous" validation can compare
+    // each slot against its immediate predecessor in the rendered order.
+    const sorted = [...windows].sort((a, b) => a.min.localeCompare(b.min));
+    onChange(value.map(dtw => dtw.day === day ? { ...dtw, windows: sorted } : dtw));
   };
 
   const onDeleteDay = (day: string) => {
