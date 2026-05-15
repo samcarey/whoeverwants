@@ -164,13 +164,13 @@ export default function DayTimeWindowsInput({
           const isEnabled = window.enabled !== false;
           const duration = windowDurationMinutes(window);
           const isTooShort = isEnabled && minDurationMinutes != null && minDurationMinutes > 0 && duration < minDurationMinutes;
-          // Validation: a slot is invalid when it overlaps OR runs up against
-          // the previous slot in sorted order (start time <= previous end
-          // time). Windows arrive pre-sorted from useDayTimeWindowsState so
-          // index N's predecessor is windows[N-1].
+          // Soft warning: a slot overlaps OR runs up against the previous
+          // slot in sorted order (start time <= previous end time). Doesn't
+          // block submission — just renders an orange outline. Windows
+          // arrive pre-sorted from useDayTimeWindowsState so index N's
+          // predecessor is windows[N-1].
           const prev = index > 0 ? windows[index - 1] : null;
           const intersectsPrev = isEnabled && !!prev && window.min <= prev.max;
-          const isInvalid = isTooShort || intersectsPrev;
           const showTrash = !isVoterForm && windows.length > 1;
           return (
             <div
@@ -207,9 +207,11 @@ export default function DayTimeWindowsInput({
                 className={`w-[168px] py-1.5 rounded-full text-sm font-medium border transition-colors text-center ${
                   !isEnabled
                     ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-gray-700 cursor-default opacity-50'
-                    : isInvalid
+                    : isTooShort
                       ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-400 dark:border-red-500 hover:bg-red-100 dark:hover:bg-red-900/50'
-                      : 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-650'
+                      : intersectsPrev
+                        ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-orange-400 dark:border-orange-500 hover:bg-gray-50 dark:hover:bg-gray-650'
+                        : 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-650'
                 } disabled:cursor-not-allowed`}
               >
                 {(() => {
