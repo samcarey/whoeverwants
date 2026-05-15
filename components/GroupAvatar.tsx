@@ -1,19 +1,15 @@
 "use client";
 
 import { useId } from 'react';
-import RespondentCircles from '@/components/RespondentCircles';
+import RespondentCircles, {
+  BOUNDING_DIAMETER,
+  BOUNDING_OFFSET,
+  BOUNDING_RADIUS,
+} from '@/components/RespondentCircles';
 
-/**
- * Group avatar — image-or-initials wrapper.
- *
- * Rendered via SVG with viewBox 0 0 100 100 and a centered disc of
- * diameter 83 — matching `RespondentCircles`'s single-circle layout
- * exactly so the image and initials variants are pixel-identical in
- * size. CSS `border-radius` on a div sized to `w-full h-full` (the
- * previous approach) made the image fill 100% of the wrapper while the
- * SVG placeholder filled only 83%, producing a visibly bigger circle
- * for uploaded images.
- */
+// Group avatar — uploaded-image variant uses the same SVG-clipped disc
+// geometry as RespondentCircles's bounding circle so image and initials
+// variants render at identical size.
 interface GroupAvatarProps {
   imageUrl: string | null;
   names: string[];
@@ -35,16 +31,16 @@ export default function GroupAvatar({
         <svg viewBox="0 0 100 100" className="w-full h-full" aria-hidden="true">
           <defs>
             <clipPath id={clipId}>
-              <circle cx="50" cy="50" r="41.5" />
+              <circle cx="50" cy="50" r={BOUNDING_RADIUS} />
             </clipPath>
           </defs>
-          <circle cx="50" cy="50" r="41.5" fill="#E5E7EB" />
+          <circle cx="50" cy="50" r={BOUNDING_RADIUS} fill="#E5E7EB" />
           <image
             href={imageUrl}
-            x="8.5"
-            y="8.5"
-            width="83"
-            height="83"
+            x={BOUNDING_OFFSET}
+            y={BOUNDING_OFFSET}
+            width={BOUNDING_DIAMETER}
+            height={BOUNDING_DIAMETER}
             preserveAspectRatio="xMidYMid slice"
             clipPath={`url(#${clipId})`}
           />

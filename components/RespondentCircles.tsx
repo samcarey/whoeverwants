@@ -4,6 +4,14 @@ import React, { useId } from 'react';
 import { getUserInitials, isCurrentUserName } from '@/lib/userProfile';
 import { useMyUserImageUrl } from '@/lib/useMyUserImageUrl';
 
+// Shared bounding-disc geometry. The avatar's outer SVG is a 100×100
+// viewBox; everything inside fits inside a centered disc of diameter
+// BOUNDING_DIAMETER so the image variant in GroupAvatar matches the
+// initials tessellation pixel-for-pixel.
+export const BOUNDING_RADIUS = 41.5;
+export const BOUNDING_DIAMETER = BOUNDING_RADIUS * 2;
+export const BOUNDING_OFFSET = 50 - BOUNDING_RADIUS;
+
 // Pre-computed circle packing layouts in SVG viewBox units (0-100)
 const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
   /* 0 */ { centers: [], diameter: 0 },
@@ -19,10 +27,15 @@ const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
   },
 ];
 
-// Per-N scale that snugs each tessellation inside the bounding circle of
-// diameter 83 (matching the image-avatar disc in GroupAvatar). The factor
-// is `41.5 / max(distance_from_50_50 + r)` over each layout's children.
-const BOUNDING_SCALE = [1.0, 1.0, 0.9222, 0.8594, 0.7554, 0.7268, 0.8254, 0.8805];
+// Per-N scale that snugs each tessellation inside the bounding disc.
+// Computed from each layout's outermost reach so layout edits stay in
+// sync without a hand-tuned parallel array.
+const BOUNDING_SCALE = LAYOUTS.map(({ centers, diameter }) => {
+  if (centers.length === 0) return 1;
+  const r = diameter / 2;
+  const maxReach = Math.max(...centers.map(([cx, cy]) => Math.hypot(cx - 50, cy - 50) + r));
+  return BOUNDING_RADIUS / maxReach;
+});
 
 const MAX_NAMED = 6;
 
@@ -101,11 +114,6 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
   ]);
   const layoutRadius = (layout.diameter * scale) / 2;
   const hasAnyImage = circles.some(c => !!c.imageUrl);
-  // Bounding-circle backdrop sits behind the tessellation at diameter 83
-  // (matching GroupAvatar's image disc). Subtle off-bg fill via
-  // `fill-gray-100 dark:fill-gray-800` so it reads as a quiet container
-  // shape rather than another colored avatar.
-  const showBackdrop = !isPlaceholder;
 
   return (
     <div className={`${sizeClassName} aspect-square flex-shrink-0 self-center`}>
@@ -123,11 +131,11 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
             })}
           </defs>
         )}
-        {showBackdrop && (
+        {!isPlaceholder && (
           <circle
             cx={50}
             cy={50}
-            r={41.5}
+            r={BOUNDING_RADIUS}
             className="fill-gray-100 dark:fill-gray-800"
           />
         )}
