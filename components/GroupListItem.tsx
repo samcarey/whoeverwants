@@ -158,6 +158,7 @@ export default function GroupListItem(props: GroupListItemProps) {
             imageUrl={imageUrl}
             names={participantNames}
             anonymousCount={anonymousRespondentCount}
+            sizeClassName="w-[4.8rem]"
           />
         )}
 
