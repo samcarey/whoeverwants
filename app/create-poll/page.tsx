@@ -1642,7 +1642,7 @@ export function CreateQuestionContent() {
                       {title.trim()}
                     </span>
                   ) : (
-                    <span className="text-[0.625rem] italic text-gray-500 dark:text-gray-400">
+                    <span className="text-[0.9375rem] italic text-gray-500 dark:text-gray-400">
                       Enter a Category, Context, and/or Options
                     </span>
                   )}
