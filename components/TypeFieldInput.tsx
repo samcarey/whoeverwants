@@ -23,6 +23,7 @@ export const FOR_FIELD_PLACEHOLDERS: Record<string, string> = {
   location: "Vacation, Day trip, etc.",
   movie: "Movie night, Date night, etc.",
   video_game: "Game night, Tournament, etc.",
+  time: "Meeting, Party, etc.",
 };
 
 export function getBuiltInType(value: string): BuiltInType | undefined {
