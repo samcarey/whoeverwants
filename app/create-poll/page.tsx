@@ -19,6 +19,7 @@ import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import CompactNameField from "@/components/CompactNameField";
+import SliderSwitch from "@/components/SliderSwitch";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
 import MinimumParticipationModal from "@/components/MinimumParticipationModal";
@@ -1796,18 +1797,20 @@ export function CreateQuestionContent() {
                     )}
 
                     {pollHasPrephase && (
-                      <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
+                      <div
+                        className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+                        onClick={() => { if (!isLoading) setAllowPreRanking(!allowPreRanking); }}
+                      >
                         <span className="text-base font-normal">
                           Allow voting before options are finalized
                         </span>
-                        <input
-                          type="checkbox"
+                        <SliderSwitch
                           checked={allowPreRanking}
-                          onChange={(e) => setAllowPreRanking(e.target.checked)}
+                          onChange={setAllowPreRanking}
                           disabled={isLoading}
-                          className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                          aria-label="Allow voting before options are finalized"
                         />
-                      </label>
+                      </div>
                     )}
 
                     <CompactNameField

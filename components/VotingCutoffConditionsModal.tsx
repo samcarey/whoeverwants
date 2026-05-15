@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import ModalPortal from '@/components/ModalPortal';
+import SliderSwitch from '@/components/SliderSwitch';
 import { formatDeadlineLabel } from '@/lib/timeUtils';
 
 // Deadline options starting small and scaling up to 1 month
@@ -73,6 +74,16 @@ export default function VotingCutoffConditionsModal({
     return formatDeadlineLabel(opt.minutes, opt.label);
   }, []);
 
+  const toggleDeadline = (next: boolean) => {
+    setDeadlineEnabled(next);
+    setDeadlineOption(next ? '1week' : 'none');
+  };
+
+  const toggleVoteCount = (next: boolean) => {
+    setVoteCountEnabled(next);
+    setAutoCloseAfter(next ? (autoCloseAfter ?? 10) : null);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -89,24 +100,18 @@ export default function VotingCutoffConditionsModal({
 
           {/* Deadline condition */}
           <div className="mb-4">
-            <label className="flex items-center gap-2 cursor-pointer mb-2">
-              <input
-                type="checkbox"
+            <div
+              className="flex items-center gap-2 cursor-pointer mb-2"
+              onClick={() => { if (!disabled) toggleDeadline(!deadlineEnabled); }}
+            >
+              <SliderSwitch
                 checked={deadlineEnabled}
-                onChange={(e) => {
-                  setDeadlineEnabled(e.target.checked);
-                  if (!e.target.checked) {
-                    // Clear deadline - set to a sentinel value
-                    setDeadlineOption('none');
-                  } else {
-                    setDeadlineOption('1week');
-                  }
-                }}
+                onChange={toggleDeadline}
                 disabled={disabled}
-                className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                aria-label="Time limit"
               />
               <span className="text-sm font-medium">Time limit</span>
-            </label>
+            </div>
             {deadlineEnabled && (
               <div className="ml-6 space-y-2">
                 <select
@@ -146,23 +151,18 @@ export default function VotingCutoffConditionsModal({
 
           {/* Vote count condition */}
           <div className="mb-6">
-            <label className="flex items-center gap-2 cursor-pointer mb-2">
-              <input
-                type="checkbox"
+            <div
+              className="flex items-center gap-2 cursor-pointer mb-2"
+              onClick={() => { if (!disabled) toggleVoteCount(!voteCountEnabled); }}
+            >
+              <SliderSwitch
                 checked={voteCountEnabled}
-                onChange={(e) => {
-                  setVoteCountEnabled(e.target.checked);
-                  if (e.target.checked) {
-                    setAutoCloseAfter(autoCloseAfter ?? 10);
-                  } else {
-                    setAutoCloseAfter(null);
-                  }
-                }}
+                onChange={toggleVoteCount}
                 disabled={disabled}
-                className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                aria-label="Close after N responses"
               />
               <span className="text-sm font-medium">Close after N responses</span>
-            </label>
+            </div>
             {voteCountEnabled && (
               <div className="ml-6">
                 <input

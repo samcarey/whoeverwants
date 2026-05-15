@@ -647,6 +647,26 @@ uv lock                        # Regenerate lock file
 
 ---
 
+## Slider Switches (Boolean Toggles)
+
+- **`components/SliderSwitch.tsx`** is the canonical replacement for `<input type="checkbox">` on every boolean settings toggle in the app. It's a `role="switch"` button with an animated knob — blue track + knob translated right when on (`bg-blue-600` + `translate-x-5`), gray track + knob left when off (`bg-gray-300 dark:bg-gray-600`). 24px tall × 44px wide, knob 20px, 200ms `transition-colors` + `transition-transform`. Use this for any new ON/OFF setting; don't bring `<input type="checkbox">` back unless you're rendering a true multi-select list-row affordance (the `MinMaxCounter` Duration enabled-toggles are the lone exception — they intentionally use checkboxes, see below).
+- **The wrapper `<label htmlFor={id}>` → `<input id={id} type="checkbox">` row-toggle pattern doesn't work for switches.** `<label htmlFor>` only delegates clicks to a labelable form control (input/select/textarea/button-with-an-associated-label-handler); a `<button role="switch">` is labelable but `htmlFor` won't fire its onClick in WebKit consistently. The canonical row layout is now:
+  ```tsx
+  <div
+    className={`flex items-center justify-between gap-3 h-12 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+    onClick={() => { if (!disabled) setX(!x); }}
+  >
+    <span>Label</span>
+    <SliderSwitch checked={x} onChange={setX} disabled={disabled} aria-label="..." />
+  </div>
+  ```
+  The `SliderSwitch`'s own onClick calls `e.stopPropagation()` so direct switch taps don't bubble to the wrapper and re-toggle. Always-`cursor-pointer` is a regression — gate it on `!disabled` so the cursor reflects whether the click does anything (see `CompactMinResponsesField.tsx`, `NotificationSettingsCard.tsx`).
+- **When a toggle has compound side effects (e.g. `VotingCutoffConditionsModal`'s `setDeadlineEnabled` + `setDeadlineOption`), extract a single `toggleX(next: boolean)` helper** and pass it as both the wrapper's onClick body AND the SliderSwitch's onChange. Duplicating the two-statement body between the wrapper and the switch is a maintenance hazard — the bodies silently drift the next time someone tweaks one path. The simplify pass on the rollout PR found this pattern at two sites and consolidated; mirror it for any future compound toggle.
+- **`MinMaxCounter` is the exception.** The Duration field's min/max enabled-toggles flank a counter pair (`☑  ⌃ 1 ⌄ — ⌃ 2 ⌄  ☑`) where the visual is intentionally compact and the box-shaped toggle reads as "this counter is on" rather than "this option is on/off" — the user explicitly kept checkboxes here. Don't migrate `MinMaxCounter` to `SliderSwitch` without an explicit follow-up ask; the box-shape semantics matter for that compound widget.
+- **The voter-form time-slot toggle in `DayTimeWindowsInput` is also an exception.** Each time-window pill carries a small enabled checkbox to its left when the voter is filling out availability; the user explicitly kept those as checkboxes during the slider rollout. The "include this slot" affordance reads as a multi-select list-row, not a settings ON/OFF toggle.
+
+---
+
 ## CRITICAL RULES FOR AI ASSISTANTS
 
 The sections below contain mandatory rules. Follow them exactly.
