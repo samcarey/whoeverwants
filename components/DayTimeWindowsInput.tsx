@@ -117,13 +117,13 @@ export default function DayTimeWindowsInput({
     <div
       className={
         borderless
-          ? 'flex items-center gap-2 min-h-12 py-2'
-          : 'flex items-center gap-2 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
+          ? 'flex items-center gap-3 min-h-12 py-2'
+          : 'flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
       }
     >
       {/* Day display. Natural width with `shrink-0` so the date never
           collapses under flex pressure; the gap to the + button is the
-          outer flex's `gap-2` (8 px) — small and identical on every row. */}
+          outer flex's `gap-3` (12 px) — small and identical on every row. */}
       <div className="shrink-0 self-start">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayLabel(day)}
@@ -143,7 +143,7 @@ export default function DayTimeWindowsInput({
           type="button"
           onClick={handleAddWindow}
           disabled={disabled}
-          className="shrink-0 self-start w-[34px] h-[34px] flex items-center justify-center rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="shrink-0 self-start w-[34px] h-[34px] flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           aria-label="Add time window"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
