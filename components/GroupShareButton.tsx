@@ -6,6 +6,10 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 interface GroupShareButtonProps {
   routeId: string;
   title: string;
+  /** Standalone variant: intrinsic width (no self-stretch), symmetric
+   *  padding, 15% bigger icon, and feedback toast centered under the
+   *  button instead of right-aligned. Used by the info page hero. */
+  large?: boolean;
 }
 
 /**
@@ -19,7 +23,7 @@ interface GroupShareButtonProps {
  * forms grant the recipient group membership on visit; the difference is
  * that `?p=` drives auto-expand and scroll target.
  */
-export default function GroupShareButton({ routeId, title }: GroupShareButtonProps) {
+export default function GroupShareButton({ routeId, title, large = false }: GroupShareButtonProps) {
   const [feedback, setFeedback] = useState<null | "copied" | "error">(null);
 
   const handleShare = useCallback(async () => {
@@ -53,16 +57,29 @@ export default function GroupShareButton({ routeId, title }: GroupShareButtonPro
     }
   }, [routeId, title]);
 
+  const buttonClass = large
+    ? "relative inline-flex items-center justify-center p-2 active:opacity-60 transition-opacity"
+    : "relative shrink-0 self-stretch py-2 pr-2 flex items-center justify-center active:opacity-60 transition-opacity";
+  const iconWrapperClass = large
+    ? "w-[46px] h-[46px] flex items-center justify-center"
+    : "w-10 h-10 flex items-center justify-center";
+  const svgClass = large
+    ? "w-[20.7px] h-[20.7px] text-gray-600 dark:text-gray-400"
+    : "w-[1.125rem] h-[1.125rem] text-gray-600 dark:text-gray-400";
+  const feedbackPositionClass = large
+    ? "left-1/2 -translate-x-1/2"
+    : "right-0";
+
   return (
     <button
       type="button"
       onClick={handleShare}
-      className="relative shrink-0 self-stretch py-2 pr-2 flex items-center justify-center active:opacity-60 transition-opacity"
+      className={buttonClass}
       aria-label="Share group"
     >
-      <span className="w-10 h-10 flex items-center justify-center">
+      <span className={iconWrapperClass}>
         <svg
-          className="w-[1.125rem] h-[1.125rem] text-gray-600 dark:text-gray-400"
+          className={svgClass}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -89,7 +106,7 @@ export default function GroupShareButton({ routeId, title }: GroupShareButtonPro
       </span>
       {feedback && (
         <span
-          className={`pointer-events-none absolute right-0 top-full mt-1 whitespace-nowrap rounded-md px-2 py-1 text-xs shadow-md ${
+          className={`pointer-events-none absolute ${feedbackPositionClass} top-full mt-1 whitespace-nowrap rounded-md px-2 py-1 text-xs shadow-md ${
             feedback === "copied"
               ? "bg-green-600 text-white dark:bg-green-500"
               : "bg-red-600 text-white dark:bg-red-500"

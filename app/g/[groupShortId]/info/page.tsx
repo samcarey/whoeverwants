@@ -70,18 +70,15 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         headerRef={headerRef}
         onBack={goBack}
         rightSlot={
-          <div className="flex items-stretch shrink-0">
-            <GroupShareButton routeId={groupId} title={group.title} />
-            <button
-              onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
-              className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
-              aria-label="Edit group title"
-            >
-              <span className="w-10 h-10 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-medium">
-                Edit
-              </span>
-            </button>
-          </div>
+          <button
+            onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
+            className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
+            aria-label="Edit group title"
+          >
+            <span className="w-10 h-10 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-medium">
+              Edit
+            </span>
+          </button>
         }
       />
 
@@ -96,6 +93,9 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white break-words">
             {displayTitle}
           </h1>
+          <div className="mt-2">
+            <GroupShareButton routeId={groupId} title={group.title} large />
+          </div>
         </div>
 
         <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
