@@ -58,7 +58,7 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
         )}
       </div>
       <div
-        className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+        className={`flex items-center justify-between gap-3 h-12 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
         onClick={() => { if (!disabled) setShowPreliminary(!showPreliminary); }}
       >
         <span id={checkboxId} className="text-base font-normal">

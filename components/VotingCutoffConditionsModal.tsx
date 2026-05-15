@@ -74,6 +74,16 @@ export default function VotingCutoffConditionsModal({
     return formatDeadlineLabel(opt.minutes, opt.label);
   }, []);
 
+  const toggleDeadline = (next: boolean) => {
+    setDeadlineEnabled(next);
+    setDeadlineOption(next ? '1week' : 'none');
+  };
+
+  const toggleVoteCount = (next: boolean) => {
+    setVoteCountEnabled(next);
+    setAutoCloseAfter(next ? (autoCloseAfter ?? 10) : null);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -92,19 +102,11 @@ export default function VotingCutoffConditionsModal({
           <div className="mb-4">
             <div
               className="flex items-center gap-2 cursor-pointer mb-2"
-              onClick={() => {
-                if (disabled) return;
-                const next = !deadlineEnabled;
-                setDeadlineEnabled(next);
-                setDeadlineOption(next ? '1week' : 'none');
-              }}
+              onClick={() => { if (!disabled) toggleDeadline(!deadlineEnabled); }}
             >
               <SliderSwitch
                 checked={deadlineEnabled}
-                onChange={(next) => {
-                  setDeadlineEnabled(next);
-                  setDeadlineOption(next ? '1week' : 'none');
-                }}
+                onChange={toggleDeadline}
                 disabled={disabled}
                 aria-label="Time limit"
               />
@@ -151,19 +153,11 @@ export default function VotingCutoffConditionsModal({
           <div className="mb-6">
             <div
               className="flex items-center gap-2 cursor-pointer mb-2"
-              onClick={() => {
-                if (disabled) return;
-                const next = !voteCountEnabled;
-                setVoteCountEnabled(next);
-                setAutoCloseAfter(next ? (autoCloseAfter ?? 10) : null);
-              }}
+              onClick={() => { if (!disabled) toggleVoteCount(!voteCountEnabled); }}
             >
               <SliderSwitch
                 checked={voteCountEnabled}
-                onChange={(next) => {
-                  setVoteCountEnabled(next);
-                  setAutoCloseAfter(next ? (autoCloseAfter ?? 10) : null);
-                }}
+                onChange={toggleVoteCount}
                 disabled={disabled}
                 aria-label="Close after N responses"
               />

@@ -7,20 +7,18 @@ interface SliderSwitchProps {
   onChange: (checked: boolean) => void;
   disabled?: boolean;
   className?: string;
-  id?: string;
   'aria-label'?: string;
   'aria-labelledby'?: string;
 }
 
 const SliderSwitch = forwardRef<HTMLButtonElement, SliderSwitchProps>(
-  function SliderSwitch({ checked, onChange, disabled = false, className = '', id, ...aria }, ref) {
+  function SliderSwitch({ checked, onChange, disabled = false, className = '', ...aria }, ref) {
     return (
       <button
         ref={ref}
         type="button"
         role="switch"
         aria-checked={checked}
-        id={id}
         onClick={(e) => { e.stopPropagation(); onChange(!checked); }}
         disabled={disabled}
         {...aria}

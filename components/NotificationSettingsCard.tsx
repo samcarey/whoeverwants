@@ -90,7 +90,7 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
     if (disabled) return;
     setError(null);
     setSaving(true);
-    // Optimistic flip so the checkbox tracks the user's intent while the
+    // Optimistic flip so the switch tracks the user's intent while the
     // permission prompt and subscription dance happen.
     setEnabled(next);
     try {
