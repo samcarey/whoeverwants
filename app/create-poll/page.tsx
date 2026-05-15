@@ -1634,12 +1634,21 @@ export function CreateQuestionContent() {
                   have above the screen edge. */}
               <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-3">
                 <div className="text-center px-2 pt-1 break-words">
-                  <span
-                    className="text-xl font-bold text-blue-600 dark:text-blue-400"
-                    style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
-                  >
-                    {title.trim() || "‹title›"}
-                  </span>
+                  {title.trim() ? (
+                    <span
+                      className="text-xl font-bold text-blue-600 dark:text-blue-400"
+                      style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
+                    >
+                      {title.trim()}
+                    </span>
+                  ) : (
+                    <span
+                      className="text-xl italic text-gray-500 dark:text-gray-400"
+                      style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
+                    >
+                      Enter a Category, Context, and/or Options
+                    </span>
+                  )}
                 </div>
 
                 {/* Top card: question form. Simple fields (Category, Context,
