@@ -4,11 +4,12 @@
 # requires to be available in the environment.
 #
 # Usage:
-#   scripts/ios/build.sh [--env dev|prod] [--skip-upload] [--ref <branch|sha>]
+#   scripts/ios/build.sh [--env latest|prod] [--skip-upload] [--ref <branch|sha>]
 #
 # Examples:
 #   scripts/ios/build.sh                       # build current branch
 #   scripts/ios/build.sh --env prod            # force production URL
+#   scripts/ios/build.sh --env latest          # force the canary (latest) URL
 #   scripts/ios/build.sh --skip-upload         # build only, no TestFlight
 set -euo pipefail
 

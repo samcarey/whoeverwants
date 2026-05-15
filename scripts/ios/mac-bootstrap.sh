@@ -121,5 +121,5 @@ Next steps:
        APPLE_TEAM_ID
        CI_KEYCHAIN_PASSWORD                   (the password from step 2)
   4. Trigger the first build from the Claude environment:
-       bash scripts/ios/build.sh --env dev
+       bash scripts/ios/build.sh --env latest
 EOF

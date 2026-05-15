@@ -16,17 +16,27 @@ import { NextResponse } from 'next/server';
 // domain. Capacitor's WKWebView already loads whoeverwants.com, so we
 // want every deeplink (group URLs, settings, etc.) to wake the app.
 //
-// The bundle id is the per-tier `<TEAM_ID>.<bundle_id>` form. Team ID
-// 479DZ4AZT5 is the same one baked into APNS env vars on the droplets.
-// If you add another bundle id (e.g. a fresh dev bundle), append another
-// string to the `appIDs` array — they all map onto the same components.
+// Each bundle id uses the `<TEAM_ID>.<bundle_id>` form. Team ID 479DZ4AZT5
+// is the same one baked into APNS env vars on the droplets. Two bundles
+// claim every path:
+//   * `com.whoeverwants.app`        — the production iOS app (loads
+//                                     whoeverwants.com via capacitor.config.ts)
+//   * `com.whoeverwants.app.latest` — the canary iOS app (loads
+//                                     latest.whoeverwants.com)
+// Both AASA endpoints (whoeverwants.com and latest.whoeverwants.com)
+// serve this same file because both apps claim BOTH hosts via their
+// entitlements — iOS picks the right app based on which bundle is
+// installed, not which AASA was fetched.
 export const dynamic = 'force-static';
 
 const AASA = {
   applinks: {
     details: [
       {
-        appIDs: ['479DZ4AZT5.com.whoeverwants.app'],
+        appIDs: [
+          '479DZ4AZT5.com.whoeverwants.app',
+          '479DZ4AZT5.com.whoeverwants.app.latest',
+        ],
         components: [{ '/': '/*' }],
       },
     ],

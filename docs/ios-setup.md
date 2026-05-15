@@ -7,14 +7,16 @@ and uploads to TestFlight automatically.
 ## Architecture
 
 - **WebView shell**: the iOS app is a thin Capacitor wrapper whose WebView
-  loads `https://whoeverwants.com` (prod) or your personal dev URL
-  (`<email-slug>.dev.whoeverwants.com`) at build time via `capacitor.config.ts`.
-- **No web bundling**: web code isn't baked into the `.ipa`. Vercel / dev
-  server deploys propagate to the device via pull-to-refresh.
-- **Per-developer dev app**: dev builds get a unique bundle ID
-  (`com.whoeverwants.app.dev.<github-username>`) and separate App Store
-  Connect record so they coexist with the prod app — and with each other if
-  multiple developers build dev.
+  loads `https://whoeverwants.com` (prod) or `https://latest.whoeverwants.com`
+  (the canary "latest" tier auto-deployed on every push to `main`) at build
+  time via `capacitor.config.ts`.
+- **No web bundling**: web code isn't baked into the `.ipa`. Vercel /
+  canary deploys propagate to the device on app open.
+- **Two iOS apps**: prod (`com.whoeverwants.app`) and latest
+  (`com.whoeverwants.app.latest`). The latest build is a single shared
+  TestFlight track for all contributors — there is NO per-developer suffix
+  (per-author dev infra was retired when dev sites became per-branch, and
+  per-branch dev sites aren't wired up to any iOS app).
 - **Rebuilds only when native changes**: plugins, permissions, icons, or
   native config changes. Web-only changes never trigger a rebuild.
 
@@ -23,7 +25,7 @@ and uploads to TestFlight automatically.
 Five things, in order:
 
 1. Register the prod bundle ID in Apple Developer + create the App Store Connect record + TestFlight group.
-2. Register your personal dev bundle ID + App Store Connect record + TestFlight group.
+2. Register the latest bundle ID + App Store Connect record + TestFlight group.
 3. Create an App Store Connect API key with Admin role.
 4. Add 5 GitHub secrets.
 5. Run the Mac mini bootstrap + create the CI keychain.
@@ -40,14 +42,15 @@ Five things, in order:
 3. In the new app → TestFlight tab → Internal Testing → + → name `Me` →
    enable **Enable automatic distribution** → Create. Add yourself as a tester.
 
-### 2. Your personal dev app (~10 min)
+### 2. Latest (canary) app (~10 min)
 
-Same flow as step 1, with your GitHub username as the suffix:
+Same flow as step 1, with the `.latest` suffix:
 
-1. Register bundle ID `com.whoeverwants.app.dev.<your-github-username>`.
-2. Create App Store Connect app: name `WhoeverWants Dev`, SKU
-   `whoeverwants-dev-<your-github-username>`, bundle ID from step 1.
-3. TestFlight → Internal Testing group → add yourself.
+1. Register bundle ID `com.whoeverwants.app.latest`.
+2. Create App Store Connect app: name `WhoeverWants Latest`, SKU
+   `whoeverwants-latest`, bundle ID from step 1.
+3. TestFlight → Internal Testing group → add yourself (and any other
+   contributors — one shared track).
 
 ### 3. App Store Connect API key (~5 min)
 
@@ -121,12 +124,12 @@ https://github.com/samcarey/whoeverwants/settings/actions/runners.
 From Claude environment (or any shell with `GITHUB_API_TOKEN`):
 
 ```
-bash scripts/ios/build.sh --env dev
+bash scripts/ios/build.sh --env latest
 ```
 
 The first run auto-scaffolds `ios/` via `npx cap add ios`, commits it back
-to the branch, then archives + signs + uploads to TestFlight for the dev
-bundle ID. ~10–15 min end-to-end.
+to the branch, then archives + signs + uploads to TestFlight for the
+`com.whoeverwants.app.latest` bundle. ~10–15 min end-to-end.
 
 Answer "None of the algorithms mentioned above" if TestFlight prompts for
 encryption compliance (one-time per app record; the
@@ -141,7 +144,7 @@ afterward).
 | Native config / plugins | push to `main`, `claude/capacitor-*`, or `ios/*` | 8–20 min |
 
 ```
-# Manual trigger for current branch (dev URL by default)
+# Manual trigger for current branch (latest URL by default)
 bash scripts/ios/build.sh
 
 # Force prod URL
@@ -198,10 +201,10 @@ APNS requires the following one-time setup.
 ### 2. Enable Push Notifications capability on the iOS app
 
 In the Apple Developer Portal:
-1. Go to **Identifiers** → find `com.whoeverwants.app` (or your dev
-   bundle ID, e.g. `com.whoeverwants.app.dev.<github-actor>`).
+1. Go to **Identifiers** → find `com.whoeverwants.app` and
+   `com.whoeverwants.app.latest`.
 2. Enable **Push Notifications** under the capabilities list. Save.
-3. Repeat for every bundle ID you build (prod + per-dev).
+3. Repeat for both bundles (prod + latest).
 
 In the iOS project:
 1. The `aps-environment` entitlement needs to be present in
