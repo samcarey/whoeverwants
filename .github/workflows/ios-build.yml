@@ -315,12 +315,22 @@ jobs:
             --apiKey "${{ steps.apikey.outputs.key_id }}" \
             --apiIssuer "${{ steps.apikey.outputs.issuer_id }}" \
             2>&1 | tee build/altool-upload.log
-          if grep -q "UPLOAD FAILED" build/altool-upload.log; then
-            echo "::error::altool reported UPLOAD FAILED (exit code was misleading)"
+          # altool exits 0 even when it rejects the upload, so we MUST scan
+          # the output for failure markers. Two patterns observed so far:
+          #   * "UPLOAD FAILED" — explicit failure banner
+          #   * "ERROR:" — surfaced when e.g. the bundle id isn't registered
+          #                in App Store Connect ("Cannot determine the Apple
+          #                ID from Bundle ID ... (12)"). The original grep
+          #                missed this because the error line lacks "UPLOAD
+          #                FAILED" verbatim.
+          if grep -q -E "UPLOAD FAILED|^.*ERROR:" build/altool-upload.log; then
+            echo "::error::altool reported a failure (exit code was misleading)"
+            grep -E "UPLOAD FAILED|ERROR:" build/altool-upload.log || true
             exit 1
           fi
           if ! grep -q -E "No errors uploading|successful upload" build/altool-upload.log; then
-            echo "::warning::altool output did not contain a success marker; proceeding cautiously"
+            echo "::error::altool output did not contain a success marker"
+            exit 1
           fi
 
       - name: Upload archive as artifact
