@@ -12,7 +12,6 @@ export interface GroupHeaderProps {
   /** Migration 108: when set, the header shows the uploaded image circle
    *  instead of the initials graphic. Null/undefined → initials fallback. */
   imageUrl?: string | null;
-  subtitle?: string;
   onTitleClick?: () => void;
   onBack?: () => void;
   rightSlot?: React.ReactNode;
@@ -47,7 +46,6 @@ export default function GroupHeader({
   participantNames,
   anonymousCount,
   imageUrl,
-  subtitle,
   onTitleClick,
   onBack,
   rightSlot,
@@ -57,14 +55,9 @@ export default function GroupHeader({
   const handleBack = onBack ?? (() => navigateWithTransition(router, '/', 'back'));
 
   const titleBlock = title ? (
-    <>
-      <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
-        {title}
-      </h1>
-      {subtitle && (
-        <p className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>
-      )}
-    </>
+    <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
+      {title}
+    </h1>
   ) : null;
 
   const middleRightPad = hasRightSlot ? 'pr-2' : 'pr-4';
