@@ -1730,7 +1730,7 @@ export function CreateQuestionContent() {
                       </button>
                     </div>
                     {dayTimeWindows.length > 0 && (
-                      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+                      <section className="rounded-3xl bg-white dark:bg-gray-800 pl-4 pr-3">
                         <div className="divide-y divide-gray-200 dark:divide-gray-700">
                           {dayTimeWindows.map((dtw) => (
                             <DayTimeWindowsInput

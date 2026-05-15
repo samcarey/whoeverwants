@@ -178,7 +178,7 @@ export default function DayTimeWindowsInput({
           return (
             <div
               key={index}
-              className="flex items-center gap-2"
+              className="flex items-center gap-[7px]"
             >
               {isVoterForm ? (
                 <label className="flex items-center p-1 cursor-pointer">
@@ -207,14 +207,14 @@ export default function DayTimeWindowsInput({
                 type="button"
                 onClick={() => isEnabled && handleEditWindow(index)}
                 disabled={disabled || !isEnabled}
-                className={`w-[168px] py-1.5 rounded-full text-sm font-medium border transition-colors text-center ${
+                className={`w-[154px] py-1.5 rounded-full text-sm font-medium border transition-colors text-center ${
                   !isEnabled
-                    ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-gray-700 cursor-default opacity-50'
+                    ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border-transparent cursor-default opacity-50'
                     : isTooShort
                       ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-400 dark:border-red-500 hover:bg-red-100 dark:hover:bg-red-900/50'
                       : intersectsPrev
-                        ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-orange-400 dark:border-orange-500 hover:bg-gray-50 dark:hover:bg-gray-650'
-                        : 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-650'
+                        ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-orange-400 dark:border-orange-500 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-transparent hover:bg-gray-200 dark:hover:bg-gray-600'
                 } disabled:cursor-not-allowed`}
               >
                 {(() => {
