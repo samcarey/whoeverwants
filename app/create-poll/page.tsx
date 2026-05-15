@@ -1643,7 +1643,7 @@ export function CreateQuestionContent() {
                   `paddingBottom: '4.5rem'` so elements have the same
                   breathing room above the sheet edge that the bubbles
                   have above the screen edge. */}
-              <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-3">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
                 <div className="text-center px-2 pt-1 break-words h-7 flex items-center justify-center">
                   {title.trim() ? (
                     <span
