@@ -72,11 +72,19 @@ export default function TimeSlotBubbles({
           <div className="flex flex-wrap gap-1.5">
             {slots.map((slot, idx) => {
               const state = getState(slot);
-              const label = getBubbleLabel(slot, idx > 0 ? slots[idx - 1] : null);
+              const { time, period } = getBubbleLabel(slot, idx > 0 ? slots[idx - 1] : null);
               const excluded =
                 maxAvailability != null && availabilityCounts != null
                   ? maxAvailability - (availabilityCounts[slot] ?? 0)
                   : 0;
+              const colorPeriod = state === "neutral";
+              const periodClass = period
+                ? colorPeriod
+                  ? period === "AM"
+                    ? "text-orange-500 dark:text-orange-400"
+                    : "text-purple-600 dark:text-purple-400"
+                  : ""
+                : "";
 
               return (
                 <button
@@ -87,7 +95,7 @@ export default function TimeSlotBubbles({
                   title={slot}
                   className={[
                     "relative select-none rounded-full text-[0.9rem] font-medium transition-colors",
-                    "w-12 h-8 flex items-center justify-center tabular-nums leading-none",
+                    "min-w-12 h-8 px-2 flex items-center justify-center tabular-nums leading-none whitespace-nowrap",
                     "border focus:outline-none focus:ring-2 focus:ring-offset-1",
                     disabled ? "cursor-default opacity-60" : "cursor-pointer active:scale-95",
                     state === "liked"
@@ -97,7 +105,12 @@ export default function TimeSlotBubbles({
                       : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-400 focus:ring-blue-400",
                   ].join(" ")}
                 >
-                  <span className="block cap-height-text">{label}</span>
+                  <span className="block cap-height-text">
+                    {time}
+                    {period && (
+                      <span className={`ml-0.5 ${periodClass}`}>{period}</span>
+                    )}
+                  </span>
                   {excluded > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white leading-none pointer-events-none">
                       {excluded}

@@ -121,14 +121,23 @@ export function formatStackedDayLabel(dateStr: string): { weekday: string; month
 }
 
 /** Generate a compact bubble label for a slot based on its predecessor.
- *  First bubble of day / period change: "1 PM"
- *  Same AM/PM, different hour:          "2"
- *  Same hour, different minute:         ":15"
+ *  First bubble of day / period change (on hour):    { time: "1",     period: "PM" }
+ *  First bubble of day / period change (off hour):   { time: "10:15", period: "AM" }
+ *  Same AM/PM, different hour (on hour):             { time: "2",     period: null }
+ *  Same AM/PM, different hour (off hour):            { time: "11:30", period: null }
+ *  Same hour, different minute:                      { time: ":15",   period: null }
+ *  `period` is non-null only when this bubble starts a new period (or is the
+ *  first of the row), so callers can color it without re-parsing.
  */
-export function getBubbleLabel(slot: string, prevSlot: string | null): string {
+export function getBubbleLabel(
+  slot: string,
+  prevSlot: string | null,
+): { time: string; period: 'AM' | 'PM' | null } {
   const { h, m } = parseSlotStart(slot);
-  const period = h < 12 ? 'AM' : 'PM';
+  const period: 'AM' | 'PM' = h < 12 ? 'AM' : 'PM';
   const h12 = h % 12 === 0 ? 12 : h % 12;
+  const mm = String(m).padStart(2, '0');
+  const hourLabel = m === 0 ? String(h12) : `${h12}:${mm}`;
 
   if (prevSlot) {
     const prev = parseSlotStart(prevSlot);
@@ -136,14 +145,14 @@ export function getBubbleLabel(slot: string, prevSlot: string | null): string {
     const prevH12 = prev.h % 12 === 0 ? 12 : prev.h % 12;
 
     if (h12 === prevH12 && period === prevPeriod) {
-      return `:${String(m).padStart(2, '0')}`;
+      return { time: `:${mm}`, period: null };
     }
     if (period === prevPeriod) {
-      return String(h12);
+      return { time: hourLabel, period: null };
     }
   }
 
-  return `${h12} ${period}`;
+  return { time: hourLabel, period };
 }
 
 /** Group slot keys by date, preserving order within each day. */

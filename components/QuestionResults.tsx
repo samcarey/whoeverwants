@@ -289,7 +289,12 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
 
                   <div className="flex flex-wrap gap-2">
                     {slots.map((slot, idx) => {
-                      const label = getBubbleLabel(slot, idx > 0 ? slots[idx - 1] : null);
+                      const { time, period } = getBubbleLabel(slot, idx > 0 ? slots[idx - 1] : null);
+                      const periodClass = period
+                        ? period === "AM"
+                          ? "text-orange-500 dark:text-orange-400"
+                          : "text-purple-600 dark:text-purple-400"
+                        : "";
                       const likes = likeCounts?.[slot] ?? 0;
                       const dislikes = dislikeCounts?.[slot] ?? 0;
                       const unavailable =
@@ -303,13 +308,18 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
                           key={slot}
                           title={formatTimeSlot(slot)}
                           className={[
-                            "relative w-12 h-8 flex items-center justify-center rounded-full text-[0.9rem] font-medium tabular-nums leading-none bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
+                            "relative min-w-12 h-8 px-2 flex items-center justify-center rounded-full text-[0.9rem] font-medium tabular-nums leading-none whitespace-nowrap bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
                             isWinner
                               ? "border-2 border-green-500 shadow-sm"
                               : "border border-gray-300 dark:border-gray-600",
                           ].join(" ")}
                         >
-                          <span className="block cap-height-text">{label}</span>
+                          <span className="block cap-height-text">
+                            {time}
+                            {period && (
+                              <span className={`ml-0.5 ${periodClass}`}>{period}</span>
+                            )}
+                          </span>
                           {likes > 0 && (
                             <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
                               {likes}
