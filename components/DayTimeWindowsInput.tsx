@@ -124,10 +124,13 @@ export default function DayTimeWindowsInput({
           : 'flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
       }
     >
-      {/* Day display. Natural width with `shrink-0` so the date never
-          collapses under flex pressure; the gap to the + button is the
-          outer flex's `gap-3` (12 px) — small and identical on every row. */}
-      <div className="shrink-0 self-start">
+      {/* Day display. Fixed width (w-24 = 96 px) sized to the upper bound
+          of the date / relative-day label widths in Geist Sans (longest
+          observed: "Wed, Sep 30" ≈ 81 px, "23 months away" ≈ 87 px). With a
+          fixed width, the + button to the right lands at the same X
+          position on every row regardless of how short the row's labels
+          happen to be ("Today" vs "Tomorrow" no longer offsets the +). */}
+      <div className="w-24 self-start">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayLabel(day)}
         </div>
