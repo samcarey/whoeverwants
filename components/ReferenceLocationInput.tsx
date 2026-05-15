@@ -101,7 +101,7 @@ export default function ReferenceLocationInput({
           <button
             type="button"
             onClick={() => onLocationChange(undefined, undefined, "")}
-            className="text-gray-700 dark:text-gray-300 hover:underline cursor-pointer truncate min-w-0"
+            className="text-gray-600 dark:text-gray-400 hover:underline cursor-pointer truncate min-w-0"
             title={label}
           >
             {label}
