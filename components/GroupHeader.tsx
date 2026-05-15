@@ -33,8 +33,8 @@ export interface GroupHeaderProps {
  * into the children's own padding so icon positions stay pixel-
  * identical. `items-center` (not `items-stretch`) preserves vertical
  * centering for callers whose rightSlot has an explicit `h-10` (info /
- * edit-title Edit/Save); back + title + GroupShareButton mark
- * themselves `self-stretch` so their hitboxes span the full bar height.
+ * edit-title Edit/Save); back + title mark themselves `self-stretch`
+ * so their hitboxes span the full bar height.
  *
  * onBack defaults to navigating to '/'; sub-routes pass their own handler
  * (e.g. back to the group root or the info page when in-app history exists).

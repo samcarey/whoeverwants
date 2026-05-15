@@ -8,6 +8,7 @@ import { useGroup } from "@/lib/useGroup";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupHeader from "@/components/GroupHeader";
+import GroupShareButton from "@/components/GroupShareButton";
 import InitialBubble from "@/components/InitialBubble";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
@@ -69,15 +70,18 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         headerRef={headerRef}
         onBack={goBack}
         rightSlot={
-          <button
-            onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
-            className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
-            aria-label="Edit group title"
-          >
-            <span className="w-10 h-10 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-medium">
-              Edit
-            </span>
-          </button>
+          <div className="flex items-stretch shrink-0">
+            <GroupShareButton routeId={groupId} title={group.title} />
+            <button
+              onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
+              className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
+              aria-label="Edit group title"
+            >
+              <span className="w-10 h-10 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-medium">
+                Edit
+              </span>
+            </button>
+          </div>
         }
       />
 

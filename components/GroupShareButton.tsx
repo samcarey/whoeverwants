@@ -9,7 +9,7 @@ interface GroupShareButtonProps {
 }
 
 /**
- * Top-right action in the group header. Tapping invokes the native share
+ * Action in the group info page header. Tapping invokes the native share
  * sheet (`navigator.share`) on iOS / Android, or copies the URL to the
  * clipboard on desktop with a "Link copied" toast. Falls through to a
  * manual-copy `prompt()` as last resort.
