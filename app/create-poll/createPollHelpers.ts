@@ -70,7 +70,9 @@ export function emptyDraft(
     durationMaxValue: 2,
     durationMinEnabled: true,
     durationMaxEnabled: true,
-    dayTimeWindows: isTime ? [{ day: todayStr, windows: [] }] : [],
+    dayTimeWindows: isTime
+      ? [{ day: todayStr, windows: [{ min: '08:00', max: '17:00' }] }]
+      : [],
     minimumParticipation: 95,
   };
 }
