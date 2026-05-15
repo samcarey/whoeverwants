@@ -551,20 +551,13 @@ export function getGroupHrefForPoll(poll: Poll): string {
 
 /** Build the URL for a group.
  *
- * - `/g/<root>?p=<target>` when the user has awaiting work — the poll is
- *   auto-expanded and scrolled-to on landing.
- * - `/g/<root>` when nothing is awaiting OR the group is empty — the page
- *   scrolls to bottom (draft form area), inviting the user to start a
- *   new poll.
+ * Always returns the bare `/g/<root>` form — no `?p=` auto-expand. Cards
+ * land collapsed; the user taps to expand. The `?p=` mechanism is still
+ * honored for direct URL access (share links, /p/ legacy redirects) — it
+ * just isn't synthesized from the home list anymore.
  */
 export function getGroupHref(group: Group): string {
-  const rootRouteId = getGroupRouteId(group);
-  if (group.isEmpty || group.unvotedCount === 0 || !group.targetedPoll) {
-    return `/g/${rootRouteId}`;
-  }
-  const target = group.targetedPoll;
-  const targetRouteId = target.short_id || target.questions[0]?.id || group.rootQuestionId || '';
-  return `/g/${rootRouteId}?${POLL_QUERY_PARAM}=${targetRouteId}`;
+  return `/g/${getGroupRouteId(group)}`;
 }
 
 /**
