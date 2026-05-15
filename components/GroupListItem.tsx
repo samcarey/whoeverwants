@@ -162,7 +162,7 @@ export default function GroupListItem(props: GroupListItemProps) {
           />
         )}
 
-        <div className="flex-1 min-w-0 -ml-[3px]">
+        <div className="flex-1 min-w-0 -ml-[3px] mt-1">
           {/* Row 1: title (left, truncates) + draft pill */}
           <div className="flex items-baseline gap-2">
             <h3
