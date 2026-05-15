@@ -83,7 +83,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
       />
 
       <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
-        <div className="flex flex-col items-center text-center mb-8">
+        <div className="flex flex-col items-center text-center mb-[12.8px]">
           <GroupAvatar
             imageUrl={group.imageUrl}
             names={heroNames}
@@ -93,7 +93,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white break-words">
             {displayTitle}
           </h1>
-          <div className="mt-2">
+          <div className="mt-[6.8px]">
             <GroupShareButton routeId={groupId} title={group.title} large />
           </div>
         </div>
