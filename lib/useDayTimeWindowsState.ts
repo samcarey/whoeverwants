@@ -25,17 +25,31 @@ export function useDayTimeWindowsState(
       if (dtw && dtw.windows.length > 0) cacheRef.current[d] = dtw.windows;
     }
     const addedDays = newDays.filter(d => !existingDays.includes(d));
-    const newEntries: DayTimeWindow[] = addedDays.map(d => {
+
+    // Iteratively place each new day into the working list so later
+    // additions can inherit from earlier ones we just placed.
+    const working: DayTimeWindow[] = value.filter(dtw => !removedDays.includes(dtw.day));
+    const sortedAddedDays = [...addedDays].sort();
+    for (const d of sortedAddedDays) {
       const cached = cacheRef.current[d];
-      if (cached) delete cacheRef.current[d];
-      return { day: d, windows: cached || [] };
-    });
-    const updated = [
-      ...value.filter(dtw => !removedDays.includes(dtw.day)),
-      ...newEntries,
-    ];
-    updated.sort((a, b) => a.day.localeCompare(b.day));
-    onChange(updated);
+      if (cached) {
+        delete cacheRef.current[d];
+        working.push({ day: d, windows: cached });
+        continue;
+      }
+      // Inherit windows from the chronologically previous day in the
+      // working list; fall back to 8am–5pm when there is no prior day.
+      const prev = working
+        .filter(x => x.day < d && x.windows.length > 0)
+        .sort((a, b) => a.day.localeCompare(b.day))
+        .pop();
+      const inheritedWindows: TimeWindow[] = prev
+        ? prev.windows.map(w => ({ min: w.min, max: w.max }))
+        : [{ min: "08:00", max: "17:00" }];
+      working.push({ day: d, windows: inheritedWindows });
+    }
+    working.sort((a, b) => a.day.localeCompare(b.day));
+    onChange(working);
   };
 
   const onWindowsChange = (day: string, windows: TimeWindow[]) => {
