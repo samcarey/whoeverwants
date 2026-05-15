@@ -1526,7 +1526,7 @@ export function CreateQuestionContent() {
   const showOptionsCard = questionType === 'question' && category !== 'yes_no' && category !== 'time';
   const optionsCard = showOptionsCard ? (
     <div>
-      <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+      <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
         Options <span className="font-normal text-xs">(leave blank to ask for suggestions)</span>
       </label>
       <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
@@ -1643,7 +1643,7 @@ export function CreateQuestionContent() {
                   `paddingBottom: '4.5rem'` so elements have the same
                   breathing room above the sheet edge that the bubbles
                   have above the screen edge. */}
-              <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-3">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
                 <div className="text-center px-2 pt-1 break-words h-7 flex items-center justify-center">
                   {title.trim() ? (
                     <span
@@ -1714,17 +1714,17 @@ export function CreateQuestionContent() {
                 {showTimeFields && (
                   <div>
                     <div className="flex items-center justify-between mb-1 px-1">
-                      <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">
+                      <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
                         Time Windows
                       </label>
                       <button
                         type="button"
                         onClick={() => setIsDaysPickerOpen(true)}
                         disabled={isLoading}
-                        className={`px-3 py-0.5 text-xs font-medium rounded-full border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                        className={`mr-2 px-3 py-0.5 text-[15px] font-medium rounded-full border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                           dayTimeWindows.length === 0
                             ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-transparent hover:bg-gray-300 dark:hover:bg-gray-600'
                         }`}
                       >
                         Select Days
@@ -1848,7 +1848,7 @@ export function CreateQuestionContent() {
                 <div>
                   <label
                     htmlFor="details"
-                    className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 px-1"
+                    className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1"
                   >
                     Notes
                   </label>
