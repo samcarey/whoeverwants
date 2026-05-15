@@ -121,26 +121,18 @@ export default function DayTimeWindowsInput({
           : 'flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
       }
     >
-      {/* Left: Day display — fixed width so the +-button column lands at
-          the same X position across rows regardless of label length. */}
-      <div className="w-28 self-start">
-        <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          {formatDayLabel(day)}
-        </div>
-        <div className="text-xs text-blue-500 dark:text-blue-400">
-          {getRelativeDay(day)}
-        </div>
-      </div>
-
-      {/* Middle: dedicated + button column (creator form only). Top-aligned
-          so it stays adjacent to the topmost slot regardless of slot count;
-          its X position is stable across every day in the list. */}
+      {/* Left: dedicated + button column (creator form only). Left-justified
+          at the row's start so its X position is identical across every day
+          regardless of how wide the date label gets. Diameter matches the
+          time-pill height (34px = text-sm line + py-1.5 padding + 1px
+          border each side); `self-start` keeps the circle at the top of the
+          row, so its center vertically aligns with the topmost time pill. */}
       {!isVoterForm && (
         <button
           type="button"
           onClick={handleAddWindow}
           disabled={disabled}
-          className="self-start w-7 h-7 flex items-center justify-center rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="self-start w-[34px] h-[34px] flex items-center justify-center rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           aria-label="Add time window"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -148,6 +140,19 @@ export default function DayTimeWindowsInput({
           </svg>
         </button>
       )}
+
+      {/* Day display. min-w keeps short labels from collapsing the column
+          but allows growth for longer relative-day strings; the + column
+          on the left is independent of this width so its X position stays
+          consistent regardless. */}
+      <div className="min-w-[100px] self-start">
+        <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          {formatDayLabel(day)}
+        </div>
+        <div className="text-xs text-blue-500 dark:text-blue-400">
+          {getRelativeDay(day)}
+        </div>
+      </div>
 
       {/* Right: Time windows stacked vertically. Trash sits on the LEFT of
           each pill (matches voter-form checkbox placement). The last
