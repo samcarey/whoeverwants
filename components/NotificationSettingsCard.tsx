@@ -33,6 +33,7 @@ import {
   ensurePushSubscription,
   type PushCapability,
 } from "@/lib/pushNotifications";
+import SliderSwitch from "@/components/SliderSwitch";
 
 interface Props {
   groupRouteId: string;
@@ -130,10 +131,11 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
       </h2>
       <div className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
         <div className="divide-y divide-gray-200 dark:divide-gray-700">
-          <label
+          <div
             className={`flex items-center justify-between gap-3 h-12 ${
               disabled ? "cursor-not-allowed" : "cursor-pointer"
             }`}
+            onClick={() => { if (!disabled) onToggle(!checked); }}
           >
             <span
               className={`text-base font-normal ${
@@ -142,15 +144,13 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
             >
               New Poll
             </span>
-            <input
-              type="checkbox"
+            <SliderSwitch
               checked={checked}
-              onChange={(e) => onToggle(e.target.checked)}
+              onChange={onToggle}
               disabled={disabled}
               aria-label="Notify me when someone creates a new poll in this group"
-              className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
             />
-          </label>
+          </div>
         </div>
       </div>
       {(helpText || error) && (

@@ -5,6 +5,7 @@ import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
 import SuggestionsList from "@/components/SuggestionsList";
 import CompactNameField from "@/components/CompactNameField";
 import OptionLabel from "@/components/OptionLabel";
+import SliderSwitch from "@/components/SliderSwitch";
 
 interface SuggestionVotingInterfaceProps {
   question: any;
@@ -249,18 +250,18 @@ export default function SuggestionVotingInterface({
                     <div className="min-w-0 flex-1">
                       <OptionLabel text={suggestion} metadata={optionsMetadata?.[suggestion]} />
                     </div>
-                    <input
-                      type="checkbox"
+                    <SliderSwitch
                       checked={isSelected}
                       disabled={isSubmitting}
-                      onChange={() => {
-                        if (isSelected) {
-                          removeSuggestion(suggestion);
-                        } else {
+                      onChange={(next) => {
+                        if (next) {
                           addExistingSuggestion(suggestion);
+                        } else {
+                          removeSuggestion(suggestion);
                         }
                       }}
-                      className="w-5 h-5 flex-shrink-0 rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      aria-label={isSelected ? `Remove ${suggestion}` : `Add ${suggestion}`}
+                      className="flex-shrink-0"
                     />
                   </div>
                 );

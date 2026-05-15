@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useId } from 'react';
+import SliderSwitch from './SliderSwitch';
 
 interface CompactMinResponsesFieldProps {
   value: number;
@@ -56,19 +57,20 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
           </button>
         )}
       </div>
-      <label htmlFor={checkboxId} className="flex items-center justify-between gap-3 h-12 cursor-pointer">
-        <span className="text-base font-normal">
+      <div
+        className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+        onClick={() => { if (!disabled) setShowPreliminary(!showPreliminary); }}
+      >
+        <span id={checkboxId} className="text-base font-normal">
           Share Results
         </span>
-        <input
-          type="checkbox"
-          id={checkboxId}
+        <SliderSwitch
           checked={showPreliminary}
-          onChange={(e) => setShowPreliminary(e.target.checked)}
+          onChange={setShowPreliminary}
           disabled={disabled}
-          className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          aria-labelledby={checkboxId}
         />
-      </label>
+      </div>
     </>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import CounterInput from './CounterInput';
+import SliderSwitch from './SliderSwitch';
 
 interface MinMaxCounterProps {
   minValue: number | null;
@@ -82,14 +83,13 @@ export default function MinMaxCounter({
   return (
     <div>
       <div className="relative flex justify-center items-center">
-        {/* Min checkbox */}
+        {/* Min toggle */}
         {onMinCheckboxChange && (
-          <input
-            type="checkbox"
+          <SliderSwitch
             checked={minCheckboxEnabled}
-            onChange={(e) => onMinCheckboxChange(e.target.checked)}
+            onChange={onMinCheckboxChange}
             disabled={disabled || minRequired}
-            className="absolute left-0 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-600 cursor-pointer disabled:opacity-50"
+            className="absolute left-0"
           />
         )}
 
@@ -125,13 +125,12 @@ export default function MinMaxCounter({
           </div>
         </div>
 
-        {/* Max checkbox */}
-        <input
-          type="checkbox"
+        {/* Max toggle */}
+        <SliderSwitch
           checked={maxEnabled}
-          onChange={(e) => handleMaxEnabledChange(e.target.checked)}
+          onChange={handleMaxEnabledChange}
           disabled={disabled || maxRequired}
-          className="absolute right-0 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-600 cursor-pointer disabled:opacity-50"
+          className="absolute right-0"
         />
       </div>
     </div>
