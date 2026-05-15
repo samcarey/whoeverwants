@@ -773,7 +773,17 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   // Re-measure when `group` flips loaded — the header is rendered behind a
   // `if (loading) return <Spinner/>` early return, so the measured ref only
   // exists once `group` is non-null.
-  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group]);
+  //
+  // Seed initialValue=80 so the polls' paddingTop starts at the right value
+  // on first render; the actual GroupHeader is ~80px tall on iOS mobile
+  // browsers (env(safe-area-inset-top)=0). ResizeObserver corrects any drift
+  // on the next tick. Without the seed, iOS Firefox paints one frame with
+  // pollsPad=0 (the initial state) before the useLayoutEffect re-render
+  // lands with pollsPad=80 — visible as polls flickering down by one header
+  // height. useLayoutEffect's setState is supposed to batch with the
+  // initial commit, but on iOS Firefox the first paint can run with the
+  // pre-effect state.
+  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group], 80);
 
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
@@ -1007,13 +1017,17 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
           window.scrollTo(0, window.scrollY + targetDelta);
         }
       }
-    } else {
-      // No expand → land at the bottom of the document so the category
-      // bubble bar is in view. With the group-like content paddingBottom
-      // trimmed to 0.5rem the bottom scroll position leaves only a thin
-      // margin below the bubbles.
-      window.scrollTo(0, document.documentElement.scrollHeight);
     }
+    // No-expand case: do NOT auto-scroll to the bottom. The scroll-to-bottom
+    // used to chase the bubble bar but, combined with the bottom-pin below,
+    // it kept re-firing as the polls list resized during initial render
+    // (placeholders being replaced by real cards, async result/vote fetches
+    // resolving). On iOS this also briefly trapped `visualViewport.offsetTop`
+    // at the URL-bar-expanded value, leaving the fixed group header reported
+    // by `getBoundingClientRect()` at viewport y=-200 for one frame — which
+    // the user saw as "the top bar scrolled off the top of the screen". Let
+    // the browser's own scroll restoration (and the user's gestures) drive
+    // scrollY for the no-expand case.
     setInitialScrollApplied(true);
     // No cleanup return: useRef persists across React StrictMode's
     // mount→cleanup→mount cycle, so the ref check above guarantees fire-once
@@ -1385,13 +1399,14 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   applyScrollAdjustmentRef.current = () => {
     if (typeof window === 'undefined' || !group) return;
     if (userInteractedRef.current) return;
-    if (initialExpandedQuestionId === null) {
-      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      if (Math.abs(window.scrollY - max) > 0.5) {
-        window.scrollTo(0, max);
-      }
-      return;
-    }
+    // Bottom-pin retired: re-applying `scrollTo(0, max)` every layout tick
+    // while the polls list resizes during initial render (placeholders
+    // mounting, async results loading) made scrollY oscillate by hundreds
+    // of pixels in the first ~50ms. On iOS this transiently displaced the
+    // fixed group header via `visualViewport.offsetTop`, causing the
+    // original "top bar scrolled off the top" complaint. Card-anchor mode
+    // (initialExpandedQuestionId set) is still needed for `?p=` URLs.
+    if (initialExpandedQuestionId === null) return;
     if (headerHeight === 0) return;
     const card = cardRefs.current.get(initialExpandedQuestionId);
     if (!card || !card.isConnected) return;

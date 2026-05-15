@@ -10,11 +10,21 @@ import { type DependencyList, type RefObject, useLayoutEffect, useRef, useState 
 // change (e.g. a loading → loaded transition that swaps a spinner for
 // the real content) so the observer reattaches once the element exists.
 // Default `[]` is correct when the element mounts once with the component.
+//
+// `initialValue` seeds the height state for the first render. Default 0.
+// Pass an estimate of the eventual height to avoid a "first render at 0
+// → second render at measured value" jump that's visible on iOS browsers
+// (useLayoutEffect's setState doesn't always batch with the initial
+// commit before the browser paints — we see it as a one-frame flicker
+// where dependent layout shifts as the measurement lands). The estimate
+// only has to be in the right ballpark; ResizeObserver corrects any
+// drift on the next tick.
 export function useMeasuredHeight<T extends HTMLElement = HTMLElement>(
   deps: DependencyList = [],
+  initialValue = 0,
 ): [RefObject<T | null>, number] {
   const ref = useRef<T>(null);
-  const [height, setHeight] = useState(0);
+  const [height, setHeight] = useState(initialValue);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
