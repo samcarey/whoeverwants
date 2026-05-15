@@ -192,7 +192,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
               type="button"
               onClick={() => inputRef.current?.focus()}
               disabled={disabled}
-              className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Change category"
             >
               <span className="text-base leading-none" aria-hidden>{builtIn!.icon}</span>
@@ -214,7 +214,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
             className={
               inDisplayMode
                 ? "sr-only"
-                : "bg-transparent text-sm text-blue-600 dark:text-blue-400 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed w-auto"
+                : "bg-transparent text-sm text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed w-auto"
             }
           />
           {value !== "custom" && !isOpen && (
@@ -252,7 +252,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
                     : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
                 } ${
                   value === type.value
-                    ? "text-blue-600 dark:text-blue-400 font-medium"
+                    ? "text-gray-500 dark:text-gray-500 font-medium"
                     : "text-gray-900 dark:text-white"
                 }`}
               >
@@ -329,7 +329,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
                   : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
               } ${
                 value === type.value
-                  ? "text-blue-600 dark:text-blue-400 font-medium"
+                  ? "text-gray-500 dark:text-gray-500 font-medium"
                   : "text-gray-900 dark:text-white"
               }`}
             >

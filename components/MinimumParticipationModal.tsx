@@ -53,7 +53,7 @@ export default function MinimumParticipationModal({
           </p>
 
           <div className="mb-4 text-center">
-            <span className="text-3xl font-semibold text-blue-600 dark:text-blue-400">
+            <span className="text-3xl font-semibold text-gray-500 dark:text-gray-500">
               {clamped}%
             </span>
           </div>
