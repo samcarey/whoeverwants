@@ -54,7 +54,11 @@ export function useDayTimeWindowsState(
 
   const onWindowsChange = (day: string, windows: TimeWindow[]) => {
     if (!onChange) return;
-    onChange(value.map(dtw => dtw.day === day ? { ...dtw, windows } : dtw));
+    // Always keep a day's windows sorted by start time so the UI renders
+    // chronologically and the "intersects previous" validation can compare
+    // each slot against its immediate predecessor in the rendered order.
+    const sorted = [...windows].sort((a, b) => a.min.localeCompare(b.min));
+    onChange(value.map(dtw => dtw.day === day ? { ...dtw, windows: sorted } : dtw));
   };
 
   const onDeleteDay = (day: string) => {
