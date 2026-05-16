@@ -1482,7 +1482,7 @@ export function CreateQuestionContent() {
   // divide-y rows above it.
   const showTimeFields =
     questionType === 'time' || (questionType === 'question' && category === 'time');
-  const formHasContent = isLocationLikeCategory(category) || showTimeFields;
+  const formHasContent = isLocationLikeCategory(category);
 
   const selectedDays = dayTimeWindows.map(dtw => dtw.day);
   const minDurationMinutesForWindows = durationMinEnabled && durationMinValue != null
