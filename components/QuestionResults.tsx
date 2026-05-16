@@ -5,14 +5,15 @@ import { QuestionResults, OptionsMetadata } from "@/lib/types";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 import CollapsibleFadeSection from "./CollapsibleFadeSection";
 import {
+  expandHourRowsToQuarters,
   formatDayLabel,
   formatStackedDayLabel,
   formatTimeSlot,
   getBubbleLabel,
   groupSlotsByDay,
-  groupSlotsByHour,
   parseSlotDate,
   parseSlotStart,
+  type SlotCell,
 } from "@/lib/timeUtils";
 
 
@@ -289,31 +290,38 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
                   </div>
 
                   <div className="flex flex-col gap-2 flex-1">
-                    {groupSlotsByHour(slots).map((hourRow) => {
-                      const firstFlatIdx = slots.indexOf(hourRow[0]);
-                      const rowPeriod = getBubbleLabel(
-                        hourRow[0],
-                        firstFlatIdx > 0 ? slots[firstFlatIdx - 1] : null,
-                      ).period;
-                      const periodLabelClass = rowPeriod === "AM"
-                        ? "text-orange-500 dark:text-orange-400"
-                        : "text-purple-600 dark:text-purple-400";
-                      const renderBubble = (slot: string) => {
-                        const flatIdx = slots.indexOf(slot);
-                        const { time } = getBubbleLabel(slot, flatIdx > 0 ? slots[flatIdx - 1] : null);
-                        const likes = likeCounts?.[slot] ?? 0;
-                        const dislikes = dislikeCounts?.[slot] ?? 0;
+                    {(() => {
+                      const hourRows = expandHourRowsToQuarters(slots);
+                      const flat: SlotCell[] = hourRows.flat();
+                      const renderCell = (cell: SlotCell, prevSlot: string | null) => {
+                        const { time } = getBubbleLabel(cell.slot, prevSlot);
+                        const sizeClass =
+                          "min-w-12 h-8 px-2 flex items-center justify-center text-[0.9rem] font-medium tabular-nums leading-none whitespace-nowrap";
+                        if (!cell.available) {
+                          return (
+                            <div
+                              key={cell.slot}
+                              className={`${sizeClass} text-gray-300 dark:text-gray-600 select-none`}
+                              aria-hidden="true"
+                            >
+                              <span className="block cap-height-text">{time}</span>
+                            </div>
+                          );
+                        }
+                        const likes = likeCounts?.[cell.slot] ?? 0;
+                        const dislikes = dislikeCounts?.[cell.slot] ?? 0;
                         const unavailable =
-                          maxAvail != null && availCounts?.[slot] != null
-                            ? maxAvail - availCounts[slot]
+                          maxAvail != null && availCounts?.[cell.slot] != null
+                            ? maxAvail - availCounts[cell.slot]
                             : 0;
-                        const isWinner = slot === winner;
+                        const isWinner = cell.slot === winner;
                         return (
                           <div
-                            key={slot}
-                            title={formatTimeSlot(slot)}
+                            key={cell.slot}
+                            title={formatTimeSlot(cell.slot)}
                             className={[
-                              "relative min-w-12 h-8 px-2 flex items-center justify-center rounded-full text-[0.9rem] font-medium tabular-nums leading-none whitespace-nowrap bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
+                              "relative rounded-full bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
+                              sizeClass,
                               isWinner
                                 ? "border-2 border-green-500 shadow-sm"
                                 : "border border-gray-300 dark:border-gray-600",
@@ -338,21 +346,35 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
                           </div>
                         );
                       };
-                      const [first, ...rest] = hourRow;
-                      return (
-                        <div key={first} className="flex gap-2 items-start">
-                          <div className={`w-7 shrink-0 h-8 flex items-center justify-end text-xs font-semibold tabular-nums ${rowPeriod ? periodLabelClass : ""}`}>
-                            {rowPeriod ?? ""}
-                          </div>
-                          <div className="grid grid-cols-[auto_1fr] gap-2 items-start flex-1">
-                            {renderBubble(first)}
-                            <div className="flex flex-wrap gap-2">
-                              {rest.map(renderBubble)}
+                      let flatIdx = 0;
+                      return hourRows.map((hourRow) => {
+                        const rowStart = flatIdx;
+                        const firstPrev = rowStart > 0 ? flat[rowStart - 1].slot : null;
+                        const rowPeriod = getBubbleLabel(hourRow[0].slot, firstPrev).period;
+                        const periodLabelClass = rowPeriod === "AM"
+                          ? "text-orange-500 dark:text-orange-400"
+                          : "text-purple-600 dark:text-purple-400";
+                        const cellsWithPrev = hourRow.map((cell, i) => {
+                          const prev = rowStart + i > 0 ? flat[rowStart + i - 1].slot : null;
+                          return { cell, prev };
+                        });
+                        flatIdx += hourRow.length;
+                        const [first, ...rest] = cellsWithPrev;
+                        return (
+                          <div key={first.cell.slot} className="flex gap-2 items-start">
+                            <div className={`w-7 shrink-0 h-8 flex items-center justify-end text-xs font-semibold tabular-nums ${rowPeriod ? periodLabelClass : ""}`}>
+                              {rowPeriod ?? ""}
+                            </div>
+                            <div className="grid grid-cols-[auto_1fr] gap-2 items-start flex-1">
+                              {renderCell(first.cell, first.prev)}
+                              <div className="flex flex-wrap gap-2">
+                                {rest.map(({ cell, prev }) => renderCell(cell, prev))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               );

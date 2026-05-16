@@ -183,6 +183,39 @@ export function groupSlotsByHour(slots: string[]): string[][] {
   return rows;
 }
 
+/** Pad each hour-row to four 15-minute cells (:00, :15, :30, :45),
+ *  filling missing positions with synthetic "ghost" cells. The ghost
+ *  cell's `slot` is `${date} HH:MM` (no end time) — usable with
+ *  `parseSlotStart` / `getBubbleLabel` but distinct from real keys so
+ *  state lookups don't collide. */
+export type SlotCell = { slot: string; available: boolean };
+export function expandHourRowsToQuarters(daySlots: string[]): SlotCell[][] {
+  if (daySlots.length === 0) return [];
+  const date = parseSlotDate(daySlots[0]);
+  const byHour = new Map<number, Map<number, string>>();
+  const orderedHours: number[] = [];
+  const seen = new Set<number>();
+  for (const slot of daySlots) {
+    const { h, m } = parseSlotStart(slot);
+    if (!seen.has(h)) {
+      seen.add(h);
+      orderedHours.push(h);
+    }
+    if (!byHour.has(h)) byHour.set(h, new Map());
+    byHour.get(h)!.set(m, slot);
+  }
+  return orderedHours.map((h) => {
+    const minuteMap = byHour.get(h)!;
+    return [0, 15, 30, 45].map((m) => {
+      const real = minuteMap.get(m);
+      if (real) return { slot: real, available: true };
+      const hh = String(h).padStart(2, '0');
+      const mm = String(m).padStart(2, '0');
+      return { slot: `${date} ${hh}:${mm}`, available: false };
+    });
+  });
+}
+
 /** Check whether a voter's day_time_windows fully cover the given slot.
  *  Mirrors the backend `_voter_available_at` in `server/algorithms/time_slots.py`.
  *  Handles cross-midnight windows where `w.max <= w.min`.

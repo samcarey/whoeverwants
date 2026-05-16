@@ -11,10 +11,11 @@
 
 import { useMemo } from "react";
 import {
+  expandHourRowsToQuarters,
   formatStackedDayLabel,
   getBubbleLabel,
   groupSlotsByDay,
-  groupSlotsByHour,
+  type SlotCell,
 } from "@/lib/timeUtils";
 
 export type SlotState = "neutral" | "liked" | "disliked";
@@ -71,33 +72,39 @@ export default function TimeSlotBubbles({
           </div>
 
           <div className="flex flex-col gap-1.5 flex-1">
-            {groupSlotsByHour(slots).map((hourRow) => {
-              const firstFlatIdx = slots.indexOf(hourRow[0]);
-              const rowPeriod = getBubbleLabel(
-                hourRow[0],
-                firstFlatIdx > 0 ? slots[firstFlatIdx - 1] : null,
-              ).period;
-              const periodLabelClass = rowPeriod === "AM"
-                ? "text-orange-500 dark:text-orange-400"
-                : "text-purple-600 dark:text-purple-400";
-              const renderBubble = (slot: string) => {
-                const flatIdx = slots.indexOf(slot);
-                const state = getState(slot);
-                const { time } = getBubbleLabel(slot, flatIdx > 0 ? slots[flatIdx - 1] : null);
+            {(() => {
+              const hourRows = expandHourRowsToQuarters(slots);
+              const flat: SlotCell[] = hourRows.flat();
+              const renderCell = (cell: SlotCell, prevSlot: string | null) => {
+                const { time } = getBubbleLabel(cell.slot, prevSlot);
+                const sizeClass =
+                  "min-w-12 h-8 px-2 flex items-center justify-center text-[0.9rem] font-medium tabular-nums leading-none whitespace-nowrap";
+                if (!cell.available) {
+                  return (
+                    <div
+                      key={cell.slot}
+                      className={`${sizeClass} text-gray-300 dark:text-gray-600 select-none`}
+                      aria-hidden="true"
+                    >
+                      <span className="block cap-height-text">{time}</span>
+                    </div>
+                  );
+                }
+                const state = getState(cell.slot);
                 const excluded =
                   maxAvailability != null && availabilityCounts != null
-                    ? maxAvailability - (availabilityCounts[slot] ?? 0)
+                    ? maxAvailability - (availabilityCounts[cell.slot] ?? 0)
                     : 0;
                 return (
                   <button
-                    key={slot}
+                    key={cell.slot}
                     type="button"
-                    onClick={() => handleTap(slot)}
+                    onClick={() => handleTap(cell.slot)}
                     disabled={disabled}
-                    title={slot}
+                    title={cell.slot}
                     className={[
-                      "relative select-none rounded-full text-[0.9rem] font-medium transition-colors",
-                      "min-w-12 h-8 px-2 flex items-center justify-center tabular-nums leading-none whitespace-nowrap",
+                      "relative select-none rounded-full transition-colors",
+                      sizeClass,
                       "border focus:outline-none focus:ring-2 focus:ring-offset-1",
                       disabled ? "cursor-default opacity-60" : "cursor-pointer active:scale-95",
                       state === "liked"
@@ -116,21 +123,35 @@ export default function TimeSlotBubbles({
                   </button>
                 );
               };
-              const [first, ...rest] = hourRow;
-              return (
-                <div key={first} className="flex gap-1.5 items-start">
-                  <div className={`w-7 shrink-0 h-8 flex items-center justify-end text-xs font-semibold tabular-nums ${rowPeriod ? periodLabelClass : ""}`}>
-                    {rowPeriod ?? ""}
-                  </div>
-                  <div className="grid grid-cols-[auto_1fr] gap-1.5 items-start flex-1">
-                    {renderBubble(first)}
-                    <div className="flex flex-wrap gap-1.5">
-                      {rest.map(renderBubble)}
+              let flatIdx = 0;
+              return hourRows.map((hourRow) => {
+                const rowStart = flatIdx;
+                const firstPrev = rowStart > 0 ? flat[rowStart - 1].slot : null;
+                const rowPeriod = getBubbleLabel(hourRow[0].slot, firstPrev).period;
+                const periodLabelClass = rowPeriod === "AM"
+                  ? "text-orange-500 dark:text-orange-400"
+                  : "text-purple-600 dark:text-purple-400";
+                const cellsWithPrev = hourRow.map((cell, i) => {
+                  const prev = rowStart + i > 0 ? flat[rowStart + i - 1].slot : null;
+                  return { cell, prev };
+                });
+                flatIdx += hourRow.length;
+                const [first, ...rest] = cellsWithPrev;
+                return (
+                  <div key={first.cell.slot} className="flex gap-1.5 items-start">
+                    <div className={`w-7 shrink-0 h-8 flex items-center justify-end text-xs font-semibold tabular-nums ${rowPeriod ? periodLabelClass : ""}`}>
+                      {rowPeriod ?? ""}
+                    </div>
+                    <div className="grid grid-cols-[auto_1fr] gap-1.5 items-start flex-1">
+                      {renderCell(first.cell, first.prev)}
+                      <div className="flex flex-wrap gap-1.5">
+                        {rest.map(({ cell, prev }) => renderCell(cell, prev))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         </div>
         );
