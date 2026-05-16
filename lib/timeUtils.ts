@@ -121,9 +121,9 @@ export function formatStackedDayLabel(dateStr: string): { weekday: string; month
 }
 
 /** Generate a compact bubble label for a slot based on its predecessor.
- *  First bubble of day / period change (on hour):    { time: "1",     period: "PM" }
+ *  First bubble of day / period change (on hour):    { time: "1:00",  period: "PM" }
  *  First bubble of day / period change (off hour):   { time: "10:15", period: "AM" }
- *  Same AM/PM, different hour (on hour):             { time: "2",     period: null }
+ *  Same AM/PM, different hour (on hour):             { time: "2:00",  period: null }
  *  Same AM/PM, different hour (off hour):            { time: "11:30", period: null }
  *  Same hour, different minute:                      { time: ":15",   period: null }
  *  `period` is non-null only when this bubble starts a new period (or is the
@@ -137,7 +137,7 @@ export function getBubbleLabel(
   const period: 'AM' | 'PM' = h < 12 ? 'AM' : 'PM';
   const h12 = h % 12 === 0 ? 12 : h % 12;
   const mm = String(m).padStart(2, '0');
-  const hourLabel = m === 0 ? String(h12) : `${h12}:${mm}`;
+  const hourLabel = `${h12}:${mm}`;
 
   if (prevSlot) {
     const prev = parseSlotStart(prevSlot);
