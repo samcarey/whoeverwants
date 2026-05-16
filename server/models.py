@@ -203,6 +203,10 @@ class QuestionResultsResponse(BaseModel):
     created_at: str
     response_deadline: str | None = None
     options: list[str] | None = None
+    # True iff `options` carries a pre-cutoff tentative list (time questions with
+    # `allow_pre_ranking` enabled). The FE uses this to gate the
+    # "vote on tentative slots" UI; treat the slots as a preview, not the final set.
+    options_are_tentative: bool = False
     yes_count: int | None = None
     no_count: int | None = None
     abstain_count: int | None = None

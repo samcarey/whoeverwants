@@ -308,6 +308,9 @@ def polls_for_poll_ids(
                     enriched["close_reason"] = mp_row.get("close_reason")
                     enriched["is_closed"] = mp_row.get("is_closed", False)
                     enriched["suggestion_deadline"] = mp_row.get("prephase_deadline")
+                    # Required by `_compute_results` for time questions' pre-cutoff
+                    # tentative-options path (allow_pre_ranking opt-in).
+                    enriched["allow_pre_ranking"] = mp_row.get("allow_pre_ranking", True)
                     try:
                         sp_resp.results = _compute_results(enriched, votes_by_question[pid])
                     except Exception:

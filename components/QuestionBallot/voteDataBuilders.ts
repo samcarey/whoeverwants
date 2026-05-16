@@ -21,7 +21,12 @@ export interface BallotInputs {
   suggestionMetadata: OptionsMetadata;
   hasSuggestionPhase: boolean;
   canSubmitSuggestions: boolean;
-  inAvailabilityPhase: boolean;
+  // For time questions: true iff THIS submission carries availability fields
+  // (voter_day_time_windows + voter_duration). False during the preferences
+  // phase AND during the pre-ranking "tentative slots" sub-phase, where the
+  // submission carries liked_slots/disliked_slots and re-sends existing
+  // availability data via COALESCE on the server.
+  isAvailabilitySubmission: boolean;
   voterDayTimeWindows: DayTimeWindow[];
   durationMinValue: number | null;
   durationMaxValue: number | null;
@@ -133,7 +138,7 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
   }
 
   if (state.questionType === 'time') {
-    if (state.inAvailabilityPhase) {
+    if (state.isAvailabilitySubmission) {
       return {
         ok: true,
         effectiveIsAbstaining,
