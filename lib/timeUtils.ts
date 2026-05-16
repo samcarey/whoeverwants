@@ -121,14 +121,26 @@ export function formatStackedDayLabel(dateStr: string): { weekday: string; month
 }
 
 /** Generate a compact bubble label for a slot based on its predecessor.
- *  First bubble of day / period change: "1 PM"
- *  Same AM/PM, different hour:          "2"
- *  Same hour, different minute:         ":15"
+ *  First bubble of day / period change (on hour):    { time: "1:00",  period: "PM" }
+ *  First bubble of day / period change (off hour):   { time: "10:15", period: "AM" }
+ *  Same AM/PM, different hour (on hour):             { time: "2:00",  period: null }
+ *  Same AM/PM, different hour (off hour):            { time: "11:30", period: null }
+ *  Same hour, different minute:                      { time: ":15",   period: null }
+ *  `period` is non-null only when this bubble starts a new period (or is the
+ *  first of the row), so callers can color it without re-parsing.
  */
-export function getBubbleLabel(slot: string, prevSlot: string | null): string {
+export function getBubbleLabel(
+  slot: string,
+  prevSlot: string | null,
+): { time: string; period: 'AM' | 'PM' | null } {
   const { h, m } = parseSlotStart(slot);
-  const period = h < 12 ? 'AM' : 'PM';
+  const period: 'AM' | 'PM' = h < 12 ? 'AM' : 'PM';
   const h12 = h % 12 === 0 ? 12 : h % 12;
+  const mm = String(m).padStart(2, '0');
+  // Pad single-digit hours with a non-breaking space so column-aligned
+  // monospace renderers line the digit/colon/minute up across rows.
+  const h12Str = h12 < 10 ? ` ${h12}` : String(h12);
+  const hourLabel = `${h12Str}:${mm}`;
 
   if (prevSlot) {
     const prev = parseSlotStart(prevSlot);
@@ -136,14 +148,14 @@ export function getBubbleLabel(slot: string, prevSlot: string | null): string {
     const prevH12 = prev.h % 12 === 0 ? 12 : prev.h % 12;
 
     if (h12 === prevH12 && period === prevPeriod) {
-      return `:${String(m).padStart(2, '0')}`;
+      return { time: `:${mm}`, period: null };
     }
     if (period === prevPeriod) {
-      return String(h12);
+      return { time: hourLabel, period: null };
     }
   }
 
-  return `${h12} ${period}`;
+  return { time: hourLabel, period };
 }
 
 /** Group slot keys by date, preserving order within each day. */
@@ -155,6 +167,46 @@ export function groupSlotsByDay(options: string[]): [string, string[]][] {
     map.get(date)!.push(slot);
   }
   return Array.from(map.entries());
+}
+
+/** Pad each hour-row to four 15-minute cells (:00, :15, :30, :45),
+ *  filling missing positions with synthetic "ghost" cells. The ghost
+ *  cell's `slot` is `${date} HH:MM` (no end time) — usable with
+ *  `parseSlotStart` / `getBubbleLabel` but distinct from real keys so
+ *  state lookups don't collide. */
+export type SlotCell = { slot: string; available: boolean };
+export function expandHourRowsToQuarters(daySlots: string[]): SlotCell[][] {
+  if (daySlots.length === 0) return [];
+  const date = parseSlotDate(daySlots[0]);
+  // Map preserves insertion order, so the iteration below yields hours in
+  // the order they first appeared in daySlots.
+  const byHour = new Map<number, Map<number, string>>();
+  for (const slot of daySlots) {
+    const { h, m } = parseSlotStart(slot);
+    let minuteMap = byHour.get(h);
+    if (!minuteMap) {
+      minuteMap = new Map();
+      byHour.set(h, minuteMap);
+    }
+    minuteMap.set(m, slot);
+  }
+  return Array.from(byHour.entries()).map(([h, minuteMap]) =>
+    [0, 15, 30, 45].map((m) => {
+      const real = minuteMap.get(m);
+      if (real) return { slot: real, available: true };
+      const hh = String(h).padStart(2, '0');
+      const mm = String(m).padStart(2, '0');
+      return { slot: `${date} ${hh}:${mm}`, available: false };
+    }),
+  );
+}
+
+/** Tailwind color class for an AM/PM badge — orange for AM, purple for PM.
+ *  Returns "" when no period (used for empty slot in the period column). */
+export function periodColorClass(period: 'AM' | 'PM' | null): string {
+  if (period === 'AM') return 'text-orange-500 dark:text-orange-400';
+  if (period === 'PM') return 'text-purple-600 dark:text-purple-400';
+  return '';
 }
 
 /** Check whether a voter's day_time_windows fully cover the given slot.

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import TimeGridModal from './TimeGridModal';
-import { windowDurationMinutes, formatDayLabel, pickNextTimeWindow } from '@/lib/timeUtils';
+import { windowDurationMinutes, formatDayLabel, pickNextTimeWindow, periodColorClass } from '@/lib/timeUtils';
 
 interface TimeWindow {
   min: string; // HH:MM format
@@ -221,12 +221,12 @@ export default function DayTimeWindowsInput({
                   return (
                     <>
                       {minFormatted.time}
-                      <span className={`ml-0.5 ${!isEnabled ? '' : minFormatted.period === 'AM' ? 'text-orange-500 dark:text-orange-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                      <span className={`ml-0.5 ${isEnabled ? periodColorClass(minFormatted.period as 'AM' | 'PM') : ''}`}>
                         {minFormatted.period}
                       </span>
                       {' - '}
                       {maxFormatted.time}
-                      <span className={`ml-0.5 ${!isEnabled ? '' : maxFormatted.period === 'AM' ? 'text-orange-500 dark:text-orange-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                      <span className={`ml-0.5 ${isEnabled ? periodColorClass(maxFormatted.period as 'AM' | 'PM') : ''}`}>
                         {maxFormatted.period}
                       </span>
                       {isCrossMidnight && isEnabled && (
