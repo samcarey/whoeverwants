@@ -72,22 +72,22 @@ export default function TimeSlotBubbles({
 
           <div className="flex flex-col gap-1.5 flex-1">
             {groupSlotsByHour(slots).map((hourRow) => {
+              const firstFlatIdx = slots.indexOf(hourRow[0]);
+              const rowPeriod = getBubbleLabel(
+                hourRow[0],
+                firstFlatIdx > 0 ? slots[firstFlatIdx - 1] : null,
+              ).period;
+              const periodLabelClass = rowPeriod === "AM"
+                ? "text-orange-500 dark:text-orange-400"
+                : "text-purple-600 dark:text-purple-400";
               const renderBubble = (slot: string) => {
                 const flatIdx = slots.indexOf(slot);
                 const state = getState(slot);
-                const { time, period } = getBubbleLabel(slot, flatIdx > 0 ? slots[flatIdx - 1] : null);
+                const { time } = getBubbleLabel(slot, flatIdx > 0 ? slots[flatIdx - 1] : null);
                 const excluded =
                   maxAvailability != null && availabilityCounts != null
                     ? maxAvailability - (availabilityCounts[slot] ?? 0)
                     : 0;
-                const colorPeriod = state === "neutral";
-                const periodClass = period
-                  ? colorPeriod
-                    ? period === "AM"
-                      ? "text-orange-500 dark:text-orange-400"
-                      : "text-purple-600 dark:text-purple-400"
-                    : ""
-                  : "";
                 return (
                   <button
                     key={slot}
@@ -107,12 +107,7 @@ export default function TimeSlotBubbles({
                         : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-400 focus:ring-blue-400",
                     ].join(" ")}
                   >
-                    <span className="block cap-height-text">
-                      {time}
-                      {period && (
-                        <span className={`ml-0.5 ${periodClass}`}>{period}</span>
-                      )}
-                    </span>
+                    <span className="block cap-height-text">{time}</span>
                     {excluded > 0 && (
                       <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white leading-none pointer-events-none">
                         {excluded}
@@ -123,10 +118,15 @@ export default function TimeSlotBubbles({
               };
               const [first, ...rest] = hourRow;
               return (
-                <div key={first} className="grid grid-cols-[auto_1fr] gap-1.5 items-start">
-                  {renderBubble(first)}
-                  <div className="flex flex-wrap gap-1.5">
-                    {rest.map(renderBubble)}
+                <div key={first} className="flex gap-1.5 items-start">
+                  <div className={`w-7 shrink-0 h-8 flex items-center justify-end text-xs font-semibold tabular-nums ${rowPeriod ? periodLabelClass : ""}`}>
+                    {rowPeriod ?? ""}
+                  </div>
+                  <div className="grid grid-cols-[auto_1fr] gap-1.5 items-start flex-1">
+                    {renderBubble(first)}
+                    <div className="flex flex-wrap gap-1.5">
+                      {rest.map(renderBubble)}
+                    </div>
                   </div>
                 </div>
               );

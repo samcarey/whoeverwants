@@ -290,14 +290,17 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
 
                   <div className="flex flex-col gap-2 flex-1">
                     {groupSlotsByHour(slots).map((hourRow) => {
+                      const firstFlatIdx = slots.indexOf(hourRow[0]);
+                      const rowPeriod = getBubbleLabel(
+                        hourRow[0],
+                        firstFlatIdx > 0 ? slots[firstFlatIdx - 1] : null,
+                      ).period;
+                      const periodLabelClass = rowPeriod === "AM"
+                        ? "text-orange-500 dark:text-orange-400"
+                        : "text-purple-600 dark:text-purple-400";
                       const renderBubble = (slot: string) => {
                         const flatIdx = slots.indexOf(slot);
-                        const { time, period } = getBubbleLabel(slot, flatIdx > 0 ? slots[flatIdx - 1] : null);
-                        const periodClass = period
-                          ? period === "AM"
-                            ? "text-orange-500 dark:text-orange-400"
-                            : "text-purple-600 dark:text-purple-400"
-                          : "";
+                        const { time } = getBubbleLabel(slot, flatIdx > 0 ? slots[flatIdx - 1] : null);
                         const likes = likeCounts?.[slot] ?? 0;
                         const dislikes = dislikeCounts?.[slot] ?? 0;
                         const unavailable =
@@ -316,12 +319,7 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
                                 : "border border-gray-300 dark:border-gray-600",
                             ].join(" ")}
                           >
-                            <span className="block cap-height-text">
-                              {time}
-                              {period && (
-                                <span className={`ml-0.5 ${periodClass}`}>{period}</span>
-                              )}
-                            </span>
+                            <span className="block cap-height-text">{time}</span>
                             {likes > 0 && (
                               <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
                                 {likes}
@@ -342,10 +340,15 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
                       };
                       const [first, ...rest] = hourRow;
                       return (
-                        <div key={first} className="grid grid-cols-[auto_1fr] gap-2 items-start">
-                          {renderBubble(first)}
-                          <div className="flex flex-wrap gap-2">
-                            {rest.map(renderBubble)}
+                        <div key={first} className="flex gap-2 items-start">
+                          <div className={`w-7 shrink-0 h-8 flex items-center justify-end text-xs font-semibold tabular-nums ${rowPeriod ? periodLabelClass : ""}`}>
+                            {rowPeriod ?? ""}
+                          </div>
+                          <div className="grid grid-cols-[auto_1fr] gap-2 items-start flex-1">
+                            {renderBubble(first)}
+                            <div className="flex flex-wrap gap-2">
+                              {rest.map(renderBubble)}
+                            </div>
                           </div>
                         </div>
                       );
