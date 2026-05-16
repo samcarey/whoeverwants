@@ -1728,37 +1728,32 @@ export function CreateQuestionContent() {
                 {showTimeFields && (
                   <>
                     <div>
-                      <div className="flex items-center justify-between mb-1 px-1 gap-2">
-                        <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
-                          Days
-                        </label>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => advanceCalendarMonth(-1)}
-                            disabled={isLoading}
-                            aria-label="Previous month"
-                            className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                            </svg>
-                          </button>
-                          <span className="inline-block min-w-[9rem] text-center text-[17.5px] font-medium text-gray-500 dark:text-gray-400 tabular-nums">
-                            {calendarMonthLabel}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => advanceCalendarMonth(1)}
-                            disabled={isLoading}
-                            aria-label="Next month"
-                            className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                          </button>
-                        </div>
+                      <div className="flex items-center justify-between mb-1 px-1">
+                        <button
+                          type="button"
+                          onClick={() => advanceCalendarMonth(-1)}
+                          disabled={isLoading}
+                          aria-label="Previous month"
+                          className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                          </svg>
+                        </button>
+                        <span className="text-[17.5px] font-medium text-gray-500 dark:text-gray-400 tabular-nums">
+                          {calendarMonthLabel}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => advanceCalendarMonth(1)}
+                          disabled={isLoading}
+                          aria-label="Next month"
+                          className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
                       </div>
                       <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
                         <DaysSelector
