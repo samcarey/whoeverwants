@@ -296,7 +296,7 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
                       const renderCell = (cell: SlotCell, prevSlot: string | null) => {
                         const { time } = getBubbleLabel(cell.slot, prevSlot);
                         const sizeClass =
-                          "min-w-12 h-8 px-2 flex items-center justify-center text-[0.9rem] font-medium tabular-nums leading-none whitespace-nowrap";
+                          "min-w-12 h-8 px-2 flex items-center justify-center text-[0.9rem] font-mono font-medium leading-none whitespace-nowrap";
                         if (!cell.available) {
                           return (
                             <div

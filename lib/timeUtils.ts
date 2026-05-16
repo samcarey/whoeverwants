@@ -137,7 +137,10 @@ export function getBubbleLabel(
   const period: 'AM' | 'PM' = h < 12 ? 'AM' : 'PM';
   const h12 = h % 12 === 0 ? 12 : h % 12;
   const mm = String(m).padStart(2, '0');
-  const hourLabel = `${h12}:${mm}`;
+  // Pad single-digit hours with a non-breaking space so column-aligned
+  // monospace renderers line the digit/colon/minute up across rows.
+  const h12Str = h12 < 10 ? ` ${h12}` : String(h12);
+  const hourLabel = `${h12Str}:${mm}`;
 
   if (prevSlot) {
     const prev = parseSlotStart(prevSlot);
