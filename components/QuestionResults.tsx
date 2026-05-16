@@ -13,6 +13,7 @@ import {
   groupSlotsByDay,
   parseSlotDate,
   parseSlotStart,
+  periodColorClass,
   type SlotCell,
 } from "@/lib/timeUtils";
 
@@ -245,7 +246,15 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
 
   // Slot keys ("YYYY-MM-DD HH:MM-HH:MM") already arrive in chronological
   // order from the backend, so no sort is needed before grouping.
-  const slotsByDay = useMemo(() => groupSlotsByDay(options), [options]);
+  const days = useMemo(
+    () =>
+      groupSlotsByDay(options).map(([dateStr, slots]) => ({
+        dateStr,
+        dayLabel: formatStackedDayLabel(dateStr),
+        hourRows: expandHourRowsToQuarters(slots),
+      })),
+    [options],
+  );
 
   if (!isQuestionClosed) {
     return null;
@@ -280,8 +289,58 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
       {options.length > 1 && (
         <CollapsibleStartOptions>
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
-            {slotsByDay.map(([dateStr, slots]) => {
-              const { weekday, monthDay } = formatStackedDayLabel(dateStr);
+            {days.map(({ dateStr, dayLabel: { weekday, monthDay }, hourRows }) => {
+              const renderCell = (cell: SlotCell, prevSlot: string | null) => {
+                const { time } = getBubbleLabel(cell.slot, prevSlot);
+                if (!cell.available) {
+                  return (
+                    <div
+                      key={cell.slot}
+                      className={`${SLOT_CELL_SIZE} text-gray-300 dark:text-gray-600 select-none`}
+                      aria-hidden="true"
+                    >
+                      <span className="block cap-height-text">{time}</span>
+                    </div>
+                  );
+                }
+                const likes = likeCounts?.[cell.slot] ?? 0;
+                const dislikes = dislikeCounts?.[cell.slot] ?? 0;
+                const unavailable =
+                  maxAvail != null && availCounts?.[cell.slot] != null
+                    ? maxAvail - availCounts[cell.slot]
+                    : 0;
+                const isWinner = cell.slot === winner;
+                return (
+                  <div
+                    key={cell.slot}
+                    title={formatTimeSlot(cell.slot)}
+                    className={[
+                      "relative rounded-full bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
+                      SLOT_CELL_SIZE,
+                      isWinner
+                        ? "border-2 border-green-500 shadow-sm"
+                        : "border border-gray-300 dark:border-gray-600",
+                    ].join(" ")}
+                  >
+                    <span className="block cap-height-text">{time}</span>
+                    {likes > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                        {likes}
+                      </span>
+                    )}
+                    {dislikes > 0 && (
+                      <span className="absolute -top-1.5 -left-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                        {dislikes}
+                      </span>
+                    )}
+                    {unavailable > 0 && (
+                      <span className="absolute -bottom-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                        {unavailable}
+                      </span>
+                    )}
+                  </div>
+                );
+              };
               return (
                 <div key={dateStr} className="flex gap-2 items-start py-3 first:pt-0 last:pb-0">
                   <div className="w-12 shrink-0 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 text-left leading-tight">
@@ -290,91 +349,26 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
                   </div>
 
                   <div className="flex flex-col gap-2 flex-1">
-                    {(() => {
-                      const hourRows = expandHourRowsToQuarters(slots);
-                      const flat: SlotCell[] = hourRows.flat();
-                      const renderCell = (cell: SlotCell, prevSlot: string | null) => {
-                        const { time } = getBubbleLabel(cell.slot, prevSlot);
-                        const sizeClass =
-                          "min-w-12 h-8 px-2 flex items-center justify-center text-[0.9rem] font-mono font-medium leading-none whitespace-nowrap";
-                        if (!cell.available) {
-                          return (
-                            <div
-                              key={cell.slot}
-                              className={`${sizeClass} text-gray-300 dark:text-gray-600 select-none`}
-                              aria-hidden="true"
-                            >
-                              <span className="block cap-height-text">{time}</span>
-                            </div>
-                          );
-                        }
-                        const likes = likeCounts?.[cell.slot] ?? 0;
-                        const dislikes = dislikeCounts?.[cell.slot] ?? 0;
-                        const unavailable =
-                          maxAvail != null && availCounts?.[cell.slot] != null
-                            ? maxAvail - availCounts[cell.slot]
-                            : 0;
-                        const isWinner = cell.slot === winner;
-                        return (
-                          <div
-                            key={cell.slot}
-                            title={formatTimeSlot(cell.slot)}
-                            className={[
-                              "relative rounded-full bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
-                              sizeClass,
-                              isWinner
-                                ? "border-2 border-green-500 shadow-sm"
-                                : "border border-gray-300 dark:border-gray-600",
-                            ].join(" ")}
-                          >
-                            <span className="block cap-height-text">{time}</span>
-                            {likes > 0 && (
-                              <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
-                                {likes}
-                              </span>
-                            )}
-                            {dislikes > 0 && (
-                              <span className="absolute -top-1.5 -left-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
-                                {dislikes}
-                              </span>
-                            )}
-                            {unavailable > 0 && (
-                              <span className="absolute -bottom-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
-                                {unavailable}
-                              </span>
-                            )}
+                    {hourRows.map((hourRow, rowIdx) => {
+                      const firstPrev = rowIdx > 0
+                        ? hourRows[rowIdx - 1][hourRows[rowIdx - 1].length - 1].slot
+                        : null;
+                      const rowPeriod = getBubbleLabel(hourRow[0].slot, firstPrev).period;
+                      const [first, ...rest] = hourRow;
+                      return (
+                        <div key={first.slot} className="flex gap-2 items-start">
+                          <div className={`w-7 shrink-0 h-8 flex items-center justify-end text-xs font-semibold tabular-nums ${periodColorClass(rowPeriod)}`}>
+                            {rowPeriod ?? ""}
                           </div>
-                        );
-                      };
-                      let flatIdx = 0;
-                      return hourRows.map((hourRow) => {
-                        const rowStart = flatIdx;
-                        const firstPrev = rowStart > 0 ? flat[rowStart - 1].slot : null;
-                        const rowPeriod = getBubbleLabel(hourRow[0].slot, firstPrev).period;
-                        const periodLabelClass = rowPeriod === "AM"
-                          ? "text-orange-500 dark:text-orange-400"
-                          : "text-purple-600 dark:text-purple-400";
-                        const cellsWithPrev = hourRow.map((cell, i) => {
-                          const prev = rowStart + i > 0 ? flat[rowStart + i - 1].slot : null;
-                          return { cell, prev };
-                        });
-                        flatIdx += hourRow.length;
-                        const [first, ...rest] = cellsWithPrev;
-                        return (
-                          <div key={first.cell.slot} className="flex gap-2 items-start">
-                            <div className={`w-7 shrink-0 h-8 flex items-center justify-end text-xs font-semibold tabular-nums ${rowPeriod ? periodLabelClass : ""}`}>
-                              {rowPeriod ?? ""}
-                            </div>
-                            <div className="grid grid-cols-[auto_1fr] gap-2 items-start flex-1">
-                              {renderCell(first.cell, first.prev)}
-                              <div className="flex flex-wrap gap-2">
-                                {rest.map(({ cell, prev }) => renderCell(cell, prev))}
-                              </div>
+                          <div className="grid grid-cols-[auto_1fr] gap-2 items-start flex-1">
+                            {renderCell(first, firstPrev)}
+                            <div className="flex flex-wrap gap-2">
+                              {rest.map((cell, i) => renderCell(cell, hourRow[i].slot))}
                             </div>
                           </div>
-                        );
-                      });
-                    })()}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -385,6 +379,9 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
     </div>
   );
 }
+
+const SLOT_CELL_SIZE =
+  "min-w-12 h-8 px-2 flex items-center justify-center text-[0.9rem] font-mono font-medium leading-none whitespace-nowrap";
 
 const COLLAPSED_SLOTS_HEIGHT = 80;
 

@@ -169,23 +169,6 @@ export function groupSlotsByDay(options: string[]): [string, string[]][] {
   return Array.from(map.entries());
 }
 
-/** Split a day's slots into rows, breaking on every hour change. Order
- *  within each row is preserved. */
-export function groupSlotsByHour(slots: string[]): string[][] {
-  const rows: string[][] = [];
-  let currentHour = -1;
-  for (const slot of slots) {
-    const { h } = parseSlotStart(slot);
-    if (h !== currentHour) {
-      rows.push([slot]);
-      currentHour = h;
-    } else {
-      rows[rows.length - 1].push(slot);
-    }
-  }
-  return rows;
-}
-
 /** Pad each hour-row to four 15-minute cells (:00, :15, :30, :45),
  *  filling missing positions with synthetic "ghost" cells. The ghost
  *  cell's `slot` is `${date} HH:MM` (no end time) — usable with
@@ -195,28 +178,35 @@ export type SlotCell = { slot: string; available: boolean };
 export function expandHourRowsToQuarters(daySlots: string[]): SlotCell[][] {
   if (daySlots.length === 0) return [];
   const date = parseSlotDate(daySlots[0]);
+  // Map preserves insertion order, so the iteration below yields hours in
+  // the order they first appeared in daySlots.
   const byHour = new Map<number, Map<number, string>>();
-  const orderedHours: number[] = [];
-  const seen = new Set<number>();
   for (const slot of daySlots) {
     const { h, m } = parseSlotStart(slot);
-    if (!seen.has(h)) {
-      seen.add(h);
-      orderedHours.push(h);
+    let minuteMap = byHour.get(h);
+    if (!minuteMap) {
+      minuteMap = new Map();
+      byHour.set(h, minuteMap);
     }
-    if (!byHour.has(h)) byHour.set(h, new Map());
-    byHour.get(h)!.set(m, slot);
+    minuteMap.set(m, slot);
   }
-  return orderedHours.map((h) => {
-    const minuteMap = byHour.get(h)!;
-    return [0, 15, 30, 45].map((m) => {
+  return Array.from(byHour.entries()).map(([h, minuteMap]) =>
+    [0, 15, 30, 45].map((m) => {
       const real = minuteMap.get(m);
       if (real) return { slot: real, available: true };
       const hh = String(h).padStart(2, '0');
       const mm = String(m).padStart(2, '0');
       return { slot: `${date} ${hh}:${mm}`, available: false };
-    });
-  });
+    }),
+  );
+}
+
+/** Tailwind color class for an AM/PM badge — orange for AM, purple for PM.
+ *  Returns "" when no period (used for empty slot in the period column). */
+export function periodColorClass(period: 'AM' | 'PM' | null): string {
+  if (period === 'AM') return 'text-orange-500 dark:text-orange-400';
+  if (period === 'PM') return 'text-purple-600 dark:text-purple-400';
+  return '';
 }
 
 /** Check whether a voter's day_time_windows fully cover the given slot.
