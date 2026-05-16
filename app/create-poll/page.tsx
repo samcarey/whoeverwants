@@ -102,7 +102,6 @@ export function CreateQuestionContent() {
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
   const [minimumParticipation, setMinimumParticipation] = useState<number>(95);
   const [showMinParticipationModal, setShowMinParticipationModal] = useState(false);
-  const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
   const {
     onDaysSelected: handleDaysSelected,
     onWindowsChange: handleDayWindowsChange,
@@ -1712,52 +1711,45 @@ export function CreateQuestionContent() {
                 </section>
 
                 {showTimeFields && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1 px-1">
-                      <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
-                        Time Windows
+                  <>
+                    <div>
+                      <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+                        Days
                       </label>
-                      <button
-                        type="button"
-                        onClick={() => setIsDaysPickerOpen(true)}
-                        disabled={isLoading}
-                        className={`mr-2 px-3 py-0.5 text-[15px] font-medium rounded-full border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                          dayTimeWindows.length === 0
-                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60'
-                            : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-transparent hover:bg-gray-300 dark:hover:bg-gray-600'
-                        }`}
-                      >
-                        Select Days
-                      </button>
+                      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+                        <DaysSelector
+                          selectedDays={selectedDays}
+                          onChange={handleDaysSelected}
+                          disabled={isLoading}
+                          inline
+                        />
+                      </section>
                     </div>
                     {dayTimeWindows.length > 0 && (
-                      <section className="rounded-3xl bg-white dark:bg-gray-800 pl-4 pr-3">
-                        <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                          {dayTimeWindows.map((dtw) => (
-                            <DayTimeWindowsInput
-                              key={dtw.day}
-                              day={dtw.day}
-                              windows={dtw.windows}
-                              onChange={(windows) => handleDayWindowsChange(dtw.day, windows)}
-                              onDelete={() => handleDeleteDay(dtw.day)}
-                              disabled={isLoading}
-                              minDurationMinutes={minDurationMinutesForWindows}
-                              allDays={dayTimeWindows}
-                              borderless
-                            />
-                          ))}
-                        </div>
-                      </section>
+                      <div>
+                        <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+                          Time Windows
+                        </label>
+                        <section className="rounded-3xl bg-white dark:bg-gray-800 pl-4 pr-3">
+                          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                            {dayTimeWindows.map((dtw) => (
+                              <DayTimeWindowsInput
+                                key={dtw.day}
+                                day={dtw.day}
+                                windows={dtw.windows}
+                                onChange={(windows) => handleDayWindowsChange(dtw.day, windows)}
+                                onDelete={() => handleDeleteDay(dtw.day)}
+                                disabled={isLoading}
+                                minDurationMinutes={minDurationMinutesForWindows}
+                                allDays={dayTimeWindows}
+                                borderless
+                              />
+                            ))}
+                          </div>
+                        </section>
+                      </div>
                     )}
-                    <DaysSelector
-                      selectedDays={selectedDays}
-                      onChange={handleDaysSelected}
-                      disabled={isLoading}
-                      isOpen={isDaysPickerOpen}
-                      onOpenChange={setIsDaysPickerOpen}
-                      hideButton={true}
-                    />
-                  </div>
+                  </>
                 )}
 
                 {optionsCard}
