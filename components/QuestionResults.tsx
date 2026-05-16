@@ -246,13 +246,7 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
   const slotsByDay = useMemo(() => groupSlotsByDay(options), [options]);
 
   if (!isQuestionClosed) {
-    return (
-      <div className="text-center py-3">
-        <div className="text-gray-600 dark:text-gray-400 text-sm">
-          Results will show when the question closes
-        </div>
-      </div>
-    );
+    return null;
   }
 
   if (options.length === 0) {
