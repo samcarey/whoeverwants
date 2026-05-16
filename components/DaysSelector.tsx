@@ -192,9 +192,9 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
 
     const firstDay = new Date(year, month, 1);
     const firstDayOfWeek = firstDay.getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     const days: { dateStr: string; isCurrentMonth: boolean }[] = [];
-    const TOTAL_CELLS = 35; // 5 rows × 7 cols
 
     // Fill leading days from previous month
     for (let i = firstDayOfWeek - 1; i >= 0; i--) {
@@ -203,21 +203,22 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     }
 
     // Add all days of the current month
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
       days.push({ dateStr: dateToString(date), isCurrentMonth: true });
     }
 
-    // Fill trailing days from next month
+    // Round up to a full week of trailing days so the last row is balanced.
+    // 28-day months starting Sunday produce 4 rows; long months that wrap a
+    // 6th week produce 6.
+    const totalCells = Math.ceil(days.length / 7) * 7;
     let nextDay = 1;
-    while (days.length < TOTAL_CELLS) {
+    while (days.length < totalCells) {
       const date = new Date(year, month + 1, nextDay++);
       days.push({ dateStr: dateToString(date), isCurrentMonth: false });
     }
 
-    // If we have more than 35 (month spans 6 rows), truncate to 35
-    return days.slice(0, TOTAL_CELLS);
+    return days;
   };
 
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

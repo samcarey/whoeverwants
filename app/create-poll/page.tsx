@@ -23,7 +23,7 @@ import SliderSwitch from "@/components/SliderSwitch";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
 import MinimumParticipationModal from "@/components/MinimumParticipationModal";
-import TimeQuestionFields from "@/components/TimeQuestionFields";
+import MinMaxCounter from "@/components/MinMaxCounter";
 import DayTimeWindowsInput from "@/components/DayTimeWindowsInput";
 import DaysSelector from "@/components/DaysSelector";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
@@ -1513,24 +1513,6 @@ export function CreateQuestionContent() {
         </div>
       )}
 
-      {showTimeFields && (
-        <TimeQuestionFields
-          disabled={isLoading}
-          durationMinValue={durationMinValue}
-          durationMaxValue={durationMaxValue}
-          durationMinEnabled={durationMinEnabled}
-          durationMaxEnabled={durationMaxEnabled}
-          onDurationMinChange={setDurationMinValue}
-          onDurationMaxChange={setDurationMaxValue}
-          onDurationMinEnabledChange={setDurationMinEnabled}
-          onDurationMaxEnabledChange={setDurationMaxEnabled}
-          dayTimeWindows={dayTimeWindows}
-          onDayTimeWindowsChange={setDayTimeWindows}
-          highlightDaysButton={dayTimeWindows.length === 0}
-          renderDaysSection={false}
-        />
-      )}
-
     </form>
   );
 
@@ -1789,6 +1771,28 @@ export function CreateQuestionContent() {
                         </section>
                       </div>
                     )}
+                    <div>
+                      <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+                        Duration
+                      </label>
+                      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+                        <MinMaxCounter
+                          minValue={durationMinValue}
+                          maxValue={durationMaxValue}
+                          maxEnabled={durationMaxEnabled}
+                          onMinChange={setDurationMinValue}
+                          onMaxChange={setDurationMaxValue}
+                          onMaxEnabledChange={setDurationMaxEnabled}
+                          increment={0.25}
+                          minLimit={0.25}
+                          disabled={isLoading}
+                          formatValue={(v) => parseFloat(v.toFixed(2)).toString()}
+                          minCheckboxEnabled={durationMinEnabled}
+                          onMinCheckboxChange={setDurationMinEnabled}
+                          suffix="h"
+                        />
+                      </section>
+                    </div>
                   </>
                 )}
 
