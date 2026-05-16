@@ -11,16 +11,21 @@ interface DaysSelectorProps {
   allowedDays?: string[];  // If provided, only these days are selectable (others greyed out)
   hideButton?: boolean;  // If true, only show modal (no clickable button with day list)
   inline?: boolean;  // If true, render the calendar inline (no modal, no Apply/Cancel buffer)
+  // When provided, treated as the controlled month value; the internal
+  // month-nav row is omitted so the caller can render its own controls.
+  currentMonth?: Date;
 }
 
-export default function DaysSelector({ selectedDays, onChange, disabled = false, isOpen = false, onOpenChange, allowedDays, hideButton = false, inline = false }: DaysSelectorProps) {
+export default function DaysSelector({ selectedDays, onChange, disabled = false, isOpen = false, onOpenChange, allowedDays, hideButton = false, inline = false, currentMonth }: DaysSelectorProps) {
   const [tempSelectedDays, setTempSelectedDays] = useState<string[]>(selectedDays);
-  const [currentMonth, setCurrentMonth] = useState(() => {
+  const [internalCurrentMonth, setInternalCurrentMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const modalContentRef = useRef<HTMLDivElement>(null);
   const effectiveSelectedDays = inline ? selectedDays : tempSelectedDays;
+  const effectiveCurrentMonth = currentMonth ?? internalCurrentMonth;
+  const isMonthControlled = currentMonth !== undefined;
 
   const handleToggleDay = (date: string) => {
     if (inline) {
@@ -78,8 +83,10 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
       onChange(validDays);
     }
     setTempSelectedDays(validDays);
-    const now = new Date();
-    setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+    if (!isMonthControlled) {
+      const now = new Date();
+      setInternalCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+    }
 
     const body = document.body;
     const html = document.documentElement;
@@ -164,7 +171,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
   };
 
   const goToPreviousMonth = () => {
-    setCurrentMonth(prev => {
+    setInternalCurrentMonth(prev => {
       const newMonth = new Date(prev);
       newMonth.setMonth(newMonth.getMonth() - 1);
       return newMonth;
@@ -172,21 +179,16 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
   };
 
   const goToNextMonth = () => {
-    setCurrentMonth(prev => {
+    setInternalCurrentMonth(prev => {
       const newMonth = new Date(prev);
       newMonth.setMonth(newMonth.getMonth() + 1);
       return newMonth;
     });
   };
 
-  const goToToday = () => {
-    const now = new Date();
-    setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
-  };
-
   const renderCalendar = () => {
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
+    const year = effectiveCurrentMonth.getFullYear();
+    const month = effectiveCurrentMonth.getMonth();
 
     const firstDay = new Date(year, month, 1);
     const firstDayOfWeek = firstDay.getDay();
@@ -220,95 +222,98 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
 
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const calendarDays = renderCalendar();
-  const monthName = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const monthName = effectiveCurrentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  const calendarBody = (
-    <>
-      {/* Month navigation */}
-      <div className="flex items-center justify-between mb-4">
-        <button
-          type="button"
-          onClick={goToPreviousMonth}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
+  const monthNavRow = (
+    <div className="flex items-center justify-between mb-4">
+      <button
+        type="button"
+        onClick={goToPreviousMonth}
+        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
 
-        <span className="font-medium">{monthName}</span>
+      <span className="font-medium">{monthName}</span>
 
-        <button
-          type="button"
-          onClick={goToNextMonth}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
+      <button
+        type="button"
+        onClick={goToNextMonth}
+        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+    </div>
+  );
+
+  const calendarGrid = (
+    <div>
+      {/* Week day headers */}
+      <div className="grid grid-cols-7 mb-2">
+        {weekDays.map(day => (
+          <div key={day} className="text-center text-xs font-medium text-gray-500 dark:text-gray-400 py-1">
+            {day}
+          </div>
+        ))}
       </div>
 
-      {/* Calendar */}
-      <div>
-        {/* Week day headers */}
-        <div className="grid grid-cols-7 gap-1 mb-2">
-          {weekDays.map(day => (
-            <div key={day} className="text-center text-xs font-medium text-gray-500 dark:text-gray-400 py-1">
-              {day}
-            </div>
-          ))}
-        </div>
+      {/* Calendar days */}
+      <div className="grid grid-cols-7">
+        {(() => {
+          const todayStr = getTodayDate();
+          return calendarDays.map(({ dateStr, isCurrentMonth }, index) => {
+            const isPast = dateStr < todayStr;
+            const isAllowed = !allowedDays || allowedDays.includes(dateStr);
+            const isDisabled = isPast || !isAllowed;
+            const isSelected = effectiveSelectedDays.includes(dateStr);
+            const isToday = dateStr === todayStr;
 
-        {/* Calendar days */}
-        <div className="grid grid-cols-7 gap-1">
-          {(() => {
-            const todayStr = getTodayDate();
-            return calendarDays.map(({ dateStr, isCurrentMonth }, index) => {
-              const isPast = dateStr < todayStr;
-              const isAllowed = !allowedDays || allowedDays.includes(dateStr);
-              const isDisabled = isPast || !isAllowed;
-              const isSelected = effectiveSelectedDays.includes(dateStr);
-              const isToday = dateStr === todayStr;
-
-              return (
-                <button
-                  key={`${dateStr}-${index}`}
-                  type="button"
-                  onClick={() => !isDisabled && handleToggleDay(dateStr)}
-                  disabled={isDisabled || disabled}
-                  data-date={dateStr}
-                  data-testid={`calendar-day-${dateStr}`}
-                  className={`
-                    aspect-square rounded-md text-sm flex items-center justify-center
-                    ${isDisabled
-                      ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                      : !isCurrentMonth
-                        ? 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
-                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
-                    }
-                    ${isSelected
-                      ? 'bg-blue-500 text-white hover:bg-blue-600'
-                      : ''
-                    }
-                    ${isToday && !isSelected && !isDisabled
-                      ? 'border-2 border-blue-500'
-                      : ''
-                    }
-                  `}
-                >
-                  {new Date(dateStr + 'T00:00:00').getDate()}
-                </button>
-              );
-            });
-          })()}
-        </div>
+            return (
+              <button
+                key={`${dateStr}-${index}`}
+                type="button"
+                onClick={() => !isDisabled && handleToggleDay(dateStr)}
+                disabled={isDisabled || disabled}
+                data-date={dateStr}
+                data-testid={`calendar-day-${dateStr}`}
+                className={`
+                  aspect-[5/4] text-sm flex items-center justify-center
+                  ${isDisabled
+                    ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
+                    : !isCurrentMonth
+                      ? 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
+                  }
+                  ${isSelected
+                    ? 'bg-blue-500 text-white hover:bg-blue-600'
+                    : ''
+                  }
+                  ${isToday && !isSelected && !isDisabled
+                    ? 'border-2 border-blue-500'
+                    : ''
+                  }
+                `}
+              >
+                {new Date(dateStr + 'T00:00:00').getDate()}
+              </button>
+            );
+          });
+        })()}
       </div>
-    </>
+    </div>
   );
 
   if (inline) {
-    return <div>{calendarBody}</div>;
+    return (
+      <div>
+        {!isMonthControlled && monthNavRow}
+        {calendarGrid}
+      </div>
+    );
   }
 
   return (
@@ -364,7 +369,8 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
               }}
             >
               <div className="p-4 modal-scrollable">
-                <div className="mb-4">{calendarBody}</div>
+                {monthNavRow}
+                <div className="mb-4">{calendarGrid}</div>
 
                 {/* Selected count */}
                 <div className="my-2 text-sm text-center text-gray-600 dark:text-gray-400">
