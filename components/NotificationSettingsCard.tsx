@@ -129,31 +129,14 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
     setEnabled(next);
     try {
       if (next) {
-        // When iOS permission is already granted (typically from the
-        // launch-time `bootstrapCapacitorPushSubscription`), don't block
-        // the toggle save on a re-registration round-trip. iOS's APNS
-        // `registration` event can take seconds to fire (up to the 15s
-        // timeout) and during that wait the switch sits in `saving=true`
-        // looking stuck. The bootstrap already registered this device's
-        // APNS token; fire a background refresh and proceed straight to
-        // the per-group pref save.
         const alreadyGrantedNative =
           capability?.capacitorNative === true && iosPermissionGranted;
         if (alreadyGrantedNative) {
-          void ensurePushSubscription().catch(() => {
-            /* background refresh — pref save below is the user-visible work */
-          });
+          // Native-iOS fast path — see file header.
+          void ensurePushSubscription().catch(() => {});
         } else {
-          // 'prompt' / web-push / first-time grant — we need to await
-          // because the user's permission decision determines whether
-          // saving the pref makes sense, and web push needs the endpoint
-          // POSTed to the server before any push can be delivered.
           const endpoint = await ensurePushSubscription();
           if (capability?.capacitorNative) {
-            // ensurePushSubscription returns the endpoint on grant, null
-            // on the iOS permission dialog being declined. Either way the
-            // iOS permission state is now definitively decided — skip the
-            // IPC re-probe and reflect it directly.
             setIosPermission(endpoint === null ? "denied" : "granted");
           }
           if (endpoint === null) {
