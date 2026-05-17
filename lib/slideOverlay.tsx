@@ -44,7 +44,6 @@ import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { isGroupRootView, normalizePath } from "./questionId";
 import { GROUP_HEADER_ATTR } from "./groupDomMarkers";
-import { instrumentTopbarJump } from "./diagnostics/topbarJump";
 import {
   SLIDE_TO_GROUP_EVENT,
   type SlideToGroupDetail,
@@ -235,12 +234,6 @@ export function SlideOverlayHost(): React.ReactElement | null {
       if (!detail) return;
       clearUnmountTimer();
       pushedRef.current = false;
-      // TEMP diagnostic: instrument the iOS Firefox topbar-jump bug for
-      // every slide event. Remove `instrumentTopbarJump` + its import +
-      // this call once the bug is diagnosed.
-      if (detail.kind.type === 'group') {
-        instrumentTopbarJump(`slide:${detail.kind.groupId}`);
-      }
       setState({ ...detail, phase: "enter" });
     };
     window.addEventListener(SLIDE_TO_GROUP_EVENT, handler);
