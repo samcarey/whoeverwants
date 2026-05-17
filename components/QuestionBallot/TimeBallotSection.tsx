@@ -216,7 +216,7 @@ export default function TimeBallotSection({
                 <button
                   type="button"
                   onClick={handleVoteClick}
-                  disabled={isSubmitting || (!isAbstaining && voterDayTimeWindows.filter(d => d.windows.length > 0).length === 0)}
+                  disabled={isSubmitting || (!isAbstaining && voterDayTimeWindows.filter(d => (d.windows ?? []).some((w: any) => w.enabled !== false)).length === 0)}
                   className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                 >
                   {isSubmitting ? 'Submitting...' : 'Submit Availability'}
