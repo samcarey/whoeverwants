@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { haptic } from "@/lib/haptics";
 
 interface PollShareButtonProps {
   url: string;
@@ -23,6 +24,7 @@ export default function PollShareButton({ url, title }: PollShareButtonProps) {
 
   const handleShare = useCallback(async () => {
     if (typeof window === "undefined" || !url) return;
+    haptic.light();
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
       try {
         await navigator.share({ title, url });

@@ -20,6 +20,7 @@ import InitialBubble from "@/components/InitialBubble";
 import ImageCropModal from "@/components/ImageCropModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { getStoredTheme, saveTheme, type ThemePreference } from "@/lib/theme";
+import { haptic } from "@/lib/haptics";
 
 const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; icon: React.ReactNode }> = [
   {
@@ -185,6 +186,7 @@ export default function SettingsPage() {
 
   const saveImageChange = async () => {
     if (imageSaving || !hasPendingImageChange) return;
+    haptic.success();
     setImageSaving(true);
     setMessage(null);
     try {
@@ -204,6 +206,7 @@ export default function SettingsPage() {
   };
 
   const handleSave = async () => {
+    haptic.success();
     setIsLoading(true);
     setMessage(null);
 

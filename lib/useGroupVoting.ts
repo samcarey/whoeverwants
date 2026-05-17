@@ -12,6 +12,7 @@ import {
 import { buildPollVoteItem } from "@/components/QuestionBallot/voteDataBuilders";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { invalidateQuestion } from "@/lib/questionCache";
+import { haptic } from "@/lib/haptics";
 import {
   loadVotedQuestions,
   parseYesNoChoice,
@@ -163,6 +164,7 @@ export function useGroupVoting({
     subQuestions: Question[],
     preparedNonYesNo: PreparedNonYesNoEntry[],
   ) => {
+    haptic.success();
     setPollSubmitting((prev) => {
       if (prev.has(pollId)) return prev;
       const next = new Set(prev);
@@ -296,6 +298,7 @@ export function useGroupVoting({
       console.error("submitYesNoChoice called for question without poll_id");
       return;
     }
+    haptic.success();
     setVoteChangeSubmitting(true);
     try {
       const voter_name = current
