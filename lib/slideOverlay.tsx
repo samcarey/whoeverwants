@@ -43,7 +43,6 @@ import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { isGroupRootView, normalizePath } from "./questionId";
-import { GROUP_HEADER_ATTR } from "./groupDomMarkers";
 import {
   SLIDE_TO_GROUP_EVENT,
   type SlideToGroupDetail,
@@ -60,17 +59,6 @@ const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 // redirect, route error). Keeps the user from being stranded behind a stuck
 // slide.
 const OVERLAY_SAFETY_TIMEOUT_MS = 4000;
-// rAF retries for the no-expand scroll-to-bottom (caps the wait if scrollHeight
-// never settles, e.g. data fetch error). 30 frames ≈ 500ms at 60fps, plenty for
-// the overlay's 380ms visible lifetime.
-const SCROLL_RETRY_FRAMES = 30;
-// Spread into the overlay's style when there's an expanded card. Collapses
-// GroupContent's header→first-card gap so the first card sits flush with the
-// header without needing overlay.scrollTop. See the overlayDivRef comment for
-// why scrollTop doesn't work here.
-const COLLAPSE_CARD_GAP_STYLE: React.CSSProperties = {
-  ["--group-card-gap" as string]: "0px",
-};
 
 /** Fire-and-forget: dispatch the slide event. Caller doesn't await anything;
  *  the host component handles the full lifecycle. Safe inside React event
@@ -214,19 +202,6 @@ export function SlideOverlayHost(): React.ReactElement | null {
       unmountTimerRef.current = null;
     }
   };
-  // We can't use `overlay.scrollTop` to align cards with the header. The
-  // overlay's `contain: strict` (combined with its transform) makes
-  // `position: fixed` descendants behave like absolute-positioned within
-  // the overlay — they scroll with the overlay's scrollTop. Setting
-  // scrollTop=8 pulls the GroupHeader 8px above the viewport top
-  // ("top bar shifts down" on unmount). Instead we collapse the 0.5rem gap
-  // between header and first card via the `--group-card-gap` CSS variable
-  // that GroupContent's `.pb-2` paddingTop reads: with the gap at 0 in the
-  // overlay context, the first card sits at offsetTop = headerHeight
-  // (flush with the header) without any scroll. The real route keeps the
-  // 0.5rem default and reaches the same visual layout via window.scrollY,
-  // so the unmount is a no-op.
-  const overlayDivRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -280,59 +255,23 @@ export function SlideOverlayHost(): React.ReactElement | null {
     }
   }, [state?.phase, router]);
 
-  // Group destinations without an expanded card scroll to the bottom of
-  // their content (the draft poll card area). For the targeted-card case,
-  // `--group-card-gap: 0px` (set on the overlay wrapper below) puts the
-  // first card flush with the header without needing any scroll. See the
-  // overlayDivRef comment above for why scrollTop doesn't work as an
-  // alignment tool here.
-  //
-  // The position:fixed GroupHeader inside this contain:strict + transform
-  // overlay scrolls WITH the overlay's content (the documented trap), so a
-  // raw scrollTop pulls the header up by `target` px during the slide,
-  // visibly snapping back down to top:0 once the overlay unmounts (the
-  // real route's window.scrollY does NOT affect its position:fixed
-  // header). Mostly invisible on tall groups (target > headerHeight so the
-  // header is fully offscreen), but on short groups (target < headerHeight)
-  // the header sits partially above the viewport and the user sees a
-  // small downward jump on unmount — especially noticeable on iOS Firefox.
-  // Counter-translate the header by `target` so it stays pinned to
-  // viewport top during the slide, matching the real route's final state.
-  //
-  // Only applies to `group` kind — info/edit-title pages don't have a
-  // bottom-anchored scrolling element.
-  const overlayMounted = state !== null;
-  const isGroupNoExpand =
-    state?.kind.type === 'group' && state.kind.expandedQuestionId === null;
-  useLayoutEffect(() => {
-    if (!overlayMounted) return;
-    if (!isGroupNoExpand) return;
-    let cancelled = false;
-    let rafId: number | null = null;
-    let attempts = 0;
-    const scrollToBottom = () => {
-      rafId = null;
-      if (cancelled) return;
-      const o = overlayDivRef.current;
-      if (!o) return;
-      const target = Math.max(0, o.scrollHeight - o.clientHeight);
-      if (target === 0 && attempts++ < SCROLL_RETRY_FRAMES) {
-        rafId = requestAnimationFrame(scrollToBottom);
-        return;
-      }
-      if (o.scrollTop !== target) o.scrollTop = target;
-      const headerEl = o.querySelector<HTMLElement>(`[${GROUP_HEADER_ATTR}]`);
-      if (headerEl) {
-        headerEl.style.transform =
-          target > 0 ? `translate3d(0, ${target}px, 0)` : '';
-      }
-    };
-    scrollToBottom();
-    return () => {
-      cancelled = true;
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [overlayMounted, isGroupNoExpand]);
+  // Overlay does not adjust its own `scrollTop`. The destination's
+  // `<GroupContent>` runs its own initial-load `useLayoutEffect` (3-tier
+  // rule: ?p → oldest awaiting → bottom) that drives `window.scrollY`;
+  // by the time the overlay unmounts, the real route is already at the
+  // correct scroll position. Earlier attempts that scrolled the overlay
+  // tripped a WebKit quirk where `position:fixed` children of a
+  // `contain:strict` + transformed ancestor scroll with the content,
+  // requiring a counter-translate on the header to keep it at viewport
+  // top — and the counter-translate went stale when `scrollHeight`
+  // changed mid-slide (placeholder cards → real cards) because the
+  // browser auto-clamped `overlay.scrollTop` to the new max while the
+  // header's transform stayed frozen at the initial value, leaving the
+  // header drifting mid-viewport on iOS Firefox. Not solving the
+  // problem at all sidesteps the entire class of stale-transform bugs.
+  // For the dominant case (tier 2 oldest-awaiting card = top of group)
+  // the real route's chosen `scrollY` is 0 anyway, so there's no
+  // content jump on unmount either.
 
   // Unmount when either (a) the URL has flipped + slide duration has elapsed,
   // or (b) the safety timeout fires. One timer per slide; cleared on new
@@ -383,7 +322,6 @@ export function SlideOverlayHost(): React.ReactElement | null {
 
   return createPortal(
     <div
-      ref={overlayDivRef}
       aria-hidden="true"
       // Inherit Geist sans; the template's font wrapper is inside
       // ResponsiveScaling, outside the body portal target.
@@ -404,11 +342,6 @@ export function SlideOverlayHost(): React.ReactElement | null {
         willChange: "transform",
         contain: "strict",
         overflow: "hidden auto",
-        // TypeScript narrows state.kind to the 'group' variant inside this
-        // check; needed to access .expandedQuestionId on the union.
-        ...(state.kind.type === 'group' && state.kind.expandedQuestionId !== null
-          ? COLLAPSE_CARD_GAP_STYLE
-          : null),
       }}
     >
       <div
