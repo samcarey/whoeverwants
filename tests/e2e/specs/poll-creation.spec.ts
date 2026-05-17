@@ -15,23 +15,15 @@ import { test, expect } from '@playwright/test';
 test.describe('Poll creation via bubble modal', () => {
   test('opening Yes/No bubble opens the modal with title input', async ({ page }) => {
     await page.goto('/g/');
-    await page.waitForLoadState('domcontentloaded');
-    await page.waitForTimeout(1500);
-
     const yesNoBubble = page.getByRole('button', { name: /^Add Yes\s*\/\s*No question$/i });
-    await expect(yesNoBubble).toBeVisible({ timeout: 5_000 });
+    await expect(yesNoBubble).toBeVisible({ timeout: 10_000 });
     await yesNoBubble.click();
-
-    // The modal slides up. Look for the title input.
-    await page.waitForTimeout(500);
     const titleInput = page.locator('input[type="text"]').first();
     await expect(titleInput).toBeVisible({ timeout: 5_000 });
   });
 
   test('all built-in category bubbles are present on /g/', async ({ page }) => {
     await page.goto('/g/');
-    await page.waitForLoadState('domcontentloaded');
-    await page.waitForTimeout(1500);
     // Categories from components/TypeFieldInput.tsx BUILT_IN_TYPES + Other.
     const expectedAriaPatterns = [
       /^Add Yes\s*\/\s*No question$/i,
@@ -44,7 +36,7 @@ test.describe('Poll creation via bubble modal', () => {
     ];
     for (const pat of expectedAriaPatterns) {
       const btn = page.getByRole('button', { name: pat });
-      await expect(btn, `expected bubble matching ${pat} to be visible`).toBeVisible({ timeout: 5_000 });
+      await expect(btn, `expected bubble matching ${pat} to be visible`).toBeVisible({ timeout: 10_000 });
     }
   });
 });

@@ -10,6 +10,18 @@ with 404 before the DB query.
 import uuid
 import pytest
 
+from fastapi.testclient import TestClient
+
+from main import app
+
+
+# Module-scoped client — these tests don't mutate DB state, so a single
+# TestClient avoids the ~35× re-instantiation that the function-scoped
+# `client` fixture in conftest.py would force on parametrized cases.
+@pytest.fixture(scope="module")
+def client():
+    return TestClient(app)
+
 
 BAD_INPUTS = [
     "NOT-A-UUID",

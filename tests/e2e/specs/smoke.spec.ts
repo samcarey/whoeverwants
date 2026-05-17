@@ -25,11 +25,11 @@ test.describe('Smoke', () => {
 
   test('/g/ (empty group placeholder) shows bubble bar', async ({ page }) => {
     await page.goto('/g/');
-    await page.waitForLoadState('domcontentloaded');
-    // The bubble bar renders BUILT_IN_TYPES + Other; should have at least 5 buttons.
-    await page.waitForTimeout(1500);  // wait for client hydration of portal
-    const buttonCount = await page.locator('button').count();
-    expect(buttonCount).toBeGreaterThanOrEqual(5);
+    // Wait for the Yes/No bubble specifically — it's the first BUILT_IN_TYPES
+    // entry and signals the portal-driven bubble bar has hydrated.
+    await expect(page.getByRole('button', { name: /Add Yes\s*\/\s*No question/i }))
+      .toBeVisible({ timeout: 10_000 });
+    expect(await page.locator('button').count()).toBeGreaterThanOrEqual(5);
   });
 
   test('PWA manifest.json is reachable and valid', async ({ page }) => {
@@ -54,10 +54,6 @@ test.describe('Smoke', () => {
 
   test('non-existent group route shows graceful "not found"', async ({ page }) => {
     await page.goto('/g/DEFINITELY-NOT-A-REAL-ID');
-    await page.waitForLoadState('domcontentloaded');
-    await page.waitForTimeout(1500);
-    // Should NOT 500 / hard crash
-    const body = await page.locator('body').innerText();
-    expect(body.toLowerCase()).toMatch(/group not found|not found/);
+    await expect(page.locator('body')).toContainText(/group not found|not found/i, { timeout: 10_000 });
   });
 });

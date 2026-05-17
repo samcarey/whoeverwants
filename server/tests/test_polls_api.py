@@ -87,8 +87,6 @@ class TestCreatePoll:
         assert resp.status_code == 201, resp.text
         data = resp.json()
         assert data["context"] == "Birthday"
-        # Note: comma-joined per `_build_distinct_contexts_title`'s ", ".join contract
-        # (no Oxford "and"). Documented in CLAUDE.md → "N questions sharing the SAME context".
         assert data["title"] == "Restaurant, Time, Movie for Birthday"
         assert len(data["questions"]) == 3
         # Sub-questions preserve insertion order
@@ -536,9 +534,6 @@ class TestPollOperations:
         data = resp.json()
         assert data["is_closed"] is True
         assert data["close_reason"] == "manual"
-        # Phase 5: only the wrapper carries is_closed/close_reason — sub-questions
-        # inherit via the JOIN-derived poll state. The fields are no longer present
-        # on QuestionResponse; assert their absence so future regressions surface.
         for sp in data["questions"]:
             assert "is_closed" not in sp
             assert "close_reason" not in sp
@@ -572,7 +567,6 @@ class TestPollOperations:
         data = resp.json()
         assert data["is_closed"] is False
         assert data["close_reason"] is None
-        # Phase 5: is_closed/close_reason are wrapper-only (see test_close_poll_...).
         for sp in data["questions"]:
             assert "is_closed" not in sp
             assert "close_reason" not in sp

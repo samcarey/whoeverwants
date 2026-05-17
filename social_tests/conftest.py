@@ -53,32 +53,36 @@ def creator_secret():
 # ── Helper functions available to all tests ───────────────────────────────────
 
 
-# Default category to attach to a single-question wrapper, by poll_type.
-# `yes_no` polls need category="yes_no" because the server's auto-title
-# function recognises that label. Other types default to "custom".
-_DEFAULT_CATEGORY = {"yes_no": "yes_no"}
+# Fields the server accepts on each request shape — used to split incoming
+# kwargs into per-question vs poll-level vs vote-item bags.
+_QUESTION_FIELDS = (
+    "options", "options_metadata", "context", "suggestion_deadline_minutes",
+    "min_availability_percent", "day_time_windows", "duration_window",
+    "reference_latitude", "reference_longitude", "reference_location_label",
+    "is_auto_title",
+)
+_POLL_FIELDS = (
+    "creator_name", "response_deadline", "prephase_deadline",
+    "prephase_deadline_minutes", "group_id", "group_title",
+    "context", "details", "min_responses", "show_preliminary_results",
+    "allow_pre_ranking", "is_auto_title",
+)
+_VOTE_ITEM_FIELDS = (
+    "vote_type", "yes_no_choice", "ranked_choices", "ranked_choice_tiers",
+    "suggestions", "is_abstain", "is_ranking_abstain",
+    "voter_day_time_windows", "voter_duration",
+    "liked_slots", "disliked_slots",
+)
 
 
 def _question_payload(poll_type: str, **kwargs) -> dict:
-    """Build a single CreateQuestionRequest dict for the given poll_type."""
     q: dict = {
         "question_type": poll_type,
-        "category": kwargs.pop("category", None) or _DEFAULT_CATEGORY.get(poll_type, "custom"),
+        # yes_no polls need category="yes_no" so the server's auto-title
+        # function recognises the label; everything else defaults to "custom".
+        "category": kwargs.pop("category", None) or ("yes_no" if poll_type == "yes_no" else "custom"),
     }
-    # Pass through optional fields that map 1:1 onto CreateQuestionRequest.
-    for k in (
-        "options",
-        "options_metadata",
-        "context",
-        "suggestion_deadline_minutes",
-        "min_availability_percent",
-        "day_time_windows",
-        "duration_window",
-        "reference_latitude",
-        "reference_longitude",
-        "reference_location_label",
-        "is_auto_title",
-    ):
+    for k in _QUESTION_FIELDS:
         if k in kwargs and kwargs[k] is not None:
             q[k] = kwargs.pop(k)
     return q
@@ -124,22 +128,11 @@ class PollHelper:
             anchor = self._result.test_name
             kwargs["details"] = f"Test: {anchor}\n{REPORT_URL}#{anchor}"
 
-        # Translate legacy `suggestion` poll_type to current shape.
         if poll_type == "suggestion":
             poll_type = "ranked_choice"
             kwargs.setdefault("suggestion_deadline_minutes", 60)
 
-        # Extract poll-level fields the server expects on CreatePollRequest.
-        poll_fields = {}
-        for k in (
-            "creator_name", "response_deadline", "prephase_deadline",
-            "prephase_deadline_minutes", "group_id", "group_title",
-            "context", "details", "min_responses", "show_preliminary_results",
-            "allow_pre_ranking", "is_auto_title",
-        ):
-            if k in kwargs:
-                poll_fields[k] = kwargs.pop(k)
-        # Anything left is per-question (options, suggestion_deadline_minutes, etc.).
+        poll_fields = {k: kwargs.pop(k) for k in _POLL_FIELDS if k in kwargs}
         question = _question_payload(poll_type, **kwargs)
         payload = {
             "creator_secret": creator_secret,
@@ -166,49 +159,32 @@ class PollHelper:
         self._first_question_id[poll_id] = qid
         return qid
 
-    def vote(self, poll_id: str, voter_name: str | None = None, **kwargs) -> dict:
-        """Submit a vote on the poll's first question via the batch endpoint."""
-        # Translate legacy vote_type=suggestion.
+    def _submit(
+        self, poll_id: str, err_prefix: str, *,
+        vote_id: str | None = None, voter_name: str | None = None, **kwargs,
+    ) -> dict:
         if kwargs.get("vote_type") == "suggestion":
             kwargs["vote_type"] = "ranked_choice"
         question_id = kwargs.pop("question_id", None) or self._question_id_for(poll_id)
         item: dict = {"question_id": question_id}
-        # Migrate vote-type fields onto the item.
-        for k in (
-            "vote_type", "yes_no_choice", "ranked_choices", "ranked_choice_tiers",
-            "suggestions", "is_abstain", "is_ranking_abstain",
-            "voter_day_time_windows", "voter_duration",
-            "liked_slots", "disliked_slots",
-        ):
+        if vote_id is not None:
+            item["vote_id"] = vote_id
+        for k in _VOTE_ITEM_FIELDS:
             if k in kwargs:
                 item[k] = kwargs.pop(k)
         body: dict = {"items": [item]}
         if voter_name is not None:
             body["voter_name"] = voter_name
-        resp = self._request("POST", f"/api/polls/{poll_id}/votes", 201, "Failed to vote", json=body)
-        # Endpoint returns a list; the legacy API returned a single dict.
+        resp = self._request("POST", f"/api/polls/{poll_id}/votes", 201, err_prefix, json=body)
         votes = resp.json()
         return votes[0] if isinstance(votes, list) and votes else votes
 
+    def vote(self, poll_id: str, voter_name: str | None = None, **kwargs) -> dict:
+        return self._submit(poll_id, "Failed to vote", voter_name=voter_name, **kwargs)
+
     def edit_vote(self, poll_id: str, vote_id: str, **kwargs) -> dict:
-        """Edit an existing vote — routes through the batch endpoint with vote_id set."""
-        question_id = kwargs.pop("question_id", None) or self._question_id_for(poll_id)
-        item: dict = {"question_id": question_id, "vote_id": vote_id}
-        for k in (
-            "vote_type", "yes_no_choice", "ranked_choices", "ranked_choice_tiers",
-            "suggestions", "is_abstain", "is_ranking_abstain",
-            "voter_day_time_windows", "voter_duration",
-            "liked_slots", "disliked_slots",
-        ):
-            if k in kwargs:
-                item[k] = kwargs.pop(k)
-        body: dict = {"items": [item]}
         voter_name = kwargs.pop("voter_name", None)
-        if voter_name is not None:
-            body["voter_name"] = voter_name
-        resp = self._request("POST", f"/api/polls/{poll_id}/votes", 201, "Failed to edit vote", json=body)
-        votes = resp.json()
-        return votes[0] if isinstance(votes, list) and votes else votes
+        return self._submit(poll_id, "Failed to edit vote", vote_id=vote_id, voter_name=voter_name, **kwargs)
 
     def close_poll(self, poll_id: str, creator_secret: str, reason: str = "manual") -> dict:
         resp = self._request(

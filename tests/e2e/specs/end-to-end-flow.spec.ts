@@ -57,11 +57,8 @@ test.describe('Multi-user voting flow', () => {
     const groupUrl = `${baseURL}/g/${poll.group_short_id}`;
     const resp = await page.goto(groupUrl, { waitUntil: 'domcontentloaded' });
     expect(resp?.status()).toBe(200);
-    await page.waitForTimeout(2000);
-
     // Title should be visible (auto-generated for a yes/no = the user-typed title)
-    const bodyText = await page.locator('body').innerText();
-    expect(bodyText.toLowerCase()).toContain('pizza');
+    await expect(page.locator('body')).toContainText(/pizza/i, { timeout: 10_000 });
     await ctx.close();
   });
 
