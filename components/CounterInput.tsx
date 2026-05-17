@@ -13,6 +13,7 @@ interface CounterInputProps {
   className?: string;
   arrowPosition?: 'left' | 'right';
   formatValue?: (value: number) => string;
+  suffix?: string;
 }
 
 export default function CounterInput({
@@ -25,7 +26,8 @@ export default function CounterInput({
   placeholder = '',
   className = '',
   arrowPosition = 'left',
-  formatValue
+  formatValue,
+  suffix,
 }: CounterInputProps) {
   const [editingValue, setEditingValue] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
@@ -143,7 +145,7 @@ export default function CounterInput({
     ? editingValue
     : (value !== null && formatValue ? formatValue(value) : (value ?? ''));
 
-  const input = (
+  const inputEl = (
     <input
       type="text"
       inputMode="decimal"
@@ -153,9 +155,21 @@ export default function CounterInput({
       onBlur={handleBlur}
       disabled={disabled}
       placeholder={placeholder}
-      className="w-16 px-0.5 py-1.5 text-center text-xl font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+      className={`w-16 ${suffix ? 'pl-1 pr-5 text-right' : 'px-0.5 text-center'} py-1.5 text-xl font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50`}
     />
   );
+
+  const input = suffix ? (
+    <div className="relative inline-block">
+      {inputEl}
+      <span
+        aria-hidden="true"
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none select-none text-gray-400 dark:text-gray-500 text-xl font-medium leading-none"
+      >
+        {suffix}
+      </span>
+    </div>
+  ) : inputEl;
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
