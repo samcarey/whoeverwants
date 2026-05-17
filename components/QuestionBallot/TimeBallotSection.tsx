@@ -1,7 +1,7 @@
 "use client";
 
 import type { Dispatch, SetStateAction, ReactNode } from "react";
-import type { Question, QuestionResults } from "@/lib/types";
+import type { Question, QuestionResults, DayTimeWindow } from "@/lib/types";
 import AbstainButton from "@/components/AbstainButton";
 import CompactNameField from "@/components/CompactNameField";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
@@ -37,8 +37,8 @@ export interface TimeBallotSectionProps {
   setDurationMaxValue: (n: number | null) => void;
   setDurationMinEnabled: (b: boolean) => void;
   setDurationMaxEnabled: (b: boolean) => void;
-  voterDayTimeWindows: any[];
-  setVoterDayTimeWindows: (v: any[]) => void;
+  voterDayTimeWindows: DayTimeWindow[];
+  setVoterDayTimeWindows: (v: DayTimeWindow[]) => void;
   preferenceSlotsForVoter: string[];
   likedSlots: string[] | null;
   setLikedSlots: Dispatch<SetStateAction<string[] | null>>;
@@ -216,7 +216,7 @@ export default function TimeBallotSection({
                 <button
                   type="button"
                   onClick={handleVoteClick}
-                  disabled={isSubmitting || (!isAbstaining && voterDayTimeWindows.filter(d => (d.windows ?? []).some((w: any) => w.enabled !== false)).length === 0)}
+                  disabled={isSubmitting || (!isAbstaining && voterDayTimeWindows.filter(d => (d.windows ?? []).some(w => w.enabled !== false)).length === 0)}
                   className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                 >
                   {isSubmitting ? 'Submitting...' : 'Submit Availability'}

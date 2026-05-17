@@ -149,7 +149,7 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
       const cleanedDays = state.voterDayTimeWindows
         .map(d => ({
           ...d,
-          windows: (d.windows ?? []).filter(w => (w as any).enabled !== false).map(({ min, max }) => ({ min, max })),
+          windows: (d.windows ?? []).filter(w => w.enabled !== false).map(({ min, max }) => ({ min, max })),
         }))
         .filter(d => d.windows.length > 0);
       return {

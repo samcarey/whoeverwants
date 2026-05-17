@@ -186,7 +186,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     && !!questionResults?.options_are_tentative
     && !!questionResults?.options?.length;
   const hasSubmittedAvailability = Array.isArray(userVoteData?.voter_day_time_windows)
-    && (userVoteData!.voter_day_time_windows as any[]).length > 0;
+    && userVoteData!.voter_day_time_windows.length > 0;
   // True while this submission would write availability fields (voter_day_time_windows
   // + voter_duration). Flips to false once the voter has submitted availability and
   // pre-ranking tentative slots exist — at that point the next submission carries
@@ -219,7 +219,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const fetchResultsLastCall = useRef(0);
 
   // Time-question voter state — initialized with question's constraints, draft restored in useEffect
-  const [voterDayTimeWindows, setVoterDayTimeWindows] = useState<any[]>(question.day_time_windows || []);
+  const [voterDayTimeWindows, setVoterDayTimeWindows] = useState<DayTimeWindow[]>(question.day_time_windows || []);
   const [durationMinValue, setDurationMinValue] = useState<number | null>(question.duration_window?.minValue ?? 1);
   const [durationMaxValue, setDurationMaxValue] = useState<number | null>(question.duration_window?.maxValue ?? 2);
   const [durationMinEnabled, setDurationMinEnabled] = useState(question.duration_window?.minEnabled ?? false);
@@ -543,18 +543,19 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   }, [question.id, question.question_type, hasVoted, fetchVoteData, isNewQuestion]);
 
   // Fetch results when question closes or for time questions in preferences phase.
-  // Pre-ranking mode also needs results during the availability phase so the
-  // server-computed tentative slot list (`options_are_tentative`) reaches the FE
-  // and the bubble UI can render after the voter submits availability.
+  // Pre-ranking mode also needs results during the availability phase, but only
+  // for voters who've already submitted availability — non-voters don't see
+  // tentative slots and would otherwise trigger the server's slot-generation
+  // pass on every mount.
   useEffect(() => {
     const isClosed = questionClosed || (poll.response_deadline && new Date(poll.response_deadline) <= new Date());
     const shouldFetchForTimeQuestion = question.question_type === 'time'
-      && (!inAvailabilityPhase || poll.allow_pre_ranking !== false);
+      && (!inAvailabilityPhase || (poll.allow_pre_ranking !== false && hasVoted));
 
     if (isClosed || shouldFetchForTimeQuestion) {
       fetchQuestionResults();
     }
-  }, [questionClosed, poll.response_deadline, question.question_type, fetchQuestionResults, inAvailabilityPhase, poll.allow_pre_ranking]);
+  }, [questionClosed, poll.response_deadline, question.question_type, fetchQuestionResults, inAvailabilityPhase, poll.allow_pre_ranking, hasVoted]);
 
   // Load saved user name. Skip when the wrapper owns the voter name input
   // (Phase 3.4 follow-up B) — the wrapper seeds its own state from
@@ -988,21 +989,15 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
       setIsEditingVote(false);
       setIsEditingRanking(false);
 
-      // Refresh results after editing votes with suggestions
-      if (hasSuggestionPhase && (isEditingVote || isEditingRanking)) {
-        await fetchQuestionResults();
-      }
-
-      // If the poll is closed or preliminary results threshold met, fetch results
-      if (isQuestionClosed || showPrelimResults) {
-        await fetchQuestionResults();
-      }
-      // Time questions in pre-ranking mode need the post-submit results refetch to
-      // populate `options_are_tentative` so the UI can advance from the availability
-      // input form to the preferences bubble UI without a one-cycle flash through
-      // the "Your availability:" summary while the showPrelimResults useEffect
-      // catches up.
-      if (question.question_type === 'time' && inAvailabilityPhase && poll.allow_pre_ranking !== false) {
+      // Refetch results when: editing in a suggestion-phase question, the question
+      // is closed, prelim threshold is met, or this is a pre-ranking time submission
+      // (so `options_are_tentative` lands before the FE re-renders the active form).
+      if (
+        (hasSuggestionPhase && (isEditingVote || isEditingRanking))
+        || isQuestionClosed
+        || showPrelimResults
+        || (question.question_type === 'time' && inAvailabilityPhase && poll.allow_pre_ranking !== false)
+      ) {
         await fetchQuestionResults();
       }
     } catch (error) {
@@ -1133,15 +1128,13 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
       clearQuestionDraft(question.poll_id ?? null, question.id);
       setIsEditingVote(false);
       setIsEditingRanking(false);
-      if (hasSuggestionPhase && capturedIsEditing) {
-        void fetchQuestionResults();
-      }
-      if (isQuestionClosed || showPrelimResults) {
-        void fetchQuestionResults();
-      }
-      // See submitVote: time + pre-ranking needs the post-submit refetch to land
-      // tentative slots before the UI re-renders.
-      if (question.question_type === 'time' && inAvailabilityPhase && poll.allow_pre_ranking !== false) {
+      // Mirror submitVote's refetch gate.
+      if (
+        (hasSuggestionPhase && capturedIsEditing)
+        || isQuestionClosed
+        || showPrelimResults
+        || (question.question_type === 'time' && inAvailabilityPhase && poll.allow_pre_ranking !== false)
+      ) {
         void fetchQuestionResults();
       }
     };

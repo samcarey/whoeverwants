@@ -535,8 +535,18 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
     return row
 
 
-def _compute_results(question, votes) -> QuestionResultsResponse:
-    """Compute question results from a question row and its votes. Shared by get_results and get_accessible_questions."""
+def _compute_results(question, votes, *, include_tentative_time_options: bool = True) -> QuestionResultsResponse:
+    """Compute question results from a question row and its votes. Shared by get_results and get_accessible_questions.
+
+    `include_tentative_time_options` gates the pre-ranking tentative-slots
+    computation for time questions in the availability phase. The bulk
+    `polls_for_poll_ids` path (`/api/groups/mine`, `/by-route-id/{id}`) sets
+    this to False because the group page refreshes every 5s and the slot
+    generation pass is the most expensive thing in this codepath — sustained
+    cost scales with (polls × voters × duration_window × slot_grid) per active
+    tab. The per-question results endpoint keeps it on so `QuestionBallot` can
+    advance to the preferences bubble UI once a voter has submitted availability.
+    """
     question_type = question["question_type"]
 
     if question_type == "yes_no":
@@ -653,19 +663,23 @@ def _compute_results(question, votes) -> QuestionResultsResponse:
         # is on, surface a tentative slot list computed from the votes so far so
         # voters can react to currently-viable slots before the availability cutoff.
         # `_finalize_time_slots` runs the same algorithm at cutoff to persist
-        # `question.options`; this path mirrors it without writing.
+        # `question.options`; this path mirrors it without writing. Skipped on
+        # bulk reads (see `include_tentative_time_options` doc).
         if (
-            question_options is None
+            include_tentative_time_options
+            and question_options is None
             and question.get("allow_pre_ranking") is not False
             and any(v.get("voter_day_time_windows") for v in vote_dicts)
         ):
-            tentative = _compute_candidate_time_slots(dict(question), vote_dicts)
+            tentative = _compute_candidate_time_slots(question, vote_dicts)
             if tentative:
                 question_options = tentative
                 options_are_tentative = True
 
-        synth_question = dict(question)
-        synth_question["options"] = json.dumps(question_options) if question_options else None
+        # `calculate_time_question_results` reads question["options"] (list or
+        # JSON string). Substitute the tentative list when we computed one,
+        # otherwise keep whatever was already on the row.
+        synth_question = {**dict(question), "options": question_options}
         time_result = calculate_time_question_results(synth_question, vote_dicts)
 
         return QuestionResultsResponse(
