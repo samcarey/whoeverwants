@@ -14,6 +14,7 @@ import {
   clearCachedMyUserProfile,
 } from "@/lib/api";
 import { usePageReady } from "@/lib/usePageReady";
+import { getCurrentPosition, GeolocationDeniedError } from "@/lib/geolocation";
 import CompactNameField from "@/components/CompactNameField";
 import InitialBubble from "@/components/InitialBubble";
 import ImageCropModal from "@/components/ImageCropModal";
@@ -243,38 +244,30 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDetectLocation = () => {
-    if (!navigator.geolocation) {
-      setMessage({ type: 'error', text: 'Geolocation is not supported by your browser' });
-      return;
-    }
-
+  const handleDetectLocation = async () => {
     setIsGeolocating(true);
     setMessage(null);
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const { latitude, longitude } = position.coords;
-          const result = await apiGeocode(`${latitude}, ${longitude}`);
-          const label = result?.label || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
-          const loc: UserLocation = { latitude, longitude, label };
-          saveUserLocation(loc);
-          setSavedLocation(loc);
-          setLocationInput("");
-          setMessage({ type: 'success', text: `Location set to ${label}` });
-        } catch {
-          setMessage({ type: 'error', text: 'Failed to determine your location' });
-        } finally {
-          setIsGeolocating(false);
-        }
-      },
-      () => {
+    try {
+      const { latitude, longitude } = await getCurrentPosition({
+        enableHighAccuracy: false,
+        timeout: 10000,
+      });
+      const result = await apiGeocode(`${latitude}, ${longitude}`);
+      const label = result?.label || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
+      const loc: UserLocation = { latitude, longitude, label };
+      saveUserLocation(loc);
+      setSavedLocation(loc);
+      setLocationInput("");
+      setMessage({ type: 'success', text: `Location set to ${label}` });
+    } catch (err) {
+      if (err instanceof GeolocationDeniedError) {
         setMessage({ type: 'error', text: 'Location access denied' });
-        setIsGeolocating(false);
-      },
-      { enableHighAccuracy: false, timeout: 10000 }
-    );
+      } else {
+        setMessage({ type: 'error', text: 'Failed to determine your location' });
+      }
+    } finally {
+      setIsGeolocating(false);
+    }
   };
 
   const handleClearAll = async () => {
