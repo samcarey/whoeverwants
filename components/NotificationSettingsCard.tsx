@@ -18,6 +18,16 @@
  * service worker at scope `/push/`, (c) calls `pushManager.subscribe`,
  * and (d) POSTs the resulting endpoint + keys to the server. If the
  * user denies permission, we stay off and surface the denial state.
+ *
+ * Native-iOS fast path: when `iosPermission === "granted"` (typically
+ * from the launch-time `bootstrapCapacitorPushSubscription`), we skip
+ * the await on `ensurePushSubscription()` and fire it as a background
+ * refresh. The APNS `registration` event can take seconds to arrive (or
+ * stall up to the 15s timeout), and awaiting it left the switch in a
+ * `saving=true` disabled state long enough that users navigated away
+ * before the pref save fired — making the toggle look stuck and the
+ * setting silently revert. Trust the bootstrap and proceed straight to
+ * the per-group pref save.
  */
 
 "use client";
@@ -119,18 +129,21 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
     setEnabled(next);
     try {
       if (next) {
-        const endpoint = await ensurePushSubscription();
-        if (capability?.capacitorNative) {
-          // ensurePushSubscription returns the endpoint on grant, null
-          // on the iOS permission dialog being declined. Either way the
-          // iOS permission state is now definitively decided — skip the
-          // IPC re-probe and reflect it directly.
-          setIosPermission(endpoint === null ? "denied" : "granted");
-        }
-        if (endpoint === null) {
-          setEnabled(false);
-          setCapability(detectPushCapability());
-          return;
+        const alreadyGrantedNative =
+          capability?.capacitorNative === true && iosPermissionGranted;
+        if (alreadyGrantedNative) {
+          // Native-iOS fast path — see file header.
+          void ensurePushSubscription().catch(() => {});
+        } else {
+          const endpoint = await ensurePushSubscription();
+          if (capability?.capacitorNative) {
+            setIosPermission(endpoint === null ? "denied" : "granted");
+          }
+          if (endpoint === null) {
+            setEnabled(false);
+            setCapability(detectPushCapability());
+            return;
+          }
         }
       }
       await apiSetGroupNotificationPref(groupRouteId, next);

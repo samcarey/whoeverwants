@@ -211,9 +211,27 @@ function arrayBuffersEqual(a: ArrayBuffer, b: ArrayBuffer): boolean {
   return true;
 }
 
+/** In-flight dedupe for `ensureCapacitorPushSubscription`. Bootstrap fires
+ *  on every layout mount and the per-group toggle fires on tap; without
+ *  coalescing they install duplicate APNS listeners, call register()
+ *  twice, and POST the same token to the server twice on every overlap. */
+let capacitorRegistrationPromise: Promise<string | null> | null = null;
+
 /** Native iOS push registration via @capacitor/push-notifications.
  *  Lazily imported so the plugin isn't pulled into the web bundle. */
 async function ensureCapacitorPushSubscription(): Promise<string | null> {
+  if (capacitorRegistrationPromise) return capacitorRegistrationPromise;
+  capacitorRegistrationPromise = (async () => {
+    try {
+      return await runCapacitorPushRegistration();
+    } finally {
+      capacitorRegistrationPromise = null;
+    }
+  })();
+  return capacitorRegistrationPromise;
+}
+
+async function runCapacitorPushRegistration(): Promise<string | null> {
   // Dynamic import so the plugin's runtime cost only lands on the
   // Capacitor native bundle. Web bundles include the chunk but never
   // execute it (capacitorNative is false on web).
