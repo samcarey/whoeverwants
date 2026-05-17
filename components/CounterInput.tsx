@@ -13,8 +13,6 @@ interface CounterInputProps {
   className?: string;
   arrowPosition?: 'left' | 'right';
   formatValue?: (value: number) => string;
-  // Optional unit suffix rendered inside the input on the right edge;
-  // non-selectable, faded — does not enter the editable value.
   suffix?: string;
 }
 

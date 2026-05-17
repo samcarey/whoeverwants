@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -29,7 +29,7 @@ import DaysSelector from "@/components/DaysSelector";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
-import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, DEFAULT_TIME_WINDOW } from "@/lib/timeUtils";
+import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, formatMonthYearLabel, shiftMonth, DEFAULT_TIME_WINDOW } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import { enterAdvancesFocus } from "@/lib/formNavigation";
 import * as questionBackTarget from "@/lib/questionBackTarget";
@@ -107,16 +107,8 @@ export function CreateQuestionContent() {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const advanceCalendarMonth = useCallback((delta: number) => {
-    setCalendarMonth(prev => {
-      const next = new Date(prev);
-      next.setMonth(next.getMonth() + delta);
-      return next;
-    });
+    setCalendarMonth(prev => shiftMonth(prev, delta));
   }, []);
-  const calendarMonthLabel = useMemo(
-    () => calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-    [calendarMonth]
-  );
   const {
     onDaysSelected: handleDaysSelected,
     onWindowsChange: handleDayWindowsChange,
@@ -1482,6 +1474,8 @@ export function CreateQuestionContent() {
   // divide-y rows above it.
   const showTimeFields =
     questionType === 'time' || (questionType === 'question' && category === 'time');
+  // Time-poll fields (Duration, Days, Time Windows) render in their own
+  // cards outside this form, so the form body is empty for time polls.
   const formHasContent = isLocationLikeCategory(category);
 
   const selectedDays = dayTimeWindows.map(dtw => dtw.day);
@@ -1723,7 +1717,7 @@ export function CreateQuestionContent() {
                           </svg>
                         </button>
                         <span className="text-[17.5px] font-medium text-gray-500 dark:text-gray-400 tabular-nums">
-                          {calendarMonthLabel}
+                          {formatMonthYearLabel(calendarMonth)}
                         </span>
                         <button
                           type="button"

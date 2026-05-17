@@ -1,6 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { formatLocalDateISO, formatMonthYearLabel, shiftMonth } from '@/lib/timeUtils';
+
+const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
 interface DaysSelectorProps {
   selectedDays: string[];
@@ -8,11 +11,11 @@ interface DaysSelectorProps {
   disabled?: boolean;
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
-  allowedDays?: string[];  // If provided, only these days are selectable (others greyed out)
-  hideButton?: boolean;  // If true, only show modal (no clickable button with day list)
-  inline?: boolean;  // If true, render the calendar inline (no modal, no Apply/Cancel buffer)
-  // When provided, treated as the controlled month value; the internal
-  // month-nav row is omitted so the caller can render its own controls.
+  allowedDays?: string[];
+  hideButton?: boolean;
+  inline?: boolean;
+  // When provided, the internal month-nav row is omitted so the caller
+  // can render its own controls.
   currentMonth?: Date;
 }
 
@@ -54,15 +57,11 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     onOpenChange?.(false);
   };
 
-  // Remove past dates from selection
   const removePastDates = (dates: string[]) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayStr = dateToString(today);
-
-    return dates.filter(dateStr => {
-      return dateStr >= todayStr;
-    });
+    const todayStr = formatLocalDateISO(today);
+    return dates.filter(dateStr => dateStr >= todayStr);
   };
 
   // Validate and clean up selected days on mount
@@ -132,98 +131,58 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     const dayNumber = date.getDate();
 
     let label = '';
-
-    // Check if it's today
-    if (dateStr === dateToString(today)) {
+    if (dateStr === formatLocalDateISO(today)) {
       label = 'Today';
-    }
-    // Check if it's tomorrow
-    else if (dateStr === dateToString(tomorrow)) {
+    } else if (dateStr === formatLocalDateISO(tomorrow)) {
       label = 'Tomorrow';
-    }
-    // Check if it's within the next week (2-7 days away)
-    else if (date <= oneWeekFromNow) {
+    } else if (date <= oneWeekFromNow) {
       label = dayOfWeek;
-    }
-    // Check if it's within the second week (8-14 days away)
-    else if (date <= twoWeeksFromNow) {
+    } else if (date <= twoWeeksFromNow) {
       label = `Next ${dayOfWeek}`;
-    }
-    // Beyond 2 weeks: use month abbreviation + day number
-    else {
+    } else {
       label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }
 
     return { label, dayNumber };
   };
 
-  // Get today's date in YYYY-MM-DD format
-  const getTodayDate = () => {
-    const today = new Date();
-    return dateToString(today);
-  };
-
-  const dateToString = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
   const goToPreviousMonth = () => {
-    setInternalCurrentMonth(prev => {
-      const newMonth = new Date(prev);
-      newMonth.setMonth(newMonth.getMonth() - 1);
-      return newMonth;
-    });
+    setInternalCurrentMonth(prev => shiftMonth(prev, -1));
   };
 
   const goToNextMonth = () => {
-    setInternalCurrentMonth(prev => {
-      const newMonth = new Date(prev);
-      newMonth.setMonth(newMonth.getMonth() + 1);
-      return newMonth;
-    });
+    setInternalCurrentMonth(prev => shiftMonth(prev, 1));
   };
 
-  const renderCalendar = () => {
+  const calendarDays = useMemo(() => {
     const year = effectiveCurrentMonth.getFullYear();
     const month = effectiveCurrentMonth.getMonth();
-
-    const firstDay = new Date(year, month, 1);
-    const firstDayOfWeek = firstDay.getDay();
+    const firstDayOfWeek = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    const days: { dateStr: string; isCurrentMonth: boolean }[] = [];
+    const days: { dateStr: string; isCurrentMonth: boolean; day: number }[] = [];
 
-    // Fill leading days from previous month
     for (let i = firstDayOfWeek - 1; i >= 0; i--) {
       const date = new Date(year, month, -i);
-      days.push({ dateStr: dateToString(date), isCurrentMonth: false });
+      days.push({ dateStr: formatLocalDateISO(date), isCurrentMonth: false, day: date.getDate() });
     }
-
-    // Add all days of the current month
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
-      days.push({ dateStr: dateToString(date), isCurrentMonth: true });
+      days.push({ dateStr: formatLocalDateISO(date), isCurrentMonth: true, day });
     }
-
-    // Round up to a full week of trailing days so the last row is balanced.
-    // 28-day months starting Sunday produce 4 rows; long months that wrap a
-    // 6th week produce 6.
+    // Round up to a full week of trailing days. 28-day months starting
+    // Sunday produce 4 rows; long months that wrap a 6th week produce 6.
     const totalCells = Math.ceil(days.length / 7) * 7;
     let nextDay = 1;
     while (days.length < totalCells) {
       const date = new Date(year, month + 1, nextDay++);
-      days.push({ dateStr: dateToString(date), isCurrentMonth: false });
+      days.push({ dateStr: formatLocalDateISO(date), isCurrentMonth: false, day: nextDay - 1 });
     }
 
     return days;
-  };
+  }, [effectiveCurrentMonth]);
 
-  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const calendarDays = renderCalendar();
-  const monthName = effectiveCurrentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const monthName = formatMonthYearLabel(effectiveCurrentMonth);
 
   const monthNavRow = (
     <div className="flex items-center justify-between mb-4">
@@ -255,7 +214,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     <div>
       {/* Week day headers */}
       <div className="grid grid-cols-7 mb-2">
-        {weekDays.map(day => (
+        {WEEK_DAYS.map(day => (
           <div key={day} className="text-center text-xs font-medium text-gray-500 dark:text-gray-400 py-1">
             {day}
           </div>
@@ -265,8 +224,8 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
       {/* Calendar days */}
       <div className="grid grid-cols-7">
         {(() => {
-          const todayStr = getTodayDate();
-          return calendarDays.map(({ dateStr, isCurrentMonth }, index) => {
+          const todayStr = formatLocalDateISO(new Date());
+          return calendarDays.map(({ dateStr, isCurrentMonth, day }, index) => {
             const isPast = dateStr < todayStr;
             const isAllowed = !allowedDays || allowedDays.includes(dateStr);
             const isDisabled = isPast || !isAllowed;
@@ -299,7 +258,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
                   }
                 `}
               >
-                {new Date(dateStr + 'T00:00:00').getDate()}
+                {day}
               </button>
             );
           });
