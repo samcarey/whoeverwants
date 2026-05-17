@@ -14,7 +14,7 @@ import {
   clearCachedMyUserProfile,
 } from "@/lib/api";
 import { usePageReady } from "@/lib/usePageReady";
-import { getCurrentPosition, GeolocationDeniedError } from "@/lib/geolocation";
+import { detectAndSaveUserLocation, GeolocationDeniedError } from "@/lib/geolocation";
 import CompactNameField from "@/components/CompactNameField";
 import InitialBubble from "@/components/InitialBubble";
 import ImageCropModal from "@/components/ImageCropModal";
@@ -248,17 +248,10 @@ export default function SettingsPage() {
     setIsGeolocating(true);
     setMessage(null);
     try {
-      const { latitude, longitude } = await getCurrentPosition({
-        enableHighAccuracy: false,
-        timeout: 10000,
-      });
-      const result = await apiGeocode(`${latitude}, ${longitude}`);
-      const label = result?.label || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
-      const loc: UserLocation = { latitude, longitude, label };
-      saveUserLocation(loc);
+      const loc = await detectAndSaveUserLocation();
       setSavedLocation(loc);
       setLocationInput("");
-      setMessage({ type: 'success', text: `Location set to ${label}` });
+      setMessage({ type: 'success', text: `Location set to ${loc.label}` });
     } catch (err) {
       if (err instanceof GeolocationDeniedError) {
         setMessage({ type: 'error', text: 'Location access denied' });

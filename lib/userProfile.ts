@@ -2,9 +2,12 @@ const USER_NAME_KEY = 'whoeverwants_user_name';
 const USER_LOCATION_KEY = 'whoeverwants_user_location';
 const USER_MIN_RESPONSES_KEY = 'whoeverwants_min_responses';
 
-export interface UserLocation {
+export interface Coords {
   latitude: number;
   longitude: number;
+}
+
+export interface UserLocation extends Coords {
   label: string; // City/zip for display, e.g. "San Francisco, CA" or "90210"
 }
 

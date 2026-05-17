@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getUserLocation, saveUserLocation, type UserLocation } from "@/lib/userProfile";
+import { getUserLocation, saveUserLocation } from "@/lib/userProfile";
 import { apiGeocode } from "@/lib/api";
-import { getCurrentPosition, GeolocationDeniedError } from "@/lib/geolocation";
+import { detectAndSaveUserLocation, GeolocationDeniedError } from "@/lib/geolocation";
 import SearchRadiusBubble from "@/components/SearchRadiusBubble";
 
 interface ReferenceLocationInputProps {
@@ -66,14 +66,8 @@ export default function ReferenceLocationInput({
     setIsGeolocating(true);
     setError(null);
     try {
-      const { latitude: lat, longitude: lon } = await getCurrentPosition({
-        enableHighAccuracy: false,
-        timeout: 10000,
-      });
-      const result = await apiGeocode(`${lat}, ${lon}`);
-      const lbl = result?.label || `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
-      onLocationChange(lat, lon, lbl);
-      saveUserLocation({ latitude: lat, longitude: lon, label: lbl });
+      const loc = await detectAndSaveUserLocation();
+      onLocationChange(loc.latitude, loc.longitude, loc.label);
       setInput("");
     } catch (err) {
       setError(err instanceof GeolocationDeniedError ? "Location access denied" : "Failed to determine location");
