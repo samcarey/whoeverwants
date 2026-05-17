@@ -31,6 +31,8 @@ import {
 import {
   detectPushCapability,
   ensurePushSubscription,
+  getCapacitorPushPermission,
+  type CapacitorPushPermission,
   type PushCapability,
 } from "@/lib/pushNotifications";
 import SliderSwitch from "@/components/SliderSwitch";
@@ -41,6 +43,8 @@ interface Props {
 
 export default function NotificationSettingsCard({ groupRouteId }: Props) {
   const [capability, setCapability] = useState<PushCapability | null>(null);
+  const [iosPermission, setIosPermission] =
+    useState<CapacitorPushPermission | null>(null);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +54,21 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
   // between server and client; the effect fires post-mount.
   useEffect(() => {
     setCapability(detectPushCapability());
+  }, []);
+
+  // Probe iOS permission so the toggle's checked display can reflect
+  // whether pushes will actually deliver (on iOS the OS-level
+  // permission must be granted AND the APNS token registered, neither
+  // of which is captured by the server pref alone). Returns 'na' on
+  // web/PWA.
+  useEffect(() => {
+    let cancelled = false;
+    void getCapacitorPushPermission().then((value) => {
+      if (!cancelled) setIosPermission(value);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -66,25 +85,30 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
     };
   }, [groupRouteId]);
 
-  // Three reasons the toggle can be disabled (in priority order):
-  //   1. Platform doesn't support any transport (greyed, off).
-  //   2. Platform supports push but user has explicitly denied perm.
-  //   3. Save is in flight.
   const platformBlocked = capability !== null && !capability.anySupported;
-  const permissionBlocked = capability?.permissionDenied === true;
+  const webPermissionBlocked = capability?.permissionDenied === true;
+  const iosPermissionDenied = iosPermission === "denied";
+  const iosPermissionGranted = iosPermission === "granted";
+  const permissionBlocked = webPermissionBlocked || iosPermissionDenied;
+  // Wait for the iOS probe before letting taps fire — otherwise we'd
+  // render a stale "ON" between mount and probe resolving.
+  const iosProbePending =
+    capability?.capacitorNative === true && iosPermission === null;
   const disabled =
     capability === null ||
     platformBlocked ||
     permissionBlocked ||
+    iosProbePending ||
     enabled === null ||
     saving;
 
-  // Forced-off display state: even if the server has notify_new_poll=true
-  // saved for this browser, the local UI shows "off" when the platform
-  // can't actually deliver. We don't overwrite the server pref in that
-  // case — the user might be opening from a different device with a
-  // working transport.
-  const checked = !!enabled && !platformBlocked && !permissionBlocked;
+  // On iOS, default-ON server pref doesn't deliver unless the OS
+  // permission is also granted — force-display OFF in that case rather
+  // than misrepresenting the delivery state.
+  const iosBlocksDisplay =
+    capability?.capacitorNative === true && !iosPermissionGranted;
+  const checked =
+    !!enabled && !platformBlocked && !permissionBlocked && !iosBlocksDisplay;
 
   const onToggle = async (next: boolean) => {
     if (disabled) return;
@@ -96,9 +120,14 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
     try {
       if (next) {
         const endpoint = await ensurePushSubscription();
+        if (capability?.capacitorNative) {
+          // ensurePushSubscription returns the endpoint on grant, null
+          // on the iOS permission dialog being declined. Either way the
+          // iOS permission state is now definitively decided — skip the
+          // IPC re-probe and reflect it directly.
+          setIosPermission(endpoint === null ? "denied" : "granted");
+        }
         if (endpoint === null) {
-          // Permission denied — reset to off, refresh capability so
-          // the UI flips into the "blocked" state.
           setEnabled(false);
           setCapability(detectPushCapability());
           return;
@@ -120,6 +149,12 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
     }
     if (capability.permissionDenied) {
       return "Notifications are blocked in your browser settings.";
+    }
+    if (iosPermissionDenied) {
+      return "Notifications are blocked. Enable them in iOS Settings → WhoeverWants → Notifications.";
+    }
+    if (capability.capacitorNative && !iosPermissionGranted && !iosProbePending) {
+      return "Tap to allow push notifications on this device.";
     }
     return null;
   })();
