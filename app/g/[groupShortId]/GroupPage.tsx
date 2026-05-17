@@ -25,6 +25,7 @@ import { isUuidLike } from "@/lib/questionId";
 import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
+import { instrumentTopbarJump } from "@/lib/diagnostics/topbarJump";
 import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -783,6 +784,17 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   // initial commit, but on iOS Firefox the first paint can run with the
   // pre-effect state.
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group], 80);
+
+  // TEMP diagnostic: instrument the iOS Firefox topbar-jump bug on initial
+  // mount of the real route (covers the "refresh /g/<id>" path; the slide
+  // path is instrumented from slideOverlay). Fires once per group page
+  // mount via a ref guard. Remove this block + its import once diagnosed.
+  const diagFiredRef = useRef(false);
+  useEffect(() => {
+    if (diagFiredRef.current) return;
+    diagFiredRef.current = true;
+    instrumentTopbarJump(`mount:${groupId}`);
+  }, [groupId]);
 
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
