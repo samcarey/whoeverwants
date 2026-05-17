@@ -46,6 +46,7 @@ import {
   type PushCapability,
 } from "@/lib/pushNotifications";
 import SliderSwitch from "@/components/SliderSwitch";
+import { haptic } from "@/lib/haptics";
 
 interface Props {
   groupRouteId: string;
@@ -122,6 +123,7 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
 
   const onToggle = async (next: boolean) => {
     if (disabled) return;
+    haptic.medium();
     setError(null);
     setSaving(true);
     // Optimistic flip so the switch tracks the user's intent while the

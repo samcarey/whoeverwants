@@ -34,6 +34,7 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import { type QuestionBallotHandle } from "@/components/QuestionBallot";
 import GroupHeader from "@/components/GroupHeader";
 import { forgetQuestion } from "@/lib/forgetQuestion";
+import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
 import { GroupCardItem, type SwipeState, type GroupCardGroup } from "./GroupCardItem";
 
@@ -1899,6 +1900,7 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         onConfirm={async () => {
           const action = pendingAction;
           if (!action) return;
+          haptic.medium();
           setPendingAction(null);
           if (action.kind === 'forget') {
             forgetQuestion(action.question.id);

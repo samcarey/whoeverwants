@@ -17,6 +17,7 @@ import GroupAvatar from "@/components/GroupAvatar";
 import ImageCropModal from "@/components/ImageCropModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
+import { haptic } from "@/lib/haptics";
 
 /**
  * Title + image staging: changes accumulate in local state and only commit
@@ -81,6 +82,7 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
 
   const save = async () => {
     if (saving) return;
+    haptic.success();
     setSaving(true);
     try {
       if (pendingCroppedBlob) {

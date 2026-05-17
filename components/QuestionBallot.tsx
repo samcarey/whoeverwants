@@ -29,6 +29,7 @@ import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { hasVotedOnQuestion, getStoredVoteId, setStoredVoteId, setVotedQuestionFlag } from "@/lib/votedQuestionsStorage";
 import { buildVoteData, buildPollVoteItem, type BallotInputs } from "./QuestionBallot/voteDataBuilders";
 import TimeBallotSection from "./QuestionBallot/TimeBallotSection";
+import { haptic } from "@/lib/haptics";
 
 interface QuestionBallotProps {
   question: Question;
@@ -862,6 +863,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
       return;
     }
 
+    haptic.success();
     setIsSubmitting(true);
     setVoteError(null);
 

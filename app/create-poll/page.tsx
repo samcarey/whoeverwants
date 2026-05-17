@@ -32,6 +32,7 @@ import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, formatMonthYearLabel, shiftMonth, DEFAULT_TIME_WINDOW } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import { enterAdvancesFocus } from "@/lib/formNavigation";
+import { haptic } from "@/lib/haptics";
 import * as questionBackTarget from "@/lib/questionBackTarget";
 import { cachePoll, getCachedGroupIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
@@ -1098,6 +1099,7 @@ export function CreateQuestionContent() {
       return;
     }
 
+    haptic.success();
     isSubmittingRef.current = true;
     setIsLoading(true);
     setError(null);

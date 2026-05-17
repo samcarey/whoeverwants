@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { haptic } from "@/lib/haptics";
 
 interface GroupShareButtonProps {
   routeId: string;
@@ -26,6 +27,7 @@ export default function GroupShareButton({ routeId, title }: GroupShareButtonPro
   const handleShare = useCallback(async () => {
     if (typeof window === "undefined") return;
     if (!routeId) return;
+    haptic.light();
     const url = `${window.location.origin}/g/${encodeURIComponent(routeId)}`;
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
       try {

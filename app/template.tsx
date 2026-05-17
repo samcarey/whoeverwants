@@ -15,6 +15,7 @@ import { apiCreateGroup } from '@/lib/api';
 import { GROUP_ID_ATTR } from '@/lib/groupDomMarkers';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
 import { Capacitor } from '@capacitor/core';
+import { haptic } from '@/lib/haptics';
 
 const IS_CAPACITOR_NATIVE = typeof window !== 'undefined' && Capacitor.isNativePlatform();
 
@@ -53,6 +54,7 @@ function CreateGroupButton({ router }: { router: ReturnType<typeof useRouter> })
   const onClick = () => {
     if (inFlight.current) return;
     inFlight.current = true;
+    haptic.medium();
     slideToNewGroup();
     apiCreateGroup()
       .then((summary) => {

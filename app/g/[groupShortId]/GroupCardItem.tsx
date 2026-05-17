@@ -51,6 +51,7 @@ import QuestionResultsDisplay, {
   CompactTimePreview,
 } from "@/components/QuestionResults";
 import SimpleCountdown from "@/components/SimpleCountdown";
+import { haptic } from "@/lib/haptics";
 
 export type GroupCardGroup = {
   key: string;
@@ -334,11 +335,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     longPressTimerRef.current = setTimeout(() => {
       if (!isScrollingRef.current && !swipeRef.current.swiping) {
         isLongPressRef.current = true;
-        if ("vibrate" in navigator) {
-          try {
-            navigator.vibrate(50);
-          } catch {}
-        }
+        haptic.medium();
         setModalQuestion(question);
         setShowModal(true);
         setPressedQuestionId(null);
@@ -379,11 +376,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       const subs = group.subQuestions;
       cardEl.style.transition = "transform 220ms cubic-bezier(0.4, 0, 0.2, 1)";
       cardEl.style.transform = `translateX(-${cardWidth}px)`;
-      if ("vibrate" in navigator) {
-        try {
-          navigator.vibrate(20);
-        } catch {}
-      }
+      haptic.success();
       window.setTimeout(() => {
         cardEl.style.transition = "none";
         cardEl.style.transform = "";
@@ -459,11 +452,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       if (past && !swipeRef.current.pastAbstainPoint) {
         swipeRef.current.pastAbstainPoint = true;
         setSwipeThresholdQuestionId(question.id);
-        if ("vibrate" in navigator) {
-          try {
-            navigator.vibrate(15);
-          } catch {}
-        }
+        haptic.light();
       } else if (!past && swipeRef.current.pastAbstainPoint) {
         swipeRef.current.pastAbstainPoint = false;
         setSwipeThresholdQuestionId(null);

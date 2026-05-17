@@ -12,6 +12,7 @@ import { slideToGroup } from "@/lib/slideOverlay";
 import { apiGetVotes, apiGetQuestionResults } from "@/lib/api";
 import { forgetGroup } from "@/lib/forgetQuestion";
 import { HOME_SELECTION_MODE_CHANGE_EVENT } from "@/lib/eventChannels";
+import { haptic } from "@/lib/haptics";
 
 interface GroupListProps {
   // Phase 5b: the home page passes the polls (wrapper-level units)
@@ -172,9 +173,7 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
     setSelectionMode(true);
     setSelectedGroupIds(new Set([groupId]));
     setPressedGroupId(null);
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      try { navigator.vibrate(50); } catch {}
-    }
+    haptic.medium();
   }, []);
 
   const toggleGroupSelection = useCallback((groupId: string) => {
@@ -187,6 +186,7 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
   }, []);
 
   const handleConfirmDelete = useCallback(() => {
+    haptic.medium();
     const idsToForget = new Set(selectedGroupIds);
     const groupsToForget = groups.filter((t) => idsToForget.has(groupKeyOf(t)));
     const forgottenPollIds: string[] = [];
