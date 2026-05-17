@@ -1,6 +1,11 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Suggestion Question Edit - Seconding Others', () => {
+// Skipped: references the obsolete /create-question route + the suggestion
+// poll_type that no longer exists. The replacement architecture is a modal
+// opened from category bubbles on /g/; a port of this test belongs alongside
+// the other current-architecture specs in specs/. Keeping the spec for
+// reference until that port lands.
+test.describe.skip('Suggestion Question Edit - Seconding Others (LEGACY, skipped)', () => {
   test('should allow seconding other suggestions when editing ballot', async ({ page, context }) => {
     // Create a suggestion question
     await page.goto('http://localhost:3000/create-question');

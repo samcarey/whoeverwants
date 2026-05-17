@@ -15,7 +15,8 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    headless: true,  // REQUIRED: Always run headless for SSH development
+    headless: true,
+    ignoreHTTPSErrors: true,
   },
   projects: [
     {
@@ -30,7 +31,6 @@ export default defineConfig({
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
     },
-    // Mobile viewports
     {
       name: 'Mobile Chrome',
       use: { ...devices['Pixel 5'] },
@@ -40,9 +40,4 @@ export default defineConfig({
       use: { ...devices['iPhone 12'] },
     },
   ],
-  webServer: {
-    command: 'npm run dev',
-    port: 3000,
-    reuseExistingServer: !process.env.CI,
-  },
 });

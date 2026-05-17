@@ -24,6 +24,7 @@ from models import (
     SubmitVoteRequest,
     VoteResponse,
 )
+from services.groups import _is_uuid_like
 from services.memberships import join_group, join_group_for_poll
 from services.push import fan_out_new_poll
 from services.questions import (
@@ -35,6 +36,15 @@ from services.questions import (
     _row_to_vote,
     _submit_vote_to_question,
 )
+
+
+def _require_uuid(value: str, label: str = "id") -> None:
+    """Reject malformed UUIDs with 404 before the DB query 500s on
+    psycopg.errors.InvalidTextRepresentation. Mirrors the pattern used
+    by `resolve_group_id_from_route_id` in services/groups.py for the
+    route_id path params."""
+    if not _is_uuid_like(value):
+        raise HTTPException(status_code=404, detail=f"Invalid {label}")
 
 logger = logging.getLogger(__name__)
 
@@ -488,6 +498,7 @@ def create_poll(
 
 @router.get("/by-id/{poll_id}", response_model=PollResponse)
 def get_poll_by_id(poll_id: str):
+    _require_uuid(poll_id, "poll_id")
     with get_db() as conn:
         row = conn.execute(
             f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
@@ -527,6 +538,9 @@ def get_poll(short_id: str):
 
 
 def _authorize_poll(conn, poll_id: str, creator_secret: str) -> dict:
+    # Reject malformed UUIDs as 404 before psycopg raises
+    # `InvalidTextRepresentation` and the request 500s.
+    _require_uuid(poll_id, "poll_id")
     row = conn.execute(
         "SELECT * FROM polls WHERE id = %(id)s",
         {"id": poll_id},
@@ -721,6 +735,7 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
 
     voter_name is poll-level: one voter, many question ballots.
     """
+    _require_uuid(poll_id, "poll_id")
     now = datetime.now(timezone.utc)
 
     # Phase C.2: group join runs BEFORE the vote in its own transaction so
