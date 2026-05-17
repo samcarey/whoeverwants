@@ -8,6 +8,7 @@ import ResponsiveScaling from "@/components/ResponsiveScaling";
 import { SlideOverlayHost } from "@/lib/slideOverlay";
 import { PersistentCreatePollHost } from "@/components/PersistentCreatePollHost";
 import { UniversalLinksHandler } from "@/components/UniversalLinksHandler";
+import { PushAutoRegister } from "@/components/PushAutoRegister";
 import { THEME_KEY } from "@/lib/theme";
 
 
@@ -136,6 +137,7 @@ export default function RootLayout({
             survives client-side route changes (template re-instantiates
             per route and would tear it down). */}
         <UniversalLinksHandler />
+        <PushAutoRegister />
         <script
           dangerouslySetInnerHTML={{
             __html: `

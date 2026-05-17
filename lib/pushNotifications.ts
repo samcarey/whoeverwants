@@ -32,6 +32,16 @@ import {
   type NotificationConfig,
 } from "@/lib/api/notifications";
 
+/** iOS notification permission state, mirroring
+ *  `@capacitor/push-notifications`'s `PermissionState` plus `'na'` for
+ *  the non-Capacitor case. Read via `getCapacitorPushPermission()`. */
+export type CapacitorPushPermission =
+  | "granted"
+  | "prompt"
+  | "prompt-with-rationale"
+  | "denied"
+  | "na";
+
 /** Available transports on the current platform/runtime. */
 export interface PushCapability {
   /** Whether the user's environment can receive push notifications via
@@ -223,51 +233,138 @@ async function ensureCapacitorPushSubscription(): Promise<string | null> {
 
   // Race the registration event against a 15s timeout. The plugin emits
   // either `registration` (success, .value = token) or `registrationError`.
-  const token = await new Promise<string>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("Timed out waiting for APNS registration"));
-    }, 15000);
-    PushNotifications.addListener(
+  // Each `addListener` returns a handle we MUST `.remove()` after the
+  // promise settles — otherwise repeated calls (per-launch + per-toggle)
+  // pile up listeners that all fire on every subsequent register().
+  // Install listeners FIRST (awaiting their handles), THEN trigger
+  // register() so the registration event can't fire before the handles
+  // are assigned for cleanup.
+  type ListenerHandle = { remove: () => Promise<void> };
+  let resolveToken: (token: string) => void;
+  let rejectToken: (err: Error) => void;
+  const tokenPromise = new Promise<string>((resolve, reject) => {
+    resolveToken = resolve;
+    rejectToken = reject;
+  });
+  const timeout = setTimeout(() => {
+    rejectToken(new Error("Timed out waiting for APNS registration"));
+  }, 15000);
+  let regHandle: ListenerHandle | undefined;
+  let errHandle: ListenerHandle | undefined;
+  try {
+    regHandle = (await PushNotifications.addListener(
       "registration",
       (registration: { value: string }) => {
         clearTimeout(timeout);
-        resolve(registration.value);
+        resolveToken(registration.value);
       },
-    );
-    PushNotifications.addListener(
+    )) as ListenerHandle;
+    errHandle = (await PushNotifications.addListener(
       "registrationError",
       (error: { error: string }) => {
         clearTimeout(timeout);
-        reject(new Error(error.error || "APNS registration failed"));
+        rejectToken(new Error(error.error || "APNS registration failed"));
       },
-    );
+    )) as ListenerHandle;
     PushNotifications.register().catch((err: unknown) => {
       clearTimeout(timeout);
-      reject(err);
+      rejectToken(err instanceof Error ? err : new Error(String(err)));
     });
-  });
+    const token = await tokenPromise;
 
-  // Read the bundle id from Capacitor's app info when possible (so
-  // dev vs prod builds register against the right APNS topic).
-  let bundleId: string | undefined;
-  try {
-    const appMod = await import("@capacitor/app").catch(() => null);
-    if (appMod && appMod.App) {
-      const info = await appMod.App.getInfo();
-      bundleId = info.id;
+    // Read the bundle id from Capacitor's app info when possible (so
+    // prod vs `latest` builds register against the right APNS topic).
+    let bundleId: string | undefined;
+    try {
+      const appMod = await import("@capacitor/app").catch(() => null);
+      if (appMod && appMod.App) {
+        const info = await appMod.App.getInfo();
+        bundleId = info.id;
+      }
+    } catch {
+      // ignore — bundle_id is optional on the server side
     }
-  } catch {
-    // ignore — bundle_id is optional on the server side
+
+    await apiRegisterPushSubscription({
+      kind: "apns",
+      endpoint: token,
+      bundle_id: bundleId,
+      user_agent: navigator.userAgent,
+    });
+
+    return token;
+  } finally {
+    clearTimeout(timeout);
+    await Promise.allSettled([
+      regHandle?.remove(),
+      errHandle?.remove(),
+    ]);
   }
+}
 
-  await apiRegisterPushSubscription({
-    kind: "apns",
-    endpoint: token,
-    bundle_id: bundleId,
-    user_agent: navigator.userAgent,
-  });
+/** Probe the Capacitor iOS push permission state without prompting.
+ *  Returns 'na' on web / non-native runtimes. The toggle UI calls this
+ *  to gate its displayed `checked` state, since on iOS the server-side
+ *  default-ON pref can't deliver unless the OS has granted permission
+ *  AND the device's APNS token is registered with the server. */
+export async function getCapacitorPushPermission(): Promise<CapacitorPushPermission> {
+  if (!Capacitor.isNativePlatform()) return "na";
+  const mod = await import("@capacitor/push-notifications").catch(() => null);
+  if (!mod || !mod.PushNotifications) return "na";
+  try {
+    const result = await mod.PushNotifications.checkPermissions();
+    return result.receive as CapacitorPushPermission;
+  } catch {
+    return "na";
+  }
+}
 
-  return token;
+/** localStorage key tracking whether we've already auto-asked iOS for
+ *  push permission on app launch. Prevents re-prompting on every
+ *  launch if the user dismisses the prompt without an explicit decision
+ *  (the system normally only shows the dialog once anyway, but iOS
+ *  versions vary and we want to be defensive). */
+const IOS_BOOTSTRAP_FLAG = "whoeverwants:ios-push-bootstrap-asked";
+
+/** Register the device's APNS token with the server, prompting for
+ *  permission at app launch if it has never been decided. No-op on
+ *  web / PWA. Behavior by current permission state:
+ *
+ *    'granted'              → silently re-register (idempotent server upsert).
+ *                             Keeps the subscription row alive across
+ *                             dev-DB resets and APNS token rotation.
+ *    'prompt' (1st launch)  → trigger the iOS system dialog. If the user
+ *                             grants, register. If they deny, no register.
+ *                             Either way, set a localStorage flag so we
+ *                             don't re-prompt.
+ *    'prompt' (flag set)    → no-op. Respect the user's "didn't decide"
+ *                             without nagging them on every launch.
+ *    'prompt-with-rationale'→ no-op. iOS doesn't use this state, but
+ *                             defensively avoid auto-prompting when an
+ *                             OS variant indicates the user has interacted
+ *                             with the prompt before.
+ *    'denied' / 'na'        → no-op.
+ *
+ *  Errors are caught and swallowed: this runs in the background and
+ *  must not crash the caller. */
+export async function bootstrapCapacitorPushSubscription(): Promise<void> {
+  const permission = await getCapacitorPushPermission();
+  if (permission === "na" || permission === "denied") return;
+  if (permission === "prompt-with-rationale") return;
+  if (permission === "prompt") {
+    try {
+      if (localStorage.getItem(IOS_BOOTSTRAP_FLAG) === "1") return;
+      localStorage.setItem(IOS_BOOTSTRAP_FLAG, "1");
+    } catch {
+      // localStorage unavailable (private mode?) — fall through and
+      // ask anyway; iOS itself caches the user's decision.
+    }
+  }
+  try {
+    await ensureCapacitorPushSubscription();
+  } catch {
+    /* ignore — caller is fire-and-forget */
+  }
 }
 
 /** Tear down the current browser's push subscription on this device.
