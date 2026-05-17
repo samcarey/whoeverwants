@@ -187,12 +187,16 @@ def _finalize_suggestion_options(conn, question_id: str, now: datetime) -> None:
         )
 
 
-def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
-    """Finalize time slots for a time question after its availability deadline passes.
+def _compute_candidate_time_slots(question: dict, votes: list[dict]) -> list[str]:
+    """Compute candidate slots for a time question without writing them to the DB.
 
-    Generates all candidate time slots from the question's day_time_windows + duration_window,
-    then applies the availability threshold filter and longest-per-start-time dedup so
-    question.options contains only the slots voters will actually rank.
+    Shared by `_finalize_time_slots` (which persists the result to `question.options`)
+    and `_compute_results` (which surfaces them as `tentative_options` during the
+    availability phase when `allow_pre_ranking` is enabled, so voters can react to
+    currently-viable slots before the cutoff).
+
+    Slots that fall below the min-availability threshold against the strongest slot
+    are filtered out, then the longest-duration slot per start time wins.
     """
     from algorithms.time_question import (
         generate_time_question_slots,
@@ -201,6 +205,23 @@ def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
         _keep_longest_per_start_time,
     )
 
+    all_slots = generate_time_question_slots(question, votes)
+    availability_counts = compute_slot_availability(all_slots, votes)
+    slots = filter_slots_by_min_availability(
+        all_slots,
+        availability_counts,
+        question.get("min_availability_percent") or 95,
+    )
+    return _keep_longest_per_start_time(slots)
+
+
+def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
+    """Finalize time slots for a time question after its availability deadline passes.
+
+    Generates all candidate time slots from the question's day_time_windows + duration_window,
+    then applies the availability threshold filter and longest-per-start-time dedup so
+    question.options contains only the slots voters will actually rank.
+    """
     question = _fetch_question_full(conn, question_id)
     if not question or question.get("options"):
         return  # Already finalized or missing
@@ -211,17 +232,7 @@ def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
     ).fetchall()
     votes_list = [dict(v) for v in votes]
 
-    all_slots = generate_time_question_slots(dict(question), votes_list)
-
-    availability_counts = compute_slot_availability(all_slots, votes_list)
-    slots = filter_slots_by_min_availability(
-        all_slots,
-        availability_counts,
-        question.get("min_availability_percent") or 95,
-    )
-
-    # Keep only the longest-duration slot per start time
-    slots = _keep_longest_per_start_time(slots)
+    slots = _compute_candidate_time_slots(dict(question), votes_list)
 
     if slots:
         conn.execute(
@@ -524,8 +535,18 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
     return row
 
 
-def _compute_results(question, votes) -> QuestionResultsResponse:
-    """Compute question results from a question row and its votes. Shared by get_results and get_accessible_questions."""
+def _compute_results(question, votes, *, include_tentative_time_options: bool = True) -> QuestionResultsResponse:
+    """Compute question results from a question row and its votes. Shared by get_results and get_accessible_questions.
+
+    `include_tentative_time_options` gates the pre-ranking tentative-slots
+    computation for time questions in the availability phase. The bulk
+    `polls_for_poll_ids` path (`/api/groups/mine`, `/by-route-id/{id}`) sets
+    this to False because the group page refreshes every 5s and the slot
+    generation pass is the most expensive thing in this codepath — sustained
+    cost scales with (polls × voters × duration_window × slot_grid) per active
+    tab. The per-question results endpoint keeps it on so `QuestionBallot` can
+    advance to the preferences bubble UI once a voter has submitted availability.
+    """
     question_type = question["question_type"]
 
     if question_type == "yes_no":
@@ -632,11 +653,34 @@ def _compute_results(question, votes) -> QuestionResultsResponse:
 
         raw_options = question.get("options")
         question_options = None
+        options_are_tentative = False
         if raw_options:
             question_options = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
 
         vote_dicts = [dict(v) for v in votes]
-        time_result = calculate_time_question_results(dict(question), vote_dicts)
+
+        # Pre-ranking mode: when slots aren't finalized yet but `allow_pre_ranking`
+        # is on, surface a tentative slot list computed from the votes so far so
+        # voters can react to currently-viable slots before the availability cutoff.
+        # `_finalize_time_slots` runs the same algorithm at cutoff to persist
+        # `question.options`; this path mirrors it without writing. Skipped on
+        # bulk reads (see `include_tentative_time_options` doc).
+        if (
+            include_tentative_time_options
+            and question_options is None
+            and question.get("allow_pre_ranking") is not False
+            and any(v.get("voter_day_time_windows") for v in vote_dicts)
+        ):
+            tentative = _compute_candidate_time_slots(question, vote_dicts)
+            if tentative:
+                question_options = tentative
+                options_are_tentative = True
+
+        # `calculate_time_question_results` reads question["options"] (list or
+        # JSON string). Substitute the tentative list when we computed one,
+        # otherwise keep whatever was already on the row.
+        synth_question = {**dict(question), "options": question_options}
+        time_result = calculate_time_question_results(synth_question, vote_dicts)
 
         return QuestionResultsResponse(
             question_id=str(question["id"]),
@@ -645,6 +689,7 @@ def _compute_results(question, votes) -> QuestionResultsResponse:
             created_at=question["created_at"].isoformat() if isinstance(question["created_at"], datetime) else str(question["created_at"]),
             response_deadline=question["response_deadline"].isoformat() if question.get("response_deadline") else None,
             options=question_options,
+            options_are_tentative=options_are_tentative,
             total_votes=len(votes),
             winner=time_result["winner"],
             availability_counts=time_result["availability_counts"],

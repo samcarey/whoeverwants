@@ -91,6 +91,10 @@ export interface QuestionResults {
   created_at: string;
   response_deadline?: string;
   options?: string[];
+  // True iff `options` is the pre-cutoff tentative list emitted by the server for
+  // time questions with `allow_pre_ranking` enabled. The slot list will shift as
+  // more voters submit availability; final slots land at the availability cutoff.
+  options_are_tentative?: boolean;
   yes_count?: number;
   no_count?: number;
   abstain_count?: number;

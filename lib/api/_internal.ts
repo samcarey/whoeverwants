@@ -182,6 +182,7 @@ export function toQuestionResults(data: any): Results {
     created_at: data.created_at,
     response_deadline: data.response_deadline ?? undefined,
     options: data.options ?? undefined,
+    options_are_tentative: data.options_are_tentative ?? false,
     yes_count: data.yes_count ?? undefined,
     no_count: data.no_count ?? undefined,
     abstain_count: data.abstain_count ?? undefined,

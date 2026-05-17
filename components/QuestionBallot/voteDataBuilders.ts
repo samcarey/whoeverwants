@@ -21,7 +21,12 @@ export interface BallotInputs {
   suggestionMetadata: OptionsMetadata;
   hasSuggestionPhase: boolean;
   canSubmitSuggestions: boolean;
-  inAvailabilityPhase: boolean;
+  // For time questions: true iff THIS submission carries availability fields
+  // (voter_day_time_windows + voter_duration). False during the preferences
+  // phase AND during the pre-ranking "tentative slots" sub-phase, where the
+  // submission carries liked_slots/disliked_slots and re-sends existing
+  // availability data via COALESCE on the server.
+  isAvailabilitySubmission: boolean;
   voterDayTimeWindows: DayTimeWindow[];
   durationMinValue: number | null;
   durationMaxValue: number | null;
@@ -133,13 +138,26 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
   }
 
   if (state.questionType === 'time') {
-    if (state.inAvailabilityPhase) {
+    if (state.isAvailabilitySubmission) {
+      // Strip windows the voter unchecked in the form (`enabled === false` —
+      // the toggle's UI state, not server-side data) and drop days that wind
+      // up with zero enabled windows. The availability algorithms (FE
+      // `isVoterAvailableForSlot`, server `_voter_available_at`) don't read
+      // the enabled flag, AND an empty `windows` array on a day means "all
+      // day available" — leaving a disabled window in place would cover the
+      // whole day with the voter's "I'm NOT available here" intent inverted.
+      const cleanedDays = state.voterDayTimeWindows
+        .map(d => ({
+          ...d,
+          windows: (d.windows ?? []).filter(w => w.enabled !== false).map(({ min, max }) => ({ min, max })),
+        }))
+        .filter(d => d.windows.length > 0);
       return {
         ok: true,
         effectiveIsAbstaining,
         voteData: {
           vote_type: 'time' as const,
-          voter_day_time_windows: state.voterDayTimeWindows.length > 0 ? state.voterDayTimeWindows : null,
+          voter_day_time_windows: cleanedDays.length > 0 ? cleanedDays : null,
           voter_duration: (state.durationMinEnabled || state.durationMaxEnabled) ? {
             minValue: state.durationMinValue,
             maxValue: state.durationMaxValue,

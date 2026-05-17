@@ -1,7 +1,7 @@
 "use client";
 
 import type { Dispatch, SetStateAction, ReactNode } from "react";
-import type { Question, QuestionResults } from "@/lib/types";
+import type { Question, QuestionResults, DayTimeWindow } from "@/lib/types";
 import AbstainButton from "@/components/AbstainButton";
 import CompactNameField from "@/components/CompactNameField";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
@@ -17,7 +17,14 @@ export interface TimeBallotSectionProps {
   hasVoted: boolean;
   isEditingVote: boolean;
   editVoteButton: ReactNode;
+  // Wrapper-level: the question's slots haven't been finalized yet (pre-cutoff).
+  // Drives the "Your availability" / "Your preferences" header label only.
   inAvailabilityPhase: boolean;
+  // Active-form gate: true while this voter is filling in availability inputs.
+  // False once the voter has submitted availability AND tentative slots are
+  // available under pre-ranking — at that point the bubble UI takes over so the
+  // voter can react to currently-viable slots before the cutoff.
+  isAvailabilitySubmission: boolean;
   isSubmitting: boolean;
   voteError: string | null;
   isAbstaining: boolean;
@@ -30,8 +37,8 @@ export interface TimeBallotSectionProps {
   setDurationMaxValue: (n: number | null) => void;
   setDurationMinEnabled: (b: boolean) => void;
   setDurationMaxEnabled: (b: boolean) => void;
-  voterDayTimeWindows: any[];
-  setVoterDayTimeWindows: (v: any[]) => void;
+  voterDayTimeWindows: DayTimeWindow[];
+  setVoterDayTimeWindows: (v: DayTimeWindow[]) => void;
   preferenceSlotsForVoter: string[];
   likedSlots: string[] | null;
   setLikedSlots: Dispatch<SetStateAction<string[] | null>>;
@@ -59,6 +66,7 @@ export default function TimeBallotSection({
   isEditingVote,
   editVoteButton,
   inAvailabilityPhase,
+  isAvailabilitySubmission,
   isSubmitting,
   voteError,
   isAbstaining,
@@ -97,11 +105,11 @@ export default function TimeBallotSection({
     );
   }
 
-  // In the preferences phase, a voter who already submitted availability but
-  // hasn't reacted yet has hasVoted=true with both liked/disliked still null.
-  // The post-submit summary has nothing to render in that case, so skip it
-  // and fall through to the active preferences form.
-  const hasNotReactedYet = !inAvailabilityPhase && hasVoted
+  // In the preferences phase (or pre-ranking tentative-slots sub-phase), a voter
+  // who already submitted availability but hasn't reacted yet has hasVoted=true
+  // with both liked/disliked still null. The post-submit summary has nothing to
+  // render in that case, so skip it and fall through to the active preferences form.
+  const hasNotReactedYet = !isAvailabilitySubmission && hasVoted
     && userVoteData?.liked_slots === null
     && userVoteData?.disliked_slots === null
     && !userVoteData?.is_abstain;
@@ -111,7 +119,7 @@ export default function TimeBallotSection({
       <div>
         <div className="py-3">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="font-medium">{inAvailabilityPhase ? 'Your availability:' : 'Your preferences:'}</h4>
+            <h4 className="font-medium">{isAvailabilitySubmission ? 'Your availability:' : 'Your preferences:'}</h4>
             {editVoteButton}
           </div>
           {isLoadingVoteData ? (
@@ -126,7 +134,7 @@ export default function TimeBallotSection({
             <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
               <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
             </div>
-          ) : inAvailabilityPhase && userVoteData?.voter_day_time_windows ? (
+          ) : isAvailabilitySubmission && userVoteData?.voter_day_time_windows ? (
             <TimeQuestionFields
               disabled={true}
               dayTimeWindows={userVoteData.voter_day_time_windows}
@@ -144,7 +152,7 @@ export default function TimeBallotSection({
                 onDurationMaxEnabledChange: () => {},
               } : {})}
             />
-          ) : !inAvailabilityPhase && (userVoteData?.liked_slots !== null || userVoteData?.disliked_slots !== null) ? (
+          ) : !isAvailabilitySubmission && (userVoteData?.liked_slots !== null || userVoteData?.disliked_slots !== null) ? (
             <div className="p-3 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-800 dark:text-green-200">
               {(userVoteData?.liked_slots?.length ?? 0) > 0 && (
                 <p>Liked: {userVoteData!.liked_slots!.map(formatTimeSlot).join(', ')}</p>
@@ -164,7 +172,7 @@ export default function TimeBallotSection({
 
   return (
     <div>
-      {inAvailabilityPhase ? (
+      {isAvailabilitySubmission ? (
           <>
             {/* Availability phase: show time window picker */}
             <div className="mb-4">
@@ -208,7 +216,7 @@ export default function TimeBallotSection({
                 <button
                   type="button"
                   onClick={handleVoteClick}
-                  disabled={isSubmitting || (!isAbstaining && voterDayTimeWindows.filter(d => d.windows.length > 0).length === 0)}
+                  disabled={isSubmitting || (!isAbstaining && voterDayTimeWindows.filter(d => (d.windows ?? []).some(w => w.enabled !== false)).length === 0)}
                   className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                 >
                   {isSubmitting ? 'Submitting...' : 'Submit Availability'}
@@ -218,9 +226,16 @@ export default function TimeBallotSection({
           </>
         ) : (
           <>
-            {/* Preferences phase: tap bubbles to like/dislike time slots */}
+            {/* Preferences phase (or pre-ranking tentative-slots sub-phase): tap
+                bubbles to like/dislike time slots. Header copy differs so voters
+                know the candidate list may still shift before the cutoff. */}
             <div className="mb-4">
               <h3 className="text-lg font-semibold mb-3 text-center">Mark Your Preferences</h3>
+              {inAvailabilityPhase && (
+                <p className="mb-3 text-xs text-amber-600 dark:text-amber-400 text-center">
+                  Tentative slots — list may shift as more voters submit availability.
+                </p>
+              )}
               <TimeSlotBubbles
                 options={preferenceSlotsForVoter}
                 likedSlots={likedSlots ?? []}

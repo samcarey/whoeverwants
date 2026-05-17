@@ -309,7 +309,15 @@ def polls_for_poll_ids(
                     enriched["is_closed"] = mp_row.get("is_closed", False)
                     enriched["suggestion_deadline"] = mp_row.get("prephase_deadline")
                     try:
-                        sp_resp.results = _compute_results(enriched, votes_by_question[pid])
+                        # Skip tentative time-slot generation: this path serves the
+                        # /api/groups/mine + /by-route-id/{id} hot loop (5s page
+                        # refresh tick), and the per-question results endpoint
+                        # populates tentative options separately for the ballot UI.
+                        sp_resp.results = _compute_results(
+                            enriched,
+                            votes_by_question[pid],
+                            include_tentative_time_options=False,
+                        )
                     except Exception:
                         logger.warning(
                             "Failed to compute results for question %s", pid, exc_info=True,
