@@ -364,6 +364,15 @@ def _is_uuid_like(value: str) -> bool:
     return isinstance(value, str) and bool(_UUID_RE.match(value))
 
 
+def require_uuid(value: str, label: str = "id") -> None:
+    """Reject malformed UUIDs with 404 before the DB query 500s on
+    `psycopg.errors.InvalidTextRepresentation`. `label` distinguishes
+    user-visible causes ("poll_id" / "question_id" / "browser_id")."""
+    from fastapi import HTTPException
+    if not _is_uuid_like(value):
+        raise HTTPException(status_code=404, detail=f"Invalid {label}")
+
+
 def poll_ids_for_group_ids(conn, group_ids: list[str]) -> list[str]:
     """Resolve a list of group_ids to every poll_id that belongs to those
     groups. Used by the groups endpoints to fan out from the user's

@@ -24,6 +24,7 @@ from models import (
     SubmitVoteRequest,
     VoteResponse,
 )
+from services.groups import require_uuid
 from services.memberships import join_group, join_group_for_poll
 from services.push import fan_out_new_poll
 from services.questions import (
@@ -488,6 +489,7 @@ def create_poll(
 
 @router.get("/by-id/{poll_id}", response_model=PollResponse)
 def get_poll_by_id(poll_id: str):
+    require_uuid(poll_id, "poll_id")
     with get_db() as conn:
         row = conn.execute(
             f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
@@ -527,6 +529,7 @@ def get_poll(short_id: str):
 
 
 def _authorize_poll(conn, poll_id: str, creator_secret: str) -> dict:
+    require_uuid(poll_id, "poll_id")
     row = conn.execute(
         "SELECT * FROM polls WHERE id = %(id)s",
         {"id": poll_id},
@@ -721,6 +724,7 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
 
     voter_name is poll-level: one voter, many question ballots.
     """
+    require_uuid(poll_id, "poll_id")
     now = datetime.now(timezone.utc)
 
     # Phase C.2: group join runs BEFORE the vote in its own transaction so

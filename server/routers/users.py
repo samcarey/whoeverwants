@@ -30,6 +30,7 @@ from pydantic import BaseModel
 
 from database import get_db
 from middleware import browser_id_from_request as _browser_id
+from services.groups import require_uuid
 
 
 class UserImageRequest(BaseModel):
@@ -189,6 +190,7 @@ def get_user_image(browser_id: str):
 
     Returns 404 when no image is set (FE renders fallback initials).
     """
+    require_uuid(browser_id, "browser_id")
     with get_db() as conn:
         row = conn.execute(
             "SELECT image_data, image_mime_type FROM user_profiles WHERE browser_id = %(id)s",

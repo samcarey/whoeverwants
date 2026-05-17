@@ -57,6 +57,15 @@ __pycache__/
 # social test generated reports
 social_tests/reports/
 
+# playwright test results
+test-results/
+playwright-report/
+
+# ad-hoc bug-testing scaffolding (not part of the main test pipeline)
+bug_testing/results*.json
+bug_testing/__pycache__/
+bug_testing/**/__pycache__/
+
 # iOS / Capacitor
 # Pods are installed by CI; Podfile.lock IS committed for reproducibility.
 ios/App/Pods/

@@ -28,7 +28,7 @@ from services.questions import (
     _row_to_question,
     _row_to_vote,
 )
-from services.groups import polls_for_poll_ids
+from services.groups import polls_for_poll_ids, require_uuid
 
 router = APIRouter(prefix="/api/questions", tags=["questions"])
 
@@ -94,6 +94,7 @@ def get_question_by_short_id(short_id: str):
 @router.get("/{question_id}", response_model=QuestionResponse)
 def get_question(question_id: str):
     """Get a question by UUID."""
+    require_uuid(question_id, "question_id")
     with get_db() as conn:
         row = _fetch_question_full(conn, question_id)
         if not row:
@@ -124,6 +125,7 @@ def get_question(question_id: str):
 @router.get("/{question_id}/votes", response_model=list[VoteResponse])
 def get_votes(question_id: str):
     """Get all votes for a question."""
+    require_uuid(question_id, "question_id")
     with get_db() as conn:
         # Verify question exists
         question = conn.execute(
@@ -146,6 +148,7 @@ def get_votes(question_id: str):
 @router.get("/{question_id}/results", response_model=QuestionResultsResponse)
 def get_results(question_id: str):
     """Compute and return question results."""
+    require_uuid(question_id, "question_id")
     now = datetime.now(timezone.utc)
     with get_db() as conn:
         question = _fetch_question_full(conn, question_id)

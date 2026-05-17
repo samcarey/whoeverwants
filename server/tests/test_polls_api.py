@@ -87,7 +87,7 @@ class TestCreatePoll:
         assert resp.status_code == 201, resp.text
         data = resp.json()
         assert data["context"] == "Birthday"
-        assert data["title"] == "Restaurant, Time, and Movie for Birthday"
+        assert data["title"] == "Restaurant, Time, Movie for Birthday"
         assert len(data["questions"]) == 3
         # Sub-questions preserve insertion order
         assert [sp["category"] for sp in data["questions"]] == [
@@ -534,8 +534,9 @@ class TestPollOperations:
         data = resp.json()
         assert data["is_closed"] is True
         assert data["close_reason"] == "manual"
-        assert all(sp["is_closed"] is True for sp in data["questions"])
-        assert all(sp["close_reason"] == "manual" for sp in data["questions"])
+        for sp in data["questions"]:
+            assert "is_closed" not in sp
+            assert "close_reason" not in sp
 
     def test_close_rejects_wrong_secret(self, client, creator_secret):
         multi = self._create_multi(client, creator_secret)
@@ -566,8 +567,9 @@ class TestPollOperations:
         data = resp.json()
         assert data["is_closed"] is False
         assert data["close_reason"] is None
-        assert all(sp["is_closed"] is False for sp in data["questions"])
-        assert all(sp["close_reason"] is None for sp in data["questions"])
+        for sp in data["questions"]:
+            assert "is_closed" not in sp
+            assert "close_reason" not in sp
 
     def test_reopen_rejects_wrong_secret(self, client, creator_secret):
         multi = self._create_multi(client, creator_secret)
@@ -611,7 +613,8 @@ class TestPollOperations:
         ).json()
         assert reopened["is_closed"] is False
         assert len(reopened["questions"]) == 3
-        assert all(sp["is_closed"] is False for sp in reopened["questions"])
+        for sp in reopened["questions"]:
+            assert "is_closed" not in sp
 
 
 class TestPollVoterAggregation:
