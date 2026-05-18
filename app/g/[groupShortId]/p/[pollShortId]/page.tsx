@@ -411,11 +411,7 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
           return (
             <div
               key={sp.id}
-              className={
-                idx > 0
-                  ? "mt-6 pt-4 border-t border-gray-200 dark:border-gray-800"
-                  : "mt-2"
-              }
+              className={`${idx > 0 ? "mt-3" : "mt-2"} rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 shadow-sm px-3 py-3`}
             >
               {isMultiPoll && (
                 <div className="mb-2 flex items-center gap-2">
