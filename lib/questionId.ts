@@ -36,3 +36,8 @@ export function extractGroupRouteId(pathname: string): string | null {
 export function isGroupRootView(pathname: string): boolean {
   return /^\/g(\/[^/]+)?\/?$/.test(pathname);
 }
+
+/** True when `pathname` is a poll detail view: `/g/<groupId>/p/<pollId>`. */
+export function isPollDetailView(pathname: string): boolean {
+  return /^\/g\/[^/]+\/p\/[^/]+\/?$/.test(pathname);
+}
