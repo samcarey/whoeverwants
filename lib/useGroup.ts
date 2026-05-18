@@ -9,7 +9,7 @@
  * + relationship-discovery path only when the cache miss occurs.
  *
  * For empty groups (membership-only, no polls yet — typically just-created
- * via the home "+" FAB), `apiGetGroupByRouteId` returns `[]`. In that case
+ * via the home new group button), `apiGetGroupByRouteId` returns `[]`. In that case
  * we fall back to `apiGetGroupSummary` to fetch just the group metadata
  * (title, short_id, created_at) and synthesize an empty `Group` via
  * `buildEmptyGroup`. The /info, /edit-title, and group root routes all
@@ -69,7 +69,7 @@ export function useGroup(groupId: string): UseGroupResult {
         if (cancelled) return;
 
         // Empty group: no visible polls. This happens for membership-only
-        // groups (just-created via the home "+" FAB) and for members of a
+        // groups (just-created via the home new group button) and for members of a
         // group whose every poll was closed before they joined. Fetch the
         // summary metadata to render the header (title) and let the user
         // create the first poll.

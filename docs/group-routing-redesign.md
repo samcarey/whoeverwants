@@ -101,7 +101,7 @@ Updated to construct/match `/g/...?p=...` URLs:
 - `lib/questionId.ts` (`extractQuestionRouteId`, `isGroupRootView`).
 - `lib/groupUtils.ts` (drop `GROUP_QUERY_PARAM`).
 - `lib/questionBackTarget.ts` (back path uses `/g/...?p=...`).
-- `app/template.tsx` (pathname checks, page-title resolver, FAB target).
+- `app/template.tsx` (pathname checks, page-title resolver, new group button target).
 - `components/GroupList.tsx` (prefetch + click handlers).
 - `components/FollowUpHeader.tsx`, `components/VoteOnItModal.tsx`, `components/ResponsiveScaling.tsx`.
 - `app/create-poll/page.tsx` (post-submit redirects, duplicate redirect, body-attribute reads).

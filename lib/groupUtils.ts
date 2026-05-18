@@ -27,7 +27,7 @@ import { getUserName } from './userProfile';
 export const EMPTY_GROUP_TITLE = 'New Group';
 
 /** Hint rendered above the bubble bar on empty groups (both the home
- *  FAB's slide overlay and the real `/g/<short_id>` route show this). */
+ *  new group button's slide overlay and the real `/g/<short_id>` route show this). */
 export const EMPTY_GROUP_HINT = 'Create a question and then share the link!';
 
 /** Trimmed + case-insensitive name equality. Collapses different casings
@@ -225,7 +225,7 @@ function groupPollsByGroup(polls: Poll[]): Map<string, Poll[]> {
 /**
  * Build groups from a flat list of polls + an optional list of
  * membership-only "empty groups" (the user joined them via the home
- * "+" FAB but no polls exist yet).
+ * new group button but no polls exist yet).
  */
 export function buildGroups(
   polls: Poll[],
@@ -574,7 +574,7 @@ export function buildGroupSyncFromCache(
     return buildGroupFromPollDown(anchorPollId, polls, voted, abstained);
   }
   // No poll matched — but the group itself may be a membership-only empty
-  // group (just-created via the home "+" FAB, or every poll closed before
+  // group (just-created via the home new group button, or every poll closed before
   // the viewer joined). The group-summary cache resolves both `groups.id`
   // and `groups.short_id`, so a cached summary here means we can render
   // the empty-group chrome synchronously without an API round-trip — which

@@ -170,7 +170,7 @@ export function slideToGroupEditTitle({
   });
 }
 
-/** Slide-in the "New Group" empty placeholder. Caller (the home "+" FAB)
+/** Slide-in the "New Group" empty placeholder. Caller (the home new group button)
  *  fires `apiCreateGroup` in parallel, then `router.push('/g/<short_id>')`
  *  on success or `router.push('/g')` on failure. The host skips its
  *  automatic router.push for this kind so the destination URL is decided
@@ -313,7 +313,7 @@ export function SlideOverlayHost(): React.ReactElement | null {
   // out of the event handler keeps the slide's first paint off the critical
   // path of router's internal commit work.
   //
-  // Skipped for the 'newGroup' kind — the FAB fires its own router.push
+  // Skipped for the 'newGroup' kind — the new group button fires its own router.push
   // once `apiCreateGroup` resolves (so the URL is the real `/g/<short_id>`
   // form rather than the placeholder `/g`). The slide still plays
   // immediately because the overlay handles the animation; the URL just

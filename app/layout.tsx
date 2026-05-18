@@ -59,7 +59,7 @@ export function generateViewport() {
     // `resizes-content` permanently shrinks the layout viewport in iOS PWA
     // standalone mode, reserving a thick blank strip above the home
     // indicator even when no keyboard is showing — the page can't render
-    // into that area, so it appears as a "white bar" the FAB has to sit
+    // into that area, so it appears as a "white bar" the new group button has to sit
     // above. Default `resizes-visual` lets the layout viewport reach the
     // actual screen bottom; the keyboard, when shown, only resizes the
     // visual viewport, which is fine for our use case (the only PWA
@@ -113,7 +113,7 @@ export default function RootLayout({
         {/* Header elements rendered outside scaling to maintain proper positioning */}
         <div id="header-portal"></div>
 
-        {/* Floating "+" FAB rendered outside scaling to maintain proper positioning */}
+        {/* New group button rendered outside scaling to maintain proper positioning */}
         <div id="floating-fab-portal"></div>
 
         {/* iOS-style overlay-slide for instant home→group navigation.

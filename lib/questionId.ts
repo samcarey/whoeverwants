@@ -32,7 +32,7 @@ export function extractGroupRouteId(pathname: string): string | null {
 /** True when `pathname` is the top-level group view: the empty placeholder
  *  (`/g` or `/g/`) or a specific group (`/g/<id>`). False for sub-routes like
  *  `/g/<id>/info`. Template uses this to decide which pages get the
- *  group-like layout + floating-plus FAB. */
+ *  group-like layout + new group button. */
 export function isGroupRootView(pathname: string): boolean {
   return /^\/g(\/[^/]+)?\/?$/.test(pathname);
 }

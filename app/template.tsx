@@ -39,7 +39,7 @@ export default function Template({ children }: AppTemplateProps) {
   );
 }
 
-/** Home-page floating "+" FAB. Slide begins on the same frame as the
+/** Home-page new group button. Slide begins on the same frame as the
  *  tap via the overlay-slide mechanism — `navigateWithTransition` /
  *  the View Transitions API would otherwise gate motion on the
  *  destination route committing + signaling data-page-ready.
@@ -75,7 +75,7 @@ function CreateGroupButton({ router }: { router: ReturnType<typeof useRouter> })
   return (
     <button
       onClick={onClick}
-      className="fixed z-50 h-12 px-[14.4px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
+      className="fixed z-50 h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
       style={{
         right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
         bottom: IS_CAPACITOR_NATIVE ? '1.75rem' : '1rem',
@@ -182,9 +182,9 @@ function TemplateInner({ children }: AppTemplateProps) {
     pathname === '/p' || pathname === '/p/' || pathname.startsWith('/p/');
   // /g/<id> renders the group view with a card expanded; the bare /g/ route is
   // the empty placeholder. Both share the group-like layout (fixed header +
-  // scroll list, bottom-padding for the floating FAB). Sub-routes
+  // scroll list, bottom-padding for the new group button). Sub-routes
   // (/g/<id>/info, .../edit-title) render their own fixed header but opt out
-  // of the group-like FAB + padding treatment via isGroupRootView.
+  // of the new group button + padding treatment via isGroupRootView.
   const isGroupLikePage = isGroupRootView(pathname);
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
 
@@ -192,7 +192,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   // form (category/for fields + question fields) plus the staged-questions
   // list and Settings. The "+ Question" button inside the card commits the
   // in-progress form to the staged list. The home page keeps a single "+"
-  // FAB which navigates to /p/ (the empty placeholder) so the user can
+  // new group button which navigates to /p/ (the empty placeholder) so the user can
   // start a new poll.
 
   return (
@@ -278,7 +278,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         <div
           className={`max-w-4xl mx-auto ${(pathname === '/' || isGroupLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isGroupLikePage ? '' : (isSettingsPage || pathname === '/') ? 'pt-0.5 pb-6' : 'pb-6'}`}
           style={pathname === '/'
-            // Home reserves enough room for the floating "+" FAB to clear the
+            // Home reserves enough room for the new group button to clear the
             // last card.
             ? { paddingBottom: '6rem' }
             // Group-like pages have the category bubble bar as the last
@@ -293,7 +293,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         </div>
       </div>
 
-      {/* Floating "+" FAB — home page only. Materializes a brand-new group
+      {/* New group button — home page only. Materializes a brand-new group
            in the DB (via apiCreateGroup) so the user can name it / share it /
            edit info before adding any polls. Then navigates to the new
            group's URL where the bubble bar lives for picking the first

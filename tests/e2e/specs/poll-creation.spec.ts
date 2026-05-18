@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
  * Poll-creation UI tests against the current architecture.
  *
  * The current flow:
- *   1. User lands on /g/ (empty placeholder) — typically via the home FAB.
+ *   1. User lands on /g/ (empty placeholder) — typically via the new group button.
  *   2. Bubble bar shows one button per BUILT_IN_TYPES entry plus "Other".
  *      Each bubble has aria-label="Add <Category> question" (or "Add Other"
  *      for the custom-text fallback).

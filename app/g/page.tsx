@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 //      `/g/<rootShortId>?p=<pollShortId>` (legacy deep-link compatibility for
 //      the old `/p/?id=<uuid>` form).
 //   2. With no params, render the empty placeholder for a not-yet-created
-//      group. The home page's "+" FAB and the What/When/Where bubble bar both
+//      group. The home page's new group button and the What/When/Where bubble bar both
 //      land here; the group materializes once the user creates a question.
 function GroupRoot() {
   const searchParams = useSearchParams();
@@ -51,7 +51,7 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
   // Inside the slideOverlay, the underlying route hasn't changed yet
   // (we're still on `/`), so writing `data-page-ready=/g` would lie to
   // any other in-flight view-transition. Skip the signal when mounted
-  // as the FAB's overlay; the real route mount fires it after router.push.
+  // as the new group button's overlay; the real route mount fires it after router.push.
   usePageReady(!inOverlay);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
