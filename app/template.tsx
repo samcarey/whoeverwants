@@ -191,8 +191,8 @@ function TemplateInner({ children }: AppTemplateProps) {
   // The draft poll card on every group-like page hosts the inline question
   // form (category/for fields + question fields) plus the staged-questions
   // list and Settings. The "+ Question" button inside the card commits the
-  // in-progress form to the staged list. The home page keeps a single "+"
-  // new group button which navigates to /p/ (the empty placeholder) so the user can
+  // in-progress form to the staged list. The home page keeps the new group
+  // button which navigates to /p/ (the empty placeholder) so the user can
   // start a new poll.
 
   return (
