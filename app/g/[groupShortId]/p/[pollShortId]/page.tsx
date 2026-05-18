@@ -39,22 +39,28 @@ import {
   getCachedPollForShortId,
   invalidateQuestion,
 } from "@/lib/questionCache";
-import { addAccessibleQuestionId, getCreatorSecret } from "@/lib/browserQuestionAccess";
-import { getUserName } from "@/lib/userProfile";
+import { addAccessibleQuestionId, getCreatorSecret, isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
+import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { hasAppHistory } from "@/lib/viewTransitions";
 import {
+  compactDurationSince,
   getCategoryIcon,
   getQuestionSectionTitle,
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
+  relativeTime,
 } from "@/lib/questionListUtils";
+import { formatCreationTimestamp } from "@/lib/timeUtils";
+import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import {
   loadVotedQuestions,
   parseYesNoChoice,
   getStoredVoteId,
 } from "@/lib/votedQuestionsStorage";
 import { haptic } from "@/lib/haptics";
+import ClientOnly from "@/components/ClientOnly";
 import GroupHeader from "@/components/GroupHeader";
+import InitialBubble from "@/components/InitialBubble";
 import QuestionBallot, { type QuestionBallotHandle } from "@/components/QuestionBallot";
 import QuestionDetails from "@/components/QuestionDetails";
 import QuestionResultsDisplay from "@/components/QuestionResults";
@@ -63,6 +69,7 @@ import VoterList from "@/components/VoterList";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FollowUpModal from "@/components/FollowUpModal";
 import PollShareButton from "@/components/PollShareButton";
+import SimpleCountdown from "@/components/SimpleCountdown";
 import type { Poll, Question, QuestionResults } from "@/lib/types";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "../../groupActionCopy";
 
@@ -369,6 +376,68 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
   const useWrapperSubmit =
     !isMultiPoll && subQuestions[0]?.question_type !== "yes_no";
 
+  // Mirror the GroupCardItem's anchor-based status computation. Poll-level
+  // deadlines (voting + prephase) are shared across sibling questions, so
+  // one status line describes the whole poll.
+  const anchor = subQuestions[0];
+  const wrapperPrephaseDeadline = poll.prephase_deadline ?? null;
+  const wrapperResponseDeadline = poll.response_deadline ?? null;
+  const wrapperUpdatedAt = poll.updated_at ?? anchor?.updated_at;
+  const statusEl: React.ReactNode = (() => {
+    if (!anchor) return null;
+    const inSuggestions = isInSuggestionPhase(anchor, wrapperPrephaseDeadline);
+    const inTimeAvailability = isInTimeAvailabilityPhase(anchor);
+    if (isClosed) {
+      const closedAt =
+        poll.close_reason === "deadline" && wrapperResponseDeadline
+          ? wrapperResponseDeadline
+          : wrapperUpdatedAt;
+      return closedAt ? (
+        <span className="text-xs text-gray-400 dark:text-gray-500">
+          Closed {compactDurationSince(closedAt)} ago
+        </span>
+      ) : null;
+    }
+    if (inSuggestions && wrapperPrephaseDeadline) {
+      return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Suggestions" />;
+    }
+    if (inSuggestions && anchor.suggestion_deadline_minutes) {
+      return (
+        <span className="font-semibold text-blue-600 dark:text-blue-400">
+          Taking Suggestions
+        </span>
+      );
+    }
+    if (inTimeAvailability) {
+      if (wrapperPrephaseDeadline) {
+        return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" />;
+      }
+      return (
+        <span className="font-semibold text-blue-600 dark:text-blue-400">
+          Collecting Availability
+        </span>
+      );
+    }
+    if (wrapperResponseDeadline) {
+      return (
+        <SimpleCountdown
+          deadline={wrapperResponseDeadline}
+          label="Voting"
+          colorClass="text-green-600 dark:text-green-400"
+        />
+      );
+    }
+    return null;
+  })();
+
+  // Creator avatar: prefer the current user's uploaded image when this poll
+  // is theirs (creator_secret in localStorage, name fallback).
+  const myUserImageUrl = useMyUserImageUrl();
+  const creatorIsMe =
+    (anchor ? isCreatedByThisBrowser(anchor.id) : false) ||
+    isCurrentUserName(poll.creator_name);
+  const creatorImageUrl = creatorIsMe ? myUserImageUrl : null;
+
   const dispatchYesNoTap = (
     questionId: string,
     newChoice: "yes" | "no" | "abstain",
@@ -401,6 +470,31 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
       />
 
       <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
+        {/* Meta strip: creator avatar + name · relative time on the left,
+            poll-level status (countdown / closed / phase label) on the
+            right. Mirrors the group-list card's chrome so the detail page
+            surfaces the same information about the poll. */}
+        {anchor && (
+          <div className="mb-2 flex items-center gap-2 px-1 min-w-0">
+            <InitialBubble
+              name={poll.creator_name ?? null}
+              imageUrl={creatorImageUrl}
+              className="shrink-0"
+            />
+            <ClientOnly fallback={null}>
+              <span className="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400">
+                {poll.creator_name && <>{poll.creator_name} &middot; </>}
+                <span title={formatCreationTimestamp(anchor.created_at)}>
+                  {relativeTime(anchor.created_at)}
+                </span>
+              </span>
+            </ClientOnly>
+            <div className="flex-1 min-w-0 flex justify-end text-sm leading-tight text-gray-500 dark:text-gray-400">
+              <ClientOnly fallback={null}>{statusEl}</ClientOnly>
+            </div>
+          </div>
+        )}
+
         {poll.details && <QuestionDetails details={poll.details} label="Notes: " />}
 
         {subQuestions.map((sp, idx) => {
