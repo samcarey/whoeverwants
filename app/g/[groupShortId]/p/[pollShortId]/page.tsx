@@ -456,15 +456,17 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
     return `${window.location.origin}${getGroupHrefForPoll(poll)}`;
   }, [poll]);
 
+  const pollTitle = subQuestions[0]?.title || poll.title;
+
   return (
     <>
       <GroupHeader
         headerRef={headerRef}
-        title={poll.title || subQuestions[0]?.title}
+        title={pollTitle}
         onBack={onBack}
         rightSlot={
           <div className="self-stretch py-2 px-2 flex items-center justify-center shrink-0">
-            <PollShareButton title={poll.title || subQuestions[0]?.title || ""} url={shareUrl} />
+            <PollShareButton title={pollTitle || ""} url={shareUrl} />
           </div>
         }
       />
