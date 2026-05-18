@@ -460,11 +460,11 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
     <>
       <GroupHeader
         headerRef={headerRef}
-        title={poll.title || subQuestions[0]?.title}
+        title={subQuestions[0]?.title || poll.title}
         onBack={onBack}
         rightSlot={
           <div className="self-stretch py-2 px-2 flex items-center justify-center shrink-0">
-            <PollShareButton title={poll.title || subQuestions[0]?.title || ""} url={shareUrl} />
+            <PollShareButton title={subQuestions[0]?.title || poll.title || ""} url={shareUrl} />
           </div>
         }
       />
