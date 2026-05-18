@@ -51,6 +51,21 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+    // @capacitor/push-notifications requires the AppDelegate to forward
+    // iOS's APNS callbacks into the plugin via NotificationCenter. Without
+    // these two methods, `PushNotifications.register()` succeeds on the
+    // device but the `registration` event never fires in JS — manifesting
+    // as a 60s timeout in `bootstrapCapacitorPushSubscription`. The plugin
+    // doesn't auto-install method swizzles, so this hand-wiring is the
+    // documented one-time setup (per the plugin README's iOS section).
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+    }
+
 }
 
 // CAPBridgeViewController.loadView() is `final` and assigns
