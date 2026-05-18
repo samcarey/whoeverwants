@@ -1631,10 +1631,9 @@ export function CreateQuestionContent() {
 
               {/* Sheet body — scrollable when content overflows. Holds the
                   two stacked section cards with a small gap between them.
-                  The bottom padding matches the group-like page's outer
-                  `paddingBottom: '4.5rem'` so elements have the same
-                  breathing room above the sheet edge that the bubbles
-                  have above the screen edge. */}
+                  Bottom padding reserves breathing room above the sheet's
+                  bottom edge so the last form field doesn't sit flush with
+                  the rounded corner when scrolled to bottom. */}
               <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
                 <div className="text-center px-2 pt-1 break-words h-7 flex items-center justify-center">
                   {title.trim() ? (
