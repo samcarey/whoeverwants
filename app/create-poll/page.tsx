@@ -1546,7 +1546,7 @@ export function CreateQuestionContent() {
   // returns 0 when the URL bar is visible (the case we need to handle).
   const bubbleBar = (
     <div className="pt-1 pb-4">
-      <h2 className="px-3 pb-2 text-center text-[17.5px] font-medium text-gray-600 dark:text-gray-400 underline underline-offset-4">
+      <h2 className="px-3 pb-2 text-center text-[15.75px] font-medium text-gray-600 dark:text-gray-400 underline underline-offset-4">
         Create a New Poll
       </h2>
       <div className="px-3 flex flex-wrap justify-center gap-2">
