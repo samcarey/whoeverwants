@@ -271,22 +271,19 @@ export function SlideOverlayHost(): React.ReactElement | null {
   }, [state?.phase, router]);
 
   // Overlay does not adjust its own `scrollTop`. The destination's
-  // `<GroupContent>` runs its own initial-load `useLayoutEffect` (3-tier
-  // rule: ?p → oldest awaiting → bottom) that drives `window.scrollY`;
-  // by the time the overlay unmounts, the real route is already at the
-  // correct scroll position. Earlier attempts that scrolled the overlay
-  // tripped a WebKit quirk where `position:fixed` children of a
-  // `contain:strict` + transformed ancestor scroll with the content,
-  // requiring a counter-translate on the header to keep it at viewport
-  // top — and the counter-translate went stale when `scrollHeight`
-  // changed mid-slide (placeholder cards → real cards) because the
-  // browser auto-clamped `overlay.scrollTop` to the new max while the
-  // header's transform stayed frozen at the initial value, leaving the
-  // header drifting mid-viewport on iOS Firefox. Not solving the
-  // problem at all sidesteps the entire class of stale-transform bugs.
-  // For the dominant case (tier 2 oldest-awaiting card = top of group)
-  // the real route's chosen `scrollY` is 0 anyway, so there's no
-  // content jump on unmount either.
+  // `<GroupContent>` runs its own initial-load `useLayoutEffect` that
+  // bottom-pins `window.scrollY`; by the time the overlay unmounts,
+  // the real route is already at the correct scroll position. Earlier
+  // attempts that scrolled the overlay tripped a WebKit quirk where
+  // `position:fixed` children of a `contain:strict` + transformed
+  // ancestor scroll with the content, requiring a counter-translate
+  // on the header to keep it at viewport top — and the
+  // counter-translate went stale when `scrollHeight` changed mid-slide
+  // (placeholder cards → real cards) because the browser auto-clamped
+  // `overlay.scrollTop` to the new max while the header's transform
+  // stayed frozen at the initial value, leaving the header drifting
+  // mid-viewport on iOS Firefox. Not solving the problem at all
+  // sidesteps the entire class of stale-transform bugs.
 
   // Unmount when either (a) the URL has flipped + slide duration has elapsed,
   // or (b) the safety timeout fires. One timer per slide; cleared on new
