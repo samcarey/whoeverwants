@@ -1,20 +1,6 @@
-/**
- * iOS clipboard link prompt — when the Capacitor shell becomes active
- * (cold launch or foreground-from-background) and the system clipboard
- * holds a URL targeting one of our known hosts (whoeverwants.com /
- * latest.whoeverwants.com), surface a confirmation modal that lets the
- * user navigate to that path inside the app.
- *
- * Inert on non-native platforms (web / PWA). On iOS this WILL trigger
- * the system "X pasted from Y" banner / permission prompt every time we
- * read — that's iOS 14+ behavior we can't suppress. We minimise reads by
- * (a) running only on app-active transitions (not every render) and
- * (b) tracking dismissed URLs in a module-level Set so resuming the app
- * with the same clipboard contents doesn't re-prompt our own modal.
- */
-
 import { Capacitor } from "@capacitor/core";
 import { pathFromUniversalLinkUrl } from "@/lib/universalLinks";
+import { normalizePath } from "@/lib/questionId";
 
 interface ClipboardReadResult {
   value?: string;
@@ -37,32 +23,28 @@ interface AppPlugin {
 }
 
 let installed = false;
-// URLs the user has already responded to (open or dismiss) in this
-// session. Persists for the lifetime of this JS module — i.e. across
-// foreground/background cycles but cleared on a full WebView reload
-// (cold launch, swipe-up-to-kill). Cold launch SHOULD re-prompt because
-// the user may have copied the URL specifically to use it now.
+let checking = false;
+
+// Bounded so a long-running PWA / WebView can't accumulate forever. Set
+// preserves insertion order, so the oldest entry is `values().next()`.
+const MAX_RESPONDED = 50;
 const respondedUrls = new Set<string>();
+
+function markResponded(raw: string): void {
+  if (respondedUrls.has(raw)) return;
+  if (respondedUrls.size >= MAX_RESPONDED) {
+    const oldest = respondedUrls.values().next().value;
+    if (oldest !== undefined) respondedUrls.delete(oldest);
+  }
+  respondedUrls.add(raw);
+}
+
+export function markClipboardUrlResponded(rawUrl: string): void {
+  markResponded(rawUrl);
+}
 
 export type ClipboardPromptHandler = (path: string, originalUrl: string) => void;
 
-/** Normalise a path for "is the user already here?" comparison.
- *  Strips a trailing slash so `/g/abc/` and `/g/abc` are equivalent. */
-function normalisePath(p: string): string {
-  if (!p) return "/";
-  return p.replace(/\/+$/, "") || "/";
-}
-
-/** Mark a URL as "the user has been prompted about this one" so a
- *  subsequent app-foreground with the same clipboard contents doesn't
- *  re-show the modal. Call from BOTH the confirm and the cancel paths. */
-export function markClipboardUrlResponded(rawUrl: string): void {
-  respondedUrls.add(rawUrl);
-}
-
-/** Install the clipboard-link prompt listener. Runs an immediate
- *  cold-launch check then re-checks on every app-active transition.
- *  Returns a cleanup function (or null if the platform isn't native). */
 export async function installClipboardLinkPrompt(
   onLinkFound: ClipboardPromptHandler,
 ): Promise<(() => void) | null> {
@@ -85,32 +67,39 @@ export async function installClipboardLinkPrompt(
   }
 
   const checkClipboard = async () => {
-    let result: ClipboardReadResult;
+    // Rapid foreground/background cycles can dispatch overlapping checks
+    // — coalesce so we only fire one iOS paste banner + one modal.
+    if (checking) return;
+    checking = true;
     try {
-      result = await Clipboard.read();
-    } catch {
-      // Empty clipboard, non-text payload, or denied paste permission.
-      // All silent — there's no useful UX in surfacing a "clipboard read
-      // failed" toast every time someone opens the app.
-      return;
+      let result: ClipboardReadResult;
+      try {
+        result = await Clipboard.read();
+      } catch {
+        // Empty / denied / non-text — silent.
+        return;
+      }
+      const raw = result?.value;
+      if (!raw || typeof raw !== "string") return;
+      if (respondedUrls.has(raw)) return;
+      const path = pathFromUniversalLinkUrl(raw);
+      if (!path) return;
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (normalizePath(currentPath) === normalizePath(path)) {
+        markResponded(raw);
+        return;
+      }
+      // Mark BEFORE firing the callback so any check racing the modal
+      // mount can't fire onLinkFound a second time for the same URL.
+      markResponded(raw);
+      onLinkFound(path, raw);
+    } finally {
+      checking = false;
     }
-    const raw = result?.value;
-    if (!raw || typeof raw !== "string") return;
-    if (respondedUrls.has(raw)) return;
-    const path = pathFromUniversalLinkUrl(raw);
-    if (!path) return;
-    // Skip if the user is already on this path — opening the same URL
-    // they're looking at would be confusing.
-    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    if (normalisePath(currentPath) === normalisePath(path)) {
-      respondedUrls.add(raw);
-      return;
-    }
-    onLinkFound(path, raw);
   };
 
-  // Cold launch: appStateChange doesn't fire on the initial active
-  // state, so do an immediate one-shot check.
+  // Cold launch: appStateChange doesn't fire on the initial active state,
+  // so do an immediate one-shot check.
   void checkClipboard();
 
   const handle = await App.addListener("appStateChange", (event) => {
@@ -121,7 +110,7 @@ export async function installClipboardLinkPrompt(
     try {
       void handle.remove();
     } catch {
-      // Listener already torn down or plugin gone; safe to ignore.
+      // Plugin already torn down; safe to ignore.
     }
     installed = false;
   };
