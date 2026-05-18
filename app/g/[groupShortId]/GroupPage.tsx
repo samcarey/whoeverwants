@@ -1754,9 +1754,6 @@ export function GroupContent({ groupId }: GroupContentProps) {
           setPendingAction(null);
           if (action.kind === 'forget') {
             forgetQuestion(action.question.id);
-            // If the forgotten question was expanded, collapse it so the URL `?p=`
-            // doesn't still point at the deleted poll.
-            setExpandedQuestionId((curr) => (curr === action.question.id ? null : curr));
             const remaining = group ? group.questions.filter((p) => p.id !== action.question.id) : [];
             if (group && remaining.length === 0) {
               // Drop the server-side `group_members` row so the group
