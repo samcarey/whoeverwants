@@ -453,6 +453,7 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
             pollShortId: poll.short_id || poll.id,
           })
         }
+        titleAriaLabel="Poll details"
         rightSlot={
           <div className="self-stretch py-2 px-2 flex items-center justify-center shrink-0">
             <PollShareButton title={pollTitle || ""} url={shareUrl} />
