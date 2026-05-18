@@ -949,25 +949,22 @@ export function GroupContent({ groupId }: GroupContentProps) {
   //    above, or trim the bottom overshoot otherwise (capped by
   //    available slack so the top never disappears behind the header).
   //
-  // 3. SCROLL-HELPER ARROWS (mutually exclusive, up takes precedence):
-  //    Two fixed buttons portaled into `#floating-fab-portal`. Both
-  //    point at a single awaiting card and align that card's top flush
-  //    with the bottom of the fixed header on tap.
+  // 3. SCROLL-HELPER ARROWS (independent; both can show simultaneously):
+  //    Two fixed buttons portaled into `#floating-fab-portal`.
   //
-  //      - UP (just below header) shows when:
-  //          • no awaiting poll has ANY part visible in the viewport, AND
-  //          • at least one awaiting poll sits wholly above it.
-  //        Targets the OLDEST above-the-fold awaiting poll (= first in
-  //        DOM order, since awaiting cards sort by created_at ASC at the
-  //        bottom of the group list).
+  //      - UP (just below header) shows when at least one awaiting poll
+  //        is not completely in view above the viewport — i.e. wholly
+  //        above (r.bottom <= viewportTop) OR top-clipped
+  //        (r.top < viewportTop && r.bottom > viewportTop). Targets the
+  //        OLDEST such poll (first in DOM order, since awaiting cards
+  //        sort by created_at ASC at the bottom of the group list) and
+  //        aligns its top flush with the bottom of the fixed header.
   //
-  //      - DOWN (above the bottom safe-area inset) shows when:
-  //          • no awaiting poll is FULLY visible, AND
-  //          • no awaiting poll has any part above the viewport
-  //            (otherwise the user should scroll up, not down), AND
-  //          • at least one awaiting poll has its bottom below the
-  //            viewport bottom (wholly below or bottom-clipped).
-  //        Targets the FIRST such below-the-fold awaiting poll.
+  //      - DOWN (above the bottom safe-area inset) shows whenever the
+  //        document can scroll further down (scrollY < maxScroll).
+  //        Targets the FIRST awaiting poll that is wholly below or
+  //        bottom-clipped (aligning its top flush with the header); if
+  //        none, scrolls to the document bottom.
   //
   //    The visibility evaluator is wired to scroll/resize AND a
   //    body-subtree MutationObserver because vote-driven re-renders flip
@@ -1384,44 +1381,39 @@ export function GroupContent({ groupId }: GroupContentProps) {
       const viewportBottom = window.innerHeight;
       let upTargetId: string | null = null;
       let downTargetId: string | null = null;
-      let anyInView = false;
-      let anyFullyVisible = false;
-      let anyAbove = false; // wholly above OR top-clipped (partially above)
       // groupQuestions is in strict chronological order (created_at ASC),
-      // so iterating in order: the FIRST wholly-above awaiting match is
-      // the oldest above-the-fold awaiting card, and the FIRST
-      // below-the-fold match is the closest one beneath the viewport
-      // (oldest among those still to be reached).
+      // so iterating in order: the FIRST not-fully-in-view-above match is
+      // the oldest such awaiting card, and the FIRST below-the-fold match
+      // is the closest one beneath the viewport.
       for (const group of groupedGroupQuestions) {
         const question = group.anchor;
         if (!isAwaitingResponse(question)) continue;
         const card = cardRefs.current.get(question.id);
         if (!card) continue;
         const r = card.getBoundingClientRect();
-        const wholeAbove = r.bottom <= viewportTop;
+        // "Not completely in view above" = any part of the card is above
+        // the viewport top: wholly above (r.bottom <= viewportTop) OR
+        // top-clipped (r.top < viewportTop && r.bottom > viewportTop).
+        if (r.top < viewportTop && upTargetId === null) {
+          upTargetId = question.id;
+        }
+        // Below-the-fold: wholly below OR bottom-clipped (top in view,
+        // bottom past viewport bottom).
         const wholeBelow = r.top >= viewportBottom;
-        if (wholeAbove) {
-          if (upTargetId === null) upTargetId = question.id;
-          anyAbove = true;
-        } else if (wholeBelow) {
-          if (downTargetId === null) downTargetId = question.id;
-        } else {
-          anyInView = true;
-          const topClipped = r.top < viewportTop;
-          const bottomClipped = r.bottom > viewportBottom;
-          if (!topClipped && !bottomClipped) anyFullyVisible = true;
-          if (topClipped) anyAbove = true;
-          if (bottomClipped && !topClipped && downTargetId === null) {
-            downTargetId = question.id;
-          }
+        const bottomClipped = r.bottom > viewportBottom && r.top >= viewportTop;
+        if ((wholeBelow || bottomClipped) && downTargetId === null) {
+          downTargetId = question.id;
         }
       }
-      const showUp = !anyInView && upTargetId !== null;
-      // Down arrow is suppressed when up shows (up takes precedence) and
-      // when any awaiting poll sits above — scrolling down wouldn't help
-      // reach them.
-      const showDown =
-        !showUp && !anyFullyVisible && !anyAbove && downTargetId !== null;
+      const showUp = upTargetId !== null;
+      // Down arrow shows whenever the page can scroll further down,
+      // independent of awaiting polls. 1px epsilon for sub-pixel scrollY
+      // values on iOS.
+      const maxScroll = Math.max(
+        0,
+        document.documentElement.scrollHeight - window.innerHeight,
+      );
+      const showDown = window.scrollY < maxScroll - 1;
       setScrollHelpers((prev) => (
         prev.showUp === showUp &&
         prev.showDown === showDown &&
@@ -1456,9 +1448,9 @@ export function GroupContent({ groupId }: GroupContentProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group, groupedGroupQuestions, headerHeight, votedQuestionIds, abstainedQuestionIds]);
 
-  // Both arrows use the same action: align the target card's top flush
-  // with the bottom of the fixed header. For wholly-above / wholly-below
-  // cards this brings them just below the header; for bottom-clipped
+  // When an awaiting card is targeted: align its top flush with the
+  // bottom of the fixed header. For wholly-above / wholly-below cards
+  // this brings them just below the header; for bottom-clipped
   // partial-below cards this scrolls down by the exact amount needed to
   // reveal the rest (which lands the bottom at viewport bottom when the
   // card fits in the viewport).
@@ -1468,6 +1460,15 @@ export function GroupContent({ groupId }: GroupContentProps) {
     if (!card) return;
     const targetY = window.scrollY + card.getBoundingClientRect().top - headerHeight;
     window.scrollTo({ top: targetY, behavior: 'smooth' });
+  };
+  // Down arrow fallback when no awaiting poll is below: scroll the
+  // document to its bottom so the bubble bar is in view.
+  const scrollToDocumentBottom = () => {
+    const max = Math.max(
+      0,
+      document.documentElement.scrollHeight - window.innerHeight,
+    );
+    window.scrollTo({ top: max, behavior: 'smooth' });
   };
 
   // Portal target for the scroll-helper buttons. Resolved after mount to
@@ -1796,8 +1797,18 @@ export function GroupContent({ groupId }: GroupContentProps) {
           {scrollHelpers.showDown && (
             <ScrollHelperButton
               direction="down"
-              onClick={() => scrollAwaitingToHeader(scrollHelpers.downTargetId)}
-              aria-label="Scroll to next poll awaiting your response"
+              onClick={() => {
+                if (scrollHelpers.downTargetId) {
+                  scrollAwaitingToHeader(scrollHelpers.downTargetId);
+                } else {
+                  scrollToDocumentBottom();
+                }
+              }}
+              aria-label={
+                scrollHelpers.downTargetId
+                  ? 'Scroll to next poll awaiting your response'
+                  : 'Scroll to bottom'
+              }
               style={{ bottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
             />
           )}
