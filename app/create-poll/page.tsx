@@ -1545,8 +1545,8 @@ export function CreateQuestionContent() {
   // last bubble row. env(safe-area-inset-bottom) isn't usable here — it
   // returns 0 when the URL bar is visible (the case we need to handle).
   const bubbleBar = (
-    <div className="pt-3 pb-4">
-      <h2 className="px-3 pb-2 text-center text-[17.5px] font-medium text-gray-600 dark:text-gray-400">
+    <div className="pt-1 pb-4">
+      <h2 className="px-3 pb-2 text-center text-[17.5px] font-medium text-gray-600 dark:text-gray-400 underline underline-offset-4">
         Create a New Poll
       </h2>
       <div className="px-3 flex flex-wrap justify-center gap-2">
