@@ -37,13 +37,11 @@ import {
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { isCurrentUserName } from "@/lib/userProfile";
 import { isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
-import { getGroupHrefForPoll } from "@/lib/groupUtils";
 import { slideToPollDetail } from "@/lib/slideOverlay";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
 import InitialBubble from "@/components/InitialBubble";
-import PollShareButton from "@/components/PollShareButton";
 import QuestionResultsDisplay, {
   CompactRankedChoicePreview,
   CompactSuggestionPreview,
@@ -385,8 +383,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
   };
 
-  const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
-
   // Status label is anchor-based: the poll's voting and prephase deadlines
   // are shared across questions (per the poll design), and `isClosed` is
   // enforced poll-atomically by Phase 3.1 close/reopen.
@@ -584,32 +580,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             isPlaceholder ? "card-pending-enter" : ""
           } transition-colors select-none relative`}
         >
-          <div className="flex items-start gap-2">
-            <h3 className="flex-1 min-w-0 font-medium text-lg leading-tight line-clamp-2 text-gray-900 dark:text-white">
-              {question.title}
-            </h3>
-            <div
-              className="shrink-0 -mt-0.5 -mr-1"
-              onClick={stopBubble}
-              onTouchStart={stopBubble}
-              onTouchEnd={stopBubble}
-              onTouchMove={stopBubble}
-            >
-              <PollShareButton
-                title={question.title}
-                url={(() => {
-                  if (typeof window === "undefined") return "";
-                  // Canonical share URL — uses `group_short_id` from the
-                  // poll directly (Migration 105: no chain walk needed);
-                  // falls back to this poll as root for placeholders.
-                  const href = wrapper
-                    ? getGroupHrefForPoll(wrapper)
-                    : `/g/${question.id}/p/${question.id}`;
-                  return `${window.location.origin}${href}`;
-                })()}
-              />
-            </div>
-          </div>
+          <h3 className="font-medium text-lg leading-tight line-clamp-2 text-gray-900 dark:text-white">
+            {question.title}
+          </h3>
           {/* Footer row: status label on the left and the question-type-
               specific compact pill on the right. If the row would be empty
               (no status AND no pill), it's skipped so the gap doesn't
