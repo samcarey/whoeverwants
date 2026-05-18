@@ -186,15 +186,33 @@ export function getCachedVotes(questionId: string): ApiVote[] | null {
   return entry && isValid(entry, RESULTS_TTL_MS) ? entry.value : null;
 }
 
-/** Invalidate a single question (call after mutations). */
+/** Evict a single question's per-entity caches (entry, results, votes).
+ *
+ *  FIELD-LEVEL invalidation only — does NOT touch `accessiblePollsCache`.
+ *  The accessible-polls list is the "which polls/questions exist in which
+ *  group" shape, which a vote / close / reopen / cutoff / edit cannot
+ *  change. Its embedded fields may go briefly stale; the 5s group-page
+ *  refresh + the per-question results/votes refetch correct them within
+ *  seconds, and the cache's 60s TTL bounds worst-case staleness.
+ *
+ *  If your mutation REMOVES the question (or its containing poll) from
+ *  the group's list — i.e. forget, leave-group, failed-create
+ *  placeholder cleanup — ALSO call `invalidateAccessibleQuestions()`.
+ *  Without that call, `buildGroupSyncFromCache` will keep rebuilding the
+ *  group with the dead entry until the TTL expires. */
 export function invalidateQuestion(id: string): void {
   cacheById.delete(id);
   resultsCache.delete(id);
   votesCache.delete(id);
-  accessiblePollsCache = null;
 }
 
-/** Invalidate the accessible questions list (e.g., after discovering new questions). */
+/** Drop the accessible-polls list ("which polls exist") cache.
+ *
+ *  SHAPE-LEVEL invalidation. Call when a poll is added/removed from the
+ *  user's accessible set — forget, leave-group, discovery, failed
+ *  optimistic create. Field changes (votes, results, deadlines) use
+ *  `invalidateQuestion` / `invalidatePoll` and leave this cache alone;
+ *  see the invariant in those helpers' doc comments. */
 export function invalidateAccessibleQuestions(): void {
   accessiblePollsCache = null;
 }
@@ -232,7 +250,13 @@ export function getCachedPollForShortId(id: string): Poll | null {
   return getCachedPollByShortId(id);
 }
 
-/** Invalidate a poll wrapper plus all its questions. */
+/** Evict a poll wrapper plus its questions from the per-entity caches.
+ *
+ *  FIELD-LEVEL invalidation — see `invalidateQuestion` for the invariant.
+ *  Does NOT touch `accessiblePollsCache`; field changes (votes, close,
+ *  reopen, cutoff, edit) leave the group's shape intact. Pair with
+ *  `invalidateAccessibleQuestions()` only when this operation also
+ *  removes the poll from the user's accessible list. */
 export function invalidatePoll(id: string): void {
   const entry = pollById.get(id);
   if (entry) {
@@ -240,7 +264,6 @@ export function invalidatePoll(id: string): void {
     if (entry.value.short_id) pollByShortId.delete(entry.value.short_id);
     for (const sub of entry.value.questions) invalidateQuestion(sub.id);
   }
-  accessiblePollsCache = null;
 }
 
 /** Cache a group summary under both id and short_id (when set). */
