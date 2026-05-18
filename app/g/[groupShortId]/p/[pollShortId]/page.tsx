@@ -14,19 +14,15 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useParams, useRouter } from "next/navigation";
 import { flushSync } from "react-dom";
 import {
-  apiCutoffPollAvailability,
-  apiCutoffPollSuggestions,
-  apiClosePoll,
   apiGetPollById,
   apiGetPollByShortId,
   apiGetQuestionResults,
   apiGetVotes,
-  apiReopenPoll,
   ApiError,
   QUESTION_VOTES_CHANGED_EVENT,
 } from "@/lib/api";
 import { POLL_HYDRATED_EVENT, type PollHydratedDetail } from "@/lib/eventChannels";
-import { slideToGroupRoot } from "@/lib/slideOverlay";
+import { slideToGroupRoot, slideToPollInfo } from "@/lib/slideOverlay";
 import {
   buildGroupFromPollDown,
   getGroupHrefForPoll,
@@ -37,11 +33,11 @@ import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import {
   cachePoll,
   getCachedPollForShortId,
-  invalidateQuestion,
 } from "@/lib/questionCache";
-import { addAccessibleQuestionId, getCreatorSecret, isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
+import { addAccessibleQuestionId, isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { hasAppHistory } from "@/lib/viewTransitions";
+import { isUuidLike } from "@/lib/questionId";
 import {
   compactDurationSince,
   getCategoryIcon,
@@ -57,7 +53,6 @@ import {
   parseYesNoChoice,
   getStoredVoteId,
 } from "@/lib/votedQuestionsStorage";
-import { haptic } from "@/lib/haptics";
 import ClientOnly from "@/components/ClientOnly";
 import GroupHeader from "@/components/GroupHeader";
 import InitialBubble from "@/components/InitialBubble";
@@ -67,11 +62,9 @@ import QuestionResultsDisplay from "@/components/QuestionResults";
 import CompactNameField from "@/components/CompactNameField";
 import VoterList from "@/components/VoterList";
 import ConfirmationModal from "@/components/ConfirmationModal";
-import FollowUpModal from "@/components/FollowUpModal";
 import PollShareButton from "@/components/PollShareButton";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import type { Poll, Question, QuestionResults } from "@/lib/types";
-import { PENDING_ACTION_COPY, type PendingActionKind } from "../../groupActionCopy";
 
 function InlineCategoryIcon({
   question,
@@ -116,7 +109,7 @@ export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
     (async () => {
       try {
         setLoading(true);
-        const fetched = pollShortId.length > 10 && pollShortId.includes("-")
+        const fetched = isUuidLike(pollShortId)
           ? await apiGetPollById(pollShortId)
           : await apiGetPollByShortId(pollShortId);
         if (cancelled) return;
@@ -201,7 +194,6 @@ interface PollDetailProps {
 }
 
 function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
-  const router = useRouter();
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([], 80);
 
   const [votedQuestionIds, setVotedQuestionIds] = useState<Set<string>>(() => {
@@ -334,11 +326,6 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
     return () => window.removeEventListener(QUESTION_VOTES_CHANGED_EVENT, onVotesChanged);
   }, [fetchOneResults, setPoll]);
 
-  const [modalQuestion, setModalQuestion] = useState<Question | null>(null);
-  const [pendingAction, setPendingAction] = useState<
-    { kind: PendingActionKind; question: Question } | null
-  >(null);
-
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { questionId: string; updates: Partial<Question> };
@@ -353,9 +340,6 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
           ),
         };
       });
-      setModalQuestion((prev) =>
-        prev && prev.id === detail.questionId ? { ...prev, ...detail.updates } : prev,
-      );
     };
     window.addEventListener("question:updated", handler);
     return () => window.removeEventListener("question:updated", handler);
@@ -464,6 +448,13 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
         headerRef={headerRef}
         title={pollTitle}
         onBack={onBack}
+        onTitleClick={() =>
+          slideToPollInfo({
+            groupId,
+            pollShortId: poll.short_id || poll.id,
+          })
+        }
+        titleAriaLabel="Poll details"
         rightSlot={
           <div className="self-stretch py-2 px-2 flex items-center justify-center shrink-0">
             <PollShareButton title={pollTitle || ""} url={shareUrl} />
@@ -706,127 +697,7 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
           />
         </div>
 
-        <button
-          type="button"
-          onClick={() => setModalQuestion(subQuestions[0])}
-          className="mt-6 mb-2 w-full py-2 px-4 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border border-gray-200 dark:border-gray-800 rounded-lg transition-colors"
-        >
-          More actions…
-        </button>
       </div>
-
-      {modalQuestion && (() => {
-        const isCreatorOrDev =
-          !!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === "development";
-        return (
-          <FollowUpModal
-            isOpen={true}
-            question={modalQuestion}
-            poll={poll}
-            totalVotes={questionResultsMap.get(modalQuestion.id)?.total_votes}
-            onClose={() => setModalQuestion(null)}
-            onDelete={() => setPendingAction({ kind: "forget", question: modalQuestion })}
-            onReopen={
-              isClosed && isCreatorOrDev
-                ? () => setPendingAction({ kind: "reopen", question: modalQuestion })
-                : undefined
-            }
-            onCloseQuestion={
-              !isClosed && isCreatorOrDev
-                ? () => setPendingAction({ kind: "close", question: modalQuestion })
-                : undefined
-            }
-            onCutoffAvailability={
-              !isClosed && isInTimeAvailabilityPhase(modalQuestion) && isCreatorOrDev
-                ? () => setPendingAction({ kind: "cutoff-availability", question: modalQuestion })
-                : undefined
-            }
-            onCutoffSuggestions={
-              !isClosed &&
-              isInSuggestionPhase(modalQuestion, poll.prephase_deadline ?? null) &&
-              isCreatorOrDev
-                ? () => setPendingAction({ kind: "cutoff-suggestions", question: modalQuestion })
-                : undefined
-            }
-          />
-        );
-      })()}
-
-      {pendingAction && (
-        <ConfirmationModal
-          isOpen={true}
-          title={PENDING_ACTION_COPY[pendingAction.kind].title}
-          message={PENDING_ACTION_COPY[pendingAction.kind].message}
-          confirmText={PENDING_ACTION_COPY[pendingAction.kind].confirmText}
-          cancelText="Cancel"
-          confirmButtonClass={PENDING_ACTION_COPY[pendingAction.kind].confirmButtonClass}
-          onConfirm={async () => {
-            const action = pendingAction;
-            if (!action) return;
-            haptic.medium();
-            setPendingAction(null);
-            if (action.kind === "forget") {
-              const { forgetQuestion } = await import("@/lib/forgetQuestion");
-              forgetQuestion(action.question.id);
-              router.push(`/g/${groupId}`);
-            } else if (action.kind === "reopen") {
-              try {
-                const secret = getCreatorSecret(action.question.id) || "dev-override";
-                const updated = await apiReopenPoll(poll.id, secret);
-                setPoll((prev) => prev ? {
-                  ...prev,
-                  is_closed: false,
-                  close_reason: null,
-                  response_deadline: updated.response_deadline ?? null,
-                } : prev);
-              } catch (err) {
-                console.error("Failed to reopen poll:", err);
-              }
-            } else if (action.kind === "close") {
-              try {
-                const secret = getCreatorSecret(action.question.id) || "";
-                await apiClosePoll(poll.id, secret);
-                setPoll((prev) => prev ? { ...prev, is_closed: true, close_reason: "manual" } : prev);
-              } catch (err) {
-                console.error("Failed to close poll:", err);
-              }
-            } else if (action.kind === "cutoff-suggestions" || action.kind === "cutoff-availability") {
-              const apiFn = action.kind === "cutoff-suggestions"
-                ? apiCutoffPollSuggestions
-                : apiCutoffPollAvailability;
-              try {
-                const secret = getCreatorSecret(action.question.id);
-                if (!secret) {
-                  console.error(`Missing creator secret for ${action.kind}`);
-                  return;
-                }
-                const updated = await apiFn(poll.id, secret);
-                setPoll((prev) => prev ? {
-                  ...prev,
-                  prephase_deadline: updated.prephase_deadline ?? null,
-                  questions: prev.questions.map((p) => {
-                    const fresh = updated.questions.find((q) => q.id === p.id);
-                    return fresh?.options ? { ...p, options: fresh.options } : p;
-                  }),
-                } : prev);
-                for (const sp of updated.questions) {
-                  invalidateQuestion(sp.id);
-                  void apiGetQuestionResults(sp.id).then((r) => {
-                    setQuestionResultsMap((prev) => {
-                      const next = new Map(prev);
-                      next.set(sp.id, r);
-                      return next;
-                    });
-                  }).catch(() => null);
-                }
-              } catch (err) {
-                console.error(`Failed to ${action.kind}:`, err);
-              }
-            }
-          }}
-          onCancel={() => setPendingAction(null)}
-        />
-      )}
 
       {(() => {
         const current = pendingVoteChange

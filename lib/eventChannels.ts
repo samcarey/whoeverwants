@@ -66,6 +66,10 @@ export type SlideOverlayKind =
   // /g/<group>/p/<pollShortId>, which renders the poll's full content
   // (results, ballots, voter list) without card chrome.
   | { type: 'pollDetail'; groupId: string; pollShortId: string }
+  // Per-poll info page at /g/<group>/p/<pollShortId>/info. Hosts the
+  // poll-level actions (forget / reopen / close / cutoff) and the full
+  // respondent list. Tapping the title on the poll detail page slides here.
+  | { type: 'pollInfo'; groupId: string; pollShortId: string }
   // Empty "New Group" placeholder, used by the home "+" FAB. The overlay
   // renders the same content as `/g/`'s EmptyPlaceholder; the actual group
   // is created via `apiCreateGroup` in parallel, and the caller fires

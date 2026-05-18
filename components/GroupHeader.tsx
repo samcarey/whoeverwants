@@ -13,6 +13,10 @@ export interface GroupHeaderProps {
    *  instead of the initials graphic. Null/undefined → initials fallback. */
   imageUrl?: string | null;
   onTitleClick?: () => void;
+  /** aria-label for the title button when `onTitleClick` is provided.
+   *  Defaults to "Group details"; the poll detail page passes
+   *  "Poll details" since tapping there opens the per-poll info page. */
+  titleAriaLabel?: string;
   onBack?: () => void;
   rightSlot?: React.ReactNode;
 }
@@ -47,6 +51,7 @@ export default function GroupHeader({
   anonymousCount,
   imageUrl,
   onTitleClick,
+  titleAriaLabel = "Group details",
   onBack,
   rightSlot,
 }: GroupHeaderProps) {
@@ -98,7 +103,7 @@ export default function GroupHeader({
             type="button"
             onClick={onTitleClick}
             className={`self-stretch min-w-0 flex-1 py-2 ${middleRightPad} flex items-center gap-2 text-left active:opacity-60 transition-opacity`}
-            aria-label="Group details"
+            aria-label={titleAriaLabel}
           >
             {middleContent}
           </button>
