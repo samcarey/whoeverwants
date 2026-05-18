@@ -232,10 +232,19 @@ async function ensureCapacitorPushSubscription(): Promise<string | null> {
 }
 
 async function runCapacitorPushRegistration(): Promise<string | null> {
+  if (!Capacitor.isNativePlatform()) {
+    console.warn(
+      "[push-bootstrap] skipped: Capacitor.isNativePlatform()=false (not running inside the iOS shell)",
+    );
+    return null;
+  }
   // Dynamic import so the plugin's runtime cost only lands on the
   // Capacitor native bundle. Web bundles include the chunk but never
   // execute it (capacitorNative is false on web).
-  const mod = await import("@capacitor/push-notifications").catch(() => null);
+  const mod = await import("@capacitor/push-notifications").catch((err) => {
+    console.warn("[push-bootstrap] dynamic import of @capacitor/push-notifications failed", err);
+    return null;
+  });
   if (!mod || !mod.PushNotifications) {
     throw new Error("Native push plugin is not installed");
   }
@@ -246,6 +255,9 @@ async function runCapacitorPushRegistration(): Promise<string | null> {
     perms = await PushNotifications.requestPermissions();
   }
   if (perms.receive !== "granted") {
+    console.warn(
+      `[push-bootstrap] permission not granted after requestPermissions: ${perms.receive}`,
+    );
     return null;
   }
 
@@ -303,13 +315,21 @@ async function runCapacitorPushRegistration(): Promise<string | null> {
       // ignore — bundle_id is optional on the server side
     }
 
-    await apiRegisterPushSubscription({
-      kind: "apns",
-      endpoint: token,
-      bundle_id: bundleId,
-      user_agent: navigator.userAgent,
-    });
+    try {
+      await apiRegisterPushSubscription({
+        kind: "apns",
+        endpoint: token,
+        bundle_id: bundleId,
+        user_agent: navigator.userAgent,
+      });
+    } catch (err) {
+      console.warn("[push-bootstrap] POST /api/notifications/subscriptions failed", err);
+      throw err;
+    }
 
+    console.warn(
+      `[push-bootstrap] APNS registration succeeded (bundle=${bundleId ?? "?"}, token=${token.slice(0, 8)}…)`,
+    );
     return token;
   } finally {
     clearTimeout(timeout);
@@ -337,13 +357,6 @@ export async function getCapacitorPushPermission(): Promise<CapacitorPushPermiss
   }
 }
 
-/** localStorage key tracking whether we've already auto-asked iOS for
- *  push permission on app launch. Prevents re-prompting on every
- *  launch if the user dismisses the prompt without an explicit decision
- *  (the system normally only shows the dialog once anyway, but iOS
- *  versions vary and we want to be defensive). */
-const IOS_BOOTSTRAP_FLAG = "whoeverwants:ios-push-bootstrap-asked";
-
 /** Register the device's APNS token with the server, prompting for
  *  permission at app launch if it has never been decided. No-op on
  *  web / PWA. Behavior by current permission state:
@@ -351,37 +364,39 @@ const IOS_BOOTSTRAP_FLAG = "whoeverwants:ios-push-bootstrap-asked";
  *    'granted'              → silently re-register (idempotent server upsert).
  *                             Keeps the subscription row alive across
  *                             dev-DB resets and APNS token rotation.
- *    'prompt' (1st launch)  → trigger the iOS system dialog. If the user
- *                             grants, register. If they deny, no register.
- *                             Either way, set a localStorage flag so we
- *                             don't re-prompt.
- *    'prompt' (flag set)    → no-op. Respect the user's "didn't decide"
- *                             without nagging them on every launch.
- *    'prompt-with-rationale'→ no-op. iOS doesn't use this state, but
- *                             defensively avoid auto-prompting when an
- *                             OS variant indicates the user has interacted
- *                             with the prompt before.
+ *    'prompt' /             → fall through to `register()`, which iOS
+ *    'prompt-with-rationale'  itself rate-limits — the system dialog only
+ *                             shows once per install; subsequent calls
+ *                             return the cached state. We previously
+ *                             gated re-attempts behind a localStorage
+ *                             flag, but that left users stranded with no
+ *                             subscription when iOS happened to leave
+ *                             the state at 'prompt' (e.g. dismissed
+ *                             dialog). Letting iOS arbitrate is safer.
  *    'denied' / 'na'        → no-op.
  *
- *  Errors are caught and swallowed: this runs in the background and
- *  must not crash the caller. */
+ *  Errors are caught + logged at warn level (forwarded to the canary
+ *  log buffer for diagnostics) so this background path stops silently
+ *  swallowing failures: the previous bare `catch {}` was hiding the
+ *  reason 0/15 group members ever registered. */
 export async function bootstrapCapacitorPushSubscription(): Promise<void> {
-  const permission = await getCapacitorPushPermission();
-  if (permission === "na" || permission === "denied") return;
-  if (permission === "prompt-with-rationale") return;
-  if (permission === "prompt") {
-    try {
-      if (localStorage.getItem(IOS_BOOTSTRAP_FLAG) === "1") return;
-      localStorage.setItem(IOS_BOOTSTRAP_FLAG, "1");
-    } catch {
-      // localStorage unavailable (private mode?) — fall through and
-      // ask anyway; iOS itself caches the user's decision.
-    }
-  }
+  let permission: CapacitorPushPermission;
   try {
-    await ensureCapacitorPushSubscription();
-  } catch {
-    /* ignore — caller is fire-and-forget */
+    permission = await getCapacitorPushPermission();
+  } catch (err) {
+    console.warn("[push-bootstrap] failed to read permission state", err);
+    return;
+  }
+  if (permission === "na" || permission === "denied") return;
+  try {
+    const endpoint = await ensureCapacitorPushSubscription();
+    if (endpoint === null) {
+      console.warn(
+        "[push-bootstrap] registration returned null (permission denied or not granted)",
+      );
+    }
+  } catch (err) {
+    console.warn("[push-bootstrap] ensureCapacitorPushSubscription threw", err);
   }
 }
 
