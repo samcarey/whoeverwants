@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { QuestionResults, RankedChoiceRound, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, ApiRankedChoiceRound } from "@/lib/api";
 import OptionLabel, { isLocationEntry, isRestaurantEntry } from "./OptionLabel";
@@ -33,6 +33,8 @@ interface RoundVisualization {
 
 export default function CompactRankedChoiceResults({ results, isQuestionClosed, userVoteData, onFollowUpClick, optionsMetadata }: CompactRankedChoiceResultsProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isPollDetailRoute = useMemo(() => /^\/g\/[^/]+\/p\/[^/]+\/?$/.test(pathname ?? ""), [pathname]);
   const [roundVisualizations, setRoundVisualizations] = useState<RoundVisualization[]>([]);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -212,15 +214,17 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
         
         setRoundVisualizations(visualizations);
         
-        // Check if there's a round specified in the URL hash
-        const hashMatch = window.location.hash.match(/^#round(\d+)$/);
+        // Check if there's a round specified in the URL hash (poll detail route only)
         let initialRoundIndex = visualizations.length - 1; // Default to final round
-        
-        if (hashMatch) {
-          const roundNumber = parseInt(hashMatch[1], 10);
-          const roundIndex = roundNumber - 1; // Convert to 0-based index
-          if (roundIndex >= 0 && roundIndex < visualizations.length) {
-            initialRoundIndex = roundIndex;
+
+        if (isPollDetailRoute) {
+          const hashMatch = window.location.hash.match(/^#round(\d+)$/);
+          if (hashMatch) {
+            const roundNumber = parseInt(hashMatch[1], 10);
+            const roundIndex = roundNumber - 1; // Convert to 0-based index
+            if (roundIndex >= 0 && roundIndex < visualizations.length) {
+              initialRoundIndex = roundIndex;
+            }
           }
         }
         
@@ -233,15 +237,17 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
     }
 
     fetchAndProcessData();
-  }, [results.question_id, results.total_votes, results.winner, userVoteData, getUserPreferenceForRound]);
+  }, [results.question_id, results.total_votes, results.winner, userVoteData, getUserPreferenceForRound, isPollDetailRoute]);
 
-  // Update URL hash when round index changes
+  // Update URL hash when round index changes — only on the poll detail route,
+  // since the hash is only meaningful there.
   useEffect(() => {
+    if (!isPollDetailRoute) return;
     if (roundVisualizations.length > 0) {
       const roundNumber = currentRoundIndex + 1;
       window.history.replaceState(null, '', `#round${roundNumber}`);
     }
-  }, [currentRoundIndex, roundVisualizations.length]);
+  }, [currentRoundIndex, roundVisualizations.length, isPollDetailRoute]);
 
   // Touch handlers for swipe functionality
   const handleTouchStart = (e: React.TouchEvent) => {
