@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { GroupSummary, Poll } from "@/lib/types";
 import { getCachedEmptyGroups, getMyGroups } from "@/lib/simpleQuestionQueries";
 import { apiGetAllQuestionIds } from "@/lib/api";
@@ -8,6 +8,7 @@ import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
 import { usePageReady } from "@/lib/usePageReady";
+import { HOME_SCROLL_KEY, getRememberedScroll } from "@/lib/scrollMemory";
 import GroupList from "@/components/GroupList";
 
 // Fun activity phrases (max 25 chars)
@@ -54,6 +55,22 @@ export default function Home() {
   const [fontSize, setFontSize] = useState<string>("text-xl");
 
   usePageReady(true);
+
+  // Restore the scroll position saved when navigating away to a group
+  // page. Fires synchronously before paint via `useLayoutEffect` and is
+  // ref-guarded so it runs at most once per mount (StrictMode commits
+  // the effect twice in dev). Falling back when no value is remembered
+  // leaves the browser's default at-top scroll alone.
+  const hasRestoredScrollRef = useRef(false);
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    if (hasRestoredScrollRef.current) return;
+    hasRestoredScrollRef.current = true;
+    const remembered = getRememberedScroll(HOME_SCROLL_KEY);
+    if (remembered !== undefined) {
+      window.scrollTo(0, remembered);
+    }
+  }, []);
 
   // Initialize and rotate phrases
   useEffect(() => {

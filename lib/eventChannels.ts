@@ -91,4 +91,14 @@ export interface SlideToGroupDetail {
   /** Discriminated union of the destination's page kind + payload. The
    *  overlay renders the matching prop-driven view component. */
   kind: SlideOverlayKind;
+  /** Visual scroll offset (in pixels) to apply to the destination's cards
+   *  wrapper via CSS transform while the slide plays. Used by
+   *  group-kind slides (`slideToGroup` / `slideToGroupRoot`) so the
+   *  overlay shows the user's saved scroll position throughout the
+   *  animation rather than the top of the list with a snap to the
+   *  restored `window.scrollY` on unmount. Only the cards wrapper
+   *  transforms — the fixed GroupHeader stays at viewport top
+   *  naturally (sidesteps the WebKit contain:strict +
+   *  position-fixed-scrolls-with-content interaction). */
+  overlayCardsOffset?: number;
 }

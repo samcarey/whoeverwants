@@ -9,6 +9,7 @@ import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { slideToNewGroup } from '@/lib/slideOverlay';
+import { HOME_SCROLL_KEY, rememberCurrentScroll } from '@/lib/scrollMemory';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { apiCreateGroup } from '@/lib/api';
@@ -55,6 +56,8 @@ function CreateGroupButton({ router }: { router: ReturnType<typeof useRouter> })
     if (inFlight.current) return;
     inFlight.current = true;
     haptic.medium();
+    // Save home scroll so back-nav from the freshly-minted group restores here.
+    rememberCurrentScroll(HOME_SCROLL_KEY);
     slideToNewGroup();
     apiCreateGroup()
       .then((summary) => {

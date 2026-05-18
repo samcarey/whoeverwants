@@ -45,6 +45,7 @@ import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { isGroupRootView, normalizePath } from "./questionId";
+import { getRememberedScroll, groupScrollKey } from "./scrollMemory";
 import {
   SLIDE_TO_GROUP_EVENT,
   type SlideToGroupDetail,
@@ -82,6 +83,11 @@ export function slideToGroup(detail: {
     href: detail.href,
     direction: 'forward',
     kind: { type: 'group', groupId: detail.groupId },
+    // Same as `slideToGroupRoot` — if the user has a saved scroll for
+    // this group from a previous visit, pre-position the overlay's
+    // cards wrapper to that offset so the slide-in shows the correct
+    // position rather than the top-of-list with a snap on unmount.
+    overlayCardsOffset: getRememberedScroll(groupScrollKey(detail.groupId)),
   });
 }
 
@@ -193,11 +199,14 @@ export function slideToGroupRoot({
   // strips query strings, so omitting `?p=` here is safe even when the
   // history entry we're popping to had one). When `useHistoryBack` is
   // true, router.back() restores the exact prior URL (including `?p=`).
+  // `overlayCardsOffset` pre-positions the destination via cards-wrapper
+  // transform so the slide doesn't show top-of-list followed by a snap.
   dispatchSlide({
     href: `/g/${groupId}`,
     direction,
     useHistoryBack,
     kind: { type: 'group', groupId },
+    overlayCardsOffset: getRememberedScroll(groupScrollKey(groupId)),
   });
 }
 
@@ -205,10 +214,26 @@ interface OverlayState extends SlideToGroupDetail {
   phase: "enter" | "shown";
 }
 
-function renderForKind(kind: SlideOverlayKind): React.ReactNode {
+function renderForKind(
+  kind: SlideOverlayKind,
+  overlayCardsOffset: number | undefined,
+): React.ReactNode {
   switch (kind.type) {
     case 'group':
-      return <GroupContent key={kind.groupId} groupId={kind.groupId} />;
+      // Pass the saved scroll as a visual offset on the cards wrapper.
+      // The overlay itself does NOT scroll (its scrollTop stays 0), so
+      // the fixed header isn't dragged off-screen by contain:strict's
+      // position-fixed-scrolls-with-content behavior. The destination's
+      // window.scrollY is set to the same value by GroupContent's own
+      // layoutEffect, so when the overlay unmounts the real route shows
+      // identical content with no visible motion.
+      return (
+        <GroupContent
+          key={kind.groupId}
+          groupId={kind.groupId}
+          overlayCardsOffset={overlayCardsOffset}
+        />
+      );
     case 'groupInfo':
       return <GroupInfoView key={kind.groupId} groupId={kind.groupId} />;
     case 'groupEditTitle':
@@ -400,7 +425,7 @@ export function SlideOverlayHost(): React.ReactElement | null {
         }}
       >
         <div className={innerClass} style={innerStyle}>
-          {renderForKind(state.kind)}
+          {renderForKind(state.kind, state.overlayCardsOffset)}
         </div>
       </div>
     </div>,

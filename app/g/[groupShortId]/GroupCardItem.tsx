@@ -38,6 +38,7 @@ import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { isCurrentUserName } from "@/lib/userProfile";
 import { isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
 import { slideToPollDetail } from "@/lib/slideOverlay";
+import { groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
@@ -245,6 +246,8 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   // still opens the follow-up modal.
   const navigateToDetail = () => {
     const pollShortId = wrapper?.short_id || question.id;
+    // Save scroll BEFORE the navigation so back-nav restores here.
+    rememberCurrentScroll(groupScrollKey(groupRouteId));
     slideToPollDetail({ groupId: groupRouteId, pollShortId });
   };
 

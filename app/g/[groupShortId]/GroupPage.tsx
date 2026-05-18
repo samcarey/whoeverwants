@@ -31,6 +31,8 @@ import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionLi
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
 import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroupInfo } from "@/lib/slideOverlay";
+import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
+import { navigateWithTransition } from "@/lib/viewTransitions";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import GroupHeader from "@/components/GroupHeader";
@@ -137,9 +139,13 @@ function rebuildGroupFromCacheOrPrev(
 
 interface GroupContentProps {
   groupId: string;
+  /** Visual offset (px) for the cards-wrapper transform, used by
+   *  `SlideOverlayHost` to pre-position the destination during a group
+   *  slide. Does NOT apply to the fixed GroupHeader. See `SlideToGroupDetail.overlayCardsOffset`. */
+  overlayCardsOffset?: number;
 }
 
-export function GroupContent({ groupId }: GroupContentProps) {
+export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
 
@@ -315,11 +321,25 @@ export function GroupContent({ groupId }: GroupContentProps) {
   const userInteractedRef = useRef(false);
   const [mountedGroupKeys, setMountedGroupKeys] = useState<Set<string>>(() => {
     if (!initialGroup) return new Set();
+    const initial = new Set<string>();
+    // When a saved scroll position is being restored (back-nav from a
+    // poll detail page), mount every card up-front so `scrollHeight`
+    // matches the original page and `window.scrollTo(0, Y)` lands at
+    // the exact position the user left. The default anchor-only mount
+    // would short the doc height and clamp the restored scroll into a
+    // wrong spot. React.memo on `GroupCardItem` keeps subsequent
+    // updates from re-rendering siblings on each vote/state change.
+    const restoring =
+      typeof window !== "undefined" &&
+      getRememberedScroll(groupScrollKey(groupId)) !== undefined;
+    if (restoring) {
+      for (const q of initialGroup.questions) initial.add(groupKeyFor(q));
+      return initial;
+    }
     // Seed with the last poll so the first paint already has the
     // bottom-pin's nearest neighbor mounted (no placeholder→card swap right
     // after mount). Progressive fill below mounts the rest in idle-time
     // batches.
-    const initial = new Set<string>();
     const target = initialGroup.questions[initialGroup.questions.length - 1] ?? null;
     if (target) initial.add(groupKeyFor(target));
     return initial;
@@ -981,11 +1001,39 @@ export function GroupContent({ groupId }: GroupContentProps) {
   // Wall-clock deadline (ms since epoch) for the bottom-pin. Set during
   // the initial-load effect; the pin no-ops past it.
   const bottomPinDeadlineRef = useRef(0);
+  // Hard upper bound for the restore-scroll rAF loop. iOS Safari +
+  // Next.js App Router reset scrollY ~30-40ms after our layoutEffect's
+  // scrollTo, so we need a re-application window to outlast that.
+  const restorePinDeadlineRef = useRef(0);
+  // Target scrollY for the restore-scroll rAF loop. Cleared when the
+  // loop converges (3 stable frames), the deadline passes, or the
+  // user interacts.
+  const restoreTargetRef = useRef<number | null>(null);
   useLayoutEffect(() => {
     if (!group || loading) return;
     if (headerHeight === 0) return;
     if (hasHandledInitialExpandRef.current) return;
     hasHandledInitialExpandRef.current = true;
+
+    // Back-nav path: restore the scroll position saved when the user
+    // navigated away (tap on a poll card). Skip bottom-pin entirely so
+    // async content settling doesn't drag the viewport off-target.
+    // `mountedGroupKeys` is initialized with every card up-front in
+    // this case (see the useState initializer above), so scrollHeight
+    // already reflects the full document and the requested scrollY
+    // lands without clamping.
+    const remembered = getRememberedScroll(groupScrollKey(groupId));
+    if (remembered !== undefined) {
+      restoreTargetRef.current = remembered;
+      // Pin against the target for a bounded window — iOS Safari +
+      // Next.js App Router's scroll-to-top fires ~30-40ms after our
+      // initial scrollTo, so we need re-application opportunities for
+      // longer than that. 800ms matches BOTTOM_PIN_DURATION_MS.
+      restorePinDeadlineRef.current = Date.now() + BOTTOM_PIN_DURATION_MS;
+      window.scrollTo(0, remembered);
+      setInitialScrollApplied(true);
+      return;
+    }
 
     bottomPinDeadlineRef.current = Date.now() + BOTTOM_PIN_DURATION_MS;
     const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -996,6 +1044,41 @@ export function GroupContent({ groupId }: GroupContentProps) {
     // semantics. A cleanup that reset the ref would fire on every dep change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group, loading, headerHeight]);
+
+  // Re-apply the restored scroll until it sticks. iOS Safari + Next.js
+  // App Router reset scrollY ~30-40ms after our initial scrollTo, so a
+  // single useLayoutEffect scrollTo isn't enough. Re-apply each frame
+  // until scrollY matches target for 3 consecutive frames (~50ms past
+  // the iOS reset), or until the deadline passes, or until the user
+  // interacts. Layout-change re-application is left to the existing
+  // ResizeObserver path that already calls `applyScrollAdjustmentRef`.
+  useEffect(() => {
+    if (!group || loading) return;
+    if (restoreTargetRef.current == null) return;
+    let rafId: number | null = null;
+    let stableFrames = 0;
+    const tick = () => {
+      rafId = null;
+      if (userInteractedRef.current || Date.now() >= restorePinDeadlineRef.current) {
+        restoreTargetRef.current = null;
+        return;
+      }
+      const target = restoreTargetRef.current;
+      if (target == null) return;
+      if (Math.abs(window.scrollY - target) > 0.5) {
+        window.scrollTo(0, target);
+        stableFrames = 0;
+      } else if (++stableFrames >= 3) {
+        restoreTargetRef.current = null;
+        return;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [group, loading]);
 
   // Listen for question:updated events (fired when close/reopen happens from within
   // a card). Merge the updates into our local group state so downstream UI —
@@ -1294,6 +1377,9 @@ export function GroupContent({ groupId }: GroupContentProps) {
     if (typeof window === 'undefined' || !group) return;
     if (userInteractedRef.current) return;
     if (headerHeight === 0) return;
+    // While a saved scroll is being restored, the rAF loop above owns
+    // re-application. Don't let the bottom-pin fight it.
+    if (restoreTargetRef.current !== null) return;
     // Bounded bottom-pin. Re-fire while async content settles
     // (placeholders → real cards, results loads grow scrollHeight) so
     // the bubble bar stays at the bottom of the viewport. Deadline
@@ -1503,7 +1589,15 @@ export function GroupContent({ groupId }: GroupContentProps) {
         participantNames={group.participantNames}
         anonymousCount={group.anonymousRespondentCount}
         imageUrl={group.imageUrl}
-        onTitleClick={() => slideToGroupInfo({ groupId })}
+        onTitleClick={() => {
+          rememberCurrentScroll(groupScrollKey(groupId));
+          slideToGroupInfo({ groupId });
+        }}
+        onBack={() => {
+          // Save scroll BEFORE the navigation so re-entry restores it.
+          rememberCurrentScroll(groupScrollKey(groupId));
+          navigateWithTransition(router, '/', 'back');
+        }}
       />
 
       {/* paddingTop reserves space for the fixed header above. The card
@@ -1517,7 +1611,20 @@ export function GroupContent({ groupId }: GroupContentProps) {
           unmount and the user saw a small downward jump. Keep the
           `--group-card-gap` custom property — the overlay (and any
           future callers) can still override it. */}
-      <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + var(--group-card-gap, 0px))` }}>
+      {/* The cards wrapper (sibling of the fixed header above) is the
+          surface we transform during a slide overlay's pre-position —
+          transforming the overlay itself would drag the fixed header
+          with the content per the WebKit contain:strict quirk. */}
+      <div
+        className="pb-2"
+        style={{
+          paddingTop: `calc(${headerHeight}px + var(--group-card-gap, 0px))`,
+          transform: overlayCardsOffset
+            ? `translate3d(0, ${-overlayCardsOffset}px, 0)`
+            : undefined,
+          willChange: overlayCardsOffset ? 'transform' : undefined,
+        }}
+      >
         {groupedGroupQuestions.map((group) => {
             // Virtualized window: groups outside ±2 viewport heights of the
             // visible region render as a measured-height placeholder div. The
