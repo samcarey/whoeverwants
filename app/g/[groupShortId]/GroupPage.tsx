@@ -1391,19 +1391,13 @@ export function GroupContent({ groupId }: GroupContentProps) {
         const card = cardRefs.current.get(question.id);
         if (!card) continue;
         const r = card.getBoundingClientRect();
-        // "Not completely in view above" = any part of the card is above
-        // the viewport top: wholly above (r.bottom <= viewportTop) OR
-        // top-clipped (r.top < viewportTop && r.bottom > viewportTop).
         if (r.top < viewportTop && upTargetId === null) {
           upTargetId = question.id;
         }
-        // Below-the-fold: wholly below OR bottom-clipped (top in view,
-        // bottom past viewport bottom).
-        const wholeBelow = r.top >= viewportBottom;
-        const bottomClipped = r.bottom > viewportBottom && r.top >= viewportTop;
-        if ((wholeBelow || bottomClipped) && downTargetId === null) {
+        if (r.bottom > viewportBottom && r.top >= viewportTop && downTargetId === null) {
           downTargetId = question.id;
         }
+        if (upTargetId !== null && downTargetId !== null) break;
       }
       const showUp = upTargetId !== null;
       // Down arrow shows whenever the page can scroll further down,
@@ -1460,15 +1454,6 @@ export function GroupContent({ groupId }: GroupContentProps) {
     if (!card) return;
     const targetY = window.scrollY + card.getBoundingClientRect().top - headerHeight;
     window.scrollTo({ top: targetY, behavior: 'smooth' });
-  };
-  // Down arrow fallback when no awaiting poll is below: scroll the
-  // document to its bottom so the bubble bar is in view.
-  const scrollToDocumentBottom = () => {
-    const max = Math.max(
-      0,
-      document.documentElement.scrollHeight - window.innerHeight,
-    );
-    window.scrollTo({ top: max, behavior: 'smooth' });
   };
 
   // Portal target for the scroll-helper buttons. Resolved after mount to
@@ -1801,7 +1786,11 @@ export function GroupContent({ groupId }: GroupContentProps) {
                 if (scrollHelpers.downTargetId) {
                   scrollAwaitingToHeader(scrollHelpers.downTargetId);
                 } else {
-                  scrollToDocumentBottom();
+                  const max = Math.max(
+                    0,
+                    document.documentElement.scrollHeight - window.innerHeight,
+                  );
+                  window.scrollTo({ top: max, behavior: 'smooth' });
                 }
               }}
               aria-label={
