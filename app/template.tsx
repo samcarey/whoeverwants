@@ -278,12 +278,12 @@ function TemplateInner({ children }: AppTemplateProps) {
             // Home reserves enough room for the floating "+" FAB to clear the
             // last card.
             ? { paddingBottom: '6rem' }
-            // Group-like pages have no floating chrome past the draft form,
-            // but the draft card's outer dashed border shouldn't visually
-            // touch the screen edge at scroll-bottom — give it a small
-            // breather below.
+            // Group-like pages have the category bubble bar as the last
+            // in-flow element. The bubble bar already carries its own pb-4
+            // (16px) internal padding; we just want a tiny breather so the
+            // bar doesn't sit flush with the screen edge at scroll-bottom.
             : isGroupLikePage
-              ? { paddingBottom: '4.5rem' }
+              ? { paddingBottom: '0.5rem' }
               : undefined}
         >
           {children}
