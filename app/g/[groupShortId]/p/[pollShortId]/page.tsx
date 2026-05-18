@@ -101,7 +101,6 @@ interface PollDetailViewProps {
  *  `useParams` for direct URL navigation. */
 export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
   const router = useRouter();
-  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([], 80);
 
   // Synchronous cache-first init: cache hit → instant render with no spinner
   // (matches the slide handoff). Cache miss → async fetch below.
@@ -167,48 +166,65 @@ export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
   }, [groupId]);
 
   if (loading && !poll) {
-    return (
-      <>
-        <GroupHeader headerRef={headerRef} onBack={goBack} />
-        <div className="min-h-[40vh] flex items-center justify-center">
-          <p className="text-gray-600 dark:text-gray-400">Loading poll...</p>
-        </div>
-      </>
-    );
+    return <LoadingFrame onBack={goBack} />;
   }
 
   if (error || !poll) {
-    return (
-      <>
-        <GroupHeader headerRef={headerRef} onBack={goBack} />
-        <div className="min-h-[40vh] flex flex-col items-center justify-center text-center px-4">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Poll Not Found</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">This poll may have been removed.</p>
-          <button
-            onClick={() => router.push(`/g/${groupId}`)}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-          >
-            Back to Group
-          </button>
-        </div>
-      </>
-    );
+    return <ErrorFrame onBack={goBack} groupId={groupId} router={router} />;
   }
 
-  return <PollDetail poll={poll} setPoll={setPoll} groupId={groupId} headerRef={headerRef} headerHeight={headerHeight} onBack={goBack} />;
+  return <PollDetail poll={poll} setPoll={setPoll} groupId={groupId} onBack={goBack} />;
+}
+
+function LoadingFrame({ onBack }: { onBack: () => void }) {
+  const [headerRef] = useMeasuredHeight<HTMLDivElement>([], 80);
+  return (
+    <>
+      <GroupHeader headerRef={headerRef} onBack={onBack} />
+      <div className="min-h-[40vh] flex items-center justify-center">
+        <p className="text-gray-600 dark:text-gray-400">Loading poll...</p>
+      </div>
+    </>
+  );
+}
+
+function ErrorFrame({
+  onBack,
+  groupId,
+  router,
+}: {
+  onBack: () => void;
+  groupId: string;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const [headerRef] = useMeasuredHeight<HTMLDivElement>([], 80);
+  return (
+    <>
+      <GroupHeader headerRef={headerRef} onBack={onBack} />
+      <div className="min-h-[40vh] flex flex-col items-center justify-center text-center px-4">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Poll Not Found</h2>
+        <p className="text-gray-600 dark:text-gray-400 mb-4">This poll may have been removed.</p>
+        <button
+          onClick={() => router.push(`/g/${groupId}`)}
+          className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+        >
+          Back to Group
+        </button>
+      </div>
+    </>
+  );
 }
 
 interface PollDetailProps {
   poll: Poll;
   setPoll: React.Dispatch<React.SetStateAction<Poll | null>>;
   groupId: string;
-  headerRef: React.Ref<HTMLDivElement>;
-  headerHeight: number;
   onBack: () => void;
 }
 
-function PollDetail({ poll, setPoll, groupId, headerRef, headerHeight, onBack }: PollDetailProps) {
+function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
   const router = useRouter();
+  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([], 80);
 
   // Voted/abstained sets (used to mark question state + by useGroupVoting
   // for post-write sync). Seeded synchronously from localStorage; the
