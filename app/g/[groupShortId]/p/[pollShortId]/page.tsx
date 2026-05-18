@@ -424,7 +424,7 @@ function PollDetail({ poll, setPoll, groupId, headerRef, headerHeight, onBack }:
         }
       />
 
-      <div style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
+      <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
         {/* Poll-level notes */}
         {poll.details && <QuestionDetails details={poll.details} label="Notes: " />}
 
