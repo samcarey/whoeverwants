@@ -8,6 +8,12 @@
  * the component so they close over per-card props instead of being re-created
  * on every parent render.
  *
+ * Tapping a card no longer expands it in place — instead it slides to the
+ * poll's detail page at `/g/<group>/p/<pollShort>`. The card itself stays
+ * compact-only: title + share button + status footer + below-card respondent
+ * row. Long-press still opens the FollowUpModal and left-swipe still
+ * batched-abstains, both unchanged.
+ *
  * See CLAUDE.md → "Group-Page Layout Stability" for the rationale and the
  * subscription pattern used for high-frequency state.
  */
@@ -18,33 +24,26 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { Poll, Question, QuestionResults } from "@/lib/types";
 import type { ApiVote } from "@/lib/api";
 import type {
-  PendingPollSubmit,
-  PreparedNonYesNoEntry,
   UserYesNoVote,
-  WrapperSubmitState,
   YesNoChoice,
 } from "@/lib/useGroupVoting";
 import {
-  getCategoryIcon,
   getBuiltInCategoryIcon,
-  getQuestionSectionTitle,
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
   compactDurationSince,
   relativeTime,
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
-import { getUserName, isCurrentUserName } from "@/lib/userProfile";
+import { isCurrentUserName } from "@/lib/userProfile";
 import { isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
 import { getGroupHrefForPoll } from "@/lib/groupUtils";
+import { slideToPollDetail } from "@/lib/slideOverlay";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
 import InitialBubble from "@/components/InitialBubble";
 import PollShareButton from "@/components/PollShareButton";
-import CompactNameField from "@/components/CompactNameField";
-import QuestionBallot, { type QuestionBallotHandle } from "@/components/QuestionBallot";
-import QuestionDetails from "@/components/QuestionDetails";
 import QuestionResultsDisplay, {
   CompactRankedChoicePreview,
   CompactSuggestionPreview,
@@ -81,83 +80,27 @@ const SWIPE_DIRECTION_THRESHOLD_PX = 12;
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
 
-// Per-question category emoji that hangs to the LEFT of the card,
-// vertically anchored at the top of its parent's relative box. The parent
-// must be `position: relative` (or be the cardFrame itself).
-//
-// left: -2.375rem = -(card px-2 0.5rem + outer-grid gap-x-0.5 0.125rem +
-//   col-1 width 1.75rem) — places the icon centered in the same column
-//   the creator bubble occupies at the top of the card. width matches
-//   col-1 so the glyph centers there.
-function HangingCategoryIcon({
-  question,
-  isClosed,
-}: {
-  question: Question;
-  isClosed: boolean;
-}) {
-  return (
-    <div
-      className="absolute flex items-center justify-center text-lg leading-none h-7"
-      style={{ width: '1.75rem', left: '-2.375rem', top: 0 }}
-      aria-hidden="true"
-    >
-      {getCategoryIcon(question, isClosed)}
-    </div>
-  );
-}
-
-// Inverse grid-rows clip for compact pills in the group card header:
-// full height when collapsed, 0 when expanded, animating in lockstep with the
-// heavy-content expand clip below. The pill sits directly at the top of the
-// overflow-hidden child so its text center aligns with the sibling status
-// text via the parent flex row's items-center.
-function CompactPreviewClip({
-  isExpanded,
-  children,
-}: {
-  isExpanded: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className={`grid w-full min-w-0 transition-[grid-template-rows] duration-300 ease-out ${
-        isExpanded ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
-      }`}
-      aria-hidden={isExpanded}
-    >
-      <div className="overflow-hidden min-w-0">{children}</div>
-    </div>
-  );
-}
-
 export interface GroupCardItemProps {
   // Identity / data ---------------------------------------------------------
   group: GroupCardGroup;
+  /** Group route id (groups.short_id / id), used when sliding to the
+   *  poll's detail page. */
+  groupRouteId: string;
 
   // Per-card primitives (computed in parent .map) --------------------------
-  isExpanded: boolean;
   isPressed: boolean;
   isPlaceholder: boolean;
   isAwaiting: boolean;
   isClosed: boolean;
-  isVisible: boolean;
   isSwipeThresholdActive: boolean;
   isTooltipActive: boolean;
 
   // State Maps. Pass directly + custom equality slices per-card. -----------
   questionResultsMap: Map<string, QuestionResults>;
   userVoteMap: Map<string, UserYesNoVote>;
-  pendingPollChoices: Map<string, YesNoChoice>;
-  wrapperSubmitState: Map<string, WrapperSubmitState>;
-  pollVoterNames: Map<string, string>;
-  pollSubmitting: Set<string>;
-  pollSubmitError: Map<string, string>;
 
   // Refs (stable identity — no need to compare in equality fn) -------------
   cardFrameRefs: MutableRefObject<Map<string, HTMLDivElement>>;
-  expandedWrapperRefs: MutableRefObject<Map<string, HTMLDivElement>>;
-  subQuestionBallotRefs: MutableRefObject<Map<string, QuestionBallotHandle>>;
   longPressTimerRef: MutableRefObject<NodeJS.Timeout | null>;
   isLongPressRef: MutableRefObject<boolean>;
   touchStartPosRef: MutableRefObject<{ x: number; y: number } | null>;
@@ -174,46 +117,26 @@ export interface GroupCardItemProps {
     pollId: string,
     subQuestions: Question[],
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
-  setExpandedQuestionId: Dispatch<SetStateAction<string | null>>;
   setPressedQuestionId: Dispatch<SetStateAction<string | null>>;
   setSwipeThresholdQuestionId: Dispatch<SetStateAction<string | null>>;
   setTooltipQuestionId: Dispatch<SetStateAction<string | null>>;
   setModalQuestion: Dispatch<SetStateAction<Question | null>>;
   setShowModal: Dispatch<SetStateAction<boolean>>;
-  setPendingVoteChange: Dispatch<
-    SetStateAction<{ questionId: string; newChoice: YesNoChoice } | null>
-  >;
-  submitYesNoChoice: (questionId: string, newChoice: YesNoChoice) => void;
-  setPollVoterName: (id: string, name: string) => void;
-  setPendingPollChoices: Dispatch<SetStateAction<Map<string, YesNoChoice>>>;
-  setPendingPollSubmit: Dispatch<SetStateAction<PendingPollSubmit | null>>;
-  handleWrapperSubmitStateChange: (
-    questionId: string,
-    state: WrapperSubmitState,
-  ) => void;
 }
 
 function GroupCardItemImpl(props: GroupCardItemProps) {
   const {
     group,
-    isExpanded,
+    groupRouteId,
     isPressed,
     isPlaceholder,
     isAwaiting,
     isClosed,
-    isVisible,
     isSwipeThresholdActive,
     isTooltipActive,
     questionResultsMap,
     userVoteMap,
-    pendingPollChoices,
-    wrapperSubmitState,
-    pollVoterNames,
-    pollSubmitting,
-    pollSubmitError,
     cardFrameRefs,
-    expandedWrapperRefs,
-    subQuestionBallotRefs,
     longPressTimerRef,
     isLongPressRef,
     touchStartPosRef,
@@ -225,18 +148,11 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     detachCardEl,
     resetSwipeRef,
     submitSwipeAbstain,
-    setExpandedQuestionId,
     setPressedQuestionId,
     setSwipeThresholdQuestionId,
     setTooltipQuestionId,
     setModalQuestion,
     setShowModal,
-    setPendingVoteChange,
-    submitYesNoChoice,
-    setPollVoterName,
-    setPendingPollChoices,
-    setPendingPollSubmit,
-    handleWrapperSubmitStateChange,
   } = props;
 
   const question = group.anchor;
@@ -261,16 +177,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     isCurrentUserName(wrapper?.creator_name);
   const creatorImageUrl = creatorIsMe ? myUserImageUrl : null;
 
-  // First-time votes on single-question polls submit directly so a stray
-  // tap on a vote-change still hits the confirmation modal.
-  const dispatchYesNoTap = (questionId: string, newChoice: YesNoChoice) => {
-    if (!isMultiGroup && !userVoteMap.get(questionId)) {
-      submitYesNoChoice(questionId, newChoice);
-      return;
-    }
-    setPendingVoteChange({ questionId, newChoice });
-  };
-
   // Wrapper-level reads (Phase 5b). Hoisted so every callsite below can use
   // them without re-deriving.
   const wrapperResponseDeadline = wrapper?.response_deadline ?? null;
@@ -278,19 +184,19 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   const wrapperCloseReason = wrapper?.close_reason ?? null;
   const wrapperUpdatedAt = wrapper?.updated_at ?? question.updated_at;
 
-  // Swipe-to-abstain is only allowed when the golden border is on: open poll,
-  // anchor un-responded, card collapsed. Multi-question polls where the user
-  // has voted on q1 but not q2 are skipped (anchor not awaiting) — by then
-  // they've engaged with the poll.
-  const swipeEligible = isAwaiting && !isExpanded && !isClosed && !!group.pollId;
+  // Swipe-to-abstain is allowed when the golden border is on: open poll +
+  // anchor un-responded. Multi-question polls where the user has voted on
+  // q1 but not q2 are skipped (anchor not awaiting) — by then they've
+  // engaged with the poll.
+  const swipeEligible = isAwaiting && !isClosed && !!group.pollId;
 
   // Stable ref-callbacks. Without useCallback the inline arrows would have
-  // fresh identity every time THIS card re-renders (e.g. when isExpanded
-  // flips); React would call the previous callback with `null` (detaching
-  // observers) then the new callback with the element (re-attaching),
-  // churning the IntersectionObserver / ResizeObserver wiring on every
-  // expand/press/swipe-threshold flip. Deps are `question.id` + `group.key`
-  // (both stable per card) plus the parent's stable handler identities.
+  // fresh identity every time THIS card re-renders (e.g. on swipe-threshold
+  // / pressed flips); React would call the previous callback with `null`
+  // (detaching observers) then the new callback with the element
+  // (re-attaching), churning the IntersectionObserver / ResizeObserver
+  // wiring on every state flip. Deps are `question.id` + `group.key` (both
+  // stable per card) plus the parent's stable handler identities.
   const setCardEl = useCallback(
     (el: HTMLDivElement | null) => {
       if (el) attachCardEl(el, question.id, group.key);
@@ -304,13 +210,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       else cardFrameRefs.current.delete(question.id);
     },
     [cardFrameRefs, question.id],
-  );
-  const setExpandedWrapperEl = useCallback(
-    (el: HTMLDivElement | null) => {
-      if (el) expandedWrapperRefs.current.set(question.id, el);
-      else expandedWrapperRefs.current.delete(question.id);
-    },
-    [expandedWrapperRefs, question.id],
   );
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -343,15 +242,17 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }, 500);
   };
 
-  // Tap toggles expand/collapse. Long-press always opens the follow-up modal
-  // regardless of expansion state.
-  const toggleExpand = () => {
-    setExpandedQuestionId((curr) => (curr === question.id ? null : question.id));
+  // Tap navigates to the poll's detail page via the overlay-slide (same
+  // mechanism as home→group, first frame moves on the next rAF). Long-press
+  // still opens the follow-up modal.
+  const navigateToDetail = () => {
+    const pollShortId = wrapper?.short_id || question.id;
+    slideToPollDetail({ groupId: groupRouteId, pollShortId });
   };
 
   const handleClick = () => {
     if (touchJustHandledRef.current || swipeJustHandledRef.current) return;
-    toggleExpand();
+    navigateToDetail();
   };
 
   // The slide-off animation has to complete BEFORE submitSwipeAbstain fires;
@@ -414,7 +315,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       setTimeout(() => {
         touchJustHandledRef.current = false;
       }, 400);
-      toggleExpand();
+      navigateToDetail();
     } else {
       setPressedQuestionId(null);
     }
@@ -535,11 +436,10 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     return null;
   })();
 
-  // Returns the type-specific compact pill JSX for one question, or null when
-  // there's nothing to show yet (no votes, no suggestions, etc.). Yes/No
-  // pills wrap in a stopBubble div because their option cards are tappable;
-  // the other pill types are display-only and bubble taps to the card's
-  // expand handler.
+  // Returns the type-specific compact pill JSX for one question, or null
+  // when there's nothing to show yet. Cards are navigation-only now —
+  // pill taps fall through to the card click handler that slides to the
+  // detail page.
   const pillForQuestion = (sp: Question): React.ReactNode => {
     const r = questionResultsMap.get(sp.id);
     const inSuggestions = isInSuggestionPhase(sp, wrapperPrephaseDeadline);
@@ -549,24 +449,12 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       if (!hasStats) return null;
       const userVote = userVoteMap.get(sp.id);
       return (
-        <div
-          onClick={stopBubble}
-          onTouchStart={stopBubble}
-          onTouchEnd={stopBubble}
-          onTouchMove={stopBubble}
-        >
-          <QuestionResultsDisplay
-            results={r!}
-            isQuestionClosed={isClosed}
-            hideLoser={true}
-            userVoteChoice={userVote?.choice ?? null}
-            onVoteChange={
-              isClosed
-                ? undefined
-                : (newChoice) => dispatchYesNoTap(sp.id, newChoice)
-            }
-          />
-        </div>
+        <QuestionResultsDisplay
+          results={r!}
+          isQuestionClosed={isClosed}
+          hideLoser={true}
+          userVoteChoice={userVote?.choice ?? null}
+        />
       );
     }
     if (sp.question_type === "ranked_choice" && r) {
@@ -600,57 +488,28 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
 
   let pillEl: React.ReactNode = null;
   if (!isMultiGroup) {
-    // Single-question group: preserve the existing per-type clip behavior.
-    // yes_no has no clip — the pill is simply omitted when expanded because
-    // the full cards take over below the row.
-    const anchorPill = pillForQuestion(question);
-    if (anchorPill) {
-      if (question.question_type === "yes_no") {
-        pillEl = !isExpanded ? anchorPill : null;
-      } else {
-        pillEl = (
-          <CompactPreviewClip isExpanded={isExpanded}>
-            {anchorPill}
-          </CompactPreviewClip>
-        );
-      }
-    }
+    pillEl = pillForQuestion(question);
   } else {
-    // Multi-question group: stack one pill per question vertically inside a
-    // single CompactPreviewClip so the whole column animates to 0 in lockstep
-    // with the heavy expand clip below. Sub-questions without any data yet
-    // (no votes / no suggestions) drop their row so the column stays compact.
+    // Multi-question: stack one pill per question. Sub-questions without
+    // any data yet drop their row so the column stays compact. `w-full
+    // min-w-0` on each row + `items-stretch` on the column lets the inner
+    // pill's `justify-end` right-align within the available track instead
+    // of pinning to max-content (which would overflow the status label).
     const subPills = group.subQuestions
       .map((sp) => {
         const node = pillForQuestion(sp);
         if (!node) return null;
-        // w-full + min-w-0 forces each row to fill the column track width,
-        // so the inner flex's `justify-end` right-aligns the pill within the
-        // available space — without it the row sizes to its pill's
-        // max-content, allowing the column to grow beyond its parent's
-        // bounds and overlap the status label on the left.
         return <div key={sp.id} className="w-full min-w-0">{node}</div>;
       })
       .filter((n): n is React.ReactElement => n !== null);
     if (subPills.length > 0) {
       pillEl = (
-        <CompactPreviewClip isExpanded={isExpanded}>
-          <div className="flex flex-col items-stretch gap-1 w-full min-w-0">
-            {subPills}
-          </div>
-        </CompactPreviewClip>
+        <div className="flex flex-col items-stretch gap-1 w-full min-w-0">
+          {subPills}
+        </div>
       );
     }
   }
-
-  const allYesNo = group.subQuestions.every(
-    (sp) => sp.question_type === "yes_no",
-  );
-  const usePollSubmit = isMultiGroup && !!group.pollId;
-  const useWrapperSubmit =
-    !isMultiGroup &&
-    !!group.pollId &&
-    group.subQuestions[0]?.question_type !== "yes_no";
 
   return (
     <div
@@ -709,9 +568,11 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
         )}
         <div
           ref={setCardFrameEl}
-          className={`min-w-0 px-2 pt-1.5 ${
-            isExpanded ? "pb-1.5" : "pb-0.5"
-          } rounded-2xl border shadow-sm ${
+          onClick={handleClick}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onTouchMove={handleTouchMove}
+          className={`min-w-0 px-2 pt-1.5 pb-0.5 rounded-2xl border shadow-sm cursor-pointer ${
             isAwaiting
               ? "border-amber-400 dark:border-amber-500"
               : "border-gray-200 dark:border-gray-800"
@@ -719,374 +580,52 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             isPressed
               ? "bg-blue-100 dark:bg-blue-900/40"
               : "bg-gray-100 dark:bg-gray-900"
-          } ${
-            !isExpanded
-              ? "hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40"
-              : ""
-          } ${isPlaceholder ? "card-pending-enter" : ""} transition-colors select-none relative`}
+          } hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40 ${
+            isPlaceholder ? "card-pending-enter" : ""
+          } transition-colors select-none relative`}
         >
-          {/* Compact header — click/touch + long-press live here so they
-              work whether the card is collapsed or expanded without
-              interfering with interactive elements inside the expanded
-              QuestionBallot. */}
-          <div
-            onClick={handleClick}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-            onTouchMove={handleTouchMove}
-            className="cursor-pointer"
-          >
-            <div className="flex items-start gap-2">
-              <h3 className="flex-1 min-w-0 font-medium text-lg leading-tight line-clamp-2 text-gray-900 dark:text-white">
-                {question.title}
-              </h3>
-              <div
-                className="shrink-0 -mt-0.5 -mr-1"
-                onClick={stopBubble}
-                onTouchStart={stopBubble}
-                onTouchEnd={stopBubble}
-                onTouchMove={stopBubble}
-              >
-                <PollShareButton
-                  title={question.title}
-                  url={(() => {
-                    if (typeof window === "undefined") return "";
-                    // Canonical share URL — uses `group_short_id` from the
-                    // poll directly (Migration 105: no chain walk needed);
-                    // falls back to this poll as root for placeholders.
-                    const href = wrapper
-                      ? getGroupHrefForPoll(wrapper)
-                      : `/g/${question.id}?p=${question.id}`;
-                    return `${window.location.origin}${href}`;
-                  })()}
-                />
-              </div>
-            </div>
-            {/* Footer row: status label on the left and the question-type-
-                specific compact pill on the right. The pill collapses to 0
-                height when the card is expanded (inverse grid-rows clip for
-                ranked_choice / suggestion / time; the yes_no compact pill is
-                simply not rendered when expanded since the full cards appear
-                below). If the row would be empty (no status AND no pill)
-                it's not rendered, so the gap doesn't appear. */}
-            {!isPlaceholder && (statusEl || pillEl) && (
-              // min-h-7 pins the row to the compact pill's natural height
-              // (~26px) so the status text stays at a stable Y whether the
-              // pill is showing or clipped to 0 by CompactPreviewClip on
-              // expand. items-end aligns the status text with the BOTTOM of
-              // the pill column — so when multiple pills stack vertically the
-              // status reads alongside the bottom-most pill instead of being
-              // centered with the whole stack.
-              <div className="min-h-7 flex items-end gap-2 min-w-0">
-                <div className="shrink-0 pl-1 text-sm leading-7 text-gray-500 dark:text-gray-400">
-                  <ClientOnly fallback={null}>{statusEl}</ClientOnly>
-                </div>
-                <div className="flex-1 min-w-0 flex justify-end">{pillEl}</div>
-              </div>
-            )}
-          </div>
-          {/* /compact header */}
-
-          {/* Expanded full-question content — pre-mounted (clipped) once the
-              card enters the viewport so fetches + effects complete before
-              expansion. Animates height via grid-template-rows 0fr ↔ 1fr
-              with overflow hidden on the child, so the natural expanded
-              height is used without JS measurement. */}
-          {!isPlaceholder && (isVisible || isExpanded) && (
+          <div className="flex items-start gap-2">
+            <h3 className="flex-1 min-w-0 font-medium text-lg leading-tight line-clamp-2 text-gray-900 dark:text-white">
+              {question.title}
+            </h3>
             <div
-              data-question-expand-grid=""
-              className={`grid transition-[grid-template-rows] duration-300 ease-out ${
-                isExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-              }`}
-              aria-hidden={!isExpanded}
+              className="shrink-0 -mt-0.5 -mr-1"
+              onClick={stopBubble}
+              onTouchStart={stopBubble}
+              onTouchEnd={stopBubble}
+              onTouchMove={stopBubble}
             >
-              {/* overflow-y: clip clips the height-animation as `overflow:
-                  hidden` did, but overflow-x: visible lets each question's
-                  category icon hang to the left of the card (mirroring the
-                  poll's icon column). `clip` is required (vs `hidden`) so the
-                  per-axis overrides don't get coerced to `auto`. `min-h-0`
-                  is required because `overflow: clip` does NOT establish a
-                  BFC (unlike `overflow: hidden`), so the grid item's default
-                  `min-height: auto` would otherwise prevent it from shrinking
-                  to 0 against the `grid-template-rows: 0fr` collapse —
-                  leaving the card visually expanded even after the React
-                  state has collapsed.
-                  See CLAUDE.md → "Group-page scroll strategy" pitfalls. */}
-              <div className="overflow-y-clip overflow-x-visible min-h-0 min-w-0" ref={setExpandedWrapperEl}>
-                <div className={allYesNo && !usePollSubmit ? "" : "mt-1.5"}>
-                  {wrapper?.details && (
-                    <QuestionDetails details={wrapper.details} label="Notes: " />
-                  )}
-                  {group.subQuestions.map((sp, idx) => {
-                    // Phase 3.3: every yes_no question uses external
-                    // rendering so non-anchor questions also get the
-                    // group-page tap-to-change flow.
-                    const isYesNo = sp.question_type === "yes_no";
-                    const r = isYesNo ? questionResultsMap.get(sp.id) : undefined;
-                    const userVote = isYesNo ? userVoteMap.get(sp.id) : undefined;
-                    const hangingIcon = (
-                      <HangingCategoryIcon question={sp} isClosed={isClosed} />
-                    );
-                    return (
-                      <div
-                        key={sp.id}
-                        className={`${
-                          isMultiGroup && idx > 0
-                            ? "mt-4 pt-3 border-t border-gray-200 dark:border-gray-800"
-                            : ""
-                        }${!isMultiGroup ? " relative" : ""}`}
-                      >
-                        {/* Single-question polls skip the section title (it
-                             duplicates the card's top header) and anchor
-                             the icon on the outer section div. Multi-
-                             question polls keep an intermediate header div
-                             so the icon stays below `pt-3` for idx > 0
-                             rows. */}
-                        {isMultiGroup ? (
-                          <div className="mb-2 relative">
-                            {hangingIcon}
-                            <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white truncate">
-                              {getQuestionSectionTitle(sp)}
-                            </div>
-                          </div>
-                        ) : (
-                          hangingIcon
-                        )}
-                        {isYesNo &&
-                          isExpanded &&
-                          r &&
-                          (() => {
-                            // For all-yes_no multi-groups, the displayed
-                            // selection prefers a staged choice (taps queued
-                            // for the wrapper-level Submit) over the
-                            // persisted vote.
-                            const stagedChoice = usePollSubmit
-                              ? pendingPollChoices.get(sp.id) ?? null
-                              : null;
-                            const displayedChoice =
-                              stagedChoice ?? userVote?.choice ?? null;
-                            return (
-                              <div
-                                className="mt-2"
-                                onClick={stopBubble}
-                                onTouchStart={stopBubble}
-                                onTouchEnd={stopBubble}
-                                onTouchMove={stopBubble}
-                              >
-                                <QuestionResultsDisplay
-                                  results={r}
-                                  isQuestionClosed={isClosed}
-                                  hideLoser={false}
-                                  userVoteChoice={displayedChoice}
-                                  isStagedChoice={stagedChoice !== null}
-                                  onVoteChange={
-                                    isClosed
-                                      ? undefined
-                                      : (newChoice) => {
-                                          if (usePollSubmit) {
-                                            setPendingPollChoices((prev) => {
-                                              if (prev.get(sp.id) === newChoice)
-                                                return prev;
-                                              const next = new Map(prev);
-                                              next.set(sp.id, newChoice);
-                                              return next;
-                                            });
-                                          } else {
-                                            dispatchYesNoTap(sp.id, newChoice);
-                                          }
-                                        }
-                                  }
-                                />
-                              </div>
-                            );
-                          })()}
-                        {(() => {
-                          // Yes_no questions render externally via
-                          // QuestionResultsDisplay (Phase 3.3) — they don't
-                          // have an inline Submit to suppress.
-                          const wrapperOwnsSubmit =
-                            !!group.pollId &&
-                            (useWrapperSubmit || (usePollSubmit && !isYesNo));
-                          const wrapperVoterName = wrapperOwnsSubmit
-                            ? pollVoterNames.get(group.pollId!) ??
-                              getUserName() ??
-                              ""
-                            : undefined;
-                          const setWrapperVoterName = wrapperOwnsSubmit
-                            ? (name: string) =>
-                                setPollVoterName(group.pollId!, name)
-                            : undefined;
-                          // Phase 5b: every question has a poll wrapper
-                          // post-Phase-4 backfill, so this assertion is safe
-                          // in practice.
-                          if (!wrapper) return null;
-                          return (
-                            <QuestionBallot
-                              ref={(handle) => {
-                                if (handle)
-                                  subQuestionBallotRefs.current.set(sp.id, handle);
-                                else
-                                  subQuestionBallotRefs.current.delete(sp.id);
-                              }}
-                              question={sp}
-                              poll={wrapper}
-                              createdDate={formatCreationTimestamp(sp.created_at)}
-                              questionId={sp.id}
-                              externalYesNoResults={isYesNo}
-                              isExpanded={isExpanded}
-                              partOfPollGroup={isMultiGroup}
-                              wrapperHandlesSubmit={wrapperOwnsSubmit}
-                              externalVoterName={wrapperVoterName}
-                              setExternalVoterName={setWrapperVoterName}
-                              onWrapperSubmitStateChange={
-                                wrapperOwnsSubmit
-                                  ? handleWrapperSubmitStateChange
-                                  : undefined
-                              }
-                            />
-                          );
-                        })()}
-                      </div>
-                    );
-                  })}
-                  {usePollSubmit &&
-                    group.pollId &&
-                    !isClosed &&
-                    (() => {
-                      const pollId = group.pollId;
-                      const hasYesNoStaged = group.subQuestions.some(
-                        (sp) =>
-                          sp.question_type === "yes_no" &&
-                          pendingPollChoices.has(sp.id),
-                      );
-                      const hasNonYesNoReady = group.subQuestions.some(
-                        (sp) =>
-                          sp.question_type !== "yes_no" &&
-                          wrapperSubmitState.get(sp.id)?.visible === true,
-                      );
-                      const hasStagedChange = hasYesNoStaged || hasNonYesNoReady;
-                      const submitting = pollSubmitting.has(pollId);
-                      const submitError = pollSubmitError.get(pollId);
-                      const voterNameVal =
-                        pollVoterNames.get(pollId) ?? getUserName() ?? "";
-                      return (
-                        <div
-                          className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-800"
-                          onClick={stopBubble}
-                          onTouchStart={stopBubble}
-                          onTouchEnd={stopBubble}
-                          onTouchMove={stopBubble}
-                        >
-                          <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-                            <CompactNameField
-                              name={voterNameVal}
-                              setName={(name: string) =>
-                                setPollVoterName(pollId, name)
-                              }
-                              disabled={submitting}
-                              maxLength={30}
-                            />
-                          </section>
-                          {submitError && (
-                            <div className="mb-3 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded text-sm">
-                              {submitError}
-                            </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // Snapshot prepared items at button-tap so
-                              // edits between click and confirm don't leak
-                              // into the in-flight batch.
-                              const preparedNonYesNo: PreparedNonYesNoEntry[] = [];
-                              let stagedCount = 0;
-                              let hadValidationError = false;
-                              for (const sp of group.subQuestions) {
-                                if (sp.question_type === "yes_no") {
-                                  if (pendingPollChoices.has(sp.id))
-                                    stagedCount++;
-                                  continue;
-                                }
-                                const handle = subQuestionBallotRefs.current.get(
-                                  sp.id,
-                                );
-                                if (!handle) continue;
-                                const result = handle.prepareBatchVoteItem();
-                                if ("skip" in result) continue;
-                                if (!result.ok) {
-                                  // Error is surfaced inline via
-                                  // QuestionBallot.voteError.
-                                  hadValidationError = true;
-                                  continue;
-                                }
-                                preparedNonYesNo.push({
-                                  questionId: sp.id,
-                                  item: result.item,
-                                  commit: result.commit,
-                                  fail: result.fail,
-                                });
-                                stagedCount++;
-                              }
-                              if (hadValidationError) return;
-                              if (stagedCount === 0) return;
-                              setPendingPollSubmit({
-                                pollId,
-                                subQuestions: group.subQuestions,
-                                stagedCount,
-                                preparedNonYesNo,
-                              });
-                            }}
-                            disabled={submitting || !hasStagedChange}
-                            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
-                          >
-                            {submitting ? "Submitting..." : "Submit Vote"}
-                          </button>
-                        </div>
-                      );
-                    })()}
-                  {useWrapperSubmit &&
-                    group.pollId &&
-                    !isClosed &&
-                    (() => {
-                      const pollId = group.pollId;
-                      const sp = group.subQuestions[0]!;
-                      const submitState = wrapperSubmitState.get(sp.id);
-                      if (!submitState?.visible) return null;
-                      const voterNameVal =
-                        pollVoterNames.get(pollId) ?? getUserName() ?? "";
-                      return (
-                        <div
-                          className="mt-3"
-                          onClick={stopBubble}
-                          onTouchStart={stopBubble}
-                          onTouchEnd={stopBubble}
-                          onTouchMove={stopBubble}
-                        >
-                          <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-                            <CompactNameField
-                              name={voterNameVal}
-                              setName={(name: string) =>
-                                setPollVoterName(pollId, name)
-                              }
-                              maxLength={30}
-                            />
-                          </section>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              subQuestionBallotRefs.current
-                                .get(sp.id)
-                                ?.triggerSubmit();
-                            }}
-                            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
-                          >
-                            {submitState.label}
-                          </button>
-                        </div>
-                      );
-                    })()}
-                </div>
+              <PollShareButton
+                title={question.title}
+                url={(() => {
+                  if (typeof window === "undefined") return "";
+                  // Canonical share URL — uses `group_short_id` from the
+                  // poll directly (Migration 105: no chain walk needed);
+                  // falls back to this poll as root for placeholders.
+                  const href = wrapper
+                    ? getGroupHrefForPoll(wrapper)
+                    : `/g/${question.id}/p/${question.id}`;
+                  return `${window.location.origin}${href}`;
+                })()}
+              />
+            </div>
+          </div>
+          {/* Footer row: status label on the left and the question-type-
+              specific compact pill on the right. If the row would be empty
+              (no status AND no pill), it's skipped so the gap doesn't
+              appear. */}
+          {!isPlaceholder && (statusEl || pillEl) && (
+            // min-h-7 pins the row to the compact pill's natural height
+            // (~26px) so the status text stays at a stable Y. items-end
+            // aligns the status text with the BOTTOM of the pill column
+            // — when multiple pills stack vertically the status reads
+            // alongside the bottom-most pill instead of being centered
+            // with the whole stack.
+            <div className="min-h-7 flex items-end gap-2 min-w-0">
+              <div className="shrink-0 pl-1 text-sm leading-7 text-gray-500 dark:text-gray-400">
+                <ClientOnly fallback={null}>{statusEl}</ClientOnly>
               </div>
+              <div className="flex-1 min-w-0 flex justify-end">{pillEl}</div>
             </div>
           )}
         </div>
@@ -1188,28 +727,21 @@ function arePropsEqual(
   // exactly two cards (prev active + new active), so the bulk of cards exit
   // here returning true.
   if (
-    prev.isExpanded !== next.isExpanded ||
     prev.isPressed !== next.isPressed ||
     prev.isPlaceholder !== next.isPlaceholder ||
     prev.isAwaiting !== next.isAwaiting ||
     prev.isClosed !== next.isClosed ||
-    prev.isVisible !== next.isVisible ||
     prev.isSwipeThresholdActive !== next.isSwipeThresholdActive ||
-    prev.isTooltipActive !== next.isTooltipActive
+    prev.isTooltipActive !== next.isTooltipActive ||
+    prev.groupRouteId !== next.groupRouteId
   ) {
     return false;
   }
 
-  // Group identity is recreated on every parent re-render: groupedGroupQuestions
-  // is memoized on (groupQuestions, pollWrapperMap), and BOTH inputs get a new
-  // identity whenever `group` mutates (vote, hydrate, results refresh). So a
-  // naive `prev.group !== next.group` would invalidate every card on every
-  // group mutation, defeating the memoization. Instead, compare the parts that
-  // actually drive the render — both preserve identity across no-op updates
-  // because patchGroupPolls / patchGroupQuestions only allocate new objects
-  // for mutated entries:
-  //   - poll wrapper identity (Poll object)
-  //   - per-question identity (Question objects in subQuestions)
+  // Group identity churns on every parent re-render via the memoized
+  // groupedGroupQuestions. Compare only the parts that actually drive this
+  // card's render — poll wrapper identity + per-question identity (both
+  // preserve identity across no-op patches).
   if (prev.group.pollId !== next.group.pollId) return false;
   if (prev.group.poll !== next.group.poll) return false;
   const prevSubs = prev.group.subQuestions;
@@ -1219,39 +751,12 @@ function arePropsEqual(
     if (prevSubs[i] !== nextSubs[i]) return false;
   }
 
-  // Per-question slice of state Maps.
+  // Per-question slice of the two Maps the card still reads.
   for (let i = 0; i < nextSubs.length; i++) {
     const id = nextSubs[i].id;
     if (prev.questionResultsMap.get(id) !== next.questionResultsMap.get(id))
       return false;
     if (prev.userVoteMap.get(id) !== next.userVoteMap.get(id)) return false;
-    if (prev.pendingPollChoices.get(id) !== next.pendingPollChoices.get(id))
-      return false;
-    const prevSub = prev.wrapperSubmitState.get(id);
-    const nextSub = next.wrapperSubmitState.get(id);
-    if (prevSub !== nextSub) {
-      // wrapperSubmitState entries are objects — compare by value when
-      // identity differs. (handleWrapperSubmitStateChange already guards
-      // against no-op writes, so different identity ≈ different value, but
-      // the field comparison is cheap insurance.)
-      if (
-        prevSub?.visible !== nextSub?.visible ||
-        prevSub?.label !== nextSub?.label
-      ) {
-        return false;
-      }
-    }
-  }
-
-  // Poll-level slice.
-  const pollId = next.group.pollId;
-  if (pollId) {
-    if (prev.pollVoterNames.get(pollId) !== next.pollVoterNames.get(pollId))
-      return false;
-    if (prev.pollSubmitting.has(pollId) !== next.pollSubmitting.has(pollId))
-      return false;
-    if (prev.pollSubmitError.get(pollId) !== next.pollSubmitError.get(pollId))
-      return false;
   }
 
   return true;

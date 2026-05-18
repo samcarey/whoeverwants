@@ -485,12 +485,12 @@ export function resolveGroupRootRouteId(poll: Poll): string {
   return poll.group_short_id || poll.short_id || poll.questions[0]?.id || poll.id;
 }
 
-/** Build `/g/<root>?p=<pollShort>` for `poll` inside its group — the
- *  canonical "navigate to this poll's group with this poll expanded" URL. */
+/** Build `/g/<root>/p/<pollShort>` for `poll` inside its group — the
+ *  canonical "navigate to this poll's detail page" URL. */
 export function getGroupHrefForPoll(poll: Poll): string {
   const pollShortId = poll.short_id || poll.questions[0]?.id || poll.id;
   const rootRouteId = resolveGroupRootRouteId(poll);
-  return `/g/${rootRouteId}?${POLL_QUERY_PARAM}=${pollShortId}`;
+  return `/g/${rootRouteId}/p/${pollShortId}`;
 }
 
 /** Build the URL for a group's root view. */

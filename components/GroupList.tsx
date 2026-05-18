@@ -268,12 +268,8 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
           // slide on the same frame as the tap. router.push fires in parallel
           // from inside SlideOverlayHost. Eliminates the view-transitions
           // snapshot+commit cost (~250-300ms) before the first frame.
-          //
-          // expandedQuestionId stays null — the slide-overlay handoff can
-          // race with the real-route's `?p=` cache lookup and collapse a
-          // pre-expanded card just after the slide settles.
           const groupRouteId = getGroupRouteId(group);
-          slideToGroup({ href, groupId: groupRouteId, expandedQuestionId: null });
+          slideToGroup({ href, groupId: groupRouteId });
         };
 
         const handleClick = () => {

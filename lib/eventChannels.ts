@@ -59,9 +59,13 @@ export interface HomeSelectionModeChangeDetail {
 export const SLIDE_TO_GROUP_EVENT = 'slideToGroup';
 
 export type SlideOverlayKind =
-  | { type: 'group'; groupId: string; expandedQuestionId: string | null }
+  | { type: 'group'; groupId: string }
   | { type: 'groupInfo'; groupId: string }
   | { type: 'groupEditTitle'; groupId: string }
+  // Per-poll detail page. Tapping a card on /g/<group> slides to
+  // /g/<group>/p/<pollShortId>, which renders the poll's full content
+  // (results, ballots, voter list) without card chrome.
+  | { type: 'pollDetail'; groupId: string; pollShortId: string }
   // Empty "New Group" placeholder, used by the home "+" FAB. The overlay
   // renders the same content as `/g/`'s EmptyPlaceholder; the actual group
   // is created via `apiCreateGroup` in parallel, and the caller fires
