@@ -25,6 +25,7 @@
 
 import type { GroupSummary, Poll } from "@/lib/types";
 import {
+  cacheAccessiblePolls,
   cacheGroupSummary,
   cachePoll,
   cacheQuestionResults,
@@ -47,7 +48,7 @@ function toGroupSummary(data: any): GroupSummary {
 }
 
 function hydrateAndCache(data: any[]): Poll[] {
-  return data.map((d) => {
+  const polls = data.map((d) => {
     const poll = toPoll(d);
     cachePoll(poll);
     // Mirror inline per-question results so apiGetQuestionResults hits
@@ -66,6 +67,23 @@ function hydrateAndCache(data: any[]): Poll[] {
     }
     return poll;
   });
+  // Merge into the accessible-polls cache (replace entries with the same
+  // group_id, keep entries from other groups). Without this, a user who
+  // lands directly on `/g/<id>` (deep-link, share, etc.) has the per-poll
+  // caches populated but `accessiblePollsCache` stays null — so
+  // `buildGroupSyncFromCache` returns null on back-nav from a poll
+  // detail, the overlay's GroupContent shows its loading spinner during
+  // the slide, and the restored window.scrollY is clamped to a tiny
+  // doc-height. Merging here primes the cache for synchronous reads
+  // throughout the group's lifetime.
+  if (polls.length > 0) {
+    const groupIds = new Set<string>();
+    for (const p of polls) if (p.group_id) groupIds.add(p.group_id);
+    const cached = getCachedAccessiblePolls() ?? [];
+    const others = cached.filter((p) => !p.group_id || !groupIds.has(p.group_id));
+    cacheAccessiblePolls([...others, ...polls]);
+  }
+  return polls;
 }
 
 export async function apiGetMyGroups(
