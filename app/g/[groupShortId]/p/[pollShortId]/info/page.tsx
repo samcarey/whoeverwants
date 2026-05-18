@@ -3,19 +3,15 @@
 /**
  * Per-poll info page at `/g/<groupShortId>/p/<pollShortId>/info`. Hosts the
  * poll-level actions (Copy / Forget / Reopen / Close / Cutoff) that used to
- * live in `FollowUpModal` on the poll detail page, plus a full list of named
- * respondents. Tapping the poll title on the detail page slides here.
- *
- * Mirrors the cache-first init + async-fallback pattern of `PollDetailView`
- * so the page renders instantly when the poll is already in the in-memory
- * cache (the common case after a slide from the detail page).
+ * live in `FollowUpModal` on the poll detail page, plus the full named
+ * respondent list. Tapping the poll title on the detail page slides here.
  *
  * After a mutating action, the action API helpers (`apiClosePoll`, etc.)
  * invalidate the poll cache and write the fresh poll back, then this page
  * slides back to the detail page — which sync-inits from the fresh cache.
  */
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, usePathname } from "next/navigation";
 import {
   ApiError,
@@ -26,6 +22,7 @@ import {
   apiGetPollByShortId,
   apiReopenPoll,
 } from "@/lib/api";
+import type { Poll, Question } from "@/lib/types";
 import { hasAppHistory } from "@/lib/viewTransitions";
 import { slideToPollDetail } from "@/lib/slideOverlay";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
@@ -33,11 +30,13 @@ import {
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
 } from "@/lib/questionListUtils";
+import { isUuidLike } from "@/lib/questionId";
 import GroupHeader from "@/components/GroupHeader";
 import InitialBubble from "@/components/InitialBubble";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import PollActionButton, { CutoffIcon } from "@/components/PollActionButton";
 import { getCreatorSecret } from "@/lib/browserQuestionAccess";
-import { isCurrentUserName } from "@/lib/userProfile";
+import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import {
   cachePoll,
@@ -46,7 +45,6 @@ import {
 import { buildQuestionSnapshot } from "@/lib/questionCreator";
 import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "../../../groupActionCopy";
-import type { Poll, Question } from "@/lib/types";
 
 interface PollInfoViewProps {
   groupId: string;
@@ -63,17 +61,14 @@ export function PollInfoView({ groupId, pollShortId }: PollInfoViewProps) {
     if (typeof window === "undefined") return null;
     return getCachedPollForShortId(pollShortId);
   });
-  const [loading, setLoading] = useState(!poll);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (poll) return;
-    if (typeof window === "undefined") return;
+    if (poll || typeof window === "undefined") return;
     let cancelled = false;
     (async () => {
       try {
-        setLoading(true);
-        const fetched = pollShortId.length > 10 && pollShortId.includes("-")
+        const fetched = isUuidLike(pollShortId)
           ? await apiGetPollById(pollShortId)
           : await apiGetPollByShortId(pollShortId);
         if (cancelled) return;
@@ -84,8 +79,6 @@ export function PollInfoView({ groupId, pollShortId }: PollInfoViewProps) {
           console.error("PollInfo: fetch failed", err);
         }
         setError(true);
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
@@ -102,15 +95,7 @@ export function PollInfoView({ groupId, pollShortId }: PollInfoViewProps) {
     });
   }, [groupId, pollShortId]);
 
-  if (loading && !poll) {
-    return (
-      <SimpleFrame onBack={goBack}>
-        <p className="text-gray-600 dark:text-gray-400">Loading poll...</p>
-      </SimpleFrame>
-    );
-  }
-
-  if (error || !poll) {
+  if (error) {
     return (
       <SimpleFrame onBack={goBack}>
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -129,12 +114,19 @@ export function PollInfoView({ groupId, pollShortId }: PollInfoViewProps) {
     );
   }
 
+  if (!poll) {
+    return (
+      <SimpleFrame onBack={goBack}>
+        <p className="text-gray-600 dark:text-gray-400">Loading poll...</p>
+      </SimpleFrame>
+    );
+  }
+
   return (
     <Info
       poll={poll}
       setPoll={setPoll}
       groupId={groupId}
-      pollShortId={pollShortId}
       onBack={goBack}
     />
   );
@@ -158,15 +150,24 @@ function SimpleFrame({
   );
 }
 
+const POLL_ACTION_APIS: Record<
+  Exclude<PendingActionKind, "forget">,
+  (pollId: string, secret: string) => Promise<Poll>
+> = {
+  reopen: apiReopenPoll,
+  close: apiClosePoll,
+  "cutoff-suggestions": apiCutoffPollSuggestions,
+  "cutoff-availability": apiCutoffPollAvailability,
+};
+
 interface InfoProps {
   poll: Poll;
   setPoll: React.Dispatch<React.SetStateAction<Poll | null>>;
   groupId: string;
-  pollShortId: string;
   onBack: () => void;
 }
 
-function Info({ poll, setPoll, groupId, pollShortId, onBack }: InfoProps) {
+function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
@@ -174,10 +175,18 @@ function Info({ poll, setPoll, groupId, pollShortId, onBack }: InfoProps) {
 
   const anchor: Question | undefined = poll.questions[0];
   const isClosed = !!poll.is_closed;
-  const isCreatorOrDev =
-    (anchor ? !!getCreatorSecret(anchor.id) : false) ||
-    process.env.NODE_ENV === "development";
   const prephaseDeadline = poll.prephase_deadline ?? null;
+  const title = poll.title || anchor?.title || "Poll";
+
+  // One localStorage parse per render instead of one per action / per render
+  // hot path. getCreatorSecret walks the secrets array; isCurrentUserName
+  // reads getUserName(). Memo-bound to anchor identity.
+  const creatorSecret = useMemo(
+    () => (anchor ? getCreatorSecret(anchor.id) : null),
+    [anchor?.id],
+  );
+  const isCreatorOrDev =
+    !!creatorSecret || process.env.NODE_ENV === "development";
 
   const canReopen = isClosed && isCreatorOrDev;
   const canClose = !isClosed && isCreatorOrDev;
@@ -192,12 +201,14 @@ function Info({ poll, setPoll, groupId, pollShortId, onBack }: InfoProps) {
   const namedVoters = poll.voter_names ?? [];
   const anonymousCount = poll.anonymous_count ?? 0;
   const totalCount = namedVoters.length + anonymousCount;
+  const currentUserName = useMemo(
+    () => getUserName()?.trim().toLowerCase() ?? null,
+    [],
+  );
 
-  const title = poll.title || anchor?.title || "Poll";
-
-  const [pendingAction, setPendingAction] = useState<
-    { kind: PendingActionKind } | null
-  >(null);
+  const [pendingAction, setPendingAction] = useState<PendingActionKind | null>(
+    null,
+  );
   const [submitting, setSubmitting] = useState(false);
 
   const onCopy = () => {
@@ -212,17 +223,17 @@ function Info({ poll, setPoll, groupId, pollShortId, onBack }: InfoProps) {
   };
 
   const onConfirmAction = async () => {
-    const action = pendingAction;
-    if (!action || !anchor) return;
+    const kind = pendingAction;
+    if (!kind || !anchor) return;
     haptic.medium();
     setPendingAction(null);
 
-    if (action.kind === "forget") {
+    if (kind === "forget") {
       try {
         setSubmitting(true);
         const { forgetQuestion } = await import("@/lib/forgetQuestion");
-        // Poll-level forget: drop every sub-question. Anchor-only would leave
-        // siblings in localStorage on multi-question polls.
+        // Drop every sub-question; anchor-only would strand siblings on
+        // multi-question polls.
         for (const sp of poll.questions) forgetQuestion(sp.id);
       } finally {
         setSubmitting(false);
@@ -231,137 +242,122 @@ function Info({ poll, setPoll, groupId, pollShortId, onBack }: InfoProps) {
       return;
     }
 
-    const secret = getCreatorSecret(anchor.id) || (process.env.NODE_ENV === "development" ? "dev-override" : "");
+    const secret = creatorSecret || (process.env.NODE_ENV === "development" ? "dev-override" : "");
     if (!secret) {
-      console.error(`Missing creator secret for ${action.kind}`);
+      console.error(`Missing creator secret for ${kind}`);
       return;
     }
 
     try {
       setSubmitting(true);
-      if (action.kind === "reopen") {
-        const updated = await apiReopenPoll(poll.id, secret);
-        setPoll((prev) => prev ? { ...prev, ...updated } : updated);
-      } else if (action.kind === "close") {
-        const updated = await apiClosePoll(poll.id, secret);
-        setPoll((prev) => prev ? { ...prev, ...updated } : updated);
-      } else if (action.kind === "cutoff-suggestions") {
-        const updated = await apiCutoffPollSuggestions(poll.id, secret);
-        setPoll((prev) => prev ? { ...prev, ...updated } : updated);
-      } else if (action.kind === "cutoff-availability") {
-        const updated = await apiCutoffPollAvailability(poll.id, secret);
-        setPoll((prev) => prev ? { ...prev, ...updated } : updated);
-      }
-      // Cache was already updated by the apiXxx helper. Slide back to detail
-      // so the user sees the result; PollDetailView sync-inits from cache.
+      const updated = await POLL_ACTION_APIS[kind](poll.id, secret);
+      setPoll((prev) => (prev ? { ...prev, ...updated } : updated));
       onBack();
     } catch (err) {
-      console.error(`Failed to ${action.kind}:`, err);
+      console.error(`Failed to ${kind}:`, err);
     } finally {
       setSubmitting(false);
     }
   };
+
+  const pendingCopy = pendingAction ? PENDING_ACTION_COPY[pendingAction] : null;
 
   return (
     <>
       <GroupHeader headerRef={headerRef} title={title} onBack={onBack} />
 
       <div style={{ paddingTop: `calc(${headerHeight}px + 1rem)` }}>
-        {/* Actions section — every poll-level operation that used to live in
-            FollowUpModal. Order: Copy + Forget on one row (parity with the
-            old modal), then per-state action buttons below. */}
         <section className="mb-6">
           <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
             Actions
           </h2>
           <div className="flex gap-3">
-            <button
+            <PollActionButton
+              variant="blue"
+              icon={
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              }
+              label="Copy"
               onClick={onCopy}
               disabled={!anchor || submitting}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200 disabled:opacity-50 disabled:active:scale-100"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
-              Copy
-            </button>
-            <button
-              onClick={() => setPendingAction({ kind: "forget" })}
+              className="flex-1"
+            />
+            <PollActionButton
+              variant="yellow"
+              icon={
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                </svg>
+              }
+              label="Forget"
+              onClick={() => setPendingAction("forget")}
               disabled={submitting}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-700 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200 disabled:opacity-50 disabled:active:scale-100"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-              </svg>
-              Forget
-            </button>
+              className="flex-1"
+            />
           </div>
 
           {canReopen && (
-            <button
-              onClick={() => setPendingAction({ kind: "reopen" })}
+            <PollActionButton
+              variant="green"
+              icon={
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 20v-6h-6" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 9.5A7 7 0 0119 12" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.5 14.5A7 7 0 015 12" />
+                </svg>
+              }
+              label="Reopen"
+              onClick={() => setPendingAction("reopen")}
               disabled={submitting}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 mt-3 bg-green-600 hover:bg-green-700 active:bg-green-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200 disabled:opacity-50 disabled:active:scale-100"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20 20v-6h-6" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 9.5A7 7 0 0119 12" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M18.5 14.5A7 7 0 015 12" />
-              </svg>
-              Reopen
-            </button>
+              className="w-full mt-3"
+            />
           )}
 
           {canClose && (
-            <button
-              onClick={() => setPendingAction({ kind: "close" })}
+            <PollActionButton
+              variant="red"
+              icon={
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18 6L6 18" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12" />
+                </svg>
+              }
+              label="Close Poll"
+              onClick={() => setPendingAction("close")}
               disabled={submitting}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 mt-3 bg-red-600 hover:bg-red-700 active:bg-red-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200 disabled:opacity-50 disabled:active:scale-100"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M18 6L6 18" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12" />
-              </svg>
-              Close Poll
-            </button>
+              className="w-full mt-3"
+            />
           )}
 
           {canCutoffAvailability && (
-            <button
-              onClick={() => setPendingAction({ kind: "cutoff-availability" })}
+            <PollActionButton
+              variant="amber"
+              icon={<CutoffIcon />}
+              label="End Availability Phase"
+              onClick={() => setPendingAction("cutoff-availability")}
               disabled={submitting}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 mt-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200 disabled:opacity-50 disabled:active:scale-100"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <circle cx="12" cy="12" r="9" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2" />
-              </svg>
-              End Availability Phase
-            </button>
+              className="w-full mt-3"
+            />
           )}
 
           {canCutoffSuggestions && (
-            <button
-              onClick={() => setPendingAction({ kind: "cutoff-suggestions" })}
+            <PollActionButton
+              variant="amber"
+              icon={<CutoffIcon />}
+              label="Cutoff Suggestions"
+              onClick={() => setPendingAction("cutoff-suggestions")}
               disabled={submitting}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 mt-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200 disabled:opacity-50 disabled:active:scale-100"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <circle cx="12" cy="12" r="9" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2" />
-              </svg>
-              Cutoff Suggestions
-            </button>
+              className="w-full mt-3"
+            />
           )}
         </section>
 
-        {/* Respondents section — full list of named voters + a final row for
-            anonymous voters. `voter_names` and `anonymous_count` are poll-
-            level aggregates from the server (Phase 3.2). */}
         <section>
           <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
             {totalCount} {totalCount === 1 ? "Respondent" : "Respondents"}
@@ -372,54 +368,53 @@ function Info({ poll, setPoll, groupId, pollShortId, onBack }: InfoProps) {
               No respondents yet
             </div>
           ) : (
-            <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
-              <ul className="divide-y divide-gray-200 dark:divide-gray-800">
-                {namedVoters.map((name, idx) => {
-                  const isViewer = isCurrentUserName(name);
-                  const imageUrl = isViewer ? myUserImageUrl : null;
-                  return (
-                    <li
-                      key={`${name}-${idx}`}
-                      className="flex items-center gap-3 px-4 py-3 text-gray-900 dark:text-white"
-                    >
-                      <InitialBubble
-                        name={name}
-                        imageUrl={imageUrl}
-                        sizeClassName="w-8 h-8"
-                        className="shrink-0"
-                      />
-                      <span className="min-w-0 break-words">{name}</span>
-                    </li>
-                  );
-                })}
-                {anonymousCount > 0 && (
-                  <li className="flex items-center gap-3 px-4 py-3 text-gray-500 dark:text-gray-400 italic">
+            <ul className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden divide-y divide-gray-200 dark:divide-gray-800">
+              {namedVoters.map((name, idx) => {
+                const isViewer =
+                  currentUserName !== null &&
+                  name.trim().toLowerCase() === currentUserName;
+                return (
+                  <li
+                    key={`${name}-${idx}`}
+                    className="flex items-center gap-3 px-4 py-3 text-gray-900 dark:text-white"
+                  >
                     <InitialBubble
-                      name={null}
+                      name={name}
+                      imageUrl={isViewer ? myUserImageUrl : null}
                       sizeClassName="w-8 h-8"
                       className="shrink-0"
                     />
-                    <span className="min-w-0">
-                      {anonymousCount === 1
-                        ? "1 anonymous respondent"
-                        : `${anonymousCount} anonymous respondents`}
-                    </span>
+                    <span className="min-w-0 break-words">{name}</span>
                   </li>
-                )}
-              </ul>
-            </div>
+                );
+              })}
+              {anonymousCount > 0 && (
+                <li className="flex items-center gap-3 px-4 py-3 text-gray-500 dark:text-gray-400 italic">
+                  <InitialBubble
+                    name={null}
+                    sizeClassName="w-8 h-8"
+                    className="shrink-0"
+                  />
+                  <span className="min-w-0">
+                    {anonymousCount === 1
+                      ? "1 anonymous respondent"
+                      : `${anonymousCount} anonymous respondents`}
+                  </span>
+                </li>
+              )}
+            </ul>
           )}
         </section>
       </div>
 
-      {pendingAction && (
+      {pendingCopy && (
         <ConfirmationModal
           isOpen={true}
-          title={PENDING_ACTION_COPY[pendingAction.kind].title}
-          message={PENDING_ACTION_COPY[pendingAction.kind].message}
-          confirmText={PENDING_ACTION_COPY[pendingAction.kind].confirmText}
+          title={pendingCopy.title}
+          message={pendingCopy.message}
+          confirmText={pendingCopy.confirmText}
           cancelText="Cancel"
-          confirmButtonClass={PENDING_ACTION_COPY[pendingAction.kind].confirmButtonClass}
+          confirmButtonClass={pendingCopy.confirmButtonClass}
           onConfirm={onConfirmAction}
           onCancel={() => setPendingAction(null)}
         />

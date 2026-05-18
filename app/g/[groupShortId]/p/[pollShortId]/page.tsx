@@ -37,6 +37,7 @@ import {
 import { addAccessibleQuestionId, isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { hasAppHistory } from "@/lib/viewTransitions";
+import { isUuidLike } from "@/lib/questionId";
 import {
   compactDurationSince,
   getCategoryIcon,
@@ -108,7 +109,7 @@ export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
     (async () => {
       try {
         setLoading(true);
-        const fetched = pollShortId.length > 10 && pollShortId.includes("-")
+        const fetched = isUuidLike(pollShortId)
           ? await apiGetPollById(pollShortId)
           : await apiGetPollByShortId(pollShortId);
         if (cancelled) return;
