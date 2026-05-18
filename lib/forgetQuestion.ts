@@ -1,4 +1,4 @@
-import { invalidateQuestion } from '@/lib/questionCache';
+import { invalidateAccessibleQuestions, invalidateQuestion } from '@/lib/questionCache';
 import { addForgottenQuestionId, removeAccessibleQuestionId } from '@/lib/browserQuestionAccess';
 import { apiLeaveGroup } from '@/lib/api';
 import type { Group } from '@/lib/groupUtils';
@@ -39,8 +39,12 @@ export function forgetQuestion(questionId: string): void {
 
     // Drop in-memory caches so subsequent navigations (e.g. back to the
     // containing group) don't rebuild views from stale data that still
-    // includes this question.
+    // includes this question. Forget is shape-changing — it removes the
+    // question from the accessible list — so wipe the accessible-polls
+    // cache too (the field-level invalidateQuestion alone leaves the
+    // accessible list rebuilding with the dead entry until TTL).
     invalidateQuestion(questionId);
+    invalidateAccessibleQuestions();
 
     // Mark as explicitly forgotten so relation discovery won't re-add it
     // when the server returns this question as a follow-up of its parent.
