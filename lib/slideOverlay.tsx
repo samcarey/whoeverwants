@@ -320,7 +320,7 @@ export function SlideOverlayHost(): React.ReactElement | null {
   // Inner wrapper class must match what the destination route gets from
   // template.tsx around {children}. Group routes get the negative-margin
   // layout (max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4 + paddingBottom
-  // 4.5rem); info / edit-title / pollDetail get the standard layout
+  // 0.5rem); info / edit-title / pollDetail get the standard layout
   // (max-w-4xl mx-auto px-4 pb-6) — without matching this, the page's own
   // inner `max-w-4xl mx-auto px-4` is the only padding layer the overlay
   // has, and the unmount shifts the content inward as template's extra
@@ -329,7 +329,7 @@ export function SlideOverlayHost(): React.ReactElement | null {
     ? "max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4"
     : "max-w-4xl mx-auto px-4 pb-6";
   const innerStyle: React.CSSProperties | undefined = isGroupKind
-    ? { paddingBottom: "4.5rem" }
+    ? { paddingBottom: "0.5rem" }
     : undefined;
 
   return createPortal(
