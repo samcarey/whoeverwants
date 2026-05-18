@@ -21,7 +21,7 @@ The guiding principle: **every phase leaves `main` shippable**. Existing questio
 | 1 — schema + create API | ✅ shipped (#198) | |
 | 2.1 — FE plumbing | ✅ shipped (#199) | |
 | 2.2 — single-question create routes through polls | ✅ shipped (#200) | |
-| 2.3 — What/When/Where bubble bar (group-like pages only) | ✅ on this branch | Home keeps single + FAB; bubbles render on `isGroupLikePage`. |
+| 2.3 — What/When/Where bubble bar (group-like pages only) | ✅ on this branch | Home keeps single + new group button; bubbles render on `isGroupLikePage`. |
 | 4 — backfill existing questions | ✅ on this branch + applied to dev+prod | Migration 093. 151 prod questions wrapped, 21 follow_up_to + 2 fork_of rewrites. |
 | 2.5 — multi-question rendering | ✅ on this branch | Sibling questions join the group via `poll_id`; group page renders one card per question, sorted by `question_index`. |
 | 2.4 — multi-question create UI | ✅ on this branch | `+ Add another section` stages yes_no/ranked_choice drafts; submit prepends them to the poll request. MVP scope per the "minimal path" below. |
@@ -261,18 +261,18 @@ Switched the existing create-question flow to write polls under the hood — UI 
 
 Done: creating a question (regular, follow-up, fork, duplicate) writes a poll wrapper + 1 question. URL is the poll's short_id. Existing group / question pages render the new question identically to before. Existing legacy questions (no `poll_id`) keep working.
 
-### Phase 2.3 — What/When/Where FAB on home + group (still single question)
+### Phase 2.3 — What/When/Where bubble bar on home + group (still single question)
 
-Visual change to the FAB; behavior is equivalent to a category-prefilled tap of the old `+` button.
+Visual change to the new group button; behavior is equivalent to a category-prefilled tap of the old `+` button.
 
-- Replace the single `+` floating action button (`app/template.tsx` portal target, `#floating-fab-portal`) with three equally-spaced bubble buttons: **What** / **When** / **Where**.
+- Replace the new group button (`app/template.tsx` portal target, `#floating-fab-portal`) with three equally-spaced bubble buttons: **What** / **When** / **Where**.
 - Each bubble opens the existing create-question modal with the category preselected:
   - **What** → no preselection (user picks from dropdown excluding location/restaurant/time).
   - **When** → category locked to `time`.
   - **Where** → category dropdown limited to location-like categories (restaurant, location, custom).
 - Empty group placeholder (`/group/new`) gets the same three bubbles instead of the old single `+`.
 - No multi-question yet; the modal still creates exactly one question on submit.
-- Update CLAUDE.md "Navigation Layout" to describe the three-bubble FAB.
+- Update CLAUDE.md "Navigation Layout" to describe the three-bubble bar.
 
 Done criteria: home + group + `/group/new` show three bubbles. Each opens the create-question modal pre-set to the right category. Submit produces a 1-question poll.
 
@@ -336,7 +336,7 @@ These are intentionally deferred to Phase 3.
 - Compact previews stack one per question inside the card footer row.
 - `polls.is_closed` becomes the source of truth for "is this question open"; existing per-question `is_closed` continues to be written to keep legacy code working until Phase 5.
 - Long-press modal (Forget / Reopen / Close / End Pre-Phase) targets the poll, not any single question.
-- Poll-level `follow_up_to` and `fork_of` are introduced — the new bubble FAB on a group page sets them.
+- Poll-level `follow_up_to` and `fork_of` are introduced — the new bubble bar on a group page sets them.
 - Cache layer updates: `questionCache.ts` adds a `pollCache` keyed by short_id; getAccessibleQuestions returns polls.
 
 ### Migration concern

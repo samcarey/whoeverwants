@@ -114,7 +114,7 @@ export async function apiGetGroupByRouteId(
 }
 
 /** Create a brand-new empty group and auto-join the caller as a member.
- *  Used by the home "+" FAB. The next `getMyGroups()` call picks up the
+ *  Used by the home new group button. The next `getMyGroups()` call picks up the
  *  new group via the always-fresh `/api/groups/empty` parallel fetch;
  *  the polls cache is unaffected since this group has no polls.
  *
@@ -144,7 +144,7 @@ export async function apiGetMyEmptyGroups(): Promise<GroupSummary[]> {
 /** Group metadata (no polls, no auto-join). Safe from any read-only
  *  context; returns null on resolution failure.
  *
- *  Short-circuits on cache hit so the FAB-create → empty-group destination
+ *  Short-circuits on cache hit so the new-group-button-create → empty-group destination
  *  doesn't fire a redundant round-trip: `apiCreateGroup` already cached the
  *  summary, and the destination's fetchGroup fallback would otherwise
  *  refetch the same payload to render the same empty group. */

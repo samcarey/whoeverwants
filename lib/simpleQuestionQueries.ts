@@ -95,7 +95,7 @@ export async function getAccessibleQuestions(): Promise<Question[]> {
  *  expansion across two round-trips.
  *
  *  Also fetches membership-only "empty groups" (groups the user joined
- *  via the home "+" FAB with no polls yet) in parallel via
+ *  via the home new group button with no polls yet) in parallel via
  *  `apiGetMyEmptyGroups` so the home list reflects both populated and
  *  empty groups in one render.
  *

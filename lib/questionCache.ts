@@ -56,7 +56,7 @@ const pollById = new Map<string, CacheEntry<Poll>>();
 const pollByShortId = new Map<string, CacheEntry<Poll>>();
 
 // Group summary cache. Keyed by both `groups.id` and `groups.short_id` so
-// that route-id lookups in either form resolve. Used by the home "+" FAB
+// that route-id lookups in either form resolve. Used by the home new group button
 // path: `apiCreateGroup` caches the just-minted summary so the destination
 // route's synchronous cache-read paths can build an empty `Group` on first
 // render — avoiding the loading-spinner flash between the slide-overlay

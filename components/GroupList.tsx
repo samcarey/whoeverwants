@@ -21,7 +21,7 @@ interface GroupListProps {
   // sharing a `group_id`.
   polls: Poll[];
   /** Membership-only "empty groups" the user joined that have no polls
-   *  yet (typically just-created via the home "+" FAB). Built into the
+   *  yet (typically just-created via the home new group button). Built into the
    *  same group list so they appear alongside populated groups. */
   emptyGroups?: GroupSummary[];
   /** Called with the poll-ids of every poll in every forgotten group +

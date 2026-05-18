@@ -1942,7 +1942,7 @@ function GroupPageInner() {
   // Group resolved with zero visible polls; GroupContent mounts via
   // useGroup's summary-fallback path.
   //
-  // When the home "+" FAB just minted this group, `apiCreateGroup` cached
+  // When the home new group button just minted this group, `apiCreateGroup` cached
   // the summary — read it synchronously so the wrapper skips the loading
   // spinner entirely and `GroupContent` mounts on first paint. Without
   // this, the slide overlay unmounts onto a brief spinner before the
