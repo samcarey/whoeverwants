@@ -100,15 +100,24 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const branchName = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '';
   const [commitHash, setCommitHash] = useState(vercelHash);
   const [badgeTarget, setBadgeTarget] = useState<HTMLElement | null>(null);
+  // Same Vercel build serves whoeverwants.com (prod) AND latest.whoeverwants.com (canary),
+  // so the latest-tier badge has to be enabled at runtime via hostname check rather than
+  // baked into the bundle. Dev hosts (next dev) get it via showTimeBadge from layout.tsx.
+  const [showOnLatest, setShowOnLatest] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.location.hostname === 'latest.whoeverwants.com') setShowOnLatest(true);
+  }, []);
+  const showBadge = showTimeBadge || showOnLatest;
   const { props: badgeLongPressProps } = useLongPress(() => setShowModal(true));
 
   // Resolve the portal target rendered by template.tsx. The target appears only after the
   // template's isMounted state flips (may be after this effect runs), and Next.js App Router
   // re-mounts templates on navigation so the node identity can change. Observe document.body
   // for the component's lifetime and re-query on each mutation; the identity-guarded setter
-  // avoids render spam. Only active in dev (showTimeBadge is gated on NODE_ENV === 'development').
+  // avoids render spam. Active in dev (showTimeBadge) and on latest.whoeverwants.com.
   useEffect(() => {
-    if (!showTimeBadge) return;
+    if (!showBadge) return;
     const check = () => {
       const el = document.getElementById('commit-badge-portal');
       setBadgeTarget(prev => (prev === el ? prev : el));
@@ -117,7 +126,7 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
     const observer = new MutationObserver(check);
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [showTimeBadge]);
+  }, [showBadge]);
 
   // In dev mode, fetch the current git SHA from the server on mount and on visibility change
   useEffect(() => {
@@ -221,8 +230,9 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
 
   return (
     <>
-      {/* Time badge - only shown in dev mode, portaled into scroll container so it scrolls with content */}
-      {showTimeBadge && badgeTarget && createPortal(
+      {/* Time badge - shown in dev mode and on latest.whoeverwants.com, portaled into the
+          template's commit-badge-portal so it sits in the top safe-area zone. */}
+      {showBadge && badgeTarget && createPortal(
         <div
           className="flex justify-center select-none"
           {...badgeLongPressProps}
