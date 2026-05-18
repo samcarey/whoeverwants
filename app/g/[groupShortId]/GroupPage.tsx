@@ -55,44 +55,12 @@ const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
   q.poll_id ?? `solo-${q.id}`;
 
 // Bottom-pin keeps `window.scrollY` at max for this many ms after initial
-// mount when tier 3 (no `?p=`, no awaiting polls) applies — the polls list
-// keeps resizing as placeholders → real cards swap in and async results
-// load, so a one-shot scroll-to-bottom would leave the bubble bar drifting
-// off-screen. Capped + gated on user-interaction (see
-// `applyScrollAdjustmentRef`) to avoid the iOS feedback loop documented in
-// PR #375 that retired the unbounded version.
+// mount — the polls list keeps resizing as placeholders → real cards swap
+// in and async results load, so a one-shot scroll-to-bottom would leave
+// the bubble bar drifting off-screen. Capped + gated on user-interaction
+// (see `applyScrollAdjustmentRef`) to avoid the iOS feedback loop
+// documented in PR #375 that retired the unbounded version.
 const BOTTOM_PIN_DURATION_MS = 800;
-
-// Find the oldest "awaiting response" question in a group — pure helper used
-// by both the seed for `mountedGroupKeys` and the initial-load scroll target
-// (tier 2 of the scroll strategy). "Awaiting" = open AND the viewer has
-// neither voted nor abstained.
-function findOldestAwaitingQuestion(
-  g: Group,
-  voted: Set<string>,
-  abstained: Set<string>,
-  now: Date,
-): Question | null {
-  const pollByQuestionId = new Map<string, Poll>();
-  for (const mp of g.polls) {
-    for (const sp of mp.questions) pollByQuestionId.set(sp.id, mp);
-  }
-  const sorted = [...g.questions].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-  );
-  for (const q of sorted) {
-    if (voted.has(q.id) || abstained.has(q.id)) continue;
-    const mp = pollByQuestionId.get(q.id);
-    if (mp) {
-      const open = mp.response_deadline
-        ? new Date(mp.response_deadline) > now && !mp.is_closed
-        : !mp.is_closed;
-      if (!open) continue;
-    }
-    return q;
-  }
-  return null;
-}
 
 const SCROLL_HELPER_BUTTON_CLASS =
   'fixed left-1/2 -translate-x-1/2 z-40 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
@@ -347,17 +315,12 @@ export function GroupContent({ groupId }: GroupContentProps) {
   const userInteractedRef = useRef(false);
   const [mountedGroupKeys, setMountedGroupKeys] = useState<Set<string>>(() => {
     if (!initialGroup) return new Set();
-    // Seed with the initial-load scroll target so the first paint already
-    // has the anchored card mounted (no placeholder→card swap right after
-    // mount). Progressive fill below mounts the rest in idle-time batches.
-    // Tiers:
-    //   1. oldest awaiting card → tap-target
-    //   2. last poll → tier-3 bottom-pin's closest mounted neighbor
+    // Seed with the last poll so the first paint already has the
+    // bottom-pin's nearest neighbor mounted (no placeholder→card swap right
+    // after mount). Progressive fill below mounts the rest in idle-time
+    // batches.
     const initial = new Set<string>();
-    const target =
-      findOldestAwaitingQuestion(initialGroup, initialVoted, initialAbstained, new Date())
-      ?? initialGroup.questions[initialGroup.questions.length - 1]
-      ?? null;
+    const target = initialGroup.questions[initialGroup.questions.length - 1] ?? null;
     if (target) initial.add(groupKeyFor(target));
     return initial;
   });
@@ -947,46 +910,37 @@ export function GroupContent({ groupId }: GroupContentProps) {
   // ===================================================================
   // Group-page scroll strategy (single source of truth — keep cohesive)
   // ===================================================================
-  // Four scroll surfaces all serve the same goal: keep the viewer's
-  // attention on whichever poll most likely wants their input next. The
-  // "awaiting set" = open polls the viewer has neither voted on nor
-  // abstained from.
+  // The initial scroll always lands the viewer at the document bottom so
+  // the bubble bar (the create-poll launcher) is visible. Past
+  // iterations tried to anchor the viewer at the oldest "awaiting"
+  // poll, but that produced a visible jump on load when the chosen
+  // anchor and the bubble-bar end of the page differed. The
+  // scroll-helper arrows below still steer users toward awaiting cards
+  // once they're scrolling.
   //
   // 1. INITIAL load (`useLayoutEffect` below, fires once per mount).
-  //    Three-tier target resolution:
-  //      a. `?p=<id>` in URL → that card's top flush with header.
-  //      b. else → oldest awaiting card's top flush with header.
-  //      c. else (everything voted/abstained / no awaiting) → document
-  //         bottom so the bubble bar is visible.
-  //    The resolved anchor is stashed in `resolvedAnchorRef`; the pin
-  //    (1b) reads from this ref instead of recomputing per tick. For
-  //    tier (c) the anchor is null and the pin uses
-  //    `bottomPinDeadlineRef` to bound itself.
-  //    Runs synchronously before paint via a fire-once `useRef` guard so
-  //    the first painted frame is already at the destination — never an
+  //    Scrolls to `document.scrollHeight - innerHeight`. Runs
+  //    synchronously before paint via a fire-once `useRef` guard so the
+  //    first painted frame is already at the destination — never an
   //    "in-place then scroll" two-frame flicker. Cleanup intentionally
-  //    omitted; useRef persists across StrictMode mount→cleanup→mount,
-  //    and a cleanup that reset the ref would re-fire on every
-  //    dep-change (e.g. async accessible-polls refresh) and re-scroll
-  //    against a now-taller page.
+  //    omitted; useRef persists across StrictMode
+  //    mount→cleanup→mount, and a cleanup that reset the ref would
+  //    re-fire on every dep-change (e.g. async accessible-polls
+  //    refresh) and re-scroll against a now-taller page.
   //
-  // 1b. ANCHOR PIN (`applyScrollAdjustmentRef`, called from layout effect
+  // 1b. BOTTOM PIN (`applyScrollAdjustmentRef`, called from layout effect
   //    AND ResizeObserver): until the user first interacts (wheel,
-  //    touchstart, keydown), each layout settling re-applies the path-1
-  //    target. Without this, cards above the chosen anchor mounting from
-  //    placeholder→card with a different actual height would slide the
-  //    anchor away from the top, and async content (bubble bar, fonts)
-  //    would shift the bottom-pin'd page off the bottom. Card-anchor
-  //    (tiers a + b) reads `card.offsetTop` which is stable against
-  //    sibling resizes — no oscillation. Bottom-pin (tier c) is bounded
+  //    touchstart, keydown), each layout settling re-applies the
+  //    bottom-pin so async content (placeholders → real cards, results
+  //    loads, fonts) doesn't drift the bubble bar off-screen. Bounded
   //    by `BOTTOM_PIN_DURATION_MS` to cap iOS's `visualViewport`
   //    feedback loop from PR #375 (where unbounded re-pin against a
   //    growing scrollHeight drove scrollY into a hundreds-of-pixels
-  //    oscillation, dragging the fixed header off the viewport). Gating
-  //    on user interaction (rather than scrollY deltas) avoids fighting
-  //    the browser's silent scrollY clamp when the doc shrinks — that
-  //    clamp fires a scroll event indistinguishable from a user
-  //    gesture, but no wheel/touch/keydown happens.
+  //    oscillation, dragging the fixed header off the viewport).
+  //    Gating on user interaction (rather than scrollY deltas) avoids
+  //    fighting the browser's silent scrollY clamp when the doc
+  //    shrinks — that clamp fires a scroll event indistinguishable
+  //    from a user gesture, but no wheel/touch/keydown happens.
   //
   // 2. TAP-EXPAND (`useEffect` further below, fires after initial layout
   //    has settled): smoothly scrolls (rAF, ease-out cubic, 300ms —
@@ -1023,15 +977,12 @@ export function GroupContent({ groupId }: GroupContentProps) {
   //    layouts via getBoundingClientRect().
   //
   // ===================================================================
-  // Initial-load scroll (path 1).
+  // Initial-load scroll (path 1). Always lands the viewer at the
+  // document bottom so the bubble bar is visible.
   // ===================================================================
   const hasHandledInitialExpandRef = useRef(false);
-  // Anchor question id resolved on initial load: oldest awaiting question.
-  // Null when no awaiting card exists (tier 2 → scroll to bottom for the
-  // bubble bar). The pin (`applyScrollAdjustmentRef`) reads this each tick.
-  const resolvedAnchorRef = useRef<string | null>(null);
-  // Wall-clock deadline (ms since epoch) for the tier-2 bottom-pin. Set
-  // during the bottom-pin branch; the pin no-ops past it.
+  // Wall-clock deadline (ms since epoch) for the bottom-pin. Set during
+  // the initial-load effect; the pin no-ops past it.
   const bottomPinDeadlineRef = useRef(0);
   useLayoutEffect(() => {
     if (!group || loading) return;
@@ -1039,31 +990,9 @@ export function GroupContent({ groupId }: GroupContentProps) {
     if (hasHandledInitialExpandRef.current) return;
     hasHandledInitialExpandRef.current = true;
 
-    // Tier 1: oldest awaiting question.
-    const oldest = findOldestAwaitingQuestion(
-      group, votedQuestionIds, abstainedQuestionIds, new Date(),
-    );
-    const anchorId = oldest?.id ?? null;
-
-    if (anchorId) {
-      resolvedAnchorRef.current = anchorId;
-      const card = cardRefs.current.get(anchorId);
-      if (card) {
-        const cardTopY = card.getBoundingClientRect().top;
-        const targetDelta = cardTopY - headerHeight;
-        if (targetDelta !== 0) {
-          window.scrollTo(0, window.scrollY + targetDelta);
-        }
-      }
-    } else {
-      // Tier 2: scroll to bottom so the bubble bar is visible. Arm the
-      // bounded bottom-pin so async content settling keeps us at the
-      // bottom for a brief window without the unbounded oscillation
-      // PR #375 retired.
-      bottomPinDeadlineRef.current = Date.now() + BOTTOM_PIN_DURATION_MS;
-      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      if (max > 0) window.scrollTo(0, max);
-    }
+    bottomPinDeadlineRef.current = Date.now() + BOTTOM_PIN_DURATION_MS;
+    const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    if (max > 0) window.scrollTo(0, max);
     setInitialScrollApplied(true);
     // No cleanup return: useRef persists across React StrictMode's
     // mount→cleanup→mount cycle, so the ref check above guarantees fire-once
@@ -1220,7 +1149,7 @@ export function GroupContent({ groupId }: GroupContentProps) {
   // === Virtualization helpers (anchor + observer wiring) ===
   // Anchor = the last group, so the document stays pinned to the bottom
   // while cards above mount via progressive fill (matches the initial-load
-  // tier-2 bottom-pin target for groups with no awaiting cards).
+  // bottom-pin target).
   const anchorGroupKey = useMemo(() => {
     if (groupedGroupQuestions.length === 0) return null;
     return groupedGroupQuestions[groupedGroupQuestions.length - 1].key;
@@ -1355,40 +1284,20 @@ export function GroupContent({ groupId }: GroupContentProps) {
   }, []);
 
   // ===================================================================
-  // Layout-shift compensation + bottom-pin. One unified function called
-  // from both useLayoutEffect (every render) and the ResizeObserver (every
-  // layout change, including async growth that doesn't trigger a render).
+  // Bottom-pin. One unified function called from both useLayoutEffect
+  // (every render) and the ResizeObserver (every layout change,
+  // including async growth that doesn't trigger a render).
   //
-  // - Card-anchor mode (oldest awaiting question exists): track that
-  //   card's offsetTop. When it changes — e.g. cards above mount with
-  //   H_actual ≠ H_estimate — scrollBy the delta so the anchor stays at
-  //   the same viewport position. User scrolls between calls aren't
-  //   disturbed because we only react to offsetTop deltas, not scrollY.
-  //
-  // - Bottom-pin mode (no awaiting card): as the doc grows, keep scrollY
-  //   at max so the user lands on the bubble bar. The pin disables on
-  //   first user interaction (or after BOTTOM_PIN_DURATION_MS).
+  // As the doc grows (placeholders → real cards, results loads, fonts),
+  // keep scrollY at max so the user lands on the bubble bar. Disables
+  // on first user interaction (or after BOTTOM_PIN_DURATION_MS).
   // ===================================================================
   const applyScrollAdjustmentRef = useRef<() => void>(() => {});
   applyScrollAdjustmentRef.current = () => {
     if (typeof window === 'undefined' || !group) return;
     if (userInteractedRef.current) return;
     if (headerHeight === 0) return;
-    const anchorId = resolvedAnchorRef.current;
-    if (anchorId) {
-      // Card-anchor: re-align the anchor card's top with the header.
-      // card.offsetTop is anchored to the card's DOM position, so
-      // sibling resizes shift it only when cards ABOVE the anchor change
-      // height — no oscillation against scrollHeight growth.
-      const card = cardRefs.current.get(anchorId);
-      if (!card || !card.isConnected) return;
-      const desiredScrollY = card.offsetTop - headerHeight;
-      if (Math.abs(window.scrollY - desiredScrollY) > 0.5) {
-        window.scrollTo(0, Math.max(0, desiredScrollY));
-      }
-      return;
-    }
-    // Tier 2: bounded bottom-pin. Re-fire while async content settles
+    // Bounded bottom-pin. Re-fire while async content settles
     // (placeholders → real cards, results loads grow scrollHeight) so
     // the bubble bar stays at the bottom of the viewport. Deadline
     // bound + userInteracted gate cap the iOS visualViewport feedback
