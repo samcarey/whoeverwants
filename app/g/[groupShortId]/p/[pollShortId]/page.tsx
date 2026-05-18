@@ -68,9 +68,12 @@ import PollShareButton from "@/components/PollShareButton";
 import type { Poll, Question, QuestionResults } from "@/lib/types";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "../../groupActionCopy";
 
-/** Hanging category emoji to the LEFT of a section, anchored to the
- *  section's top edge. Mirrors the GroupCardItem helper. */
-function HangingCategoryIcon({
+/** Inline category emoji rendered next to a multi-question section title.
+ *  The group-card version hangs to the left of the card via negative
+ *  positioning into the creator-bubble column; the detail page has no
+ *  such column so the icon sits inline. Single-question polls omit it
+ *  entirely (the page header already conveys what the poll is). */
+function InlineCategoryIcon({
   question,
   isClosed,
 }: {
@@ -78,13 +81,13 @@ function HangingCategoryIcon({
   isClosed: boolean;
 }) {
   return (
-    <div
-      className="absolute flex items-center justify-center text-lg leading-none h-7"
-      style={{ width: "1.75rem", left: "-2.375rem", top: 0 }}
+    <span
+      className="inline-flex items-center justify-center text-lg leading-none shrink-0"
+      style={{ width: "1.75rem", height: "1.75rem" }}
       aria-hidden="true"
     >
       {getCategoryIcon(question, isClosed)}
-    </div>
+    </span>
   );
 }
 
@@ -436,21 +439,20 @@ function PollDetail({ poll, setPoll, groupId, headerRef, headerHeight, onBack }:
           return (
             <div
               key={sp.id}
-              className={`${
+              className={
                 idx > 0
                   ? "mt-6 pt-4 border-t border-gray-200 dark:border-gray-800"
                   : "mt-2"
-              } relative`}
+              }
             >
               {isMultiPoll && (
-                <div className="mb-2 relative">
-                  <HangingCategoryIcon question={sp} isClosed={isClosed} />
-                  <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white">
+                <div className="mb-2 flex items-center gap-2">
+                  <InlineCategoryIcon question={sp} isClosed={isClosed} />
+                  <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
                     {getQuestionSectionTitle(sp)}
                   </div>
                 </div>
               )}
-              {!isMultiPoll && <HangingCategoryIcon question={sp} isClosed={isClosed} />}
 
               {isYesNo && r && (() => {
                 const stagedChoice = usePollSubmit
