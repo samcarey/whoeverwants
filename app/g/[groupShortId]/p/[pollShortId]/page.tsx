@@ -6,17 +6,11 @@
  * a stand-alone page, without the card chrome that the group list uses.
  *
  * Tapping a card on `/g/<groupShortId>` slides here via `slideToPollDetail`
- * (lib/slideOverlay.tsx — same overlay-slide mechanism as home→group, so
- * the first frame moves on the next rAF). Back arrow slides back to the
- * group root.
- *
- * State shape mirrors what GroupContent kept inside the now-removed expand
- * clip: votes / staged choices / wrapper-submit visibility all live in
- * `useGroupVoting`, fed a one-poll synthetic Group. Voter / results data
- * refreshes on QUESTION_VOTES_CHANGED_EVENT just like the group page.
+ * — same overlay-slide mechanism as home→group, so the first frame moves
+ * on the next rAF. Back arrow slides back to the group root.
  */
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { flushSync } from "react-dom";
 import {
@@ -33,7 +27,11 @@ import {
 } from "@/lib/api";
 import { POLL_HYDRATED_EVENT, type PollHydratedDetail } from "@/lib/eventChannels";
 import { slideToGroupRoot } from "@/lib/slideOverlay";
-import { buildGroupFromPollDown, isPendingPollId } from "@/lib/groupUtils";
+import {
+  buildGroupFromPollDown,
+  getGroupHrefForPoll,
+  isPendingPollId,
+} from "@/lib/groupUtils";
 import { useGroupVoting, type PreparedNonYesNoEntry } from "@/lib/useGroupVoting";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import {
@@ -68,11 +66,6 @@ import PollShareButton from "@/components/PollShareButton";
 import type { Poll, Question, QuestionResults } from "@/lib/types";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "../../groupActionCopy";
 
-/** Inline category emoji rendered next to a multi-question section title.
- *  The group-card version hangs to the left of the card via negative
- *  positioning into the creator-bubble column; the detail page has no
- *  such column so the icon sits inline. Single-question polls omit it
- *  entirely (the page header already conveys what the poll is). */
 function InlineCategoryIcon({
   question,
   isClosed,
@@ -102,8 +95,6 @@ interface PollDetailViewProps {
 export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
   const router = useRouter();
 
-  // Synchronous cache-first init: cache hit → instant render with no spinner
-  // (matches the slide handoff). Cache miss → async fetch below.
   const [poll, setPoll] = useState<Poll | null>(() => {
     if (typeof window === "undefined") return null;
     return getCachedPollForShortId(pollShortId);
@@ -126,12 +117,10 @@ export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
         for (const sp of fetched.questions) addAccessibleQuestionId(sp.id);
       } catch (err) {
         if (cancelled) return;
-        if (err instanceof ApiError && err.status === 404) {
-          setError(true);
-        } else {
+        if (!(err instanceof ApiError && err.status === 404)) {
           console.error("PollDetail: fetch failed", err);
-          setError(true);
         }
+        setError(true);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -141,16 +130,15 @@ export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
     };
   }, [poll, pollShortId]);
 
-  // POLL_HYDRATED swaps a placeholder poll for the real one. If the user
-  // landed on the detail page for a placeholder (e.g. clicked through right
-  // after submitting), swap in-place when the matching real Poll arrives.
+  // POLL_HYDRATED swaps a placeholder poll for the real one. Handles the
+  // case where the user clicked through to a freshly-submitted poll before
+  // apiCreatePoll resolved.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PollHydratedDetail>).detail;
       if (!detail?.poll || !poll) return;
       if (detail.placeholderId !== poll.id) return;
       flushSync(() => setPoll(detail.poll));
-      // The new short_id is the canonical URL — swap without remount.
       const newShort = detail.poll.short_id;
       if (newShort && newShort !== pollShortId) {
         cachePoll(detail.poll);
@@ -165,43 +153,11 @@ export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
     slideToGroupRoot({ groupId, direction: "back", useHistoryBack: hasAppHistory() });
   }, [groupId]);
 
-  if (loading && !poll) {
-    return <LoadingFrame onBack={goBack} />;
-  }
+  if (loading && !poll) return <SimpleFrame onBack={goBack}><p className="text-gray-600 dark:text-gray-400">Loading poll...</p></SimpleFrame>;
 
   if (error || !poll) {
-    return <ErrorFrame onBack={goBack} groupId={groupId} router={router} />;
-  }
-
-  return <PollDetail poll={poll} setPoll={setPoll} groupId={groupId} onBack={goBack} />;
-}
-
-function LoadingFrame({ onBack }: { onBack: () => void }) {
-  const [headerRef] = useMeasuredHeight<HTMLDivElement>([], 80);
-  return (
-    <>
-      <GroupHeader headerRef={headerRef} onBack={onBack} />
-      <div className="min-h-[40vh] flex items-center justify-center">
-        <p className="text-gray-600 dark:text-gray-400">Loading poll...</p>
-      </div>
-    </>
-  );
-}
-
-function ErrorFrame({
-  onBack,
-  groupId,
-  router,
-}: {
-  onBack: () => void;
-  groupId: string;
-  router: ReturnType<typeof useRouter>;
-}) {
-  const [headerRef] = useMeasuredHeight<HTMLDivElement>([], 80);
-  return (
-    <>
-      <GroupHeader headerRef={headerRef} onBack={onBack} />
-      <div className="min-h-[40vh] flex flex-col items-center justify-center text-center px-4">
+    return (
+      <SimpleFrame onBack={goBack}>
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Poll Not Found</h2>
         <p className="text-gray-600 dark:text-gray-400 mb-4">This poll may have been removed.</p>
         <button
@@ -210,6 +166,21 @@ function ErrorFrame({
         >
           Back to Group
         </button>
+      </SimpleFrame>
+    );
+  }
+
+  return <PollDetail poll={poll} setPoll={setPoll} groupId={groupId} onBack={goBack} />;
+}
+
+/** Loading / error frame — no measured header since nothing flows under it. */
+function SimpleFrame({ onBack, children }: { onBack: () => void; children: React.ReactNode }) {
+  const headerRef = useRef<HTMLDivElement>(null);
+  return (
+    <>
+      <GroupHeader headerRef={headerRef} onBack={onBack} />
+      <div className="min-h-[40vh] flex flex-col items-center justify-center text-center px-4">
+        {children}
       </div>
     </>
   );
@@ -226,9 +197,6 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
   const router = useRouter();
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([], 80);
 
-  // Voted/abstained sets (used to mark question state + by useGroupVoting
-  // for post-write sync). Seeded synchronously from localStorage; the
-  // QUESTION_VOTES_CHANGED_EVENT listener keeps them fresh.
   const [votedQuestionIds, setVotedQuestionIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
     return loadVotedQuestions().votedQuestionIds;
@@ -238,14 +206,12 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
     return loadVotedQuestions().abstainedQuestionIds;
   });
 
-  // Synthetic single-poll Group so `useGroupVoting` can find each question's
-  // poll_id and run the shared post-write sync. The hook only reads
-  // `group.questions`, so we don't need a fully-populated Group.
+  // Synthetic single-poll Group: useGroupVoting only reads `group.questions`
+  // to resolve poll_id per vote write. Voted/abstained sets are passed via
+  // setters; rebuilding the Group on every vote would churn identity for
+  // no benefit, so they're deliberately omitted from deps.
   const syntheticGroup = useMemo(
     () => buildGroupFromPollDown(poll.id, [poll], votedQuestionIds, abstainedQuestionIds),
-    // We deliberately omit voted/abstained from deps: the hook reads them
-    // via the setters we pass; rebuilding the Group on every vote would
-    // churn identity for no benefit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [poll],
   );
@@ -275,8 +241,6 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
     setAbstainedQuestionIds,
   });
 
-  // Per-question results map. Seeded from inline `question.results`, refreshed
-  // on QUESTION_VOTES_CHANGED_EVENT.
   const [questionResultsMap, setQuestionResultsMap] = useState<Map<string, QuestionResults>>(() => {
     const seed = new Map<string, QuestionResults>();
     for (const sp of poll.questions) {
@@ -285,95 +249,89 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
     return seed;
   });
 
-  // Per-question ballot handles for the wrapper-level Submit button.
   const subQuestionBallotRefs = useMemo(() => new Map<string, QuestionBallotHandle>(), []);
 
-  // Load this viewer's yes_no votes + fresh results once on mount, then again
-  // whenever the vote-changed event fires for one of our questions.
+  // Ref so the QUESTION_VOTES_CHANGED listener can stay registered with
+  // empty deps — re-attaching on every poll mutation would also re-fan-out
+  // the initial-mount fetch loop for every sub-question.
+  const pollRef = useRef(poll);
+  useEffect(() => { pollRef.current = poll; }, [poll]);
+
+  const fetchOneResults = useCallback(async (sp: Question) => {
+    if (isPendingPollId(sp.id)) return;
+    const wantsResults =
+      sp.question_type === "yes_no" ||
+      sp.question_type === "ranked_choice" ||
+      sp.question_type === "time";
+    if (!wantsResults) return;
+    const voteId = sp.question_type === "yes_no" ? getStoredVoteId(sp.id) : null;
+    const [results, votes] = await Promise.all([
+      apiGetQuestionResults(sp.id).catch(() => null),
+      voteId ? apiGetVotes(sp.id).catch(() => null) : Promise.resolve(null),
+    ]);
+    if (results) {
+      setQuestionResultsMap((prev) => {
+        const existing = prev.get(sp.id);
+        if (
+          existing &&
+          existing.total_votes === results.total_votes &&
+          existing.yes_count === results.yes_count &&
+          existing.no_count === results.no_count &&
+          existing.winner === results.winner &&
+          (existing.suggestion_counts?.length ?? 0) === (results.suggestion_counts?.length ?? 0)
+        ) {
+          return prev;
+        }
+        const next = new Map(prev);
+        next.set(sp.id, results);
+        return next;
+      });
+    }
+    if (voteId && votes) {
+      const mine = votes.find((v) => v.id === voteId);
+      if (!mine) return;
+      const choice = parseYesNoChoice(mine);
+      const voterName = mine.voter_name ?? null;
+      setUserVoteMap((prev) => {
+        const existing = prev.get(sp.id);
+        if (existing && existing.voteId === voteId && existing.choice === choice && existing.voterName === voterName) {
+          return prev;
+        }
+        const next = new Map(prev);
+        next.set(sp.id, { choice, voteId, voterName });
+        return next;
+      });
+    }
+  }, [setUserVoteMap]);
+
   useEffect(() => {
-    let cancelled = false;
-    const fetchOne = async (sp: Question) => {
-      if (isPendingPollId(sp.id)) return;
-      const wantsResults =
-        sp.question_type === "yes_no" ||
-        sp.question_type === "ranked_choice" ||
-        sp.question_type === "time";
-      if (!wantsResults) return;
-      const voteId = sp.question_type === "yes_no" ? getStoredVoteId(sp.id) : null;
-      const [results, votes] = await Promise.all([
-        apiGetQuestionResults(sp.id).catch(() => null),
-        voteId ? apiGetVotes(sp.id).catch(() => null) : Promise.resolve(null),
-      ]);
-      if (cancelled) return;
-      if (results) {
-        setQuestionResultsMap((prev) => {
-          const existing = prev.get(sp.id);
-          if (
-            existing &&
-            existing.total_votes === results.total_votes &&
-            existing.yes_count === results.yes_count &&
-            existing.no_count === results.no_count &&
-            existing.winner === results.winner &&
-            (existing.suggestion_counts?.length ?? 0) === (results.suggestion_counts?.length ?? 0)
-          ) {
-            return prev;
-          }
-          const next = new Map(prev);
-          next.set(sp.id, results);
-          return next;
-        });
-      }
-      if (voteId && votes) {
-        const mine = votes.find((v) => v.id === voteId);
-        if (!mine) return;
-        const choice = parseYesNoChoice(mine);
-        const voterName = mine.voter_name ?? null;
-        setUserVoteMap((prev) => {
-          const existing = prev.get(sp.id);
-          if (existing && existing.voteId === voteId && existing.choice === choice && existing.voterName === voterName) {
-            return prev;
-          }
-          const next = new Map(prev);
-          next.set(sp.id, { choice, voteId, voterName });
-          return next;
-        });
-      }
-    };
+    for (const sp of poll.questions) void fetchOneResults(sp);
+  }, [poll.id, poll.questions, fetchOneResults]);
 
-    for (const sp of poll.questions) void fetchOne(sp);
-
+  // Wrapper refetch keeps voter_names + prephase_deadline + closed-state
+  // fresh in the respondent row and status label after a vote.
+  useEffect(() => {
     const onVotesChanged = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { questionId?: string } | undefined;
-      const qid = detail?.questionId;
+      const qid = (e as CustomEvent).detail?.questionId as string | undefined;
       if (!qid) return;
-      const sp = poll.questions.find((p) => p.id === qid);
+      const current = pollRef.current;
+      const sp = current.questions.find((p) => p.id === qid);
       if (!sp) return;
-      void fetchOne(sp);
-      // Also refetch the wrapper so voter_names + prephase_deadline stay
-      // fresh in the respondent row and the status label.
-      void apiGetPollById(poll.id).then((fresh) => {
-        if (cancelled) return;
+      void fetchOneResults(sp);
+      void apiGetPollById(current.id).then((fresh) => {
         setPoll(fresh);
         cachePoll(fresh);
       }).catch(() => null);
     };
     window.addEventListener(QUESTION_VOTES_CHANGED_EVENT, onVotesChanged);
+    return () => window.removeEventListener(QUESTION_VOTES_CHANGED_EVENT, onVotesChanged);
+  }, [fetchOneResults, setPoll]);
 
-    return () => {
-      cancelled = true;
-      window.removeEventListener(QUESTION_VOTES_CHANGED_EVENT, onVotesChanged);
-    };
-  }, [poll, setPoll, setUserVoteMap]);
-
-  // Long-press modal + per-question pending action (close/reopen/cutoff/forget).
   const [modalQuestion, setModalQuestion] = useState<Question | null>(null);
-  const [showModal, setShowModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<
     { kind: PendingActionKind; question: Question } | null
   >(null);
 
-  // Listen for cross-component updates that may shift wrapper-level state
-  // (e.g. dispatchAction from elsewhere closing the same poll).
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { questionId: string; updates: Partial<Question> };
@@ -426,9 +384,8 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
 
   const shareUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
-    const short = poll.short_id || subQuestions[0]?.id || poll.id;
-    return `${window.location.origin}/g/${groupId}/p/${short}`;
-  }, [poll.short_id, poll.id, subQuestions, groupId]);
+    return `${window.location.origin}${getGroupHrefForPoll(poll)}`;
+  }, [poll]);
 
   return (
     <>
@@ -444,14 +401,13 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
       />
 
       <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
-        {/* Poll-level notes */}
         {poll.details && <QuestionDetails details={poll.details} label="Notes: " />}
 
-        {/* Stacked sub-question sections — no outer card chrome. */}
         {subQuestions.map((sp, idx) => {
           const isYesNo = sp.question_type === "yes_no";
           const r = questionResultsMap.get(sp.id);
           const userVote = userVoteMap.get(sp.id);
+          const wrapperOwnsSubmit = useWrapperSubmit || (usePollSubmit && !isYesNo);
           return (
             <div
               key={sp.id}
@@ -517,23 +473,19 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
                 externalYesNoResults={isYesNo}
                 isExpanded={true}
                 partOfPollGroup={isMultiPoll}
-                wrapperHandlesSubmit={
-                  !!poll.id && (useWrapperSubmit || (usePollSubmit && !isYesNo))
-                }
+                wrapperHandlesSubmit={!!poll.id && wrapperOwnsSubmit}
                 externalVoterName={
-                  (useWrapperSubmit || (usePollSubmit && !isYesNo))
+                  wrapperOwnsSubmit
                     ? pollVoterNames.get(poll.id) ?? getUserName() ?? ""
                     : undefined
                 }
                 setExternalVoterName={
-                  (useWrapperSubmit || (usePollSubmit && !isYesNo))
+                  wrapperOwnsSubmit
                     ? (name: string) => setPollVoterName(poll.id, name)
                     : undefined
                 }
                 onWrapperSubmitStateChange={
-                  (useWrapperSubmit || (usePollSubmit && !isYesNo))
-                    ? handleWrapperSubmitStateChange
-                    : undefined
+                  wrapperOwnsSubmit ? handleWrapperSubmitStateChange : undefined
                 }
               />
             </div>
@@ -649,7 +601,6 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
           );
         })()}
 
-        {/* Respondent row at the foot of the page. */}
         <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800">
           <VoterList
             staticVoterNames={poll.voter_names ?? []}
@@ -658,56 +609,51 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
           />
         </div>
 
-        {/* Floating "more actions" trigger — opens the same long-press modal
-            the group card supported (forget / reopen / close / cutoffs). */}
         <button
           type="button"
-          onClick={() => {
-            setModalQuestion(subQuestions[0]);
-            setShowModal(true);
-          }}
+          onClick={() => setModalQuestion(subQuestions[0])}
           className="mt-6 mb-2 w-full py-2 px-4 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border border-gray-200 dark:border-gray-800 rounded-lg transition-colors"
         >
           More actions…
         </button>
       </div>
 
-      {modalQuestion && (
-        <FollowUpModal
-          isOpen={showModal}
-          question={modalQuestion}
-          poll={poll}
-          totalVotes={questionResultsMap.get(modalQuestion.id)?.total_votes}
-          onClose={() => setShowModal(false)}
-          onDelete={() => setPendingAction({ kind: "forget", question: modalQuestion })}
-          onReopen={
-            isClosed &&
-            (!!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === "development")
-              ? () => setPendingAction({ kind: "reopen", question: modalQuestion })
-              : undefined
-          }
-          onCloseQuestion={
-            !isClosed &&
-            (!!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === "development")
-              ? () => setPendingAction({ kind: "close", question: modalQuestion })
-              : undefined
-          }
-          onCutoffAvailability={
-            !isClosed &&
-            isInTimeAvailabilityPhase(modalQuestion) &&
-            (!!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === "development")
-              ? () => setPendingAction({ kind: "cutoff-availability", question: modalQuestion })
-              : undefined
-          }
-          onCutoffSuggestions={
-            !isClosed &&
-            isInSuggestionPhase(modalQuestion, poll.prephase_deadline ?? null) &&
-            (!!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === "development")
-              ? () => setPendingAction({ kind: "cutoff-suggestions", question: modalQuestion })
-              : undefined
-          }
-        />
-      )}
+      {modalQuestion && (() => {
+        const isCreatorOrDev =
+          !!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === "development";
+        return (
+          <FollowUpModal
+            isOpen={true}
+            question={modalQuestion}
+            poll={poll}
+            totalVotes={questionResultsMap.get(modalQuestion.id)?.total_votes}
+            onClose={() => setModalQuestion(null)}
+            onDelete={() => setPendingAction({ kind: "forget", question: modalQuestion })}
+            onReopen={
+              isClosed && isCreatorOrDev
+                ? () => setPendingAction({ kind: "reopen", question: modalQuestion })
+                : undefined
+            }
+            onCloseQuestion={
+              !isClosed && isCreatorOrDev
+                ? () => setPendingAction({ kind: "close", question: modalQuestion })
+                : undefined
+            }
+            onCutoffAvailability={
+              !isClosed && isInTimeAvailabilityPhase(modalQuestion) && isCreatorOrDev
+                ? () => setPendingAction({ kind: "cutoff-availability", question: modalQuestion })
+                : undefined
+            }
+            onCutoffSuggestions={
+              !isClosed &&
+              isInSuggestionPhase(modalQuestion, poll.prephase_deadline ?? null) &&
+              isCreatorOrDev
+                ? () => setPendingAction({ kind: "cutoff-suggestions", question: modalQuestion })
+                : undefined
+            }
+          />
+        );
+      })()}
 
       {pendingAction && (
         <ConfirmationModal
@@ -785,9 +731,6 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
         />
       )}
 
-      {/* Confirmation for yes/no vote tap/change (multi-poll path and
-          single-poll edits route through this modal; first-time
-          single-poll taps bypass it via dispatchYesNoTap). */}
       {(() => {
         const current = pendingVoteChange
           ? userVoteMap.get(pendingVoteChange.questionId)?.choice

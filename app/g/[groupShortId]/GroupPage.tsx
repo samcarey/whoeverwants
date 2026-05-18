@@ -250,16 +250,21 @@ export function GroupContent({ groupId }: GroupContentProps) {
   usePageReady(!!group && !loading && initialScrollApplied);
 
   // Prefetch each poll's detail page route so taps land on a warm cache.
+  // Re-fires only when the poll-id set changes (not on every 5s wrapper
+  // refresh, which produces a fresh Group identity but the same hrefs).
+  const prefetchKey = useMemo(
+    () => (group ? group.polls.map(mp => mp.short_id ?? "").join(",") : ""),
+    [group],
+  );
   useEffect(() => {
     if (!group) return;
     const hrefs: string[] = [];
     for (const mp of group.polls) {
-      const pollShort = mp.short_id;
-      if (!pollShort) continue;
-      hrefs.push(`/g/${groupId}/p/${pollShort}`);
+      if (mp.short_id) hrefs.push(`/g/${groupId}/p/${mp.short_id}`);
     }
     prefetchBatch(hrefs, { priority: "low" });
-  }, [group, prefetchBatch, groupId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefetchKey, prefetchBatch, groupId]);
 
   // Which question's creation-time tooltip is currently showing (null = none).
   // Shared across all cards so only one tooltip is visible at a time.
