@@ -15,8 +15,9 @@
  *   - `group`           → `<GroupContent>`
  *   - `groupInfo`       → `<GroupInfoView>` (member list / hero avatar)
  *   - `groupEditTitle`  → `<GroupEditTitleView>` (title + image staging)
+ *   - `pollDetail`      → `<PollDetailView>` (full poll content, no card)
  *
- * All three render inside the group-family layout (no template chrome, fixed
+ * All render inside the group-family layout (no template chrome, fixed
  * GroupHeader rendered by the page itself), so the same outer wrapper works
  * for every kind. Adding a new kind requires:
  *   1. Extend `SlideOverlayKind` in `lib/eventChannels.ts`.
@@ -51,6 +52,7 @@ import {
 import { GroupContent } from "@/app/g/[groupShortId]/GroupPage";
 import { GroupInfoView } from "@/app/g/[groupShortId]/info/page";
 import { GroupEditTitleView } from "@/app/g/[groupShortId]/edit-title/page";
+import { PollDetailView } from "@/app/g/[groupShortId]/p/[pollShortId]/page";
 import { EmptyPlaceholder } from "@/app/g/page";
 
 const SLIDE_DURATION_MS = 350; // iOS push duration. Tune here only.
@@ -73,16 +75,27 @@ function dispatchSlide(detail: SlideToGroupDetail): void {
 export function slideToGroup(detail: {
   href: string;
   groupId: string;
-  expandedQuestionId: string | null;
 }): void {
   dispatchSlide({
     href: detail.href,
     direction: 'forward',
-    kind: {
-      type: 'group',
-      groupId: detail.groupId,
-      expandedQuestionId: detail.expandedQuestionId,
-    },
+    kind: { type: 'group', groupId: detail.groupId },
+  });
+}
+
+/** Slide-in a poll's detail page (tap on a group card). The destination
+ *  renders the poll's full content full-bleed at `/g/<groupId>/p/<pollShortId>`. */
+export function slideToPollDetail({
+  groupId,
+  pollShortId,
+}: {
+  groupId: string;
+  pollShortId: string;
+}): void {
+  dispatchSlide({
+    href: `/g/${groupId}/p/${pollShortId}`,
+    direction: 'forward',
+    kind: { type: 'pollDetail', groupId, pollShortId },
   });
 }
 
@@ -155,7 +168,7 @@ export function slideToGroupRoot({
     href: `/g/${groupId}`,
     direction,
     useHistoryBack,
-    kind: { type: 'group', groupId, expandedQuestionId: null },
+    kind: { type: 'group', groupId },
   });
 }
 
@@ -166,17 +179,19 @@ interface OverlayState extends SlideToGroupDetail {
 function renderForKind(kind: SlideOverlayKind): React.ReactNode {
   switch (kind.type) {
     case 'group':
-      return (
-        <GroupContent
-          key={kind.groupId}
-          groupId={kind.groupId}
-          initialExpandedQuestionId={kind.expandedQuestionId}
-        />
-      );
+      return <GroupContent key={kind.groupId} groupId={kind.groupId} />;
     case 'groupInfo':
       return <GroupInfoView key={kind.groupId} groupId={kind.groupId} />;
     case 'groupEditTitle':
       return <GroupEditTitleView key={kind.groupId} groupId={kind.groupId} />;
+    case 'pollDetail':
+      return (
+        <PollDetailView
+          key={`${kind.groupId}/${kind.pollShortId}`}
+          groupId={kind.groupId}
+          pollShortId={kind.pollShortId}
+        />
+      );
     case 'newGroup':
       return <EmptyPlaceholder inOverlay />;
   }
@@ -308,11 +323,11 @@ export function SlideOverlayHost(): React.ReactElement | null {
   // Inner wrapper class must match what the destination route gets from
   // template.tsx around {children}. Group routes get the negative-margin
   // layout (max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4 + paddingBottom
-  // 4.5rem); info/edit-title get the standard layout (max-w-4xl mx-auto
-  // px-4 pb-6) — without matching this, the page's own inner
-  // `max-w-4xl mx-auto px-4` is the only padding layer the overlay has,
-  // and the unmount shifts the content inward as template's extra px-4
-  // kicks in. If template.tsx's wrapper ever changes, update this too.
+  // 4.5rem); info / edit-title / pollDetail get the standard layout
+  // (max-w-4xl mx-auto px-4 pb-6) — without matching this, the page's own
+  // inner `max-w-4xl mx-auto px-4` is the only padding layer the overlay
+  // has, and the unmount shifts the content inward as template's extra
+  // px-4 kicks in. If template.tsx's wrapper ever changes, update this too.
   const innerClass = isGroupKind
     ? "max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4"
     : "max-w-4xl mx-auto px-4 pb-6";

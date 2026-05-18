@@ -6,13 +6,15 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyGroups } from "@/lib/simpleQuestionQueries";
 import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, EMPTY_GROUP_HINT, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
+// POLL_QUERY_PARAM is still used by `GroupPageInner` to redirect legacy
+// `?p=<pollShort>` URLs to the new `/g/<group>/p/<pollShort>` route.
 import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
 import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useGroupVoting } from "@/lib/useGroupVoting";
 import type { QuestionResults } from "@/lib/types";
 import { addAccessibleQuestionId, getCreatorSecret } from "@/lib/browserQuestionAccess";
-import { getCachedAccessiblePolls, getCachedGroupSummary, getCachedPollById, getCachedPollByShortId, getCachedPollForShortId } from "@/lib/questionCache";
+import { getCachedAccessiblePolls, getCachedGroupSummary, getCachedPollById, getCachedPollByShortId } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
@@ -31,7 +33,6 @@ import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroupInfo } from "@/lib/slideOverlay";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
-import { type QuestionBallotHandle } from "@/components/QuestionBallot";
 import GroupHeader from "@/components/GroupHeader";
 import { forgetQuestion } from "@/lib/forgetQuestion";
 import { haptic } from "@/lib/haptics";
@@ -168,10 +169,9 @@ function rebuildGroupFromCacheOrPrev(
 
 interface GroupContentProps {
   groupId: string;
-  initialExpandedQuestionId?: string | null;
 }
 
-export function GroupContent({ groupId, initialExpandedQuestionId = null }: GroupContentProps) {
+export function GroupContent({ groupId }: GroupContentProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
 
@@ -249,36 +249,29 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   const [initialScrollApplied, setInitialScrollApplied] = useState(false);
   usePageReady(!!group && !loading && initialScrollApplied);
 
-  // Prefetch `/g/<root>?p=<poll>` for every poll in the group so taps land
-  // on a warm cache. The path stays constant (group root); only `?p=` varies.
+  // Prefetch each poll's detail page route so taps land on a warm cache.
+  // Re-fires only when the poll-id set changes (not on every 5s wrapper
+  // refresh, which produces a fresh Group identity but the same hrefs).
+  const prefetchKey = useMemo(
+    () => (group ? group.polls.map(mp => mp.short_id ?? "").join(",") : ""),
+    [group],
+  );
   useEffect(() => {
     if (!group) return;
-    const wrapperByQuestionId = new Map<string, string>();
+    const hrefs: string[] = [];
     for (const mp of group.polls) {
-      if (!mp.short_id) continue;
-      for (const sp of mp.questions) wrapperByQuestionId.set(sp.id, mp.short_id);
+      if (mp.short_id) hrefs.push(`/g/${groupId}/p/${mp.short_id}`);
     }
-    const hrefs = group.questions.map(p => {
-      const pollShort = wrapperByQuestionId.get(p.id);
-      return pollShort ? `/g/${groupId}?${POLL_QUERY_PARAM}=${pollShort}` : `/g/${groupId}`;
-    });
     prefetchBatch(hrefs, { priority: "low" });
-  }, [group, prefetchBatch, groupId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefetchKey, prefetchBatch, groupId]);
 
-  // Expanded card state — only one card can be expanded at a time.
-  // Initialized from the prop so the `/g/<root>?p=<id>` route can open a card on first render.
-  const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(initialExpandedQuestionId);
-  // Which question's creation-time tooltip is currently showing (null = none). Shared
-  // across all cards so only one tooltip is visible at a time.
+  // Which question's creation-time tooltip is currently showing (null = none).
+  // Shared across all cards so only one tooltip is visible at a time.
   const [tooltipQuestionId, setTooltipQuestionId] = useState<string | null>(null);
-  // Questions whose expanded content has been pre-mounted because the card scrolled
-  // into view. We keep the mounted subtree display:none'd until expansion so all
-  // data fetches, state init, and child effects happen BEFORE the user taps —
-  // the expand then renders at the correct final height with no resize flicker.
-  const [visibleQuestionIds, setVisibleQuestionIds] = useState<Set<string>>(() => {
-    // Initialize with the pre-expanded question (so its content mounts on first paint).
-    return initialExpandedQuestionId ? new Set([initialExpandedQuestionId]) : new Set();
-  });
+  // Questions whose card has scrolled into view. Drives the lazy fetch of
+  // per-question results that populate compact pills.
+  const [visibleQuestionIds, setVisibleQuestionIds] = useState<Set<string>>(() => new Set());
   // Per-question results for the compact winner preview shown above the grid-rows
   // clip. Seeded synchronously from inline question.results so the previews render
   // on first paint — without this, slots mount empty and fill in late when the
@@ -294,29 +287,15 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
     }
     return seed;
   });
-  // Voting state + handlers for the group page. See lib/useGroupVoting.ts.
-  // votedQuestionIds / abstainedQuestionIds stay on the page because they're seeded
-  // synchronously alongside the cached group; the hook pushes fresh values
-  // back through the setters after every successful vote write.
+  // Group page only needs the userVoteMap (read by compact yes/no pills) and
+  // submitSwipeAbstain (drives the left-swipe-to-abstain gesture on cards).
+  // Full vote flows (taps, edits, multi-question Submit) live on the poll
+  // detail page now. votedQuestionIds / abstainedQuestionIds remain here
+  // because they're seeded synchronously alongside the cached group and
+  // drive the awaiting-response sort + golden-border predicate.
   const {
     userVoteMap,
     setUserVoteMap,
-    pendingVoteChange,
-    setPendingVoteChange,
-    voteChangeSubmitting,
-    pendingPollChoices,
-    setPendingPollChoices,
-    pollVoterNames,
-    setPollVoterName,
-    pendingPollSubmit,
-    setPendingPollSubmit,
-    pollSubmitting,
-    pollSubmitError,
-    wrapperSubmitState,
-    handleWrapperSubmitStateChange,
-    confirmPollSubmit,
-    confirmVoteChange,
-    submitYesNoChoice,
     submitSwipeAbstain,
   } = useGroupVoting({ group, setVotedQuestionIds, setAbstainedQuestionIds });
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
@@ -325,20 +304,10 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   // and observe viewport intersection.
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   // Same key as cardRefs but targets the inner BORDERED frame of each card —
-  // the visible "card shape" the user perceives. The FLIP animation applied
-  // on submit operates on this element so the actual visible frame morphs
-  // (and the surrounding grid wrapper / category-icon column stay still).
+  // the visible "card shape" the user perceives. Swipe-to-abstain animates
+  // this element directly so the inner border + status footer slide as one
+  // unit (the surrounding grid wrapper / hanging icon column stay still).
   const cardFrameRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  // Ref to each card's overflow-hidden wrapper — its scrollHeight reports the
-  // natural expanded content height (pre-mounted via IntersectionObserver) so
-  // we can compute the target scroll position BEFORE the grid-rows animation
-  // finishes growing.
-  const expandedWrapperRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  // Phase 3.4 follow-up B: wrapper-level Submit for 1-question non-yes_no
-  // polls. Each QuestionBallot exposes triggerSubmit() via this ref;
-  // the wrapper Submit calls it, which routes through the same validation
-  // + confirmation modal flow the per-question Submit used to invoke.
-  const subQuestionBallotRefs = useRef<Map<string, QuestionBallotHandle>>(new Map());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
 
   // === Windowed virtualization ===
@@ -378,25 +347,18 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   const userInteractedRef = useRef(false);
   const [mountedGroupKeys, setMountedGroupKeys] = useState<Set<string>>(() => {
     if (!initialGroup) return new Set();
-    // Seed with the URL-anchored group only — keeps initial paint cheap
-    // (one card rendered) even for very long groups. The progressive-fill
-    // effect below mounts the rest in idle-time batches around the anchor.
-    // Tier order matches the initial-load scroll target so the seeded card
-    // is the same one we're about to scroll to:
-    //   1. `?p=<id>` → that card
-    //   2. oldest awaiting card
-    //   3. last poll (tier 3 → scroll to bottom; last card is the closest
-    //      mounted neighbor so the bottom-pin lands near correct).
+    // Seed with the initial-load scroll target so the first paint already
+    // has the anchored card mounted (no placeholder→card swap right after
+    // mount). Progressive fill below mounts the rest in idle-time batches.
+    // Tiers:
+    //   1. oldest awaiting card → tap-target
+    //   2. last poll → tier-3 bottom-pin's closest mounted neighbor
     const initial = new Set<string>();
-    let target: Question | null = null;
-    if (initialExpandedQuestionId) {
-      target = initialGroup.questions.find(p => p.id === initialExpandedQuestionId) ?? null;
-    }
-    if (!target) {
-      target = findOldestAwaitingQuestion(initialGroup, initialVoted, initialAbstained, new Date());
-    }
-    const seed = target ?? initialGroup.questions[initialGroup.questions.length - 1] ?? null;
-    if (seed) initial.add(groupKeyFor(seed));
+    const target =
+      findOldestAwaitingQuestion(initialGroup, initialVoted, initialAbstained, new Date())
+      ?? initialGroup.questions[initialGroup.questions.length - 1]
+      ?? null;
+    if (target) initial.add(groupKeyFor(target));
     return initial;
   });
 
@@ -1064,12 +1026,12 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   // Initial-load scroll (path 1).
   // ===================================================================
   const hasHandledInitialExpandRef = useRef(false);
-  // Anchor question id resolved on initial load: tier 1 (`?p=`) → tier 2
-  // (oldest awaiting). Null when tier 3 (scroll to bottom) applies. The
-  // pin (`applyScrollAdjustmentRef`) reads this synchronously each tick.
+  // Anchor question id resolved on initial load: oldest awaiting question.
+  // Null when no awaiting card exists (tier 2 → scroll to bottom for the
+  // bubble bar). The pin (`applyScrollAdjustmentRef`) reads this each tick.
   const resolvedAnchorRef = useRef<string | null>(null);
-  // Wall-clock deadline (ms since epoch) for the tier-3 bottom-pin. Set
-  // during initial-load tier-3 branch; the pin no-ops past it.
+  // Wall-clock deadline (ms since epoch) for the tier-2 bottom-pin. Set
+  // during the bottom-pin branch; the pin no-ops past it.
   const bottomPinDeadlineRef = useRef(0);
   useLayoutEffect(() => {
     if (!group || loading) return;
@@ -1077,16 +1039,11 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
     if (hasHandledInitialExpandRef.current) return;
     hasHandledInitialExpandRef.current = true;
 
-    // Tier 1: explicit `?p=` URL anchor.
-    let anchorId: string | null = initialExpandedQuestionId;
-
-    // Tier 2: oldest awaiting question.
-    if (!anchorId) {
-      const oldest = findOldestAwaitingQuestion(
-        group, votedQuestionIds, abstainedQuestionIds, new Date(),
-      );
-      if (oldest) anchorId = oldest.id;
-    }
+    // Tier 1: oldest awaiting question.
+    const oldest = findOldestAwaitingQuestion(
+      group, votedQuestionIds, abstainedQuestionIds, new Date(),
+    );
+    const anchorId = oldest?.id ?? null;
 
     if (anchorId) {
       resolvedAnchorRef.current = anchorId;
@@ -1099,7 +1056,7 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         }
       }
     } else {
-      // Tier 3: scroll to bottom so the bubble bar is visible. Arm the
+      // Tier 2: scroll to bottom so the bubble bar is visible. Arm the
       // bounded bottom-pin so async content settling keeps us at the
       // bottom for a brief window without the unbounded oscillation
       // PR #375 retired.
@@ -1110,63 +1067,9 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
     setInitialScrollApplied(true);
     // No cleanup return: useRef persists across React StrictMode's
     // mount→cleanup→mount cycle, so the ref check above guarantees fire-once
-    // semantics. A cleanup that reset the ref would fire on every dep change
-    // (e.g. `group` updating from an async accessible-polls refresh) and
-    // re-apply the scroll against the new — taller — page, producing a
-    // visible "settle further down" jump after the user already saw the
-    // page in the right position.
+    // semantics. A cleanup that reset the ref would fire on every dep change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group, loading, headerHeight, initialExpandedQuestionId]);
-
-  // ===================================================================
-  // Tap-expand smooth scroll (path 2 — see strategy block above). Only
-  // fires when expandedQuestionId changes AFTER the initial layout has
-  // settled; the initial-expand path above handles the first render.
-  // ===================================================================
-  useEffect(() => {
-    if (!expandedQuestionId) return;
-    if (headerHeight === 0) return;
-    if (expandedQuestionId === initialExpandedQuestionId) return;
-    const card = cardRefs.current.get(expandedQuestionId);
-    if (!card) return;
-
-    const wrapper = expandedWrapperRefs.current.get(expandedQuestionId);
-    const expandedContentHeight = wrapper?.scrollHeight ?? 0;
-    const wrapperCurrent = wrapper?.getBoundingClientRect().height ?? 0;
-    const compactHeight = card.getBoundingClientRect().height - wrapperCurrent;
-    const visibleTopY = headerHeight;
-    const visibleBottomY = window.innerHeight;
-    const cardTopY = card.getBoundingClientRect().top;
-    const finalCardBottomY = cardTopY + compactHeight + expandedContentHeight;
-    const BOTTOM_GAP = 12;
-
-    let targetDelta = 0;
-    if (cardTopY < visibleTopY) {
-      targetDelta = cardTopY - visibleTopY;
-    } else if (finalCardBottomY + BOTTOM_GAP > visibleBottomY) {
-      const overshoot = finalCardBottomY + BOTTOM_GAP - visibleBottomY;
-      const slack = cardTopY - visibleTopY;
-      targetDelta = Math.min(overshoot, slack);
-    }
-    if (targetDelta === 0) return;
-
-    const startScrollY = window.scrollY;
-    const targetScrollY = startScrollY + targetDelta;
-    const DURATION = 300; // matches the grid-rows CSS transition
-    const startTime = performance.now();
-    let rafId: number | null = null;
-    const tick = (now: number) => {
-      const elapsed = now - startTime;
-      const t = Math.min(elapsed / DURATION, 1);
-      const eased = 1 - Math.pow(1 - t, 3);
-      window.scrollTo(0, startScrollY + (targetScrollY - startScrollY) * eased);
-      if (t < 1) rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [expandedQuestionId, headerHeight, initialExpandedQuestionId]);
+  }, [group, loading, headerHeight]);
 
   // Listen for question:updated events (fired when close/reopen happens from within
   // a card). Merge the updates into our local group state so downstream UI —
@@ -1315,20 +1218,13 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   }, [groupQuestions, pollWrapperMap]);
 
   // === Virtualization helpers (anchor + observer wiring) ===
-  // The URL-targeted group is the layout-shift compensation anchor + the
-  // initial mount seed. When the URL signals "no expand" (suppressExpand →
-  // null), fall back to the last group so the document stays pinned to the
-  // bottom while cards above mount.
+  // Anchor = the last group, so the document stays pinned to the bottom
+  // while cards above mount via progressive fill (matches the initial-load
+  // tier-2 bottom-pin target for groups with no awaiting cards).
   const anchorGroupKey = useMemo(() => {
     if (groupedGroupQuestions.length === 0) return null;
-    if (initialExpandedQuestionId) {
-      const found = groupedGroupQuestions.find(g =>
-        g.subQuestions.some(p => p.id === initialExpandedQuestionId)
-      );
-      if (found) return found.key;
-    }
     return groupedGroupQuestions[groupedGroupQuestions.length - 1].key;
-  }, [groupedGroupQuestions, initialExpandedQuestionId]);
+  }, [groupedGroupQuestions]);
 
   // Drop mountedGroupKeys entries for groups that no longer exist (forget,
   // error reload). Always include the anchor. Progressive fill below adds
@@ -1463,16 +1359,15 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
   // from both useLayoutEffect (every render) and the ResizeObserver (every
   // layout change, including async growth that doesn't trigger a render).
   //
-  // - Card-anchor mode (initialExpandedQuestionId set): track the URL
-  //   anchor's offsetTop. When it changes — e.g. cards above mount with
+  // - Card-anchor mode (oldest awaiting question exists): track that
+  //   card's offsetTop. When it changes — e.g. cards above mount with
   //   H_actual ≠ H_estimate — scrollBy the delta so the anchor stays at
   //   the same viewport position. User scrolls between calls aren't
   //   disturbed because we only react to offsetTop deltas, not scrollY.
   //
-  // - Bottom-pin mode (initialExpandedQuestionId null, suppressExpand):
-  //   as the doc grows, keep scrollY at max so the user lands on the
-  //   bubble bar. The pin disables once the user scrolls >50px above
-  //   bottom.
+  // - Bottom-pin mode (no awaiting card): as the doc grows, keep scrollY
+  //   at max so the user lands on the bubble bar. The pin disables on
+  //   first user interaction (or after BOTTOM_PIN_DURATION_MS).
   // ===================================================================
   const applyScrollAdjustmentRef = useRef<() => void>(() => {});
   applyScrollAdjustmentRef.current = () => {
@@ -1481,7 +1376,7 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
     if (headerHeight === 0) return;
     const anchorId = resolvedAnchorRef.current;
     if (anchorId) {
-      // Tier 1 + 2: re-align the anchor card's top with the header.
+      // Card-anchor: re-align the anchor card's top with the header.
       // card.offsetTop is anchored to the card's DOM position, so
       // sibling resizes shift it only when cards ABOVE the anchor change
       // height — no oscillation against scrollHeight growth.
@@ -1493,7 +1388,7 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
       }
       return;
     }
-    // Tier 3: bounded bottom-pin. Re-fire while async content settles
+    // Tier 2: bounded bottom-pin. Re-fire while async content settles
     // (placeholders → real cards, results loads grow scrollHeight) so
     // the bubble bar stays at the bottom of the viewport. Deadline
     // bound + userInteracted gate cap the iOS visualViewport feedback
@@ -1560,29 +1455,6 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
     window.addEventListener(QUESTION_VOTES_CHANGED_EVENT, handler);
     return () => window.removeEventListener(QUESTION_VOTES_CHANGED_EVENT, handler);
   }, [group, patchGroupPolls]);
-
-  // Sync `?p=` to the expanded card via shallow replaceState — sharing the
-  // URL reopens the same card. Collapse leaves `?p=` on the just-collapsed
-  // poll so refresh doesn't surprise-collapse what the user was viewing.
-  //
-  // Pathname guard: GroupContent is ALSO mounted inside the slide-overlay
-  // (lib/slideOverlay.tsx) BEFORE router.push commits — at that moment the
-  // browser URL is still the source page (e.g. `/`). Writing `?p=` to that
-  // URL pollutes the source's history entry, so back-nav lands on `/?p=…`
-  // instead of `/`. Only sync when the current path is actually a `/g/...`
-  // route — i.e. this GroupContent is the real route, not a transient
-  // overlay copy.
-  useEffect(() => {
-    if (typeof window === 'undefined' || !group || !expandedQuestionId) return;
-    if (!window.location.pathname.startsWith('/g/')) return;
-    const wrapper = pollByQuestionId.get(expandedQuestionId) ?? null;
-    const routeId = wrapper?.short_id || expandedQuestionId;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get(POLL_QUERY_PARAM) === routeId) return;
-    params.set(POLL_QUERY_PARAM, routeId);
-    const next = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
-    window.history.replaceState(window.history.state, '', next);
-  }, [expandedQuestionId, pollByQuestionId]);
 
   // ===================================================================
   // Scroll-helper arrow visibility (path 3 — see strategy block above).
@@ -1774,39 +1646,29 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
             const question = group.anchor;
             const isClosed = !isQuestionOpen(question);
             const isAwaiting = isAwaitingResponse(question);
-            const isExpanded = expandedQuestionId === question.id;
             const isPressed = pressedQuestionId === question.id;
-            // A freshly-submitted placeholder card while it FLIP-animates
+            // A freshly-submitted placeholder card while it fade-in-animates
             // into its slot. Once POLL_HYDRATED_EVENT swaps the placeholder
             // for the real Poll, this flag clears and the card paints
             // normally.
             const isPlaceholder = pendingPollFirstQuestionId === question.id
               || isPendingPollId(question.poll_id);
-            const isVisible = visibleQuestionIds.has(question.id);
             const isSwipeThresholdActive = swipeThresholdQuestionId === question.id;
             const isTooltipActive = tooltipQuestionId === question.id;
             return (
               <GroupCardItem
                 key={question.id}
                 group={group as GroupCardGroup}
-                isExpanded={isExpanded}
+                groupRouteId={groupId}
                 isPressed={isPressed}
                 isPlaceholder={isPlaceholder}
                 isAwaiting={isAwaiting}
                 isClosed={isClosed}
-                isVisible={isVisible}
                 isSwipeThresholdActive={isSwipeThresholdActive}
                 isTooltipActive={isTooltipActive}
                 questionResultsMap={questionResultsMap}
                 userVoteMap={userVoteMap}
-                pendingPollChoices={pendingPollChoices}
-                wrapperSubmitState={wrapperSubmitState}
-                pollVoterNames={pollVoterNames}
-                pollSubmitting={pollSubmitting}
-                pollSubmitError={pollSubmitError}
                 cardFrameRefs={cardFrameRefs}
-                expandedWrapperRefs={expandedWrapperRefs}
-                subQuestionBallotRefs={subQuestionBallotRefs}
                 longPressTimerRef={longPressTimer}
                 isLongPressRef={isLongPress}
                 touchStartPosRef={touchStartPos}
@@ -1818,18 +1680,11 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
                 detachCardEl={detachCardEl}
                 resetSwipeRef={resetSwipeRef}
                 submitSwipeAbstain={submitSwipeAbstain}
-                setExpandedQuestionId={setExpandedQuestionId}
                 setPressedQuestionId={setPressedQuestionId}
                 setSwipeThresholdQuestionId={setSwipeThresholdQuestionId}
                 setTooltipQuestionId={setTooltipQuestionId}
                 setModalQuestion={setModalQuestion}
                 setShowModal={setShowModal}
-                setPendingVoteChange={setPendingVoteChange}
-                submitYesNoChoice={submitYesNoChoice}
-                setPollVoterName={setPollVoterName}
-                setPendingPollChoices={setPendingPollChoices}
-                setPendingPollSubmit={setPendingPollSubmit}
-                handleWrapperSubmitStateChange={handleWrapperSubmitStateChange}
               />
             );
           })}
@@ -1904,9 +1759,6 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
           setPendingAction(null);
           if (action.kind === 'forget') {
             forgetQuestion(action.question.id);
-            // If the forgotten question was expanded, collapse it so the URL `?p=`
-            // doesn't still point at the deleted poll.
-            setExpandedQuestionId((curr) => (curr === action.question.id ? null : curr));
             const remaining = group ? group.questions.filter((p) => p.id !== action.question.id) : [];
             if (group && remaining.length === 0) {
               // Drop the server-side `group_members` row so the group
@@ -2018,69 +1870,6 @@ export function GroupContent({ groupId, initialExpandedQuestionId = null }: Grou
         onCancel={() => setPendingAction(null)}
       />
       )}
-
-      {/* First-time votes on single-question polls bypass this modal entirely
-          (see GroupCardItem.dispatchYesNoTap); multi-group cards stage into
-          pendingPollChoices and confirm via the wrapper-level modal below. */}
-      {(() => {
-        const current = pendingVoteChange
-          ? userVoteMap.get(pendingVoteChange.questionId)?.choice
-          : undefined;
-        const label = (c: 'yes' | 'no' | 'abstain' | null | undefined) =>
-          c === 'abstain' ? 'Abstain' : c === 'yes' ? 'Yes' : c === 'no' ? 'No' : '';
-        const isChange = !!current;
-        return (
-          <ConfirmationModal
-            isOpen={!!pendingVoteChange}
-            title={isChange ? 'Change vote?' : 'Submit vote?'}
-            message={
-              pendingVoteChange
-                ? isChange
-                  ? `Change your vote from ${label(current)} to ${label(pendingVoteChange.newChoice)}?`
-                  : `Submit your vote: ${label(pendingVoteChange.newChoice)}?`
-                : ''
-            }
-            confirmText={
-              voteChangeSubmitting
-                ? 'Saving…'
-                : isChange
-                  ? 'Change vote'
-                  : 'Submit vote'
-            }
-            cancelText="Cancel"
-            confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
-            onConfirm={confirmVoteChange}
-            onCancel={() => setPendingVoteChange(null)}
-          />
-        );
-      })()}
-
-      {/* Wrapper-level Submit confirmation. subQuestions + stagedCount are
-          snapshotted at button-tap time so the modal stays consistent if
-          groupedGroupQuestions re-derives mid-confirmation. */}
-      <ConfirmationModal
-        isOpen={!!pendingPollSubmit}
-        title="Submit vote"
-        message={
-          pendingPollSubmit
-            ? pendingPollSubmit.stagedCount === 1
-              ? 'Submit your vote on this question?'
-              : `Submit your vote across ${pendingPollSubmit.stagedCount} questions?`
-            : ''
-        }
-        confirmText={pendingPollSubmit && pollSubmitting.has(pendingPollSubmit.pollId) ? 'Submitting…' : 'Submit Vote'}
-        cancelText="Cancel"
-        confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
-        onConfirm={() => {
-          if (!pendingPollSubmit) return;
-          void confirmPollSubmit(
-            pendingPollSubmit.pollId,
-            pendingPollSubmit.subQuestions,
-            pendingPollSubmit.preparedNonYesNo,
-          );
-        }}
-        onCancel={() => setPendingPollSubmit(null)}
-      />
 
       {/* Scroll-helper buttons — rendered via the floating-fab-portal so
           `position: fixed` is relative to the real viewport (outside the
@@ -2211,13 +2000,16 @@ function GroupPageInner() {
     return () => { cancelled = true; };
   }, [groupShortId, router, rootInitial]);
 
-  // `?p=<id>` → resolve to the cached Poll for the initial-expand target.
-  const targetPoll = useMemo<Poll | null>(() => {
-    if (typeof window === "undefined" || !pollParam || !rootPoll) return null;
-    return getCachedPollForShortId(pollParam);
-  }, [pollParam, rootPoll]);
-
-  const initialExpandedQuestionId = targetPoll?.questions[0]?.id ?? null;
+  // Legacy `?p=<id>` URLs (back when poll cards expanded in place) redirect
+  // to the new poll detail page at `/g/<group>/p/<pollShort>`. Wait until
+  // the group root has resolved so we know the canonical group route id.
+  useEffect(() => {
+    if (!pollParam) return;
+    if (typeof window === "undefined") return;
+    if (!rootPoll) return;
+    const targetGroupId = rootPoll.group_short_id || rootPoll.short_id || groupShortId;
+    router.replace(`/g/${targetGroupId}/p/${pollParam}`);
+  }, [pollParam, rootPoll, groupShortId, router]);
 
   if (error) {
     return (
@@ -2258,12 +2050,7 @@ function GroupPageInner() {
   const groupRouteId =
     rootPoll?.group_short_id || rootPoll?.short_id || groupShortId;
 
-  return (
-    <GroupContent
-      groupId={groupRouteId}
-      initialExpandedQuestionId={initialExpandedQuestionId}
-    />
-  );
+  return <GroupContent groupId={groupRouteId} />;
 }
 
 export default function GroupPage() {
