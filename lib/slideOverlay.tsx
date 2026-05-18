@@ -16,6 +16,7 @@
  *   - `groupInfo`       → `<GroupInfoView>` (member list / hero avatar)
  *   - `groupEditTitle`  → `<GroupEditTitleView>` (title + image staging)
  *   - `pollDetail`      → `<PollDetailView>` (full poll content, no card)
+ *   - `pollInfo`        → `<PollInfoView>` (poll-level actions + respondents)
  *
  * All render inside the group-family layout (no template chrome, fixed
  * GroupHeader rendered by the page itself), so the same outer wrapper works
@@ -53,6 +54,7 @@ import { GroupContent } from "@/app/g/[groupShortId]/GroupPage";
 import { GroupInfoView } from "@/app/g/[groupShortId]/info/page";
 import { GroupEditTitleView } from "@/app/g/[groupShortId]/edit-title/page";
 import { PollDetailView } from "@/app/g/[groupShortId]/p/[pollShortId]/page";
+import { PollInfoView } from "@/app/g/[groupShortId]/p/[pollShortId]/info/page";
 import { EmptyPlaceholder } from "@/app/g/page";
 
 const SLIDE_DURATION_MS = 350; // iOS push duration. Tune here only.
@@ -88,14 +90,41 @@ export function slideToGroup(detail: {
 export function slideToPollDetail({
   groupId,
   pollShortId,
+  direction = 'forward',
+  useHistoryBack = false,
 }: {
   groupId: string;
   pollShortId: string;
+  direction?: 'forward' | 'back';
+  useHistoryBack?: boolean;
 }): void {
   dispatchSlide({
     href: `/g/${groupId}/p/${pollShortId}`,
-    direction: 'forward',
+    direction,
+    useHistoryBack,
     kind: { type: 'pollDetail', groupId, pollShortId },
+  });
+}
+
+/** Slide-in the poll's /info subroute. Used by GroupHeader's title click on
+ *  the poll detail page. Hosts forget / close / reopen / cutoff actions and
+ *  the full respondent list. */
+export function slideToPollInfo({
+  groupId,
+  pollShortId,
+  direction = 'forward',
+  useHistoryBack = false,
+}: {
+  groupId: string;
+  pollShortId: string;
+  direction?: 'forward' | 'back';
+  useHistoryBack?: boolean;
+}): void {
+  dispatchSlide({
+    href: `/g/${groupId}/p/${pollShortId}/info`,
+    direction,
+    useHistoryBack,
+    kind: { type: 'pollInfo', groupId, pollShortId },
   });
 }
 
@@ -188,6 +217,14 @@ function renderForKind(kind: SlideOverlayKind): React.ReactNode {
       return (
         <PollDetailView
           key={`${kind.groupId}/${kind.pollShortId}`}
+          groupId={kind.groupId}
+          pollShortId={kind.pollShortId}
+        />
+      );
+    case 'pollInfo':
+      return (
+        <PollInfoView
+          key={`${kind.groupId}/${kind.pollShortId}/info`}
           groupId={kind.groupId}
           pollShortId={kind.pollShortId}
         />
