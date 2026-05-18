@@ -692,10 +692,15 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
         })()}
 
         <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800">
+          <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
+            Respondents
+          </h2>
           <VoterList
+            singleLine
             staticVoterNames={poll.voter_names ?? []}
             staticAnonymousCount={poll.anonymous_count ?? 0}
-            label="Respondents"
+            emptyText="No voters yet"
+            className="px-1"
           />
         </div>
 
