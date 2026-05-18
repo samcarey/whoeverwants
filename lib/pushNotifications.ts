@@ -282,9 +282,16 @@ async function runCapacitorPushRegistration(): Promise<string | null> {
     resolveToken = resolve;
     rejectToken = reject;
   });
+  // Wait up to 60s for the APNS token. iOS's first-install `registerFor-
+  // RemoteNotifications` round-trip can take 20-40s before the device
+  // token comes back (the OS has to establish a fresh APNS connection;
+  // before that, the registration event simply doesn't fire). 15s was
+  // too tight — captured a real failure in `latest.whoeverwants.com`'s
+  // client log buffer immediately after a fresh TestFlight install.
+  // Bootstrap is fire-and-forget so a 60s wait costs nothing user-visible.
   const timeout = setTimeout(() => {
     rejectToken(new Error("Timed out waiting for APNS registration"));
-  }, 15000);
+  }, 60000);
   let regHandle: ListenerHandle | undefined;
   let errHandle: ListenerHandle | undefined;
   try {
