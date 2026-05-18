@@ -100,14 +100,9 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const branchName = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '';
   const [commitHash, setCommitHash] = useState(vercelHash);
   const [badgeTarget, setBadgeTarget] = useState<HTMLElement | null>(null);
-  // Same Vercel build serves whoeverwants.com (prod) AND latest.whoeverwants.com (canary),
-  // so the latest-tier badge has to be enabled at runtime via hostname check rather than
-  // baked into the bundle. Dev hosts (next dev) get it via showTimeBadge from layout.tsx.
-  const [showOnLatest, setShowOnLatest] = useState(false);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (window.location.hostname === 'latest.whoeverwants.com') setShowOnLatest(true);
-  }, []);
+  // Same Vercel build serves whoeverwants.com (prod) and latest.whoeverwants.com (canary),
+  // so canary detection is runtime-only.
+  const [showOnLatest] = useState(() => typeof window !== 'undefined' && window.location.hostname === 'latest.whoeverwants.com');
   const showBadge = showTimeBadge || showOnLatest;
   const { props: badgeLongPressProps } = useLongPress(() => setShowModal(true));
 
