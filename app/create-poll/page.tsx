@@ -1545,22 +1545,27 @@ export function CreateQuestionContent() {
   // last bubble row. env(safe-area-inset-bottom) isn't usable here — it
   // returns 0 when the URL bar is visible (the case we need to handle).
   const bubbleBar = (
-    <div className="px-3 pt-3 pb-4 flex flex-wrap justify-center gap-2">
-      {BUBBLE_ENTRIES.map((entry) => (
-        <button
-          key={entry.value}
-          type="button"
-          onClick={() => openModalFor(entry.value)}
-          disabled={isLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
-          aria-label={`Add ${entry.label} question`}
-        >
-          {entry.icon && (
-            <span className="text-base leading-none" aria-hidden>{entry.icon}</span>
-          )}
-          <span>{entry.label}</span>
-        </button>
-      ))}
+    <div className="pt-3 pb-4">
+      <h2 className="px-3 pb-2 text-center text-[17.5px] font-medium text-gray-600 dark:text-gray-400">
+        Create a New Poll
+      </h2>
+      <div className="px-3 flex flex-wrap justify-center gap-2">
+        {BUBBLE_ENTRIES.map((entry) => (
+          <button
+            key={entry.value}
+            type="button"
+            onClick={() => openModalFor(entry.value)}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
+            aria-label={`Add ${entry.label} question`}
+          >
+            {entry.icon && (
+              <span className="text-base leading-none" aria-hidden>{entry.icon}</span>
+            )}
+            <span>{entry.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 
