@@ -101,7 +101,9 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           </h1>
         </div>
 
-        <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
+        <NotificationSettingsCard groupRouteId={groupId} />
+
+        <h2 className="mt-6 px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
           {totalCount} {totalCount === 1 ? 'Member' : 'Members'}
         </h2>
 
@@ -130,8 +132,6 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
             })}
           </ul>
         </div>
-
-        <NotificationSettingsCard groupRouteId={groupId} />
       </div>
     </>
   );
