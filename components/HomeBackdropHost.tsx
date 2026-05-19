@@ -77,6 +77,14 @@ export default function HomeBackdropHost(): React.ReactElement | null {
           inset: 0,
           zIndex: 0,
           background: "var(--background)",
+          // `overflow-y: auto` + `overflow-x: hidden` instead of just
+          // `overflow-y: auto`. Per CSS spec, when one axis is non-
+          // `visible` the other coerces from `visible` to `auto` — so a
+          // bare `overflow-y: auto` turns into `auto/auto` and surfaces a
+          // horizontal scrollbar (the cards-area's `-mx-4` extends ~1 rem
+          // past the viewport edge). Explicit `overflow-x: hidden`
+          // suppresses it.
+          overflowX: "hidden",
           overflowY: "auto",
           // Mirror template.tsx's horizontal safe-area wrapper that the
           // real home page lives inside. Without this, the backdrop
