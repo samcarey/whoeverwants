@@ -74,6 +74,23 @@ body {
   display: none;  /* Safari and Chrome */
 }
 
+/* Applied to <body> while the swipe-back gesture is active. The gesture's
+ * transform shifts the page content past the viewport edges; without this,
+ * the browser surfaces a page-level horizontal scrollbar at the bottom and
+ * may flash the vertical scrollbar too. overflow-x: clip suppresses the
+ * horizontal scroll without creating a scroll context (which would
+ * otherwise reset body's scroll position on iOS); scrollbar-width: none
+ * + the ::-webkit-scrollbar rule hide the vertical bar that some browsers
+ * keep persistently visible. */
+body.swipe-back-active {
+  overflow-x: clip;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+body.swipe-back-active::-webkit-scrollbar {
+  display: none;
+}
+
 /* Trim a text box to its cap-height / alphabetic-baseline bounds so
  * flex centering lines up the visible glyphs rather than the padded
  * line box. Used on time-slot bubble labels which are purely

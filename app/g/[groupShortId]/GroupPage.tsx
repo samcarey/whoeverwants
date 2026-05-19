@@ -783,11 +783,18 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // managing the state here directly.
   const showHomeBackdrop = () => {
     if (typeof window !== 'undefined') {
+      // Suppress the page-level scrollbars the transform would surface
+      // (the swipe wrapper's translateX extends content past the viewport
+      // edges, which the browser would otherwise reflect as page-wide
+      // scrollbars at the bottom + right). Class is removed on
+      // snap-back / cancel / commit cleanup via hideHomeBackdrop.
+      document.body.classList.add('swipe-back-active');
       window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT));
     }
   };
   const hideHomeBackdrop = () => {
     if (typeof window !== 'undefined') {
+      document.body.classList.remove('swipe-back-active');
       window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
     }
   };

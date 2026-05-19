@@ -77,6 +77,12 @@ export default function Home() {
       badge.style.transform = '';
       badge.style.transition = '';
     }
+    // Clear the swipe-back-active body class, which suppresses page-level
+    // scrollbars during the gesture. On snap-back/cancel paths the
+    // GroupPage handler removes it directly; on commit, GroupPage has
+    // unmounted by the time we land here, so home's mount effect is the
+    // last place that can clean it up.
+    document.body.classList.remove('swipe-back-active');
     window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
   }, []);
 
