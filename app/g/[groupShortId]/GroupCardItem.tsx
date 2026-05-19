@@ -451,17 +451,14 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             right column). Renders only when there's a non-empty pill so
             empty groups don't leave a stray gap. `mb-3` gives the
             user-requested breathing room before the bottom row. CSS
-            `zoom: 1.4` scales the pill (font, padding, badge, etc.)
-            proportionally by 40% while still reflowing siblings — unlike
-            `transform: scale` which leaves the original box behind. Zoom
-            is supported in every modern browser we ship to (Chromium,
-            WebKit, Firefox ≥ 126). */}
+            `zoom: 1.4` on an inner block element (NOT the flex container)
+            scales the pill (font, padding, badge, etc.) proportionally
+            by 40% while reflowing siblings — applying zoom to the flex
+            wrapper itself produces inconsistent results in WebKit, so we
+            scope it to a plain `<div>` inside the flex parent. */}
         {!isPlaceholder && pillEl && (
-          <div
-            className="mt-2 mb-3 flex justify-center min-w-0"
-            style={{ zoom: 1.4 }}
-          >
-            {pillEl}
+          <div className="mt-2 mb-3 flex justify-center min-w-0">
+            <div style={{ zoom: 1.4 }}>{pillEl}</div>
           </div>
         )}
 
