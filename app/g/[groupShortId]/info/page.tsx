@@ -66,7 +66,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
       {/* Floating opaque-bubble back + Edit buttons over a transparent top bar. */}
       <button
         onClick={goBack}
-        className="fixed left-3 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 shadow-md active:opacity-70"
+        className="fixed left-3 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 shadow-md active:opacity-70"
         style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
         aria-label="Go back"
       >
@@ -76,7 +76,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
       </button>
       <button
         onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
-        className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 shadow-md active:opacity-70 text-blue-600 dark:text-blue-400 text-sm font-medium"
+        className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 shadow-md active:opacity-70 text-blue-600 dark:text-blue-400 text-sm font-medium"
         style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
         aria-label="Edit group title"
       >
