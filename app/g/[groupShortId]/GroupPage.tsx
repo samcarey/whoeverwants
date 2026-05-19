@@ -1653,6 +1653,16 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           willChange: overlayCardsOffset ? 'transform' : undefined,
         }}
       >
+        {/* Top divider above the first poll — pairs with each card's
+            `border-b-2` so the rectangles are bracketed top + bottom.
+            Rendered only when there's at least one poll so empty groups
+            don't show a stray line above the bubble bar. */}
+        {groupedGroupQuestions.length > 0 && (
+          <div
+            className="border-t-2 border-gray-200 dark:border-gray-800"
+            aria-hidden="true"
+          />
+        )}
         {groupedGroupQuestions.map((group) => {
             // Virtualized window: groups outside ±2 viewport heights of the
             // visible region render as a measured-height placeholder div. The
@@ -1667,7 +1677,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
                 <div
                   key={`placeholder-${group.key}`}
                   ref={(el) => { el ? attachCardEl(el, anchorId, group.key) : detachCardEl(anchorId); }}
-                  className="border-b border-gray-200 dark:border-gray-800"
+                  className="border-b-2 border-gray-200 dark:border-gray-800"
                   style={{ height: placeholderHeight }}
                   aria-hidden="true"
                 />

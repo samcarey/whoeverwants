@@ -411,7 +411,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   return (
     <div
       ref={setCardEl}
-      className={`relative border-b border-gray-200 dark:border-gray-800 ${
+      className={`relative border-b-2 border-gray-200 dark:border-gray-800 ${
         isPlaceholder ? "card-pending-enter" : ""
       }`}
     >
