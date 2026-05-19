@@ -450,9 +450,17 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
         {/* Pill row: centered across the FULL rectangle width (not just the
             right column). Renders only when there's a non-empty pill so
             empty groups don't leave a stray gap. `mb-3` gives the
-            user-requested breathing room before the bottom row. */}
+            user-requested breathing room before the bottom row. CSS
+            `zoom: 1.4` scales the pill (font, padding, badge, etc.)
+            proportionally by 40% while still reflowing siblings — unlike
+            `transform: scale` which leaves the original box behind. Zoom
+            is supported in every modern browser we ship to (Chromium,
+            WebKit, Firefox ≥ 126). */}
         {!isPlaceholder && pillEl && (
-          <div className="mt-2 mb-3 flex justify-center min-w-0">
+          <div
+            className="mt-2 mb-3 flex justify-center min-w-0"
+            style={{ zoom: 1.4 }}
+          >
             {pillEl}
           </div>
         )}
