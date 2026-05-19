@@ -755,8 +755,8 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // pre-effect state.
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group], 80);
 
-  // Swipe-back gesture: dragging leftward on the content slides the page
-  // off to the left with home revealed underneath (the destination renders
+  // Swipe-back gesture: dragging rightward on the content slides the page
+  // off to the right with home revealed underneath (the destination renders
   // after router.push). Refs (not state) drive the transform during the
   // gesture so per-frame motion doesn't trigger React re-renders.
   // `touch-action: pan-y` on the wrapper hands horizontal pans to us while
@@ -835,17 +835,17 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     const dy = e.touches[0].clientY - st.startY;
     if (!st.swiping) {
       // Decide direction once motion crosses the threshold. Require horizontal
-      // motion to be dominant AND leftward; anything else (vertical scroll,
-      // rightward drag) is not our gesture.
+      // motion to be dominant AND rightward; anything else (vertical scroll,
+      // leftward drag) is not our gesture.
       if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-      if (Math.abs(dy) >= Math.abs(dx) || dx >= 0) {
+      if (Math.abs(dy) >= Math.abs(dx) || dx <= 0) {
         st.ignored = true;
         return;
       }
       st.swiping = true;
     }
     // Cap at 0 so the user can't pull the page past its starting edge.
-    const offset = Math.min(0, dx);
+    const offset = Math.max(0, dx);
     applySwipeTransform(offset, 0);
   };
 
@@ -858,11 +858,11 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     const endX = e.changedTouches[0]?.clientX ?? st.startX;
     const dx = endX - st.startX;
     const dt = Date.now() - st.startTime;
-    const offset = Math.min(0, dx);
-    const velocity = -dx / Math.max(1, dt); // px/ms, positive = leftward speed
+    const offset = Math.max(0, dx);
+    const velocity = dx / Math.max(1, dt); // px/ms, positive = rightward speed
     const vw = window.innerWidth;
     const shouldCommit =
-      Math.abs(offset) >= vw * 0.3 || velocity >= 0.5;
+      offset >= vw * 0.3 || velocity >= 0.5;
     if (shouldCommit) {
       st.committing = true;
       rememberCurrentScroll(groupScrollKey(groupId));
@@ -871,12 +871,12 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // the poll detail page instead of home.
       const wrapper = swipeWrapperRef.current;
       if (wrapper) wrapper.style.pointerEvents = 'none';
-      const remaining = vw - Math.abs(offset);
+      const remaining = vw - offset;
       const duration = Math.max(
         140,
         Math.min(360, remaining / Math.max(0.4, velocity)),
       );
-      applySwipeTransform(-vw, duration);
+      applySwipeTransform(vw, duration);
       window.setTimeout(() => {
         router.push('/');
       }, duration);
