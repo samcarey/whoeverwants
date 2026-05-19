@@ -3,7 +3,7 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, Suspense } from "react";
 import { apiGetQuestionById, apiGetPollById } from "@/lib/api";
-import { EMPTY_GROUP_HINT, getGroupHrefForPoll } from "@/lib/groupUtils";
+import { getGroupHrefForPoll } from "@/lib/groupUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupHeader from "@/components/GroupHeader";
@@ -87,10 +87,7 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
           portal — mismatched padding made the bubbles rewrap on
           handoff. */}
       <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
-        <p className="px-4 text-base text-gray-700 dark:text-gray-300 text-center">
-          {EMPTY_GROUP_HINT}
-        </p>
-        <div id={DRAFT_POLL_PORTAL_ID} className="mt-4" />
+        <div id={DRAFT_POLL_PORTAL_ID} />
       </div>
     </>
   );

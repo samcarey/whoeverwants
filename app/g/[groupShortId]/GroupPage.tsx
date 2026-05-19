@@ -5,7 +5,7 @@ import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getMyGroups } from "@/lib/simpleQuestionQueries";
-import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, EMPTY_GROUP_HINT, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
+import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
 // POLL_QUERY_PARAM is still used by `GroupPageInner` to redirect legacy
 // `?p=<pollShort>` URLs to the new `/g/<group>/p/<pollShort>` route.
 import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
@@ -1691,11 +1691,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
             );
           })}
 
-        {group?.isEmpty && (
-          <p className="px-4 pt-6 pb-4 text-base text-gray-700 dark:text-gray-300 text-center">
-            {EMPTY_GROUP_HINT}
-          </p>
-        )}
         <div id={DRAFT_POLL_PORTAL_ID} />
       </div>
 
