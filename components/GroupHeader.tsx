@@ -18,6 +18,12 @@ export interface GroupHeaderProps {
    *  "Poll details" since tapping there opens the per-poll info page. */
   titleAriaLabel?: string;
   onBack?: () => void;
+  /** Icon shown in the left-edge button. 'arrow' (default) is a chevron-left
+   *  for sub-routes that conceptually "go back" to a parent. 'menu' is a
+   *  hamburger-style three-line glyph (third line shorter) used on the
+   *  group root and poll detail pages — top-level surfaces where the
+   *  control still navigates back but reads more as primary nav. */
+  backIconVariant?: "arrow" | "menu";
   rightSlot?: React.ReactNode;
 }
 
@@ -53,11 +59,32 @@ export default function GroupHeader({
   onTitleClick,
   titleAriaLabel = "Group details",
   onBack,
+  backIconVariant = "arrow",
   rightSlot,
 }: GroupHeaderProps) {
   const router = useRouter();
   const hasRightSlot = !!rightSlot;
   const handleBack = onBack ?? (() => navigateWithTransition(router, '/', 'back'));
+
+  // Menu variant: same bubble treatment as the /info page's floating back
+  // button — white circle with a thin gray border — so it reads as the
+  // "primary nav" affordance. Arrow variant stays a bare glyph since the
+  // sub-routes it lives on are about returning to a parent.
+  const backIcon = backIconVariant === "menu" ? (
+    <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12h16" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 18h11" />
+    </svg>
+  ) : (
+    <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+    </svg>
+  );
+  const backIconSlotClass =
+    backIconVariant === "menu"
+      ? "w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600"
+      : "w-10 h-10 flex items-center justify-center";
 
   const titleBlock = title ? (
     <>
@@ -105,10 +132,8 @@ export default function GroupHeader({
           className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
           aria-label="Go back"
         >
-          <span className="w-10 h-10 flex items-center justify-center">
-            <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
+          <span className={backIconSlotClass}>
+            {backIcon}
           </span>
         </button>
         {onTitleClick && titleBlock ? (

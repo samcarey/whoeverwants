@@ -1615,6 +1615,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           rememberCurrentScroll(groupScrollKey(groupId));
           navigateWithTransition(router, '/', 'back');
         }}
+        backIconVariant="menu"
       />
 
       {/* paddingTop reserves space for the fixed header above. The card
