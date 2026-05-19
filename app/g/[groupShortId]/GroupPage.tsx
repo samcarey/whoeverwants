@@ -1656,7 +1656,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
                 <div
                   key={`placeholder-${group.key}`}
                   ref={(el) => { el ? attachCardEl(el, anchorId, group.key) : detachCardEl(anchorId); }}
-                  className="mr-1.5 mb-3"
+                  className="border-b border-gray-200 dark:border-gray-800"
                   style={{ height: placeholderHeight }}
                   aria-hidden="true"
                 />
