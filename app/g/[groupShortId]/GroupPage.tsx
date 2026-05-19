@@ -786,21 +786,29 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // Suppress the page-level scrollbars the transform would surface
       // (the swipe wrapper's translateX extends content past the viewport
       // edges, which the browser would otherwise reflect as page-wide
-      // scrollbars at the bottom + right). overflow-x: clip suppresses
-      // the horizontal scroll without creating a new scroll context —
-      // important on iOS where overflow: hidden on <body> can reset
-      // scroll position. scrollbarWidth: 'none' hides the vertical bar.
-      // Inline styles (vs a CSS class) so the rule unambiguously beats
-      // any cascaded body styling.
-      document.body.style.overflowX = 'clip';
-      (document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string }).scrollbarWidth = 'none';
+      // scrollbars at the bottom + right). overflow-x: clip on both
+      // <html> and <body> suppresses the horizontal scroll without
+      // creating a new scroll context (which would otherwise reset
+      // body's scroll position on iOS); scrollbar-width: none hides the
+      // vertical bar. Both elements need to be clipped because html
+      // looks at body's content overflow for its own scrollable size.
+      const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+      const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+      htmlS.overflowX = 'clip';
+      htmlS.scrollbarWidth = 'none';
+      bodyS.overflowX = 'clip';
+      bodyS.scrollbarWidth = 'none';
       window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT));
     }
   };
   const hideHomeBackdrop = () => {
     if (typeof window !== 'undefined') {
-      document.body.style.overflowX = '';
-      (document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string }).scrollbarWidth = '';
+      const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+      const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+      htmlS.overflowX = '';
+      htmlS.scrollbarWidth = '';
+      bodyS.overflowX = '';
+      bodyS.scrollbarWidth = '';
       window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
     }
   };
