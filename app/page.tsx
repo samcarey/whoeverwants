@@ -63,8 +63,20 @@ export default function Home() {
   // we tell the host to unmount. Inside useLayoutEffect so the dispatch
   // happens before the browser paints (otherwise the backdrop briefly
   // sits over the rendered home page).
+  //
+  // Also resets the commit-age badge's swipe transform here — the badge
+  // portal lives in the persistent template chrome (shared with the
+  // group page), so any translateX the group's swipe applied to it
+  // would otherwise strand it off-screen on home. Resetting in the same
+  // useLayoutEffect that dismisses the backdrop syncs both transitions
+  // into the same paint pass.
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
+    const badge = document.getElementById('commit-badge-portal');
+    if (badge) {
+      badge.style.transform = '';
+      badge.style.transition = '';
+    }
     window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
   }, []);
 

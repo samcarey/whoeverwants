@@ -806,15 +806,17 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         transitionMs > 0
           ? `transform ${transitionMs}ms cubic-bezier(0.32, 0.72, 0, 1)`
           : 'none';
-      // Header + cards wrapper + scroll arrows all slide together with the
-      // gesture. Arrows are portaled to body-level for the
-      // responsive-scaling-escape, so they're transformed individually via
-      // their own refs rather than inherited from a parent.
+      // Header + cards wrapper + scroll arrows + commit-age badge all
+      // slide together with the gesture. Arrows and badge are portaled to
+      // body-level (escaping the responsive-scaling-container's transform
+      // on desktop), so they're transformed individually rather than
+      // inherited from a parent.
       const targets: (HTMLElement | null)[] = [
         swipeWrapperRef.current,
         headerRef.current,
         upArrowRef.current,
         downArrowRef.current,
+        document.getElementById('commit-badge-portal'),
       ];
       for (const el of targets) {
         if (!el) continue;
@@ -831,6 +833,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       headerRef.current,
       upArrowRef.current,
       downArrowRef.current,
+      document.getElementById('commit-badge-portal'),
     ];
     for (const el of targets) {
       if (!el) continue;
