@@ -1636,6 +1636,17 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         className="pb-2"
         style={{
           paddingTop: `calc(${headerHeight}px + var(--group-card-gap, 0px))`,
+          // Negative horizontal margin cancels the outer template wrapper's
+          // `paddingLeft/Right: max(0.35rem, env(safe-area-inset-*))` so the
+          // edge-to-edge poll rectangles + dividers butt against the body's
+          // safe-area content edge. Tailwind v4's `-mx-4` on the template's
+          // inner wrapper is shadowed by the adjacent `mx-auto` (same
+          // specificity, `mx-auto` lands later in the generated CSS and
+          // wins), so we can't rely on that path. The 0.35rem overhang on
+          // desktop is well inside the inner template's `sm:px-4` (1rem)
+          // padding, so it doesn't escape the centered max-w-4xl bounds.
+          marginLeft: 'calc(-1 * max(0.35rem, env(safe-area-inset-left, 0px)))',
+          marginRight: 'calc(-1 * max(0.35rem, env(safe-area-inset-right, 0px)))',
           transform: overlayCardsOffset
             ? `translate3d(0, ${-overlayCardsOffset}px, 0)`
             : undefined,
