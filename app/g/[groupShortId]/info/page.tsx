@@ -5,10 +5,9 @@ import { useParams } from "next/navigation";
 import { hasAppHistory } from "@/lib/viewTransitions";
 import { slideToGroupRoot, slideToGroupEditTitle } from "@/lib/slideOverlay";
 import { useGroup } from "@/lib/useGroup";
-import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupAvatar from "@/components/GroupAvatar";
-import GroupHeader from "@/components/GroupHeader";
 import GroupShareButton from "@/components/GroupShareButton";
+import HeaderPortal from "@/components/HeaderPortal";
 import InitialBubble from "@/components/InitialBubble";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
@@ -27,7 +26,6 @@ export function GroupInfoView({ groupId }: { groupId: string }) {
 }
 
 function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; groupId: string }) {
-  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
   const myUserImageUrl = useMyUserImageUrl();
 
   const goBack = () => {
@@ -66,39 +64,51 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
 
   return (
     <>
-      <GroupHeader
-        headerRef={headerRef}
-        onBack={goBack}
-        rightSlot={
-          <button
-            onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
-            className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
-            aria-label="Edit group title"
-          >
-            <span className="w-10 h-10 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-medium">
-              Edit
-            </span>
-          </button>
-        }
-      />
+      {/* Portaled outside .responsive-scaling-container so position:fixed is
+       *  viewport-relative on desktop (the scaling transform would otherwise
+       *  make these buttons fixed to the scaled container, not the viewport). */}
+      <HeaderPortal>
+        <button
+          onClick={goBack}
+          className="fixed left-3 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+          aria-label="Go back"
+        >
+          <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <button
+          onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
+          className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70 text-blue-600 dark:text-blue-400 text-sm font-medium"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+          aria-label="Edit group title"
+        >
+          Edit
+        </button>
+      </HeaderPortal>
 
-      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
+      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1.05rem)' }}>
         <div className="flex flex-col items-center text-center mb-[3.2px]">
-          <GroupAvatar
-            imageUrl={group.imageUrl}
-            names={heroNames}
-            anonymousCount={group.anonymousRespondentCount}
-            sizeClassName="w-[10.5rem]"
-          />
-          <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white break-words">
+          <div className="relative inline-block">
+            <GroupAvatar
+              imageUrl={group.imageUrl}
+              names={heroNames}
+              anonymousCount={group.anonymousRespondentCount}
+              sizeClassName="w-[8.4rem]"
+            />
+            <div className="absolute left-full top-1/2 -translate-y-1/2 ml-[0.09rem]">
+              <GroupShareButton routeId={groupId} title={group.title} />
+            </div>
+          </div>
+          <h1 className="mt-[0.2rem] text-3xl font-bold text-gray-900 dark:text-white break-words">
             {displayTitle}
           </h1>
-          <div className="mt-[1.7px]">
-            <GroupShareButton routeId={groupId} title={group.title} />
-          </div>
         </div>
 
-        <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
+        <NotificationSettingsCard groupRouteId={groupId} className="mt-[0.96rem]" />
+
+        <h2 className="mt-6 px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
           {totalCount} {totalCount === 1 ? 'Member' : 'Members'}
         </h2>
 
@@ -127,8 +137,6 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
             })}
           </ul>
         </div>
-
-        <NotificationSettingsCard groupRouteId={groupId} />
       </div>
     </>
   );

@@ -50,9 +50,10 @@ import { haptic } from "@/lib/haptics";
 
 interface Props {
   groupRouteId: string;
+  className?: string;
 }
 
-export default function NotificationSettingsCard({ groupRouteId }: Props) {
+export default function NotificationSettingsCard({ groupRouteId, className = "mt-6" }: Props) {
   const [capability, setCapability] = useState<PushCapability | null>(null);
   const [iosPermission, setIosPermission] =
     useState<CapacitorPushPermission | null>(null);
@@ -160,7 +161,7 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
   const helpText = (() => {
     if (capability === null) return null;
     if (!capability.anySupported) {
-      return "Notifications are not supported on this device.";
+      return "Notifications are not supported on this platform.";
     }
     if (capability.permissionDenied) {
       return "Notifications are blocked in your browser settings.";
@@ -175,7 +176,7 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
   })();
 
   return (
-    <section className="mt-6">
+    <section className={className}>
       <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
         Notifications
       </h2>
