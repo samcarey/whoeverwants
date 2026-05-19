@@ -89,6 +89,31 @@ export function formatCompactCountdown(diffMs: number): string {
   return `${Math.floor(days / 365)}y`;
 }
 
+/** Wide-threshold compact countdown — same shape as `formatCompactCountdown`
+ *  but promotes to the next unit only at ≥ 2 of it. Buckets:
+ *    0–119s → `Ns`, 2m–119m → `Nm`, 2h–47h → `Nh`, 2d–13d → `Nd`,
+ *    2w–8w → `Nw`, 2mo–23mo → `Nmo`, ≥2y → `Ny`.
+ *  Preserves more precision near the boundary so a viewer never sees a
+ *  "1h" label that actually meant "60m left"; useful when the countdown
+ *  is the only timing signal visible (the group-page poll rows' status
+ *  corner, where the user wants to know whether they have ~89 minutes or
+ *  ~1 hour 29 minutes). */
+export function formatCompactCountdownWide(diffMs: number): string {
+  if (diffMs <= 0) return 'Expired';
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 120) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 120) return `${minutes}m`;
+  const hours = Math.floor(seconds / 3600);
+  if (hours < 48) return `${hours}h`;
+  const days = Math.floor(seconds / 86400);
+  if (days < 14) return `${days}d`;
+  if (days < 60) return `${Math.floor(days / 7)}w`;
+  const months = Math.floor(days / 30);
+  if (months < 24) return `${months}mo`;
+  return `${Math.floor(days / 365)}y`;
+}
+
 /** Format "label (clock time)" showing the absolute time `minutes` from now.
  *  Returns just the label on the server or when minutes <= 0. */
 export function formatDeadlineLabel(minutes: number, label: string): string {

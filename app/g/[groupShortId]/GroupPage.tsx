@@ -39,7 +39,7 @@ import GroupHeader from "@/components/GroupHeader";
 import { forgetQuestion } from "@/lib/forgetQuestion";
 import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
-import { GroupCardItem, type SwipeState, type GroupCardGroup } from "./GroupCardItem";
+import { GroupCardItem, ROW_DIVIDER_CLASS, type GroupCardGroup } from "./GroupCardItem";
 
 import type { Group } from "@/lib/groupUtils";
 
@@ -267,8 +267,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     }
     return seed;
   });
-  // Group page only needs the userVoteMap (read by compact yes/no pills) and
-  // submitSwipeAbstain (drives the left-swipe-to-abstain gesture on cards).
+  // Group page only needs the userVoteMap (read by compact yes/no pills).
   // Full vote flows (taps, edits, multi-question Submit) live on the poll
   // detail page now. votedQuestionIds / abstainedQuestionIds remain here
   // because they're seeded synchronously alongside the cached group and
@@ -276,18 +275,12 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   const {
     userVoteMap,
     setUserVoteMap,
-    submitSwipeAbstain,
   } = useGroupVoting({ group, setVotedQuestionIds, setAbstainedQuestionIds });
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
   const touchJustHandled = useRef(false);
   // Refs for each card wrapper so we can scroll the expanded card into view
   // and observe viewport intersection.
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  // Same key as cardRefs but targets the inner BORDERED frame of each card —
-  // the visible "card shape" the user perceives. Swipe-to-abstain animates
-  // this element directly so the inner border + status footer slide as one
-  // unit (the surrounding grid wrapper / hanging icon column stay still).
-  const cardFrameRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
 
   // === Windowed virtualization ===
@@ -365,35 +358,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
   const [pressedQuestionId, setPressedQuestionId] = useState<string | null>(null);
-
-  // Swipe-to-abstain state. Only one card can be swiped at a time, so a
-  // single shared ref tracks the active gesture. Per-frame transforms go
-  // straight to the cardFrame DOM ref for 60fps; the bold-text state below
-  // re-renders only on threshold crossings (driven by `pastAbstainPoint`).
-  const swipeRef = useRef<SwipeState>({
-    questionId: null,
-    pollId: null,
-    cardWidth: 0,
-    startX: 0,
-    startY: 0,
-    offsetPx: 0,
-    swiping: false,
-    pastAbstainPoint: false,
-  });
-  // Mirrors `touchJustHandled` for the swipe gesture so the synthesized
-  // click after the touchend doesn't toggle expand.
-  const swipeJustHandled = useRef(false);
-  const [swipeThresholdQuestionId, setSwipeThresholdQuestionId] = useState<string | null>(null);
-  // Stable callback identity for GroupCardItem props — empty deps because
-  // every reference inside is itself stable (refs + useState dispatcher).
-  const resetSwipeRef = useCallback(() => {
-    swipeRef.current.questionId = null;
-    swipeRef.current.pollId = null;
-    swipeRef.current.swiping = false;
-    swipeRef.current.pastAbstainPoint = false;
-    swipeRef.current.offsetPx = 0;
-    setSwipeThresholdQuestionId(null);
-  }, []);
 
   // On cache hit, defer the background refresh via requestIdleCallback so it
   // doesn't compete with React commit during a view transition.
@@ -1636,12 +1600,33 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         className="pb-2"
         style={{
           paddingTop: `calc(${headerHeight}px + var(--group-card-gap, 0px))`,
+          // Negative horizontal margin cancels the outer template wrapper's
+          // `paddingLeft/Right: max(0.35rem, env(safe-area-inset-*))` so the
+          // edge-to-edge poll rectangles + dividers butt against the body's
+          // safe-area content edge. Tailwind v4's `-mx-4` on the template's
+          // inner wrapper is shadowed by the adjacent `mx-auto` (same
+          // specificity, `mx-auto` lands later in the generated CSS and
+          // wins), so we can't rely on that path. The 0.35rem overhang on
+          // desktop is well inside the inner template's `sm:px-4` (1rem)
+          // padding, so it doesn't escape the centered max-w-4xl bounds.
+          marginLeft: 'calc(-1 * max(0.35rem, env(safe-area-inset-left, 0px)))',
+          marginRight: 'calc(-1 * max(0.35rem, env(safe-area-inset-right, 0px)))',
           transform: overlayCardsOffset
             ? `translate3d(0, ${-overlayCardsOffset}px, 0)`
             : undefined,
           willChange: overlayCardsOffset ? 'transform' : undefined,
         }}
       >
+        {/* Top divider above the first poll — pairs with each card's
+            `border-b-2` so the rectangles are bracketed top + bottom.
+            Rendered only when there's at least one poll so empty groups
+            don't show a stray line above the bubble bar. */}
+        {groupedGroupQuestions.length > 0 && (
+          <div
+            className={`border-t-2 ${ROW_DIVIDER_CLASS}`}
+            aria-hidden="true"
+          />
+        )}
         {groupedGroupQuestions.map((group) => {
             // Virtualized window: groups outside ±2 viewport heights of the
             // visible region render as a measured-height placeholder div. The
@@ -1656,7 +1641,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
                 <div
                   key={`placeholder-${group.key}`}
                   ref={(el) => { el ? attachCardEl(el, anchorId, group.key) : detachCardEl(anchorId); }}
-                  className="mr-1.5 mb-3"
+                  className={`border-b-2 ${ROW_DIVIDER_CLASS}`}
                   style={{ height: placeholderHeight }}
                   aria-hidden="true"
                 />
@@ -1672,7 +1657,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
             // normally.
             const isPlaceholder = pendingPollFirstQuestionId === question.id
               || isPendingPollId(question.poll_id);
-            const isSwipeThresholdActive = swipeThresholdQuestionId === question.id;
             const isTooltipActive = tooltipQuestionId === question.id;
             return (
               <GroupCardItem
@@ -1683,24 +1667,17 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
                 isPlaceholder={isPlaceholder}
                 isAwaiting={isAwaiting}
                 isClosed={isClosed}
-                isSwipeThresholdActive={isSwipeThresholdActive}
                 isTooltipActive={isTooltipActive}
                 questionResultsMap={questionResultsMap}
                 userVoteMap={userVoteMap}
-                cardFrameRefs={cardFrameRefs}
                 longPressTimerRef={longPressTimer}
                 isLongPressRef={isLongPress}
                 touchStartPosRef={touchStartPos}
                 isScrollingRef={isScrolling}
-                swipeRef={swipeRef}
-                swipeJustHandledRef={swipeJustHandled}
                 touchJustHandledRef={touchJustHandled}
                 attachCardEl={attachCardEl}
                 detachCardEl={detachCardEl}
-                resetSwipeRef={resetSwipeRef}
-                submitSwipeAbstain={submitSwipeAbstain}
                 setPressedQuestionId={setPressedQuestionId}
-                setSwipeThresholdQuestionId={setSwipeThresholdQuestionId}
                 setTooltipQuestionId={setTooltipQuestionId}
                 setModalQuestion={setModalQuestion}
                 setShowModal={setShowModal}
