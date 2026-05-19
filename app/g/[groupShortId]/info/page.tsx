@@ -5,9 +5,7 @@ import { useParams } from "next/navigation";
 import { hasAppHistory } from "@/lib/viewTransitions";
 import { slideToGroupRoot, slideToGroupEditTitle } from "@/lib/slideOverlay";
 import { useGroup } from "@/lib/useGroup";
-import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupAvatar from "@/components/GroupAvatar";
-import GroupHeader from "@/components/GroupHeader";
 import GroupShareButton from "@/components/GroupShareButton";
 import InitialBubble from "@/components/InitialBubble";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
@@ -27,7 +25,6 @@ export function GroupInfoView({ groupId }: { groupId: string }) {
 }
 
 function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; groupId: string }) {
-  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
   const myUserImageUrl = useMyUserImageUrl();
 
   const goBack = () => {
@@ -66,23 +63,27 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
 
   return (
     <>
-      <GroupHeader
-        headerRef={headerRef}
-        onBack={goBack}
-        rightSlot={
-          <button
-            onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
-            className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
-            aria-label="Edit group title"
-          >
-            <span className="w-10 h-10 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-medium">
-              Edit
-            </span>
-          </button>
-        }
-      />
+      {/* Floating opaque-bubble back + Edit buttons over a transparent top bar. */}
+      <button
+        onClick={goBack}
+        className="fixed left-3 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 shadow-md active:opacity-70"
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+        aria-label="Go back"
+      >
+        <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
+      <button
+        onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
+        className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 shadow-md active:opacity-70 text-blue-600 dark:text-blue-400 text-sm font-medium"
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+        aria-label="Edit group title"
+      >
+        Edit
+      </button>
 
-      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 0.15rem)` }}>
+      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 2.1rem)' }}>
         <div className="flex flex-col items-center text-center mb-[3.2px]">
           <GroupAvatar
             imageUrl={group.imageUrl}
