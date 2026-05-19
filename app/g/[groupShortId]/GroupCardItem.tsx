@@ -585,12 +585,8 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             isPlaceholder ? "card-pending-enter" : ""
           } transition-colors select-none relative`}
         >
-          {/* Status label floats to the upper-right of the card so the
-              title wraps around it. Only rendered when there's something
-              to show; when null the title uses the full width.
-              Line-clamp on the title is intentionally dropped because
-              `-webkit-line-clamp` uses `display: -webkit-box`, which
-              breaks float interactions — see CLAUDE.md. */}
+          {/* `-webkit-line-clamp`'s `display: -webkit-box` breaks float
+              interactions, so the title is line-clamp-free here. */}
           {!isPlaceholder && statusEl && (
             <div className="float-right shrink-0 pl-2 pt-1 text-sm leading-tight text-gray-500 dark:text-gray-400">
               <ClientOnly fallback={null}>{statusEl}</ClientOnly>
@@ -599,10 +595,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           <h3 className="font-medium text-lg leading-tight text-gray-900 dark:text-white">
             {question.title}
           </h3>
-          {/* Footer row: only the compact pill now, right-aligned. The
-              status was lifted into a float-right above. `clear-both`
-              ensures the pill row sits below the floated status when the
-              title is short enough to leave the status hanging mid-card. */}
+          {/* `clear-both` keeps the pill row below the floated status
+              when the title is short enough to leave the status hanging
+              mid-card. */}
           {!isPlaceholder && pillEl && (
             <div className="mt-1 min-h-7 flex justify-end clear-both min-w-0">
               <div className="flex-1 min-w-0 flex justify-end">{pillEl}</div>
