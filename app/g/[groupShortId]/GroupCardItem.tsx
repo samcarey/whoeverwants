@@ -428,7 +428,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchMove={handleTouchMove}
-        className={`px-4 pt-3 pb-1 cursor-pointer transition-colors select-none ${
+        className={`pl-[0.9rem] pr-[0.65rem] pt-3 pb-1 cursor-pointer transition-colors select-none ${
           isPressed
             ? "bg-blue-100 dark:bg-blue-900/40"
             : "bg-transparent"
