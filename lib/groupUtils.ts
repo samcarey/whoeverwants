@@ -21,6 +21,7 @@ import {
 } from './questionCache';
 import { isUuidLike } from './questionId';
 import { getUserName } from './userProfile';
+import { API_ORIGIN } from './api/_internal';
 
 /** Fallback group title when no participant names remain after filtering
  *  out the current user. */
@@ -190,7 +191,7 @@ export function buildGroupImageUrl(
 ): string | null {
   if (!routeId || !imageUpdatedAt) return null;
   const v = encodeURIComponent(imageUpdatedAt);
-  return `/api/groups/by-route-id/${encodeURIComponent(routeId)}/image?v=${v}`;
+  return `${API_ORIGIN}/api/groups/by-route-id/${encodeURIComponent(routeId)}/image?v=${v}`;
 }
 
 /** True iff the poll wrapper is open: not manually closed AND no

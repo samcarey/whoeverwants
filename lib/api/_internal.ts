@@ -13,24 +13,52 @@ import { adoptServerBrowserId, getBrowserId } from "@/lib/browserIdentity";
 // API URL resolution:
 // - NEXT_PUBLIC_API_URL overrides everything
 // - Server-side: absolute URLs (no browser privacy concerns in SSR)
-// - Client-side: relative /api/questions path, proxied by Next.js rewrites
-//   (keeps requests same-origin, avoiding Safari ITP warnings)
-export function getApiEndpoint(endpoint: string): string {
+// - Client-side, production Vercel build: absolute URLs, bypassing Next.js
+//   rewrites. As of May 2026 Vercel's edge proxy fails the TLS handshake
+//   against post-LE-Generation-Y intermediates (E8, R12, ...) for ~5-10%
+//   of US edge POPs and prevents `/api/*` rewrites from reaching our
+//   FastAPI origin. Going direct via api.whoeverwants.com (cross-origin
+//   + CORS) sidesteps the broken hop. The FastAPI's
+//   `allow_origins=["*"] + allow_credentials=False` handles cross-origin
+//   POSTs cleanly; X-Browser-Id is the identity header — no cookies, no
+//   credential preflight mode.
+// - Client-side, dev mode (per-branch Mac dev server, localhost): RELATIVE
+//   URL so Next.js rewrites proxy through to the in-container FastAPI.
+//   Dev mode does NOT have the Vercel-edge problem (no Vercel in the path).
+function computeApiOrigin(): string {
   if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/questions\/?$/, `/api/${endpoint}`);
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/questions\/?$/, '');
   }
   if (typeof window === 'undefined') {
     if (process.env.NODE_ENV !== 'production') {
-      return `http://localhost:8000/api/${endpoint}`;
+      return 'http://localhost:8000';
     }
     const branch = process.env.NEXT_PUBLIC_VERCEL_GIT_BRANCH || process.env.VERCEL_GIT_COMMIT_REF;
-    if (branch && branch !== 'main' && branch !== 'master') {
-      const slug = branchToSlug(branch);
-      return `https://${slug}.api.whoeverwants.com/api/${endpoint}`;
+    if (branch && branch !== 'main' && branch !== 'master' && branch !== 'production') {
+      return `https://${branchToSlug(branch)}.api.whoeverwants.com`;
     }
-    return `https://api.whoeverwants.com/api/${endpoint}`;
+    return 'https://api.whoeverwants.com';
   }
-  return `/api/${endpoint}`;
+  // CSR
+  if (process.env.NODE_ENV !== 'production') {
+    return ''; // relative → Next.js rewrite to the in-container API
+  }
+  // Vercel-built browser bundle. Host-conditional like the legacy rewrites.
+  const host = window.location.hostname;
+  if (host === 'latest.whoeverwants.com') {
+    return 'https://api.latest.whoeverwants.com';
+  }
+  const branch = process.env.NEXT_PUBLIC_VERCEL_GIT_BRANCH;
+  if (branch && branch !== 'main' && branch !== 'master' && branch !== 'production') {
+    return `https://${branchToSlug(branch)}.api.whoeverwants.com`;
+  }
+  return 'https://api.whoeverwants.com';
+}
+
+export const API_ORIGIN = computeApiOrigin();
+
+export function getApiEndpoint(endpoint: string): string {
+  return `${API_ORIGIN}/api/${endpoint}`;
 }
 
 export const API_BASE = getApiEndpoint('questions');
