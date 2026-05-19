@@ -571,7 +571,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           onTouchMove={handleTouchMove}
-          className={`min-w-0 px-2 pt-1.5 pb-0.5 rounded-2xl border shadow-sm cursor-pointer ${
+          className={`min-w-0 px-2 pt-1.5 ${
+            !isPlaceholder && pillEl ? "pb-0.5" : "pb-1.5"
+          } rounded-2xl border shadow-sm cursor-pointer ${
             isAwaiting
               ? "border-amber-400 dark:border-amber-500"
               : "border-gray-200 dark:border-gray-800"
@@ -583,24 +585,21 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             isPlaceholder ? "card-pending-enter" : ""
           } transition-colors select-none relative`}
         >
-          <h3 className="font-medium text-lg leading-tight line-clamp-2 text-gray-900 dark:text-white">
+          {/* `-webkit-line-clamp`'s `display: -webkit-box` breaks float
+              interactions, so the title is line-clamp-free here. */}
+          {!isPlaceholder && statusEl && (
+            <div className="float-right shrink-0 pl-2 pt-1 text-sm leading-tight text-gray-500 dark:text-gray-400">
+              <ClientOnly fallback={null}>{statusEl}</ClientOnly>
+            </div>
+          )}
+          <h3 className="font-medium text-lg leading-tight text-gray-900 dark:text-white">
             {question.title}
           </h3>
-          {/* Footer row: status label on the left and the question-type-
-              specific compact pill on the right. If the row would be empty
-              (no status AND no pill), it's skipped so the gap doesn't
-              appear. */}
-          {!isPlaceholder && (statusEl || pillEl) && (
-            // min-h-7 pins the row to the compact pill's natural height
-            // (~26px) so the status text stays at a stable Y. items-end
-            // aligns the status text with the BOTTOM of the pill column
-            // — when multiple pills stack vertically the status reads
-            // alongside the bottom-most pill instead of being centered
-            // with the whole stack.
-            <div className="min-h-7 flex items-end gap-2 min-w-0">
-              <div className="shrink-0 pl-1 text-sm leading-7 text-gray-500 dark:text-gray-400">
-                <ClientOnly fallback={null}>{statusEl}</ClientOnly>
-              </div>
+          {/* `clear-both` keeps the pill row below the floated status
+              when the title is short enough to leave the status hanging
+              mid-card. */}
+          {!isPlaceholder && pillEl && (
+            <div className="mt-1 min-h-7 flex justify-end clear-both min-w-0">
               <div className="flex-1 min-w-0 flex justify-end">{pillEl}</div>
             </div>
           )}
