@@ -83,15 +83,15 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         Edit
       </button>
 
-      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 2.1rem)' }}>
+      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1.05rem)' }}>
         <div className="flex flex-col items-center text-center mb-[3.2px]">
           <GroupAvatar
             imageUrl={group.imageUrl}
             names={heroNames}
             anonymousCount={group.anonymousRespondentCount}
-            sizeClassName="w-[10.5rem]"
+            sizeClassName="w-[8.4rem]"
           />
-          <h1 className="mt-[0.4rem] text-3xl font-bold text-gray-900 dark:text-white break-words">
+          <h1 className="mt-[0.2rem] text-3xl font-bold text-gray-900 dark:text-white break-words">
             {displayTitle}
           </h1>
           <div className="mt-[1.7px]">
