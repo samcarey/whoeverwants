@@ -119,16 +119,3 @@ export interface SlideToGroupDetail {
    *  position-fixed-scrolls-with-content interaction). */
   overlayCardsOffset?: number;
 }
-
-/** Fired by GroupContent when a swipe-back gesture is recognized AND when it
- *  commits to navigation. The host (HomeBackdropHost in app/layout.tsx)
- *  mounts a body-level portal showing home's chrome + cached GroupList,
- *  positioned identically to the real home route. It persists across the
- *  router.push commit so there's no blank frame between the swipe wrapper
- *  unmounting and home rendering. */
-export const SHOW_HOME_BACKDROP_EVENT = 'home-backdrop:show';
-
-/** Fired by snap-back / cancel paths in GroupContent AND by the home page's
- *  mount effect (so the backdrop dismisses itself once home has rendered
- *  through it). */
-export const HIDE_HOME_BACKDROP_EVENT = 'home-backdrop:hide';

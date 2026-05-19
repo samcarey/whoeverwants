@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
 import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
@@ -19,8 +19,6 @@ import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
   POLL_FAILED_EVENT,
-  SHOW_HOME_BACKDROP_EVENT,
-  HIDE_HOME_BACKDROP_EVENT,
   type PollPendingDetail,
   type PollHydratedDetail,
   type PollFailedDetail,
@@ -74,29 +72,31 @@ const SCROLL_STOPPED_DEBOUNCE_MS = 150;
 const SCROLL_HELPER_BUTTON_CLASS_BASE =
   'fixed left-1/2 -translate-x-1/2 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
 
-const ScrollHelperButton = React.forwardRef<
-  HTMLButtonElement,
-  {
-    direction: 'up' | 'down';
-    onClick: () => void;
-    style: React.CSSProperties;
-    /** When true, render above the slide overlay (z-70) instead of at the
-     *  default z-40 so the arrows aren't hidden by the overlay's opaque
-     *  background during a group-kind slide. */
-    elevated?: boolean;
-  } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'style' | 'type' | 'className'>
->(({ direction, onClick, style, elevated, ...rest }, ref) => {
+function ScrollHelperButton({
+  direction,
+  onClick,
+  style,
+  elevated,
+  ...rest
+}: {
+  direction: 'up' | 'down';
+  onClick: () => void;
+  style: React.CSSProperties;
+  /** When true, render above the slide overlay (z-70) instead of at the
+   *  default z-40 so the arrows aren't hidden by the overlay's opaque
+   *  background during a group-kind slide. */
+  elevated?: boolean;
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'style' | 'type' | 'className'>) {
   const path = direction === 'up' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7';
   const className = `${SCROLL_HELPER_BUTTON_CLASS_BASE} ${elevated ? 'z-[70]' : 'z-40'}`;
   return (
-    <button ref={ref} type="button" onClick={onClick} className={className} style={style} {...rest}>
+    <button type="button" onClick={onClick} className={className} style={style} {...rest}>
       <svg className="w-[1.35rem] h-[1.35rem]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d={path} />
       </svg>
     </button>
   );
-});
-ScrollHelperButton.displayName = 'ScrollHelperButton';
+}
 
 // Shared cache-driven Group rebuild for POLL_PENDING / POLL_HYDRATED /
 // POLL_FAILED setGroup updaters. Returns prev when the rebuild would produce
@@ -755,21 +755,22 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // pre-effect state.
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group], 80);
 
-  // Swipe-back gesture: dragging rightward on the content slides the page
-  // off to the right with home revealed underneath. While the gesture is
-  // active a "home backdrop" portal is mounted at z-index 0 showing the
-  // cached groups list — so the user sees home from the first pixel of
-  // motion (matching iOS native back-swipe), not just after navigation
-  // completes. Refs (not state) drive the transform during the gesture so
-  // per-frame motion doesn't trigger React re-renders; only the backdrop
-  // mount/unmount goes through state.
-  // `touch-action: pan-y` on the wrapper hands horizontal pans to us while
-  // letting the browser handle vertical scroll natively — so we never
-  // preventDefault on touchmove (per CLAUDE.md: that permanently kills iOS
-  // scroll for the touch sequence).
-  const swipeWrapperRef = useRef<HTMLDivElement | null>(null);
-  const upArrowRef = useRef<HTMLButtonElement | null>(null);
-  const downArrowRef = useRef<HTMLButtonElement | null>(null);
+  // Swipe-back gesture: a rightward swipe past a threshold fires the same
+  // `navigateWithTransition(router, '/', 'back')` that the GroupHeader's
+  // back button uses — so the visual is the View Transitions API
+  // back-direction slide (browser snapshots the whole page and animates
+  // both old + new uniformly), identical to tapping the back arrow. We
+  // intentionally do NOT track the finger in real time anymore — the
+  // earlier implementation transformed individual elements (header,
+  // cards wrapper, scroll arrows, badge portal, plus a separate
+  // home-backdrop portal) which had to be kept in lockstep manually;
+  // every fixed-positioned element added later was a new source of
+  // "subtle glitches" where some element didn't slide with the page.
+  // View Transitions captures the whole page in one snapshot, so
+  // nothing can go out of sync.
+  //
+  // `touch-action: pan-y` on the wrapper hands horizontal pans to us
+  // while leaving native vertical scroll to the browser.
   const swipeStateRef = useRef<{
     startX: number;
     startY: number;
@@ -778,69 +779,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     startTime: number;
     committing: boolean;
   } | null>(null);
-  // Backdrop visibility is now owned by HomeBackdropHost at layout level
-  // (so it survives router.push). We dispatch SHOW/HIDE events instead of
-  // managing the state here directly.
-  const showHomeBackdrop = () => {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT));
-    }
-  };
-  const hideHomeBackdrop = () => {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
-    }
-  };
-
-  // Backdrop stays at its final position (no parallax) — the user sees the
-  // home page elements at their natural locations from the very start of
-  // the gesture, just progressively revealed as the opaque wrapper slides
-  // off to the right. An earlier iOS-style parallax variant was retired
-  // because shifting the title left made it visually collide with the
-  // (statically positioned) settings gear at the viewport's left edge.
-  const applySwipeTransform = useCallback(
-    (translateX: number, transitionMs: number) => {
-      const wrapperTransform =
-        translateX === 0 ? '' : `translate3d(${translateX}px, 0, 0)`;
-      const transition =
-        transitionMs > 0
-          ? `transform ${transitionMs}ms cubic-bezier(0.32, 0.72, 0, 1)`
-          : 'none';
-      // Header + cards wrapper + scroll arrows + commit-age badge all
-      // slide together with the gesture. Arrows and badge are portaled to
-      // body-level (escaping the responsive-scaling-container's transform
-      // on desktop), so they're transformed individually rather than
-      // inherited from a parent.
-      const targets: (HTMLElement | null)[] = [
-        swipeWrapperRef.current,
-        headerRef.current,
-        upArrowRef.current,
-        downArrowRef.current,
-        document.getElementById('commit-badge-portal'),
-      ];
-      for (const el of targets) {
-        if (!el) continue;
-        el.style.transform = wrapperTransform;
-        el.style.transition = transition;
-      }
-    },
-    [headerRef],
-  );
-
-  const clearSwipeTransform = useCallback(() => {
-    const targets: (HTMLElement | null)[] = [
-      swipeWrapperRef.current,
-      headerRef.current,
-      upArrowRef.current,
-      downArrowRef.current,
-      document.getElementById('commit-badge-portal'),
-    ];
-    for (const el of targets) {
-      if (!el) continue;
-      el.style.transform = '';
-      el.style.transition = '';
-    }
-  }, [headerRef]);
 
   const handleSwipeTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length !== 1) {
@@ -862,7 +800,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     const st = swipeStateRef.current;
     if (!st || st.ignored || st.committing) return;
     if (e.touches.length !== 1) {
-      if (st.swiping) applySwipeTransform(0, 200);
       st.ignored = true;
       return;
     }
@@ -878,13 +815,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         return;
       }
       st.swiping = true;
-      // Mount the home backdrop so the user sees home revealed under the
-      // page as soon as motion is recognized as a swipe-back.
-      showHomeBackdrop();
     }
-    // Cap at 0 so the user can't pull the page past its starting edge.
-    const offset = Math.max(0, dx);
-    applySwipeTransform(offset, 0);
   };
 
   const handleSwipeTouchEnd = (e: React.TouchEvent) => {
@@ -896,50 +827,18 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     const endX = e.changedTouches[0]?.clientX ?? st.startX;
     const dx = endX - st.startX;
     const dt = Date.now() - st.startTime;
-    const offset = Math.max(0, dx);
     const velocity = dx / Math.max(1, dt); // px/ms, positive = rightward speed
     const vw = window.innerWidth;
-    const shouldCommit =
-      offset >= vw * 0.3 || velocity >= 0.5;
+    const shouldCommit = dx >= vw * 0.3 || velocity >= 0.5;
+    swipeStateRef.current = null;
     if (shouldCommit) {
-      st.committing = true;
       rememberCurrentScroll(groupScrollKey(groupId));
-      // Block taps on cards while the page slides off — otherwise a tap
-      // landing on a card mid-slide can race router.push and navigate to
-      // the poll detail page instead of home.
-      const wrapper = swipeWrapperRef.current;
-      if (wrapper) wrapper.style.pointerEvents = 'none';
-      const remaining = vw - offset;
-      const duration = Math.max(
-        140,
-        Math.min(360, remaining / Math.max(0.4, velocity)),
-      );
-      applySwipeTransform(vw, duration);
-      window.setTimeout(() => {
-        router.push('/');
-      }, duration);
-    } else {
-      applySwipeTransform(0, 220);
-      window.setTimeout(() => {
-        clearSwipeTransform();
-        swipeStateRef.current = null;
-        hideHomeBackdrop();
-      }, 240);
+      navigateWithTransition(router, '/', 'back');
     }
   };
 
   const handleSwipeTouchCancel = () => {
-    const st = swipeStateRef.current;
     swipeStateRef.current = null;
-    if (st?.swiping && !st.committing) {
-      applySwipeTransform(0, 200);
-      window.setTimeout(() => {
-        clearSwipeTransform();
-        hideHomeBackdrop();
-      }, 220);
-    } else {
-      hideHomeBackdrop();
-    }
   };
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
@@ -1819,39 +1718,19 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           surface we transform during a slide overlay's pre-position —
           transforming the overlay itself would drag the fixed header
           with the content per the WebKit contain:strict quirk. */}
-      {/* Home backdrop is rendered by <HomeBackdropHost /> at the layout
-          level (see components/HomeBackdropHost.tsx). GroupContent
-          dispatches SHOW_HOME_BACKDROP_EVENT on swipe lock and
-          HIDE_HOME_BACKDROP_EVENT on snap-back/cancel; the home page's
-          mount effect dispatches HIDE so the backdrop dismisses itself
-          once home has rendered. Living outside this component is what
-          eliminates the blank frame between router.push commit and home's
-          first paint. */}
-
-      {/* Swipe-back wrapper. Owns its own transform (set imperatively by
-          the touch handlers via swipeWrapperRef); the inner cards div keeps
-          its own transform for overlayCardsOffset so the two don't conflict
-          across React re-renders. `touch-action: pan-y` hands horizontal
-          pans to the app while leaving vertical scroll to the browser.
-          `position: relative; z-index: 1` + opaque background keeps the
-          home backdrop hidden behind the page until the swipe actually
-          moves the wrapper sideways. `minHeight: 100dvh` extends the
-          opaque background to the bottom of the viewport so the backdrop
-          can't peek through below short groups. */}
+      {/* Swipe-back gesture handler. Pure detection — a rightward swipe
+          past threshold fires navigateWithTransition(router, '/', 'back')
+          which routes through the View Transitions API just like the
+          back arrow. No real-time transforms here; the page only moves
+          once the gesture commits. `touch-action: pan-y` hands
+          horizontal pans to us while leaving native vertical scroll to
+          the browser. */}
       <div
-        ref={swipeWrapperRef}
         onTouchStart={handleSwipeTouchStart}
         onTouchMove={handleSwipeTouchMove}
         onTouchEnd={handleSwipeTouchEnd}
         onTouchCancel={handleSwipeTouchCancel}
         className="touch-pan-y"
-        style={{
-          willChange: 'transform',
-          position: 'relative',
-          zIndex: 1,
-          background: 'var(--background)',
-          minHeight: '100dvh',
-        }}
       >
       <div
         className="pb-2"
@@ -2130,7 +2009,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         <>
           {scrollHelpers.showUp && (
             <ScrollHelperButton
-              ref={upArrowRef}
               direction="up"
               onClick={() => scrollAwaitingToHeader(scrollHelpers.upTargetId)}
               aria-label="Scroll to next poll awaiting your response"
@@ -2140,7 +2018,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           )}
           {scrollHelpers.showDown && (
             <ScrollHelperButton
-              ref={downArrowRef}
               direction="down"
               onClick={() => {
                 if (scrollHelpers.downTargetId) {
