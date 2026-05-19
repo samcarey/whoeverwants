@@ -92,7 +92,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
               anonymousCount={group.anonymousRespondentCount}
               sizeClassName="w-[8.4rem]"
             />
-            <div className="absolute left-full top-1/2 -translate-y-1/2 ml-1">
+            <div className="absolute left-full top-1/2 -translate-y-1/2 ml-[0.15rem]">
               <GroupShareButton routeId={groupId} title={group.title} />
             </div>
           </div>
@@ -101,7 +101,9 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           </h1>
         </div>
 
-        <NotificationSettingsCard groupRouteId={groupId} />
+        <div className="-mt-[0.3rem]">
+          <NotificationSettingsCard groupRouteId={groupId} />
+        </div>
 
         <h2 className="mt-6 px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
           {totalCount} {totalCount === 1 ? 'Member' : 'Members'}
