@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { formatCompactCountdown, formatCountdownTime } from "@/lib/timeUtils";
+import {
+  formatCompactCountdown,
+  formatCompactCountdownWide,
+  formatCountdownTime,
+} from "@/lib/timeUtils";
 
 interface SimpleCountdownProps {
   deadline: string;
@@ -11,6 +15,10 @@ interface SimpleCountdownProps {
    *  via `formatCompactCountdown` instead of the multi-unit
    *  `formatCountdownTime` ("1h 30m"). */
   compact?: boolean;
+  /** When true (and `compact`), uses the ≥ 2 threshold flavor
+   *  (`formatCompactCountdownWide`) so a 90-minute remainder reads "90m"
+   *  instead of "1h". Implies `compact`. */
+  wide?: boolean;
   /** When true, the countdown text clears to empty on expiry instead of
    *  showing the word "Expired". Used in surfaces where the parent already
    *  unmounts / hides the row once the deadline passes, so the brief
@@ -32,6 +40,7 @@ export default function SimpleCountdown({
   label,
   colorClass = "text-blue-600 dark:text-blue-400",
   compact = false,
+  wide = false,
   blankOnExpire = false,
   numberClass = "font-mono font-semibold",
 }: SimpleCountdownProps) {
@@ -40,7 +49,11 @@ export default function SimpleCountdown({
   useEffect(() => {
     const el = spanRef.current;
     if (!el) return;
-    const format = compact ? formatCompactCountdown : formatCountdownTime;
+    const format = wide
+      ? formatCompactCountdownWide
+      : compact
+        ? formatCompactCountdown
+        : formatCountdownTime;
     const expired = blankOnExpire ? '' : 'Expired';
     const render = () => {
       const difference = new Date(deadline).getTime() - Date.now();
@@ -52,7 +65,7 @@ export default function SimpleCountdown({
     if (!render()) return;
     const interval = setInterval(() => { if (!render()) clearInterval(interval); }, 1000);
     return () => clearInterval(interval);
-  }, [deadline, compact, blankOnExpire]);
+  }, [deadline, compact, wide, blankOnExpire]);
 
   return <>{label ? `${label}: ` : null}<span ref={spanRef} className={`${numberClass} ${colorClass}`} /></>;
 }

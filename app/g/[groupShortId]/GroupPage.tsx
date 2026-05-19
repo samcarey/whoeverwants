@@ -1659,7 +1659,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
             don't show a stray line above the bubble bar. */}
         {groupedGroupQuestions.length > 0 && (
           <div
-            className="border-t-2 border-gray-200 dark:border-gray-800"
+            className="border-t-2 border-gray-300 dark:border-gray-600"
             aria-hidden="true"
           />
         )}
@@ -1677,7 +1677,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
                 <div
                   key={`placeholder-${group.key}`}
                   ref={(el) => { el ? attachCardEl(el, anchorId, group.key) : detachCardEl(anchorId); }}
-                  className="border-b-2 border-gray-200 dark:border-gray-800"
+                  className="border-b-2 border-gray-300 dark:border-gray-600"
                   style={{ height: placeholderHeight }}
                   aria-hidden="true"
                 />

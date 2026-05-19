@@ -272,7 +272,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       );
     }
     if (inSuggestions && wrapperPrephaseDeadline) {
-      return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Suggestions" />;
+      return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Suggestions" wide />;
     }
     if (inSuggestions && question.suggestion_deadline_minutes) {
       return (
@@ -283,7 +283,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
     if (inTimeAvailability) {
       if (wrapperPrephaseDeadline) {
-        return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" />;
+        return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" wide />;
       }
       return (
         <span className="font-semibold text-blue-600 dark:text-blue-400">
@@ -297,6 +297,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           deadline={wrapperResponseDeadline}
           label="Voting"
           colorClass="text-green-600 dark:text-green-400"
+          wide
         />
       );
     }
@@ -370,16 +371,16 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
   }
 
-  // Bottom-right column: pill (centered) + respondent row (centered). Both
-  // collapse cleanly when empty so the row doesn't reserve dead vertical
-  // space. Multi-question polls use the poll wrapper's aggregated voter
-  // list per the Addressability paradigm — never client-aggregated across
-  // sub-question fetches.
+  // Bottom-right column: pill (centered) + respondent row (right-justified
+  // against the rectangle's right edge). Both collapse cleanly when empty
+  // so the row doesn't reserve dead vertical space. Multi-question polls
+  // use the poll wrapper's aggregated voter list per the Addressability
+  // paradigm — never client-aggregated across sub-question fetches.
   const respondentRow: React.ReactNode = !isPlaceholder ? (
     isMultiGroup ? (
       <VoterList
         singleLine
-        className="min-w-0 justify-center"
+        className="min-w-0 justify-end"
         staticVoterNames={wrapper?.voter_names ?? []}
         staticAnonymousCount={wrapper?.anonymous_count ?? 0}
         emptyText="No voters"
@@ -388,7 +389,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       <VoterList
         questionId={question.id}
         singleLine
-        className="min-w-0 justify-center"
+        className="min-w-0 justify-end"
         filter={
           isInSuggestionPhase(question, wrapperPrephaseDeadline)
             ? suggestionPhaseRespondentFilter
@@ -411,7 +412,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   return (
     <div
       ref={setCardEl}
-      className={`relative border-b-2 border-gray-200 dark:border-gray-800 ${
+      className={`relative border-b-2 border-gray-300 dark:border-gray-600 ${
         isPlaceholder ? "card-pending-enter" : ""
       }`}
     >
@@ -427,7 +428,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchMove={handleTouchMove}
-        className={`px-4 py-3 cursor-pointer transition-colors select-none ${
+        className={`px-4 pt-3 pb-1 cursor-pointer transition-colors select-none ${
           isPressed
             ? "bg-blue-100 dark:bg-blue-900/40"
             : "bg-transparent"
@@ -481,14 +482,14 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
               </span>
             </ClientOnly>
 
-            <div className="flex-1 min-w-0 flex flex-col items-center gap-1">
+            <div className="flex-1 min-w-0 flex flex-col items-stretch gap-1">
               {pillEl && (
                 <div className="w-full min-w-0 flex justify-center">
                   {pillEl}
                 </div>
               )}
               <ClientOnly fallback={null}>
-                <div className="w-full min-w-0 flex justify-center">
+                <div className="w-full min-w-0 flex justify-end">
                   {respondentRow}
                 </div>
               </ClientOnly>
