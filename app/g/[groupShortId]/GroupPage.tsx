@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
 import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
@@ -73,31 +73,29 @@ const SCROLL_STOPPED_DEBOUNCE_MS = 150;
 const SCROLL_HELPER_BUTTON_CLASS_BASE =
   'fixed left-1/2 -translate-x-1/2 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
 
-function ScrollHelperButton({
-  direction,
-  onClick,
-  style,
-  elevated,
-  ...rest
-}: {
-  direction: 'up' | 'down';
-  onClick: () => void;
-  style: React.CSSProperties;
-  /** When true, render above the slide overlay (z-70) instead of at the
-   *  default z-40 so the arrows aren't hidden by the overlay's opaque
-   *  background during a group-kind slide. */
-  elevated?: boolean;
-} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'style' | 'type' | 'className'>) {
+const ScrollHelperButton = React.forwardRef<
+  HTMLButtonElement,
+  {
+    direction: 'up' | 'down';
+    onClick: () => void;
+    style: React.CSSProperties;
+    /** When true, render above the slide overlay (z-70) instead of at the
+     *  default z-40 so the arrows aren't hidden by the overlay's opaque
+     *  background during a group-kind slide. */
+    elevated?: boolean;
+  } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'style' | 'type' | 'className'>
+>(({ direction, onClick, style, elevated, ...rest }, ref) => {
   const path = direction === 'up' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7';
   const className = `${SCROLL_HELPER_BUTTON_CLASS_BASE} ${elevated ? 'z-[70]' : 'z-40'}`;
   return (
-    <button type="button" onClick={onClick} className={className} style={style} {...rest}>
+    <button ref={ref} type="button" onClick={onClick} className={className} style={style} {...rest}>
       <svg className="w-[1.35rem] h-[1.35rem]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d={path} />
       </svg>
     </button>
   );
-}
+});
+ScrollHelperButton.displayName = 'ScrollHelperButton';
 
 // Shared cache-driven Group rebuild for POLL_PENDING / POLL_HYDRATED /
 // POLL_FAILED setGroup updaters. Returns prev when the rebuild would produce
@@ -770,6 +768,8 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // scroll for the touch sequence).
   const swipeWrapperRef = useRef<HTMLDivElement | null>(null);
   const backdropRef = useRef<HTMLDivElement | null>(null);
+  const upArrowRef = useRef<HTMLButtonElement | null>(null);
+  const downArrowRef = useRef<HTMLButtonElement | null>(null);
   const swipeStateRef = useRef<{
     startX: number;
     startY: number;
@@ -794,30 +794,36 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         transitionMs > 0
           ? `transform ${transitionMs}ms cubic-bezier(0.32, 0.72, 0, 1)`
           : 'none';
-      const wrapper = swipeWrapperRef.current;
-      const header = headerRef.current;
-      if (wrapper) {
-        wrapper.style.transform = wrapperTransform;
-        wrapper.style.transition = transition;
-      }
-      if (header) {
-        header.style.transform = wrapperTransform;
-        header.style.transition = transition;
+      // Header + cards wrapper + scroll arrows all slide together with the
+      // gesture. Arrows are portaled to body-level for the
+      // responsive-scaling-escape, so they're transformed individually via
+      // their own refs rather than inherited from a parent.
+      const targets: (HTMLElement | null)[] = [
+        swipeWrapperRef.current,
+        headerRef.current,
+        upArrowRef.current,
+        downArrowRef.current,
+      ];
+      for (const el of targets) {
+        if (!el) continue;
+        el.style.transform = wrapperTransform;
+        el.style.transition = transition;
       }
     },
     [headerRef],
   );
 
   const clearSwipeTransform = useCallback(() => {
-    const wrapper = swipeWrapperRef.current;
-    const header = headerRef.current;
-    if (wrapper) {
-      wrapper.style.transform = '';
-      wrapper.style.transition = '';
-    }
-    if (header) {
-      header.style.transform = '';
-      header.style.transition = '';
+    const targets: (HTMLElement | null)[] = [
+      swipeWrapperRef.current,
+      headerRef.current,
+      upArrowRef.current,
+      downArrowRef.current,
+    ];
+    for (const el of targets) {
+      if (!el) continue;
+      el.style.transform = '';
+      el.style.transition = '';
     }
   }, [headerRef]);
 
@@ -2183,6 +2189,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         <>
           {scrollHelpers.showUp && (
             <ScrollHelperButton
+              ref={upArrowRef}
               direction="up"
               onClick={() => scrollAwaitingToHeader(scrollHelpers.upTargetId)}
               aria-label="Scroll to next poll awaiting your response"
@@ -2192,6 +2199,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           )}
           {scrollHelpers.showDown && (
             <ScrollHelperButton
+              ref={downArrowRef}
               direction="down"
               onClick={() => {
                 if (scrollHelpers.downTargetId) {

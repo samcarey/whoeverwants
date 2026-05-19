@@ -152,7 +152,13 @@ export default function Home() {
   useEffect(() => {
     async function fetchQuestions() {
       try {
-        setLoading(true);
+        // Only show the spinner when there's no cached data to render —
+        // otherwise mounting home (e.g. after a swipe-back from a group)
+        // would flash the GroupList off-screen for one render cycle while
+        // the refetch round-trips, then flash it back when the same data
+        // returns from the cache-warmed endpoint.
+        const hasCached = initialPolls.length > 0 || initialEmptyGroups.length > 0;
+        if (!hasCached) setLoading(true);
         setError(null);
 
         // Dev mode: if ?dev=1 in URL, import all question IDs from the database
@@ -179,8 +185,18 @@ export default function Home() {
         // accessible questions, with results inline. Replaces the legacy
         // discoverRelatedQuestions + getAccessiblePolls pair.
         const { polls: nextPolls, emptyGroups: nextEmptyGroups } = await getMyGroups();
-        setPolls(nextPolls);
-        setEmptyGroups(nextEmptyGroups);
+        // Preserve previous array identity when the data is unchanged so
+        // GroupList's memo can skip re-rendering every card on every mount.
+        setPolls((prev) =>
+          prev.length === nextPolls.length && prev.every((p, i) => p.id === nextPolls[i].id)
+            ? prev
+            : nextPolls,
+        );
+        setEmptyGroups((prev) =>
+          prev.length === nextEmptyGroups.length && prev.every((g, i) => g.id === nextEmptyGroups[i].id)
+            ? prev
+            : nextEmptyGroups,
+        );
       } catch (error) {
         console.error("Unexpected error:", error);
         setError("An unexpected error occurred");
