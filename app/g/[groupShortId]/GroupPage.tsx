@@ -64,6 +64,11 @@ const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
 // documented in PR #375 that retired the unbounded version.
 const BOTTOM_PIN_DURATION_MS = 800;
 
+// Debounce window for "scroll has stopped." Below this iOS momentum
+// scrolling can briefly pause and reads as idle; above it the arrows
+// feel laggy to appear after a true stop.
+const SCROLL_STOPPED_DEBOUNCE_MS = 150;
+
 const SCROLL_HELPER_BUTTON_CLASS_BASE =
   'fixed left-1/2 -translate-x-1/2 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
 
@@ -1437,15 +1442,16 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   useEffect(() => {
     if (!group || typeof window === 'undefined') return;
     let rafId: number | null = null;
-    // Suppress OFF→ON transitions while the user is mid-scroll: if an
-    // arrow isn't already visible when scrolling starts, defer surfacing
-    // it until scroll has completely stopped (debounced via the timer
-    // below). Already-visible arrows continue updating normally so they
-    // can hide / retarget. Threshold 150ms covers iOS momentum pauses.
     let isScrolling = false;
     let scrollStoppedTimer: number | null = null;
+    // Mirror of the React state, kept in sync inside the setter below so
+    // `evaluate` can short-circuit before doing the DOM scan when both
+    // arrows are hidden during a scroll (off→on is suppressed anyway).
+    let currentShowUp = false;
+    let currentShowDown = false;
     const evaluate = () => {
       rafId = null;
+      if (isScrolling && !currentShowUp && !currentShowDown) return;
       const viewportTop = headerHeight;
       const viewportBottom = window.innerHeight;
       let upTargetId: string | null = null;
@@ -1478,15 +1484,17 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       );
       const showDown = window.scrollY < maxScroll - 1;
       setScrollHelpers((prev) => {
-        const effShowUp = isScrolling && !prev.showUp ? false : showUp;
-        const effShowDown = isScrolling && !prev.showDown ? false : showDown;
+        const nextShowUp = isScrolling && !prev.showUp ? false : showUp;
+        const nextShowDown = isScrolling && !prev.showDown ? false : showDown;
+        currentShowUp = nextShowUp;
+        currentShowDown = nextShowDown;
         return (
-          prev.showUp === effShowUp &&
-          prev.showDown === effShowDown &&
+          prev.showUp === nextShowUp &&
+          prev.showDown === nextShowDown &&
           prev.upTargetId === upTargetId &&
           prev.downTargetId === downTargetId
             ? prev
-            : { showUp: effShowUp, showDown: effShowDown, upTargetId, downTargetId }
+            : { showUp: nextShowUp, showDown: nextShowDown, upTargetId, downTargetId }
         );
       });
     };
@@ -1505,7 +1513,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         isScrolling = false;
         scrollStoppedTimer = null;
         schedule();
-      }, 150);
+      }, SCROLL_STOPPED_DEBOUNCE_MS);
       schedule();
     };
     evaluate();
