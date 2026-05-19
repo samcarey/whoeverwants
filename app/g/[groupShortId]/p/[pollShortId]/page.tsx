@@ -10,7 +10,7 @@
  * on the next rAF. Back arrow slides back to the group root.
  */
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { flushSync } from "react-dom";
 import {
@@ -37,6 +37,11 @@ import {
 import { addAccessibleQuestionId, isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { hasAppHistory } from "@/lib/viewTransitions";
+import {
+  getRememberedScroll,
+  pollScrollKey,
+  rememberCurrentScroll,
+} from "@/lib/scrollMemory";
 import { isUuidLike } from "@/lib/questionId";
 import {
   compactDurationSince,
@@ -87,12 +92,18 @@ function InlineCategoryIcon({
 interface PollDetailViewProps {
   groupId: string;
   pollShortId: string;
+  /** Visual scroll offset applied to the content wrapper via CSS transform
+   *  while the slide-in plays. Mirrors `GroupContent.overlayCardsOffset` —
+   *  the overlay's scrollTop stays 0, the destination's own layoutEffect
+   *  drives `window.scrollY` to the same value, and on unmount the real
+   *  route is already in position so no visual snap. */
+  overlayCardsOffset?: number;
 }
 
 /** Prop-driven view exposed so SlideOverlayHost can render the page during
  *  the slide-in animation. The default page export below wraps this with
  *  `useParams` for direct URL navigation. */
-export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
+export function PollDetailView({ groupId, pollShortId, overlayCardsOffset }: PollDetailViewProps) {
   const router = useRouter();
 
   const [poll, setPoll] = useState<Poll | null>(() => {
@@ -150,8 +161,10 @@ export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
   }, [poll, pollShortId, groupId]);
 
   const goBack = useCallback(() => {
+    // Save scroll BEFORE the navigation so re-entry restores it.
+    rememberCurrentScroll(pollScrollKey(pollShortId));
     slideToGroupRoot({ groupId, direction: "back", useHistoryBack: hasAppHistory() });
-  }, [groupId]);
+  }, [groupId, pollShortId]);
 
   if (loading && !poll) return <SimpleFrame onBack={goBack}><p className="text-gray-600 dark:text-gray-400">Loading poll...</p></SimpleFrame>;
 
@@ -170,7 +183,16 @@ export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
     );
   }
 
-  return <PollDetail poll={poll} setPoll={setPoll} groupId={groupId} onBack={goBack} />;
+  return (
+    <PollDetail
+      poll={poll}
+      setPoll={setPoll}
+      groupId={groupId}
+      pollShortId={pollShortId}
+      onBack={goBack}
+      overlayCardsOffset={overlayCardsOffset}
+    />
+  );
 }
 
 /** Loading / error frame — no measured header since nothing flows under it. */
@@ -190,10 +212,12 @@ interface PollDetailProps {
   poll: Poll;
   setPoll: React.Dispatch<React.SetStateAction<Poll | null>>;
   groupId: string;
+  pollShortId: string;
   onBack: () => void;
+  overlayCardsOffset?: number;
 }
 
-function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
+function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsOffset }: PollDetailProps) {
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([], 80);
 
   const [votedQuestionIds, setVotedQuestionIds] = useState<Set<string>>(() => {
@@ -345,11 +369,71 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
     return () => window.removeEventListener("question:updated", handler);
   }, [setPoll]);
 
-  // Scroll to top on mount so the slide handoff lands at the page top
-  // (independent of whatever scrollY the group page had).
+  // Initial-load scroll: restore the position saved when the user
+  // last navigated away (back arrow / title tap), else scroll to top
+  // for a fresh visit. Mirrors `GroupContent`'s restore loop — iOS
+  // Safari + Next.js App Router reset scrollY ~30-40ms after our
+  // initial scrollTo, so a single application isn't enough; the rAF
+  // loop below re-applies until scrollY sticks or the user
+  // interacts. The deadline matches GroupContent's BOTTOM_PIN_DURATION_MS.
+  const restoreTargetRef = useRef<number | null>(null);
+  const restoreDeadlineRef = useRef(0);
+  const userInteractedRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const remembered = getRememberedScroll(pollScrollKey(pollShortId));
+    if (remembered !== undefined) {
+      restoreTargetRef.current = remembered;
+      restoreDeadlineRef.current = Date.now() + 800;
+      window.scrollTo(0, remembered);
+      return;
+    }
+    window.scrollTo(0, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (restoreTargetRef.current == null) return;
+    let rafId: number | null = null;
+    let stableFrames = 0;
+    const tick = () => {
+      rafId = null;
+      if (userInteractedRef.current || Date.now() >= restoreDeadlineRef.current) {
+        restoreTargetRef.current = null;
+        return;
+      }
+      const target = restoreTargetRef.current;
+      if (target == null) return;
+      if (Math.abs(window.scrollY - target) > 0.5) {
+        window.scrollTo(0, target);
+        stableFrames = 0;
+      } else if (++stableFrames >= 3) {
+        restoreTargetRef.current = null;
+        return;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, []);
+
+  // pointerdown / wheel / keydown release the restore pin so a real
+  // user scroll during the bounded window isn't undone. Capture-phase
+  // so it fires regardless of inner handler stopPropagation.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.scrollTo(0, 0);
+    const disable = () => { userInteractedRef.current = true; };
+    window.addEventListener("pointerdown", disable, { passive: true, capture: true });
+    window.addEventListener("wheel", disable, { passive: true, capture: true });
+    window.addEventListener("keydown", disable, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener("pointerdown", disable, { capture: true } as any);
+      window.removeEventListener("wheel", disable, { capture: true } as any);
+      window.removeEventListener("keydown", disable, { capture: true } as any);
+    };
   }, []);
 
   const subQuestions = poll.questions;
@@ -448,12 +532,14 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
         headerRef={headerRef}
         title={pollTitle}
         onBack={onBack}
-        onTitleClick={() =>
+        onTitleClick={() => {
+          // Save scroll BEFORE navigating to /info so back-nav restores here.
+          rememberCurrentScroll(pollScrollKey(pollShortId));
           slideToPollInfo({
             groupId,
             pollShortId: poll.short_id || poll.id,
-          })
-        }
+          });
+        }}
         titleAriaLabel="Poll details"
         rightSlot={
           <div className="self-stretch py-2 px-2 flex items-center justify-center shrink-0">
@@ -462,7 +548,21 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
         }
       />
 
-      <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
+      <div
+        style={{
+          paddingTop: `calc(${headerHeight}px + 1.5rem)`,
+          // While the slide overlay plays, pre-position the visible
+          // content via transform so the user sees their saved scroll
+          // throughout the animation. The overlay itself does NOT
+          // scroll (its scrollTop stays 0) to avoid the WebKit
+          // contain:strict + position-fixed-scrolls-with-content
+          // quirk that would drag the GroupHeader off the viewport.
+          transform: overlayCardsOffset
+            ? `translate3d(0, ${-overlayCardsOffset}px, 0)`
+            : undefined,
+          willChange: overlayCardsOffset ? "transform" : undefined,
+        }}
+      >
         {/* Meta strip: creator avatar + name · relative time on the left,
             poll-level status (countdown / closed / phase label) on the
             right. Mirrors the group-list card's chrome so the detail page

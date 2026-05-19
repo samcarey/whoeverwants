@@ -41,3 +41,7 @@ export const HOME_SCROLL_KEY = "home";
 export function groupScrollKey(groupRouteId: string): string {
   return `group:${groupRouteId}`;
 }
+
+export function pollScrollKey(pollShortId: string): string {
+  return `poll:${pollShortId}`;
+}
