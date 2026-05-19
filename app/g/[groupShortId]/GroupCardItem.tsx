@@ -447,11 +447,23 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           )}
         </div>
 
-        {/* Bottom row: author + timestamp (left) / pill + respondents
-            centered (right). Skipped during the placeholder/FLIP phase
-            so only the title is visible until the real poll hydrates. */}
+        {/* Pill row: centered across the FULL rectangle width (not just the
+            right column). Renders only when there's a non-empty pill so
+            empty groups don't leave a stray gap. `mb-3` gives the
+            user-requested breathing room before the bottom row. */}
+        {!isPlaceholder && pillEl && (
+          <div className="mt-2 mb-3 flex justify-center min-w-0">
+            {pillEl}
+          </div>
+        )}
+
+        {/* Bottom row: author + timestamp (left) / respondents (right).
+            Skipped during the placeholder/FLIP phase so only the title
+            is visible until the real poll hydrates. The pill above gives
+            its own mb-3 spacing; when the pill is absent we keep mt-2 on
+            this row so there's still a visible gap from the title. */}
         {!isPlaceholder && (
-          <div className="mt-2 flex items-end justify-between gap-3 min-w-0">
+          <div className={`${pillEl ? "" : "mt-2 "}flex items-end justify-between gap-3 min-w-0`}>
             <ClientOnly fallback={null}>
               <span className="shrink-0 truncate text-xs text-gray-400 dark:text-gray-500">
                 {wrapper?.creator_name && <>{wrapper.creator_name} &middot; </>}
@@ -482,18 +494,11 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
               </span>
             </ClientOnly>
 
-            <div className="flex-1 min-w-0 flex flex-col items-stretch gap-1">
-              {pillEl && (
-                <div className="w-full min-w-0 flex justify-center">
-                  {pillEl}
-                </div>
-              )}
-              <ClientOnly fallback={null}>
-                <div className="w-full min-w-0 flex justify-end">
-                  {respondentRow}
-                </div>
-              </ClientOnly>
-            </div>
+            <ClientOnly fallback={null}>
+              <div className="flex-1 min-w-0 flex justify-end">
+                {respondentRow}
+              </div>
+            </ClientOnly>
           </div>
         )}
       </div>
