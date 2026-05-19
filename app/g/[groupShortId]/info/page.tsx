@@ -7,6 +7,7 @@ import { slideToGroupRoot, slideToGroupEditTitle } from "@/lib/slideOverlay";
 import { useGroup } from "@/lib/useGroup";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupShareButton from "@/components/GroupShareButton";
+import HeaderPortal from "@/components/HeaderPortal";
 import InitialBubble from "@/components/InitialBubble";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
@@ -63,25 +64,29 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
 
   return (
     <>
-      {/* Floating opaque-bubble back + Edit buttons over a transparent top bar. */}
-      <button
-        onClick={goBack}
-        className="fixed left-3 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70"
-        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
-        aria-label="Go back"
-      >
-        <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-      </button>
-      <button
-        onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
-        className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70 text-blue-600 dark:text-blue-400 text-sm font-medium"
-        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
-        aria-label="Edit group title"
-      >
-        Edit
-      </button>
+      {/* Portaled outside .responsive-scaling-container so position:fixed is
+       *  viewport-relative on desktop (the scaling transform would otherwise
+       *  make these buttons fixed to the scaled container, not the viewport). */}
+      <HeaderPortal>
+        <button
+          onClick={goBack}
+          className="fixed left-3 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+          aria-label="Go back"
+        >
+          <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <button
+          onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
+          className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70 text-blue-600 dark:text-blue-400 text-sm font-medium"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+          aria-label="Edit group title"
+        >
+          Edit
+        </button>
+      </HeaderPortal>
 
       <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1.05rem)' }}>
         <div className="flex flex-col items-center text-center mb-[3.2px]">
@@ -101,9 +106,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           </h1>
         </div>
 
-        <div className="-mt-[0.54rem]">
-          <NotificationSettingsCard groupRouteId={groupId} />
-        </div>
+        <NotificationSettingsCard groupRouteId={groupId} className="mt-[0.96rem]" />
 
         <h2 className="mt-6 px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
           {totalCount} {totalCount === 1 ? 'Member' : 'Members'}
