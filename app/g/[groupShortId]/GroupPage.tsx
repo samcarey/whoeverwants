@@ -769,6 +769,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // preventDefault on touchmove (per CLAUDE.md: that permanently kills iOS
   // scroll for the touch sequence).
   const swipeWrapperRef = useRef<HTMLDivElement | null>(null);
+  const backdropRef = useRef<HTMLDivElement | null>(null);
   const swipeStateRef = useRef<{
     startX: number;
     startY: number;
@@ -779,9 +780,20 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   } | null>(null);
   const [showHomeBackdrop, setShowHomeBackdrop] = useState(false);
 
+  // iOS-style parallax: while the page slides right by N px, the home
+  // backdrop slides right by N * 0.3 px from a -0.3 viewport-width start.
+  // This means the title / +Group / phrase area (right side of home) are
+  // gradually revealed during the swipe, not just after navigation lands.
+  const BACKDROP_PARALLAX = 0.3;
+  const backdropTranslateXFor = (translateX: number): number => {
+    if (typeof window === 'undefined') return 0;
+    return (translateX - window.innerWidth) * BACKDROP_PARALLAX;
+  };
+
   const applySwipeTransform = useCallback(
     (translateX: number, transitionMs: number) => {
-      const transform = translateX === 0 ? '' : `translate3d(${translateX}px, 0, 0)`;
+      const wrapperTransform =
+        translateX === 0 ? '' : `translate3d(${translateX}px, 0, 0)`;
       const transition =
         transitionMs > 0
           ? `transform ${transitionMs}ms cubic-bezier(0.32, 0.72, 0, 1)`
@@ -789,12 +801,18 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       const wrapper = swipeWrapperRef.current;
       const header = headerRef.current;
       if (wrapper) {
-        wrapper.style.transform = transform;
+        wrapper.style.transform = wrapperTransform;
         wrapper.style.transition = transition;
       }
       if (header) {
-        header.style.transform = transform;
+        header.style.transform = wrapperTransform;
         header.style.transition = transition;
+      }
+      const backdrop = backdropRef.current;
+      if (backdrop) {
+        const parallax = backdropTranslateXFor(translateX);
+        backdrop.style.transform = `translate3d(${parallax}px, 0, 0)`;
+        backdrop.style.transition = transition;
       }
     },
     [headerRef],
@@ -1804,9 +1822,17 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       {showHomeBackdrop && createPortal(
         <div
           ref={(el) => {
+            backdropRef.current = el;
             if (!el) return;
             const remembered = getRememberedScroll(HOME_SCROLL_KEY);
             if (remembered !== undefined) el.scrollTop = remembered;
+            // Seed the parallax transform to match the wrapper's current
+            // position so the backdrop mounts in lockstep with the gesture
+            // — no jump on first paint.
+            const wrapper = swipeWrapperRef.current;
+            const matrix = wrapper ? new DOMMatrixReadOnly(getComputedStyle(wrapper).transform) : null;
+            const wrapperTx = matrix ? matrix.m41 : 0;
+            el.style.transform = `translate3d(${backdropTranslateXFor(wrapperTx)}px, 0, 0)`;
           }}
           aria-hidden="true"
           style={{
@@ -1815,7 +1841,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
             zIndex: 0,
             background: 'var(--background)',
             overflowY: 'auto',
-            transform: 'translateZ(0)',
+            willChange: 'transform',
           }}
         >
           {/* Title row — paddingTop matches template.tsx's home block exactly. */}
