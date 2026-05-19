@@ -30,7 +30,7 @@ import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
 import { usePrefetch } from "@/lib/prefetch";
-import { slideToGroupInfo } from "@/lib/slideOverlay";
+import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import FollowUpModal from "@/components/FollowUpModal";
@@ -64,22 +64,28 @@ const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
 // documented in PR #375 that retired the unbounded version.
 const BOTTOM_PIN_DURATION_MS = 800;
 
-const SCROLL_HELPER_BUTTON_CLASS =
-  'fixed left-1/2 -translate-x-1/2 z-40 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
+const SCROLL_HELPER_BUTTON_CLASS_BASE =
+  'fixed left-1/2 -translate-x-1/2 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
 
 function ScrollHelperButton({
   direction,
   onClick,
   style,
+  elevated,
   ...rest
 }: {
   direction: 'up' | 'down';
   onClick: () => void;
   style: React.CSSProperties;
+  /** When true, render above the slide overlay (z-70) instead of at the
+   *  default z-40 so the arrows aren't hidden by the overlay's opaque
+   *  background during a group-kind slide. */
+  elevated?: boolean;
 } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'style' | 'type' | 'className'>) {
   const path = direction === 'up' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7';
+  const className = `${SCROLL_HELPER_BUTTON_CLASS_BASE} ${elevated ? 'z-[70]' : 'z-40'}`;
   return (
-    <button type="button" onClick={onClick} className={SCROLL_HELPER_BUTTON_CLASS} style={style} {...rest}>
+    <button type="button" onClick={onClick} className={className} style={style} {...rest}>
       <svg className="w-[1.35rem] h-[1.35rem]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d={path} />
       </svg>
@@ -1550,6 +1556,17 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     setScrollHelperPortal(document.getElementById('floating-fab-portal'));
   }, []);
 
+  // Elevate the arrow z-index above the slide overlay (z-60) when a
+  // group-kind overlay is mounted. The slide overlay covers the viewport
+  // with an opaque background at z-60; without this elevation the arrows
+  // (default z-40) would be hidden behind the overlay throughout the
+  // slide and only appear after unmount — visible as "arrows only appear
+  // after the transition". Bumped only for group-kind overlays so that
+  // slides FROM group to a subroute (info / edit-title / pollDetail /
+  // pollInfo) still let the source's arrows get progressively covered by
+  // the incoming overlay as it slides over them.
+  const elevateArrowsForOverlay = useIsSlideOverlayGroupActive();
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1870,7 +1887,10 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
 
       {/* Scroll-helper buttons — rendered via the floating-fab-portal so
           `position: fixed` is relative to the real viewport (outside the
-          responsive-scaling container's transform on desktop). */}
+          responsive-scaling container's transform on desktop). The
+          buttons elevate above the slide overlay (z-70) while a
+          group-kind overlay is mounted, so they don't get hidden by the
+          overlay's opaque background during the slide. */}
       {scrollHelperPortal && createPortal(
         <>
           {scrollHelpers.showUp && (
@@ -1878,6 +1898,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
               direction="up"
               onClick={() => scrollAwaitingToHeader(scrollHelpers.upTargetId)}
               aria-label="Scroll to next poll awaiting your response"
+              elevated={elevateArrowsForOverlay}
               style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
             />
           )}
@@ -1900,6 +1921,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
                   ? 'Scroll to next poll awaiting your response'
                   : 'Scroll to bottom'
               }
+              elevated={elevateArrowsForOverlay}
               style={{ bottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
             />
           )}

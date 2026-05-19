@@ -45,10 +45,12 @@ import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { isGroupRootView, normalizePath } from "./questionId";
-import { getRememberedScroll, groupScrollKey, pollScrollKey } from "./scrollMemory";
+import { getRememberedScroll, groupScrollKey } from "./scrollMemory";
 import {
   SLIDE_TO_GROUP_EVENT,
+  SLIDE_OVERLAY_GROUP_ACTIVE_EVENT,
   type SlideToGroupDetail,
+  type SlideOverlayGroupActiveDetail,
   type SlideOverlayKind,
 } from "./eventChannels";
 import { GroupContent } from "@/app/g/[groupShortId]/GroupPage";
@@ -59,6 +61,46 @@ import { PollInfoView } from "@/app/g/[groupShortId]/p/[pollShortId]/info/page";
 import { EmptyPlaceholder } from "@/app/g/page";
 
 const SLIDE_DURATION_MS = 350; // iOS push duration. Tune here only.
+
+// Module-level state for "is a group-kind overlay currently mounted?" —
+// read synchronously by `useIsSlideOverlayGroupActive()` on first render
+// (avoids a one-frame flash where the hook returns false while the event
+// listener attaches). SlideOverlayHost is the sole writer.
+let slideOverlayGroupActive = false;
+
+function setSlideOverlayGroupActive(value: boolean): void {
+  if (slideOverlayGroupActive === value) return;
+  slideOverlayGroupActive = value;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent<SlideOverlayGroupActiveDetail>(
+        SLIDE_OVERLAY_GROUP_ACTIVE_EVENT,
+        { detail: { active: value } },
+      ),
+    );
+  }
+}
+
+/** Subscribe to whether a group-kind slide overlay is currently mounted.
+ *  See `SLIDE_OVERLAY_GROUP_ACTIVE_EVENT` for the use case. */
+export function useIsSlideOverlayGroupActive(): boolean {
+  const [active, setActive] = useState<boolean>(slideOverlayGroupActive);
+  useEffect(() => {
+    // Re-sync in case the module-level value changed between the lazy
+    // useState initializer and the effect attaching (rare but possible
+    // in StrictMode dev double-mount + concurrent slide).
+    setActive(slideOverlayGroupActive);
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<SlideOverlayGroupActiveDetail>).detail;
+      if (!detail) return;
+      setActive(detail.active);
+    };
+    window.addEventListener(SLIDE_OVERLAY_GROUP_ACTIVE_EVENT, handler);
+    return () => window.removeEventListener(SLIDE_OVERLAY_GROUP_ACTIVE_EVENT, handler);
+  }, []);
+  return active;
+}
+
 const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 // Hard upper bound on overlay lifetime if pathname never matches (unexpected
 // redirect, route error). Keeps the user from being stranded behind a stuck
@@ -109,7 +151,6 @@ export function slideToPollDetail({
     direction,
     useHistoryBack,
     kind: { type: 'pollDetail', groupId, pollShortId },
-    overlayCardsOffset: getRememberedScroll(pollScrollKey(pollShortId)),
   });
 }
 
@@ -245,7 +286,6 @@ function renderForKind(
           key={`${kind.groupId}/${kind.pollShortId}`}
           groupId={kind.groupId}
           pollShortId={kind.pollShortId}
-          overlayCardsOffset={overlayCardsOffset}
         />
       );
     case 'pollInfo':
@@ -293,6 +333,16 @@ export function SlideOverlayHost(): React.ReactElement | null {
     window.addEventListener(SLIDE_TO_GROUP_EVENT, handler);
     return () => window.removeEventListener(SLIDE_TO_GROUP_EVENT, handler);
   }, []);
+
+  // Broadcast group-kind overlay mount/unmount so the real-route
+  // <GroupContent> for the destination can elevate its scroll-helper
+  // arrows above the overlay during the slide. See
+  // `SLIDE_OVERLAY_GROUP_ACTIVE_EVENT` for why.
+  useEffect(() => {
+    const isGroupKind =
+      state?.kind.type === 'group' || state?.kind.type === 'newGroup';
+    setSlideOverlayGroupActive(isGroupKind);
+  }, [state?.kind.type]);
 
   // Double-rAF so the browser paints the 'enter' frame at translateX(±100%)
   // before we change the transform — without that gap, the transition is

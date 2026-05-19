@@ -78,6 +78,23 @@ export type SlideOverlayKind =
   // caller owns the navigation.
   | { type: 'newGroup' };
 
+/** Fired by `SlideOverlayHost` whenever a group-kind slide overlay
+ *  (`'group'` or `'newGroup'`) mounts or unmounts. `<GroupContent>` (the
+ *  group root view, which is the slide's destination in these cases)
+ *  subscribes via `useIsSlideOverlayGroupActive()` and elevates its
+ *  portaled scroll-helper arrows above the overlay (z-70 instead of z-40)
+ *  while active — without elevation the arrows sit at z-40 underneath the
+ *  overlay's z-60 opaque background and only become visible after the
+ *  overlay unmounts (~410ms in, surfacing as "arrows only appear after
+ *  the transition"). Non-group kinds (`'groupInfo'`, `'pollDetail'`, etc.)
+ *  don't fire this event because the source group's arrows under those
+ *  overlays should remain at the default z-40 and naturally get covered
+ *  as the overlay slides across the viewport. */
+export const SLIDE_OVERLAY_GROUP_ACTIVE_EVENT = 'slideOverlayGroupActive';
+export interface SlideOverlayGroupActiveDetail {
+  active: boolean;
+}
+
 export interface SlideToGroupDetail {
   /** Canonical destination href, e.g. `/g/abc?p=xyz`. */
   href: string;
