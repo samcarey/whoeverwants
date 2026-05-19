@@ -10,7 +10,7 @@
  * on the next rAF. Back arrow slides back to the group root.
  */
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { flushSync } from "react-dom";
 import {
@@ -37,6 +37,11 @@ import {
 import { addAccessibleQuestionId, isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { hasAppHistory } from "@/lib/viewTransitions";
+import {
+  getRememberedScroll,
+  pollScrollKey,
+  rememberCurrentScroll,
+} from "@/lib/scrollMemory";
 import { isUuidLike } from "@/lib/questionId";
 import {
   compactDurationSince,
@@ -87,12 +92,14 @@ function InlineCategoryIcon({
 interface PollDetailViewProps {
   groupId: string;
   pollShortId: string;
+  /** See `SlideToGroupDetail.overlayCardsOffset` in `lib/eventChannels.ts`. */
+  overlayCardsOffset?: number;
 }
 
 /** Prop-driven view exposed so SlideOverlayHost can render the page during
  *  the slide-in animation. The default page export below wraps this with
  *  `useParams` for direct URL navigation. */
-export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
+export function PollDetailView({ groupId, pollShortId, overlayCardsOffset }: PollDetailViewProps) {
   const router = useRouter();
 
   const [poll, setPoll] = useState<Poll | null>(() => {
@@ -150,8 +157,9 @@ export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
   }, [poll, pollShortId, groupId]);
 
   const goBack = useCallback(() => {
+    rememberCurrentScroll(pollScrollKey(pollShortId));
     slideToGroupRoot({ groupId, direction: "back", useHistoryBack: hasAppHistory() });
-  }, [groupId]);
+  }, [groupId, pollShortId]);
 
   if (loading && !poll) return <SimpleFrame onBack={goBack}><p className="text-gray-600 dark:text-gray-400">Loading poll...</p></SimpleFrame>;
 
@@ -170,7 +178,16 @@ export function PollDetailView({ groupId, pollShortId }: PollDetailViewProps) {
     );
   }
 
-  return <PollDetail poll={poll} setPoll={setPoll} groupId={groupId} onBack={goBack} />;
+  return (
+    <PollDetail
+      poll={poll}
+      setPoll={setPoll}
+      groupId={groupId}
+      pollShortId={pollShortId}
+      onBack={goBack}
+      overlayCardsOffset={overlayCardsOffset}
+    />
+  );
 }
 
 /** Loading / error frame — no measured header since nothing flows under it. */
@@ -190,10 +207,13 @@ interface PollDetailProps {
   poll: Poll;
   setPoll: React.Dispatch<React.SetStateAction<Poll | null>>;
   groupId: string;
+  pollShortId: string;
   onBack: () => void;
+  overlayCardsOffset?: number;
 }
 
-function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
+function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsOffset }: PollDetailProps) {
+  const scrollKey = pollScrollKey(pollShortId);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([], 80);
 
   const [votedQuestionIds, setVotedQuestionIds] = useState<Set<string>>(() => {
@@ -345,11 +365,65 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
     return () => window.removeEventListener("question:updated", handler);
   }, [setPoll]);
 
-  // Scroll to top on mount so the slide handoff lands at the page top
-  // (independent of whatever scrollY the group page had).
+  // Same restore-loop pattern as GroupContent — see CLAUDE.md "Scroll-Position Memory".
+  // The rAF loop defeats iOS Safari + Next.js App Router's post-layoutEffect
+  // scroll-to-top reset (~30-40ms after our scrollTo).
+  const restoreTargetRef = useRef<number | null>(null);
+  const restoreDeadlineRef = useRef(0);
+  const userInteractedRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const remembered = getRememberedScroll(scrollKey);
+    if (remembered !== undefined) {
+      restoreTargetRef.current = remembered;
+      restoreDeadlineRef.current = Date.now() + 800;
+      window.scrollTo(0, remembered);
+      return;
+    }
+    window.scrollTo(0, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (restoreTargetRef.current == null) return;
+    let rafId: number | null = null;
+    let stableFrames = 0;
+    const tick = () => {
+      rafId = null;
+      if (userInteractedRef.current || Date.now() >= restoreDeadlineRef.current) {
+        restoreTargetRef.current = null;
+        return;
+      }
+      const target = restoreTargetRef.current;
+      if (target == null) return;
+      if (Math.abs(window.scrollY - target) > 0.5) {
+        window.scrollTo(0, target);
+        stableFrames = 0;
+      } else if (++stableFrames >= 3) {
+        restoreTargetRef.current = null;
+        return;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.scrollTo(0, 0);
+    const disable = () => { userInteractedRef.current = true; };
+    const opts: AddEventListenerOptions = { passive: true, capture: true };
+    window.addEventListener("pointerdown", disable, opts);
+    window.addEventListener("wheel", disable, opts);
+    window.addEventListener("keydown", disable, opts);
+    return () => {
+      window.removeEventListener("pointerdown", disable, opts);
+      window.removeEventListener("wheel", disable, opts);
+      window.removeEventListener("keydown", disable, opts);
+    };
   }, []);
 
   const subQuestions = poll.questions;
@@ -448,12 +522,13 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
         headerRef={headerRef}
         title={pollTitle}
         onBack={onBack}
-        onTitleClick={() =>
+        onTitleClick={() => {
+          rememberCurrentScroll(scrollKey);
           slideToPollInfo({
             groupId,
             pollShortId: poll.short_id || poll.id,
-          })
-        }
+          });
+        }}
         titleAriaLabel="Poll details"
         rightSlot={
           <div className="self-stretch py-2 px-2 flex items-center justify-center shrink-0">
@@ -462,7 +537,15 @@ function PollDetail({ poll, setPoll, groupId, onBack }: PollDetailProps) {
         }
       />
 
-      <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
+      <div
+        style={{
+          paddingTop: `calc(${headerHeight}px + 1.5rem)`,
+          transform: overlayCardsOffset
+            ? `translate3d(0, ${-overlayCardsOffset}px, 0)`
+            : undefined,
+          willChange: overlayCardsOffset ? "transform" : undefined,
+        }}
+      >
         {/* Meta strip: creator avatar + name · relative time on the left,
             poll-level status (countdown / closed / phase label) on the
             right. Mirrors the group-list card's chrome so the detail page

@@ -45,7 +45,7 @@ import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { isGroupRootView, normalizePath } from "./questionId";
-import { getRememberedScroll, groupScrollKey } from "./scrollMemory";
+import { getRememberedScroll, groupScrollKey, pollScrollKey } from "./scrollMemory";
 import {
   SLIDE_TO_GROUP_EVENT,
   type SlideToGroupDetail,
@@ -109,6 +109,7 @@ export function slideToPollDetail({
     direction,
     useHistoryBack,
     kind: { type: 'pollDetail', groupId, pollShortId },
+    overlayCardsOffset: getRememberedScroll(pollScrollKey(pollShortId)),
   });
 }
 
@@ -244,6 +245,7 @@ function renderForKind(
           key={`${kind.groupId}/${kind.pollShortId}`}
           groupId={kind.groupId}
           pollShortId={kind.pollShortId}
+          overlayCardsOffset={overlayCardsOffset}
         />
       );
     case 'pollInfo':
