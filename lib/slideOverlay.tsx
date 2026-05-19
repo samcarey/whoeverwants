@@ -109,9 +109,6 @@ export function slideToPollDetail({
     direction,
     useHistoryBack,
     kind: { type: 'pollDetail', groupId, pollShortId },
-    // Same pattern as `slideToGroup` — pre-position the destination's
-    // content wrapper to the saved scroll so the slide-in shows the
-    // user's prior position rather than top-of-page with a snap on unmount.
     overlayCardsOffset: getRememberedScroll(pollScrollKey(pollShortId)),
   });
 }

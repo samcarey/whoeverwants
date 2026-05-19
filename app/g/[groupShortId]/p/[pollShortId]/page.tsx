@@ -92,11 +92,7 @@ function InlineCategoryIcon({
 interface PollDetailViewProps {
   groupId: string;
   pollShortId: string;
-  /** Visual scroll offset applied to the content wrapper via CSS transform
-   *  while the slide-in plays. Mirrors `GroupContent.overlayCardsOffset` —
-   *  the overlay's scrollTop stays 0, the destination's own layoutEffect
-   *  drives `window.scrollY` to the same value, and on unmount the real
-   *  route is already in position so no visual snap. */
+  /** See `SlideToGroupDetail.overlayCardsOffset` in `lib/eventChannels.ts`. */
   overlayCardsOffset?: number;
 }
 
@@ -161,7 +157,6 @@ export function PollDetailView({ groupId, pollShortId, overlayCardsOffset }: Pol
   }, [poll, pollShortId, groupId]);
 
   const goBack = useCallback(() => {
-    // Save scroll BEFORE the navigation so re-entry restores it.
     rememberCurrentScroll(pollScrollKey(pollShortId));
     slideToGroupRoot({ groupId, direction: "back", useHistoryBack: hasAppHistory() });
   }, [groupId, pollShortId]);
@@ -218,6 +213,7 @@ interface PollDetailProps {
 }
 
 function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsOffset }: PollDetailProps) {
+  const scrollKey = pollScrollKey(pollShortId);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([], 80);
 
   const [votedQuestionIds, setVotedQuestionIds] = useState<Set<string>>(() => {
@@ -369,20 +365,16 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     return () => window.removeEventListener("question:updated", handler);
   }, [setPoll]);
 
-  // Initial-load scroll: restore the position saved when the user
-  // last navigated away (back arrow / title tap), else scroll to top
-  // for a fresh visit. Mirrors `GroupContent`'s restore loop — iOS
-  // Safari + Next.js App Router reset scrollY ~30-40ms after our
-  // initial scrollTo, so a single application isn't enough; the rAF
-  // loop below re-applies until scrollY sticks or the user
-  // interacts. The deadline matches GroupContent's BOTTOM_PIN_DURATION_MS.
+  // Same restore-loop pattern as GroupContent — see CLAUDE.md "Scroll-Position Memory".
+  // The rAF loop defeats iOS Safari + Next.js App Router's post-layoutEffect
+  // scroll-to-top reset (~30-40ms after our scrollTo).
   const restoreTargetRef = useRef<number | null>(null);
   const restoreDeadlineRef = useRef(0);
   const userInteractedRef = useRef(false);
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
-    const remembered = getRememberedScroll(pollScrollKey(pollShortId));
+    const remembered = getRememberedScroll(scrollKey);
     if (remembered !== undefined) {
       restoreTargetRef.current = remembered;
       restoreDeadlineRef.current = Date.now() + 800;
@@ -420,19 +412,17 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     };
   }, []);
 
-  // pointerdown / wheel / keydown release the restore pin so a real
-  // user scroll during the bounded window isn't undone. Capture-phase
-  // so it fires regardless of inner handler stopPropagation.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const disable = () => { userInteractedRef.current = true; };
-    window.addEventListener("pointerdown", disable, { passive: true, capture: true });
-    window.addEventListener("wheel", disable, { passive: true, capture: true });
-    window.addEventListener("keydown", disable, { passive: true, capture: true });
+    const opts: AddEventListenerOptions = { passive: true, capture: true };
+    window.addEventListener("pointerdown", disable, opts);
+    window.addEventListener("wheel", disable, opts);
+    window.addEventListener("keydown", disable, opts);
     return () => {
-      window.removeEventListener("pointerdown", disable, { capture: true } as any);
-      window.removeEventListener("wheel", disable, { capture: true } as any);
-      window.removeEventListener("keydown", disable, { capture: true } as any);
+      window.removeEventListener("pointerdown", disable, opts);
+      window.removeEventListener("wheel", disable, opts);
+      window.removeEventListener("keydown", disable, opts);
     };
   }, []);
 
@@ -533,8 +523,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
         title={pollTitle}
         onBack={onBack}
         onTitleClick={() => {
-          // Save scroll BEFORE navigating to /info so back-nav restores here.
-          rememberCurrentScroll(pollScrollKey(pollShortId));
+          rememberCurrentScroll(scrollKey);
           slideToPollInfo({
             groupId,
             pollShortId: poll.short_id || poll.id,
@@ -551,12 +540,6 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
       <div
         style={{
           paddingTop: `calc(${headerHeight}px + 1.5rem)`,
-          // While the slide overlay plays, pre-position the visible
-          // content via transform so the user sees their saved scroll
-          // throughout the animation. The overlay itself does NOT
-          // scroll (its scrollTop stays 0) to avoid the WebKit
-          // contain:strict + position-fixed-scrolls-with-content
-          // quirk that would drag the GroupHeader off the viewport.
           transform: overlayCardsOffset
             ? `translate3d(0, ${-overlayCardsOffset}px, 0)`
             : undefined,
