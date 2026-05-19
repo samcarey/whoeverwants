@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useState, useRef, useMe
 import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
-import { getMyGroups, getCachedEmptyGroups } from "@/lib/simpleQuestionQueries";
+import { getMyGroups } from "@/lib/simpleQuestionQueries";
 import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
 // POLL_QUERY_PARAM is still used by `GroupPageInner` to redirect legacy
 // `?p=<pollShort>` URLs to the new `/g/<group>/p/<pollShort>` route.
@@ -19,6 +19,8 @@ import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
   POLL_FAILED_EVENT,
+  SHOW_HOME_BACKDROP_EVENT,
+  HIDE_HOME_BACKDROP_EVENT,
   type PollPendingDetail,
   type PollHydratedDetail,
   type PollFailedDetail,
@@ -31,12 +33,11 @@ import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionLi
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
 import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
-import { getRememberedScroll, groupScrollKey, rememberCurrentScroll, HOME_SCROLL_KEY } from "@/lib/scrollMemory";
+import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import GroupHeader from "@/components/GroupHeader";
-import GroupList from "@/components/GroupList";
 import { forgetQuestion } from "@/lib/forgetQuestion";
 import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
@@ -767,7 +768,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // preventDefault on touchmove (per CLAUDE.md: that permanently kills iOS
   // scroll for the touch sequence).
   const swipeWrapperRef = useRef<HTMLDivElement | null>(null);
-  const backdropRef = useRef<HTMLDivElement | null>(null);
   const upArrowRef = useRef<HTMLButtonElement | null>(null);
   const downArrowRef = useRef<HTMLButtonElement | null>(null);
   const swipeStateRef = useRef<{
@@ -778,7 +778,19 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     startTime: number;
     committing: boolean;
   } | null>(null);
-  const [showHomeBackdrop, setShowHomeBackdrop] = useState(false);
+  // Backdrop visibility is now owned by HomeBackdropHost at layout level
+  // (so it survives router.push). We dispatch SHOW/HIDE events instead of
+  // managing the state here directly.
+  const showHomeBackdrop = () => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT));
+    }
+  };
+  const hideHomeBackdrop = () => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
+    }
+  };
 
   // Backdrop stays at its final position (no parallax) — the user sees the
   // home page elements at their natural locations from the very start of
@@ -865,7 +877,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       st.swiping = true;
       // Mount the home backdrop so the user sees home revealed under the
       // page as soon as motion is recognized as a swipe-back.
-      setShowHomeBackdrop(true);
+      showHomeBackdrop();
     }
     // Cap at 0 so the user can't pull the page past its starting edge.
     const offset = Math.max(0, dx);
@@ -908,7 +920,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       window.setTimeout(() => {
         clearSwipeTransform();
         swipeStateRef.current = null;
-        setShowHomeBackdrop(false);
+        hideHomeBackdrop();
       }, 240);
     }
   };
@@ -920,10 +932,10 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       applySwipeTransform(0, 200);
       window.setTimeout(() => {
         clearSwipeTransform();
-        setShowHomeBackdrop(false);
+        hideHomeBackdrop();
       }, 220);
     } else {
-      setShowHomeBackdrop(false);
+      hideHomeBackdrop();
     }
   };
 
@@ -1804,88 +1816,14 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           surface we transform during a slide overlay's pre-position —
           transforming the overlay itself would drag the fixed header
           with the content per the WebKit contain:strict quirk. */}
-      {/* Home backdrop + non-parallax'd chrome — mounted only while a
-          swipe-back gesture is active. The backdrop holds the parallax'd
-          content (title, phrase, cards) and is revealed underneath as the
-          wrapper slides right. The settings gear (top-left) and +Group
-          button (bottom-right) sit OUTSIDE the parallax'd backdrop in
-          their own fixed layers, so they appear at their final viewport
-          positions from the first pixel of motion (matching what the user
-          sees on the real home route). All three are masked by the opaque
-          swipe wrapper (z-1) until the wrapper transforms sideways. */}
-      {showHomeBackdrop && createPortal(
-        <>
-          <div
-            ref={(el) => {
-              backdropRef.current = el;
-              if (!el) return;
-              const remembered = getRememberedScroll(HOME_SCROLL_KEY);
-              if (remembered !== undefined) el.scrollTop = remembered;
-            }}
-            aria-hidden="true"
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 0,
-              background: 'var(--background)',
-              overflowY: 'auto',
-            }}
-          >
-            {/* Title row — paddingTop matches template.tsx's home block exactly. */}
-            <div
-              className="max-w-4xl mx-auto px-2 pb-1"
-              style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}
-            >
-              <div className="relative text-center">
-                <h1 className="text-2xl font-bold mb-1 select-none">Whoever Wants</h1>
-              </div>
-              <div className="h-7 flex items-center justify-center mb-1" />
-            </div>
-            {/* Cards area — wrapper classes match template.tsx for home. */}
-            <div
-              className="max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4 pt-0.5"
-              style={{ paddingBottom: '6rem' }}
-            >
-              <GroupList
-                polls={getCachedAccessiblePolls() ?? []}
-                emptyGroups={getCachedEmptyGroups() ?? []}
-              />
-            </div>
-          </div>
-          {/* Static settings gear — sits at the same viewport position the
-              real one occupies on /. Not parallax'd so it appears in place
-              from the moment the wrapper starts to expose the left edge. */}
-          <span
-            aria-hidden="true"
-            className="fixed z-50 w-10 h-10 flex items-center justify-center rounded-full"
-            style={{
-              // Aligns vertical center with the "Whoever Wants" h1 baseline —
-              // matches the real gear's `absolute top-1/2 -translate-y-1/2`
-              // positioning inside template.tsx's 36px-tall title row.
-              top: 'calc(0.75rem + env(safe-area-inset-top, 0px) - 2px)',
-              left: 'max(0.25rem, env(safe-area-inset-left, 0px))',
-            }}
-          >
-            <svg className="w-6 h-6 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </span>
-          {/* Static +Group button — same viewport position as the real one. */}
-          <span
-            aria-hidden="true"
-            className="fixed z-50 h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 shadow-md shadow-black/20 text-white font-normal"
-            style={{
-              right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
-              bottom: '1rem',
-            }}
-          >
-            <span aria-hidden="true" className="text-[28.8px] leading-none">+</span>
-            <span className="text-lg leading-none">Group</span>
-          </span>
-        </>,
-        document.body,
-      )}
+      {/* Home backdrop is rendered by <HomeBackdropHost /> at the layout
+          level (see components/HomeBackdropHost.tsx). GroupContent
+          dispatches SHOW_HOME_BACKDROP_EVENT on swipe lock and
+          HIDE_HOME_BACKDROP_EVENT on snap-back/cancel; the home page's
+          mount effect dispatches HIDE so the backdrop dismisses itself
+          once home has rendered. Living outside this component is what
+          eliminates the blank frame between router.push commit and home's
+          first paint. */}
 
       {/* Swipe-back wrapper. Owns its own transform (set imperatively by
           the touch handlers via swipeWrapperRef); the inner cards div keeps

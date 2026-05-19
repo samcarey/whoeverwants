@@ -6,7 +6,7 @@ import { getCachedEmptyGroups, getMyGroups } from "@/lib/simpleQuestionQueries";
 import { apiGetAllQuestionIds } from "@/lib/api";
 import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
-import { POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
+import { HIDE_HOME_BACKDROP_EVENT, POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
 import { usePageReady } from "@/lib/usePageReady";
 import { HOME_SCROLL_KEY, getRememberedScroll } from "@/lib/scrollMemory";
 import GroupList from "@/components/GroupList";
@@ -55,6 +55,18 @@ export default function Home() {
   const [fontSize, setFontSize] = useState<string>("text-xl");
 
   usePageReady(true);
+
+  // Dismiss the swipe-back home backdrop on mount. The backdrop persists
+  // across the router.push that commits the swipe (mounted at layout
+  // level via HomeBackdropHost) so there's no blank frame between
+  // GroupContent unmount and this page's first paint; once we've rendered
+  // we tell the host to unmount. Inside useLayoutEffect so the dispatch
+  // happens before the browser paints (otherwise the backdrop briefly
+  // sits over the rendered home page).
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
+  }, []);
 
   // Restore the scroll position saved when navigating away to a group
   // page. Fires synchronously before paint via `useLayoutEffect` and is
