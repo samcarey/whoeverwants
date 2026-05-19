@@ -963,6 +963,12 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   //    rAF-coalesced so a mutation burst doesn't trigger N forced
   //    layouts via getBoundingClientRect().
   //
+  //    OFF→ON transitions are suppressed while the user is actively
+  //    scrolling: if an arrow isn't visible when scrolling starts, it
+  //    stays hidden until scroll has completely stopped (150ms debounce
+  //    on the scroll listener). Already-visible arrows keep updating
+  //    normally so they can hide or retarget mid-scroll.
+  //
   // ===================================================================
   // Initial-load scroll (path 1). Always lands the viewer at the
   // document bottom so the bubble bar is visible.
@@ -1431,6 +1437,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   useEffect(() => {
     if (!group || typeof window === 'undefined') return;
     let rafId: number | null = null;
+    // Suppress OFF→ON transitions while the user is mid-scroll: if an
+    // arrow isn't already visible when scrolling starts, defer surfacing
+    // it until scroll has completely stopped (debounced via the timer
+    // below). Already-visible arrows continue updating normally so they
+    // can hide / retarget. Threshold 150ms covers iOS momentum pauses.
+    let isScrolling = false;
+    let scrollStoppedTimer: number | null = null;
     const evaluate = () => {
       rafId = null;
       const viewportTop = headerHeight;
@@ -1464,14 +1477,18 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         document.documentElement.scrollHeight - window.innerHeight,
       );
       const showDown = window.scrollY < maxScroll - 1;
-      setScrollHelpers((prev) => (
-        prev.showUp === showUp &&
-        prev.showDown === showDown &&
-        prev.upTargetId === upTargetId &&
-        prev.downTargetId === downTargetId
-          ? prev
-          : { showUp, showDown, upTargetId, downTargetId }
-      ));
+      setScrollHelpers((prev) => {
+        const effShowUp = isScrolling && !prev.showUp ? false : showUp;
+        const effShowDown = isScrolling && !prev.showDown ? false : showDown;
+        return (
+          prev.showUp === effShowUp &&
+          prev.showDown === effShowDown &&
+          prev.upTargetId === upTargetId &&
+          prev.downTargetId === downTargetId
+            ? prev
+            : { showUp: effShowUp, showDown: effShowDown, upTargetId, downTargetId }
+        );
+      });
     };
     // rAF-coalesce: a body-subtree MutationObserver fires on every DOM
     // mutation (vote-driven re-renders, expand/collapse animations,
@@ -1481,8 +1498,18 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       if (rafId !== null) return;
       rafId = requestAnimationFrame(evaluate);
     };
+    const onScroll = () => {
+      isScrolling = true;
+      if (scrollStoppedTimer !== null) window.clearTimeout(scrollStoppedTimer);
+      scrollStoppedTimer = window.setTimeout(() => {
+        isScrolling = false;
+        scrollStoppedTimer = null;
+        schedule();
+      }, 150);
+      schedule();
+    };
     evaluate();
-    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', schedule, { passive: true });
     // Body subtree catches vote-driven DOM changes that flip a card's
     // awaiting state plus expand/collapse height transitions that move
@@ -1491,7 +1518,8 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     observer.observe(document.body, { childList: true, subtree: true });
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
-      window.removeEventListener('scroll', schedule);
+      if (scrollStoppedTimer !== null) window.clearTimeout(scrollStoppedTimer);
+      window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', schedule);
       observer.disconnect();
     };
