@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useState, useRef, useMemo, Sus
 import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
-import { getMyGroups } from "@/lib/simpleQuestionQueries";
+import { getMyGroups, getCachedEmptyGroups } from "@/lib/simpleQuestionQueries";
 import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, buildPollMap, findChainRoot, isPendingPollId, POLL_QUERY_PARAM } from "@/lib/groupUtils";
 // POLL_QUERY_PARAM is still used by `GroupPageInner` to redirect legacy
 // `?p=<pollShort>` URLs to the new `/g/<group>/p/<pollShort>` route.
@@ -31,11 +31,12 @@ import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionLi
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
 import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
-import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
+import { getRememberedScroll, groupScrollKey, rememberCurrentScroll, HOME_SCROLL_KEY } from "@/lib/scrollMemory";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import GroupHeader from "@/components/GroupHeader";
+import GroupList from "@/components/GroupList";
 import { forgetQuestion } from "@/lib/forgetQuestion";
 import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
@@ -756,9 +757,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group], 80);
 
   // Swipe-back gesture: dragging rightward on the content slides the page
-  // off to the right with home revealed underneath (the destination renders
-  // after router.push). Refs (not state) drive the transform during the
-  // gesture so per-frame motion doesn't trigger React re-renders.
+  // off to the right with home revealed underneath. While the gesture is
+  // active a "home backdrop" portal is mounted at z-index 0 showing the
+  // cached groups list — so the user sees home from the first pixel of
+  // motion (matching iOS native back-swipe), not just after navigation
+  // completes. Refs (not state) drive the transform during the gesture so
+  // per-frame motion doesn't trigger React re-renders; only the backdrop
+  // mount/unmount goes through state.
   // `touch-action: pan-y` on the wrapper hands horizontal pans to us while
   // letting the browser handle vertical scroll natively — so we never
   // preventDefault on touchmove (per CLAUDE.md: that permanently kills iOS
@@ -772,6 +777,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     startTime: number;
     committing: boolean;
   } | null>(null);
+  const [showHomeBackdrop, setShowHomeBackdrop] = useState(false);
 
   const applySwipeTransform = useCallback(
     (translateX: number, transitionMs: number) => {
@@ -843,6 +849,9 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         return;
       }
       st.swiping = true;
+      // Mount the home backdrop so the user sees home revealed under the
+      // page as soon as motion is recognized as a swipe-back.
+      setShowHomeBackdrop(true);
     }
     // Cap at 0 so the user can't pull the page past its starting edge.
     const offset = Math.max(0, dx);
@@ -885,6 +894,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       window.setTimeout(() => {
         clearSwipeTransform();
         swipeStateRef.current = null;
+        setShowHomeBackdrop(false);
       }, 240);
     }
   };
@@ -896,7 +906,10 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       applySwipeTransform(0, 200);
       window.setTimeout(() => {
         clearSwipeTransform();
+        setShowHomeBackdrop(false);
       }, 220);
+    } else {
+      setShowHomeBackdrop(false);
     }
   };
 
@@ -1777,11 +1790,61 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           surface we transform during a slide overlay's pre-position —
           transforming the overlay itself would drag the fixed header
           with the content per the WebKit contain:strict quirk. */}
+      {/* Home backdrop — mounted only while a swipe-back gesture is active.
+          Sits at z-index 0 behind the opaque swipe wrapper. As the wrapper
+          slides right, the backdrop is revealed on the left. Mirrors the
+          chrome that template.tsx renders for the real home route ("Whoever
+          Wants" title + GroupList of cached polls) so the visual matches
+          what the user will land on after the gesture commits. The portal
+          target is `document.body` so the backdrop's z-index resolves in
+          the root stacking context (the swipe wrapper sits inside the
+          template's containing div, which has no transform — so its
+          `position: relative; z-index: 1` puts it in the same root context
+          above this backdrop). */}
+      {showHomeBackdrop && createPortal(
+        <div
+          ref={(el) => {
+            if (!el) return;
+            const remembered = getRememberedScroll(HOME_SCROLL_KEY);
+            if (remembered !== undefined) el.scrollTop = remembered;
+          }}
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 0,
+            background: 'var(--background)',
+            overflowY: 'auto',
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+          }}
+        >
+          <div className="text-center pt-0.5 mb-1 select-none">
+            <h1 className="text-2xl font-bold">Whoever Wants</h1>
+            <div className="h-7" />
+          </div>
+          <div
+            className="max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4"
+            style={{ paddingBottom: '6rem' }}
+          >
+            <GroupList
+              polls={getCachedAccessiblePolls() ?? []}
+              emptyGroups={getCachedEmptyGroups() ?? []}
+            />
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* Swipe-back wrapper. Owns its own transform (set imperatively by
           the touch handlers via swipeWrapperRef); the inner cards div keeps
           its own transform for overlayCardsOffset so the two don't conflict
           across React re-renders. `touch-action: pan-y` hands horizontal
-          pans to the app while leaving vertical scroll to the browser. */}
+          pans to the app while leaving vertical scroll to the browser.
+          `position: relative; z-index: 1` + opaque background keeps the
+          home backdrop hidden behind the page until the swipe actually
+          moves the wrapper sideways. `minHeight: 100dvh` extends the
+          opaque background to the bottom of the viewport so the backdrop
+          can't peek through below short groups. */}
       <div
         ref={swipeWrapperRef}
         onTouchStart={handleSwipeTouchStart}
@@ -1789,7 +1852,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         onTouchEnd={handleSwipeTouchEnd}
         onTouchCancel={handleSwipeTouchCancel}
         className="touch-pan-y"
-        style={{ willChange: 'transform' }}
+        style={{
+          willChange: 'transform',
+          position: 'relative',
+          zIndex: 1,
+          background: 'var(--background)',
+          minHeight: '100dvh',
+        }}
       >
       <div
         className="pb-2"
