@@ -49,7 +49,14 @@ export default function HomeBackdropHost(): React.ReactElement | null {
   if (!visible || typeof document === "undefined") return null;
 
   return createPortal(
-    <>
+    // Wrap in a div carrying the Geist sans font-family. The portal target
+    // is document.body, which only declares `--font-geist-sans` as a CSS
+    // variable — the actual `font-family` rule lives on the inner wrapper
+    // inside <ResponsiveScaling> that this portal bypasses. Without this
+    // class the backdrop text renders in the browser default (Arial/
+    // Helvetica) and snaps to Geist Sans the moment the real home page
+    // mounts. Same pattern as SlideOverlayHost.
+    <div className="font-[family-name:var(--font-geist-sans)]">
       <div
         ref={(el) => {
           if (!el) return;
@@ -123,7 +130,7 @@ export default function HomeBackdropHost(): React.ReactElement | null {
         <span aria-hidden="true" className="text-[28.8px] leading-none">+</span>
         <span className="text-lg leading-none">Group</span>
       </span>
-    </>,
+    </div>,
     document.body,
   );
 }
