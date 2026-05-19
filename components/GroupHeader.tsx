@@ -60,9 +60,22 @@ export default function GroupHeader({
   const handleBack = onBack ?? (() => navigateWithTransition(router, '/', 'back'));
 
   const titleBlock = title ? (
-    <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
-      {title}
-    </h1>
+    <>
+      <h1 className="min-w-0 font-semibold text-lg text-gray-900 dark:text-white truncate">
+        {title}
+      </h1>
+      {onTitleClick && (
+        <svg
+          className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      )}
+    </>
   ) : null;
 
   const middleRightPad = hasRightSlot ? 'pr-2' : 'pr-4';
@@ -75,7 +88,7 @@ export default function GroupHeader({
           anonymousCount={anonymousCount ?? 0}
         />
       )}
-      <div className="min-w-0 flex-1">{titleBlock}</div>
+      <div className="min-w-0 flex-1 flex items-center gap-1">{titleBlock}</div>
     </>
   );
 
