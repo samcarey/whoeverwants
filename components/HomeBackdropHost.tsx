@@ -70,6 +70,12 @@ export default function HomeBackdropHost(): React.ReactElement | null {
           zIndex: 0,
           background: "var(--background)",
           overflowY: "auto",
+          // Mirror template.tsx's horizontal safe-area wrapper that the
+          // real home page lives inside. Without this, the backdrop
+          // content extends ~0.35rem further outward than the real home
+          // and snaps inward when the transition commits.
+          paddingLeft: "max(0.35rem, env(safe-area-inset-left))",
+          paddingRight: "max(0.35rem, env(safe-area-inset-right))",
         }}
       >
         <div
