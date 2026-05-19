@@ -571,7 +571,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           onTouchMove={handleTouchMove}
-          className={`min-w-0 px-2 pt-1.5 pb-0.5 rounded-2xl border shadow-sm cursor-pointer ${
+          className={`min-w-0 px-2 pt-1.5 ${
+            !isPlaceholder && pillEl ? "pb-0.5" : "pb-1.5"
+          } rounded-2xl border shadow-sm cursor-pointer ${
             isAwaiting
               ? "border-amber-400 dark:border-amber-500"
               : "border-gray-200 dark:border-gray-800"
