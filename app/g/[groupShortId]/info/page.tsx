@@ -82,7 +82,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         }
       />
 
-      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
+      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 0.15rem)` }}>
         <div className="flex flex-col items-center text-center mb-[3.2px]">
           <GroupAvatar
             imageUrl={group.imageUrl}
@@ -90,7 +90,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
             anonymousCount={group.anonymousRespondentCount}
             sizeClassName="w-[10.5rem]"
           />
-          <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white break-words">
+          <h1 className="mt-[0.4rem] text-3xl font-bold text-gray-900 dark:text-white break-words">
             {displayTitle}
           </h1>
           <div className="mt-[1.7px]">
