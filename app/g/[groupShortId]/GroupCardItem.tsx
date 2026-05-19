@@ -447,18 +447,28 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           )}
         </div>
 
-        {/* Pill row: centered across the FULL rectangle width (not just the
-            right column). Renders only when there's a non-empty pill so
-            empty groups don't leave a stray gap. `mb-3` gives the
-            user-requested breathing room before the bottom row. CSS
-            `zoom: 1.4` on an inner block element (NOT the flex container)
-            scales the pill (font, padding, badge, etc.) proportionally
-            by 40% while reflowing siblings — applying zoom to the flex
-            wrapper itself produces inconsistent results in WebKit, so we
-            scope it to a plain `<div>` inside the flex parent. */}
+        {/* Pill row: centered across the FULL rectangle width (not just
+            the right column). Renders only when there's a non-empty
+            pill so empty groups don't leave a stray gap.
+            `transform: scale(1.4)` enlarges the pill (font, padding,
+            badges) proportionally by 40%. We tried CSS `zoom` first but
+            it didn't render in WebKit even on a fresh browser load —
+            switched to `transform` which is universally supported with
+            no quirks. The downside is `transform` doesn't reflow, so we
+            absorb the ~20% visual overflow with explicit `py-2` on the
+            outer flex container — that gives the pill ~8px on top and
+            ~8px below to expand into without colliding with the title
+            row above or the author/respondents row below. */}
         {!isPlaceholder && pillEl && (
-          <div className="mt-2 mb-3 flex justify-center min-w-0">
-            <div style={{ zoom: 1.4 }}>{pillEl}</div>
+          <div className="mt-1 mb-2 py-2 flex justify-center min-w-0">
+            <div
+              style={{
+                transform: "scale(1.4)",
+                transformOrigin: "center",
+              }}
+            >
+              {pillEl}
+            </div>
           </div>
         )}
 
