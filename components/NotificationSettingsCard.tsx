@@ -160,7 +160,7 @@ export default function NotificationSettingsCard({ groupRouteId }: Props) {
   const helpText = (() => {
     if (capability === null) return null;
     if (!capability.anySupported) {
-      return "Notifications are not supported on this device.";
+      return "Notifications are not supported on this platform.";
     }
     if (capability.permissionDenied) {
       return "Notifications are blocked in your browser settings.";
