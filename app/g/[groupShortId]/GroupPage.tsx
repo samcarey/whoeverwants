@@ -755,6 +755,150 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // pre-effect state.
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group], 80);
 
+  // Swipe-back gesture: dragging leftward on the content slides the page
+  // off to the left with home revealed underneath (the destination renders
+  // after router.push). Refs (not state) drive the transform during the
+  // gesture so per-frame motion doesn't trigger React re-renders.
+  // `touch-action: pan-y` on the wrapper hands horizontal pans to us while
+  // letting the browser handle vertical scroll natively — so we never
+  // preventDefault on touchmove (per CLAUDE.md: that permanently kills iOS
+  // scroll for the touch sequence).
+  const swipeWrapperRef = useRef<HTMLDivElement | null>(null);
+  const swipeStateRef = useRef<{
+    startX: number;
+    startY: number;
+    swiping: boolean;
+    ignored: boolean;
+    startTime: number;
+    committing: boolean;
+  } | null>(null);
+
+  const applySwipeTransform = useCallback(
+    (translateX: number, transitionMs: number) => {
+      const transform = translateX === 0 ? '' : `translate3d(${translateX}px, 0, 0)`;
+      const transition =
+        transitionMs > 0
+          ? `transform ${transitionMs}ms cubic-bezier(0.32, 0.72, 0, 1)`
+          : 'none';
+      const wrapper = swipeWrapperRef.current;
+      const header = headerRef.current;
+      if (wrapper) {
+        wrapper.style.transform = transform;
+        wrapper.style.transition = transition;
+      }
+      if (header) {
+        header.style.transform = transform;
+        header.style.transition = transition;
+      }
+    },
+    [headerRef],
+  );
+
+  const clearSwipeTransform = useCallback(() => {
+    const wrapper = swipeWrapperRef.current;
+    const header = headerRef.current;
+    if (wrapper) {
+      wrapper.style.transform = '';
+      wrapper.style.transition = '';
+    }
+    if (header) {
+      header.style.transform = '';
+      header.style.transition = '';
+    }
+  }, [headerRef]);
+
+  const handleSwipeTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) {
+      swipeStateRef.current = null;
+      return;
+    }
+    if (swipeStateRef.current?.committing) return;
+    swipeStateRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      swiping: false,
+      ignored: false,
+      startTime: Date.now(),
+      committing: false,
+    };
+  };
+
+  const handleSwipeTouchMove = (e: React.TouchEvent) => {
+    const st = swipeStateRef.current;
+    if (!st || st.ignored || st.committing) return;
+    if (e.touches.length !== 1) {
+      if (st.swiping) applySwipeTransform(0, 200);
+      st.ignored = true;
+      return;
+    }
+    const dx = e.touches[0].clientX - st.startX;
+    const dy = e.touches[0].clientY - st.startY;
+    if (!st.swiping) {
+      // Decide direction once motion crosses the threshold. Require horizontal
+      // motion to be dominant AND leftward; anything else (vertical scroll,
+      // rightward drag) is not our gesture.
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      if (Math.abs(dy) >= Math.abs(dx) || dx >= 0) {
+        st.ignored = true;
+        return;
+      }
+      st.swiping = true;
+    }
+    // Cap at 0 so the user can't pull the page past its starting edge.
+    const offset = Math.min(0, dx);
+    applySwipeTransform(offset, 0);
+  };
+
+  const handleSwipeTouchEnd = (e: React.TouchEvent) => {
+    const st = swipeStateRef.current;
+    if (!st || !st.swiping || st.ignored || st.committing) {
+      swipeStateRef.current = null;
+      return;
+    }
+    const endX = e.changedTouches[0]?.clientX ?? st.startX;
+    const dx = endX - st.startX;
+    const dt = Date.now() - st.startTime;
+    const offset = Math.min(0, dx);
+    const velocity = -dx / Math.max(1, dt); // px/ms, positive = leftward speed
+    const vw = window.innerWidth;
+    const shouldCommit =
+      Math.abs(offset) >= vw * 0.3 || velocity >= 0.5;
+    if (shouldCommit) {
+      st.committing = true;
+      rememberCurrentScroll(groupScrollKey(groupId));
+      // Block taps on cards while the page slides off — otherwise a tap
+      // landing on a card mid-slide can race router.push and navigate to
+      // the poll detail page instead of home.
+      const wrapper = swipeWrapperRef.current;
+      if (wrapper) wrapper.style.pointerEvents = 'none';
+      const remaining = vw - Math.abs(offset);
+      const duration = Math.max(
+        140,
+        Math.min(360, remaining / Math.max(0.4, velocity)),
+      );
+      applySwipeTransform(-vw, duration);
+      window.setTimeout(() => {
+        router.push('/');
+      }, duration);
+    } else {
+      applySwipeTransform(0, 220);
+      window.setTimeout(() => {
+        clearSwipeTransform();
+        swipeStateRef.current = null;
+      }, 240);
+    }
+  };
+
+  const handleSwipeTouchCancel = () => {
+    const st = swipeStateRef.current;
+    swipeStateRef.current = null;
+    if (st?.swiping && !st.committing) {
+      applySwipeTransform(0, 200);
+      window.setTimeout(() => {
+        clearSwipeTransform();
+      }, 220);
+    }
+  };
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
   // content when they scroll into view. rootMargin prefetches slightly early.
@@ -1633,6 +1777,20 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           surface we transform during a slide overlay's pre-position —
           transforming the overlay itself would drag the fixed header
           with the content per the WebKit contain:strict quirk. */}
+      {/* Swipe-back wrapper. Owns its own transform (set imperatively by
+          the touch handlers via swipeWrapperRef); the inner cards div keeps
+          its own transform for overlayCardsOffset so the two don't conflict
+          across React re-renders. `touch-action: pan-y` hands horizontal
+          pans to the app while leaving vertical scroll to the browser. */}
+      <div
+        ref={swipeWrapperRef}
+        onTouchStart={handleSwipeTouchStart}
+        onTouchMove={handleSwipeTouchMove}
+        onTouchEnd={handleSwipeTouchEnd}
+        onTouchCancel={handleSwipeTouchCancel}
+        className="touch-pan-y"
+        style={{ willChange: 'transform' }}
+      >
       <div
         className="pb-2"
         style={{
@@ -1723,6 +1881,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           })}
 
         <div id={DRAFT_POLL_PORTAL_ID} />
+      </div>
       </div>
 
       {/* Group-aware long-press modal — Copy + Forget, plus Reopen when
