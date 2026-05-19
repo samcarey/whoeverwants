@@ -248,40 +248,6 @@ export function useGroupVoting({
     }
   };
 
-  // Swipe-to-abstain on a group card. Submits a single batched abstain for
-  // every un-responded sub-question of the poll. The caller drives the
-  // slide-off animation; this function is the data side of the gesture.
-  // Pinned via useRef so the identity is stable across renders — the group
-  // page passes this to React.memo'd GroupCardItem and a fresh closure on
-  // every parent render would defeat memoization.
-  const submitSwipeAbstain = useRef(async (
-    pollId: string,
-    subQuestions: Question[],
-  ): Promise<{ ok: true } | { ok: false; error: string }> => {
-    const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
-    const items: PollVoteItem[] = subQuestions
-      .filter((sp) => !votedQuestionIds.has(sp.id) && !abstainedQuestionIds.has(sp.id))
-      .map((sp) =>
-        buildPollVoteItem(
-          { vote_type: sp.question_type, is_abstain: true },
-          sp.id,
-          null,
-          { questionType: sp.question_type, canSubmitSuggestions: false, isEditing: false },
-        ),
-      );
-    if (items.length === 0) return { ok: true };
-    try {
-      const voter_name = getUserName()?.trim() || null;
-      const returned = await apiSubmitPollVotes(pollId, { voter_name, items });
-      syncStateAfterPollVotes(returned, voter_name);
-      return { ok: true };
-    } catch (err) {
-      console.error("Swipe abstain failed:", err);
-      const message = err instanceof Error ? err.message : "Submit failed.";
-      return { ok: false, error: message };
-    }
-  }).current;
-
   // Always routes through the unified poll endpoint as a single-item batch,
   // matching the "vote submission is always atomic across the poll" rule
   // even for single-question polls.
@@ -373,6 +339,5 @@ export function useGroupVoting({
     confirmPollSubmit,
     confirmVoteChange,
     submitYesNoChoice,
-    submitSwipeAbstain,
   };
 }

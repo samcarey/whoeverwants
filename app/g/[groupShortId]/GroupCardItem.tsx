@@ -54,25 +54,16 @@ export type GroupCardGroup = {
   anchor: Question;
 };
 
-// Kept exported (with all original fields) so the parent's swipeRef type
-// stays unchanged during the rectangle redesign. The in-row swipe gesture
-// is gone; this can be retired in a follow-up parent-side cleanup.
-export type SwipeState = {
-  questionId: string | null;
-  pollId: string | null;
-  cardWidth: number;
-  startX: number;
-  startY: number;
-  offsetPx: number;
-  swiping: boolean;
-  pastAbstainPoint: boolean;
-};
-
 // Stable filter: votes submitted during the suggestion phase (gave suggestions
 // or fully abstained from suggestions). Module-scope so VoterList doesn't
 // re-run its effect on every parent render.
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
+
+/** Shared between row bottom-borders, the placeholder height-reservation
+ *  div, and the top-of-list sentinel divider in GroupPage. Keep all three
+ *  in lockstep so adjacent dividers don't visually diverge. */
+export const ROW_DIVIDER_CLASS = "border-gray-300 dark:border-gray-600";
 
 export interface GroupCardItemProps {
   // Identity / data ---------------------------------------------------------
@@ -81,48 +72,34 @@ export interface GroupCardItemProps {
    *  poll's detail page. */
   groupRouteId: string;
 
-  // Per-card primitives (computed in parent .map) --------------------------
+  // Per-row primitives (computed in parent .map) --------------------------
   isPressed: boolean;
   isPlaceholder: boolean;
   isAwaiting: boolean;
   isClosed: boolean;
-  isSwipeThresholdActive: boolean;
   isTooltipActive: boolean;
 
-  // State Maps. Pass directly + custom equality slices per-card. -----------
+  // State Maps. Pass directly + custom equality slices per-row. ------------
   questionResultsMap: Map<string, QuestionResults>;
   userVoteMap: Map<string, UserYesNoVote>;
 
   // Refs (stable identity — no need to compare in equality fn) -------------
-  cardFrameRefs: MutableRefObject<Map<string, HTMLDivElement>>;
   longPressTimerRef: MutableRefObject<NodeJS.Timeout | null>;
   isLongPressRef: MutableRefObject<boolean>;
   touchStartPosRef: MutableRefObject<{ x: number; y: number } | null>;
   isScrollingRef: MutableRefObject<boolean>;
-  swipeRef: MutableRefObject<SwipeState>;
-  swipeJustHandledRef: MutableRefObject<boolean>;
   touchJustHandledRef: MutableRefObject<boolean>;
 
   // Stable callbacks/setters ------------------------------------------------
   attachCardEl: (el: HTMLElement, anchorId: string, groupKey: string) => void;
   detachCardEl: (anchorId: string) => void;
-  resetSwipeRef: () => void;
-  submitSwipeAbstain: (
-    pollId: string,
-    subQuestions: Question[],
-  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   setPressedQuestionId: Dispatch<SetStateAction<string | null>>;
-  setSwipeThresholdQuestionId: Dispatch<SetStateAction<string | null>>;
   setTooltipQuestionId: Dispatch<SetStateAction<string | null>>;
   setModalQuestion: Dispatch<SetStateAction<Question | null>>;
   setShowModal: Dispatch<SetStateAction<boolean>>;
 }
 
 function GroupCardItemImpl(props: GroupCardItemProps) {
-  // Swipe-related props (isSwipeThresholdActive, swipeRef, swipeJustHandledRef,
-  // resetSwipeRef, submitSwipeAbstain, setSwipeThresholdQuestionId) are still
-  // in the prop interface during the rectangle-redesign rollout but unused
-  // here; the parent's swipe state can be retired in a follow-up cleanup.
   const {
     group,
     groupRouteId,
@@ -133,7 +110,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     isTooltipActive,
     questionResultsMap,
     userVoteMap,
-    cardFrameRefs,
     longPressTimerRef,
     isLongPressRef,
     touchStartPosRef,
@@ -157,11 +133,10 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   const wrapperPrephaseDeadline = wrapper?.prephase_deadline ?? null;
   const wrapperCloseReason = wrapper?.close_reason ?? null;
   const wrapperUpdatedAt = wrapper?.updated_at ?? question.updated_at;
-
-  // Anchor's category icon prefixes the title. For multi-question polls
-  // the anchor question's category is the representative one (the wrapper
-  // title is shared across siblings).
   const categoryIcon = getCategoryIcon(question, isClosed);
+  // Hoisted: every row reads this 1–3 times (status label, respondent
+  // filter, respondent empty-text, includeSelf gate).
+  const inSuggestionPhase = isInSuggestionPhase(question, wrapperPrephaseDeadline);
 
   // Stable ref-callbacks. Without useCallback the inline arrows would have
   // fresh identity every time THIS card re-renders (e.g. on swipe-threshold
@@ -177,14 +152,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     },
     [attachCardEl, detachCardEl, question.id, group.key],
   );
-  const setCardFrameEl = useCallback(
-    (el: HTMLDivElement | null) => {
-      if (el) cardFrameRefs.current.set(question.id, el);
-      else cardFrameRefs.current.delete(question.id);
-    },
-    [cardFrameRefs, question.id],
-  );
-
   // Tap navigates to the poll's detail page via the overlay-slide (same
   // mechanism as home→group, first frame moves on the next rAF). Long-press
   // still opens the follow-up modal.
@@ -258,7 +225,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   // are shared across questions (per the poll design), and `isClosed` is
   // enforced poll-atomically by Phase 3.1 close/reopen.
   const statusEl: React.ReactNode = (() => {
-    const inSuggestions = isInSuggestionPhase(question, wrapperPrephaseDeadline);
     const inTimeAvailability = isInTimeAvailabilityPhase(question);
     if (isClosed) {
       const closedAt =
@@ -271,10 +237,10 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
         </span>
       );
     }
-    if (inSuggestions && wrapperPrephaseDeadline) {
+    if (inSuggestionPhase && wrapperPrephaseDeadline) {
       return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Suggestions" wide />;
     }
-    if (inSuggestions && question.suggestion_deadline_minutes) {
+    if (inSuggestionPhase && question.suggestion_deadline_minutes) {
       return (
         <span className="font-semibold text-blue-600 dark:text-blue-400">
           Taking Suggestions
@@ -390,17 +356,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
         questionId={question.id}
         singleLine
         className="min-w-0 justify-end"
-        filter={
-          isInSuggestionPhase(question, wrapperPrephaseDeadline)
-            ? suggestionPhaseRespondentFilter
-            : undefined
-        }
-        emptyText={
-          isInSuggestionPhase(question, wrapperPrephaseDeadline)
-            ? "No suggestions yet"
-            : "No voters"
-        }
-        includeSelf={isInSuggestionPhase(question, wrapperPrephaseDeadline)}
+        filter={inSuggestionPhase ? suggestionPhaseRespondentFilter : undefined}
+        emptyText={inSuggestionPhase ? "No suggestions yet" : "No voters"}
+        includeSelf={inSuggestionPhase}
       />
     )
   ) : null;
@@ -412,7 +370,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   return (
     <div
       ref={setCardEl}
-      className={`relative border-b-2 border-gray-300 dark:border-gray-600 ${
+      className={`relative border-b-2 ${ROW_DIVIDER_CLASS} ${
         isPlaceholder ? "card-pending-enter" : ""
       }`}
     >
@@ -423,7 +381,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
         />
       )}
       <div
-        ref={setCardFrameEl}
         onClick={handleClick}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
@@ -545,7 +502,6 @@ function arePropsEqual(
     prev.isPlaceholder !== next.isPlaceholder ||
     prev.isAwaiting !== next.isAwaiting ||
     prev.isClosed !== next.isClosed ||
-    prev.isSwipeThresholdActive !== next.isSwipeThresholdActive ||
     prev.isTooltipActive !== next.isTooltipActive ||
     prev.groupRouteId !== next.groupRouteId
   ) {
