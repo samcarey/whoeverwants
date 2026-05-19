@@ -195,7 +195,7 @@ function SimpleFrame({ onBack, children }: { onBack: () => void; children: React
   const headerRef = useRef<HTMLDivElement>(null);
   return (
     <>
-      <GroupHeader headerRef={headerRef} onBack={onBack} />
+      <GroupHeader headerRef={headerRef} onBack={onBack} backIconVariant="menu" />
       <div className="min-h-[40vh] flex flex-col items-center justify-center text-center px-4">
         {children}
       </div>
@@ -530,6 +530,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           });
         }}
         titleAriaLabel="Poll details"
+        backIconVariant="menu"
         rightSlot={
           <div className="self-stretch py-2 px-2 flex items-center justify-center shrink-0">
             <PollShareButton title={pollTitle || ""} url={shareUrl} />

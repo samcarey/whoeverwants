@@ -76,8 +76,9 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
         participantNames: [] as string[],
         anonymousCount: 0,
         onTitleClick: () => {},
+        backIconVariant: "menu" as const,
       }
-    : { headerRef, title: "New Group" };
+    : { headerRef, title: "New Group", backIconVariant: "menu" as const };
 
   return (
     <>
