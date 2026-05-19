@@ -23,6 +23,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { Capacitor } from "@capacitor/core";
 import GroupList from "@/components/GroupList";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { getCachedEmptyGroups } from "@/lib/simpleQuestionQueries";
@@ -31,6 +32,13 @@ import {
   HIDE_HOME_BACKDROP_EVENT,
   SHOW_HOME_BACKDROP_EVENT,
 } from "@/lib/eventChannels";
+
+// Same Capacitor-native check template.tsx uses to lift the real +Group
+// button (avoids it being obscured by the iOS home-indicator gesture
+// area). Without matching the value here, the backdrop's fake +Group
+// sits 12px lower than the real one and visibly jumps up on commit.
+const IS_CAPACITOR_NATIVE =
+  typeof window !== "undefined" && Capacitor.isNativePlatform();
 
 export default function HomeBackdropHost(): React.ReactElement | null {
   const [visible, setVisible] = useState(false);
@@ -82,7 +90,38 @@ export default function HomeBackdropHost(): React.ReactElement | null {
           className="max-w-4xl mx-auto px-2 pb-1"
           style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top, 0px))" }}
         >
+          {/* Mirror template.tsx's title row including the gear's absolute
+              positioning relative to this `.relative` parent — keeps the
+              gear's viewport x in lockstep with the real home so it
+              doesn't shift right on commit. */}
           <div className="relative text-center">
+            <span
+              aria-hidden="true"
+              className="absolute top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full"
+              style={{
+                left: "max(0.25rem, env(safe-area-inset-left, 0px))",
+              }}
+            >
+              <svg
+                className="w-6 h-6 text-gray-400 dark:text-gray-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+            </span>
             <h1 className="text-2xl font-bold mb-1 select-none">Whoever Wants</h1>
           </div>
           <div className="h-7 flex items-center justify-center mb-1" />
@@ -99,38 +138,10 @@ export default function HomeBackdropHost(): React.ReactElement | null {
       </div>
       <span
         aria-hidden="true"
-        className="fixed z-50 w-10 h-10 flex items-center justify-center rounded-full"
-        style={{
-          top: "calc(0.75rem + env(safe-area-inset-top, 0px) - 2px)",
-          left: "max(0.25rem, env(safe-area-inset-left, 0px))",
-        }}
-      >
-        <svg
-          className="w-6 h-6 text-gray-400 dark:text-gray-500"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-          />
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-          />
-        </svg>
-      </span>
-      <span
-        aria-hidden="true"
         className="fixed z-50 h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 shadow-md shadow-black/20 text-white font-normal"
         style={{
           right: "max(1.5rem, env(safe-area-inset-right, 0px))",
-          bottom: "1rem",
+          bottom: IS_CAPACITOR_NATIVE ? "1.75rem" : "1rem",
         }}
       >
         <span aria-hidden="true" className="text-[28.8px] leading-none">+</span>
