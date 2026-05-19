@@ -786,15 +786,21 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // Suppress the page-level scrollbars the transform would surface
       // (the swipe wrapper's translateX extends content past the viewport
       // edges, which the browser would otherwise reflect as page-wide
-      // scrollbars at the bottom + right). Class is removed on
-      // snap-back / cancel / commit cleanup via hideHomeBackdrop.
-      document.body.classList.add('swipe-back-active');
+      // scrollbars at the bottom + right). overflow-x: clip suppresses
+      // the horizontal scroll without creating a new scroll context —
+      // important on iOS where overflow: hidden on <body> can reset
+      // scroll position. scrollbarWidth: 'none' hides the vertical bar.
+      // Inline styles (vs a CSS class) so the rule unambiguously beats
+      // any cascaded body styling.
+      document.body.style.overflowX = 'clip';
+      (document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string }).scrollbarWidth = 'none';
       window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT));
     }
   };
   const hideHomeBackdrop = () => {
     if (typeof window !== 'undefined') {
-      document.body.classList.remove('swipe-back-active');
+      document.body.style.overflowX = '';
+      (document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string }).scrollbarWidth = '';
       window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
     }
   };
