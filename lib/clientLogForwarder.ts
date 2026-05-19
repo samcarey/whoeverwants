@@ -10,6 +10,8 @@
  * other diagnostic channel (Safari Web Inspector requires a wired Mac).
  */
 
+import { API_ORIGIN } from "./api/_internal";
+
 const BATCH_INTERVAL_MS = 2000;
 const MAX_QUEUE_SIZE = 500;
 const MAX_MESSAGE_LENGTH = 4000;
@@ -102,7 +104,7 @@ function flush() {
   const payload = JSON.stringify({ logs: batch, sessionId: getSessionId() });
 
   // Use sendBeacon for reliability (survives page unload), fall back to fetch
-  const url = '/api/client-logs';
+  const url = `${API_ORIGIN}/api/client-logs`;
   const sent = navigator.sendBeacon?.(url, new Blob([payload], { type: 'application/json' }));
   if (!sent) {
     fetch(url, {

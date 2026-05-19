@@ -11,7 +11,7 @@
  * own across navigations) without going through a fresh fetch.
  */
 
-import { userFetch } from "./_internal";
+import { API_ORIGIN, userFetch } from "./_internal";
 
 const PROFILE_STORAGE_KEY = 'whoeverwants_user_profile';
 
@@ -75,7 +75,7 @@ export function buildUserImageUrl(
 ): string | null {
   if (!browserId || !imageUpdatedAt) return null;
   const v = encodeURIComponent(imageUpdatedAt);
-  return `/api/users/by-browser-id/${encodeURIComponent(browserId)}/image?v=${v}`;
+  return `${API_ORIGIN}/api/users/by-browser-id/${encodeURIComponent(browserId)}/image?v=${v}`;
 }
 
 function profilesEqual(a: UserProfile | null, b: UserProfile | null): boolean {

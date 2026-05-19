@@ -247,14 +247,13 @@ ${DROPLET_IP_DASHED}.sslip.io {
 }
 
 ${API_DOMAIN} {
-	@options method OPTIONS
-	handle @options {
-		header Access-Control-Allow-Origin *
-		header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-		header Access-Control-Allow-Headers "Content-Type, Authorization"
-		respond 204
-	}
-
+	# CORS lives on the FastAPI side (Starlette CORSMiddleware with
+	# allow_origins=["*"], allow_headers=["*"], expose_headers=["X-Browser-Id"],
+	# and the default Access-Control-Max-Age: 600 preflight cache).
+	# Intercepting OPTIONS at Caddy with a hand-maintained allow list
+	# silently desyncs from FastAPI (X-Browser-Id was missing here for
+	# weeks, blocking the cross-origin browser→API switch). Let FastAPI
+	# own CORS end-to-end — the localhost reverse_proxy is fast enough.
 	reverse_proxy 127.0.0.1:8000
 }
 
