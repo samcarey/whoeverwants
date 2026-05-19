@@ -450,9 +450,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             centered (right). Skipped during the placeholder/FLIP phase
             so only the title is visible until the real poll hydrates. */}
         {!isPlaceholder && (
-          <div className="mt-2 flex items-start justify-between gap-3 min-w-0">
+          <div className="mt-2 flex items-end justify-between gap-3 min-w-0">
             <ClientOnly fallback={null}>
-              <span className="shrink-0 truncate text-xs text-gray-400 dark:text-gray-500 mt-[3px]">
+              <span className="shrink-0 truncate text-xs text-gray-400 dark:text-gray-500">
                 {wrapper?.creator_name && <>{wrapper.creator_name} &middot; </>}
                 <span
                   className="relative cursor-help"
