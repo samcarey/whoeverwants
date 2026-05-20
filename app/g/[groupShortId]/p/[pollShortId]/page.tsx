@@ -219,6 +219,7 @@ interface PollDetailProps {
 }
 
 function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsOffset }: PollDetailProps) {
+  const router = useRouter();
   const scrollKey = pollScrollKey(pollShortId);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([], 80);
 
