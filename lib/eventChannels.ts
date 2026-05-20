@@ -132,3 +132,18 @@ export const SHOW_HOME_BACKDROP_EVENT = 'home-backdrop:show';
  *  mount effect (so the backdrop dismisses itself once home has rendered
  *  through it). */
 export const HIDE_HOME_BACKDROP_EVENT = 'home-backdrop:hide';
+
+/** Fired by PollDetail's swipe-back gesture when motion is recognized AND
+ *  when it commits to navigation. GroupBackdropHost (in app/layout.tsx)
+ *  mounts a body-level portal showing the cached group page underneath the
+ *  poll detail page. Mirrors the home-backdrop architecture but for the
+ *  poll→group transition instead of group→home. */
+export const SHOW_GROUP_BACKDROP_EVENT = 'group-backdrop:show';
+export interface GroupBackdropShowDetail {
+  groupId: string;
+}
+
+/** Fired by snap-back / cancel paths in PollDetail AND by GroupPageInner's
+ *  mount effect (so the backdrop dismisses itself once the real group page
+ *  has rendered through it). */
+export const HIDE_GROUP_BACKDROP_EVENT = 'group-backdrop:hide';

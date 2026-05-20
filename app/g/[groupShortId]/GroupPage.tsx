@@ -21,6 +21,7 @@ import {
   POLL_FAILED_EVENT,
   SHOW_HOME_BACKDROP_EVENT,
   HIDE_HOME_BACKDROP_EVENT,
+  HIDE_GROUP_BACKDROP_EVENT,
   type PollPendingDetail,
   type PollHydratedDetail,
   type PollFailedDetail,
@@ -2294,6 +2295,32 @@ function GroupPageInner() {
   const searchParams = useSearchParams();
   const groupShortId = params.groupShortId as string;
   const pollParam = searchParams.get(POLL_QUERY_PARAM);
+
+  // Dismiss the swipe-back group backdrop on mount. Mirrors the home page's
+  // HIDE_HOME_BACKDROP_EVENT dispatch — the backdrop persists across the
+  // router.push that commits a poll→group swipe (mounted at layout level
+  // via GroupBackdropHost) so there's no blank frame between PollDetail's
+  // unmount and this page's first paint. Once we've rendered we tell the
+  // host to unmount. Also clears the swipe transform on the commit-badge
+  // portal + the inline html/body overflow-clip styles that suppress
+  // scrollbars during the gesture — on commit, PollDetail has unmounted
+  // by the time we land here, so this is the last place that can clean
+  // them up.
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const badge = document.getElementById('commit-badge-portal');
+    if (badge) {
+      badge.style.transform = '';
+      badge.style.transition = '';
+    }
+    const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+    const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+    htmlS.overflowX = '';
+    htmlS.scrollbarWidth = '';
+    bodyS.overflowX = '';
+    bodyS.scrollbarWidth = '';
+    window.dispatchEvent(new Event(HIDE_GROUP_BACKDROP_EVENT));
+  }, []);
 
   const rootInitial = useMemo<Poll | null>(() => {
     if (typeof window === "undefined" || !groupShortId) return null;

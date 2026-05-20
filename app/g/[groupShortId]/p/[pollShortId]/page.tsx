@@ -21,7 +21,13 @@ import {
   ApiError,
   QUESTION_VOTES_CHANGED_EVENT,
 } from "@/lib/api";
-import { POLL_HYDRATED_EVENT, type PollHydratedDetail } from "@/lib/eventChannels";
+import {
+  POLL_HYDRATED_EVENT,
+  SHOW_GROUP_BACKDROP_EVENT,
+  HIDE_GROUP_BACKDROP_EVENT,
+  type PollHydratedDetail,
+  type GroupBackdropShowDetail,
+} from "@/lib/eventChannels";
 import { slideToGroupRoot, slideToPollInfo } from "@/lib/slideOverlay";
 import {
   buildGroupFromPollDown,
@@ -426,6 +432,186 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     };
   }, []);
 
+  // Swipe-back gesture: dragging rightward on the content slides the page
+  // off to the right with the group page revealed underneath. Mirrors the
+  // group→home swipe in GroupContent — see that file for the architecture
+  // rationale (touch-action: pan-y, refs not state to avoid per-frame
+  // re-renders, lazy backdrop mount on first motion recognition, etc.).
+  const swipeWrapperRef = useRef<HTMLDivElement | null>(null);
+  const swipeStateRef = useRef<{
+    startX: number;
+    startY: number;
+    swiping: boolean;
+    ignored: boolean;
+    startTime: number;
+    committing: boolean;
+  } | null>(null);
+
+  const showGroupBackdrop = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+    const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+    htmlS.overflowX = "clip";
+    htmlS.scrollbarWidth = "none";
+    bodyS.overflowX = "clip";
+    bodyS.scrollbarWidth = "none";
+    window.dispatchEvent(
+      new CustomEvent<GroupBackdropShowDetail>(SHOW_GROUP_BACKDROP_EVENT, {
+        detail: { groupId },
+      }),
+    );
+  }, [groupId]);
+
+  const hideGroupBackdrop = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+    const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+    htmlS.overflowX = "";
+    htmlS.scrollbarWidth = "";
+    bodyS.overflowX = "";
+    bodyS.scrollbarWidth = "";
+    window.dispatchEvent(new Event(HIDE_GROUP_BACKDROP_EVENT));
+  }, []);
+
+  const applySwipeTransform = useCallback(
+    (translateX: number, transitionMs: number) => {
+      const wrapperTransform =
+        translateX === 0 ? "" : `translate3d(${translateX}px, 0, 0)`;
+      const transition =
+        transitionMs > 0
+          ? `transform ${transitionMs}ms cubic-bezier(0.32, 0.72, 0, 1)`
+          : "none";
+      // Wrapper + fixed header + body-portaled commit-age badge all slide
+      // together. PollDetail has no scroll-helper arrows so the targets
+      // list is shorter than GroupContent's.
+      const targets: (HTMLElement | null)[] = [
+        swipeWrapperRef.current,
+        headerRef.current,
+        typeof document !== "undefined"
+          ? document.getElementById("commit-badge-portal")
+          : null,
+      ];
+      for (const el of targets) {
+        if (!el) continue;
+        el.style.transform = wrapperTransform;
+        el.style.transition = transition;
+      }
+    },
+    [headerRef],
+  );
+
+  const clearSwipeTransform = useCallback(() => {
+    const targets: (HTMLElement | null)[] = [
+      swipeWrapperRef.current,
+      headerRef.current,
+      typeof document !== "undefined"
+        ? document.getElementById("commit-badge-portal")
+        : null,
+    ];
+    for (const el of targets) {
+      if (!el) continue;
+      el.style.transform = "";
+      el.style.transition = "";
+    }
+  }, [headerRef]);
+
+  const handleSwipeTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) {
+      swipeStateRef.current = null;
+      return;
+    }
+    if (swipeStateRef.current?.committing) return;
+    swipeStateRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      swiping: false,
+      ignored: false,
+      startTime: Date.now(),
+      committing: false,
+    };
+  };
+
+  const handleSwipeTouchMove = (e: React.TouchEvent) => {
+    const st = swipeStateRef.current;
+    if (!st || st.ignored || st.committing) return;
+    if (e.touches.length !== 1) {
+      if (st.swiping) applySwipeTransform(0, 200);
+      st.ignored = true;
+      return;
+    }
+    const dx = e.touches[0].clientX - st.startX;
+    const dy = e.touches[0].clientY - st.startY;
+    if (!st.swiping) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      if (Math.abs(dy) >= Math.abs(dx) || dx <= 0) {
+        st.ignored = true;
+        return;
+      }
+      st.swiping = true;
+      showGroupBackdrop();
+    }
+    const offset = Math.max(0, dx);
+    applySwipeTransform(offset, 0);
+  };
+
+  const handleSwipeTouchEnd = (e: React.TouchEvent) => {
+    const st = swipeStateRef.current;
+    if (!st || !st.swiping || st.ignored || st.committing) {
+      swipeStateRef.current = null;
+      return;
+    }
+    const endX = e.changedTouches[0]?.clientX ?? st.startX;
+    const dx = endX - st.startX;
+    const dt = Date.now() - st.startTime;
+    const offset = Math.max(0, dx);
+    const velocity = dx / Math.max(1, dt);
+    const vw = window.innerWidth;
+    const shouldCommit = offset >= vw * 0.3 || velocity >= 0.5;
+    if (shouldCommit) {
+      st.committing = true;
+      rememberCurrentScroll(scrollKey);
+      // Block taps on the page while it slides off — otherwise a stray
+      // tap mid-slide could trigger an interactive element underneath
+      // the gesture.
+      const wrapper = swipeWrapperRef.current;
+      if (wrapper) wrapper.style.pointerEvents = "none";
+      const remaining = vw - offset;
+      const duration = Math.max(
+        140,
+        Math.min(360, remaining / Math.max(0.4, velocity)),
+      );
+      applySwipeTransform(vw, duration);
+      window.setTimeout(() => {
+        // Direct router.push (matching the home-swipe pattern) — using
+        // slideToGroupRoot here would layer a second animation on top of
+        // the in-flight swipe. The backdrop is already showing the group
+        // view; navigation just commits the URL.
+        router.push(`/g/${groupId}`);
+      }, duration);
+    } else {
+      applySwipeTransform(0, 220);
+      window.setTimeout(() => {
+        clearSwipeTransform();
+        swipeStateRef.current = null;
+        hideGroupBackdrop();
+      }, 240);
+    }
+  };
+
+  const handleSwipeTouchCancel = () => {
+    const st = swipeStateRef.current;
+    swipeStateRef.current = null;
+    if (st?.swiping && !st.committing) {
+      applySwipeTransform(0, 200);
+      window.setTimeout(() => {
+        clearSwipeTransform();
+        hideGroupBackdrop();
+      }, 220);
+    } else {
+      hideGroupBackdrop();
+    }
+  };
+
   const subQuestions = poll.questions;
   const isMultiPoll = subQuestions.length > 1;
   const allYesNo = subQuestions.every((sp) => sp.question_type === "yes_no");
@@ -538,6 +724,31 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
         }
       />
 
+      {/* Swipe-back wrapper. Owns its own transform (set imperatively by
+          the touch handlers via swipeWrapperRef); the inner cards div keeps
+          its own transform for overlayCardsOffset so the two don't conflict
+          across React re-renders. `touch-action: pan-y` hands horizontal
+          pans to the app while leaving vertical scroll to the browser.
+          `position: relative; z-index: 1` + opaque background keeps the
+          group backdrop hidden behind the page until the swipe actually
+          moves the wrapper sideways. `minHeight: 100dvh` extends the
+          opaque background to the bottom of the viewport so the backdrop
+          can't peek through below short polls. */}
+      <div
+        ref={swipeWrapperRef}
+        onTouchStart={handleSwipeTouchStart}
+        onTouchMove={handleSwipeTouchMove}
+        onTouchEnd={handleSwipeTouchEnd}
+        onTouchCancel={handleSwipeTouchCancel}
+        className="touch-pan-y"
+        style={{
+          willChange: "transform",
+          position: "relative",
+          zIndex: 1,
+          background: "var(--background)",
+          minHeight: "100dvh",
+        }}
+      >
       <div
         style={{
           paddingTop: `calc(${headerHeight}px + 1.5rem)`,
@@ -781,6 +992,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           />
         </div>
 
+      </div>
       </div>
 
       {(() => {
