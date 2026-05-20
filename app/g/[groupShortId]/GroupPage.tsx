@@ -1211,6 +1211,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     // already reflects the full document and the requested scrollY
     // lands without clamping.
     const remembered = getRememberedScroll(groupScrollKey(groupId));
+    console.log(`[scroll-debug] RESTORE key=${groupScrollKey(groupId)} remembered=${remembered} preY=${window.scrollY} scrollHeight=${document.documentElement.scrollHeight} innerHeight=${window.innerHeight} mountedKeys=${mountedGroupKeys.size}`);
     if (remembered !== undefined) {
       restoreTargetRef.current = remembered;
       // Pin against the target for a bounded window — iOS Safari +
@@ -1219,6 +1220,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // longer than that. 800ms matches BOTTOM_PIN_DURATION_MS.
       restorePinDeadlineRef.current = Date.now() + BOTTOM_PIN_DURATION_MS;
       window.scrollTo(0, remembered);
+      console.log(`[scroll-debug] applied scrollTo(${remembered}) → actualY=${window.scrollY}`);
       setInitialScrollApplied(true);
       return;
     }
@@ -1245,18 +1247,26 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     if (restoreTargetRef.current == null) return;
     let rafId: number | null = null;
     let stableFrames = 0;
+    let tickCount = 0;
+    const startTime = Date.now();
     const tick = () => {
       rafId = null;
+      tickCount++;
       if (userInteractedRef.current || Date.now() >= restorePinDeadlineRef.current) {
+        console.log(`[scroll-debug] rAF BAIL after ${tickCount} ticks (${Date.now() - startTime}ms): userInteracted=${userInteractedRef.current} deadlinePassed=${Date.now() >= restorePinDeadlineRef.current} finalY=${window.scrollY} target=${restoreTargetRef.current}`);
         restoreTargetRef.current = null;
         return;
       }
       const target = restoreTargetRef.current;
       if (target == null) return;
       if (Math.abs(window.scrollY - target) > 0.5) {
+        if (tickCount === 1 || tickCount % 10 === 0) {
+          console.log(`[scroll-debug] rAF tick=${tickCount} scrollY=${window.scrollY} target=${target} reapplying`);
+        }
         window.scrollTo(0, target);
         stableFrames = 0;
       } else if (++stableFrames >= 3) {
+        console.log(`[scroll-debug] rAF SUCCESS after ${tickCount} ticks (${Date.now() - startTime}ms): finalY=${window.scrollY} target=${target}`);
         restoreTargetRef.current = null;
         return;
       }
