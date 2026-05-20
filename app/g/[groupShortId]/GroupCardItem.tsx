@@ -393,15 +393,28 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             : "bg-transparent"
         } hover:bg-gray-100 dark:hover:bg-gray-900 active:bg-blue-100 dark:active:bg-blue-900/40`}
       >
-        {/* Top row: icon + title (left) / status (right). */}
+        {/* Top row: icon + title (left) / status + nav chevron (right). The
+            chevron mirrors the one in GroupHeader (same path, same color)
+            to signal "tap to slide to this poll's detail page". Always
+            shown for non-placeholder rows, regardless of whether a status
+            label is present. */}
         <div className="flex items-start justify-between gap-2 min-w-0">
           <h3 className="flex-1 min-w-0 font-medium text-lg leading-tight text-gray-900 dark:text-white">
             <span className="mr-1.5" aria-hidden="true">{categoryIcon}</span>
             {question.title}
           </h3>
-          {!isPlaceholder && statusEl && (
-            <div className="shrink-0 pt-0.5 text-sm leading-tight text-gray-500 dark:text-gray-400">
-              <ClientOnly fallback={null}>{statusEl}</ClientOnly>
+          {!isPlaceholder && (
+            <div className="shrink-0 pt-0.5 flex items-center gap-1 text-sm leading-tight text-gray-500 dark:text-gray-400">
+              {statusEl && <ClientOnly fallback={null}>{statusEl}</ClientOnly>}
+              <svg
+                className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </div>
           )}
         </div>
