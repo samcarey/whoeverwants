@@ -2297,6 +2297,24 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Gate on user input, not scrollY deltas.** The first version tracked `prev.offsetTop` and scrolled by `newOffsetTop - prevOffsetTop` to preserve visual position. That broke when cards above mounted SMALLER than estimated → doc shrank → browser silently CLAMPED scrollY (e.g. 1796 → 1568) → my prev was stale → my delta calculation produced wrong scrolls. Hard to distinguish browser-clamp scroll events from user-initiated ones at the JS level. Switching to "pin until first pointerdown/wheel/keydown" sidesteps the entire problem: layout settling is unambiguous (no user input has happened), so we just re-pin every time.
 - **`userInteractedRef` listens to `pointerdown` / `wheel` / `keydown` in capture phase.** NOT `scroll` — programmatic scrolls (our own `scrollTo`, browser clamps when doc shrinks) all fire `scroll` events with `isTrusted: true`, indistinguishable from a user gesture. `pointerdown` (in capture phase) is the unified touch+mouse+pen event and reliably fires on iOS even when scroll engages immediately.
 
+### Swipe-Back Gesture (Shared Hook)
+
+Two routes implement iOS-style swipe-back: `GroupContent` → home (`/`) and `PollDetail` → its containing group (`/g/<group>`). Both share `lib/useSwipeBackGesture.ts: useSwipeBackGesture({ headerRef, extraTargets?, showBackdrop, hideBackdrop, onBeforeCommit?, onCommit })` which returns `{ swipeWrapperRef, touchHandlers }` for the caller to spread onto a wrapper div.
+
+- **Caller responsibilities:**
+  - Render an opaque `position: relative; z-index: 1; min-height: 100dvh` wrapper that owns the `touch-pan-y` class and the swipe ref + touch handlers.
+  - Mount a body-level backdrop host that listens for `SHOW_*_BACKDROP_EVENT` (`<HomeBackdropHost />` and `<GroupBackdropHost />` in `app/layout.tsx`).
+  - Dispatch the SHOW event from the `showBackdrop` callback and HIDE from `hideBackdrop`. The destination route's mount effect dispatches HIDE again as a final cleanup (covers the commit path where the source page unmounted before snap-back/cancel could fire).
+  - Call `rememberCurrentScroll(scrollKey)` inside `onBeforeCommit` (saved BEFORE navigation so re-entry restores it).
+  - Do the actual navigation inside `onCommit` (`router.push(target)` matches the home-swipe pattern; routing through `slideToGroupRoot` here would layer a second animation on top of the in-flight swipe).
+- **Shared transform targets**: the hook always transforms `swipeWrapperRef.current`, `headerRef.current`, and `document.getElementById('commit-badge-portal')`. Callers pass any additional body-portaled affordances (scroll-helper arrows on the group page) via `extraTargets`.
+- **Commit threshold**: ≥30% viewport width OR ≥0.5 px/ms velocity. Slide finish duration is bounded `[140, 360]ms` based on remaining distance + velocity. Snap-back uses a flat 220ms `cubic-bezier(0.32, 0.72, 0, 1)`. Don't tweak these without testing across iOS Safari + Chrome.
+- **`setSwipeScrollbarLock(locked)` in `lib/scrollbarLock.ts`** is the canonical toggle for `html`+`body` `overflow-x: clip` + `scrollbar-width: none`. The swipe wrapper's translateX extends content past the viewport edges; without the lock the browser surfaces a horizontal scrollbar (and on desktop, also a vertical bar). The hook calls this internally on show/hide; the destination route's mount effect also calls `setSwipeScrollbarLock(false)` as the final cleanup (covers the commit-path race where the source page unmounts before the snap-back/cancel timer fires).
+- **Backdrop architecture (per route family):**
+  - `<HomeBackdropHost />` renders a static `<GroupList>` snapshot (no fixed header, no own state machine).
+  - `<GroupBackdropHost />` renders `<GroupContent>` itself with `overlayCardsOffset={savedScroll}` so it skips its own `window.scrollTo` (which would scroll the still-mounted PollDetail underneath). `contain: strict` on the backdrop wrapper keeps the backdrop's z-20 GroupHeader from escaping to body level and painting over PollDetail's z-20 header.
+- **Two-back-paths coexistence**: PollDetail's back button uses `slideToGroupRoot` (the slide overlay), while the swipe uses `router.push` directly. This is intentional — the slide overlay's CSS-animation would fight a gesture-driven motion. The two paths are functionally equivalent (both end at `/g/<group>`); the swipe one just bypasses the overlay layer.
+
 ### Scroll API Pitfalls
 
 - **Non-scrollable headers in iOS PWA need `touch-action: none`** to prevent elastic rubber-banding. iOS WebKit allows bounce/elastic behavior from touch gestures even on content that has no scroll to offer. Adding `touch-none` (Tailwind) to fixed header bars prevents touches on them from initiating any scroll behavior. Taps (`onClick`) still work — `touch-action` only controls default browser behaviors.
