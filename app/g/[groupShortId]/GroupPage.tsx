@@ -1279,6 +1279,35 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     };
   }, [group, loading]);
 
+  // Bottom-pin rAF loop (fresh-nav path). Mirrors the restore rAF loop:
+  // useLayoutEffect + ResizeObserver alone can leave gaps where Next.js
+  // App Router's scroll-to-top resets scrollY to 0 with no React update
+  // following for 100+ms — the user sees the bubble bar disappear (scroll
+  // back to 0 puts it below viewport) then reappear (next React update
+  // re-applies bottom-pin). Running a continuous rAF loop for the deadline
+  // window closes that gap.
+  useEffect(() => {
+    if (!group || loading) return;
+    if (headerHeight === 0) return;
+    if (bottomPinDeadlineRef.current === 0) return;
+    if (restoreTargetRef.current !== null) return;
+    let rafId: number | null = null;
+    const tick = () => {
+      rafId = null;
+      if (userInteractedRef.current || Date.now() >= bottomPinDeadlineRef.current) return;
+      if (restoreTargetRef.current !== null) return;
+      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      if (max > 0 && Math.abs(window.scrollY - max) > 0.5) {
+        window.scrollTo(0, max);
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [group, loading, headerHeight]);
+
   // Listen for question:updated events (fired when close/reopen happens from within
   // a card). Merge the updates into our local group state so downstream UI —
   // e.g. whether the modal should offer a Reopen button — reflects reality.
