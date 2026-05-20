@@ -7,6 +7,7 @@ import { apiGetAllQuestionIds } from "@/lib/api";
 import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { HIDE_HOME_BACKDROP_EVENT, POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
+import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import { usePageReady } from "@/lib/usePageReady";
 import { HOME_SCROLL_KEY, getRememberedScroll } from "@/lib/scrollMemory";
 import GroupList from "@/components/GroupList";
@@ -77,18 +78,10 @@ export default function Home() {
       badge.style.transform = '';
       badge.style.transition = '';
     }
-    // Clear the swipe-back inline html/body styles (overflowX: clip +
-    // scrollbar hiding) that suppress page-level scrollbars during the
-    // gesture. On snap-back/cancel paths the GroupPage handler clears
-    // them directly; on commit, GroupPage has unmounted by the time we
-    // land here, so home's mount effect is the last place that can
-    // clean them up.
-    const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
-    const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
-    htmlS.overflowX = '';
-    htmlS.scrollbarWidth = '';
-    bodyS.overflowX = '';
-    bodyS.scrollbarWidth = '';
+    // On snap-back/cancel paths GroupPage clears these directly; on
+    // commit, GroupPage has unmounted by the time we land here, so this
+    // is the last place that can clear the scrollbar lock.
+    setSwipeScrollbarLock(false);
     window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
   }, []);
 

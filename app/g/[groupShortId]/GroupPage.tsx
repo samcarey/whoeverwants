@@ -30,6 +30,8 @@ import { isUuidLike } from "@/lib/questionId";
 import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
+import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
+import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -757,212 +759,25 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group], 80);
 
   // Swipe-back gesture: dragging rightward on the content slides the page
-  // off to the right with home revealed underneath. While the gesture is
-  // active a "home backdrop" portal is mounted at z-index 0 showing the
-  // cached groups list — so the user sees home from the first pixel of
-  // motion (matching iOS native back-swipe), not just after navigation
-  // completes. Refs (not state) drive the transform during the gesture so
-  // per-frame motion doesn't trigger React re-renders; only the backdrop
-  // mount/unmount goes through state.
-  // `touch-action: pan-y` on the wrapper hands horizontal pans to us while
-  // letting the browser handle vertical scroll natively — so we never
-  // preventDefault on touchmove (per CLAUDE.md: that permanently kills iOS
-  // scroll for the touch sequence).
-  const swipeWrapperRef = useRef<HTMLDivElement | null>(null);
+  // off to the right with the home backdrop revealed underneath. While the
+  // gesture is active, HomeBackdropHost (at layout level) mounts the cached
+  // groups list so the user sees home from the first pixel of motion. The
+  // backdrop dismisses itself once home's mount effect dispatches HIDE.
+  //
+  // The backdrop stays at its final position (no parallax) — an earlier
+  // iOS-style parallax variant was retired because shifting the title left
+  // made it visually collide with the (statically positioned) settings
+  // gear at the viewport's left edge.
   const upArrowRef = useRef<HTMLButtonElement | null>(null);
   const downArrowRef = useRef<HTMLButtonElement | null>(null);
-  const swipeStateRef = useRef<{
-    startX: number;
-    startY: number;
-    swiping: boolean;
-    ignored: boolean;
-    startTime: number;
-    committing: boolean;
-  } | null>(null);
-  // Backdrop visibility is now owned by HomeBackdropHost at layout level
-  // (so it survives router.push). We dispatch SHOW/HIDE events instead of
-  // managing the state here directly.
-  const showHomeBackdrop = () => {
-    if (typeof window !== 'undefined') {
-      // Suppress the page-level scrollbars the transform would surface
-      // (the swipe wrapper's translateX extends content past the viewport
-      // edges, which the browser would otherwise reflect as page-wide
-      // scrollbars at the bottom + right). overflow-x: clip on both
-      // <html> and <body> suppresses the horizontal scroll without
-      // creating a new scroll context (which would otherwise reset
-      // body's scroll position on iOS); scrollbar-width: none hides the
-      // vertical bar. Both elements need to be clipped because html
-      // looks at body's content overflow for its own scrollable size.
-      const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
-      const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
-      htmlS.overflowX = 'clip';
-      htmlS.scrollbarWidth = 'none';
-      bodyS.overflowX = 'clip';
-      bodyS.scrollbarWidth = 'none';
-      window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT));
-    }
-  };
-  const hideHomeBackdrop = () => {
-    if (typeof window !== 'undefined') {
-      const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
-      const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
-      htmlS.overflowX = '';
-      htmlS.scrollbarWidth = '';
-      bodyS.overflowX = '';
-      bodyS.scrollbarWidth = '';
-      window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
-    }
-  };
-
-  // Backdrop stays at its final position (no parallax) — the user sees the
-  // home page elements at their natural locations from the very start of
-  // the gesture, just progressively revealed as the opaque wrapper slides
-  // off to the right. An earlier iOS-style parallax variant was retired
-  // because shifting the title left made it visually collide with the
-  // (statically positioned) settings gear at the viewport's left edge.
-  const applySwipeTransform = useCallback(
-    (translateX: number, transitionMs: number) => {
-      const wrapperTransform =
-        translateX === 0 ? '' : `translate3d(${translateX}px, 0, 0)`;
-      const transition =
-        transitionMs > 0
-          ? `transform ${transitionMs}ms cubic-bezier(0.32, 0.72, 0, 1)`
-          : 'none';
-      // Header + cards wrapper + scroll arrows + commit-age badge all
-      // slide together with the gesture. Arrows and badge are portaled to
-      // body-level (escaping the responsive-scaling-container's transform
-      // on desktop), so they're transformed individually rather than
-      // inherited from a parent.
-      const targets: (HTMLElement | null)[] = [
-        swipeWrapperRef.current,
-        headerRef.current,
-        upArrowRef.current,
-        downArrowRef.current,
-        document.getElementById('commit-badge-portal'),
-      ];
-      for (const el of targets) {
-        if (!el) continue;
-        el.style.transform = wrapperTransform;
-        el.style.transition = transition;
-      }
-    },
-    [headerRef],
-  );
-
-  const clearSwipeTransform = useCallback(() => {
-    const targets: (HTMLElement | null)[] = [
-      swipeWrapperRef.current,
-      headerRef.current,
-      upArrowRef.current,
-      downArrowRef.current,
-      document.getElementById('commit-badge-portal'),
-    ];
-    for (const el of targets) {
-      if (!el) continue;
-      el.style.transform = '';
-      el.style.transition = '';
-    }
-  }, [headerRef]);
-
-  const handleSwipeTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length !== 1) {
-      swipeStateRef.current = null;
-      return;
-    }
-    if (swipeStateRef.current?.committing) return;
-    swipeStateRef.current = {
-      startX: e.touches[0].clientX,
-      startY: e.touches[0].clientY,
-      swiping: false,
-      ignored: false,
-      startTime: Date.now(),
-      committing: false,
-    };
-  };
-
-  const handleSwipeTouchMove = (e: React.TouchEvent) => {
-    const st = swipeStateRef.current;
-    if (!st || st.ignored || st.committing) return;
-    if (e.touches.length !== 1) {
-      if (st.swiping) applySwipeTransform(0, 200);
-      st.ignored = true;
-      return;
-    }
-    const dx = e.touches[0].clientX - st.startX;
-    const dy = e.touches[0].clientY - st.startY;
-    if (!st.swiping) {
-      // Decide direction once motion crosses the threshold. Require horizontal
-      // motion to be dominant AND rightward; anything else (vertical scroll,
-      // leftward drag) is not our gesture.
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-      if (Math.abs(dy) >= Math.abs(dx) || dx <= 0) {
-        st.ignored = true;
-        return;
-      }
-      st.swiping = true;
-      // Mount the home backdrop so the user sees home revealed under the
-      // page as soon as motion is recognized as a swipe-back.
-      showHomeBackdrop();
-    }
-    // Cap at 0 so the user can't pull the page past its starting edge.
-    const offset = Math.max(0, dx);
-    applySwipeTransform(offset, 0);
-  };
-
-  const handleSwipeTouchEnd = (e: React.TouchEvent) => {
-    const st = swipeStateRef.current;
-    if (!st || !st.swiping || st.ignored || st.committing) {
-      swipeStateRef.current = null;
-      return;
-    }
-    const endX = e.changedTouches[0]?.clientX ?? st.startX;
-    const dx = endX - st.startX;
-    const dt = Date.now() - st.startTime;
-    const offset = Math.max(0, dx);
-    const velocity = dx / Math.max(1, dt); // px/ms, positive = rightward speed
-    const vw = window.innerWidth;
-    const shouldCommit =
-      offset >= vw * 0.3 || velocity >= 0.5;
-    if (shouldCommit) {
-      st.committing = true;
-      rememberCurrentScroll(groupScrollKey(groupId));
-      // Block taps on cards while the page slides off — otherwise a tap
-      // landing on a card mid-slide can race router.push and navigate to
-      // the poll detail page instead of home.
-      const wrapper = swipeWrapperRef.current;
-      if (wrapper) wrapper.style.pointerEvents = 'none';
-      const remaining = vw - offset;
-      const duration = Math.max(
-        140,
-        Math.min(360, remaining / Math.max(0.4, velocity)),
-      );
-      applySwipeTransform(vw, duration);
-      window.setTimeout(() => {
-        router.push('/');
-      }, duration);
-    } else {
-      applySwipeTransform(0, 220);
-      window.setTimeout(() => {
-        clearSwipeTransform();
-        swipeStateRef.current = null;
-        hideHomeBackdrop();
-      }, 240);
-    }
-  };
-
-  const handleSwipeTouchCancel = () => {
-    const st = swipeStateRef.current;
-    swipeStateRef.current = null;
-    if (st?.swiping && !st.committing) {
-      applySwipeTransform(0, 200);
-      window.setTimeout(() => {
-        clearSwipeTransform();
-        hideHomeBackdrop();
-      }, 220);
-    } else {
-      hideHomeBackdrop();
-    }
-  };
+  const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
+    headerRef,
+    extraTargets: [upArrowRef, downArrowRef],
+    showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
+    hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
+    onBeforeCommit: () => rememberCurrentScroll(groupScrollKey(groupId)),
+    onCommit: () => router.push('/'),
+  });
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
   // content when they scroll into view. rootMargin prefetches slightly early.
@@ -1944,22 +1759,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           eliminates the blank frame between router.push commit and home's
           first paint. */}
 
-      {/* Swipe-back wrapper. Owns its own transform (set imperatively by
-          the touch handlers via swipeWrapperRef); the inner cards div keeps
-          its own transform for overlayCardsOffset so the two don't conflict
-          across React re-renders. `touch-action: pan-y` hands horizontal
-          pans to the app while leaving vertical scroll to the browser.
-          `position: relative; z-index: 1` + opaque background keeps the
-          home backdrop hidden behind the page until the swipe actually
-          moves the wrapper sideways. `minHeight: 100dvh` extends the
-          opaque background to the bottom of the viewport so the backdrop
-          can't peek through below short groups. */}
+      {/* z-index:1 + opaque background keeps the home backdrop hidden
+          behind the page until the swipe moves the wrapper sideways.
+          Inner cards div keeps its own transform for overlayCardsOffset
+          so the two don't conflict across React re-renders. */}
       <div
         ref={swipeWrapperRef}
-        onTouchStart={handleSwipeTouchStart}
-        onTouchMove={handleSwipeTouchMove}
-        onTouchEnd={handleSwipeTouchEnd}
-        onTouchCancel={handleSwipeTouchCancel}
+        {...swipeTouchHandlers}
         className="touch-pan-y"
         style={{
           willChange: 'transform',
@@ -2296,16 +2102,12 @@ function GroupPageInner() {
   const groupShortId = params.groupShortId as string;
   const pollParam = searchParams.get(POLL_QUERY_PARAM);
 
-  // Dismiss the swipe-back group backdrop on mount. Mirrors the home page's
-  // HIDE_HOME_BACKDROP_EVENT dispatch — the backdrop persists across the
-  // router.push that commits a poll→group swipe (mounted at layout level
-  // via GroupBackdropHost) so there's no blank frame between PollDetail's
-  // unmount and this page's first paint. Once we've rendered we tell the
-  // host to unmount. Also clears the swipe transform on the commit-badge
-  // portal + the inline html/body overflow-clip styles that suppress
-  // scrollbars during the gesture — on commit, PollDetail has unmounted
-  // by the time we land here, so this is the last place that can clean
-  // them up.
+  // Dismiss the poll→group swipe-back backdrop on mount. The backdrop
+  // persists across the router.push that commits the swipe so there's no
+  // blank frame between PollDetail's unmount and this page's first paint;
+  // once we render, we tell the host to unmount. PollDetail has already
+  // unmounted by this point, so this is the last place that can reset the
+  // commit-badge transform and the html/body scrollbar lock.
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
     const badge = document.getElementById('commit-badge-portal');
@@ -2313,12 +2115,7 @@ function GroupPageInner() {
       badge.style.transform = '';
       badge.style.transition = '';
     }
-    const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
-    const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
-    htmlS.overflowX = '';
-    htmlS.scrollbarWidth = '';
-    bodyS.overflowX = '';
-    bodyS.scrollbarWidth = '';
+    setSwipeScrollbarLock(false);
     window.dispatchEvent(new Event(HIDE_GROUP_BACKDROP_EVENT));
   }, []);
 
