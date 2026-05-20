@@ -1268,6 +1268,15 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       } else if (++stableFrames >= 3) {
         console.log(`[scroll-debug] rAF SUCCESS after ${tickCount} ticks (${Date.now() - startTime}ms): finalY=${window.scrollY} target=${target}`);
         restoreTargetRef.current = null;
+        // Track post-success drift for ~2s to catch anything that
+        // shifts scroll after the rAF loop ends (overlay unmount,
+        // resize observers, etc).
+        const tgt = target;
+        [50, 200, 500, 1000, 2000].forEach((delay) => {
+          setTimeout(() => {
+            console.log(`[scroll-debug] post-success @+${delay}ms scrollY=${window.scrollY} target=${tgt} scrollHeight=${document.documentElement.scrollHeight} innerHeight=${window.innerHeight}`);
+          }, delay);
+        });
         return;
       }
       rafId = requestAnimationFrame(tick);
