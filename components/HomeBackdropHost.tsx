@@ -156,7 +156,7 @@ export default function HomeBackdropHost(): React.ReactElement | null {
         type="button"
         aria-hidden="true"
         tabIndex={-1}
-        className="fixed z-50 h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 shadow-md shadow-black/20 text-white font-normal"
+        className="fixed z-50 h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
         style={{
           right: "max(1.5rem, env(safe-area-inset-right, 0px))",
           bottom: IS_CAPACITOR_NATIVE ? "1.75rem" : "1rem",
