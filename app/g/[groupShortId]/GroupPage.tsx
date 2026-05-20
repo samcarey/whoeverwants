@@ -1285,26 +1285,43 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // following for 100+ms — the user sees the bubble bar disappear (scroll
   // back to 0 puts it below viewport) then reappear (next React update
   // re-applies bottom-pin). Running a continuous rAF loop for the deadline
-  // window closes that gap.
+  // window closes that gap. Also installs a synchronous `scroll` listener
+  // that snaps scrollY back BEFORE the next paint when the page is in
+  // bottom-pin mode — closes the 1-frame window where rAF lags behind a
+  // Next.js scrollTo(0,0) reset.
   useEffect(() => {
     if (!group || loading) return;
     if (headerHeight === 0) return;
     if (bottomPinDeadlineRef.current === 0) return;
     if (restoreTargetRef.current !== null) return;
     let rafId: number | null = null;
+    let reentryGuard = false;
+    const repin = (source: string) => {
+      if (userInteractedRef.current) return;
+      if (Date.now() >= bottomPinDeadlineRef.current) return;
+      if (restoreTargetRef.current !== null) return;
+      if (reentryGuard) return;
+      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      if (max > 0 && Math.abs(window.scrollY - max) > 0.5) {
+        console.log(`[scroll-debug] bottom-pin repin via ${source}: scrollY=${window.scrollY} target=${max}`);
+        reentryGuard = true;
+        window.scrollTo(0, max);
+        reentryGuard = false;
+      }
+    };
     const tick = () => {
       rafId = null;
       if (userInteractedRef.current || Date.now() >= bottomPinDeadlineRef.current) return;
       if (restoreTargetRef.current !== null) return;
-      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      if (max > 0 && Math.abs(window.scrollY - max) > 0.5) {
-        window.scrollTo(0, max);
-      }
+      repin('rAF');
       rafId = requestAnimationFrame(tick);
     };
+    const onScroll = () => repin('scroll-event');
     rafId = requestAnimationFrame(tick);
+    window.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', onScroll);
     };
   }, [group, loading, headerHeight]);
 
