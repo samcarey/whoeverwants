@@ -94,9 +94,18 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
       style={{
         right: "max(1.5rem, env(safe-area-inset-right, 0px))",
         bottom: IS_CAPACITOR_NATIVE ? "1.75rem" : "1rem",
-        opacity: visible ? 1 : 0,
+        // Pin to a permanent GPU layer so the button's subpixel
+        // rasterization is stable regardless of what's happening to other
+        // layers. Without this, the swipe wrapper's `translate3d(...)`
+        // promotion + demotion lets the browser repaint this sibling
+        // button with a 1-3px subpixel shift, producing a visible jump
+        // when the gesture commits.
+        transform: "translateZ(0)",
+        // `visibility` (not `opacity`) so there's no fade animation. A
+        // 150ms opacity transition triggers GPU compositing of its own
+        // and was contributing to the same subpixel-shift class of bug.
+        visibility: visible ? "visible" : "hidden",
         pointerEvents: visible ? "auto" : "none",
-        transition: "opacity 150ms ease-out",
       }}
       aria-label="Create new group"
       aria-hidden={!visible}
