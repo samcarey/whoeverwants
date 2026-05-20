@@ -1246,7 +1246,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     if (!group || loading) return;
     if (restoreTargetRef.current == null) return;
     let rafId: number | null = null;
-    let stableFrames = 0;
     let tickCount = 0;
     const startTime = Date.now();
     const tick = () => {
@@ -1259,25 +1258,18 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       }
       const target = restoreTargetRef.current;
       if (target == null) return;
+      // Re-apply on every frame until the deadline. Don't early-success on
+      // N stable frames: Next.js App Router's scroll-to-top useEffect can
+      // fire dozens of ms after pathname commit (well past any reasonable
+      // "stable for 3 frames" window), and if we stopped guarding before
+      // that we'd see scrollY snap to 0 with no one watching. The cost of
+      // running rAF for 800ms is one no-op compare per frame when scrollY
+      // is already at target — negligible.
       if (Math.abs(window.scrollY - target) > 0.5) {
         if (tickCount === 1 || tickCount % 10 === 0) {
           console.log(`[scroll-debug] rAF tick=${tickCount} scrollY=${window.scrollY} target=${target} reapplying`);
         }
         window.scrollTo(0, target);
-        stableFrames = 0;
-      } else if (++stableFrames >= 3) {
-        console.log(`[scroll-debug] rAF SUCCESS after ${tickCount} ticks (${Date.now() - startTime}ms): finalY=${window.scrollY} target=${target}`);
-        restoreTargetRef.current = null;
-        // Track post-success drift for ~2s to catch anything that
-        // shifts scroll after the rAF loop ends (overlay unmount,
-        // resize observers, etc).
-        const tgt = target;
-        [50, 200, 500, 1000, 2000].forEach((delay) => {
-          setTimeout(() => {
-            console.log(`[scroll-debug] post-success @+${delay}ms scrollY=${window.scrollY} target=${tgt} scrollHeight=${document.documentElement.scrollHeight} innerHeight=${window.innerHeight}`);
-          }, delay);
-        });
-        return;
       }
       rafId = requestAnimationFrame(tick);
     };
