@@ -77,7 +77,6 @@ export default function GroupHeader({
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
     </svg>
   );
-  const backIconSlotClass = "w-10 h-10 flex items-center justify-center";
 
   const titleBlock = title ? (
     <>
@@ -125,7 +124,7 @@ export default function GroupHeader({
           className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
           aria-label="Go back"
         >
-          <span className={backIconSlotClass}>
+          <span className="w-10 h-10 flex items-center justify-center">
             {backIcon}
           </span>
         </button>
