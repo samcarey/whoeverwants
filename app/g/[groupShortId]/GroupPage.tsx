@@ -1239,7 +1239,19 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // scrollHeight ≈ innerHeight (cards rendered as shells), scrollTo
       // is clamped to 0, and the bubble bar sits hundreds of px below
       // the viewport until async data fills in the cards.
-      setRestoreMinHeight(remembered + window.innerHeight);
+      //
+      // Imperatively write the DOM style FIRST so the synchronous
+      // window.scrollTo below sees the grown scrollHeight on the same
+      // paint cycle. Calling setRestoreMinHeight alone schedules a
+      // re-render but doesn't commit before scrollTo runs, so the
+      // scroll would land on the still-short doc and clamp to 0.
+      // State is also set so React keeps the value across subsequent
+      // re-renders until the rAF bail clears it.
+      const minH = remembered + window.innerHeight;
+      if (swipeWrapperRef.current) {
+        swipeWrapperRef.current.style.minHeight = `${minH}px`;
+      }
+      setRestoreMinHeight(minH);
       window.scrollTo(0, remembered);
       console.log(`[scroll-debug] applied scrollTo(${remembered}) → actualY=${window.scrollY}`);
       setInitialScrollApplied(true);
