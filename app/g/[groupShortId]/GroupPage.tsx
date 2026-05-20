@@ -1253,7 +1253,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     // already reflects the full document and the requested scrollY
     // lands without clamping.
     const remembered = getRememberedScroll(groupScrollKey(groupId));
-    console.log(`[scroll-debug] RESTORE key=${groupScrollKey(groupId)} remembered=${remembered} preY=${window.scrollY} scrollHeight=${document.documentElement.scrollHeight} innerHeight=${window.innerHeight} mountedKeys=${mountedGroupKeys.size}`);
     if (remembered !== undefined) {
       restoreTargetRef.current = remembered;
       // Pin against the target for a bounded window — iOS Safari +
@@ -1266,7 +1265,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // committed with the grown wrapper. scrollTo lands at the target
       // without clamping.
       window.scrollTo(0, remembered);
-      console.log(`[scroll-debug] applied scrollTo(${remembered}) → actualY=${window.scrollY}`);
       setInitialScrollApplied(true);
       return;
     }
@@ -1292,13 +1290,9 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     if (!group || loading) return;
     if (restoreTargetRef.current == null) return;
     let rafId: number | null = null;
-    let tickCount = 0;
-    const startTime = Date.now();
     const tick = () => {
       rafId = null;
-      tickCount++;
       if (userInteractedRef.current || Date.now() >= restorePinDeadlineRef.current) {
-        console.log(`[scroll-debug] rAF BAIL after ${tickCount} ticks (${Date.now() - startTime}ms): userInteracted=${userInteractedRef.current} deadlinePassed=${Date.now() >= restorePinDeadlineRef.current} finalY=${window.scrollY} target=${restoreTargetRef.current}`);
         restoreTargetRef.current = null;
         setRestoreMinHeight(null);
         return;
@@ -1313,9 +1307,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // running rAF for 800ms is one no-op compare per frame when scrollY
       // is already at target — negligible.
       if (Math.abs(window.scrollY - target) > 0.5) {
-        if (tickCount === 1 || tickCount % 10 === 0) {
-          console.log(`[scroll-debug] rAF tick=${tickCount} scrollY=${window.scrollY} target=${target} reapplying`);
-        }
         window.scrollTo(0, target);
       }
       rafId = requestAnimationFrame(tick);
@@ -1343,14 +1334,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     if (restoreTargetRef.current !== null) return;
     let rafId: number | null = null;
     let reentryGuard = false;
-    const repin = (source: string) => {
+    const repin = () => {
       if (userInteractedRef.current) return;
       if (Date.now() >= bottomPinDeadlineRef.current) return;
       if (restoreTargetRef.current !== null) return;
       if (reentryGuard) return;
       const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
       if (max > 0 && Math.abs(window.scrollY - max) > 0.5) {
-        console.log(`[scroll-debug] bottom-pin repin via ${source}: scrollY=${window.scrollY} target=${max}`);
         reentryGuard = true;
         window.scrollTo(0, max);
         reentryGuard = false;
@@ -1360,10 +1350,10 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       rafId = null;
       if (userInteractedRef.current || Date.now() >= bottomPinDeadlineRef.current) return;
       if (restoreTargetRef.current !== null) return;
-      repin('rAF');
+      repin();
       rafId = requestAnimationFrame(tick);
     };
-    const onScroll = () => repin('scroll-event');
+    const onScroll = () => repin();
     rafId = requestAnimationFrame(tick);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => {

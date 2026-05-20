@@ -768,35 +768,6 @@ export function CreateQuestionContent() {
     return () => observer.disconnect();
   }, []);
 
-  // Diagnostic: continuously sample bubble bar bounds every frame to
-  // catch any flicker class (position shift, opacity blip,
-  // unmount/remount). Logs only when the snapshot changes.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    let rafId: number | null = null;
-    let lastSnapshot = '';
-    const sample = () => {
-      rafId = null;
-      const targets = document.querySelectorAll<HTMLElement>(`#${DRAFT_POLL_PORTAL_ID}`);
-      const snap = Array.from(targets).map(t => {
-        const bar = t.firstElementChild as HTMLElement | null;
-        if (!bar) return 'empty';
-        const r = bar.getBoundingClientRect();
-        const inOverlay = !!t.closest('[aria-hidden="true"][style*="position: fixed"]');
-        return `${inOverlay ? 'O' : 'R'}top=${r.top.toFixed(0)},h=${r.height.toFixed(0)}`;
-      }).join('|');
-      if (snap !== lastSnapshot) {
-        console.log(`[bubble-debug] path=${window.location.pathname} ${snap || '(none)'} scrollY=${window.scrollY}`);
-        lastSnapshot = snap;
-      }
-      rafId = requestAnimationFrame(sample);
-    };
-    rafId = requestAnimationFrame(sample);
-    return () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, []);
-
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {
     if (typeof window === 'undefined') {
