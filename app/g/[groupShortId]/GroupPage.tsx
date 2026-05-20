@@ -1197,6 +1197,21 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // loop converges (3 stable frames), the deadline passes, or the
   // user interacts.
   const restoreTargetRef = useRef<number | null>(null);
+  // Minimum document height to apply during the restore window. The
+  // initial render has `scrollHeight ≈ innerHeight` (cards mounted as
+  // shell components with empty data), but `window.scrollTo(remembered)`
+  // is silently clamped to scrollHeight-innerHeight = 0. As async card
+  // data arrives, the doc grows, but scrollY can't reach `remembered`
+  // until growth exceeds it — leaving the bubble bar pushed below the
+  // visible viewport for hundreds of ms. Setting `minHeight =
+  // remembered + innerHeight` on the cards-wrapper forces document
+  // scrollHeight high enough that scrollTo(remembered) is reachable
+  // from the first paint. Cleared once the rAF loop bails. The
+  // overshoot is invisible to the user — they're at scrollY=remembered
+  // = scrollHeight-innerHeight, so the wrapper's bottom edge is
+  // exactly at viewport bottom; any extra height we forced sits below
+  // the actual content but never enters the viewport.
+  const [restoreMinHeight, setRestoreMinHeight] = useState<number | null>(null);
   useLayoutEffect(() => {
     if (!group || loading) return;
     if (headerHeight === 0) return;
@@ -1219,6 +1234,12 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // initial scrollTo, so we need re-application opportunities for
       // longer than that. 800ms matches BOTTOM_PIN_DURATION_MS.
       restorePinDeadlineRef.current = Date.now() + BOTTOM_PIN_DURATION_MS;
+      // Force document scrollHeight high enough that scrollTo(remembered)
+      // works from first paint. Without this the initial render has
+      // scrollHeight ≈ innerHeight (cards rendered as shells), scrollTo
+      // is clamped to 0, and the bubble bar sits hundreds of px below
+      // the viewport until async data fills in the cards.
+      setRestoreMinHeight(remembered + window.innerHeight);
       window.scrollTo(0, remembered);
       console.log(`[scroll-debug] applied scrollTo(${remembered}) → actualY=${window.scrollY}`);
       setInitialScrollApplied(true);
@@ -1254,6 +1275,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       if (userInteractedRef.current || Date.now() >= restorePinDeadlineRef.current) {
         console.log(`[scroll-debug] rAF BAIL after ${tickCount} ticks (${Date.now() - startTime}ms): userInteracted=${userInteractedRef.current} deadlinePassed=${Date.now() >= restorePinDeadlineRef.current} finalY=${window.scrollY} target=${restoreTargetRef.current}`);
         restoreTargetRef.current = null;
+        setRestoreMinHeight(null);
         return;
       }
       const target = restoreTargetRef.current;
@@ -1928,7 +1950,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           position: 'relative',
           zIndex: 1,
           background: 'var(--background)',
-          minHeight: '100dvh',
+          minHeight: restoreMinHeight !== null ? `${restoreMinHeight}px` : '100dvh',
         }}
       >
       <div
