@@ -380,7 +380,14 @@ export function SlideOverlayHost(): React.ReactElement | null {
     if (state.useHistoryBack) {
       router.back();
     } else {
-      router.push(state.href);
+      // `scroll: false` tells Next.js to skip its scroll-to-top
+      // useEffect on this navigation. The destination's GroupContent
+      // owns scroll restoration via its own useLayoutEffect; Next.js'
+      // post-commit scroll-to-0 fights that and on iOS Safari leaves
+      // a 13-30ms window where scrollY=0 right when the overlay
+      // unmounts — visible as a bubble-bar / bottom-of-list flicker
+      // when the user's saved scroll is near the doc bottom.
+      router.push(state.href, { scroll: false });
     }
   }, [state?.phase, router]);
 
