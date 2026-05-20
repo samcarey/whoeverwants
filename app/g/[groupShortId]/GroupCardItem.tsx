@@ -393,11 +393,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             : "bg-transparent"
         } hover:bg-gray-100 dark:hover:bg-gray-900 active:bg-blue-100 dark:active:bg-blue-900/40`}
       >
-        {/* Top row: icon + title (left) / status + nav chevron (right). The
-            chevron mirrors the one in GroupHeader (same path, same color)
-            to signal "tap to slide to this poll's detail page". Always
-            shown for non-placeholder rows, regardless of whether a status
-            label is present. */}
+        {/* Top row: icon + title (left) / status + chevron (right). */}
         <div className="flex items-start justify-between gap-2 min-w-0">
           <h3 className="flex-1 min-w-0 font-medium text-lg leading-tight text-gray-900 dark:text-white">
             <span className="mr-1.5" aria-hidden="true">{categoryIcon}</span>
