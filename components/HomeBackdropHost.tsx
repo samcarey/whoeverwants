@@ -144,8 +144,18 @@ export default function HomeBackdropHost(): React.ReactElement | null {
           />
         </div>
       </div>
-      <span
+      {/* Use the same tag (button) + class list as the real button so
+          any browser-default appearance (iOS Safari adds internal
+          padding to buttons even with Tailwind preflight applied)
+          renders identically — a <span> with the same Tailwind classes
+          can land a pixel or two off vertically. type=button so the
+          implicit submit doesn't fire if this ever ends up inside a
+          form; aria-hidden + tabIndex=-1 keep it out of the
+          accessibility tree (it's a visual placeholder, not real). */}
+      <button
+        type="button"
         aria-hidden="true"
+        tabIndex={-1}
         className="fixed z-50 h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 shadow-md shadow-black/20 text-white font-normal"
         style={{
           right: "max(1.5rem, env(safe-area-inset-right, 0px))",
@@ -154,7 +164,7 @@ export default function HomeBackdropHost(): React.ReactElement | null {
       >
         <span aria-hidden="true" className="text-[28.8px] leading-none">+</span>
         <span className="text-lg leading-none">Group</span>
-      </span>
+      </button>
     </div>,
     document.body,
   );
