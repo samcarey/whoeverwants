@@ -2,11 +2,18 @@
 
 /**
  * Body-level backdrop that mirrors the real home route (settings gear +
- * "Whoever Wants" title + cached GroupList + +Group button). Mounted in
- * app/layout.tsx so it persists across the router.push that commits a
- * swipe-back gesture — without this persistence the backdrop would
- * unmount alongside GroupContent and there'd be a blank frame between
- * GroupContent's unmount and the real home page's first paint.
+ * "Whoever Wants" title + cached GroupList). Mounted in app/layout.tsx so
+ * it persists across the router.push that commits a swipe-back gesture —
+ * without this persistence the backdrop would unmount alongside
+ * GroupContent and there'd be a blank frame between GroupContent's
+ * unmount and the real home page's first paint.
+ *
+ * The "+ Group" button is NOT painted by this backdrop — it lives in
+ * `<CreateGroupButtonHost />` (also mounted at layout level), which
+ * keeps a single persistent button instance visible throughout the
+ * gesture. The fake button this host used to render was retired because
+ * even with identical class lists the swap from fake (backdrop) to real
+ * (template) caused a small position jump on iOS.
  *
  * Lifecycle:
  *   - SHOW_HOME_BACKDROP_EVENT (from GroupContent's swipe-lock path) → mount
@@ -23,7 +30,6 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Capacitor } from "@capacitor/core";
 import GroupList from "@/components/GroupList";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { getCachedEmptyGroups } from "@/lib/simpleQuestionQueries";
@@ -32,13 +38,6 @@ import {
   HIDE_HOME_BACKDROP_EVENT,
   SHOW_HOME_BACKDROP_EVENT,
 } from "@/lib/eventChannels";
-
-// Same Capacitor-native check template.tsx uses to lift the real +Group
-// button (avoids it being obscured by the iOS home-indicator gesture
-// area). Without matching the value here, the backdrop's fake +Group
-// sits 12px lower than the real one and visibly jumps up on commit.
-const IS_CAPACITOR_NATIVE =
-  typeof window !== "undefined" && Capacitor.isNativePlatform();
 
 export default function HomeBackdropHost(): React.ReactElement | null {
   const [visible, setVisible] = useState(false);
@@ -144,27 +143,6 @@ export default function HomeBackdropHost(): React.ReactElement | null {
           />
         </div>
       </div>
-      {/* Use the same tag (button) + class list as the real button so
-          any browser-default appearance (iOS Safari adds internal
-          padding to buttons even with Tailwind preflight applied)
-          renders identically — a <span> with the same Tailwind classes
-          can land a pixel or two off vertically. type=button so the
-          implicit submit doesn't fire if this ever ends up inside a
-          form; aria-hidden + tabIndex=-1 keep it out of the
-          accessibility tree (it's a visual placeholder, not real). */}
-      <button
-        type="button"
-        aria-hidden="true"
-        tabIndex={-1}
-        className="fixed z-50 h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
-        style={{
-          right: "max(1.5rem, env(safe-area-inset-right, 0px))",
-          bottom: IS_CAPACITOR_NATIVE ? "1.75rem" : "1rem",
-        }}
-      >
-        <span aria-hidden="true" className="text-[28.8px] leading-none">+</span>
-        <span className="text-lg leading-none">Group</span>
-      </button>
     </div>,
     document.body,
   );

@@ -7,6 +7,7 @@ import CommitInfo from "@/components/CommitInfo";
 import ResponsiveScaling from "@/components/ResponsiveScaling";
 import { SlideOverlayHost } from "@/lib/slideOverlay";
 import HomeBackdropHost from "@/components/HomeBackdropHost";
+import CreateGroupButtonHost from "@/components/CreateGroupButtonHost";
 import { PersistentCreatePollHost } from "@/components/PersistentCreatePollHost";
 import { UniversalLinksHandler } from "@/components/UniversalLinksHandler";
 import { ClipboardLinkPrompt } from "@/components/ClipboardLinkPrompt";
@@ -131,6 +132,12 @@ export default function RootLayout({
             frame between GroupContent's unmount and the real home page's
             first paint. */}
         <HomeBackdropHost />
+
+        {/* Single persistent "+ Group" button instance for the home page
+            and the group→home swipe-back gesture window. Mounted at layout
+            level so the DOM node is identical across the gesture and the
+            commit — no fake/real button swap, no position jump. */}
+        <CreateGroupButtonHost />
 
         {/* CreateQuestionContent (category bubble bar + create-poll modal).
             Lives in the root layout — NOT template — so it persists across
