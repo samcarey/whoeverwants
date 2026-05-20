@@ -1231,6 +1231,20 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     if (hasHandledInitialExpandRef.current) return;
     hasHandledInitialExpandRef.current = true;
 
+    // Skip document-level scroll machinery when rendered inside the
+    // slide overlay. The overlay is position:fixed + contain:strict,
+    // so its wrapper's minHeight does NOT contribute to
+    // documentElement.scrollHeight. Calling window.scrollTo(0,
+    // remembered) from here lands on a still-short doc (only the
+    // home page contributes) and iOS Safari deferred-clamps the
+    // scrollY back to 0 a few frames later — even after the real
+    // route's wrapper grows the doc. The clamp persists, the rAF
+    // loop fights it, and the visible polls/bubble bar at the
+    // bottom flicker right after the overlay unmounts. Overlay
+    // positioning is driven by `overlayCardsOffset` transform on
+    // the cards-wrapper; document scroll is irrelevant for it.
+    if (overlayCardsOffset !== undefined) return;
+
     // Back-nav path: restore the scroll position saved when the user
     // navigated away (tap on a poll card). Skip bottom-pin entirely so
     // async content settling doesn't drag the viewport off-target.
