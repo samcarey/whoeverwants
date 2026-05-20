@@ -1,24 +1,15 @@
 "use client";
 
-import React, { useEffect, useState, Suspense, useRef } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { createPortal } from 'react-dom';
 import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
-import { slideToNewGroup } from '@/lib/slideOverlay';
-import { HOME_SCROLL_KEY, rememberCurrentScroll } from '@/lib/scrollMemory';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
-import { apiCreateGroup } from '@/lib/api';
-import { GROUP_ID_ATTR } from '@/lib/groupDomMarkers';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
-import { Capacitor } from '@capacitor/core';
-import { haptic } from '@/lib/haptics';
-
-const IS_CAPACITOR_NATIVE = typeof window !== 'undefined' && Capacitor.isNativePlatform();
 
 // `CreateQuestionContent` (the bubble-bar + create-poll-modal owner) is
 // mounted in `app/layout.tsx` via `<PersistentCreatePollHost />` so it
@@ -26,6 +17,11 @@ const IS_CAPACITOR_NATIVE = typeof window !== 'undefined' && Capacitor.isNativeP
 // template.tsx re-instantiates on every route change, which would unmount
 // the component and cause the bubble bar's portal target to be briefly
 // cleared (visible as "buttons blink after slide").
+//
+// The home page's "+ Group" button is similarly mounted at layout level
+// via `<CreateGroupButtonHost />`. One persistent DOM node toggled by
+// opacity/pointer-events, so the swipe-back gesture can't observe a
+// position jump as the page commits.
 
 interface AppTemplateProps {
   children: React.ReactNode;
@@ -36,55 +32,6 @@ export default function Template({ children }: AppTemplateProps) {
     <Suspense fallback={<div />}>
       <TemplateInner>{children}</TemplateInner>
     </Suspense>
-  );
-}
-
-/** Home-page new group button. Slide begins on the same frame as the
- *  tap via the overlay-slide mechanism — `navigateWithTransition` /
- *  the View Transitions API would otherwise gate motion on the
- *  destination route committing + signaling data-page-ready.
- *
- *  `apiCreateGroup` runs in parallel; on resolve we push the canonical
- *  `/g/<short_id>`, on failure we fall back to `/g`. Body's
- *  `data-group-id` is set inline so any submit during the overlay
- *  window binds to the just-created group (the group page's own
- *  mount effect re-sets the same value). In-flight ref prevents
- *  double-creates on rapid taps. */
-function CreateGroupButton({ router }: { router: ReturnType<typeof useRouter> }) {
-  const inFlight = useRef(false);
-  const onClick = () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    haptic.medium();
-    // Save home scroll so back-nav from the freshly-minted group restores here.
-    rememberCurrentScroll(HOME_SCROLL_KEY);
-    slideToNewGroup();
-    apiCreateGroup()
-      .then((summary) => {
-        const routeId = summary.short_id || summary.id;
-        document.body.setAttribute(GROUP_ID_ATTR, summary.id);
-        router.push(`/g/${routeId}`);
-      })
-      .catch(() => {
-        router.push('/g');
-      })
-      .finally(() => {
-        inFlight.current = false;
-      });
-  };
-  return (
-    <button
-      onClick={onClick}
-      className="fixed z-50 h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
-      style={{
-        right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
-        bottom: IS_CAPACITOR_NATIVE ? '1.75rem' : '1rem',
-      }}
-      aria-label="Create new group"
-    >
-      <span aria-hidden="true" className="text-[28.8px] leading-none">+</span>
-      <span className="text-lg leading-none">Group</span>
-    </button>
   );
 }
 
@@ -292,17 +239,6 @@ function TemplateInner({ children }: AppTemplateProps) {
           {children}
         </div>
       </div>
-
-      {/* New group button — home page only. Materializes a brand-new group
-           in the DB (via apiCreateGroup) so the user can name it / share it /
-           edit info before adding any polls. Then navigates to the new
-           group's URL where the bubble bar lives for picking the first
-           poll's category. Falls back to the legacy /g/ empty placeholder
-           on API failure so the user can still create a poll. */}
-      {isMounted && pathname === '/' && createPortal(
-        <CreateGroupButton router={router} />,
-        document.getElementById('floating-fab-portal')!
-      )}
 
       {/* Header elements rendered outside scaling container */}
       <HeaderPortal>

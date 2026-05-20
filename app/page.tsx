@@ -6,7 +6,7 @@ import { getCachedEmptyGroups, getMyGroups } from "@/lib/simpleQuestionQueries";
 import { apiGetAllQuestionIds } from "@/lib/api";
 import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
-import { POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
+import { HIDE_HOME_BACKDROP_EVENT, POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
 import { usePageReady } from "@/lib/usePageReady";
 import { HOME_SCROLL_KEY, getRememberedScroll } from "@/lib/scrollMemory";
 import GroupList from "@/components/GroupList";
@@ -55,6 +55,42 @@ export default function Home() {
   const [fontSize, setFontSize] = useState<string>("text-xl");
 
   usePageReady(true);
+
+  // Dismiss the swipe-back home backdrop on mount. The backdrop persists
+  // across the router.push that commits the swipe (mounted at layout
+  // level via HomeBackdropHost) so there's no blank frame between
+  // GroupContent unmount and this page's first paint; once we've rendered
+  // we tell the host to unmount. Inside useLayoutEffect so the dispatch
+  // happens before the browser paints (otherwise the backdrop briefly
+  // sits over the rendered home page).
+  //
+  // Also resets the commit-age badge's swipe transform here — the badge
+  // portal lives in the persistent template chrome (shared with the
+  // group page), so any translateX the group's swipe applied to it
+  // would otherwise strand it off-screen on home. Resetting in the same
+  // useLayoutEffect that dismisses the backdrop syncs both transitions
+  // into the same paint pass.
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const badge = document.getElementById('commit-badge-portal');
+    if (badge) {
+      badge.style.transform = '';
+      badge.style.transition = '';
+    }
+    // Clear the swipe-back inline html/body styles (overflowX: clip +
+    // scrollbar hiding) that suppress page-level scrollbars during the
+    // gesture. On snap-back/cancel paths the GroupPage handler clears
+    // them directly; on commit, GroupPage has unmounted by the time we
+    // land here, so home's mount effect is the last place that can
+    // clean them up.
+    const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+    const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+    htmlS.overflowX = '';
+    htmlS.scrollbarWidth = '';
+    bodyS.overflowX = '';
+    bodyS.scrollbarWidth = '';
+    window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
+  }, []);
 
   // Restore the scroll position saved when navigating away to a group
   // page. Fires synchronously before paint via `useLayoutEffect` and is
@@ -152,7 +188,13 @@ export default function Home() {
   useEffect(() => {
     async function fetchQuestions() {
       try {
-        setLoading(true);
+        // Only show the spinner when there's no cached data to render —
+        // otherwise mounting home (e.g. after a swipe-back from a group)
+        // would flash the GroupList off-screen for one render cycle while
+        // the refetch round-trips, then flash it back when the same data
+        // returns from the cache-warmed endpoint.
+        const hasCached = initialPolls.length > 0 || initialEmptyGroups.length > 0;
+        if (!hasCached) setLoading(true);
         setError(null);
 
         // Dev mode: if ?dev=1 in URL, import all question IDs from the database
@@ -179,8 +221,18 @@ export default function Home() {
         // accessible questions, with results inline. Replaces the legacy
         // discoverRelatedQuestions + getAccessiblePolls pair.
         const { polls: nextPolls, emptyGroups: nextEmptyGroups } = await getMyGroups();
-        setPolls(nextPolls);
-        setEmptyGroups(nextEmptyGroups);
+        // Preserve previous array identity when the data is unchanged so
+        // GroupList's memo can skip re-rendering every card on every mount.
+        setPolls((prev) =>
+          prev.length === nextPolls.length && prev.every((p, i) => p.id === nextPolls[i].id)
+            ? prev
+            : nextPolls,
+        );
+        setEmptyGroups((prev) =>
+          prev.length === nextEmptyGroups.length && prev.every((g, i) => g.id === nextEmptyGroups[i].id)
+            ? prev
+            : nextEmptyGroups,
+        );
       } catch (error) {
         console.error("Unexpected error:", error);
         setError("An unexpected error occurred");

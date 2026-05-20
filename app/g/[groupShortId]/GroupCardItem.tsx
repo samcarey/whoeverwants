@@ -158,7 +158,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   const navigateToDetail = () => {
     const pollShortId = wrapper?.short_id || question.id;
     // Save scroll BEFORE the navigation so back-nav restores here.
+    const scrollY = typeof window !== "undefined" ? window.scrollY : 0;
     rememberCurrentScroll(groupScrollKey(groupRouteId));
+    console.log(`[scroll-debug] SAVE groupScroll key=${groupScrollKey(groupRouteId)} y=${scrollY}`);
     slideToPollDetail({ groupId: groupRouteId, pollShortId });
   };
 

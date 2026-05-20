@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
 import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
@@ -19,6 +19,8 @@ import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
   POLL_FAILED_EVENT,
+  SHOW_HOME_BACKDROP_EVENT,
+  HIDE_HOME_BACKDROP_EVENT,
   type PollPendingDetail,
   type PollHydratedDetail,
   type PollFailedDetail,
@@ -72,31 +74,29 @@ const SCROLL_STOPPED_DEBOUNCE_MS = 150;
 const SCROLL_HELPER_BUTTON_CLASS_BASE =
   'fixed left-1/2 -translate-x-1/2 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
 
-function ScrollHelperButton({
-  direction,
-  onClick,
-  style,
-  elevated,
-  ...rest
-}: {
-  direction: 'up' | 'down';
-  onClick: () => void;
-  style: React.CSSProperties;
-  /** When true, render above the slide overlay (z-70) instead of at the
-   *  default z-40 so the arrows aren't hidden by the overlay's opaque
-   *  background during a group-kind slide. */
-  elevated?: boolean;
-} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'style' | 'type' | 'className'>) {
+const ScrollHelperButton = React.forwardRef<
+  HTMLButtonElement,
+  {
+    direction: 'up' | 'down';
+    onClick: () => void;
+    style: React.CSSProperties;
+    /** When true, render above the slide overlay (z-70) instead of at the
+     *  default z-40 so the arrows aren't hidden by the overlay's opaque
+     *  background during a group-kind slide. */
+    elevated?: boolean;
+  } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'style' | 'type' | 'className'>
+>(({ direction, onClick, style, elevated, ...rest }, ref) => {
   const path = direction === 'up' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7';
   const className = `${SCROLL_HELPER_BUTTON_CLASS_BASE} ${elevated ? 'z-[70]' : 'z-40'}`;
   return (
-    <button type="button" onClick={onClick} className={className} style={style} {...rest}>
+    <button ref={ref} type="button" onClick={onClick} className={className} style={style} {...rest}>
       <svg className="w-[1.35rem] h-[1.35rem]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d={path} />
       </svg>
     </button>
   );
-}
+});
+ScrollHelperButton.displayName = 'ScrollHelperButton';
 
 // Shared cache-driven Group rebuild for POLL_PENDING / POLL_HYDRATED /
 // POLL_FAILED setGroup updaters. Returns prev when the rebuild would produce
@@ -755,6 +755,213 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // pre-effect state.
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group], 80);
 
+  // Swipe-back gesture: dragging rightward on the content slides the page
+  // off to the right with home revealed underneath. While the gesture is
+  // active a "home backdrop" portal is mounted at z-index 0 showing the
+  // cached groups list — so the user sees home from the first pixel of
+  // motion (matching iOS native back-swipe), not just after navigation
+  // completes. Refs (not state) drive the transform during the gesture so
+  // per-frame motion doesn't trigger React re-renders; only the backdrop
+  // mount/unmount goes through state.
+  // `touch-action: pan-y` on the wrapper hands horizontal pans to us while
+  // letting the browser handle vertical scroll natively — so we never
+  // preventDefault on touchmove (per CLAUDE.md: that permanently kills iOS
+  // scroll for the touch sequence).
+  const swipeWrapperRef = useRef<HTMLDivElement | null>(null);
+  const upArrowRef = useRef<HTMLButtonElement | null>(null);
+  const downArrowRef = useRef<HTMLButtonElement | null>(null);
+  const swipeStateRef = useRef<{
+    startX: number;
+    startY: number;
+    swiping: boolean;
+    ignored: boolean;
+    startTime: number;
+    committing: boolean;
+  } | null>(null);
+  // Backdrop visibility is now owned by HomeBackdropHost at layout level
+  // (so it survives router.push). We dispatch SHOW/HIDE events instead of
+  // managing the state here directly.
+  const showHomeBackdrop = () => {
+    if (typeof window !== 'undefined') {
+      // Suppress the page-level scrollbars the transform would surface
+      // (the swipe wrapper's translateX extends content past the viewport
+      // edges, which the browser would otherwise reflect as page-wide
+      // scrollbars at the bottom + right). overflow-x: clip on both
+      // <html> and <body> suppresses the horizontal scroll without
+      // creating a new scroll context (which would otherwise reset
+      // body's scroll position on iOS); scrollbar-width: none hides the
+      // vertical bar. Both elements need to be clipped because html
+      // looks at body's content overflow for its own scrollable size.
+      const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+      const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+      htmlS.overflowX = 'clip';
+      htmlS.scrollbarWidth = 'none';
+      bodyS.overflowX = 'clip';
+      bodyS.scrollbarWidth = 'none';
+      window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT));
+    }
+  };
+  const hideHomeBackdrop = () => {
+    if (typeof window !== 'undefined') {
+      const htmlS = document.documentElement.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+      const bodyS = document.body.style as CSSStyleDeclaration & { scrollbarWidth?: string };
+      htmlS.overflowX = '';
+      htmlS.scrollbarWidth = '';
+      bodyS.overflowX = '';
+      bodyS.scrollbarWidth = '';
+      window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
+    }
+  };
+
+  // Backdrop stays at its final position (no parallax) — the user sees the
+  // home page elements at their natural locations from the very start of
+  // the gesture, just progressively revealed as the opaque wrapper slides
+  // off to the right. An earlier iOS-style parallax variant was retired
+  // because shifting the title left made it visually collide with the
+  // (statically positioned) settings gear at the viewport's left edge.
+  const applySwipeTransform = useCallback(
+    (translateX: number, transitionMs: number) => {
+      const wrapperTransform =
+        translateX === 0 ? '' : `translate3d(${translateX}px, 0, 0)`;
+      const transition =
+        transitionMs > 0
+          ? `transform ${transitionMs}ms cubic-bezier(0.32, 0.72, 0, 1)`
+          : 'none';
+      // Header + cards wrapper + scroll arrows + commit-age badge all
+      // slide together with the gesture. Arrows and badge are portaled to
+      // body-level (escaping the responsive-scaling-container's transform
+      // on desktop), so they're transformed individually rather than
+      // inherited from a parent.
+      const targets: (HTMLElement | null)[] = [
+        swipeWrapperRef.current,
+        headerRef.current,
+        upArrowRef.current,
+        downArrowRef.current,
+        document.getElementById('commit-badge-portal'),
+      ];
+      for (const el of targets) {
+        if (!el) continue;
+        el.style.transform = wrapperTransform;
+        el.style.transition = transition;
+      }
+    },
+    [headerRef],
+  );
+
+  const clearSwipeTransform = useCallback(() => {
+    const targets: (HTMLElement | null)[] = [
+      swipeWrapperRef.current,
+      headerRef.current,
+      upArrowRef.current,
+      downArrowRef.current,
+      document.getElementById('commit-badge-portal'),
+    ];
+    for (const el of targets) {
+      if (!el) continue;
+      el.style.transform = '';
+      el.style.transition = '';
+    }
+  }, [headerRef]);
+
+  const handleSwipeTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) {
+      swipeStateRef.current = null;
+      return;
+    }
+    if (swipeStateRef.current?.committing) return;
+    swipeStateRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      swiping: false,
+      ignored: false,
+      startTime: Date.now(),
+      committing: false,
+    };
+  };
+
+  const handleSwipeTouchMove = (e: React.TouchEvent) => {
+    const st = swipeStateRef.current;
+    if (!st || st.ignored || st.committing) return;
+    if (e.touches.length !== 1) {
+      if (st.swiping) applySwipeTransform(0, 200);
+      st.ignored = true;
+      return;
+    }
+    const dx = e.touches[0].clientX - st.startX;
+    const dy = e.touches[0].clientY - st.startY;
+    if (!st.swiping) {
+      // Decide direction once motion crosses the threshold. Require horizontal
+      // motion to be dominant AND rightward; anything else (vertical scroll,
+      // leftward drag) is not our gesture.
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      if (Math.abs(dy) >= Math.abs(dx) || dx <= 0) {
+        st.ignored = true;
+        return;
+      }
+      st.swiping = true;
+      // Mount the home backdrop so the user sees home revealed under the
+      // page as soon as motion is recognized as a swipe-back.
+      showHomeBackdrop();
+    }
+    // Cap at 0 so the user can't pull the page past its starting edge.
+    const offset = Math.max(0, dx);
+    applySwipeTransform(offset, 0);
+  };
+
+  const handleSwipeTouchEnd = (e: React.TouchEvent) => {
+    const st = swipeStateRef.current;
+    if (!st || !st.swiping || st.ignored || st.committing) {
+      swipeStateRef.current = null;
+      return;
+    }
+    const endX = e.changedTouches[0]?.clientX ?? st.startX;
+    const dx = endX - st.startX;
+    const dt = Date.now() - st.startTime;
+    const offset = Math.max(0, dx);
+    const velocity = dx / Math.max(1, dt); // px/ms, positive = rightward speed
+    const vw = window.innerWidth;
+    const shouldCommit =
+      offset >= vw * 0.3 || velocity >= 0.5;
+    if (shouldCommit) {
+      st.committing = true;
+      rememberCurrentScroll(groupScrollKey(groupId));
+      // Block taps on cards while the page slides off — otherwise a tap
+      // landing on a card mid-slide can race router.push and navigate to
+      // the poll detail page instead of home.
+      const wrapper = swipeWrapperRef.current;
+      if (wrapper) wrapper.style.pointerEvents = 'none';
+      const remaining = vw - offset;
+      const duration = Math.max(
+        140,
+        Math.min(360, remaining / Math.max(0.4, velocity)),
+      );
+      applySwipeTransform(vw, duration);
+      window.setTimeout(() => {
+        router.push('/');
+      }, duration);
+    } else {
+      applySwipeTransform(0, 220);
+      window.setTimeout(() => {
+        clearSwipeTransform();
+        swipeStateRef.current = null;
+        hideHomeBackdrop();
+      }, 240);
+    }
+  };
+
+  const handleSwipeTouchCancel = () => {
+    const st = swipeStateRef.current;
+    swipeStateRef.current = null;
+    if (st?.swiping && !st.committing) {
+      applySwipeTransform(0, 200);
+      window.setTimeout(() => {
+        clearSwipeTransform();
+        hideHomeBackdrop();
+      }, 220);
+    } else {
+      hideHomeBackdrop();
+    }
+  };
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
   // content when they scroll into view. rootMargin prefetches slightly early.
@@ -990,11 +1197,53 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // loop converges (3 stable frames), the deadline passes, or the
   // user interacts.
   const restoreTargetRef = useRef<number | null>(null);
+  // Minimum document height to apply during the restore window. The
+  // initial render has `scrollHeight ≈ innerHeight` (cards mounted as
+  // shell components with empty data), but `window.scrollTo(remembered)`
+  // is silently clamped to scrollHeight-innerHeight = 0. As async card
+  // data arrives, the doc grows, but scrollY can't reach `remembered`
+  // until growth exceeds it — leaving the bubble bar pushed below the
+  // visible viewport for hundreds of ms. Setting `minHeight =
+  // remembered + innerHeight` on the cards-wrapper forces document
+  // scrollHeight high enough that scrollTo(remembered) is reachable
+  // from the first paint. Cleared once the rAF loop bails. The
+  // overshoot is invisible to the user — they're at scrollY=remembered
+  // = scrollHeight-innerHeight, so the wrapper's bottom edge is
+  // exactly at viewport bottom; any extra height we forced sits below
+  // the actual content but never enters the viewport.
+  //
+  // Seeded SYNCHRONOUSLY in the useState initializer so the very
+  // first render already commits with the larger minHeight. A
+  // useLayoutEffect that calls setRestoreMinHeight after the initial
+  // render is too late — the initial render's small wrapper would
+  // commit, document.scrollHeight would drop, and Next.js'
+  // scroll-to-top would clamp scrollY to 0 before the effect's
+  // imperative write could catch up.
+  const [restoreMinHeight, setRestoreMinHeight] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const remembered = getRememberedScroll(groupScrollKey(groupId));
+    if (remembered === undefined) return null;
+    return remembered + window.innerHeight;
+  });
   useLayoutEffect(() => {
     if (!group || loading) return;
     if (headerHeight === 0) return;
     if (hasHandledInitialExpandRef.current) return;
     hasHandledInitialExpandRef.current = true;
+
+    // Skip document-level scroll machinery when rendered inside the
+    // slide overlay. The overlay is position:fixed + contain:strict,
+    // so its wrapper's minHeight does NOT contribute to
+    // documentElement.scrollHeight. Calling window.scrollTo(0,
+    // remembered) from here lands on a still-short doc (only the
+    // home page contributes) and iOS Safari deferred-clamps the
+    // scrollY back to 0 a few frames later — even after the real
+    // route's wrapper grows the doc. The clamp persists, the rAF
+    // loop fights it, and the visible polls/bubble bar at the
+    // bottom flicker right after the overlay unmounts. Overlay
+    // positioning is driven by `overlayCardsOffset` transform on
+    // the cards-wrapper; document scroll is irrelevant for it.
+    if (overlayCardsOffset !== undefined) return;
 
     // Back-nav path: restore the scroll position saved when the user
     // navigated away (tap on a poll card). Skip bottom-pin entirely so
@@ -1011,6 +1260,10 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // initial scrollTo, so we need re-application opportunities for
       // longer than that. 800ms matches BOTTOM_PIN_DURATION_MS.
       restorePinDeadlineRef.current = Date.now() + BOTTOM_PIN_DURATION_MS;
+      // Document scrollHeight is already large enough — restoreMinHeight
+      // is seeded in the useState initializer so the initial render
+      // committed with the grown wrapper. scrollTo lands at the target
+      // without clamping.
       window.scrollTo(0, remembered);
       setInitialScrollApplied(true);
       return;
@@ -1037,21 +1290,24 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     if (!group || loading) return;
     if (restoreTargetRef.current == null) return;
     let rafId: number | null = null;
-    let stableFrames = 0;
     const tick = () => {
       rafId = null;
       if (userInteractedRef.current || Date.now() >= restorePinDeadlineRef.current) {
         restoreTargetRef.current = null;
+        setRestoreMinHeight(null);
         return;
       }
       const target = restoreTargetRef.current;
       if (target == null) return;
+      // Re-apply on every frame until the deadline. Don't early-success on
+      // N stable frames: Next.js App Router's scroll-to-top useEffect can
+      // fire dozens of ms after pathname commit (well past any reasonable
+      // "stable for 3 frames" window), and if we stopped guarding before
+      // that we'd see scrollY snap to 0 with no one watching. The cost of
+      // running rAF for 800ms is one no-op compare per frame when scrollY
+      // is already at target — negligible.
       if (Math.abs(window.scrollY - target) > 0.5) {
         window.scrollTo(0, target);
-        stableFrames = 0;
-      } else if (++stableFrames >= 3) {
-        restoreTargetRef.current = null;
-        return;
       }
       rafId = requestAnimationFrame(tick);
     };
@@ -1060,6 +1316,51 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, [group, loading]);
+
+  // Bottom-pin rAF loop (fresh-nav path). Mirrors the restore rAF loop:
+  // useLayoutEffect + ResizeObserver alone can leave gaps where Next.js
+  // App Router's scroll-to-top resets scrollY to 0 with no React update
+  // following for 100+ms — the user sees the bubble bar disappear (scroll
+  // back to 0 puts it below viewport) then reappear (next React update
+  // re-applies bottom-pin). Running a continuous rAF loop for the deadline
+  // window closes that gap. Also installs a synchronous `scroll` listener
+  // that snaps scrollY back BEFORE the next paint when the page is in
+  // bottom-pin mode — closes the 1-frame window where rAF lags behind a
+  // Next.js scrollTo(0,0) reset.
+  useEffect(() => {
+    if (!group || loading) return;
+    if (headerHeight === 0) return;
+    if (bottomPinDeadlineRef.current === 0) return;
+    if (restoreTargetRef.current !== null) return;
+    let rafId: number | null = null;
+    let reentryGuard = false;
+    const repin = () => {
+      if (userInteractedRef.current) return;
+      if (Date.now() >= bottomPinDeadlineRef.current) return;
+      if (restoreTargetRef.current !== null) return;
+      if (reentryGuard) return;
+      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      if (max > 0 && Math.abs(window.scrollY - max) > 0.5) {
+        reentryGuard = true;
+        window.scrollTo(0, max);
+        reentryGuard = false;
+      }
+    };
+    const tick = () => {
+      rafId = null;
+      if (userInteractedRef.current || Date.now() >= bottomPinDeadlineRef.current) return;
+      if (restoreTargetRef.current !== null) return;
+      repin();
+      rafId = requestAnimationFrame(tick);
+    };
+    const onScroll = () => repin();
+    rafId = requestAnimationFrame(tick);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', onScroll);
+    };
+  }, [group, loading, headerHeight]);
 
   // Listen for question:updated events (fired when close/reopen happens from within
   // a card). Merge the updates into our local group state so downstream UI —
@@ -1633,6 +1934,40 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           surface we transform during a slide overlay's pre-position —
           transforming the overlay itself would drag the fixed header
           with the content per the WebKit contain:strict quirk. */}
+      {/* Home backdrop is rendered by <HomeBackdropHost /> at the layout
+          level (see components/HomeBackdropHost.tsx). GroupContent
+          dispatches SHOW_HOME_BACKDROP_EVENT on swipe lock and
+          HIDE_HOME_BACKDROP_EVENT on snap-back/cancel; the home page's
+          mount effect dispatches HIDE so the backdrop dismisses itself
+          once home has rendered. Living outside this component is what
+          eliminates the blank frame between router.push commit and home's
+          first paint. */}
+
+      {/* Swipe-back wrapper. Owns its own transform (set imperatively by
+          the touch handlers via swipeWrapperRef); the inner cards div keeps
+          its own transform for overlayCardsOffset so the two don't conflict
+          across React re-renders. `touch-action: pan-y` hands horizontal
+          pans to the app while leaving vertical scroll to the browser.
+          `position: relative; z-index: 1` + opaque background keeps the
+          home backdrop hidden behind the page until the swipe actually
+          moves the wrapper sideways. `minHeight: 100dvh` extends the
+          opaque background to the bottom of the viewport so the backdrop
+          can't peek through below short groups. */}
+      <div
+        ref={swipeWrapperRef}
+        onTouchStart={handleSwipeTouchStart}
+        onTouchMove={handleSwipeTouchMove}
+        onTouchEnd={handleSwipeTouchEnd}
+        onTouchCancel={handleSwipeTouchCancel}
+        className="touch-pan-y"
+        style={{
+          willChange: 'transform',
+          position: 'relative',
+          zIndex: 1,
+          background: 'var(--background)',
+          minHeight: restoreMinHeight !== null ? `${restoreMinHeight}px` : '100dvh',
+        }}
+      >
       <div
         className="pb-2"
         style={{
@@ -1723,6 +2058,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           })}
 
         <div id={DRAFT_POLL_PORTAL_ID} />
+      </div>
       </div>
 
       {/* Group-aware long-press modal — Copy + Forget, plus Reopen when
@@ -1909,6 +2245,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         <>
           {scrollHelpers.showUp && (
             <ScrollHelperButton
+              ref={upArrowRef}
               direction="up"
               onClick={() => scrollAwaitingToHeader(scrollHelpers.upTargetId)}
               aria-label="Scroll to next poll awaiting your response"
@@ -1918,6 +2255,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           )}
           {scrollHelpers.showDown && (
             <ScrollHelperButton
+              ref={downArrowRef}
               direction="down"
               onClick={() => {
                 if (scrollHelpers.downTargetId) {
