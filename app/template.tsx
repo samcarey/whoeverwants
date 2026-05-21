@@ -39,15 +39,14 @@ function TemplateInner({ children }: AppTemplateProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { prefetchOnHover } = usePrefetch();
-  const [hasAppHistory, setHasAppHistory] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
-  // Track in-app navigation for back button (runs on each client-side navigation).
+  // Track in-app navigation for the exported `hasAppHistory()` helper
+  // in lib/viewTransitions.ts (consumed by group sub-routes' back-arrows).
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const count = parseInt(sessionStorage.getItem(NAV_COUNT_KEY) || '0', 10) + 1;
     sessionStorage.setItem(NAV_COUNT_KEY, String(count));
-    setHasAppHistory(count > 1);
   }, [pathname]);
 
   // Set mounted state for portal rendering + install client log forwarder on dev sites
