@@ -24,6 +24,13 @@ export default function CompactNameField({ name, setName, disabled = false, maxL
         value={name}
         onChange={(e) => setName(e.target.value)}
         onBlur={() => setName(name.trim())}
+        onFocus={(e) => {
+          // text-right inputs put the caret at position 0 when the user
+          // taps the empty left side of a pre-filled field — backspace
+          // there is a no-op and the user "can't delete". Selecting all
+          // on focus makes the next keystroke replace the value.
+          e.currentTarget.select();
+        }}
         onKeyDown={enterAdvancesFocus}
         disabled={disabled}
         maxLength={maxLength}
