@@ -348,9 +348,24 @@ async function ensureAppleNativeInit(): Promise<void> {
     await SocialLogin.initialize({
       apple: {
         clientId,
-        // `redirectUrl` is unused on native iOS but the plugin's type
-        // requires it. Use a real HTTPS URL so the value validates.
-        redirectUrl: "https://whoeverwants.com/auth/verify",
+        // The @capgo/capacitor-social-login plugin FETCHES this URL during
+        // initialize() and rejects the whole login flow with "Invalid
+        // response code: 404" when it returns non-2xx. The plugin docs
+        // claim this field is unused on native iOS, but empirically it
+        // is used. The URL must be:
+        //   1. Registered as a Return URL on the Apple Service ID
+        //      (com.whoeverwants.signin → Configure → Return URLs).
+        //   2. Return 200 on a plain GET.
+        // Use the current origin — for the canary build that's
+        // https://latest.whoeverwants.com, for prod it's
+        // https://whoeverwants.com; both are registered with Apple AND
+        // return 200. Falls back to the prod URL when window is absent
+        // (defensive — this code path only runs in the iOS WebView so
+        // window is always present in practice).
+        redirectUrl:
+          typeof window !== "undefined"
+            ? window.location.origin
+            : "https://whoeverwants.com",
       },
     });
   })().catch((err) => {
