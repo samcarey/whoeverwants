@@ -1,4 +1,5 @@
-"""Middleware for FastAPI: rate limiting + Phase B.3 browser_id capture."""
+"""Middleware for FastAPI: rate limiting + Phase B.3 browser_id capture
++ Phase A session resolution."""
 
 import os
 import re
@@ -9,6 +10,9 @@ from threading import Lock
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from database import get_db
+from services.auth import lookup_session_user_id
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -139,3 +143,77 @@ def browser_id_from_request(request: Request) -> str | None:
     rare path that bypasses middleware.
     """
     return getattr(request.state, "browser_id", None)
+
+
+# ---------------------------------------------------------------------------
+# Phase A: session resolution
+# ---------------------------------------------------------------------------
+#
+# `IdentityMiddleware` resolves the session token from the
+# `Authorization: Bearer <token>` header into a user_id (via
+# `services/auth.py: lookup_session_user_id`). When no Authorization
+# header is present, the middleware sets `request.state.user_id = None`
+# without touching the DB — anonymous requests pay no cost.
+#
+# Three accessors so callers state intent explicitly per use:
+#
+#   `session_token_from_request(request)` — raw bearer token (or None).
+#       Used by /api/auth/sign-out to know which row to revoke.
+#   `user_id_from_request(request)`       — resolved user_id (or None).
+#       Used by every endpoint that prefers user_id over browser_id when
+#       both are present.
+#   `actor_id_from_request(request)`      — "user_id when present, else
+#       browser_id". The canonical identity that audit-writes key on
+#       post-Phase-A (Phases E–H will switch).
+#
+# Phase A only resolves; nothing on the read path enforces yet. Phase E
+# will gate private-group visibility on user_id; the eventual push-
+# notification fan-out walks `user_browsers` via the helpers in
+# `services/auth.py` (not via middleware) so a one-off lookup doesn't
+# tax every request.
+
+_BEARER_RE = re.compile(r"^Bearer\s+([A-Za-z0-9_\-]{16,256})\s*$")
+
+
+def session_token_from_request(request: Request) -> str | None:
+    """Extract the raw bearer token from the Authorization header, or
+    None. Format-validated (URL-safe base64 chars, length range) so a
+    malformed header can't reach the DB lookup."""
+    header = request.headers.get("authorization")
+    if not header:
+        return None
+    m = _BEARER_RE.match(header)
+    return m.group(1) if m else None
+
+
+def user_id_from_request(request: Request) -> str | None:
+    """Resolved user_id from the IdentityMiddleware, or None for anon."""
+    return getattr(request.state, "user_id", None)
+
+
+def actor_id_from_request(request: Request) -> str:
+    """Canonical caller identity: user_id when signed in, else
+    browser_id. The browser_id always exists (middleware mints one on
+    first visit), so this never returns None — the caller's identity is
+    always knowable to the server."""
+    return user_id_from_request(request) or browser_id_from_request(request) or ""
+
+
+class IdentityMiddleware(BaseHTTPMiddleware):
+    """Resolve `request.state.user_id` from the Authorization header.
+    No-op (sets None) when no token is present — anonymous requests
+    pay zero DB cost."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        request.state.user_id = None
+        token = session_token_from_request(request)
+        if token:
+            try:
+                with get_db() as conn:
+                    request.state.user_id = lookup_session_user_id(conn, token)
+            except Exception:
+                # Failing-closed (500 every request during a DB blip)
+                # is worse than failing-open to anonymous. Endpoints
+                # that require sign-in still 401 on missing user_id.
+                request.state.user_id = None
+        return await call_next(request)

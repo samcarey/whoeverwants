@@ -69,3 +69,12 @@ export {
   apiSearchVideoGames,
 } from "./search";
 export type { SearchResult } from "./search";
+
+export {
+  apiRequestMagicLink,
+  apiVerifyMagicLink,
+  apiGetMe,
+  apiSignOut,
+  getCurrentUser,
+} from "./auth";
+export type { MagicLinkRequestResponse, SessionResponse } from "./auth";
