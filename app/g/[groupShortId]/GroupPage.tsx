@@ -45,7 +45,7 @@ import { forgetQuestion } from "@/lib/forgetQuestion";
 import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
 import { GroupCardItem, ROW_DIVIDER_CLASS, type GroupCardGroup } from "./GroupCardItem";
-import BubbleBarPanel from "@/components/BubbleBarPanel";
+import BubbleBarPanel, { PANEL_HEIGHT_VAR, PANEL_OFFSET_VAR } from "@/components/BubbleBarPanel";
 
 import type { Group } from "@/lib/groupUtils";
 
@@ -1789,7 +1789,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           // sits flush against the panel's top edge at scroll-bottom.
           // Fallback covers a 3-row bubble bar + heading + safe-area
           // inset for the first paint before the ResizeObserver fires.
-          paddingBottom: `var(--bubble-bar-panel-height, 12rem)`,
+          paddingBottom: `var(${PANEL_HEIGHT_VAR}, 12rem)`,
           // Negative horizontal margin cancels the outer template wrapper's
           // `paddingLeft/Right: max(0.35rem, env(safe-area-inset-*))` so the
           // edge-to-edge poll rectangles + dividers butt against the body's
@@ -2107,8 +2107,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
               // arrow still clears the home indicator on iPhone when the
               // panel is auto-hidden.
               style={{
-                bottom:
-                  'calc(max(0.5rem, env(safe-area-inset-bottom, 0px)) + var(--bubble-bar-panel-offset, 0px))',
+                bottom: `calc(max(0.5rem, env(safe-area-inset-bottom, 0px)) + var(${PANEL_OFFSET_VAR}, 0px))`,
                 transition: 'bottom 200ms ease-out',
               }}
             />

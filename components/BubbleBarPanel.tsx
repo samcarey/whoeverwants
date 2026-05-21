@@ -2,22 +2,27 @@
 
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { DRAFT_POLL_PORTAL_ID } from "@/lib/groupDomMarkers";
+import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 
 // Pixels of scroll delta required before we update the cached direction —
 // filters iOS momentum / rubber-band jitter that would otherwise toggle
 // visibility on sub-pixel motion.
 const SCROLL_DELTA_THRESHOLD = 5;
 
-// CSS vars exposed on `:root`:
-//   --bubble-bar-panel-height — measured panel height. Stable regardless
-//     of visibility so the host's bottom padding doesn't reflow when the
-//     panel hides.
-//   --bubble-bar-panel-offset — height when visible, 0 when hidden. Other
-//     floating chrome (e.g. the down scroll-helper arrow) reads this to
-//     stay above the panel while it's on-screen but reclaim the space
-//     when it auto-hides.
-const PANEL_HEIGHT_VAR = "--bubble-bar-panel-height";
-const PANEL_OFFSET_VAR = "--bubble-bar-panel-offset";
+/**
+ * CSS variable set on `<html>` to the panel's measured height. Stable
+ * regardless of visibility so the host's bottom padding doesn't reflow
+ * when the panel hides. Exported so consumers don't hand-write the name.
+ */
+export const PANEL_HEIGHT_VAR = "--bubble-bar-panel-height";
+
+/**
+ * CSS variable set on `<html>` to the panel's height when visible, 0
+ * when hidden. Other floating chrome (e.g. the down scroll-helper arrow)
+ * reads this to stay above the panel while it's on-screen but reclaim
+ * the space when it auto-hides.
+ */
+export const PANEL_OFFSET_VAR = "--bubble-bar-panel-offset";
 
 /**
  * Fixed-bottom panel that hosts the create-poll bubble bar.
@@ -54,20 +59,43 @@ const PANEL_OFFSET_VAR = "--bubble-bar-panel-offset";
  */
 const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) => {
   const [visible, setVisible] = useState(true);
-  const panelRef = useRef<HTMLDivElement>(null);
+  // Bumped on every `visualViewport.resize` so `useMeasuredHeight`'s
+  // ResizeObserver re-attaches and re-reads `offsetHeight`. iOS browsers
+  // resolve `env(safe-area-inset-bottom)` differently depending on URL
+  // bar / toolbar visibility, but the env()-driven size change isn't
+  // always picked up by ResizeObserver on those browsers — refreshing via
+  // a deps bump catches the shift so the host's padding stays correct.
+  const [vvCounter, setVvCounter] = useState(0);
+  // Initial height estimate covers a 3-row bubble bar + heading + 34px
+  // safe-area inset (matches the fallback in the host's padding-bottom).
+  const [panelRef, panelHeight] = useMeasuredHeight<HTMLDivElement>([vvCounter], 192);
+
+  // Cached document scrollHeight — reading it on every scroll tick forces
+  // a synchronous layout flush, which is expensive on long group pages.
+  // Refresh only when the document actually resizes.
+  const cachedScrollHeightRef = useRef(0);
+  useEffect(() => {
+    const update = () => {
+      cachedScrollHeightRef.current = document.documentElement.scrollHeight;
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, []);
 
   // Scroll-driven visibility.
   useEffect(() => {
     let lastScrollY = window.scrollY;
     let lastDirection: "up" | "down" = "up";
-    let rafScheduled = false;
+    let rafId: number | null = null;
 
     const evaluate = () => {
-      rafScheduled = false;
+      rafId = null;
       const currentY = window.scrollY;
       const maxScroll = Math.max(
         0,
-        document.documentElement.scrollHeight - window.innerHeight,
+        cachedScrollHeightRef.current - window.innerHeight,
       );
       // 2px tolerance for sub-pixel fp imprecision at the document
       // edges. When the doc can't scroll (maxScroll === 0), atBottom is
@@ -86,9 +114,8 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
     };
 
     const schedule = () => {
-      if (rafScheduled) return;
-      rafScheduled = true;
-      requestAnimationFrame(evaluate);
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(evaluate);
     };
 
     window.addEventListener("scroll", schedule, { passive: true });
@@ -97,86 +124,38 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
 
     return () => {
       window.removeEventListener("scroll", schedule);
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, []);
 
-  // Measure panel height + mirror it into two CSS vars. Both vars need to
-  // stay in sync with the latest measurement AND the latest visibility, so
-  // we route every update through a single writer driven by:
-  //   - ResizeObserver on the panel (height changes)
-  //   - the visibility effect below (toggles the offset between full
-  //     height and 0)
-  // The visibleRef bridges the two: the measure effect reads the latest
-  // visibility without listing it in deps (we don't want to tear down the
-  // observer on every scroll-direction flip).
-  const measuredHeightRef = useRef(0);
-  const visibleRef = useRef(visible);
+  // Track visualViewport resizes so the panel measurement stays current
+  // when iOS toggles UA chrome (and `env(safe-area-inset-bottom)` shifts).
   useEffect(() => {
-    visibleRef.current = visible;
-  }, [visible]);
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => setVvCounter((n) => n + 1);
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
 
-  const writeCssVars = (heightPx: number, isVisible: boolean) => {
+  // Write the two CSS vars whenever measurement OR visibility flips.
+  // Guarded against no-op writes so the same value doesn't repeatedly
+  // invalidate style on the cards-wrapper (which reads `--bubble-bar-
+  // panel-height`) and the down scroll-helper arrow (which reads
+  // `--bubble-bar-panel-offset`). On unmount we deliberately DON'T
+  // clear the vars — a sibling instance (overlay vs real route during
+  // a slide) may still be rendering and the host's padding would jump
+  // to 0 otherwise.
+  const lastWrittenRef = useRef({ height: -1, visible: true });
+  useEffect(() => {
+    const heightPx = Math.round(panelHeight);
+    const last = lastWrittenRef.current;
+    if (last.height === heightPx && last.visible === visible) return;
+    lastWrittenRef.current = { height: heightPx, visible };
     const root = document.documentElement.style;
     root.setProperty(PANEL_HEIGHT_VAR, `${heightPx}px`);
-    root.setProperty(PANEL_OFFSET_VAR, isVisible ? `${heightPx}px` : "0px");
-  };
-
-  useEffect(() => {
-    const el = panelRef.current;
-    if (!el) return;
-    const onMeasure = (h: number) => {
-      const rounded = Math.round(h);
-      measuredHeightRef.current = rounded;
-      writeCssVars(rounded, visibleRef.current);
-    };
-    const remeasure = () => {
-      if (panelRef.current) onMeasure(panelRef.current.offsetHeight);
-    };
-    onMeasure(el.offsetHeight);
-    // rAF-defer the observer callback so the CSS-var write doesn't run
-    // in the same tick that observed the size change. Without this,
-    // browsers raise "ResizeObserver loop completed with undelivered
-    // notifications" warnings (benign, but they noise the client log
-    // forwarder).
-    let pendingHeight: number | null = null;
-    let rafId: number | null = null;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        pendingHeight = entry.contentRect.height;
-      }
-      if (rafId !== null) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        if (pendingHeight !== null) {
-          onMeasure(pendingHeight);
-          pendingHeight = null;
-        }
-      });
-    });
-    observer.observe(el);
-    // iOS browsers can resolve `env(safe-area-inset-bottom)` differently
-    // depending on URL-bar / toolbar visibility — but the panel's
-    // bounding box change isn't always picked up by ResizeObserver on
-    // those browsers. Re-measure on visualViewport resize to catch the
-    // env() shift so the host's padding stays correct as the user scrolls
-    // and the UA chrome toggles.
-    const vv = window.visualViewport;
-    vv?.addEventListener("resize", remeasure);
-    return () => {
-      observer.disconnect();
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      vv?.removeEventListener("resize", remeasure);
-      // Don't clear the vars on unmount — a sibling instance (overlay vs
-      // real route during a slide) may still be rendering and the host's
-      // padding would jump to 0 otherwise.
-    };
-  }, []);
-
-  // Re-write on visibility flips (no measurement change, just the offset
-  // toggle).
-  useEffect(() => {
-    writeCssVars(measuredHeightRef.current, visible);
-  }, [visible]);
+    root.setProperty(PANEL_OFFSET_VAR, visible ? `${heightPx}px` : "0px");
+  }, [panelHeight, visible]);
 
   return (
     <div

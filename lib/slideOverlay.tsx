@@ -451,7 +451,6 @@ export function SlideOverlayHost(): React.ReactElement | null {
   const innerClass = isGroupKind
     ? "max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4"
     : "max-w-4xl mx-auto px-4 pb-6";
-  const innerStyle: React.CSSProperties | undefined = undefined;
 
   return createPortal(
     <div
@@ -483,7 +482,7 @@ export function SlideOverlayHost(): React.ReactElement | null {
           paddingRight: "max(0.35rem, env(safe-area-inset-right))",
         }}
       >
-        <div className={innerClass} style={innerStyle}>
+        <div className={innerClass}>
           {renderForKind(state.kind, state.overlayCardsOffset)}
         </div>
       </div>
