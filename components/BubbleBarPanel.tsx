@@ -114,6 +114,9 @@ export default function BubbleBarPanel() {
       measuredHeightRef.current = rounded;
       writeCssVars(rounded, visibleRef.current);
     };
+    const remeasure = () => {
+      if (panelRef.current) onMeasure(panelRef.current.offsetHeight);
+    };
     onMeasure(el.offsetHeight);
     // rAF-defer the observer callback so the CSS-var write doesn't run
     // in the same tick that observed the size change. Without this,
@@ -136,9 +139,18 @@ export default function BubbleBarPanel() {
       });
     });
     observer.observe(el);
+    // iOS browsers can resolve `env(safe-area-inset-bottom)` differently
+    // depending on URL-bar / toolbar visibility — but the panel's
+    // bounding box change isn't always picked up by ResizeObserver on
+    // those browsers. Re-measure on visualViewport resize to catch the
+    // env() shift so the host's padding stays correct as the user scrolls
+    // and the UA chrome toggles.
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", remeasure);
     return () => {
       observer.disconnect();
       if (rafId !== null) cancelAnimationFrame(rafId);
+      vv?.removeEventListener("resize", remeasure);
       // Don't clear the vars on unmount — a sibling instance (overlay vs
       // real route during a slide) may still be rendering and the host's
       // padding would jump to 0 otherwise.
