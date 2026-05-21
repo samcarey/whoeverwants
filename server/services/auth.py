@@ -412,3 +412,55 @@ def load_user_profile(conn, user_id: str) -> UserProfile | None:
         providers=providers,
         created_at=user_row["created_at"],
     )
+
+
+# ---------------------------------------------------------------------------
+# Shared sign-in completion (magic-link + OAuth providers)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CompletedSignIn:
+    """Result of `complete_sign_in`: a freshly-issued session + the user's
+    profile snapshot. Routers serialize this into their own response
+    models (SessionResponse / etc.) — keeping the data shape here lets
+    the magic-link and OAuth routes share one finalization rhythm."""
+
+    session: IssuedSession
+    profile: UserProfile
+
+
+def complete_sign_in(
+    conn,
+    *,
+    provider: str,
+    provider_user_id: str,
+    email: str | None,
+    browser_id: str | None,
+    user_agent: str | None,
+) -> CompletedSignIn:
+    """The four-step finalization shared by every sign-in provider:
+    `resolve_or_merge_user` → `link_browser_to_user` → `issue_session`
+    → `load_user_profile`. Magic-link verify, Google OAuth, and Apple
+    OAuth all hand off here; Phase D's passkey route will too.
+
+    `profile` is guaranteed non-None by construction — `resolve_or_merge_user`
+    inserted/found a row whose id we then pass to `load_user_profile` in
+    the same transaction.
+    """
+    resolved = resolve_or_merge_user(
+        conn,
+        provider=provider,
+        provider_user_id=provider_user_id,
+        email=email,
+    )
+    link_browser_to_user(conn, user_id=resolved.user_id, browser_id=browser_id)
+    session = issue_session(
+        conn,
+        user_id=resolved.user_id,
+        browser_id=browser_id,
+        user_agent=user_agent,
+    )
+    profile = load_user_profile(conn, resolved.user_id)
+    assert profile is not None, "profile must exist immediately after issue"
+    return CompletedSignIn(session=session, profile=profile)

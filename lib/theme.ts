@@ -30,3 +30,21 @@ export function applyTheme(theme: ThemePreference) {
     root.setAttribute("data-theme", theme);
   }
 }
+
+/** Resolve the user's currently-active theme to a concrete light/dark
+ *  value, accounting for explicit override (`data-theme` set by the
+ *  pre-hydration script in app/layout.tsx) and system preference
+ *  fallback. Used by themed third-party widgets (e.g. Google's Sign-In
+ *  button) that need an actual light/dark — not the user's stored
+ *  preference of "system". SSR-safe (returns "light" with no DOM). */
+export function resolveActiveTheme(): "light" | "dark" {
+  if (typeof document === "undefined") return "light";
+  const explicit = document.documentElement.getAttribute("data-theme");
+  if (explicit === "dark") return "dark";
+  if (explicit === "light") return "light";
+  return typeof window !== "undefined" &&
+    window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}

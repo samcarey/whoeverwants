@@ -91,18 +91,20 @@ export function getCurrentUser(): SessionUser | null {
   return getCachedSessionUser();
 }
 
-// ---------------------------------------------------------------------------
 // Phase C: Apple + Google OAuth sign-in
-// ---------------------------------------------------------------------------
 
-/** Verify a Google OIDC ID token (obtained client-side via the Google
- *  Identity Services SDK) against the server. On success, the server
- *  resolves the user via the (provider, sub) lookup or merges by
- *  verified email, issues a session, and we persist it locally. */
-export async function apiSignInWithGoogle(
+export type OAuthProvider = "google" | "apple";
+
+/** Verify an OAuth ID token (Google or Apple) against the server.
+ *  On success, the server resolves the user via the (provider, sub)
+ *  lookup or merges by verified email, issues a session, and we
+ *  persist it locally so `fetchWithBase` attaches the bearer token to
+ *  subsequent requests. */
+export async function apiSignInWithOAuth(
+  provider: OAuthProvider,
   idToken: string,
 ): Promise<SessionResponse> {
-  const res = await authFetch<SessionResponse>("/oauth/google", {
+  const res = await authFetch<SessionResponse>(`/oauth/${provider}`, {
     method: "POST",
     body: JSON.stringify({ id_token: idToken }),
   });
@@ -110,20 +112,10 @@ export async function apiSignInWithGoogle(
   return res;
 }
 
-/** Same shape as `apiSignInWithGoogle` for Apple. The Apple flow only
- *  carries the user's email on the first sign-in — repeat sign-ins
- *  carry just `sub`, which the server matches against the existing
- *  identity row. */
-export async function apiSignInWithApple(
-  idToken: string,
-): Promise<SessionResponse> {
-  const res = await authFetch<SessionResponse>("/oauth/apple", {
-    method: "POST",
-    body: JSON.stringify({ id_token: idToken }),
-  });
-  saveSession(res.session_token, res.user);
-  return res;
-}
+// Module-memoized providers lookup: the server's response is driven by
+// env vars and is stable for the page lifetime, so one fetch per page
+// load is enough. Concurrent callers share the in-flight promise.
+let providersPromise: Promise<AuthProvidersResponse> | null = null;
 
 /** Capability discovery — which sign-in methods this API tier has
  *  configured. Used by the SignInModal to hide OAuth buttons when the
@@ -131,5 +123,12 @@ export async function apiSignInWithApple(
  *  configuration (NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID etc.); both must
  *  be true for the button to function end-to-end. */
 export async function apiGetAuthProviders(): Promise<AuthProvidersResponse> {
-  return authFetch<AuthProvidersResponse>("/providers");
+  if (!providersPromise) {
+    providersPromise = authFetch<AuthProvidersResponse>("/providers").catch((err) => {
+      // Drop the cached failure so the next call can retry.
+      providersPromise = null;
+      throw err;
+    });
+  }
+  return providersPromise;
 }

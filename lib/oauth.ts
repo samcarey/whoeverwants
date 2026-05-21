@@ -179,6 +179,15 @@ async function ensureGoogleSdk(): Promise<GoogleAccountsIdentity> {
   return window.google.accounts.id;
 }
 
+// `sdk.initialize` overwrites Google's singleton callback every call,
+// so re-initializing per modal-open swaps the credential delivery to
+// the new Promise's resolver. Mirror Apple's one-shot init by routing
+// every callback through a mutable resolver that's reassigned before
+// each renderButton, with init itself called exactly once per page.
+let googleInitialized = false;
+let googleResolveRef: ((token: string) => void) | null = null;
+let googleRejectRef: ((err: Error) => void) | null = null;
+
 /** Render the Google "Sign in with Google" button into a container.
  *
  *  The button itself is rendered by Google's SDK — required by their
@@ -198,23 +207,32 @@ export async function renderGoogleButton(
   theme: "light" | "dark"
 ): Promise<string> {
   const sdk = await ensureGoogleSdk();
+  // Reject any previous still-pending promise so the new caller's
+  // resolver is the only one Google's callback delivers to.
+  googleRejectRef?.(new Error("Sign-in superseded"));
   return new Promise<string>((resolve, reject) => {
-    let settled = false;
+    googleResolveRef = resolve;
+    googleRejectRef = reject;
     try {
-      sdk.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        ux_mode: "popup",
-        cancel_on_tap_outside: true,
-        callback: (response) => {
-          if (settled) return;
-          settled = true;
-          if (response?.credential) {
-            resolve(response.credential);
-          } else {
-            reject(new Error("Google didn't return a credential."));
-          }
-        },
-      });
+      if (!googleInitialized) {
+        sdk.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          ux_mode: "popup",
+          cancel_on_tap_outside: true,
+          callback: (response) => {
+            const r = googleResolveRef;
+            const rej = googleRejectRef;
+            googleResolveRef = null;
+            googleRejectRef = null;
+            if (response?.credential) {
+              r?.(response.credential);
+            } else {
+              rej?.(new Error("Google didn't return a credential."));
+            }
+          },
+        });
+        googleInitialized = true;
+      }
       sdk.renderButton(container, {
         type: "standard",
         theme: theme === "dark" ? "filled_black" : "outline",
@@ -222,13 +240,11 @@ export async function renderGoogleButton(
         text: "signin_with",
         shape: "rectangular",
         logo_alignment: "left",
-        // width: 280, // intentionally omitted; lets the button stretch.
       });
     } catch (err) {
-      if (!settled) {
-        settled = true;
-        reject(err instanceof Error ? err : new Error(String(err)));
-      }
+      googleResolveRef = null;
+      googleRejectRef = null;
+      reject(err instanceof Error ? err : new Error(String(err)));
     }
   });
 }

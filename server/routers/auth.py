@@ -37,15 +37,14 @@ from middleware import (
     user_id_from_request as _user_id,
 )
 from services.auth import (
+    CompletedSignIn,
+    complete_sign_in,
     consume_magic_link,
     email_throttled,
     is_valid_email,
     issue_magic_link,
-    issue_session,
-    link_browser_to_user,
     load_user_profile,
     normalize_email,
-    resolve_or_merge_user,
     revoke_session,
     unlink_browser,
 )
@@ -210,6 +209,22 @@ def request_magic_link(req: MagicLinkRequestBody, request: Request):
     )
 
 
+def _signin_response(completed: CompletedSignIn) -> SessionResponse:
+    """Wrap `services.auth.CompletedSignIn` in the FE-facing response
+    shape. Every sign-in route — magic-link verify, OAuth providers,
+    eventual passkey — funnels through here so they don't drift."""
+    return SessionResponse(
+        session_token=completed.session.token,
+        expires_at=completed.session.expires_at,
+        user=UserSummary(
+            user_id=completed.profile.user_id,
+            email=completed.profile.email,
+            providers=completed.profile.providers,
+            created_at=completed.profile.created_at,
+        ),
+    )
+
+
 @router.post(
     "/magic-link/verify",
     response_model=SessionResponse,
@@ -221,9 +236,6 @@ def verify_magic_link(req: MagicLinkVerifyBody, request: Request):
     in by clicking the email on a different device than the one that
     requested the link links the CLICKING device, which matches user
     intent."""
-    browser_id = _browser_id(request)
-    user_agent = request.headers.get("user-agent")
-
     with get_db() as conn:
         consumed = consume_magic_link(conn, req.token)
         if not consumed:
@@ -231,35 +243,15 @@ def verify_magic_link(req: MagicLinkVerifyBody, request: Request):
                 status_code=400,
                 detail="Invalid or expired sign-in link",
             )
-
-        resolved = resolve_or_merge_user(
+        completed = complete_sign_in(
             conn,
             provider="email",
             provider_user_id=consumed.email,
             email=consumed.email,
+            browser_id=_browser_id(request),
+            user_agent=request.headers.get("user-agent"),
         )
-        link_browser_to_user(
-            conn, user_id=resolved.user_id, browser_id=browser_id
-        )
-        session = issue_session(
-            conn,
-            user_id=resolved.user_id,
-            browser_id=browser_id,
-            user_agent=user_agent,
-        )
-        profile = load_user_profile(conn, resolved.user_id)
-
-    assert profile is not None, "profile must exist immediately after issue"
-    return SessionResponse(
-        session_token=session.token,
-        expires_at=session.expires_at,
-        user=UserSummary(
-            user_id=profile.user_id,
-            email=profile.email,
-            providers=profile.providers,
-            created_at=profile.created_at,
-        ),
-    )
+    return _signin_response(completed)
 
 
 # ---------------------------------------------------------------------------
@@ -283,45 +275,37 @@ def verify_magic_link(req: MagicLinkVerifyBody, request: Request):
 # would be a 10-line addition here.
 
 
-def _sign_in_via_oauth(
-    request: Request,
+def _handle_oauth_signin(
     *,
-    provider: str,
-    provider_user_id: str,
-    email: str | None,
+    request: Request,
+    id_token: str,
+    provider_label: str,
+    configured: bool,
+    verify: callable,
 ) -> SessionResponse:
-    """Shared post-verify path: merge / mint user, link browser, issue
-    session, return profile. Identical for every OAuth provider."""
-    browser_id = _browser_id(request)
-    user_agent = request.headers.get("user-agent")
+    """Provider-agnostic OAuth handler. The verify endpoint passes its
+    provider-specific `configured()` flag + `verify(id_token)` function;
+    we handle the 503 / 400 / session-issuance rhythm uniformly. Adding
+    a third OIDC provider is one route handler + one row of imports."""
+    if not configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"{provider_label} sign-in isn't available on this server",
+        )
+    try:
+        identity = verify(id_token)
+    except OAuthVerificationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     with get_db() as conn:
-        resolved = resolve_or_merge_user(
+        completed = complete_sign_in(
             conn,
-            provider=provider,
-            provider_user_id=provider_user_id,
-            email=email,
+            provider=identity.provider,
+            provider_user_id=identity.provider_user_id,
+            email=identity.email,
+            browser_id=_browser_id(request),
+            user_agent=request.headers.get("user-agent"),
         )
-        link_browser_to_user(
-            conn, user_id=resolved.user_id, browser_id=browser_id
-        )
-        session = issue_session(
-            conn,
-            user_id=resolved.user_id,
-            browser_id=browser_id,
-            user_agent=user_agent,
-        )
-        profile = load_user_profile(conn, resolved.user_id)
-    assert profile is not None, "profile must exist immediately after issue"
-    return SessionResponse(
-        session_token=session.token,
-        expires_at=session.expires_at,
-        user=UserSummary(
-            user_id=profile.user_id,
-            email=profile.email,
-            providers=profile.providers,
-            created_at=profile.created_at,
-        ),
-    )
+    return _signin_response(completed)
 
 
 @router.post("/oauth/google", response_model=SessionResponse)
@@ -335,20 +319,12 @@ def sign_in_with_google(req: OAuthSignInBody, request: Request):
             (GOOGLE_OAUTH_CLIENT_IDS unset). FE should hide the button
             but a stale bundle that still tries it gets a clear 503.
     """
-    if not google_configured():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google sign-in isn't available on this server",
-        )
-    try:
-        identity = verify_google_id_token(req.id_token)
-    except OAuthVerificationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return _sign_in_via_oauth(
-        request,
-        provider=identity.provider,
-        provider_user_id=identity.provider_user_id,
-        email=identity.email,
+    return _handle_oauth_signin(
+        request=request,
+        id_token=req.id_token,
+        provider_label="Google",
+        configured=google_configured(),
+        verify=verify_google_id_token,
     )
 
 
@@ -366,20 +342,12 @@ def sign_in_with_apple(req: OAuthSignInBody, request: Request):
       - Token is ES256-signed (not RS256). The verifier pins the
         algorithm to keep a hostile token from switching families.
     """
-    if not apple_configured():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Apple sign-in isn't available on this server",
-        )
-    try:
-        identity = verify_apple_id_token(req.id_token)
-    except OAuthVerificationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return _sign_in_via_oauth(
-        request,
-        provider=identity.provider,
-        provider_user_id=identity.provider_user_id,
-        email=identity.email,
+    return _handle_oauth_signin(
+        request=request,
+        id_token=req.id_token,
+        provider_label="Apple",
+        configured=apple_configured(),
+        verify=verify_apple_id_token,
     )
 
 
