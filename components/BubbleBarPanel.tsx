@@ -182,7 +182,7 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
       <div
         ref={panelRef}
         aria-hidden={!visible}
-        className="bg-gray-50 dark:bg-gray-900 transition-transform duration-200 ease-out"
+        className="bg-background transition-transform duration-200 ease-out"
         style={{
           transform: visible ? "translateY(0)" : "translateY(100%)",
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
