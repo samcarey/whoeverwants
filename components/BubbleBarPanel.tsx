@@ -115,14 +115,30 @@ export default function BubbleBarPanel() {
       writeCssVars(rounded, visibleRef.current);
     };
     onMeasure(el.offsetHeight);
+    // rAF-defer the observer callback so the CSS-var write doesn't run
+    // in the same tick that observed the size change. Without this,
+    // browsers raise "ResizeObserver loop completed with undelivered
+    // notifications" warnings (benign, but they noise the client log
+    // forwarder).
+    let pendingHeight: number | null = null;
+    let rafId: number | null = null;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        onMeasure(entry.contentRect.height);
+        pendingHeight = entry.contentRect.height;
       }
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (pendingHeight !== null) {
+          onMeasure(pendingHeight);
+          pendingHeight = null;
+        }
+      });
     });
     observer.observe(el);
     return () => {
       observer.disconnect();
+      if (rafId !== null) cancelAnimationFrame(rafId);
       // Don't clear the vars on unmount — a sibling instance (overlay vs
       // real route during a slide) may still be rendering and the host's
       // padding would jump to 0 otherwise.
