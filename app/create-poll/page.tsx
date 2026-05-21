@@ -1557,24 +1557,29 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
-  // pt-* is the gap above; pb-4 supplements the page's outer
+  // py-* is the vertical gap; pb-3 supplements the page's outer
   // paddingBottom (template.tsx) so iOS Safari's bottom URL bar
   // (~50–64px, overlays the viewport at max scroll) doesn't clip the
-  // last bubble row. env(safe-area-inset-bottom) isn't usable here — it
+  // bubble row. env(safe-area-inset-bottom) isn't usable here — it
   // returns 0 when the URL bar is visible (the case we need to handle).
+  //
+  // Layout: ONE horizontally scrollable row. The "New" label is sticky
+  // to the left edge (with the panel's bg behind it) so it stays visible
+  // as the user scrolls through bubbles. Bubble row uses `scrollbar-hide`
+  // so the iOS native scrollbar doesn't clutter the chrome.
   const bubbleBar = (
-    <div className="pt-1 pb-4">
-      <h2 className="px-3 pb-2 text-center text-[15.75px] font-medium text-gray-600 dark:text-gray-400 underline underline-offset-4">
-        Create a New Poll
-      </h2>
-      <div className="px-3 flex flex-wrap justify-center gap-2">
+    <div className="pt-2 pb-3">
+      <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide px-3">
+        <span className="sticky left-0 z-10 bg-gray-50 dark:bg-gray-900 pr-2 text-[15.75px] font-medium text-gray-600 dark:text-gray-400 underline underline-offset-4 shrink-0 select-none">
+          New
+        </span>
         {BUBBLE_ENTRIES.map((entry) => (
           <button
             key={entry.value}
             type="button"
             onClick={() => handleBubbleClick(entry.value)}
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
             aria-label={`Add ${entry.label} question`}
           >
             {entry.icon && (

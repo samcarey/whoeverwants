@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useRef, useState } from "react";
+import type React from "react";
 import { DRAFT_POLL_PORTAL_ID } from "@/lib/groupDomMarkers";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 
@@ -157,10 +158,26 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
     root.setProperty(PANEL_OFFSET_VAR, visible ? `${heightPx}px` : "0px");
   }, [panelHeight, visible]);
 
+  // Swallow touch propagation on the panel so a horizontal drag on the
+  // bubble row CAN'T initiate the page-level swipe-back-to-home gesture.
+  // The panel is already a sibling of `swipeWrapperRef` in the React tree
+  // (touches that start here don't bubble to the wrapper's React handlers
+  // via the structural separation), but `stopPropagation` makes the
+  // exemption explicit and defends against a future refactor that moves
+  // the panel inside the swipe wrapper. The native browser still gets
+  // the events for horizontal scroll of the bubble row.
+  const stopTouchPropagation = (e: React.TouchEvent) => {
+    e.stopPropagation();
+  };
+
   return (
     <div
       ref={forwardedShellRef}
       className="fixed bottom-0 left-0 right-0 z-30"
+      onTouchStart={stopTouchPropagation}
+      onTouchMove={stopTouchPropagation}
+      onTouchEnd={stopTouchPropagation}
+      onTouchCancel={stopTouchPropagation}
     >
       <div
         ref={panelRef}
