@@ -62,10 +62,7 @@ export default function GroupBackdropHost(): React.ReactElement | null {
           contain: "strict",
         }}
       >
-        <div
-          className="max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4"
-          style={{ paddingBottom: "0.5rem" }}
-        >
+        <div className="max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4">
           <GroupContent
             key={groupId}
             groupId={groupId}

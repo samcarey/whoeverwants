@@ -440,18 +440,17 @@ export function SlideOverlayHost(): React.ReactElement | null {
   const isGroupKind = state.kind.type === 'group';
   // Inner wrapper class must match what the destination route gets from
   // template.tsx around {children}. Group routes get the negative-margin
-  // layout (max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4 + paddingBottom
-  // 0.5rem); info / edit-title / pollDetail get the standard layout
-  // (max-w-4xl mx-auto px-4 pb-6) — without matching this, the page's own
-  // inner `max-w-4xl mx-auto px-4` is the only padding layer the overlay
-  // has, and the unmount shifts the content inward as template's extra
-  // px-4 kicks in. If template.tsx's wrapper ever changes, update this too.
+  // layout (max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4, no bottom
+  // padding — the BubbleBarPanel is position-fixed and reserves its own
+  // space via the cards-wrapper's padding-bottom); info / edit-title /
+  // pollDetail get the standard layout (max-w-4xl mx-auto px-4 pb-6).
+  // Without matching this, the page's own inner `max-w-4xl mx-auto px-4`
+  // is the only padding layer the overlay has, and the unmount shifts
+  // the content inward as template's extra px-4 kicks in. If
+  // template.tsx's wrapper ever changes, update this too.
   const innerClass = isGroupKind
     ? "max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4"
     : "max-w-4xl mx-auto px-4 pb-6";
-  const innerStyle: React.CSSProperties | undefined = isGroupKind
-    ? { paddingBottom: "0.5rem" }
-    : undefined;
 
   return createPortal(
     <div
@@ -483,7 +482,7 @@ export function SlideOverlayHost(): React.ReactElement | null {
           paddingRight: "max(0.35rem, env(safe-area-inset-right))",
         }}
       >
-        <div className={innerClass} style={innerStyle}>
+        <div className={innerClass}>
           {renderForKind(state.kind, state.overlayCardsOffset)}
         </div>
       </div>
