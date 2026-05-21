@@ -13,7 +13,6 @@ import {
   appleConfigured,
   appleSignIn,
   googleConfigured,
-  isWebOAuthAvailable,
   renderGoogleButton,
 } from "@/lib/oauth";
 import { resolveActiveTheme } from "@/lib/theme";
@@ -86,7 +85,6 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
   // id_token on first successful sign-in.
   useEffect(() => {
     if (!isOpen || sent) return;
-    if (!isWebOAuthAvailable()) return;
     if (!googleConfigured() || !serverProviders?.google) return;
     const el = googleButtonRef.current;
     if (!el) return;
@@ -133,12 +131,16 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
       onClose();
     } catch (err) {
       // Apple rejects on user-cancel with various error shapes across
-      // SDK versions — match defensively. Silent on cancel.
+      // SDK + plugin versions — match defensively. Silent on cancel.
+      //   - Web SDK throws { error: "popup_closed_by_user" }
+      //   - Native plugin throws Error with message including either
+      //     "canceled" / "cancelled" OR "AuthorizationError error 1001"
+      //     (Apple's ASAuthorizationError.canceled raw code).
       const message = err instanceof Error ? err.message : String(err);
       const rawError = (err as { error?: string })?.error;
       if (
-        /popup_closed_by_user|user_cancelled|cancelled/i.test(message) ||
-        (typeof rawError === "string" && rawError.includes("cancel"))
+        /popup_closed_by_user|user_cancelled|cancell?ed|error 1001/i.test(message) ||
+        (typeof rawError === "string" && /cancell?ed/i.test(rawError))
       ) {
         setError(null);
       } else {
@@ -221,11 +223,15 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
     onClose();
   };
 
-  const webOAuth = isWebOAuthAvailable();
-  const showGoogle =
-    webOAuth && !!serverProviders?.google && googleConfigured();
-  const showApple =
-    webOAuth && !!serverProviders?.apple && appleConfigured();
+  // Per-provider gating: each provider's `configured()` already short-
+  // circuits surfaces it can't reach (e.g. googleConfigured() returns
+  // false on native iOS until the per-bundle Google plugin lands), and
+  // the server's `providers` endpoint reports tier-level config. Both
+  // sides must agree before the button surfaces — otherwise users tap
+  // an inert button and either nothing happens (no client SDK) or they
+  // get a 503 (no server config).
+  const showGoogle = !!serverProviders?.google && googleConfigured();
+  const showApple = !!serverProviders?.apple && appleConfigured();
   const showAnyOAuth = showGoogle || showApple;
 
   return (

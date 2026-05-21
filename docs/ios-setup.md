@@ -279,3 +279,72 @@ Then commit the resulting changes under `ios/`.
   doesn't match the Team ID. Confirm `APNS_TEAM_ID` and `APNS_KEY_ID`
   exactly match the values from the Auth Key's page in the developer
   portal.
+
+## Sign In with Apple (native)
+
+The Capacitor iOS app drives Apple Sign In through Apple's native
+`ASAuthorizationController` via the `@capgo/capacitor-social-login`
+plugin. The web flow (in Safari / PWA) keeps using Apple's JS SDK. Both
+funnel ID tokens through `POST /api/auth/oauth/apple`, but the audience
+(`aud`) claim differs by surface — native sends the bundle id, web
+sends the Service ID. The server's `APPLE_OAUTH_AUDIENCES` env var
+must list ALL of them.
+
+> **Why not `@capacitor-community/apple-sign-in`?** Its 7.x release
+> pins `capacitor-swift-pm` to v7.x; our `@capacitor/push-notifications@8`
+> pins it to v8.x. SPM rejects the conflicting graph at archive
+> time. `@capgo/capacitor-social-login` is the only mainstream
+> Apple-on-iOS Capacitor plugin with a v8 release.
+
+### 1. Enable "Sign In with Apple" capability per bundle
+
+In the Apple Developer Portal:
+1. Go to **Identifiers** → find `com.whoeverwants.app` and
+   `com.whoeverwants.app.latest`.
+2. Enable **Sign In with Apple** under the capabilities list. Save.
+3. Repeat for both bundles (prod + latest).
+
+Without the portal toggle, the `com.apple.developer.applesignin`
+entitlement (already in `ios/App/App/App.entitlements`) compiles fine
+but iOS silently rejects `SignInWithApple.authorize()` at runtime — no
+prompt appears, the JS promise hangs until the page tears down.
+
+### 2. Update the API server's `APPLE_OAUTH_AUDIENCES`
+
+On each droplet (prod + canary), `/root/whoeverwants/.env.api` must
+list every audience the server should accept:
+
+```bash
+# Web Service ID + both iOS bundle ids, comma-separated:
+APPLE_OAUTH_AUDIENCES=com.whoeverwants.signin,com.whoeverwants.app,com.whoeverwants.app.latest
+```
+
+Then `docker compose up -d --force-recreate api` to pick up the env
+change (a plain `restart` reuses the existing container's env).
+
+### 3. Capacitor plugin installation
+
+Already wired up — `@capgo/capacitor-social-login` is declared in
+`package.json`. `npx cap sync ios` (run by the iOS build workflow on
+every push touching `package.json` or `ios/**`) pulls the plugin's
+native code in via Swift Package Manager. No additional Xcode project
+patching required.
+
+### Diagnostics
+
+- **Authorization sheet doesn't appear, promise hangs**: most likely
+  the per-bundle "Sign In with Apple" capability is still off in the
+  developer portal. Toggle it on (Step 1) — the change takes effect on
+  next launch, no rebuild needed.
+- **Server returns 400 "Sign-in token isn't for this application"**:
+  the bundle id sent in the JWT's `aud` isn't in
+  `APPLE_OAUTH_AUDIENCES`. Check `bash scripts/remote-latest.sh "docker
+  compose logs --tail 50 api | grep aud"` for the actual rejected
+  value, then add it to `.env.api` and force-recreate the container.
+- **First-ever sign-in lands with `email=null` even though Apple
+  shows the email in the sheet**: Apple only sends email + name on the
+  FIRST authorization for a given (user, RP) pair. The server resolves
+  via `sub` either way; subsequent sign-ins reuse the original user_id.
+  If you accidentally deleted the user row, Apple still won't re-send
+  email — the user has to visit Settings → Apple ID → Sign in with
+  Apple → find the app → Stop Using Apple ID, then sign in again.
