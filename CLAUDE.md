@@ -669,6 +669,21 @@ uv lock                        # Regenerate lock file
 
 ---
 
+## Name-Required Policy
+
+The user's saved display name (`lib/userProfile.ts: getUserName/saveUserName`, localStorage key `whoeverwants_user_name`) is required for creating a poll, voting on a ballot, and creating a new group. Settings is the single edit surface.
+
+- **Shared validation lives in two mirrored files: `lib/nameValidation.ts` + `server/services/validation.py`.** Common-sense rules only: 1–50 chars after trim, no control chars (`\x00-\x1F\x7F`). Mirror constants in both files when changing.
+- **`<NameRequiredModal>` (`components/NameRequiredModal.tsx`) is the canonical "we need a name" surface.** Input + Save button; on save, calls `saveUserName(name)` then `onSubmit(name)`. Three callsites: `CreateGroupButtonHost` (home new group button), `CreateQuestionContent` (category bubble tap), `PollDetail` (every vote Submit path). Modal is z-`[70]` so it stacks above the create-poll bottom sheet (z-`[60]`) and the ConfirmationModal.
+- **No inline `<CompactNameField>` in ballots or the create-poll form.** Earlier iterations rendered "Your Name" inputs in the wrapper Submit sections of `app/g/[groupShortId]/p/[pollShortId]/page.tsx`, the create-poll modal bottom card, and each ballot's internal Submit (`QuestionBallot.tsx`, `RankingSection.tsx`, `QuestionBallot/TimeBallotSection.tsx`, `SuggestionVotingInterface.tsx`). They're all gone. Per-poll name overrides are not supported — your name is your name.
+- **Modal gates fire at the moment of the user-action click, not earlier.** Bubble tap → `handleBubbleClick(cat)` checks `isValidUserName(getUserName())`; if missing, stash `pendingBubbleCategory` + open modal; on save, `openModalFor(cat)`. Vote Submit click → `gateOnName(retry)` helper in `PollDetail`; if missing, stash a `pendingNameRetry: (() => void) | null` thunk + open modal; on save, replay the thunk. The thunk pattern keeps the union types from sprawling — each Submit site passes its own retry closure inline. Don't reach for a multi-variant `PendingAction` union; the thunk is cleaner.
+- **Server enforcement is the backstop, not the primary gate.** `validate_user_name` raises 400 in `POST /api/polls` (creator_name) and `POST /api/polls/{id}/votes` (voter_name). The FE's bubble/Submit modals are what produce a good UX; the server returns "is required" / "contains invalid characters" if the FE is bypassed. Mirror this pattern for any future "required identity field": always-on FE gate at action-click + server validator with matching rules.
+- **`CompactNameField.tsx`** still exists; it's only used on the settings page now. **Selects all on focus** so tapping into a pre-filled right-aligned field doesn't leave the caret at position 0 (where backspace is a no-op against the user's expectation — see the earlier bug). Tailwind's `text-right` + a pre-filled value is the trigger; any future right-aligned input wrapping a saved value should mirror the `.select()` on focus.
+- **Settings Save's disabled gate compares against `initialName`**, not against `name` truthiness. Tracking `initialName` (snapshot from `getUserName()` at mount; refreshed after each successful save) lets the rule "name changed → dirty → save enabled" cover the "user cleared a previously-saved name" case. Without this, the only-name-changed-to-empty case looked like "nothing dirty" and Save stayed disabled. Pattern applies to any other settings field whose meaningful state includes "cleared": track the initial value, compare on dirty-detection.
+- **API tests `conftest.py: create_poll` includes `"creator_name": "Test User"` by default** so existing tests don't have to know about the name-required rule. Anonymous-vote tests (passing `voter_name: null` or omitting it) were flipped to assert the server's 400 instead of the old 201. Future tests posting to `/api/polls` or `/api/polls/{id}/votes` need a non-empty name in the body.
+
+---
+
 ## CRITICAL RULES FOR AI ASSISTANTS
 
 The sections below contain mandatory rules. Follow them exactly.

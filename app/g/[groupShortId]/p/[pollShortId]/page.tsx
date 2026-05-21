@@ -71,9 +71,10 @@ import InitialBubble from "@/components/InitialBubble";
 import QuestionBallot, { type QuestionBallotHandle } from "@/components/QuestionBallot";
 import QuestionDetails from "@/components/QuestionDetails";
 import QuestionResultsDisplay from "@/components/QuestionResults";
-import CompactNameField from "@/components/CompactNameField";
 import VoterList from "@/components/VoterList";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import NameRequiredModal from "@/components/NameRequiredModal";
+import { isValidUserName } from "@/lib/nameValidation";
 import PollShareButton from "@/components/PollShareButton";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import type { Poll, Question, QuestionResults } from "@/lib/types";
@@ -251,8 +252,6 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     voteChangeSubmitting,
     pendingPollChoices,
     setPendingPollChoices,
-    pollVoterNames,
-    setPollVoterName,
     pendingPollSubmit,
     setPendingPollSubmit,
     pollSubmitting,
@@ -525,17 +524,61 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     isCurrentUserName(poll.creator_name);
   const creatorImageUrl = creatorIsMe ? myUserImageUrl : null;
 
+  // When a submit action fires without a saved name, the retry closure is
+  // stashed here and replayed after NameRequiredModal save.
+  const [pendingNameRetry, setPendingNameRetry] = useState<(() => void) | null>(null);
+
+  const gateOnName = (retry: () => void): boolean => {
+    if (isValidUserName(getUserName())) return true;
+    setPendingNameRetry(() => retry);
+    return false;
+  };
+
   const dispatchYesNoTap = (
     questionId: string,
     newChoice: "yes" | "no" | "abstain",
   ) => {
-    // First-time votes on single-question polls auto-submit; multi-poll
-    // taps and edits route through the confirmation modal.
     if (!isMultiPoll && !userVoteMap.get(questionId)) {
+      if (!gateOnName(() => void submitYesNoChoice(questionId, newChoice))) return;
       void submitYesNoChoice(questionId, newChoice);
       return;
     }
     setPendingVoteChange({ questionId, newChoice });
+  };
+
+  const runMultiSubmit = (pollId: string) => {
+    const preparedNonYesNo: PreparedNonYesNoEntry[] = [];
+    let stagedCount = 0;
+    let hadValidationError = false;
+    for (const sp of subQuestions) {
+      if (sp.question_type === "yes_no") {
+        if (pendingPollChoices.has(sp.id)) stagedCount++;
+        continue;
+      }
+      const handle = subQuestionBallotRefs.get(sp.id);
+      if (!handle) continue;
+      const result = handle.prepareBatchVoteItem();
+      if ("skip" in result) continue;
+      if (!result.ok) {
+        hadValidationError = true;
+        continue;
+      }
+      preparedNonYesNo.push({
+        questionId: sp.id,
+        item: result.item,
+        commit: result.commit,
+        fail: result.fail,
+      });
+      stagedCount++;
+    }
+    if (hadValidationError) return;
+    if (stagedCount === 0) return;
+    setPendingPollSubmit({
+      pollId,
+      subQuestions,
+      stagedCount,
+      preparedNonYesNo,
+    });
   };
 
   const shareUrl = useMemo(() => {
@@ -544,6 +587,8 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   }, [poll]);
 
   const pollTitle = subQuestions[0]?.title || poll.title;
+  // One localStorage read per render — passed into N sub-question QuestionBallots.
+  const savedUserName = getUserName() ?? "";
 
   return (
     <>
@@ -684,16 +729,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                 isExpanded={true}
                 partOfPollGroup={isMultiPoll}
                 wrapperHandlesSubmit={!!poll.id && wrapperOwnsSubmit}
-                externalVoterName={
-                  wrapperOwnsSubmit
-                    ? pollVoterNames.get(poll.id) ?? getUserName() ?? ""
-                    : undefined
-                }
-                setExternalVoterName={
-                  wrapperOwnsSubmit
-                    ? (name: string) => setPollVoterName(poll.id, name)
-                    : undefined
-                }
+                externalVoterName={wrapperOwnsSubmit ? savedUserName : undefined}
                 onWrapperSubmitStateChange={
                   wrapperOwnsSubmit ? handleWrapperSubmitStateChange : undefined
                 }
@@ -718,18 +754,8 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           const hasStagedChange = hasYesNoStaged || hasNonYesNoReady;
           const submitting = pollSubmitting.has(pollId);
           const submitError = pollSubmitError.get(pollId);
-          const voterNameVal =
-            pollVoterNames.get(pollId) ?? getUserName() ?? "";
           return (
             <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800">
-              <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-                <CompactNameField
-                  name={voterNameVal}
-                  setName={(name: string) => setPollVoterName(pollId, name)}
-                  disabled={submitting}
-                  maxLength={30}
-                />
-              </section>
               {submitError && (
                 <div className="mb-3 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded text-sm">
                   {submitError}
@@ -738,38 +764,8 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               <button
                 type="button"
                 onClick={() => {
-                  const preparedNonYesNo: PreparedNonYesNoEntry[] = [];
-                  let stagedCount = 0;
-                  let hadValidationError = false;
-                  for (const sp of subQuestions) {
-                    if (sp.question_type === "yes_no") {
-                      if (pendingPollChoices.has(sp.id)) stagedCount++;
-                      continue;
-                    }
-                    const handle = subQuestionBallotRefs.get(sp.id);
-                    if (!handle) continue;
-                    const result = handle.prepareBatchVoteItem();
-                    if ("skip" in result) continue;
-                    if (!result.ok) {
-                      hadValidationError = true;
-                      continue;
-                    }
-                    preparedNonYesNo.push({
-                      questionId: sp.id,
-                      item: result.item,
-                      commit: result.commit,
-                      fail: result.fail,
-                    });
-                    stagedCount++;
-                  }
-                  if (hadValidationError) return;
-                  if (stagedCount === 0) return;
-                  setPendingPollSubmit({
-                    pollId,
-                    subQuestions,
-                    stagedCount,
-                    preparedNonYesNo,
-                  });
+                  if (!gateOnName(() => runMultiSubmit(pollId))) return;
+                  runMultiSubmit(pollId);
                 }}
                 disabled={submitting || !hasStagedChange}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
@@ -787,21 +783,14 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           const sp = subQuestions[0]!;
           const submitState = wrapperSubmitState.get(sp.id);
           if (!submitState?.visible) return null;
-          const voterNameVal =
-            pollVoterNames.get(pollId) ?? getUserName() ?? "";
           return (
             <div className="mt-3">
-              <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-                <CompactNameField
-                  name={voterNameVal}
-                  setName={(name: string) => setPollVoterName(pollId, name)}
-                  maxLength={30}
-                />
-              </section>
               <button
                 type="button"
                 onClick={() => {
-                  subQuestionBallotRefs.get(sp.id)?.triggerSubmit();
+                  const fire = () => subQuestionBallotRefs.get(sp.id)?.triggerSubmit();
+                  if (!gateOnName(fire)) return;
+                  fire();
                 }}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
@@ -854,7 +843,16 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
             }
             cancelText="Cancel"
             confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
-            onConfirm={confirmVoteChange}
+            onConfirm={() => {
+              if (!pendingVoteChange) return;
+              const { questionId, newChoice } = pendingVoteChange;
+              const fire = () => void submitYesNoChoice(questionId, newChoice);
+              if (!gateOnName(fire)) {
+                setPendingVoteChange(null);
+                return;
+              }
+              void confirmVoteChange();
+            }}
             onCancel={() => setPendingVoteChange(null)}
           />
         );
@@ -882,6 +880,17 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           );
         }}
         onCancel={() => setPendingPollSubmit(null)}
+      />
+
+      <NameRequiredModal
+        isOpen={!!pendingNameRetry}
+        message="Please enter your name to submit your vote."
+        onSubmit={() => {
+          const retry = pendingNameRetry;
+          setPendingNameRetry(null);
+          if (retry) retry();
+        }}
+        onCancel={() => setPendingNameRetry(null)}
       />
     </>
   );

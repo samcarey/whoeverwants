@@ -37,6 +37,9 @@ import {
   HIDE_HOME_BACKDROP_EVENT,
 } from "@/lib/eventChannels";
 import { haptic } from "@/lib/haptics";
+import { getUserName } from "@/lib/userProfile";
+import { isValidUserName } from "@/lib/nameValidation";
+import NameRequiredModal from "@/components/NameRequiredModal";
 
 const IS_CAPACITOR_NATIVE =
   typeof window !== "undefined" && Capacitor.isNativePlatform();
@@ -47,6 +50,7 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
   const inFlight = useRef(false);
   const [mounted, setMounted] = useState(false);
   const [swipeBackActive, setSwipeBackActive] = useState(false);
+  const [nameModalOpen, setNameModalOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -67,7 +71,7 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
   const isHome = pathname === "/";
   const visible = isHome || swipeBackActive;
 
-  const onClick = () => {
+  const startCreate = () => {
     if (inFlight.current) return;
     inFlight.current = true;
     haptic.medium();
@@ -87,7 +91,17 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
       });
   };
 
+  const onClick = () => {
+    if (inFlight.current) return;
+    if (!isValidUserName(getUserName())) {
+      setNameModalOpen(true);
+      return;
+    }
+    startCreate();
+  };
+
   return createPortal(
+    <>
     <button
       onClick={onClick}
       className="fixed z-50 h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
@@ -115,7 +129,17 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
         +
       </span>
       <span className="text-lg leading-none">Group</span>
-    </button>,
+    </button>
+    <NameRequiredModal
+      isOpen={nameModalOpen}
+      message="Please enter your name to create a new group."
+      onSubmit={() => {
+        setNameModalOpen(false);
+        startCreate();
+      }}
+      onCancel={() => setNameModalOpen(false)}
+    />
+    </>,
     target,
   );
 }

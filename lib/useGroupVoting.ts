@@ -80,16 +80,6 @@ export function useGroupVoting({
   const [pendingPollChoices, setPendingPollChoices] = useState<
     Map<string, YesNoChoice>
   >(() => new Map());
-  const [pollVoterNames, setPollVoterNames] = useState<Map<string, string>>(
-    () => new Map(),
-  );
-  // Same-value guard avoids no-op re-renders when both the all-yes_no Submit
-  // row and the wrapper Submit row write the identical name on each keystroke.
-  const setPollVoterName = useRef((id: string, name: string) => {
-    setPollVoterNames((prev) =>
-      prev.get(id) === name ? prev : new Map(prev).set(id, name),
-    );
-  }).current;
 
   const [pendingPollSubmit, setPendingPollSubmit] =
     useState<PendingPollSubmit | null>(null);
@@ -185,8 +175,7 @@ export function useGroupVoting({
         setPendingPollSubmit(null);
         return;
       }
-      const voterNameRaw = pollVoterNames.get(pollId) ?? getUserName() ?? "";
-      const voter_name = voterNameRaw.trim() || null;
+      const voter_name = (getUserName() ?? "").trim() || null;
       const returnedVotes = await apiSubmitPollVotes(pollId, {
         voter_name,
         items,
@@ -328,8 +317,6 @@ export function useGroupVoting({
     voteChangeSubmitting,
     pendingPollChoices,
     setPendingPollChoices,
-    pollVoterNames,
-    setPollVoterName,
     pendingPollSubmit,
     setPendingPollSubmit,
     pollSubmitting,

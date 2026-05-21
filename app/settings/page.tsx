@@ -58,6 +58,11 @@ export default function SettingsPage() {
   const router = useRouter();
   usePageReady(true);
   const [name, setName] = useState("");
+  // Snapshot of the saved name at mount, so the Save button can detect
+  // "user cleared their saved name" (name="" but savedName was non-empty)
+  // as a real change to commit — without this, clearing the name leaves
+  // Save disabled with nothing else dirty.
+  const [initialName, setInitialName] = useState("");
   const [locationInput, setLocationInput] = useState("");
   const [savedLocation, setSavedLocation] = useState<UserLocation | null>(null);
   const [theme, setTheme] = useState<ThemePreference>("system");
@@ -88,6 +93,7 @@ export default function SettingsPage() {
     const savedName = getUserName();
     if (savedName) {
       setName(savedName);
+      setInitialName(savedName);
     }
     const loc = getUserLocation();
     if (loc) {
@@ -212,6 +218,7 @@ export default function SettingsPage() {
 
     try {
       saveUserName(name);
+      setInitialName(name.trim());
 
       // Geocode location input if provided and different from saved
       if (locationInput.trim()) {
@@ -271,6 +278,7 @@ export default function SettingsPage() {
     clearUserName();
     clearUserLocation();
     setName("");
+    setInitialName("");
     setSavedLocation(null);
     setLocationInput("");
     // Also clear any uploaded profile image — "clear my settings" is
@@ -482,7 +490,7 @@ export default function SettingsPage() {
 
       <button
         onClick={handleSave}
-        disabled={isLoading || (!name.trim() && !locationInput.trim() && !hasPendingImageChange)}
+        disabled={isLoading || (name.trim() === initialName.trim() && !locationInput.trim() && !hasPendingImageChange)}
         className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed mb-6"
       >
         {isLoading ? 'Saving...' : 'Save'}

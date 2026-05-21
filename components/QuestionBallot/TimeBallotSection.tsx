@@ -3,7 +3,6 @@
 import type { Dispatch, SetStateAction, ReactNode } from "react";
 import type { Question, QuestionResults, DayTimeWindow } from "@/lib/types";
 import AbstainButton from "@/components/AbstainButton";
-import CompactNameField from "@/components/CompactNameField";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
 import TimeSlotBubbles from "@/components/TimeSlotBubbles";
 import { formatTimeSlot } from "@/lib/timeUtils";
@@ -209,10 +208,6 @@ export default function TimeBallotSection({
 
             {!wrapperHandlesSubmit && (
               <>
-                <section className="mb-4 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-                  <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
-                </section>
-
                 <button
                   type="button"
                   onClick={handleVoteClick}
@@ -270,10 +265,6 @@ export default function TimeBallotSection({
 
             {!wrapperHandlesSubmit && (
               <>
-                <section className="mb-4 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-                  <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
-                </section>
-
                 <button
                   type="button"
                   onClick={handleVoteClick}

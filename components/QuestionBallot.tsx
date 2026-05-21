@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle, forwardRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAppPrefetch } from "@/lib/prefetch";
-import CompactNameField from "@/components/CompactNameField";
 import QuestionResultsDisplay from "@/components/QuestionResults";
 import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
 import RankingSection from "@/components/RankingSection";
@@ -20,6 +19,7 @@ import RankableOptions from "@/components/RankableOptions";
 import { isCreatedByThisBrowser, getCreatorSecret, recordQuestionCreation, storeSeenQuestionOptions, getSeenQuestionOptions } from "@/lib/browserQuestionAccess";
 import { hasQuestionData } from "@/lib/forgetQuestion";
 import { getUserName, saveUserName } from "@/lib/userProfile";
+import { isValidUserName } from "@/lib/nameValidation";
 import { usePageTitle } from "@/lib/usePageTitle";
 import QuestionDetails from "@/components/QuestionDetails";
 import SearchRadiusBubble from "@/components/SearchRadiusBubble";
@@ -1358,10 +1358,6 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                       </div>
                     )}
                   </div>
-
-                  <section className="mb-4 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-                    <CompactNameField name={voterName} setName={setVoterName} />
-                  </section>
 
                   <button
                     onClick={handleVoteClick}

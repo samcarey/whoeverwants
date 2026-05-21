@@ -52,6 +52,7 @@ def yes_no_question(**overrides) -> dict:
 def create_poll(client, creator_secret, *, browser_id=None, **kwargs) -> dict:
     payload = {
         "creator_secret": creator_secret,
+        "creator_name": "Test User",
         "questions": [yes_no_question()],
     }
     payload.update(kwargs)

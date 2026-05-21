@@ -27,6 +27,7 @@ from models import (
 from services.groups import require_uuid
 from services.memberships import join_group, join_group_for_poll
 from services.push import fan_out_new_poll
+from services.validation import validate_user_name
 from services.questions import (
     _edit_vote_on_question,
     _finalize_suggestion_options,
@@ -431,6 +432,7 @@ def create_poll(
     req: CreatePollRequest, request: Request, background_tasks: BackgroundTasks
 ):
     _validate_request(req)
+    req.creator_name = validate_user_name(req.creator_name, field="Creator name")
 
     # questions.title is NOT NULL, so each question row needs a value even though
     # display goes through the poll's computed title.
@@ -725,6 +727,7 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
     voter_name is poll-level: one voter, many question ballots.
     """
     require_uuid(poll_id, "poll_id")
+    req.voter_name = validate_user_name(req.voter_name, field="Voter name")
     now = datetime.now(timezone.utc)
 
     # Phase C.2: group join runs BEFORE the vote in its own transaction so

@@ -3,7 +3,6 @@
 import Countdown from "@/components/Countdown";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import RankableOptions from "@/components/RankableOptions";
-import CompactNameField from "@/components/CompactNameField";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import BinaryRankedChoiceBallot from "@/components/QuestionBallot/BinaryRankedChoiceBallot";
 import type { OptionsMetadata, QuestionResults } from "@/lib/types";
@@ -262,9 +261,6 @@ export default function RankingSection({
 
       {showBallot && !wrapperHandlesSubmit && (
         <>
-          <section className="mt-4 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-            <CompactNameField name={voterName} setName={setVoterName} />
-          </section>
           <button
             onClick={handleVoteClick}
             disabled={isSubmitting || (!isAbstaining && !justCancelledAbstain && rankedChoices.filter(choice => choice && choice.trim().length > 0).length === 0 && suggestionChoices.filter(c => c && c.trim().length > 0).length === 0)}

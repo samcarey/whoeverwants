@@ -12,13 +12,13 @@ import type { Poll, OptionsMetadata, Question } from "@/lib/types";
 import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import NameRequiredModal from "@/components/NameRequiredModal";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, getCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
-import CompactNameField from "@/components/CompactNameField";
 import SliderSwitch from "@/components/SliderSwitch";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
@@ -33,6 +33,7 @@ import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, format
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import { enterAdvancesFocus } from "@/lib/formNavigation";
 import { haptic } from "@/lib/haptics";
+import { isValidUserName, validateUserName } from "@/lib/nameValidation";
 import * as questionBackTarget from "@/lib/questionBackTarget";
 import { cachePoll, getCachedGroupIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
@@ -151,6 +152,10 @@ export function CreateQuestionContent() {
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  // When the user taps a category bubble but hasn't saved a name, stash
+  // the chosen category and open the NameRequiredModal. On save, retry
+  // `openModalFor` so the form lands with the right category.
+  const [pendingBubbleCategory, setPendingBubbleCategory] = useState<string | null>(null);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
@@ -663,9 +668,18 @@ export function CreateQuestionContent() {
     // Still editable — they can clear or change it freely.
     const inheritedForField = sharedDraftContext(drafts) ?? '';
     applyDraftToState(emptyDraft({ category: cat, forField: inheritedForField }));
+    setCreatorName(getUserName() ?? "");
     setError(null);
     setIsModalOpen(true);
   }, [applyDraftToState, drafts]);
+
+  const handleBubbleClick = useCallback((cat: string) => {
+    if (!isValidUserName(getUserName())) {
+      setPendingBubbleCategory(cat);
+      return;
+    }
+    openModalFor(cat);
+  }, [openModalFor]);
 
   // Read showDiscardConfirm via a ref inside the Escape handler so toggling
   // the inner confirm dialog doesn't tear down + rebuild the body-position
@@ -1080,6 +1094,12 @@ export function CreateQuestionContent() {
       return;
     }
 
+    const nameCheck = validateUserName(creatorName);
+    if (!nameCheck.ok) {
+      setError(nameCheck.error);
+      return;
+    }
+
     // Auto-stage the inline form when it carries valid content. Lets the
     // user submit a single-question poll without first tapping "+ Question".
     // We compute the effective drafts list locally because setDrafts won't
@@ -1296,9 +1316,7 @@ export function CreateQuestionContent() {
         recordQuestionCreation(sp.id, creatorSecret);
       }
 
-      if (creatorName.trim()) {
-        saveUserName(creatorName.trim());
-      }
+      saveUserName(creatorName);
       clearFormState();
       setIsSubmitted(false);
       isSubmittingRef.current = false;
@@ -1554,7 +1572,7 @@ export function CreateQuestionContent() {
           <button
             key={entry.value}
             type="button"
-            onClick={() => openModalFor(entry.value)}
+            onClick={() => handleBubbleClick(entry.value)}
             disabled={isLoading}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
             aria-label={`Add ${entry.label} question`}
@@ -1849,11 +1867,6 @@ export function CreateQuestionContent() {
                       </div>
                     )}
 
-                    <CompactNameField
-                      name={creatorName}
-                      setName={setCreatorName}
-                      disabled={isLoading}
-                    />
                   </form>
                 </section>
 
@@ -1938,6 +1951,17 @@ export function CreateQuestionContent() {
         message="Discard this poll? Your changes will be lost."
         confirmText="Discard"
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+      />
+
+      <NameRequiredModal
+        isOpen={!!pendingBubbleCategory}
+        message="Please enter your name to start a new poll."
+        onSubmit={() => {
+          const cat = pendingBubbleCategory;
+          setPendingBubbleCategory(null);
+          if (cat) openModalFor(cat);
+        }}
+        onCancel={() => setPendingBubbleCategory(null)}
       />
     </div>
   );

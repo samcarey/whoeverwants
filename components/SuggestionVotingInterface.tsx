@@ -3,7 +3,6 @@
 import { useState, useEffect, Dispatch, SetStateAction } from "react";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
 import SuggestionsList from "@/components/SuggestionsList";
-import CompactNameField from "@/components/CompactNameField";
 import OptionLabel from "@/components/OptionLabel";
 import SliderSwitch from "@/components/SliderSwitch";
 
@@ -304,10 +303,6 @@ export default function SuggestionVotingInterface({
 
       {!wrapperHandlesSubmit && (
         <>
-          <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-            <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} />
-          </section>
-
           {/* Submit Button */}
           <button
             onClick={handleVoteClick}

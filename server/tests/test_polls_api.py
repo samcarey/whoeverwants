@@ -51,7 +51,7 @@ class TestCreatePoll:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "questions": [_yes_no_question()],
             },
         )
@@ -68,7 +68,7 @@ class TestCreatePoll:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "context": "Birthday",
                 "questions": [
                     _restaurant_question(),
@@ -105,7 +105,7 @@ class TestCreatePoll:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "title": "What should we do tonight?",
                 "questions": [_yes_no_question()],
             },
@@ -121,7 +121,7 @@ class TestCreatePoll:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "group_title": "Friday Night Plans",
                 "questions": [_yes_no_question()],
             },
@@ -132,10 +132,66 @@ class TestCreatePoll:
         # The override flows through to the computed display title too.
         assert data["title"] == "Friday Night Plans"
 
+    def test_rejects_missing_creator_name(self, client, creator_secret):
+        resp = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "questions": [_yes_no_question()],
+            },
+        )
+        assert resp.status_code == 400, resp.text
+        assert "name" in resp.json()["detail"].lower()
+
+    def test_rejects_whitespace_creator_name(self, client, creator_secret):
+        resp = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "creator_name": "   ",
+                "questions": [_yes_no_question()],
+            },
+        )
+        assert resp.status_code == 400, resp.text
+
+    def test_rejects_overlong_creator_name(self, client, creator_secret):
+        resp = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "creator_name": "A" * 51,
+                "questions": [_yes_no_question()],
+            },
+        )
+        assert resp.status_code == 400, resp.text
+
+    def test_rejects_creator_name_with_control_char(self, client, creator_secret):
+        resp = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "creator_name": "Bad\x07name",
+                "questions": [_yes_no_question()],
+            },
+        )
+        assert resp.status_code == 400, resp.text
+
+    def test_creator_name_is_trimmed(self, client, creator_secret):
+        resp = client.post(
+            "/api/polls",
+            json={
+                "creator_secret": creator_secret,
+                "creator_name": "  Alice  ",
+                "questions": [_yes_no_question()],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["creator_name"] == "Alice"
+
     def test_rejects_zero_questions(self, client, creator_secret):
         resp = client.post(
             "/api/polls",
-            json={"creator_secret": creator_secret, "questions": []},
+            json={"creator_secret": creator_secret, "creator_name": "Test User", "questions": []},
         )
         assert resp.status_code == 422  # pydantic min_length
 
@@ -143,7 +199,7 @@ class TestCreatePoll:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "questions": [
                     {"question_type": "time", "category": "time"},
                     {"question_type": "time", "category": "time"},
@@ -159,7 +215,7 @@ class TestCreatePoll:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "questions": [
                     _restaurant_question(),
                     _restaurant_question(),
@@ -175,7 +231,7 @@ class TestCreatePoll:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "questions": [
                     _restaurant_question(context="Lunch"),
                     _restaurant_question(context="Dinner"),
@@ -191,7 +247,7 @@ class TestCreatePoll:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "response_deadline": "2030-01-01T12:00:00Z",
                 "prephase_deadline": "2030-01-02T12:00:00Z",
                 "questions": [_yes_no_question()],
@@ -206,7 +262,7 @@ class TestReadPoll:
         create = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "questions": [_yes_no_question()],
             },
         )
@@ -221,7 +277,7 @@ class TestReadPoll:
         create = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "questions": [_restaurant_question()],
             },
         )
@@ -245,7 +301,7 @@ class TestQuestionLinkage:
         create = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "questions": [
                     _yes_no_question(),
                     _restaurant_question(),
@@ -278,7 +334,7 @@ class TestGroupAddition:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "questions": [_yes_no_question()],
                 **kwargs,
             },
@@ -294,7 +350,7 @@ class TestGroupAddition:
         child = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "group_id": group_id,
                 "questions": [_yes_no_question()],
             },
@@ -311,7 +367,7 @@ class TestGroupAddition:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "group_id": bogus,
                 "questions": [_yes_no_question()],
             },
@@ -331,7 +387,7 @@ class TestGroupAddition:
         child = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "group_id": group_id,
                 "questions": [_yes_no_question()],
             },
@@ -352,7 +408,7 @@ class TestGroupAddition:
         child = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "group_id": group_id,
                 "group_title": "New Title",
                 "questions": [_yes_no_question()],
@@ -379,7 +435,7 @@ class TestGroupAddition:
         child = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "group_id": parent["group_id"],
                 "questions": [_yes_no_question()],
             },
@@ -449,7 +505,7 @@ class TestGroupId:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "questions": [_yes_no_question()],
             },
         )
@@ -461,25 +517,25 @@ class TestGroupId:
     def test_two_root_polls_get_distinct_groups(self, client, creator_secret):
         a = client.post(
             "/api/polls",
-            json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
+            json={"creator_secret": creator_secret, "creator_name": "Test User", "questions": [_yes_no_question()]},
         )
         b = client.post(
             "/api/polls",
-            json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
+            json={"creator_secret": creator_secret, "creator_name": "Test User", "questions": [_yes_no_question()]},
         )
         assert self._group_id_for(a.json()["id"]) != self._group_id_for(b.json()["id"])
 
     def test_group_id_param_reuses_group(self, client, creator_secret):
         parent = client.post(
             "/api/polls",
-            json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
+            json={"creator_secret": creator_secret, "creator_name": "Test User", "questions": [_yes_no_question()]},
         )
         parent_group_id = self._group_id_for(parent.json()["id"])
 
         child = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "group_id": parent_group_id,
                 "questions": [_yes_no_question()],
             },
@@ -493,7 +549,7 @@ class TestGroupId:
         # assertion now that there's no chain walk.
         root = client.post(
             "/api/polls",
-            json={"creator_secret": creator_secret, "questions": [_yes_no_question()]},
+            json={"creator_secret": creator_secret, "creator_name": "Test User", "questions": [_yes_no_question()]},
         )
         root_group = self._group_id_for(root.json()["id"])
 
@@ -501,7 +557,7 @@ class TestGroupId:
             resp = client.post(
                 "/api/polls",
                 json={
-                    "creator_secret": creator_secret,
+                    "creator_secret": creator_secret, "creator_name": "Test User",
                     "group_id": root_group,
                     "questions": [_yes_no_question()],
                 },
@@ -517,7 +573,7 @@ class TestPollOperations:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "questions": questions or [_yes_no_question(), _restaurant_question()],
             },
         )
@@ -528,7 +584,7 @@ class TestPollOperations:
         multi = self._create_multi(client, creator_secret)
         resp = client.post(
             f"/api/polls/{multi['id']}/close",
-            json={"creator_secret": creator_secret, "close_reason": "manual"},
+            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
         )
         assert resp.status_code == 200, resp.text
         data = resp.json()
@@ -549,7 +605,7 @@ class TestPollOperations:
     def test_close_404_on_unknown_id(self, client, creator_secret):
         resp = client.post(
             f"/api/polls/{uuid.uuid4()}/close",
-            json={"creator_secret": creator_secret, "close_reason": "manual"},
+            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
         )
         assert resp.status_code == 404
 
@@ -557,7 +613,7 @@ class TestPollOperations:
         multi = self._create_multi(client, creator_secret)
         client.post(
             f"/api/polls/{multi['id']}/close",
-            json={"creator_secret": creator_secret, "close_reason": "manual"},
+            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
         )
         resp = client.post(
             f"/api/polls/{multi['id']}/reopen",
@@ -605,7 +661,7 @@ class TestPollOperations:
         )
         client.post(
             f"/api/polls/{multi['id']}/close",
-            json={"creator_secret": creator_secret, "close_reason": "manual"},
+            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
         )
         reopened = client.post(
             f"/api/polls/{multi['id']}/reopen",
@@ -645,7 +701,7 @@ class TestPollVoterAggregation:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "context": "Test",
                 "questions": [
                     _yes_no_question(context="A"),
@@ -676,30 +732,26 @@ class TestPollVoterAggregation:
         assert sorted(data["voter_names"]) == ["Alice", "Bob", "Carol"]
         assert data["anonymous_count"] == 0
 
-    def test_anonymous_count_is_max_per_question(self, client, creator_secret):
+    def test_anonymous_vote_rejected(self, client, creator_secret):
+        # Name-required policy: server rejects null/empty voter_name on
+        # POST /api/polls/<id>/votes. `anonymous_count` aggregation only
+        # ever populates from pre-policy legacy rows.
         multi = self._make_two_yes_no_multi(client, creator_secret)
-        sp_a, sp_b = multi["questions"]
-        # 3 anon on A, 2 anon on B → expect MAX = 3.
-        for _ in range(3):
-            self._vote(client, sp_a["id"], None, poll_id=multi["id"])
-        for _ in range(2):
-            self._vote(client, sp_b["id"], None, poll_id=multi["id"])
-        data = client.get(f"/api/polls/by-id/{multi['id']}").json()
-        assert data["voter_names"] == []
-        assert data["anonymous_count"] == 3
-
-    def test_mixed_named_and_anonymous(self, client, creator_secret):
-        multi = self._make_two_yes_no_multi(client, creator_secret)
-        sp_a, sp_b = multi["questions"]
-        self._vote(client, sp_a["id"], "Alice", poll_id=multi["id"])
-        self._vote(client, sp_b["id"], "Alice", poll_id=multi["id"])
-        self._vote(client, sp_a["id"], None, poll_id=multi["id"])
-        self._vote(client, sp_a["id"], None, poll_id=multi["id"])
-        self._vote(client, sp_b["id"], None, poll_id=multi["id"])
-        data = client.get(f"/api/polls/by-id/{multi['id']}").json()
-        assert data["voter_names"] == ["Alice"]
-        # max(2 anon on A, 1 anon on B) = 2
-        assert data["anonymous_count"] == 2
+        sp_a = multi["questions"][0]
+        resp = client.post(
+            f"/api/polls/{multi['id']}/votes",
+            json={
+                "voter_name": None,
+                "items": [
+                    {
+                        "question_id": sp_a["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    }
+                ],
+            },
+        )
+        assert resp.status_code == 400, resp.text
 
     def test_aggregation_returned_by_short_id_endpoint_too(self, client, creator_secret):
         multi = self._make_two_yes_no_multi(client, creator_secret)
@@ -715,7 +767,7 @@ class TestPollVoterAggregation:
         self._vote(client, sp_a["id"], "Alice", poll_id=multi["id"])
         closed = client.post(
             f"/api/polls/{multi['id']}/close",
-            json={"creator_secret": creator_secret, "close_reason": "manual"},
+            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
         ).json()
         assert closed["voter_names"] == ["Alice"]
 
@@ -739,7 +791,7 @@ class TestPollUnifiedVoting:
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret,
+                "creator_secret": creator_secret, "creator_name": "Test User",
                 "context": "Voting",
                 "questions": questions
                 or [_yes_no_question(context="A"), _yes_no_question(context="B")],
@@ -967,7 +1019,7 @@ class TestPollUnifiedVoting:
         multi = self._make_multi(client, creator_secret)
         client.post(
             f"/api/polls/{multi['id']}/close",
-            json={"creator_secret": creator_secret, "close_reason": "manual"},
+            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
         )
         sp_a = multi["questions"][0]
         resp = client.post(
@@ -994,7 +1046,9 @@ class TestPollUnifiedVoting:
         # Pydantic min_length=1 rejection.
         assert resp.status_code == 422
 
-    def test_anonymous_voter_name(self, client, creator_secret):
+    def test_voter_name_required(self, client, creator_secret):
+        # Name-required policy: server rejects omitted voter_name on
+        # POST /api/polls/<id>/votes.
         multi = self._make_multi(client, creator_secret)
         sp_a = multi["questions"][0]
         resp = client.post(
@@ -1009,6 +1063,4 @@ class TestPollUnifiedVoting:
                 ],
             },
         )
-        assert resp.status_code == 201
-        rows = resp.json()
-        assert rows[0]["voter_name"] is None
+        assert resp.status_code == 400, resp.text
