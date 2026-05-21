@@ -1567,11 +1567,10 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
-  // py-* is the vertical gap; pb-3 supplements the page's outer
-  // paddingBottom (template.tsx) so iOS Safari's bottom URL bar
-  // (~50–64px, overlays the viewport at max scroll) doesn't clip the
-  // bubble row. env(safe-area-inset-bottom) isn't usable here — it
-  // returns 0 when the URL bar is visible (the case we need to handle).
+  // py-2 = symmetric 8px gap above/below the bubble row. iOS PWA / iPhone
+  // home-indicator clearance is handled separately by the panel's own
+  // `paddingBottom: env(safe-area-inset-bottom)` (see BubbleBarPanel.tsx),
+  // so we don't need to bake extra bottom padding into the bubble row.
   //
   // Layout: ONE horizontally scrollable row. The leading "New" button is
   // the catch-all (opens the modal with the default `custom` category) —
@@ -1580,7 +1579,7 @@ export function CreateQuestionContent() {
   // with the category buttons that follow it, plus `font-bold` so it
   // reads as the primary "create a new poll" affordance.
   const bubbleBar = (
-    <div className="pt-2 pb-[18px]">
+    <div className="py-2">
       <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide px-3">
         <button
           type="button"
