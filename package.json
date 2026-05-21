@@ -29,7 +29,6 @@
     "publish": "./scripts/publish.sh"
   },
   "dependencies": {
-    "@capacitor-community/apple-sign-in": "^7.0.0",
     "@capacitor/app": "^8.0.1",
     "@capacitor/clipboard": "^8.0.1",
     "@capacitor/core": "^8.3.1",
@@ -37,6 +36,7 @@
     "@capacitor/haptics": "^8.0.2",
     "@capacitor/ios": "^8.3.1",
     "@capacitor/push-notifications": "^8.0.1",
+    "@capgo/capacitor-social-login": "^8.3.22",
     "@ncdai/react-wheel-picker": "^1.0.17",
     "geist": "^1.7.0",
     "next": "^16.2.0",

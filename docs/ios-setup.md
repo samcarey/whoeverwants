@@ -283,12 +283,18 @@ Then commit the resulting changes under `ios/`.
 ## Sign In with Apple (native)
 
 The Capacitor iOS app drives Apple Sign In through Apple's native
-`ASAuthorizationController` via the `@capacitor-community/apple-sign-in`
+`ASAuthorizationController` via the `@capgo/capacitor-social-login`
 plugin. The web flow (in Safari / PWA) keeps using Apple's JS SDK. Both
 funnel ID tokens through `POST /api/auth/oauth/apple`, but the audience
 (`aud`) claim differs by surface — native sends the bundle id, web
 sends the Service ID. The server's `APPLE_OAUTH_AUDIENCES` env var
 must list ALL of them.
+
+> **Why not `@capacitor-community/apple-sign-in`?** Its 7.x release
+> pins `capacitor-swift-pm` to v7.x; our `@capacitor/push-notifications@8`
+> pins it to v8.x. SPM rejects the conflicting graph at archive
+> time. `@capgo/capacitor-social-login` is the only mainstream
+> Apple-on-iOS Capacitor plugin with a v8 release.
 
 ### 1. Enable "Sign In with Apple" capability per bundle
 
@@ -318,10 +324,11 @@ change (a plain `restart` reuses the existing container's env).
 
 ### 3. Capacitor plugin installation
 
-Already wired up — `@capacitor-community/apple-sign-in` is declared in
+Already wired up — `@capgo/capacitor-social-login` is declared in
 `package.json`. `npx cap sync ios` (run by the iOS build workflow on
 every push touching `package.json` or `ios/**`) pulls the plugin's
-native code in. No additional Xcode project patching required.
+native code in via Swift Package Manager. No additional Xcode project
+patching required.
 
 ### Diagnostics
 

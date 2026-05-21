@@ -4,11 +4,12 @@
  * Two surfaces:
  *   1. Web / PWA — both providers load their browser SDKs lazily and
  *      hand us back an ID token from the popup-style flow.
- *   2. Capacitor iOS — Apple uses the native `@capacitor-community/apple-sign-in`
- *      plugin (drives Apple's system sign-in sheet via Core Auth Services).
- *      Google native is deferred (per-bundle iOS client IDs + URL scheme
- *      patching add material complexity); the Google button is hidden on
- *      native iOS for now. Magic link remains as the email fallback there.
+ *   2. Capacitor iOS — Apple uses the `@capgo/capacitor-social-login`
+ *      plugin (drives Apple's system sign-in sheet via
+ *      ASAuthorizationController). Google native is deferred (per-bundle
+ *      iOS client IDs + URL scheme patching add material complexity);
+ *      the Google button is hidden on native iOS for now. Magic link
+ *      remains as the email fallback there.
  *
  * Whichever surface produces the token, it's POSTed to the same
  * `/api/auth/oauth/{provider}` endpoint and verified against the
@@ -23,6 +24,13 @@
  *     The entitlement (`com.apple.developer.applesignin`) in
  *     `App.entitlements` compiles without it, but iOS silently rejects
  *     the authorize call.
+ *
+ * Plugin choice: `@capgo/capacitor-social-login` was picked over the
+ * better-known `@capacitor-community/apple-sign-in` because the latter
+ * peg-pins `capacitor-swift-pm` to v7.x while `@capacitor/push-notifications@8`
+ * pins it to v8.x — SPM rejects the dependency graph at archive time
+ * with a "could not resolve" error. capgo is the only mainstream plugin
+ * with a Capacitor-8-compatible release (8.x).
  */
 
 import { Capacitor } from "@capacitor/core";
@@ -300,62 +308,82 @@ async function appleWebSignIn(): Promise<string> {
 // Apple — Capacitor native
 // ---------------------------------------------------------------------------
 //
-// Uses `@capacitor-community/apple-sign-in` which wraps `ASAuthorizationController`
-// (Apple's native authorization request) and returns the identityToken JWT.
-// Same token shape as the web flow — POSTed to `/api/auth/oauth/apple` and
-// verified by the server's JWKS pipeline. The audience claim differs:
+// Uses `@capgo/capacitor-social-login` which wraps `ASAuthorizationController`
+// on iOS and returns the identityToken JWT. Same token shape as the web flow
+// — POSTed to `/api/auth/oauth/apple` and verified by the server's JWKS
+// pipeline. The audience claim differs:
 //   - Web flow: aud = Service ID (e.g. com.whoeverwants.signin).
 //   - Native iOS: aud = bundle id (com.whoeverwants.app or .latest).
 // `APPLE_OAUTH_AUDIENCES` on the API server must include all three.
 
-async function appleNativeSignIn(): Promise<string> {
-  // Dynamic import keeps the plugin chunk out of the web bundle.
-  // Matches the pattern in lib/pushNotifications.ts, lib/geolocation.ts.
-  const mod = await import("@capacitor-community/apple-sign-in").catch(() => null);
-  if (!mod) {
-    throw new Error("Apple sign-in plugin failed to load.");
-  }
-  const { SignInWithApple } = mod;
+// One-shot init: SocialLogin.initialize() can be called repeatedly but
+// pays a noticeable round-trip on first call. Memoize the promise so
+// concurrent modal opens share it, mirroring the script-loader pattern
+// for the web SDKs above.
+let appleNativeInitPromise: Promise<void> | null = null;
 
-  // The bundle id IS the Apple-issued audience for native flows. Read
-  // it at runtime from @capacitor/app so the prod + canary builds
-  // (com.whoeverwants.app vs .latest) each send their own value.
-  const appMod = await import("@capacitor/app").catch(() => null);
-  let clientId = "com.whoeverwants.app";
-  if (appMod) {
-    try {
-      const info = await appMod.App.getInfo();
-      if (info?.id) clientId = info.id;
-    } catch {
-      // Fall back to the prod bundle id; the server's audience list
-      // includes both bundles so a missed lookup still verifies.
+async function ensureAppleNativeInit(): Promise<void> {
+  if (appleNativeInitPromise) return appleNativeInitPromise;
+  appleNativeInitPromise = (async () => {
+    const mod = await import("@capgo/capacitor-social-login").catch(() => null);
+    if (!mod) {
+      appleNativeInitPromise = null;
+      throw new Error("Apple sign-in plugin failed to load.");
     }
-  }
-
-  // Per Apple's docs `state` + `nonce` are optional but Apple
-  // explicitly recommends sending them. Use crypto-random values.
-  const rand = (length = 24) => {
-    const bytes = new Uint8Array(length);
-    crypto.getRandomValues(bytes);
-    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-  };
-
-  try {
-    const result = await SignInWithApple.authorize({
-      clientId,
-      // `redirectURI` is required by the plugin's type even for native
-      // flows. Apple ignores it; the server doesn't see it. Use a real
-      // HTTPS URL so the param is valid.
-      redirectURI: "https://whoeverwants.com/auth/verify",
-      scopes: "email",
-      state: rand(8),
-      nonce: rand(16),
+    const { SocialLogin } = mod;
+    // The bundle id IS the Apple-issued audience for native flows. Read
+    // it at runtime from @capacitor/app so the prod + canary builds
+    // (com.whoeverwants.app vs .latest) each send their own value.
+    const appMod = await import("@capacitor/app").catch(() => null);
+    let clientId = "com.whoeverwants.app";
+    if (appMod) {
+      try {
+        const info = await appMod.App.getInfo();
+        if (info?.id) clientId = info.id;
+      } catch {
+        // Fall back to the prod bundle id; the server's audience list
+        // includes both bundles so a missed lookup still verifies.
+      }
+    }
+    await SocialLogin.initialize({
+      apple: {
+        clientId,
+        // `redirectUrl` is unused on native iOS but the plugin's type
+        // requires it. Use a real HTTPS URL so the value validates.
+        redirectUrl: "https://whoeverwants.com/auth/verify",
+      },
     });
-    const token = result?.response?.identityToken;
-    if (!token) {
+  })().catch((err) => {
+    appleNativeInitPromise = null;
+    throw err;
+  });
+  return appleNativeInitPromise;
+}
+
+async function appleNativeSignIn(): Promise<string> {
+  await ensureAppleNativeInit();
+  const mod = await import("@capgo/capacitor-social-login");
+  const { SocialLogin } = mod;
+  try {
+    const res = await SocialLogin.login({
+      provider: "apple",
+      options: { scopes: ["email"] },
+    });
+    // capgo plugin returns { provider: 'apple', result: { idToken, ... } }.
+    // Older shapes also surfaced the token at `result.profile.token.id_token`
+    // — fall through both forms defensively so a minor plugin bump doesn't
+    // strand us on a wrong field name.
+    const result = (res as { result?: Record<string, unknown> })?.result;
+    const idToken =
+      (result?.idToken as string | undefined) ??
+      (
+        (result?.profile as { token?: { id_token?: string } } | undefined)
+          ?.token?.id_token
+      );
+    if (!idToken) {
       throw new Error("Apple didn't return an identity token.");
     }
-    return token;
+    return idToken;
   } catch (err) {
     // Plugin surfaces user-cancel as a thrown error with various
     // shapes. Re-throw as a recognizable Error so the modal can
