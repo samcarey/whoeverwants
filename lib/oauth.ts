@@ -373,7 +373,12 @@ async function appleNativeSignIn(): Promise<string> {
     // Older shapes also surfaced the token at `result.profile.token.id_token`
     // — fall through both forms defensively so a minor plugin bump doesn't
     // strand us on a wrong field name.
-    const result = (res as { result?: Record<string, unknown> })?.result;
+    // Cast through `unknown` — the plugin's typed `AppleProviderResponse`
+    // doesn't have a string index signature, and the defensive fall-
+    // through below reads fields that aren't on the typed shape (older
+    // plugin versions surfaced the token under `profile.token.id_token`).
+    const result = (res as unknown as { result?: Record<string, unknown> })
+      ?.result;
     const idToken =
       (result?.idToken as string | undefined) ??
       (
