@@ -9,8 +9,11 @@ resulting claims as proof of identity.
 
 Both providers expose JWKS via standard endpoints; PyJWT's `PyJWKClient`
 caches the keys and handles rotation transparently. We pin the algorithms
-list to `RS256` (Google) / `ES256` (Apple) so a hostile token can't switch
-to a weaker family.
+list to `RS256` for both providers so a hostile token can't switch to a
+weaker family. (Apple's Sign In with Apple documentation references
+ES256 historically, but the live JWKS at https://appleid.apple.com/auth/keys
+publishes ONLY RS256 keys — Apple issues RS256-signed tokens in practice.
+Verified empirically; the docs are stale.)
 
 `verify_google_id_token` and `verify_apple_id_token` are the public
 surface. Both return an `OAuthIdentity` describing the verified user, or
@@ -214,7 +217,7 @@ def verify_apple_id_token(id_token: str) -> OAuthIdentity:
         jwks_client=_apple_jwks_client(),
         audiences=_APPLE_AUDIENCES,
         issuers=(_APPLE_ISSUER,),
-        algorithms=("ES256",),
+        algorithms=("RS256",),
     )
     email = claims.get("email")
     raw_verified = claims.get("email_verified")

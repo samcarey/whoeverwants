@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 TEST_DB_URL = os.environ.get(
     "DATABASE_URL",
@@ -92,8 +92,10 @@ def google_keypair():
 
 @pytest.fixture(scope="module")
 def apple_keypair():
-    """ES256 keypair (P-256 curve) for signing fake Apple tokens."""
-    private = ec.generate_private_key(ec.SECP256R1())
+    """RS256 keypair for signing fake Apple tokens. Apple's live JWKS at
+    https://appleid.apple.com/auth/keys publishes ONLY RS256 keys, despite
+    older docs referencing ES256."""
+    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public = private.public_key()
     return private, public
 
@@ -174,7 +176,7 @@ def _sign_apple(
     if email is not None:
         payload["email"] = email
         payload["email_verified"] = email_verified
-    return jwt.encode(payload, private_key, algorithm="ES256")
+    return jwt.encode(payload, private_key, algorithm="RS256")
 
 
 @pytest.fixture
