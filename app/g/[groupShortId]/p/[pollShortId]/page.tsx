@@ -71,7 +71,6 @@ import InitialBubble from "@/components/InitialBubble";
 import QuestionBallot, { type QuestionBallotHandle } from "@/components/QuestionBallot";
 import QuestionDetails from "@/components/QuestionDetails";
 import QuestionResultsDisplay from "@/components/QuestionResults";
-import CompactNameField from "@/components/CompactNameField";
 import VoterList from "@/components/VoterList";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import NameRequiredModal from "@/components/NameRequiredModal";
@@ -253,8 +252,6 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     voteChangeSubmitting,
     pendingPollChoices,
     setPendingPollChoices,
-    pollVoterNames,
-    setPollVoterName,
     pendingPollSubmit,
     setPendingPollSubmit,
     pollSubmitting,
@@ -527,11 +524,15 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     isCurrentUserName(poll.creator_name);
   const creatorImageUrl = creatorIsMe ? myUserImageUrl : null;
 
-  // Holds a yes/no tap that couldn't fire because the user hasn't saved a
-  // name yet. The NameRequiredModal retries via this when they save.
-  const [pendingYesNoTap, setPendingYesNoTap] = useState<
-    { questionId: string; newChoice: "yes" | "no" | "abstain" } | null
-  >(null);
+  // Submit actions paused because the user hasn't saved a name yet.
+  // NameRequiredModal collects the name and retries via `runPendingAction`.
+  type PendingSubmitAction =
+    | { kind: "yesNoTap"; questionId: string; newChoice: "yes" | "no" | "abstain" }
+    | { kind: "multi"; pollId: string }
+    | { kind: "single"; spId: string }
+    | { kind: "voteChange"; questionId: string; newChoice: "yes" | "no" | "abstain" };
+  const [pendingSubmitAction, setPendingSubmitAction] =
+    useState<PendingSubmitAction | null>(null);
 
   const dispatchYesNoTap = (
     questionId: string,
@@ -541,13 +542,60 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     // taps and edits route through the confirmation modal.
     if (!isMultiPoll && !userVoteMap.get(questionId)) {
       if (!isValidUserName(getUserName())) {
-        setPendingYesNoTap({ questionId, newChoice });
+        setPendingSubmitAction({ kind: "yesNoTap", questionId, newChoice });
         return;
       }
       void submitYesNoChoice(questionId, newChoice);
       return;
     }
     setPendingVoteChange({ questionId, newChoice });
+  };
+
+  const runMultiSubmit = (pollId: string) => {
+    const preparedNonYesNo: PreparedNonYesNoEntry[] = [];
+    let stagedCount = 0;
+    let hadValidationError = false;
+    for (const sp of subQuestions) {
+      if (sp.question_type === "yes_no") {
+        if (pendingPollChoices.has(sp.id)) stagedCount++;
+        continue;
+      }
+      const handle = subQuestionBallotRefs.get(sp.id);
+      if (!handle) continue;
+      const result = handle.prepareBatchVoteItem();
+      if ("skip" in result) continue;
+      if (!result.ok) {
+        hadValidationError = true;
+        continue;
+      }
+      preparedNonYesNo.push({
+        questionId: sp.id,
+        item: result.item,
+        commit: result.commit,
+        fail: result.fail,
+      });
+      stagedCount++;
+    }
+    if (hadValidationError) return;
+    if (stagedCount === 0) return;
+    setPendingPollSubmit({
+      pollId,
+      subQuestions,
+      stagedCount,
+      preparedNonYesNo,
+    });
+  };
+
+  const runPendingAction = (action: PendingSubmitAction) => {
+    if (action.kind === "yesNoTap") {
+      void submitYesNoChoice(action.questionId, action.newChoice);
+    } else if (action.kind === "multi") {
+      runMultiSubmit(action.pollId);
+    } else if (action.kind === "single") {
+      subQuestionBallotRefs.get(action.spId)?.triggerSubmit();
+    } else if (action.kind === "voteChange") {
+      void submitYesNoChoice(action.questionId, action.newChoice);
+    }
   };
 
   const shareUrl = useMemo(() => {
@@ -697,14 +745,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                 partOfPollGroup={isMultiPoll}
                 wrapperHandlesSubmit={!!poll.id && wrapperOwnsSubmit}
                 externalVoterName={
-                  wrapperOwnsSubmit
-                    ? pollVoterNames.get(poll.id) ?? getUserName() ?? ""
-                    : undefined
-                }
-                setExternalVoterName={
-                  wrapperOwnsSubmit
-                    ? (name: string) => setPollVoterName(poll.id, name)
-                    : undefined
+                  wrapperOwnsSubmit ? getUserName() ?? "" : undefined
                 }
                 onWrapperSubmitStateChange={
                   wrapperOwnsSubmit ? handleWrapperSubmitStateChange : undefined
@@ -730,18 +771,8 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           const hasStagedChange = hasYesNoStaged || hasNonYesNoReady;
           const submitting = pollSubmitting.has(pollId);
           const submitError = pollSubmitError.get(pollId);
-          const voterNameVal =
-            pollVoterNames.get(pollId) ?? getUserName() ?? "";
           return (
             <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800">
-              <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-                <CompactNameField
-                  name={voterNameVal}
-                  setName={(name: string) => setPollVoterName(pollId, name)}
-                  disabled={submitting}
-                  maxLength={30}
-                />
-              </section>
               {submitError && (
                 <div className="mb-3 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded text-sm">
                   {submitError}
@@ -750,40 +781,13 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               <button
                 type="button"
                 onClick={() => {
-                  const preparedNonYesNo: PreparedNonYesNoEntry[] = [];
-                  let stagedCount = 0;
-                  let hadValidationError = false;
-                  for (const sp of subQuestions) {
-                    if (sp.question_type === "yes_no") {
-                      if (pendingPollChoices.has(sp.id)) stagedCount++;
-                      continue;
-                    }
-                    const handle = subQuestionBallotRefs.get(sp.id);
-                    if (!handle) continue;
-                    const result = handle.prepareBatchVoteItem();
-                    if ("skip" in result) continue;
-                    if (!result.ok) {
-                      hadValidationError = true;
-                      continue;
-                    }
-                    preparedNonYesNo.push({
-                      questionId: sp.id,
-                      item: result.item,
-                      commit: result.commit,
-                      fail: result.fail,
-                    });
-                    stagedCount++;
+                  if (!isValidUserName(getUserName())) {
+                    setPendingSubmitAction({ kind: "multi", pollId });
+                    return;
                   }
-                  if (hadValidationError) return;
-                  if (stagedCount === 0) return;
-                  setPendingPollSubmit({
-                    pollId,
-                    subQuestions,
-                    stagedCount,
-                    preparedNonYesNo,
-                  });
+                  runMultiSubmit(pollId);
                 }}
-                disabled={submitting || !hasStagedChange || !isValidUserName(voterNameVal)}
+                disabled={submitting || !hasStagedChange}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
                 {submitting ? "Submitting..." : "Submit Vote"}
@@ -799,23 +803,17 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           const sp = subQuestions[0]!;
           const submitState = wrapperSubmitState.get(sp.id);
           if (!submitState?.visible) return null;
-          const voterNameVal =
-            pollVoterNames.get(pollId) ?? getUserName() ?? "";
           return (
             <div className="mt-3">
-              <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-                <CompactNameField
-                  name={voterNameVal}
-                  setName={(name: string) => setPollVoterName(pollId, name)}
-                  maxLength={30}
-                />
-              </section>
               <button
                 type="button"
                 onClick={() => {
+                  if (!isValidUserName(getUserName())) {
+                    setPendingSubmitAction({ kind: "single", spId: sp.id });
+                    return;
+                  }
                   subQuestionBallotRefs.get(sp.id)?.triggerSubmit();
                 }}
-                disabled={!isValidUserName(voterNameVal)}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
                 {submitState.label}
@@ -867,7 +865,16 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
             }
             cancelText="Cancel"
             confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
-            onConfirm={confirmVoteChange}
+            onConfirm={() => {
+              if (!pendingVoteChange) return;
+              const { questionId, newChoice } = pendingVoteChange;
+              if (!isValidUserName(getUserName())) {
+                setPendingSubmitAction({ kind: "voteChange", questionId, newChoice });
+                setPendingVoteChange(null);
+                return;
+              }
+              void confirmVoteChange();
+            }}
             onCancel={() => setPendingVoteChange(null)}
           />
         );
@@ -898,14 +905,14 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
       />
 
       <NameRequiredModal
-        isOpen={!!pendingYesNoTap}
+        isOpen={!!pendingSubmitAction}
         message="Please enter your name to submit your vote."
         onSubmit={() => {
-          const tap = pendingYesNoTap;
-          setPendingYesNoTap(null);
-          if (tap) void submitYesNoChoice(tap.questionId, tap.newChoice);
+          const action = pendingSubmitAction;
+          setPendingSubmitAction(null);
+          if (action) runPendingAction(action);
         }}
-        onCancel={() => setPendingYesNoTap(null)}
+        onCancel={() => setPendingSubmitAction(null)}
       />
     </>
   );

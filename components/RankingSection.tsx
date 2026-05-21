@@ -3,8 +3,6 @@
 import Countdown from "@/components/Countdown";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import RankableOptions from "@/components/RankableOptions";
-import CompactNameField from "@/components/CompactNameField";
-import { isValidUserName } from "@/lib/nameValidation";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import BinaryRankedChoiceBallot from "@/components/QuestionBallot/BinaryRankedChoiceBallot";
 import type { OptionsMetadata, QuestionResults } from "@/lib/types";
@@ -263,12 +261,9 @@ export default function RankingSection({
 
       {showBallot && !wrapperHandlesSubmit && (
         <>
-          <section className="mt-4 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-            <CompactNameField name={voterName} setName={setVoterName} />
-          </section>
           <button
             onClick={handleVoteClick}
-            disabled={isSubmitting || (!isAbstaining && !justCancelledAbstain && rankedChoices.filter(choice => choice && choice.trim().length > 0).length === 0 && suggestionChoices.filter(c => c && c.trim().length > 0).length === 0) || !isValidUserName(voterName)}
+            disabled={isSubmitting || (!isAbstaining && !justCancelledAbstain && rankedChoices.filter(choice => choice && choice.trim().length > 0).length === 0 && suggestionChoices.filter(c => c && c.trim().length > 0).length === 0)}
             className="w-full mt-4 py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] font-medium text-base transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
           >
             {isSubmitting ? 'Submitting...' : 'Submit Vote'}

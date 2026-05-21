@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle, forwardRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAppPrefetch } from "@/lib/prefetch";
-import CompactNameField from "@/components/CompactNameField";
 import QuestionResultsDisplay from "@/components/QuestionResults";
 import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
 import RankingSection from "@/components/RankingSection";
@@ -1360,13 +1359,9 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                     )}
                   </div>
 
-                  <section className="mb-4 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-                    <CompactNameField name={voterName} setName={setVoterName} />
-                  </section>
-
                   <button
                     onClick={handleVoteClick}
-                    disabled={isSubmitting || (!yesNoChoice && !isAbstaining) || !isValidUserName(voterName)}
+                    disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
                     className="w-full py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] font-medium text-base transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}

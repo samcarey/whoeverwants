@@ -3,8 +3,6 @@
 import { useState, useEffect, Dispatch, SetStateAction } from "react";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
 import SuggestionsList from "@/components/SuggestionsList";
-import CompactNameField from "@/components/CompactNameField";
-import { isValidUserName } from "@/lib/nameValidation";
 import OptionLabel from "@/components/OptionLabel";
 import SliderSwitch from "@/components/SliderSwitch";
 
@@ -305,14 +303,10 @@ export default function SuggestionVotingInterface({
 
       {!wrapperHandlesSubmit && (
         <>
-          <section className="mb-3 rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-            <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} />
-          </section>
-
           {/* Submit Button */}
           <button
             onClick={handleVoteClick}
-            disabled={isSubmitting || !isValidUserName(voterName)}
+            disabled={isSubmitting}
             className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100 ${
               suggestionChoices.length === 0 && !isSubmitting
                 ? 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 active:bg-yellow-300 dark:active:bg-yellow-700 text-yellow-800 dark:text-yellow-200 border-2 border-yellow-300 dark:border-yellow-700'
