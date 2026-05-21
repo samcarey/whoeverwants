@@ -81,6 +81,12 @@ const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
 ];
 
+// Shared classes for every chip in the bubble bar. Module-scope so the
+// string isn't re-allocated per render (same precedent as BUBBLE_ENTRIES
+// and THEME_OPTIONS — see CLAUDE.md on hoisting static template strings).
+const BUBBLE_BUTTON_CLASS =
+  "shrink-0 flex items-center gap-1.5 px-[13.5px] py-[6.75px] rounded-full bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
+
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
@@ -1570,17 +1576,9 @@ export function CreateQuestionContent() {
   // Layout: ONE horizontally scrollable row. The leading "New" button is
   // the catch-all (opens the modal with the default `custom` category) —
   // it took over the role of the retired "Other" trailing entry, and is
-  // always pinned at the start of the row. It shares the same bubble
-  // styling as the category buttons that follow it, plus `font-bold` so
-  // it reads as the primary "create a new poll" affordance. Bubble row
-  // uses `scrollbar-hide` so the iOS native scrollbar doesn't clutter
-  // the chrome. Bubble padding is `px-[13.5px] py-[6.75px]` (150% of an
-  // earlier `px-[9px] py-[4.5px]` tuning pass) — half-pixel arbitrary
-  // values are house style for percentage-tuned specs (see CLAUDE.md).
-  // `pb-[18px]` is 150% of the previous `pb-3` (12px). No border on the
-  // bubbles — the blue fill is enough visual separation.
-  const bubbleButtonClass =
-    "shrink-0 flex items-center gap-1.5 px-[13.5px] py-[6.75px] rounded-full bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
+  // always pinned at the start of the row. It shares `BUBBLE_BUTTON_CLASS`
+  // with the category buttons that follow it, plus `font-bold` so it
+  // reads as the primary "create a new poll" affordance.
   const bubbleBar = (
     <div className="pt-2 pb-[18px]">
       <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide px-3">
@@ -1588,7 +1586,7 @@ export function CreateQuestionContent() {
           type="button"
           onClick={() => handleBubbleClick('custom')}
           disabled={isLoading}
-          className={`${bubbleButtonClass} font-bold`}
+          className={`${BUBBLE_BUTTON_CLASS} font-bold`}
           aria-label="Create a new poll"
         >
           <span className="text-[22.4px] leading-none" aria-hidden>+</span>
@@ -1600,7 +1598,7 @@ export function CreateQuestionContent() {
             type="button"
             onClick={() => handleBubbleClick(entry.value)}
             disabled={isLoading}
-            className={bubbleButtonClass}
+            className={BUBBLE_BUTTON_CLASS}
             aria-label={`Add ${entry.label} question`}
           >
             {entry.icon && (

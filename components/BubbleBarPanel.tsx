@@ -10,6 +10,19 @@ import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 // visibility on sub-pixel motion.
 const SCROLL_DELTA_THRESHOLD = 5;
 
+// Swallow touch propagation on the panel so a horizontal drag on the
+// bubble row CAN'T initiate the page-level swipe-back-to-home gesture.
+// The panel is already a sibling of `swipeWrapperRef` in the React tree
+// (touches that start here don't bubble to the wrapper's React handlers
+// via the structural separation), but `stopPropagation` makes the
+// exemption explicit and defends against a future refactor that moves
+// the panel inside the swipe wrapper. The native browser still gets
+// the events for horizontal scroll of the bubble row.
+// Module-scope so the function identity is stable across renders.
+const stopTouchPropagation = (e: React.TouchEvent) => {
+  e.stopPropagation();
+};
+
 /**
  * CSS variable set on `<html>` to the panel's measured height. Stable
  * regardless of visibility so the host's bottom padding doesn't reflow
@@ -157,18 +170,6 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
     root.setProperty(PANEL_HEIGHT_VAR, `${heightPx}px`);
     root.setProperty(PANEL_OFFSET_VAR, visible ? `${heightPx}px` : "0px");
   }, [panelHeight, visible]);
-
-  // Swallow touch propagation on the panel so a horizontal drag on the
-  // bubble row CAN'T initiate the page-level swipe-back-to-home gesture.
-  // The panel is already a sibling of `swipeWrapperRef` in the React tree
-  // (touches that start here don't bubble to the wrapper's React handlers
-  // via the structural separation), but `stopPropagation` makes the
-  // exemption explicit and defends against a future refactor that moves
-  // the panel inside the swipe wrapper. The native browser still gets
-  // the events for horizontal scroll of the bubble row.
-  const stopTouchPropagation = (e: React.TouchEvent) => {
-    e.stopPropagation();
-  };
 
   return (
     <div
