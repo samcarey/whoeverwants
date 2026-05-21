@@ -1591,8 +1591,8 @@ export function CreateQuestionContent() {
           className={`${bubbleButtonClass} font-bold`}
           aria-label="Create a new poll"
         >
-          <span className="text-2xl cap-height-text" aria-hidden>+</span>
-          <span>New</span>
+          <span className="text-[22.4px] leading-none" aria-hidden>+</span>
+          <span className="leading-none">New</span>
         </button>
         {BUBBLE_ENTRIES.map((entry) => (
           <button
