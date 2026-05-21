@@ -1780,6 +1780,24 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           zIndex: 1,
           background: 'var(--background)',
           minHeight: restoreMinHeight !== null ? `${restoreMinHeight}px` : '100dvh',
+          // Negative horizontal margins cancel the outer template wrapper's
+          // `paddingLeft/Right: max(0.35rem, env(safe-area-inset-*))` so the
+          // edge-to-edge poll rectangles + dividers butt against the body's
+          // safe-area content edge. Tailwind v4's `-mx-4` on the template's
+          // inner wrapper is shadowed by the adjacent `mx-auto` (same
+          // specificity, `mx-auto` lands later in the generated CSS and
+          // wins), so we can't rely on that path. The 0.35rem overhang on
+          // desktop is well inside the inner template's `sm:px-4` (1rem)
+          // padding, so it doesn't escape the centered max-w-4xl bounds.
+          // Lives on the swipeWrapper (not on the inner cards-wrapper) so
+          // the wrapper's `background: var(--background)` paints into
+          // those safe-area strips too — otherwise during a swipe-back the
+          // HomeBackdropHost (z=0, full viewport) is visible through them
+          // beneath the negative-margin extension of the cards, showing
+          // home content in a thin column between each card's left-edge
+          // yellow bar and the rest of the rectangle background.
+          marginLeft: 'calc(-1 * max(0.35rem, env(safe-area-inset-left, 0px)))',
+          marginRight: 'calc(-1 * max(0.35rem, env(safe-area-inset-right, 0px)))',
         }}
       >
       <div
@@ -1790,17 +1808,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           // Fallback covers a 3-row bubble bar + heading + safe-area
           // inset for the first paint before the ResizeObserver fires.
           paddingBottom: `var(${PANEL_HEIGHT_VAR}, 12rem)`,
-          // Negative horizontal margin cancels the outer template wrapper's
-          // `paddingLeft/Right: max(0.35rem, env(safe-area-inset-*))` so the
-          // edge-to-edge poll rectangles + dividers butt against the body's
-          // safe-area content edge. Tailwind v4's `-mx-4` on the template's
-          // inner wrapper is shadowed by the adjacent `mx-auto` (same
-          // specificity, `mx-auto` lands later in the generated CSS and
-          // wins), so we can't rely on that path. The 0.35rem overhang on
-          // desktop is well inside the inner template's `sm:px-4` (1rem)
-          // padding, so it doesn't escape the centered max-w-4xl bounds.
-          marginLeft: 'calc(-1 * max(0.35rem, env(safe-area-inset-left, 0px)))',
-          marginRight: 'calc(-1 * max(0.35rem, env(safe-area-inset-right, 0px)))',
           transform: overlayCardsOffset
             ? `translate3d(0, ${-overlayCardsOffset}px, 0)`
             : undefined,
