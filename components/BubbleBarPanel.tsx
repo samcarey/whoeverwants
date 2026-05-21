@@ -1,0 +1,151 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { DRAFT_POLL_PORTAL_ID } from "@/lib/groupDomMarkers";
+
+// Pixels of scroll delta required before we update the cached direction —
+// filters iOS momentum / rubber-band jitter that would otherwise toggle
+// visibility on sub-pixel motion.
+const SCROLL_DELTA_THRESHOLD = 5;
+
+// CSS vars exposed on `:root`:
+//   --bubble-bar-panel-height — measured panel height. Stable regardless
+//     of visibility so the host's bottom padding doesn't reflow when the
+//     panel hides.
+//   --bubble-bar-panel-offset — height when visible, 0 when hidden. Other
+//     floating chrome (e.g. the down scroll-helper arrow) reads this to
+//     stay above the panel while it's on-screen but reclaim the space
+//     when it auto-hides.
+const PANEL_HEIGHT_VAR = "--bubble-bar-panel-height";
+const PANEL_OFFSET_VAR = "--bubble-bar-panel-offset";
+
+/**
+ * Fixed-bottom panel that hosts the create-poll bubble bar.
+ *
+ * The bar's JSX is owned by `CreateQuestionContent` (it queries for every
+ * `#draft-poll-portal` in the DOM and renders into all matches); this
+ * component just provides the panel chrome + an internal `#draft-poll-portal`
+ * div, and runs the auto-hide scroll logic.
+ *
+ * Visibility rule:
+ *   visible = atBottomOfDocument || lastScrollDirection === 'up'
+ *
+ * Initial state is visible. Mounted by `GroupContent` and `EmptyPlaceholder`
+ * as a sibling of the swipe wrapper (NOT a child): the panel is
+ * `position: fixed`, and any transformed ancestor would re-anchor it to
+ * that ancestor's containing block — pushing it far below the viewport on
+ * tall pages during a back-swipe. Both the slide overlay's copy of
+ * GroupContent and the real route's copy render their own BubbleBarPanel
+ * — same dual-portal pattern the bubble bar already relies on.
+ */
+export default function BubbleBarPanel() {
+  const [visible, setVisible] = useState(true);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Scroll-driven visibility.
+  useEffect(() => {
+    let lastScrollY = window.scrollY;
+    let lastDirection: "up" | "down" = "up";
+    let rafScheduled = false;
+
+    const evaluate = () => {
+      rafScheduled = false;
+      const currentY = window.scrollY;
+      const maxScroll = Math.max(
+        0,
+        document.documentElement.scrollHeight - window.innerHeight,
+      );
+      // 2px tolerance for sub-pixel fp imprecision near the doc bottom.
+      // When the doc can't scroll (maxScroll === 0), this is trivially
+      // true so the panel stays visible.
+      const atBottom = currentY >= maxScroll - 2;
+
+      const delta = currentY - lastScrollY;
+      if (Math.abs(delta) > SCROLL_DELTA_THRESHOLD) {
+        lastDirection = delta > 0 ? "down" : "up";
+        lastScrollY = currentY;
+      }
+
+      const nextVisible = atBottom || lastDirection === "up";
+      setVisible((prev) => (prev === nextVisible ? prev : nextVisible));
+    };
+
+    const schedule = () => {
+      if (rafScheduled) return;
+      rafScheduled = true;
+      requestAnimationFrame(evaluate);
+    };
+
+    window.addEventListener("scroll", schedule, { passive: true });
+    // Initial eval — handles cases like back-nav landing scrolled.
+    schedule();
+
+    return () => {
+      window.removeEventListener("scroll", schedule);
+    };
+  }, []);
+
+  // Measure panel height + mirror it into two CSS vars. Both vars need to
+  // stay in sync with the latest measurement AND the latest visibility, so
+  // we route every update through a single writer driven by:
+  //   - ResizeObserver on the panel (height changes)
+  //   - the visibility effect below (toggles the offset between full
+  //     height and 0)
+  // The visibleRef bridges the two: the measure effect reads the latest
+  // visibility without listing it in deps (we don't want to tear down the
+  // observer on every scroll-direction flip).
+  const measuredHeightRef = useRef(0);
+  const visibleRef = useRef(visible);
+  useEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
+
+  const writeCssVars = (heightPx: number, isVisible: boolean) => {
+    const root = document.documentElement.style;
+    root.setProperty(PANEL_HEIGHT_VAR, `${heightPx}px`);
+    root.setProperty(PANEL_OFFSET_VAR, isVisible ? `${heightPx}px` : "0px");
+  };
+
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const onMeasure = (h: number) => {
+      const rounded = Math.round(h);
+      measuredHeightRef.current = rounded;
+      writeCssVars(rounded, visibleRef.current);
+    };
+    onMeasure(el.offsetHeight);
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        onMeasure(entry.contentRect.height);
+      }
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      // Don't clear the vars on unmount — a sibling instance (overlay vs
+      // real route during a slide) may still be rendering and the host's
+      // padding would jump to 0 otherwise.
+    };
+  }, []);
+
+  // Re-write on visibility flips (no measurement change, just the offset
+  // toggle).
+  useEffect(() => {
+    writeCssVars(measuredHeightRef.current, visible);
+  }, [visible]);
+
+  return (
+    <div
+      ref={panelRef}
+      aria-hidden={!visible}
+      className="fixed bottom-0 left-0 right-0 z-30 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 transition-transform duration-200 ease-out"
+      style={{
+        transform: visible ? "translateY(0)" : "translateY(100%)",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      }}
+    >
+      <div id={DRAFT_POLL_PORTAL_ID} />
+    </div>
+  );
+}

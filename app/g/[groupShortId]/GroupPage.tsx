@@ -27,7 +27,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
-import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
+import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
@@ -45,6 +45,7 @@ import { forgetQuestion } from "@/lib/forgetQuestion";
 import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
 import { GroupCardItem, ROW_DIVIDER_CLASS, type GroupCardGroup } from "./GroupCardItem";
+import BubbleBarPanel from "@/components/BubbleBarPanel";
 
 import type { Group } from "@/lib/groupUtils";
 
@@ -1776,9 +1777,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         }}
       >
       <div
-        className="pb-2"
         style={{
           paddingTop: `calc(${headerHeight}px + var(--group-card-gap, 0px))`,
+          // Clear the floating BubbleBarPanel so the last card isn't
+          // hidden behind it when scrolled to the document bottom. Falls
+          // back to a generous estimate before the panel's ResizeObserver
+          // writes the CSS var on first paint.
+          paddingBottom: `calc(var(--bubble-bar-panel-height, 9rem) + 0.5rem)`,
           // Negative horizontal margin cancels the outer template wrapper's
           // `paddingLeft/Right: max(0.35rem, env(safe-area-inset-*))` so the
           // edge-to-edge poll rectangles + dividers butt against the body's
@@ -1863,10 +1868,17 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
               />
             );
           })}
-
-        <div id={DRAFT_POLL_PORTAL_ID} />
       </div>
       </div>
+      {/* Floating bubble bar — sits OUTSIDE the swipe wrapper so its
+          `position: fixed` stays viewport-relative during a back-swipe
+          (any transformed ancestor would re-anchor it to the wrapper's
+          containing block, landing it far below the viewport on tall
+          pages). Two instances coexist during a slide-overlay handoff
+          (overlay's GroupContent + real route's GroupContent); both
+          register their own `#draft-poll-portal` target and the bar's
+          dual-portal rendering pipes the JSX into both. */}
+      <BubbleBarPanel />
 
       {/* Group-aware long-press modal — Copy + Forget, plus Reopen when
            the poll is closed and the current browser is the creator (or dev). */}
@@ -2081,7 +2093,16 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
                   : 'Scroll to bottom'
               }
               elevated={elevateArrowsForOverlay}
-              style={{ bottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
+              // Float above the BubbleBarPanel while it's visible (offset
+              // var is the panel's measured height when shown, 0 when
+              // hidden), with the safe-area inset as the floor so the
+              // arrow still clears the home indicator on iPhone when the
+              // panel is auto-hidden.
+              style={{
+                bottom:
+                  'calc(max(0.5rem, env(safe-area-inset-bottom, 0px)) + var(--bubble-bar-panel-offset, 0px))',
+                transition: 'bottom 200ms ease-out',
+              }}
             />
           )}
         </>,

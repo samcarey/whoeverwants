@@ -7,7 +7,8 @@ import { getGroupHrefForPoll } from "@/lib/groupUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupHeader from "@/components/GroupHeader";
-import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
+import BubbleBarPanel from "@/components/BubbleBarPanel";
+import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 
 export const dynamic = 'force-dynamic';
 
@@ -83,13 +84,8 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
   return (
     <>
       <GroupHeader {...headerProps} />
-      {/* Portal target has NO horizontal padding so the bubble bar
-          inside it gets the same effective width as GroupContent's
-          portal — mismatched padding made the bubbles rewrap on
-          handoff. */}
-      <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}>
-        <div id={DRAFT_POLL_PORTAL_ID} />
-      </div>
+      <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }} />
+      <BubbleBarPanel />
     </>
   );
 }
