@@ -668,8 +668,6 @@ export function CreateQuestionContent() {
     // Still editable — they can clear or change it freely.
     const inheritedForField = sharedDraftContext(drafts) ?? '';
     applyDraftToState(emptyDraft({ category: cat, forField: inheritedForField }));
-    // Refresh the creator name from localStorage so a name just set via
-    // NameRequiredModal flows into the submit payload.
     setCreatorName(getUserName() ?? "");
     setError(null);
     setIsModalOpen(true);
@@ -1318,9 +1316,7 @@ export function CreateQuestionContent() {
         recordQuestionCreation(sp.id, creatorSecret);
       }
 
-      if (creatorName.trim()) {
-        saveUserName(creatorName.trim());
-      }
+      saveUserName(creatorName);
       clearFormState();
       setIsSubmitted(false);
       isSubmittingRef.current = false;

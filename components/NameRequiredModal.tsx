@@ -25,8 +25,6 @@ export default function NameRequiredModal({
   const [name, setName] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Reset + focus on open. Empty start: callers reach this modal precisely
-  // because no name was saved, so there's nothing to prefill.
   useEffect(() => {
     if (!isOpen) return;
     setName("");
@@ -34,10 +32,16 @@ export default function NameRequiredModal({
     return () => window.clearTimeout(id);
   }, [isOpen]);
 
+  // Stash `onCancel` in a ref so parent re-renders with a fresh closure don't
+  // tear down + rebuild the keydown listener + body-overflow lock mid-typing.
+  const onCancelRef = useRef(onCancel);
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  }, [onCancel]);
   useEffect(() => {
     if (!isOpen) return;
     const handle = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") onCancelRef.current();
     };
     document.addEventListener("keydown", handle);
     document.body.style.overflow = "hidden";
@@ -45,7 +49,7 @@ export default function NameRequiredModal({
       document.removeEventListener("keydown", handle);
       document.body.style.overflow = "unset";
     };
-  }, [isOpen, onCancel]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

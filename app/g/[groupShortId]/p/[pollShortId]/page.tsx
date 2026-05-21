@@ -524,27 +524,22 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     isCurrentUserName(poll.creator_name);
   const creatorImageUrl = creatorIsMe ? myUserImageUrl : null;
 
-  // Submit actions paused because the user hasn't saved a name yet.
-  // NameRequiredModal collects the name and retries via `runPendingAction`.
-  type PendingSubmitAction =
-    | { kind: "yesNoTap"; questionId: string; newChoice: "yes" | "no" | "abstain" }
-    | { kind: "multi"; pollId: string }
-    | { kind: "single"; spId: string }
-    | { kind: "voteChange"; questionId: string; newChoice: "yes" | "no" | "abstain" };
-  const [pendingSubmitAction, setPendingSubmitAction] =
-    useState<PendingSubmitAction | null>(null);
+  // When a submit action fires without a saved name, the retry closure is
+  // stashed here and replayed after NameRequiredModal save.
+  const [pendingNameRetry, setPendingNameRetry] = useState<(() => void) | null>(null);
+
+  const gateOnName = (retry: () => void): boolean => {
+    if (isValidUserName(getUserName())) return true;
+    setPendingNameRetry(() => retry);
+    return false;
+  };
 
   const dispatchYesNoTap = (
     questionId: string,
     newChoice: "yes" | "no" | "abstain",
   ) => {
-    // First-time votes on single-question polls auto-submit; multi-poll
-    // taps and edits route through the confirmation modal.
     if (!isMultiPoll && !userVoteMap.get(questionId)) {
-      if (!isValidUserName(getUserName())) {
-        setPendingSubmitAction({ kind: "yesNoTap", questionId, newChoice });
-        return;
-      }
+      if (!gateOnName(() => void submitYesNoChoice(questionId, newChoice))) return;
       void submitYesNoChoice(questionId, newChoice);
       return;
     }
@@ -586,24 +581,14 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     });
   };
 
-  const runPendingAction = (action: PendingSubmitAction) => {
-    if (action.kind === "yesNoTap") {
-      void submitYesNoChoice(action.questionId, action.newChoice);
-    } else if (action.kind === "multi") {
-      runMultiSubmit(action.pollId);
-    } else if (action.kind === "single") {
-      subQuestionBallotRefs.get(action.spId)?.triggerSubmit();
-    } else if (action.kind === "voteChange") {
-      void submitYesNoChoice(action.questionId, action.newChoice);
-    }
-  };
-
   const shareUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
     return `${window.location.origin}${getGroupHrefForPoll(poll)}`;
   }, [poll]);
 
   const pollTitle = subQuestions[0]?.title || poll.title;
+  // One localStorage read per render — passed into N sub-question QuestionBallots.
+  const savedUserName = getUserName() ?? "";
 
   return (
     <>
@@ -744,9 +729,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                 isExpanded={true}
                 partOfPollGroup={isMultiPoll}
                 wrapperHandlesSubmit={!!poll.id && wrapperOwnsSubmit}
-                externalVoterName={
-                  wrapperOwnsSubmit ? getUserName() ?? "" : undefined
-                }
+                externalVoterName={wrapperOwnsSubmit ? savedUserName : undefined}
                 onWrapperSubmitStateChange={
                   wrapperOwnsSubmit ? handleWrapperSubmitStateChange : undefined
                 }
@@ -781,10 +764,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               <button
                 type="button"
                 onClick={() => {
-                  if (!isValidUserName(getUserName())) {
-                    setPendingSubmitAction({ kind: "multi", pollId });
-                    return;
-                  }
+                  if (!gateOnName(() => runMultiSubmit(pollId))) return;
                   runMultiSubmit(pollId);
                 }}
                 disabled={submitting || !hasStagedChange}
@@ -808,11 +788,9 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               <button
                 type="button"
                 onClick={() => {
-                  if (!isValidUserName(getUserName())) {
-                    setPendingSubmitAction({ kind: "single", spId: sp.id });
-                    return;
-                  }
-                  subQuestionBallotRefs.get(sp.id)?.triggerSubmit();
+                  const fire = () => subQuestionBallotRefs.get(sp.id)?.triggerSubmit();
+                  if (!gateOnName(fire)) return;
+                  fire();
                 }}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
@@ -868,8 +846,8 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
             onConfirm={() => {
               if (!pendingVoteChange) return;
               const { questionId, newChoice } = pendingVoteChange;
-              if (!isValidUserName(getUserName())) {
-                setPendingSubmitAction({ kind: "voteChange", questionId, newChoice });
+              const fire = () => void submitYesNoChoice(questionId, newChoice);
+              if (!gateOnName(fire)) {
                 setPendingVoteChange(null);
                 return;
               }
@@ -905,14 +883,14 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
       />
 
       <NameRequiredModal
-        isOpen={!!pendingSubmitAction}
+        isOpen={!!pendingNameRetry}
         message="Please enter your name to submit your vote."
         onSubmit={() => {
-          const action = pendingSubmitAction;
-          setPendingSubmitAction(null);
-          if (action) runPendingAction(action);
+          const retry = pendingNameRetry;
+          setPendingNameRetry(null);
+          if (retry) retry();
         }}
-        onCancel={() => setPendingSubmitAction(null)}
+        onCancel={() => setPendingNameRetry(null)}
       />
     </>
   );
