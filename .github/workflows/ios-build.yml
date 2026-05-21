@@ -24,6 +24,16 @@ on:
       - 'package-lock.json'
       - '.github/workflows/ios-build.yml'
       - 'scripts/ios/**'
+  release:
+    # A non-draft / non-prerelease release publish always builds the prod
+    # bundle pinned to the release's tag, regardless of which files
+    # changed. This keeps the iOS prod build in lockstep with the
+    # GitHub Release that drives the rest of the prod deploy (Vercel + the
+    # prod droplet's API container both auto-deploy on release publish
+    # too; this trigger closes the loop for the native app). Prereleases
+    # are excluded — the `prod_only_on_real_release` guard on the job
+    # filters them out.
+    types: [published]
   workflow_dispatch:
     inputs:
       cap_env:
@@ -53,10 +63,14 @@ jobs:
   build:
     runs-on: [self-hosted, macos-mini]
     timeout-minutes: 45
+    # Skip prereleases — they wouldn't go to the production TestFlight
+    # track anyway, and the `published` event fires for them too.
+    if: github.event_name != 'release' || !github.event.release.prerelease
 
     env:
-      # Resolve CAP_ENV: manual dispatch input > branch-based default.
-      CAP_ENV: ${{ github.event.inputs.cap_env != '' && github.event.inputs.cap_env || (github.ref == 'refs/heads/main' && 'prod' || 'latest') }}
+      # Resolve CAP_ENV: manual dispatch input > release publish (always
+      # prod) > push to main (prod) > push to any other branch (latest).
+      CAP_ENV: ${{ github.event.inputs.cap_env != '' && github.event.inputs.cap_env || ((github.event_name == 'release' || github.ref == 'refs/heads/main') && 'prod' || 'latest') }}
       SCHEME: App
       PROJECT: ios/App/App.xcodeproj
       ARCHIVE_PATH: ${{ github.workspace }}/build/App.xcarchive

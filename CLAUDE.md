@@ -1828,6 +1828,7 @@ self-hosted Mac mini runner (labels: `self-hosted, macos-mini`). The workflow:
 
 Triggers:
 - Pushes to ANY branch that touch `capacitor.config.ts`, `ios/**`, `package.json`, `package-lock.json`, the workflow file, or `scripts/ios/**`. `main` builds the prod bundle (`com.whoeverwants.app`); every other branch builds the shared `latest` bundle (`com.whoeverwants.app.latest`). Concurrency is keyed on `github.ref` with `cancel-in-progress: true`, so rapid pushes to the same branch only run the latest commit.
+- **GitHub Release published** (non-draft, non-prerelease) → builds the prod bundle pinned to the release's tag. Keeps the iOS prod IPA in lockstep with the Vercel + droplet auto-deploys that already fire on the same event. Prereleases are filtered out by an `if:` guard on the job (the `published` action fires for prereleases too).
 - Manual via `workflow_dispatch` — inputs: `cap_env` (`latest|prod`), `cap_server_url` (explicit URL override), `skip_upload` (bool).
 
 ### Universal Links
