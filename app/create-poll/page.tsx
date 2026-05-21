@@ -72,10 +72,20 @@ export const dynamic = 'force-dynamic';
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
 // Order matches the dropdown inside the modal so muscle memory carries over.
+// The leading "New" button (rendered separately at the start of the row)
+// is the catch-all that opens the modal with the default `custom` category;
+// the in-row entries below cover the built-in categories. The old trailing
+// "Other" entry was retired in favor of "New" since it duplicated the same
+// custom-category landing experience.
 const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
-  { value: 'custom', label: 'Other' },
 ];
+
+// Shared classes for every chip in the bubble bar. Module-scope so the
+// string isn't re-allocated per render (same precedent as BUBBLE_ENTRIES
+// and THEME_OPTIONS — see CLAUDE.md on hoisting static template strings).
+const BUBBLE_BUTTON_CLASS =
+  "shrink-0 flex items-center gap-1.5 px-[13.5px] py-[6.75px] rounded-full bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
 
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
@@ -1557,24 +1567,38 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
-  // pt-* is the gap above; pb-4 supplements the page's outer
+  // py-* is the vertical gap; pb-3 supplements the page's outer
   // paddingBottom (template.tsx) so iOS Safari's bottom URL bar
   // (~50–64px, overlays the viewport at max scroll) doesn't clip the
-  // last bubble row. env(safe-area-inset-bottom) isn't usable here — it
+  // bubble row. env(safe-area-inset-bottom) isn't usable here — it
   // returns 0 when the URL bar is visible (the case we need to handle).
+  //
+  // Layout: ONE horizontally scrollable row. The leading "New" button is
+  // the catch-all (opens the modal with the default `custom` category) —
+  // it took over the role of the retired "Other" trailing entry, and is
+  // always pinned at the start of the row. It shares `BUBBLE_BUTTON_CLASS`
+  // with the category buttons that follow it, plus `font-bold` so it
+  // reads as the primary "create a new poll" affordance.
   const bubbleBar = (
-    <div className="pt-1 pb-4">
-      <h2 className="px-3 pb-2 text-center text-[15.75px] font-medium text-gray-600 dark:text-gray-400 underline underline-offset-4">
-        Create a New Poll
-      </h2>
-      <div className="px-3 flex flex-wrap justify-center gap-2">
+    <div className="pt-2 pb-[18px]">
+      <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide px-3">
+        <button
+          type="button"
+          onClick={() => handleBubbleClick('custom')}
+          disabled={isLoading}
+          className={`${BUBBLE_BUTTON_CLASS} font-bold`}
+          aria-label="Create a new poll"
+        >
+          <span className="text-[22.4px] leading-none" aria-hidden>+</span>
+          <span className="leading-none">New</span>
+        </button>
         {BUBBLE_ENTRIES.map((entry) => (
           <button
             key={entry.value}
             type="button"
             onClick={() => handleBubbleClick(entry.value)}
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
+            className={BUBBLE_BUTTON_CLASS}
             aria-label={`Add ${entry.label} question`}
           >
             {entry.icon && (
