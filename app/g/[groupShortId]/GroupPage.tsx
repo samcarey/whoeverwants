@@ -771,9 +771,15 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // gear at the viewport's left edge.
   const upArrowRef = useRef<HTMLButtonElement | null>(null);
   const downArrowRef = useRef<HTMLButtonElement | null>(null);
+  // BubbleBarPanel's outer shell. Registered as a swipe extra-target so
+  // the panel slides horizontally with the page during a back-swipe to
+  // home (the panel sits OUTSIDE the swipeWrapper so its position:fixed
+  // stays viewport-anchored — without this ref the panel would stay put
+  // while the rest of the page slid off).
+  const bubbleBarShellRef = useRef<HTMLDivElement | null>(null);
   const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
     headerRef,
-    extraTargets: [upArrowRef, downArrowRef],
+    extraTargets: [upArrowRef, downArrowRef, bubbleBarShellRef],
     showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
     hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
     onBeforeCommit: () => rememberCurrentScroll(groupScrollKey(groupId)),
@@ -1874,11 +1880,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           `position: fixed` stays viewport-relative during a back-swipe
           (any transformed ancestor would re-anchor it to the wrapper's
           containing block, landing it far below the viewport on tall
-          pages). Two instances coexist during a slide-overlay handoff
-          (overlay's GroupContent + real route's GroupContent); both
-          register their own `#draft-poll-portal` target and the bar's
-          dual-portal rendering pipes the JSX into both. */}
-      <BubbleBarPanel />
+          pages). Its outer shell is registered as a swipe extra-target
+          so it still translates horizontally with the rest of the page
+          during the gesture. Two instances coexist during a slide-overlay
+          handoff (overlay's GroupContent + real route's GroupContent);
+          both register their own `#draft-poll-portal` target and the
+          bar's dual-portal rendering pipes the JSX into both. */}
+      <BubbleBarPanel ref={bubbleBarShellRef} />
 
       {/* Group-aware long-press modal — Copy + Forget, plus Reopen when
            the poll is closed and the current browser is the creator (or dev). */}

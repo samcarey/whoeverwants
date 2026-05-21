@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import { DRAFT_POLL_PORTAL_ID } from "@/lib/groupDomMarkers";
 
 // Pixels of scroll delta required before we update the cached direction —
@@ -42,8 +42,17 @@ const PANEL_OFFSET_VAR = "--bubble-bar-panel-offset";
  * tall pages during a back-swipe. Both the slide overlay's copy of
  * GroupContent and the real route's copy render their own BubbleBarPanel
  * — same dual-portal pattern the bubble bar already relies on.
+ *
+ * **Two-layer structure**: outer `shell` div is the swipe-back transform
+ * target (position-fixed, no visuals); inner `panel` div carries the
+ * background / border / safe-area padding + the visibility translateY.
+ * Decoupling the two means `useSwipeBackGesture`'s
+ * `el.style.transform = translate3d(X,0,0)` write on the shell composes
+ * cleanly with the inner panel's translateY — neither overrides the
+ * other. The forwarded ref points at the shell so callers can register
+ * it as an extra swipe target.
  */
-export default function BubbleBarPanel() {
+const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) => {
   const [visible, setVisible] = useState(true);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -171,15 +180,24 @@ export default function BubbleBarPanel() {
 
   return (
     <div
-      ref={panelRef}
-      aria-hidden={!visible}
-      className="fixed bottom-0 left-0 right-0 z-30 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 transition-transform duration-200 ease-out"
-      style={{
-        transform: visible ? "translateY(0)" : "translateY(100%)",
-        paddingBottom: "env(safe-area-inset-bottom, 0px)",
-      }}
+      ref={forwardedShellRef}
+      className="fixed bottom-0 left-0 right-0 z-30"
     >
-      <div id={DRAFT_POLL_PORTAL_ID} />
+      <div
+        ref={panelRef}
+        aria-hidden={!visible}
+        className="bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 transition-transform duration-200 ease-out"
+        style={{
+          transform: visible ? "translateY(0)" : "translateY(100%)",
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        }}
+      >
+        <div id={DRAFT_POLL_PORTAL_ID} />
+      </div>
     </div>
   );
-}
+});
+
+BubbleBarPanel.displayName = "BubbleBarPanel";
+
+export default BubbleBarPanel;
