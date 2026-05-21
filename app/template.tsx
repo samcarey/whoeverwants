@@ -6,7 +6,7 @@ import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
-import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
+import { navigateWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
@@ -39,15 +39,14 @@ function TemplateInner({ children }: AppTemplateProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { prefetchOnHover } = usePrefetch();
-  const [hasAppHistory, setHasAppHistory] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
-  // Track in-app navigation for back button (runs on each client-side navigation).
+  // Track in-app navigation for the exported `hasAppHistory()` helper
+  // in lib/viewTransitions.ts (consumed by group sub-routes' back-arrows).
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const count = parseInt(sessionStorage.getItem(NAV_COUNT_KEY) || '0', 10) + 1;
     sessionStorage.setItem(NAV_COUNT_KEY, String(count));
-    setHasAppHistory(count > 1);
   }, [pathname]);
 
   // Set mounted state for portal rendering + install client log forwarder on dev sites
@@ -240,11 +239,11 @@ function TemplateInner({ children }: AppTemplateProps) {
 
       {/* Header elements rendered outside scaling container */}
       <HeaderPortal>
-        {/* Back arrow in upper left — settings page only, when there's in-app history. */}
-        {(isSettingsPage && hasAppHistory) && (
+        {/* Back arrow in upper left — settings page always navigates to home. */}
+        {isSettingsPage && (
           <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
             <button
-              onClick={() => navigateBackWithTransition()}
+              onClick={() => navigateWithTransition(router, '/', 'back')}
               className="w-12 h-16 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
               aria-label="Go back"
             >
