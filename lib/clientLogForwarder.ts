@@ -103,19 +103,26 @@ function flush() {
   const batch = queue.splice(0);
   const payload = JSON.stringify({ logs: batch, sessionId: getSessionId() });
 
-  // Use sendBeacon for reliability (survives page unload), fall back to fetch
+  // iOS WKWebView (Capacitor + PWA + Safari) silently drops cross-origin
+  // `sendBeacon` POSTs with `application/json` Blobs: the CORS preflight
+  // succeeds, sendBeacon returns true (queued), but the actual POST never
+  // fires and the server never sees the data. Observed empirically — the
+  // log buffer was permanently empty on `latest.whoeverwants.com` despite
+  // the forwarder being installed, with only OPTIONS preflights landing.
+  //
+  // `fetch keepalive` is the cross-platform reliable path. The trade-off
+  // vs sendBeacon: fetch keepalive caps the body at 64 KB (per spec) and
+  // doesn't survive a page-unload as aggressively. Both are fine for our
+  // 2-second-batched, sub-KB-per-message workload.
   const url = `${API_ORIGIN}/api/client-logs`;
-  const sent = navigator.sendBeacon?.(url, new Blob([payload], { type: 'application/json' }));
-  if (!sent) {
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: payload,
-      keepalive: true,
-    }).catch(() => {
-      // silently discard — we don't want log forwarding to cause errors
-    });
-  }
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload,
+    keepalive: true,
+  }).catch(() => {
+    // silently discard — we don't want log forwarding to cause errors
+  });
 }
 
 /**
