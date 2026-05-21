@@ -28,7 +28,12 @@ const PANEL_OFFSET_VAR = "--bubble-bar-panel-offset";
  * div, and runs the auto-hide scroll logic.
  *
  * Visibility rule:
- *   visible = atBottomOfDocument || lastScrollDirection === 'up'
+ *   visible = atTopOfDocument || atBottomOfDocument || lastDirection === 'up'
+ *
+ * Showing at the top is the user's discoverability default ("you just
+ * landed, here's how to create one"); showing at the bottom is the
+ * `you've reached the end, here's how to keep going` case; showing on
+ * scroll-up is the iOS-style "I want chrome back" gesture.
  *
  * Initial state is visible. Mounted by `GroupContent` and `EmptyPlaceholder`
  * as a sibling of the swipe wrapper (NOT a child): the panel is
@@ -55,9 +60,10 @@ export default function BubbleBarPanel() {
         0,
         document.documentElement.scrollHeight - window.innerHeight,
       );
-      // 2px tolerance for sub-pixel fp imprecision near the doc bottom.
-      // When the doc can't scroll (maxScroll === 0), this is trivially
-      // true so the panel stays visible.
+      // 2px tolerance for sub-pixel fp imprecision at the document
+      // edges. When the doc can't scroll (maxScroll === 0), atBottom is
+      // trivially true so the panel stays visible.
+      const atTop = currentY <= 2;
       const atBottom = currentY >= maxScroll - 2;
 
       const delta = currentY - lastScrollY;
@@ -66,7 +72,7 @@ export default function BubbleBarPanel() {
         lastScrollY = currentY;
       }
 
-      const nextVisible = atBottom || lastDirection === "up";
+      const nextVisible = atTop || atBottom || lastDirection === "up";
       setVisible((prev) => (prev === nextVisible ? prev : nextVisible));
     };
 
