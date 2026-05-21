@@ -72,9 +72,13 @@ export const dynamic = 'force-dynamic';
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
 // Order matches the dropdown inside the modal so muscle memory carries over.
+// The leading "New" button (rendered separately at the start of the row)
+// is the catch-all that opens the modal with the default `custom` category;
+// the in-row entries below cover the built-in categories. The old trailing
+// "Other" entry was retired in favor of "New" since it duplicated the same
+// custom-category landing experience.
 const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
-  { value: 'custom', label: 'Other' },
 ];
 
 export function CreateQuestionContent() {
@@ -1563,28 +1567,39 @@ export function CreateQuestionContent() {
   // bubble row. env(safe-area-inset-bottom) isn't usable here — it
   // returns 0 when the URL bar is visible (the case we need to handle).
   //
-  // Layout: ONE horizontally scrollable row. The "New" label scrolls with
-  // the bubbles (no sticky positioning) and sits flush against the first
-  // bubble — the flex `gap-2` (8px) IS the entire space to its right.
-  // Bubble row uses `scrollbar-hide` so the iOS native scrollbar doesn't
-  // clutter the chrome. Bubble padding is `px-[13.5px] py-[6.75px]` (150%
-  // of an earlier `px-[9px] py-[4.5px]` tuning pass) — half-pixel
-  // arbitrary values are house style for percentage-tuned specs (see
-  // CLAUDE.md). `pb-[18px]` is 150% of the previous `pb-3` (12px). No
-  // border on the bubbles — the blue fill is enough visual separation.
+  // Layout: ONE horizontally scrollable row. The leading "New" button is
+  // the catch-all (opens the modal with the default `custom` category) —
+  // it took over the role of the retired "Other" trailing entry, and is
+  // always pinned at the start of the row. It shares the same bubble
+  // styling as the category buttons that follow it, plus `font-bold` so
+  // it reads as the primary "create a new poll" affordance. Bubble row
+  // uses `scrollbar-hide` so the iOS native scrollbar doesn't clutter
+  // the chrome. Bubble padding is `px-[13.5px] py-[6.75px]` (150% of an
+  // earlier `px-[9px] py-[4.5px]` tuning pass) — half-pixel arbitrary
+  // values are house style for percentage-tuned specs (see CLAUDE.md).
+  // `pb-[18px]` is 150% of the previous `pb-3` (12px). No border on the
+  // bubbles — the blue fill is enough visual separation.
+  const bubbleButtonClass =
+    "shrink-0 flex items-center gap-1.5 px-[13.5px] py-[6.75px] rounded-full bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
   const bubbleBar = (
     <div className="pt-2 pb-[18px]">
       <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide px-3">
-        <span className="text-[15.75px] font-bold text-gray-600 dark:text-gray-400 shrink-0 select-none">
+        <button
+          type="button"
+          onClick={() => handleBubbleClick('custom')}
+          disabled={isLoading}
+          className={`${bubbleButtonClass} font-bold`}
+          aria-label="Create a new poll"
+        >
           New
-        </span>
+        </button>
         {BUBBLE_ENTRIES.map((entry) => (
           <button
             key={entry.value}
             type="button"
             onClick={() => handleBubbleClick(entry.value)}
             disabled={isLoading}
-            className="shrink-0 flex items-center gap-1.5 px-[13.5px] py-[6.75px] rounded-full bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
+            className={bubbleButtonClass}
             aria-label={`Add ${entry.label} question`}
           >
             {entry.icon && (
