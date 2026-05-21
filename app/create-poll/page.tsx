@@ -1567,12 +1567,13 @@ export function CreateQuestionContent() {
   // the bubbles (no sticky positioning) and sits flush against the first
   // bubble — the flex `gap-2` (8px) IS the entire space to its right.
   // Bubble row uses `scrollbar-hide` so the iOS native scrollbar doesn't
-  // clutter the chrome. Bubble padding is `px-[9px] py-[4.5px]` (75% of
-  // the original `px-3 py-1.5`) — half-pixel arbitrary values are house
-  // style for percentage-tuned specs (see CLAUDE.md). No border on the
-  // bubbles — the blue fill is enough visual separation.
+  // clutter the chrome. Bubble padding is `px-[13.5px] py-[6.75px]` (150%
+  // of an earlier `px-[9px] py-[4.5px]` tuning pass) — half-pixel
+  // arbitrary values are house style for percentage-tuned specs (see
+  // CLAUDE.md). `pb-[18px]` is 150% of the previous `pb-3` (12px). No
+  // border on the bubbles — the blue fill is enough visual separation.
   const bubbleBar = (
-    <div className="pt-2 pb-3">
+    <div className="pt-2 pb-[18px]">
       <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide px-3">
         <span className="text-[15.75px] font-bold text-gray-600 dark:text-gray-400 shrink-0 select-none">
           New
@@ -1583,7 +1584,7 @@ export function CreateQuestionContent() {
             type="button"
             onClick={() => handleBubbleClick(entry.value)}
             disabled={isLoading}
-            className="shrink-0 flex items-center gap-1.5 px-[9px] py-[4.5px] rounded-full bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
+            className="shrink-0 flex items-center gap-1.5 px-[13.5px] py-[6.75px] rounded-full bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
             aria-label={`Add ${entry.label} question`}
           >
             {entry.icon && (
