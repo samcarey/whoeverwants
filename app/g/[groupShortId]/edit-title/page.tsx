@@ -7,13 +7,11 @@ import {
   apiUploadGroupImage,
   apiDeleteGroupImage,
 } from "@/lib/api";
-import { hasAppHistory } from "@/lib/viewTransitions";
 import { slideToGroupInfo } from "@/lib/slideOverlay";
 import { useGroup } from "@/lib/useGroup";
-import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { type Group } from "@/lib/groupUtils";
-import GroupHeader from "@/components/GroupHeader";
 import GroupAvatar from "@/components/GroupAvatar";
+import HeaderPortal from "@/components/HeaderPortal";
 import ImageCropModal from "@/components/ImageCropModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
@@ -59,12 +57,13 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
-
   const navigateAway = () => {
-    // Slide overlay: mount info above this page and slide it in from the
-    // left. The overlay host fires router.back() (or push) in parallel.
-    slideToGroupInfo({ groupId, direction: 'back', useHistoryBack: hasAppHistory() });
+    // Always land on /info — back button is "go to the info page", not
+    // "pop one history entry" (which could be the group root or anywhere
+    // else depending on how the user reached edit-title). The slide
+    // overlay handles the router.push since useHistoryBack defaults to
+    // false.
+    slideToGroupInfo({ groupId, direction: 'back' });
   };
 
   const handleBack = () => {
@@ -126,25 +125,32 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
 
   return (
     <>
-      <GroupHeader
-        headerRef={headerRef}
-        title="Edit Title"
-        onBack={handleBack}
-        rightSlot={
-          <button
-            onClick={save}
-            disabled={saving}
-            className="self-stretch py-2 px-2 flex items-center justify-center shrink-0 disabled:opacity-50"
-            aria-label="Save group title"
-          >
-            <span className="min-w-10 h-10 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-semibold">
-              {saving ? '...' : 'Save'}
-            </span>
-          </button>
-        }
-      />
+      {/* Floating opaque-bubble buttons portaled outside .responsive-scaling-container
+       *  so position:fixed is viewport-relative on desktop. Mirrors the /info
+       *  page's back + Edit buttons. */}
+      <HeaderPortal>
+        <button
+          onClick={handleBack}
+          className="fixed left-3 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+          aria-label="Go back"
+        >
+          <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70 disabled:opacity-50 text-blue-600 dark:text-blue-400 text-sm font-medium"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+          aria-label="Save group title"
+        >
+          {saving ? '...' : 'Save'}
+        </button>
+      </HeaderPortal>
 
-      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 1rem)` }}>
+      <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1.05rem)' }}>
         {/* Avatar + badges — centered above the title. Camera badge in
             the lower-right opens the file picker; X badge in the upper-
             right stages an image removal (only shown when an image is
@@ -202,7 +208,6 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
           onChange={(e) => setValue(e.target.value)}
           onBlur={(e) => setValue(e.target.value.trim())}
           placeholder={group.defaultTitle}
-          autoFocus
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
