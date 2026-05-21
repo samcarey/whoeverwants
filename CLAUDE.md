@@ -945,10 +945,12 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Auth & Access Model
 
-> **Phase A + B shipped (migration 112).** User accounts via magic-link
-> email; OAuth (Apple, Google), passkey, group privacy, join requests,
-> invite links, and per-vote anonymity are scheduled phases on top.
-> Full plan + rationale in `docs/auth-access-model.md`.
+> **Phases A + B + C shipped.** A+B = identity foundation +
+> magic-link email sign-in (migration 112). C = "Sign in with Apple"
+> + "Sign in with Google" on web. Passkey (D), group privacy (E),
+> join requests (F), invite links (G), per-vote anonymity (H), and
+> Capacitor native OAuth (deferred follow-up to C) are still
+> scheduled. Full plan + rationale in `docs/auth-access-model.md`.
 
 **Identity tables (migration 112):**
 - `users(id)` — one row per real person.
@@ -1046,8 +1048,28 @@ contents directly; don't trust upsert completion alone. If migration
 doesn't appear, fire the upsert manually before debugging the
 migration content.
 
+**Phase C (Apple + Google OAuth on web) is wired through three layers:**
+
+1. **Server verifier (`server/services/oauth.py`).** `verify_google_id_token(id_token)` and `verify_apple_id_token(id_token)` validate the JWT against the provider's JWKS (signature + iss + aud + exp + required claims) and return an `OAuthIdentity{provider, provider_user_id, email, email_verified}`. Uses `PyJWKClient` (from the existing `pyjwt[crypto]` dep) — keys are fetched and cached per process; rotation is transparent. Algorithm is pinned per provider (`RS256` for Google, `ES256` for Apple) so a hostile token can't switch families. Email is only surfaced as the merge key when `email_verified` is true (Google sends boolean, Apple sends string "true" — both branches accepted; anything else → `email=None`, but the sub-based identity still resolves).
+2. **Server endpoints (`server/routers/auth.py`).** `POST /api/auth/oauth/google` and `POST /api/auth/oauth/apple` accept `{id_token}`, verify, then route through the shared `_sign_in_via_oauth` helper which calls `resolve_or_merge_user` → `link_browser_to_user` → `issue_session` (same three-step rhythm as magic-link verify). Returns the same `SessionResponse` shape so the FE doesn't branch by provider. `GET /api/auth/providers` reports `{email, google, apple}` capability booleans driven by `google_configured()` / `apple_configured()` — both gate the verify endpoints with 503 when the corresponding `*_AUDIENCES` env var is unset.
+3. **FE (`lib/oauth.ts` + `lib/api/auth.ts` + `components/SignInModal.tsx`).** SDK loaders for Google Identity Services + Apple JS are module-level memoized promises (concurrent modal opens share one fetch). Google renders its own branded button into a `ref`'d container via `google.accounts.id.renderButton` — required by their branding guidelines and the only way to get reliable popup-based credential delivery. Apple uses a custom-styled button that calls `AppleID.auth.signIn()`. `SignInModal` queries `apiGetAuthProviders()` on every open and hides each OAuth button when EITHER the client bundle (NEXT_PUBLIC_*_CLIENT_ID env var) OR the server tier (`*_AUDIENCES`) isn't configured — both must agree before the button surfaces.
+
+**Configuration: each provider needs matching env vars on BOTH sides.** Drop these into the API droplet's `.env.api` AND the Vercel project's environment variables to enable each button. Without them, the buttons hide silently:
+
+  * Google: `GOOGLE_OAUTH_CLIENT_IDS` (server, comma-separated to accept web + iOS audiences) + `NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID` (FE web client ID).
+  * Apple: `APPLE_OAUTH_AUDIENCES` (server, comma-separated for web Service ID + iOS bundle ID) + `NEXT_PUBLIC_APPLE_OAUTH_SERVICE_ID` (FE Service ID) + `NEXT_PUBLIC_APPLE_OAUTH_REDIRECT_URI` (optional; defaults to the current origin).
+
+**Cross-provider account merge "just works" via the shared verified-email lookup in `resolve_or_merge_user`.** A user who signed in with magic link first (email identity) and later signs in with Google using the same verified email lands on the SAME `user_id` — the second sign-in adds a `user_identities` row for `provider='google'` pointing at the existing user. `/api/auth/me` then reports `providers: ['email', 'google']`. Apple "Hide my email" relay addresses (`<token>@privaterelay.appleid.com`) are stable per (user, RP) and are treated identically to real emails for the merge — same address every time, so repeat sign-ins resolve.
+
+**Capacitor iOS web OAuth is intentionally hidden via `isWebOAuthAvailable()` (`Capacitor.isNativePlatform()` short-circuit).** Google explicitly blocks `accounts.google.com/gsi` in embedded WebViews per their "disallowed-user-agents" policy (would surface as a `403 disallowed_useragent` error mid-flow), and Apple's JS SDK doesn't render reliably inside WKWebView either. The buttons hide entirely on native iOS; only magic link is offered there. The follow-up Capacitor native PR will add `@capacitor-community/apple-sign-in` + a Google-Auth Capacitor plugin and use the same `/api/auth/oauth/{google,apple}` endpoints with native-flow-issued ID tokens.
+
+**Pitfall: PyJWT's `audience` accepts a list but `issuer` does NOT.** `jwt.decode(..., issuer='x')` only matches a single string; Google publishes tokens with both `'https://accounts.google.com'` AND `'accounts.google.com'` as the issuer over time. `services/oauth.py: _verify` therefore decodes WITHOUT an `issuer` arg and checks `claims['iss'] in tuple_of_acceptable_issuers` manually afterward. Mirror this pattern if a third OIDC provider arrives with multiple valid issuers.
+
+**Pitfall: testing OAuth without calling real providers.** `server/tests/test_oauth.py` monkey-patches `services.oauth._google_jwks_client` / `_apple_jwks_client` to return a fake `PyJWKClient` whose `get_signing_key_from_jwt` returns a locally-generated RSA (Google) / EC (Apple) public key. Tests then mint JWTs signed by the matching private key and drive every branch of the verifier (valid token, expired, wrong audience, wrong issuer, unverified email, repeat sign-in without email, cross-provider merge). The pattern is reusable for adding a third OIDC provider — generate the keypair once per module, patch the JWKS lookup, mint signed tokens locally.
+
+**Pitfall: stale OAuth env vars after .env.api edit require `docker compose up -d --force-recreate api`.** The `env_file:` in `docker-compose.yml` is read only on container creation. `restart` reuses the existing container's env. Symptom: `GET /api/auth/providers` keeps reporting `google: false` even though `GOOGLE_OAUTH_CLIENT_IDS` is in `.env.api` because the running process's `os.environ` doesn't see the new value. Same idiom as the APNS env-var rule (see Push Notifications section).
+
 **Open phases (see `docs/auth-access-model.md`):**
-- C: Sign in with Apple + Google (web + Capacitor).
 - D: Passkey (WebAuthn).
 - E: `groups.privacy` column, new groups default private, sign-in
   required for private creation.
@@ -1056,6 +1078,7 @@ migration content.
   target_poll_id.
 - H: per-vote anonymity flags (`votes.anonymous_to_peers`,
   `anonymous_to_creator`) + read-time filter audit.
+- C-follow-up: native Capacitor flows for Apple + Google on iOS.
 
 ---
 

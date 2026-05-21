@@ -1,13 +1,18 @@
-"""Auth endpoints — Phase A (foundation) + Phase B (magic link).
+"""Auth endpoints — Phase A (foundation) + Phase B (magic link)
++ Phase C (Apple / Google OAuth).
 
 `POST /api/auth/magic-link/request`  start magic-link sign-in
 `POST /api/auth/magic-link/verify`   consume token, issue session
+`POST /api/auth/oauth/google`        verify Google ID token, issue session
+`POST /api/auth/oauth/apple`         verify Apple ID token, issue session
+`GET  /api/auth/providers`           list which sign-in methods are wired up
 `GET  /api/auth/me`                   resolve current session → user profile
 `POST /api/auth/sign-out`             revoke current session, unlink browser
 
-Phases C (Apple/Google OAuth) and D (Passkey) will add sibling routes
-that share `services/auth.py`'s `resolve_or_merge_user` +
-`issue_session` + `link_browser_to_user` helpers.
+Phase D (Passkey) will add a sibling route that shares
+`services/auth.py`'s `resolve_or_merge_user` + `issue_session` +
+`link_browser_to_user` helpers — the OAuth routes already follow that
+pattern.
 
 Identity resolution for the current request is done by
 `IdentityMiddleware` in `server/middleware.py` (sets
@@ -32,19 +37,25 @@ from middleware import (
     user_id_from_request as _user_id,
 )
 from services.auth import (
+    CompletedSignIn,
+    complete_sign_in,
     consume_magic_link,
     email_throttled,
     is_valid_email,
     issue_magic_link,
-    issue_session,
-    link_browser_to_user,
     load_user_profile,
     normalize_email,
-    resolve_or_merge_user,
     revoke_session,
     unlink_browser,
 )
 from services.email import email_configured, send_magic_link
+from services.oauth import (
+    OAuthVerificationError,
+    apple_configured,
+    google_configured,
+    verify_apple_id_token,
+    verify_google_id_token,
+)
 
 log = logging.getLogger("auth")
 
@@ -85,6 +96,32 @@ class SessionResponse(BaseModel):
     session_token: str
     expires_at: datetime
     user: UserSummary
+
+
+class OAuthSignInBody(BaseModel):
+    """ID-token bearing payload from a successful OAuth flow on the FE.
+
+    Both Google and Apple use the same shape: a single `id_token` JWT
+    signed by the provider. The verifier in `services/oauth.py` checks
+    signature + issuer + audience + expiry against the provider's JWKS
+    and pulls `sub` (stable user id) + `email` (when present and
+    verified) from the claims. The FE never sends user-controlled
+    identity strings here — everything the server trusts comes from the
+    JWT itself.
+    """
+
+    id_token: str = Field(min_length=32, max_length=4096)
+
+
+class ProvidersResponse(BaseModel):
+    """Which sign-in providers this API tier has configured. The FE
+    hides OAuth buttons when the matching provider is unconfigured so
+    users don't tap an inert button. Email is always available (the
+    Resend fallback logs to stdout when RESEND_API_KEY is unset)."""
+
+    email: bool
+    google: bool
+    apple: bool
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +209,22 @@ def request_magic_link(req: MagicLinkRequestBody, request: Request):
     )
 
 
+def _signin_response(completed: CompletedSignIn) -> SessionResponse:
+    """Wrap `services.auth.CompletedSignIn` in the FE-facing response
+    shape. Every sign-in route — magic-link verify, OAuth providers,
+    eventual passkey — funnels through here so they don't drift."""
+    return SessionResponse(
+        session_token=completed.session.token,
+        expires_at=completed.session.expires_at,
+        user=UserSummary(
+            user_id=completed.profile.user_id,
+            email=completed.profile.email,
+            providers=completed.profile.providers,
+            created_at=completed.profile.created_at,
+        ),
+    )
+
+
 @router.post(
     "/magic-link/verify",
     response_model=SessionResponse,
@@ -183,9 +236,6 @@ def verify_magic_link(req: MagicLinkVerifyBody, request: Request):
     in by clicking the email on a different device than the one that
     requested the link links the CLICKING device, which matches user
     intent."""
-    browser_id = _browser_id(request)
-    user_agent = request.headers.get("user-agent")
-
     with get_db() as conn:
         consumed = consume_magic_link(conn, req.token)
         if not consumed:
@@ -193,34 +243,129 @@ def verify_magic_link(req: MagicLinkVerifyBody, request: Request):
                 status_code=400,
                 detail="Invalid or expired sign-in link",
             )
-
-        resolved = resolve_or_merge_user(
+        completed = complete_sign_in(
             conn,
             provider="email",
             provider_user_id=consumed.email,
             email=consumed.email,
+            browser_id=_browser_id(request),
+            user_agent=request.headers.get("user-agent"),
         )
-        link_browser_to_user(
-            conn, user_id=resolved.user_id, browser_id=browser_id
-        )
-        session = issue_session(
-            conn,
-            user_id=resolved.user_id,
-            browser_id=browser_id,
-            user_agent=user_agent,
-        )
-        profile = load_user_profile(conn, resolved.user_id)
+    return _signin_response(completed)
 
-    assert profile is not None, "profile must exist immediately after issue"
-    return SessionResponse(
-        session_token=session.token,
-        expires_at=session.expires_at,
-        user=UserSummary(
-            user_id=profile.user_id,
-            email=profile.email,
-            providers=profile.providers,
-            created_at=profile.created_at,
-        ),
+
+# ---------------------------------------------------------------------------
+# OAuth (Apple + Google) — Phase C
+# ---------------------------------------------------------------------------
+#
+# Both endpoints share a flow:
+#   1. FE drives the provider's sign-in UI and obtains an ID token.
+#   2. FE POSTs the raw id_token here.
+#   3. `services/oauth.py` verifies the token against the provider's
+#      JWKS (signature + iss + aud + exp) and extracts the verified
+#      identity.
+#   4. `resolve_or_merge_user` keys the identity into our users table —
+#      either matching the existing (provider, sub) row OR merging by
+#      verified email across providers OR minting a new user.
+#   5. `link_browser_to_user` + `issue_session` issue the bearer token
+#      the FE stores for subsequent requests.
+#
+# The provider-specific logic lives in `services/oauth.py`; the router
+# is intentionally thin so adding a third OIDC provider (e.g. Microsoft)
+# would be a 10-line addition here.
+
+
+def _handle_oauth_signin(
+    *,
+    request: Request,
+    id_token: str,
+    provider_label: str,
+    configured: bool,
+    verify: callable,
+) -> SessionResponse:
+    """Provider-agnostic OAuth handler. The verify endpoint passes its
+    provider-specific `configured()` flag + `verify(id_token)` function;
+    we handle the 503 / 400 / session-issuance rhythm uniformly. Adding
+    a third OIDC provider is one route handler + one row of imports."""
+    if not configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"{provider_label} sign-in isn't available on this server",
+        )
+    try:
+        identity = verify(id_token)
+    except OAuthVerificationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    with get_db() as conn:
+        completed = complete_sign_in(
+            conn,
+            provider=identity.provider,
+            provider_user_id=identity.provider_user_id,
+            email=identity.email,
+            browser_id=_browser_id(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+    return _signin_response(completed)
+
+
+@router.post("/oauth/google", response_model=SessionResponse)
+def sign_in_with_google(req: OAuthSignInBody, request: Request):
+    """Verify a Google OIDC ID token and issue a session.
+
+    Failure cases:
+      400 — token failed signature / issuer / audience / expiry checks,
+            or `sub` is missing. Message is user-safe.
+      503 — Google OAuth isn't configured on this API tier
+            (GOOGLE_OAUTH_CLIENT_IDS unset). FE should hide the button
+            but a stale bundle that still tries it gets a clear 503.
+    """
+    return _handle_oauth_signin(
+        request=request,
+        id_token=req.id_token,
+        provider_label="Google",
+        configured=google_configured(),
+        verify=verify_google_id_token,
+    )
+
+
+@router.post("/oauth/apple", response_model=SessionResponse)
+def sign_in_with_apple(req: OAuthSignInBody, request: Request):
+    """Verify an Apple Sign In ID token and issue a session.
+
+    Apple's quirks vs Google:
+      - Email is sent on the FIRST sign-in only; subsequent sign-ins
+        carry just `sub`. We resolve via the (provider, sub) lookup
+        regardless of email presence, so repeat sign-ins still land on
+        the right user.
+      - "Hide my email" relays produce a stable per-(user, RP) proxy
+        address. Treated identically to a real email for merge purposes.
+      - Token is ES256-signed (not RS256). The verifier pins the
+        algorithm to keep a hostile token from switching families.
+    """
+    return _handle_oauth_signin(
+        request=request,
+        id_token=req.id_token,
+        provider_label="Apple",
+        configured=apple_configured(),
+        verify=verify_apple_id_token,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Providers (capability discovery)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/providers", response_model=ProvidersResponse)
+def get_providers():
+    """Report which sign-in methods this API tier supports. Read by the
+    FE on first paint of the sign-in modal so OAuth buttons can hide
+    when the provider isn't configured (avoids the user tapping an
+    inert button and seeing a 503)."""
+    return ProvidersResponse(
+        email=True,
+        google=google_configured(),
+        apple=apple_configured(),
     )
 
 
