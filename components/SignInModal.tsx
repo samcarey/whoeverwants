@@ -126,8 +126,15 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
     setError(null);
     setOAuthSubmitting("apple");
     try {
+      console.warn("[apple-signin] starting appleSignIn()");
       const idToken = await appleSignIn();
-      await apiSignInWithOAuth("apple", idToken);
+      console.warn(
+        `[apple-signin] got id_token (len=${idToken?.length ?? 0}); POSTing to /oauth/apple`,
+      );
+      const res = await apiSignInWithOAuth("apple", idToken);
+      console.warn(
+        `[apple-signin] POST succeeded; session_token len=${res.session_token?.length ?? 0} user.user_id=${res.user?.user_id ?? "(none)"} email=${res.user?.email ?? "(none)"} providers=${(res.user?.providers ?? []).join(",")}`,
+      );
       onClose();
     } catch (err) {
       // Apple rejects on user-cancel with various error shapes across
@@ -138,10 +145,21 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
       //     (Apple's ASAuthorizationError.canceled raw code).
       const message = err instanceof Error ? err.message : String(err);
       const rawError = (err as { error?: string })?.error;
-      if (
+      const isCancel =
         /popup_closed_by_user|user_cancelled|cancell?ed|error 1001/i.test(message) ||
-        (typeof rawError === "string" && /cancell?ed/i.test(rawError))
-      ) {
+        (typeof rawError === "string" && /cancell?ed/i.test(rawError));
+      // SignInModal swallows the error into a UI state setter, so
+      // without this the client log buffer was empty when sign-in
+      // silently failed. Forward every non-cancel error so the next
+      // failure leaves a trail.
+      if (!isCancel) {
+        const status = err instanceof ApiError ? err.status : undefined;
+        const name = err instanceof Error ? err.name : typeof err;
+        console.warn(
+          `[apple-signin] caught error: name=${name} status=${status} message=${message} rawError=${rawError ?? "(none)"}`,
+        );
+      }
+      if (isCancel) {
         setError(null);
       } else {
         setError(
