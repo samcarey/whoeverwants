@@ -350,6 +350,9 @@ def build_registration_options(
 @dataclass
 class RegisteredPasskey:
     credential_id: str
+    user_id: str  # the user this passkey is now bound to — important for the
+                  # anonymous registration path where the caller doesn't know
+                  # the user_id ahead of time.
     aaguid: str | None
     transports: str | None
 
@@ -357,7 +360,7 @@ class RegisteredPasskey:
 def complete_registration(
     conn,
     *,
-    user_id: str,
+    request_user_id: str | None,
     browser_id: str,
     rp_id: str,
     origin: str,
@@ -368,6 +371,17 @@ def complete_registration(
     credential. Raises `PasskeyError` on any failure with a user-safe
     message — the router converts that into a 400.
 
+    `request_user_id` is the user_id resolved by the IdentityMiddleware,
+    or None for an anonymous registration (passkey-as-account-creation
+    flow). The user_id the credential is bound to is read from the
+    challenge row's stashed user_id — that's the one
+    `build_registration_options` minted at step 1, regardless of
+    whether the request was signed in or anonymous.
+
+    When the request IS signed in, we additionally verify the stashed
+    user_id matches `request_user_id` so a token swapping mid-ceremony
+    can't bind a credential to an unintended account.
+
     On success, also inserts the `user_identities` row for
     `provider='passkey'` so cross-provider account-merge by verified
     email continues to work (the email lookup in `resolve_or_merge_user`
@@ -375,10 +389,16 @@ def complete_registration(
     stash = _consume_challenge(conn, browser_id=browser_id, kind="registration")
     if not stash:
         raise PasskeyError("Registration session expired. Try again.")
-    if stash.user_id != user_id:
-        # Someone else's challenge — should never happen since both
-        # come from request.state, but enforce defensively.
+    if not stash.user_id:
+        # Registration challenges are always stashed with a user_id (the
+        # one minted at options time). A missing value means the stash
+        # was tampered with.
+        raise PasskeyError("Registration session corrupted. Try again.")
+    if request_user_id and stash.user_id != request_user_id:
+        # Authenticated request, but the challenge belongs to a different
+        # user. Bearer token was swapped between options and verify.
         raise PasskeyError("Registration session mismatch. Try again.")
+    user_id = stash.user_id
 
     try:
         verification = verify_registration_response(
@@ -453,6 +473,7 @@ def complete_registration(
 
     return RegisteredPasskey(
         credential_id=credential_id,
+        user_id=user_id,
         aaguid=aaguid,
         transports=transports,
     )

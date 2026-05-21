@@ -432,13 +432,38 @@ class TestProvidersEndpoint:
 
 
 class TestPasskeyRegistrationOptions:
-    def test_requires_signed_in(self, client, browser_id):
+    def test_anonymous_mints_user_and_returns_options(
+        self, client, browser_id, db_conn
+    ):
+        """Anonymous registration (no Authorization header): server mints
+        a fresh user_id up front, returns options dict with that
+        user_id encoded into the WebAuthn `user.id` field. The matching
+        user_identities row is written at verify time, so the row will
+        be orphan-cleaned if verify is never called (5-min challenge
+        TTL expires; orphan user remains until manual cleanup)."""
         resp = client.post(
             "/api/auth/passkey/registration/options",
             json={},
             headers=_bid_headers(browser_id),
         )
-        assert resp.status_code == 401
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "challenge" in body
+        assert body["user"]["id"]
+        # excludeCredentials is empty for a fresh user.
+        assert body.get("excludeCredentials") == []
+        # Confirm a `users` row was minted.
+        challenge_row = db_conn.execute(
+            "SELECT user_id FROM passkey_challenges WHERE browser_id = %s::uuid AND kind = 'registration'",
+            (browser_id,),
+        ).fetchone()
+        assert challenge_row is not None
+        assert challenge_row["user_id"] is not None
+        user_row = db_conn.execute(
+            "SELECT id FROM users WHERE id = %s::uuid",
+            (str(challenge_row["user_id"]),),
+        ).fetchone()
+        assert user_row is not None
 
     def test_returns_options_when_signed_in(
         self, client, browser_id, db_conn
@@ -463,18 +488,13 @@ class TestPasskeyRegistrationOptions:
         assert body.get("excludeCredentials") == []
 
     def test_503_when_passkeys_disabled(
-        self, client, browser_id, db_conn, monkeypatch
+        self, client, browser_id, monkeypatch
     ):
-        # Auth check fires BEFORE the capability check in the current
-        # implementation since `_require_passkey_configured` is called
-        # first — verify behavior matches that.
         monkeypatch.setenv("PASSKEYS_DISABLED", "1")
-        user_id = _create_user(db_conn)
-        token = _issue_session_for(user_id, browser_id)
         resp = client.post(
             "/api/auth/passkey/registration/options",
             json={},
-            headers=_bearer_headers(browser_id, token),
+            headers=_bid_headers(browser_id),
         )
         assert resp.status_code == 503
 
@@ -528,12 +548,11 @@ class TestPasskeyAuthenticationOptions:
 
 class TestPasskeyVerifyInvalidInput:
     def test_registration_verify_400_without_options_first(
-        self, client, browser_id, db_conn
+        self, client, browser_id
     ):
         # Verify with no prior options call: challenge stash is empty,
-        # so the helper raises PasskeyError → 400.
-        user_id = _create_user(db_conn)
-        token = _issue_session_for(user_id, browser_id)
+        # so the helper raises PasskeyError → 400. Anonymous request
+        # path — registration is no longer auth-gated.
         resp = client.post(
             "/api/auth/passkey/registration/verify",
             json={
@@ -545,7 +564,7 @@ class TestPasskeyVerifyInvalidInput:
                 },
                 "name": None,
             },
-            headers=_bearer_headers(browser_id, token),
+            headers=_bid_headers(browser_id),
         )
         assert resp.status_code == 400
         assert "expired" in resp.json()["detail"].lower()

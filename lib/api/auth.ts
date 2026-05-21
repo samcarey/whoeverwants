@@ -56,6 +56,13 @@ export interface PasskeyRegistrationResult {
   credential_id: string;
   aaguid: string | null;
   transports: string | null;
+  /**
+   * Set when the registration was anonymous (passkey-as-account-creation
+   * flow). The FE persists this session so subsequent fetches are
+   * authenticated. For "Add a passkey" from Settings (signed in
+   * already), session is null.
+   */
+  session: SessionResponse | null;
 }
 
 export async function apiRequestMagicLink(
@@ -173,16 +180,27 @@ export async function apiPasskeyRegistrationOptions(): Promise<unknown> {
 }
 
 /** Step 2 of registration: post the attestation back for verification.
- *  Returns the saved credential's id + metadata so the FE can update its
- *  local passkey list without a follow-up GET. */
+ *  Returns the saved credential's id + metadata so the FE can update
+ *  its local passkey list without a follow-up GET. When the server
+ *  also issues a session (anonymous registration path), that session
+ *  is persisted locally so subsequent fetches attach the bearer token
+ *  — the caller doesn't have to do anything special for the new
+ *  account creation flow vs the add-to-existing-account flow. */
 export async function apiPasskeyRegistrationVerify(
   credential: unknown,
   name: string | null,
 ): Promise<PasskeyRegistrationResult> {
-  return authFetch<PasskeyRegistrationResult>("/passkey/registration/verify", {
-    method: "POST",
-    body: JSON.stringify({ credential, name }),
-  });
+  const res = await authFetch<PasskeyRegistrationResult>(
+    "/passkey/registration/verify",
+    {
+      method: "POST",
+      body: JSON.stringify({ credential, name }),
+    },
+  );
+  if (res.session) {
+    saveSession(res.session.session_token, res.session.user);
+  }
+  return res;
 }
 
 /** Step 1 of authentication: ask the server for a fresh challenge +

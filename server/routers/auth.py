@@ -550,30 +550,56 @@ def _require_browser_id(request: Request) -> str:
 def passkey_registration_options(
     _: PasskeyRegistrationOptionsBody, request: Request
 ) -> dict:
-    """Mint a fresh registration challenge for the signed-in user.
+    """Mint a fresh registration challenge.
 
-    Requires sign-in: registration ADDS a new credential to an
-    existing account. A user with no other identity method can't
-    bootstrap a passkey via this endpoint — they sign in with magic
-    link / Google / Apple first, then register a passkey from
-    Settings.
+    Two paths converge here:
+      - Signed-in caller → ADD a passkey to the existing account. The
+        request's user_id is used; user_identities for that account get
+        a new 'passkey' row at verify time.
+      - Anonymous caller → CREATE a brand-new account with a passkey as
+        its only identity. A fresh `users` row is minted up front so
+        the registration options can encode the user_id correctly (the
+        WebAuthn `user.id` field needs to be stable across the
+        ceremony — the credential is bound to it). The matching
+        session is issued at verify time, not here.
+
+    Account-recovery tradeoff: an anonymous passkey-only account has
+    no email on file, so losing the device with the only passkey means
+    losing the account. The FE flow encourages adding a recovery
+    email after the fact, but doesn't enforce it.
     """
     _require_passkey_configured()
-    user_id = _require_signed_in(request)
     browser_id = _require_browser_id(request)
     rp_id = _resolve_rp_id(request)
+    request_user_id = _user_id(request)
     with get_db() as conn:
-        profile = load_user_profile(conn, user_id)
-        if not profile:
-            # Should never happen — _require_signed_in guarantees the
-            # session resolves to a user — but be explicit.
-            raise HTTPException(status_code=401, detail="Account no longer exists")
-        # The "user label" is what the OS shows in the passkey prompt
-        # ("Sign in to WhoeverWants as <label>"). Prefer the user's
-        # email; fall back to a short user_id slice if they're
-        # passkey-only with no email (rare, but possible if they merge
-        # in via a passkey on a future flow).
-        user_label = profile.email or f"User {user_id[:8]}"
+        if request_user_id:
+            profile = load_user_profile(conn, request_user_id)
+            if not profile:
+                # Bearer token resolves to a non-existent user. Treat
+                # as anonymous and mint fresh below.
+                request_user_id = None
+        if request_user_id:
+            user_id = request_user_id
+            # The "user label" is what the OS shows in the passkey prompt
+            # ("Sign in to WhoeverWants as <label>"). Prefer the user's
+            # email; fall back to a short user_id slice.
+            user_label = profile.email or f"User {user_id[:8]}"
+        else:
+            # Anonymous: mint a fresh user up front. The WebAuthn user.id
+            # field needs to be stable across the ceremony — credentials
+            # are bound to it on the authenticator — so we can't defer
+            # the user creation to verify time without playing games with
+            # placeholder ids. Abandoned ceremonies (user closes the
+            # prompt before completing) leave an orphan row in `users`
+            # with no `user_identities` row; periodic cleanup query is
+            # `DELETE FROM users WHERE NOT EXISTS (SELECT 1 FROM
+            # user_identities WHERE user_id = users.id)`.
+            new_row = conn.execute(
+                "INSERT INTO users DEFAULT VALUES RETURNING id"
+            ).fetchone()
+            user_id = str(new_row["id"])
+            user_label = f"User {user_id[:8]}"
         options = build_registration_options(
             conn,
             user_id=user_id,
@@ -590,33 +616,56 @@ def passkey_registration_verify(
 ) -> dict:
     """Verify the registration attestation and persist the credential.
 
-    Returns a minimal `{credential_id, name}` shape so the FE can
-    update its local passkey list without a follow-up GET. On any
-    verification failure raises 400 with a user-safe message from
-    `PasskeyError`.
+    Returns `{credential_id, aaguid, transports, session?}`. The
+    optional `session` is set when the request was anonymous (passkey-
+    as-account-creation flow) — the FE then persists the bearer token
+    so subsequent fetches are authenticated. For the signed-in
+    "Add a passkey" path the session is null (the existing session
+    keeps working).
+
+    On any verification failure raises 400 with a user-safe message
+    from `PasskeyError`.
     """
     _require_passkey_configured()
-    user_id = _require_signed_in(request)
     browser_id = _require_browser_id(request)
     rp_id = _resolve_rp_id(request)
     origin = _resolve_fe_origin(request)
+    request_user_id = _user_id(request)
+    issued_session: SessionResponse | None = None
     try:
         with get_db() as conn:
             registered = complete_registration(
                 conn,
-                user_id=user_id,
+                request_user_id=request_user_id,
                 browser_id=browser_id,
                 rp_id=rp_id,
                 origin=origin,
                 credential_json=req.credential,
                 name=req.name,
             )
+            # Anonymous registration → issue a session via the shared
+            # complete_sign_in helper so the FE doesn't have to do a
+            # separate sign-in round-trip. Uses the SAME provider /
+            # provider_user_id as complete_registration writes (ON
+            # CONFLICT DO NOTHING in resolve_or_merge_user makes the
+            # duplicate identity-row insert a no-op).
+            if not request_user_id:
+                completed = complete_sign_in(
+                    conn,
+                    provider="passkey",
+                    provider_user_id=registered.credential_id,
+                    email=None,
+                    browser_id=browser_id,
+                    user_agent=request.headers.get("user-agent"),
+                )
+                issued_session = _signin_response(completed)
     except PasskeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {
         "credential_id": registered.credential_id,
         "aaguid": registered.aaguid,
         "transports": registered.transports,
+        "session": issued_session.model_dump(mode="json") if issued_session else None,
     }
 
 

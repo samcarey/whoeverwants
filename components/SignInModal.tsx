@@ -18,6 +18,8 @@ import {
 import {
   PasskeyCancelledError,
   passkeySupported,
+  platformPasskeySupported,
+  registerPasskey,
   signInWithPasskey,
 } from "@/lib/passkeys";
 import { resolveActiveTheme } from "@/lib/theme";
@@ -50,8 +52,15 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
   const [serverProviders, setServerProviders] =
     useState<AuthProvidersResponse | null>(null);
   const [oauthSubmitting, setOAuthSubmitting] = useState<
-    "google" | "apple" | "passkey" | null
+    "google" | "apple" | "passkey" | "passkey-register" | null
   >(null);
+  // Platform-authenticator availability gates the "Create account
+  // with a passkey" button — we don't want to surface it on devices
+  // without Touch ID / Face ID / Windows Hello / etc. since the
+  // ceremony would fall back to whatever roaming key the browser can
+  // muster and most users without a platform authenticator also don't
+  // have a YubiKey.
+  const [platformPasskey, setPlatformPasskey] = useState<boolean | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const googleButtonRef = useRef<HTMLDivElement>(null);
   const openedAtRef = useRef<number>(0);
@@ -74,11 +83,23 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
       })
       .catch(() => {
         // Network failure → assume neither OAuth provider is available
-        // on this tier, but keep the magic-link path visible.
+        // on this tier, but keep the magic-link path visible. Same
+        // graceful degradation for passkey: server is the source of
+        // truth, and a missing field reads as false.
         if (!cancelled) {
-          setServerProviders({ email: true, google: false, apple: false });
+          setServerProviders({
+            email: true,
+            google: false,
+            apple: false,
+            passkey: false,
+          });
         }
       });
+    // Resolve platform-authenticator availability in parallel —
+    // independent of server capability, governed by the OS / browser.
+    platformPasskeySupported().then((ok) => {
+      if (!cancelled) setPlatformPasskey(ok);
+    });
     return () => {
       cancelled = true;
     };
@@ -199,6 +220,31 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
     }
   };
 
+  const handlePasskeyRegister = async () => {
+    setError(null);
+    setOAuthSubmitting("passkey-register");
+    try {
+      // The server's anonymous-registration path issues a session
+      // alongside the credential; `registerPasskey` → `apiPasskey
+      // RegistrationVerify` persists it via `saveSession`. By the
+      // time we return here the FE is signed in.
+      await registerPasskey(null);
+      onClose();
+    } catch (err) {
+      if (err instanceof PasskeyCancelledError) {
+        setError(null);
+      } else {
+        setError(
+          err instanceof ApiError && err.status === 400
+            ? err.message || "Couldn't create your account."
+            : "Couldn't create an account with a passkey. Try again in a moment."
+        );
+      }
+    } finally {
+      setOAuthSubmitting(null);
+    }
+  };
+
   // Suppress backdrop dismissal in the first 400ms after open so the
   // synthesized click after a long-press / tap that opened the modal
   // doesn't immediately close it. Mirrors FollowUpModal's pattern.
@@ -284,6 +330,14 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
   // platform authenticator specifically.
   const showPasskey =
     !!serverProviders?.passkey && passkeySupported();
+  // "Create account with a passkey" only when the device has a
+  // platform authenticator. Roaming keys (USB / Bluetooth) work but
+  // most users without a platform authenticator also don't have one,
+  // and showing the button to them just leads to "your device can't"
+  // dialogs. The sign-in button stays available either way — they
+  // might have a passkey on a paired phone.
+  const showPasskeyRegister =
+    showPasskey && platformPasskey === true;
   const showAnyAlt = showGoogle || showApple || showPasskey;
 
   return (
@@ -401,6 +455,18 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
                   {oauthSubmitting === "passkey"
                     ? "Signing in…"
                     : "Sign in with a passkey"}
+                </button>
+              )}
+              {showPasskeyRegister && (
+                <button
+                  type="button"
+                  onClick={handlePasskeyRegister}
+                  disabled={oauthSubmitting !== null}
+                  className="w-full mb-3 text-sm text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                >
+                  {oauthSubmitting === "passkey-register"
+                    ? "Creating account…"
+                    : "New here? Create an account with a passkey"}
                 </button>
               )}
               {showAnyAlt && (
