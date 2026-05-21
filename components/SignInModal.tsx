@@ -2,20 +2,48 @@
 
 import { useEffect, useRef, useState } from "react";
 import ModalPortal from "./ModalPortal";
-import { apiRequestMagicLink } from "@/lib/api";
+import {
+  apiGetAuthProviders,
+  apiRequestMagicLink,
+  apiSignInWithApple,
+  apiSignInWithGoogle,
+} from "@/lib/api";
 import { ApiError } from "@/lib/api";
+import {
+  appleConfigured,
+  appleSignIn,
+  googleConfigured,
+  isWebOAuthAvailable,
+  renderGoogleButton,
+} from "@/lib/oauth";
 
 interface SignInModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+function getThemePreference(): "light" | "dark" {
+  if (typeof document === "undefined") return "light";
+  // `data-theme` is stamped by the pre-hydration script in app/layout.tsx;
+  // if it's missing (system theme), fall back to media-query.
+  const explicit = document.documentElement.getAttribute("data-theme");
+  if (explicit === "dark") return "dark";
+  if (explicit === "light") return "light";
+  return window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
 /**
- * Phase B: magic-link sign-in modal. Single email field + Send button.
- * On send, hands off to the user's email — the magic link in the
- * inbox takes over (clicking it lands on `/auth/verify?token=...` and
- * issues the session there). This modal closes after a successful
- * request and shows a "check your email" toast in the settings page.
+ * Phase B + C: magic-link + OAuth sign-in modal.
+ *
+ * Magic-link is always available (the Resend fallback logs to stdout
+ * when API key isn't set, so dev still works); Google + Apple buttons
+ * render only when BOTH client-side env vars (NEXT_PUBLIC_*_CLIENT_ID)
+ * and server-side env vars (GOOGLE_OAUTH_CLIENT_IDS etc.) are
+ * configured. The capability discovery happens via
+ * `apiGetAuthProviders()` on mount.
  *
  * Stacks above the create-poll bottom sheet (z-60) and the
  * ConfirmationModal (z-70) via z-80, in case a future flow opens it
@@ -27,8 +55,111 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
   const [sent, setSent] = useState(false);
   const [emailConfigured, setEmailConfigured] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [serverProviders, setServerProviders] = useState<{
+    google: boolean;
+    apple: boolean;
+  } | null>(null);
+  const [oauthSubmitting, setOAuthSubmitting] = useState<
+    "google" | "apple" | null
+  >(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const googleButtonRef = useRef<HTMLDivElement>(null);
   const openedAtRef = useRef<number>(0);
+
+  // Resolve server-side provider capability once per modal open. The
+  // returned values are cached by the fetch layer's normal HTTP cache
+  // headers; we don't memoize at the module level because the API tier
+  // can change between page loads (PWA switching networks, dev tier
+  // gaining a new env var).
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    apiGetAuthProviders()
+      .then((p) => {
+        if (!cancelled) {
+          setServerProviders({ google: p.google, apple: p.apple });
+        }
+      })
+      .catch(() => {
+        // Network failure → assume neither OAuth provider is available
+        // on this tier, but keep the magic-link path visible.
+        if (!cancelled) setServerProviders({ google: false, apple: false });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  // Google's SDK renders its own branded button into a container we
+  // supply. Initialize it whenever the container mounts AND the server
+  // confirms Google is configured. The Promise resolves with the
+  // id_token on first successful sign-in; subsequent renders are no-ops
+  // (the SDK is initialized once).
+  useEffect(() => {
+    if (!isOpen || sent) return;
+    if (!isWebOAuthAvailable()) return;
+    if (!googleConfigured() || !serverProviders?.google) return;
+    const el = googleButtonRef.current;
+    if (!el) return;
+    let cancelled = false;
+    el.innerHTML = ""; // clean up any prior render before re-renders.
+    renderGoogleButton(el, getThemePreference())
+      .then(async (idToken) => {
+        if (cancelled) return;
+        setOAuthSubmitting("google");
+        setError(null);
+        try {
+          await apiSignInWithGoogle(idToken);
+          onClose();
+        } catch (err) {
+          setError(
+            err instanceof ApiError && err.status === 400
+              ? err.message || "Google sign-in failed."
+              : "Couldn't sign you in with Google. Try again in a moment."
+          );
+        } finally {
+          setOAuthSubmitting(null);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(
+          err instanceof Error ? err.message : "Google sign-in failed to load."
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, sent, serverProviders?.google, onClose]);
+
+  const handleAppleSignIn = async () => {
+    setError(null);
+    setOAuthSubmitting("apple");
+    try {
+      const idToken = await appleSignIn();
+      await apiSignInWithApple(idToken);
+      onClose();
+    } catch (err) {
+      // Apple's SDK throws with `error: 'popup_closed_by_user'` shape on
+      // cancel — treat as silent dismissal.
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        /popup_closed_by_user|user_cancelled|cancelled/i.test(message) ||
+        // SDK rejection on cancel sometimes has shape `{ error: 'popup_closed_by_user' }`.
+        (err as { error?: string })?.error?.includes?.("cancel")
+      ) {
+        setError(null);
+      } else {
+        setError(
+          err instanceof ApiError && err.status === 400
+            ? err.message || "Apple sign-in failed."
+            : "Couldn't sign you in with Apple. Try again in a moment."
+        );
+      }
+    } finally {
+      setOAuthSubmitting(null);
+    }
+  };
 
   // Suppress backdrop dismissal in the first 400ms after open so the
   // synthesized click after a long-press / tap that opened the modal
@@ -153,38 +284,96 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
               </button>
             </div>
           ) : (
-            <form onSubmit={handleSubmit}>
+            <>
               <h2 className="text-lg font-semibold mb-1">Sign in</h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                We&apos;ll email you a one-tap sign-in link. No password
-                needed.
+                Pick a sign-in method. Your existing polls and groups stay
+                tied to this browser regardless.
               </p>
-              <input
-                ref={inputRef}
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onBlur={(e) => setEmail(e.target.value.trim())}
-                disabled={submitting}
-                maxLength={254}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white mb-3"
-              />
-              {error && (
-                <p className="text-sm text-red-600 dark:text-red-400 mb-3">
-                  {error}
-                </p>
-              )}
-              <button
-                type="submit"
-                disabled={submitting || !email.trim()}
-                className="w-full rounded-full bg-blue-600 hover:bg-blue-700 text-white h-11 font-medium disabled:opacity-50"
-              >
-                {submitting ? "Sending…" : "Send sign-in link"}
-              </button>
-            </form>
+
+              {/* OAuth buttons — only render when both the client bundle
+                  and the server tier have the provider configured. */}
+              {isWebOAuthAvailable() &&
+                serverProviders?.google &&
+                googleConfigured() && (
+                  <div className="mb-3">
+                    <div
+                      ref={googleButtonRef}
+                      className="flex justify-center min-h-[44px]"
+                      aria-label="Sign in with Google"
+                    />
+                  </div>
+                )}
+              {isWebOAuthAvailable() &&
+                serverProviders?.apple &&
+                appleConfigured() && (
+                  <button
+                    type="button"
+                    onClick={handleAppleSignIn}
+                    disabled={oauthSubmitting !== null}
+                    className="w-full mb-3 flex items-center justify-center gap-2 rounded-md h-11 font-medium bg-black text-white dark:bg-white dark:text-black disabled:opacity-50"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      aria-hidden
+                    >
+                      <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
+                    </svg>
+                    {oauthSubmitting === "apple"
+                      ? "Signing in…"
+                      : "Sign in with Apple"}
+                  </button>
+                )}
+
+              {/* "or" divider between OAuth and magic link, only when at
+                  least one OAuth button is visible. */}
+              {isWebOAuthAvailable() &&
+                ((serverProviders?.google && googleConfigured()) ||
+                  (serverProviders?.apple && appleConfigured())) && (
+                  <div className="flex items-center gap-3 my-4">
+                    <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      or
+                    </span>
+                    <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                  </div>
+                )}
+
+              <form onSubmit={handleSubmit}>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Email me a sign-in link
+                </label>
+                <input
+                  ref={inputRef}
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={(e) => setEmail(e.target.value.trim())}
+                  disabled={submitting || oauthSubmitting !== null}
+                  maxLength={254}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white mb-3"
+                />
+                {error && (
+                  <p className="text-sm text-red-600 dark:text-red-400 mb-3">
+                    {error}
+                  </p>
+                )}
+                <button
+                  type="submit"
+                  disabled={
+                    submitting || !email.trim() || oauthSubmitting !== null
+                  }
+                  className="w-full rounded-full bg-blue-600 hover:bg-blue-700 text-white h-11 font-medium disabled:opacity-50"
+                >
+                  {submitting ? "Sending…" : "Send sign-in link"}
+                </button>
+              </form>
+            </>
           )}
         </div>
       </div>

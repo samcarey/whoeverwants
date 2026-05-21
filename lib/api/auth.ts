@@ -29,6 +29,12 @@ export interface SessionResponse {
   user: SessionUser;
 }
 
+export interface AuthProvidersResponse {
+  email: boolean;
+  google: boolean;
+  apple: boolean;
+}
+
 export async function apiRequestMagicLink(
   email: string,
 ): Promise<MagicLinkRequestResponse> {
@@ -83,4 +89,47 @@ export async function apiSignOut(): Promise<void> {
  *  `apiGetMe()` to refresh from the server. */
 export function getCurrentUser(): SessionUser | null {
   return getCachedSessionUser();
+}
+
+// ---------------------------------------------------------------------------
+// Phase C: Apple + Google OAuth sign-in
+// ---------------------------------------------------------------------------
+
+/** Verify a Google OIDC ID token (obtained client-side via the Google
+ *  Identity Services SDK) against the server. On success, the server
+ *  resolves the user via the (provider, sub) lookup or merges by
+ *  verified email, issues a session, and we persist it locally. */
+export async function apiSignInWithGoogle(
+  idToken: string,
+): Promise<SessionResponse> {
+  const res = await authFetch<SessionResponse>("/oauth/google", {
+    method: "POST",
+    body: JSON.stringify({ id_token: idToken }),
+  });
+  saveSession(res.session_token, res.user);
+  return res;
+}
+
+/** Same shape as `apiSignInWithGoogle` for Apple. The Apple flow only
+ *  carries the user's email on the first sign-in — repeat sign-ins
+ *  carry just `sub`, which the server matches against the existing
+ *  identity row. */
+export async function apiSignInWithApple(
+  idToken: string,
+): Promise<SessionResponse> {
+  const res = await authFetch<SessionResponse>("/oauth/apple", {
+    method: "POST",
+    body: JSON.stringify({ id_token: idToken }),
+  });
+  saveSession(res.session_token, res.user);
+  return res;
+}
+
+/** Capability discovery — which sign-in methods this API tier has
+ *  configured. Used by the SignInModal to hide OAuth buttons when the
+ *  server isn't wired up to verify them. Independent of client-side
+ *  configuration (NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID etc.); both must
+ *  be true for the button to function end-to-end. */
+export async function apiGetAuthProviders(): Promise<AuthProvidersResponse> {
+  return authFetch<AuthProvidersResponse>("/providers");
 }

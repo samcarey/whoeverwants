@@ -75,6 +75,13 @@ export {
   apiVerifyMagicLink,
   apiGetMe,
   apiSignOut,
+  apiSignInWithGoogle,
+  apiSignInWithApple,
+  apiGetAuthProviders,
   getCurrentUser,
 } from "./auth";
-export type { MagicLinkRequestResponse, SessionResponse } from "./auth";
+export type {
+  MagicLinkRequestResponse,
+  SessionResponse,
+  AuthProvidersResponse,
+} from "./auth";
