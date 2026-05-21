@@ -348,24 +348,27 @@ async function ensureAppleNativeInit(): Promise<void> {
     await SocialLogin.initialize({
       apple: {
         clientId,
-        // The @capgo/capacitor-social-login plugin FETCHES this URL during
-        // initialize() and rejects the whole login flow with "Invalid
-        // response code: 404" when it returns non-2xx. The plugin docs
-        // claim this field is unused on native iOS, but empirically it
-        // is used. The URL must be:
-        //   1. Registered as a Return URL on the Apple Service ID
-        //      (com.whoeverwants.signin → Configure → Return URLs).
-        //   2. Return 200 on a plain GET.
-        // Use the current origin — for the canary build that's
-        // https://latest.whoeverwants.com, for prod it's
-        // https://whoeverwants.com; both are registered with Apple AND
-        // return 200. Falls back to the prod URL when window is absent
-        // (defensive — this code path only runs in the iOS WebView so
-        // window is always present in practice).
+        // The @capgo/capacitor-social-login plugin GETs AND POSTs this URL
+        // during initialize() + login() and rejects the whole flow with
+        // "Invalid response code: NNN" when it returns non-2xx. The plugin
+        // docs claim this field is unused on native iOS, but empirically
+        // it is used. The URL must:
+        //   1. Live under a Return URL registered on the Apple Service ID
+        //      (com.whoeverwants.signin → Configure → Return URLs). Both
+        //      `https://whoeverwants.com` and `https://latest.whoeverwants.com`
+        //      are registered, so any path under either is fine.
+        //   2. Accept both GET AND POST and return 2xx. The bare origin
+        //      `/` returns 200 on GET but 405 on POST (Vercel's static page
+        //      handler doesn't accept POST). So we need a dedicated route.
+        // `/auth/apple/callback` is the Next.js route handler in
+        // `app/auth/apple/callback/route.ts` — accepts both methods,
+        // returns `{status: "ok"}`. The actual id_token verification
+        // happens on `/api/auth/oauth/apple` after the plugin hands the
+        // token to our JS, not here.
         redirectUrl:
           typeof window !== "undefined"
-            ? window.location.origin
-            : "https://whoeverwants.com",
+            ? `${window.location.origin}/auth/apple/callback`
+            : "https://whoeverwants.com/auth/apple/callback",
       },
     });
   })().catch((err) => {
