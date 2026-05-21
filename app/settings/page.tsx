@@ -12,7 +12,12 @@ import {
   cacheMyUserProfile,
   getCachedMyUserProfile,
   clearCachedMyUserProfile,
+  apiGetMe,
+  apiSignOut,
+  getCurrentUser,
 } from "@/lib/api";
+import { SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
+import SignInModal from "@/components/SignInModal";
 import { usePageReady } from "@/lib/usePageReady";
 import { detectAndSaveUserLocation, GeolocationDeniedError } from "@/lib/geolocation";
 import CompactNameField from "@/components/CompactNameField";
@@ -88,6 +93,46 @@ export default function SettingsPage() {
   const [imageSaving, setImageSaving] = useState(false);
   const [showDiscardImageConfirm, setShowDiscardImageConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Phase A+B: signed-in state. `currentUser` is seeded synchronously
+  // from the localStorage-cached profile so first paint already shows
+  // the signed-in row; the `apiGetMe()` round-trip below refreshes
+  // and detects server-side revocation.
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(() => getCurrentUser());
+  const [signInModalOpen, setSignInModalOpen] = useState(false);
+  const [signOutInFlight, setSignOutInFlight] = useState(false);
+
+  // Subscribe to session changes so sign-in (from the modal) and
+  // sign-out (from this page or anywhere else) flip the displayed state
+  // without a route navigation.
+  useEffect(() => {
+    const handler = () => setCurrentUser(getCurrentUser());
+    if (typeof window !== "undefined") {
+      window.addEventListener(SESSION_CHANGED_EVENT, handler);
+      return () => window.removeEventListener(SESSION_CHANGED_EVENT, handler);
+    }
+  }, []);
+
+  // Refresh from the server on mount — catches server-side revocation
+  // (different device signed out, account deleted, session expired).
+  useEffect(() => {
+    apiGetMe()
+      .then((user) => setCurrentUser(user))
+      .catch(() => {
+        // Treat as "not signed in" for the network-blip case; the
+        // cached value still drives the optimistic display.
+      });
+  }, []);
+
+  const handleSignOut = async () => {
+    if (signOutInFlight) return;
+    setSignOutInFlight(true);
+    try {
+      await apiSignOut();
+    } finally {
+      setSignOutInFlight(false);
+    }
+  };
 
   useEffect(() => {
     const savedName = getUserName();
@@ -478,6 +523,46 @@ export default function SettingsPage() {
         </p>
       </div>
 
+      {/* Account section — Phase A + B. Single-line row with the
+          signed-in email + Sign Out, or a Sign In CTA when anonymous.
+          Sits below Theme so it groups visually with the other
+          single-row settings. */}
+      <div className="mb-6">
+        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
+          <div className="flex items-center justify-between gap-3 h-12">
+            <span className="text-base font-normal shrink-0">Account</span>
+            {currentUser ? (
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-base font-normal text-gray-500 dark:text-gray-500 truncate">
+                  {currentUser.email || "Signed in"}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={signOutInFlight}
+                  className="text-sm text-red-600 dark:text-red-400 hover:underline disabled:opacity-50 shrink-0"
+                >
+                  {signOutInFlight ? "Signing out…" : "Sign out"}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSignInModalOpen(true)}
+                className="text-base font-normal text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Sign in
+              </button>
+            )}
+          </div>
+        </section>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          {currentUser
+            ? "Your polls and groups are tied to your account."
+            : "Sign in to keep your polls and groups across devices."}
+        </p>
+      </div>
+
       {message && (
         <div className={`mb-4 p-3 rounded-md text-sm ${
           message.type === 'success'
@@ -554,6 +639,11 @@ export default function SettingsPage() {
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
         onConfirm={discardImageChange}
         onCancel={() => setShowDiscardImageConfirm(false)}
+      />
+
+      <SignInModal
+        isOpen={signInModalOpen}
+        onClose={() => setSignInModalOpen(false)}
       />
     </div>
   );

@@ -1,0 +1,145 @@
+/**
+ * Phase A: client-side session token storage + cached user profile.
+ *
+ * Mirrors `lib/browserIdentity.ts`'s lazy-load pattern: cached in memory
+ * after first storage read; module-level memo so 50+ components calling
+ * `getSessionToken()` per render don't each touch localStorage.
+ *
+ * Storage backend: localStorage today. iOS Capacitor's WKWebView
+ * localStorage persists across app updates (and survives until the user
+ * explicitly clears app data), which is the right durability for a
+ * session token. A future upgrade to `@capacitor/preferences` (Keychain
+ * on iOS) would survive even data clears; deferred until Phase I.
+ *
+ * Token contents are opaque to the FE — the server stores only the
+ * sha256 hash. The raw token here is treated as a bearer credential and
+ * sent via `Authorization: Bearer <token>` on every API call (added in
+ * `lib/api/_internal.ts`).
+ */
+
+const TOKEN_KEY = 'session_token';
+const PROFILE_KEY = 'session_user';
+
+// Listener channel for sign-in / sign-out events. Components that
+// surface signed-in state (settings page header, future "you're now
+// linked to N polls" banner, etc.) subscribe to refresh without
+// requiring a prop drill.
+export const SESSION_CHANGED_EVENT = 'session:changed';
+
+export interface SessionUser {
+  user_id: string;
+  email: string | null;
+  providers: string[];
+  created_at: string; // ISO-8601
+}
+
+let cachedToken: string | null | undefined; // undefined = not yet read
+let cachedProfile: SessionUser | null | undefined;
+
+function readToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const v = localStorage.getItem(TOKEN_KEY);
+    return v && v.length >= 16 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function readProfile(): SessionUser | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && typeof parsed.user_id === 'string') {
+      return parsed as SessionUser;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeToken(value: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (value === null) localStorage.removeItem(TOKEN_KEY);
+    else localStorage.setItem(TOKEN_KEY, value);
+  } catch {
+    // Quota / privacy mode — accept the in-memory value and move on.
+  }
+}
+
+function writeProfile(value: SessionUser | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (value === null) localStorage.removeItem(PROFILE_KEY);
+    else localStorage.setItem(PROFILE_KEY, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+}
+
+function dispatchChange(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.dispatchEvent(new CustomEvent(SESSION_CHANGED_EVENT));
+  } catch {
+    // ignore (test env / old browsers)
+  }
+}
+
+/** Current session bearer token, or null if signed out / not yet signed in. */
+export function getSessionToken(): string | null {
+  if (cachedToken === undefined) cachedToken = readToken();
+  return cachedToken;
+}
+
+/** Cached user profile from the last sign-in, or null. Refreshed on
+ *  every successful sign-in / explicit refetch. */
+export function getCachedSessionUser(): SessionUser | null {
+  if (cachedProfile === undefined) cachedProfile = readProfile();
+  return cachedProfile;
+}
+
+/** Persist the result of a successful sign-in. Dispatches
+ *  SESSION_CHANGED_EVENT so listeners can refresh. */
+export function saveSession(token: string, user: SessionUser): void {
+  cachedToken = token;
+  cachedProfile = user;
+  writeToken(token);
+  writeProfile(user);
+  dispatchChange();
+}
+
+/** Clear local session state. Server-side revocation is the caller's
+ *  job (POST /api/auth/sign-out). */
+export function clearSession(): void {
+  const wasSignedIn = !!cachedToken || !!cachedProfile;
+  cachedToken = null;
+  cachedProfile = null;
+  writeToken(null);
+  writeProfile(null);
+  if (wasSignedIn) dispatchChange();
+}
+
+/** Update the cached profile without rotating the token (used after
+ *  `/api/auth/me` refetch). */
+export function updateCachedSessionUser(user: SessionUser | null): void {
+  cachedProfile = user;
+  writeProfile(user);
+  dispatchChange();
+}
+
+/** Reset for tests. */
+export function _resetSessionForTests(): void {
+  cachedToken = undefined;
+  cachedProfile = undefined;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(PROFILE_KEY);
+    } catch {}
+  }
+}

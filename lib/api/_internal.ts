@@ -9,6 +9,7 @@
 import type { Poll, Question, QuestionResults } from "@/lib/types";
 import { branchToSlug } from "@/lib/slug";
 import { adoptServerBrowserId, getBrowserId } from "@/lib/browserIdentity";
+import { clearSession, getSessionToken } from "@/lib/session";
 
 // Production browser builds bypass Next.js' `/api/*` rewrites and hit the
 // FastAPI origin directly — Vercel's edge proxy (May 2026) fails the TLS
@@ -66,6 +67,7 @@ export const GROUP_BASE = getApiEndpoint('groups');
 export const USER_BASE = getApiEndpoint('users');
 export const SEARCH_BASE = getApiEndpoint('search');
 export const NOTIFICATIONS_BASE = getApiEndpoint('notifications');
+export const AUTH_BASE = getApiEndpoint('auth');
 
 const BROWSER_ID_HEADER = 'X-Browser-Id';
 
@@ -82,11 +84,15 @@ async function fetchWithBase<T>(base: string, path: string, options?: RequestIni
   // whatever value the server returns. The header round-trip is the FE↔BE
   // identity handshake that Phase C will hang membership off of.
   const browserId = getBrowserId();
+  // Phase A: attach the session bearer token (if signed in). The server's
+  // IdentityMiddleware resolves it to a user_id on every request.
+  const sessionToken = getSessionToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options?.headers as Record<string, string> | undefined),
   };
   if (browserId) headers[BROWSER_ID_HEADER] = browserId;
+  if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
 
   const res = await fetch(url, {
     ...options,
@@ -99,6 +105,14 @@ async function fetchWithBase<T>(base: string, path: string, options?: RequestIni
   adoptServerBrowserId(res.headers.get(BROWSER_ID_HEADER));
 
   if (!res.ok) {
+    // Phase A: a 401 with a session token attached means the server
+    // says the token is no longer valid (revoked / expired / user
+    // deleted). Drop local session state so the FE stops attaching the
+    // dead token to every subsequent request. The sign-in surface will
+    // re-fetch and show the user as signed out.
+    if (res.status === 401 && sessionToken) {
+      clearSession();
+    }
     let detail = res.statusText;
     try {
       const body = await res.json();
@@ -130,6 +144,10 @@ export function userFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function notificationsFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return fetchWithBase<T>(NOTIFICATIONS_BASE, path, options);
+}
+
+export function authFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  return fetchWithBase<T>(AUTH_BASE, path, options);
 }
 
 /**
