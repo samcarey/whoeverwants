@@ -947,9 +947,11 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 > **Phases A + B + C shipped.** A+B = identity foundation +
 > magic-link email sign-in (migration 112). C = "Sign in with Apple"
-> + "Sign in with Google" on web. Passkey (D), group privacy (E),
-> join requests (F), invite links (G), per-vote anonymity (H), and
-> Capacitor native OAuth (deferred follow-up to C) are still
+> + "Sign in with Google" on web, plus native Apple Sign In on
+> Capacitor iOS via `@capacitor-community/apple-sign-in`. Passkey (D),
+> group privacy (E), join requests (F), invite links (G), per-vote
+> anonymity (H), and native Google on iOS (deferred sub-follow-up to C —
+> needs per-bundle iOS client IDs + URL-scheme patching) are still
 > scheduled. Full plan + rationale in `docs/auth-access-model.md`.
 
 **Identity tables (migration 112):**
@@ -1061,7 +1063,7 @@ migration content.
 
 **Cross-provider account merge "just works" via the shared verified-email lookup in `resolve_or_merge_user`.** A user who signed in with magic link first (email identity) and later signs in with Google using the same verified email lands on the SAME `user_id` — the second sign-in adds a `user_identities` row for `provider='google'` pointing at the existing user. `/api/auth/me` then reports `providers: ['email', 'google']`. Apple "Hide my email" relay addresses (`<token>@privaterelay.appleid.com`) are stable per (user, RP) and are treated identically to real emails for the merge — same address every time, so repeat sign-ins resolve.
 
-**Capacitor iOS web OAuth is intentionally hidden via `isWebOAuthAvailable()` (`Capacitor.isNativePlatform()` short-circuit).** Google explicitly blocks `accounts.google.com/gsi` in embedded WebViews per their "disallowed-user-agents" policy (would surface as a `403 disallowed_useragent` error mid-flow), and Apple's JS SDK doesn't render reliably inside WKWebView either. The buttons hide entirely on native iOS; only magic link is offered there. The follow-up Capacitor native PR will add `@capacitor-community/apple-sign-in` + a Google-Auth Capacitor plugin and use the same `/api/auth/oauth/{google,apple}` endpoints with native-flow-issued ID tokens.
+**Capacitor iOS gets native Apple Sign In via `@capacitor-community/apple-sign-in`; Google stays web-only for now.** `lib/oauth.ts: appleSignIn()` dispatches at runtime: native iOS calls `SignInWithApple.authorize()` (dynamic-imported, matches the `lib/pushNotifications.ts` / `lib/geolocation.ts` chunk-keeps-out-of-web-bundle pattern); web/PWA loads Apple's `appleid.auth.js` SDK and runs the popup flow. Both surfaces return an `id_token` (Apple calls it `identityToken` on native) which the FE POSTs to the same `/api/auth/oauth/apple` endpoint — the server's JWKS verifier doesn't care which surface produced it. **Apple `aud` claim differs by surface**: web flow's audience is the Service ID, native iOS's audience is the bundle id (`com.whoeverwants.app` for prod, `com.whoeverwants.app.latest` for canary). The server's `APPLE_OAUTH_AUDIENCES` env var must therefore include the Service ID AND both bundle ids comma-separated. The native bundle id is read at runtime via `App.getInfo().id` from `@capacitor/app` so prod + canary IPAs each send their own value; missing lookup falls back to `com.whoeverwants.app`. **Google is intentionally hidden on native iOS** — `googleConfigured()` short-circuits to false there because Google explicitly blocks `accounts.google.com/gsi` in embedded WebViews (would surface as `403 disallowed_useragent` mid-flow) AND adding a native Google plugin requires per-bundle iOS client IDs + reversed-URL-scheme registration in `CFBundleURLTypes` + (likely) Info.plist patching in `ios-build.yml` — materially more work than Apple's drop-in plugin. Magic link is always available on every surface. **Apple Developer manual prereq (one-time per bundle id):** enable "Sign In with Apple" capability on `com.whoeverwants.app` AND `com.whoeverwants.app.latest` in the Apple Developer portal → Identifiers → <bundle> → Capabilities. The entitlement (`com.apple.developer.applesignin`) in `App.entitlements` compiles without the portal toggle, but iOS silently rejects the authorize call. **Capacitor 8 + plugin 7.x:** `@capacitor-community/apple-sign-in@7.1.0` declares Capacitor 7 as its peer dep but works against our 8.x core; if `npx cap sync ios` ever errors with a "peer dep" warning, bump the plugin if a 8.x release lands, otherwise tolerate the warning (native bridge ABI is stable).
 
 **Pitfall: PyJWT's `audience` accepts a list but `issuer` does NOT.** `jwt.decode(..., issuer='x')` only matches a single string; Google publishes tokens with both `'https://accounts.google.com'` AND `'accounts.google.com'` as the issuer over time. `services/oauth.py: _verify` therefore decodes WITHOUT an `issuer` arg and checks `claims['iss'] in tuple_of_acceptable_issuers` manually afterward. Mirror this pattern if a third OIDC provider arrives with multiple valid issuers.
 
@@ -1078,7 +1080,7 @@ migration content.
   target_poll_id.
 - H: per-vote anonymity flags (`votes.anonymous_to_peers`,
   `anonymous_to_creator`) + read-time filter audit.
-- C-follow-up: native Capacitor flows for Apple + Google on iOS.
+- C-follow-up: native Google Sign In on iOS (Apple native shipped; Google needs per-bundle iOS client IDs + reversed-URL-scheme registration).
 
 ---
 
