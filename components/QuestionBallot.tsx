@@ -20,6 +20,7 @@ import RankableOptions from "@/components/RankableOptions";
 import { isCreatedByThisBrowser, getCreatorSecret, recordQuestionCreation, storeSeenQuestionOptions, getSeenQuestionOptions } from "@/lib/browserQuestionAccess";
 import { hasQuestionData } from "@/lib/forgetQuestion";
 import { getUserName, saveUserName } from "@/lib/userProfile";
+import { isValidUserName } from "@/lib/nameValidation";
 import { usePageTitle } from "@/lib/usePageTitle";
 import QuestionDetails from "@/components/QuestionDetails";
 import SearchRadiusBubble from "@/components/SearchRadiusBubble";
@@ -1365,7 +1366,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
 
                   <button
                     onClick={handleVoteClick}
-                    disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
+                    disabled={isSubmitting || (!yesNoChoice && !isAbstaining) || !isValidUserName(voterName)}
                     className="w-full py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] font-medium text-base transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}

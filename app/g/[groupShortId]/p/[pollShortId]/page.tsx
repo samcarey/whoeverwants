@@ -74,6 +74,8 @@ import QuestionResultsDisplay from "@/components/QuestionResults";
 import CompactNameField from "@/components/CompactNameField";
 import VoterList from "@/components/VoterList";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import NameRequiredModal from "@/components/NameRequiredModal";
+import { isValidUserName } from "@/lib/nameValidation";
 import PollShareButton from "@/components/PollShareButton";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import type { Poll, Question, QuestionResults } from "@/lib/types";
@@ -525,6 +527,12 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     isCurrentUserName(poll.creator_name);
   const creatorImageUrl = creatorIsMe ? myUserImageUrl : null;
 
+  // Holds a yes/no tap that couldn't fire because the user hasn't saved a
+  // name yet. The NameRequiredModal retries via this when they save.
+  const [pendingYesNoTap, setPendingYesNoTap] = useState<
+    { questionId: string; newChoice: "yes" | "no" | "abstain" } | null
+  >(null);
+
   const dispatchYesNoTap = (
     questionId: string,
     newChoice: "yes" | "no" | "abstain",
@@ -532,6 +540,10 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     // First-time votes on single-question polls auto-submit; multi-poll
     // taps and edits route through the confirmation modal.
     if (!isMultiPoll && !userVoteMap.get(questionId)) {
+      if (!isValidUserName(getUserName())) {
+        setPendingYesNoTap({ questionId, newChoice });
+        return;
+      }
       void submitYesNoChoice(questionId, newChoice);
       return;
     }
@@ -771,7 +783,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                     preparedNonYesNo,
                   });
                 }}
-                disabled={submitting || !hasStagedChange}
+                disabled={submitting || !hasStagedChange || !isValidUserName(voterNameVal)}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
                 {submitting ? "Submitting..." : "Submit Vote"}
@@ -803,6 +815,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                 onClick={() => {
                   subQuestionBallotRefs.get(sp.id)?.triggerSubmit();
                 }}
+                disabled={!isValidUserName(voterNameVal)}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
                 {submitState.label}
@@ -882,6 +895,17 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           );
         }}
         onCancel={() => setPendingPollSubmit(null)}
+      />
+
+      <NameRequiredModal
+        isOpen={!!pendingYesNoTap}
+        message="Please enter your name to submit your vote."
+        onSubmit={() => {
+          const tap = pendingYesNoTap;
+          setPendingYesNoTap(null);
+          if (tap) void submitYesNoChoice(tap.questionId, tap.newChoice);
+        }}
+        onCancel={() => setPendingYesNoTap(null)}
       />
     </>
   );

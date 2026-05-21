@@ -33,6 +33,7 @@ import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, format
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import { enterAdvancesFocus } from "@/lib/formNavigation";
 import { haptic } from "@/lib/haptics";
+import { isValidUserName, validateUserName } from "@/lib/nameValidation";
 import * as questionBackTarget from "@/lib/questionBackTarget";
 import { cachePoll, getCachedGroupIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
@@ -1080,6 +1081,12 @@ export function CreateQuestionContent() {
       return;
     }
 
+    const nameCheck = validateUserName(creatorName);
+    if (!nameCheck.ok) {
+      setError(nameCheck.error);
+      return;
+    }
+
     // Auto-stage the inline form when it carries valid content. Lets the
     // user submit a single-question poll without first tapping "+ Question".
     // We compute the effective drafts list locally because setDrafts won't
@@ -1617,7 +1624,7 @@ export function CreateQuestionContent() {
                 <button
                   type="button"
                   onClick={handleSubmitClick}
-                  disabled={isLoading || isSubmitted || !inlineFormHasDraftableContent}
+                  disabled={isLoading || isSubmitted || !inlineFormHasDraftableContent || !isValidUserName(creatorName)}
                   aria-label="Submit poll"
                   className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
