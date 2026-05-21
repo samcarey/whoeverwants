@@ -17,6 +17,20 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* BubbleBarPanel (components/BubbleBarPanel.tsx) rewrites these to the
+     panel's measured height once the bubble bar JSX has portaled into
+     the panel's `#draft-poll-portal` div. Until then (a transient window
+     during overlay-slide navigation, before CreateQuestionContent's
+     MutationObserver discovers the new portal target), the down
+     scroll-helper arrow + the cards-wrapper read these defaults — sized
+     to match `useMeasuredHeight`'s initial seed (192 ≈ heading + 3-row
+     bubble bar + ~34px iPhone safe-area-inset-bottom). Without the
+     defaults the arrow's `var(..., 0px)` fallback positioned it at the
+     viewport bottom during the slide, then animated UP via its `bottom`
+     transition once the panel measured at full size, surfacing to users
+     as "the arrow repositions itself after the transition completes". */
+  --bubble-bar-panel-height: 192px;
+  --bubble-bar-panel-offset: 192px;
 }
 
 @theme inline {

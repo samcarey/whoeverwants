@@ -23,6 +23,22 @@ const stopTouchPropagation = (e: React.TouchEvent) => {
   e.stopPropagation();
 };
 
+// Empty-panel threshold. The panel mounts with an empty `#draft-poll-portal`
+// because the bubble bar JSX is owned by CreateQuestionContent (in
+// app/layout.tsx) and gets portaled in asynchronously via its
+// MutationObserver. Until that lands, the panel's offsetHeight is only its
+// 1px border + `env(safe-area-inset-bottom)` — max ~35px on iPhone X-class,
+// near 0 on browsers without safe-area. Writing this small value to the
+// CSS var pulls the down scroll-helper arrow to the viewport bottom; when
+// content lands and we rewrite to the real ~130px+ height, the arrow's
+// `bottom` transition fires and the user sees it animate up — that's the
+// "arrow repositions after the slide completes" bug. Skip writes below this
+// threshold so consumers read the `:root` CSS default (192px) instead.
+// Empirically the populated bar is ~88px (1-row + heading + padding) on a
+// wide desktop viewport, ~130px+ (multi-row) on phone widths; the threshold
+// sits comfortably above max empty (35px) and well below min populated.
+const MIN_MEANINGFUL_PANEL_HEIGHT = 50;
+
 /**
  * CSS variable set on `<html>` to the panel's measured height. Stable
  * regardless of visibility so the host's bottom padding doesn't reflow
@@ -80,9 +96,13 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
   // always picked up by ResizeObserver on those browsers — refreshing via
   // a deps bump catches the shift so the host's padding stays correct.
   const [vvCounter, setVvCounter] = useState(0);
-  // Initial height estimate covers a 3-row bubble bar + heading + 34px
-  // safe-area inset (matches the fallback in the host's padding-bottom).
-  const [panelRef, panelHeight] = useMeasuredHeight<HTMLDivElement>([vvCounter], 192);
+  // No seed value — default 0 keeps Render 1's `panelHeight` below
+  // MIN_MEANINGFUL_PANEL_HEIGHT, so if Render 1's useEffect closure runs
+  // (React behavior here is subtle when useLayoutEffect setState triggers
+  // a re-render before paint) the threshold check skips the write. The
+  // :root CSS default for `--bubble-bar-panel-offset` (192px) is what
+  // consumers see until the real measurement lands and we override.
+  const [panelRef, panelHeight] = useMeasuredHeight<HTMLDivElement>([vvCounter]);
 
   // Cached document scrollHeight — reading it on every scroll tick forces
   // a synchronous layout flush, which is expensive on long group pages.
@@ -163,6 +183,12 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
   const lastWrittenRef = useRef({ height: -1, visible: true });
   useEffect(() => {
     const heightPx = Math.round(panelHeight);
+    // Skip the empty-mount write — the panel is still waiting for its
+    // bubble bar JSX to portal in. See MIN_MEANINGFUL_PANEL_HEIGHT above.
+    // Always allow writes when visible=false so auto-hide still fires
+    // 0px to the var (though in practice the panel is never auto-hidden
+    // while still empty — auto-hide requires the user scrolling).
+    if (visible && heightPx < MIN_MEANINGFUL_PANEL_HEIGHT) return;
     const last = lastWrittenRef.current;
     if (last.height === heightPx && last.visible === visible) return;
     lastWrittenRef.current = { height: heightPx, visible };
