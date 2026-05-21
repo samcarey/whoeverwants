@@ -96,9 +96,13 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
   // always picked up by ResizeObserver on those browsers — refreshing via
   // a deps bump catches the shift so the host's padding stays correct.
   const [vvCounter, setVvCounter] = useState(0);
-  // Initial height estimate covers a 3-row bubble bar + heading + 34px
-  // safe-area inset (matches the fallback in the host's padding-bottom).
-  const [panelRef, panelHeight] = useMeasuredHeight<HTMLDivElement>([vvCounter], 192);
+  // No seed value — default 0 keeps Render 1's `panelHeight` below
+  // MIN_MEANINGFUL_PANEL_HEIGHT, so if Render 1's useEffect closure runs
+  // (React behavior here is subtle when useLayoutEffect setState triggers
+  // a re-render before paint) the threshold check skips the write. The
+  // :root CSS default for `--bubble-bar-panel-offset` (192px) is what
+  // consumers see until the real measurement lands and we override.
+  const [panelRef, panelHeight] = useMeasuredHeight<HTMLDivElement>([vvCounter]);
 
   // Cached document scrollHeight — reading it on every scroll tick forces
   // a synchronous layout flush, which is expensive on long group pages.
