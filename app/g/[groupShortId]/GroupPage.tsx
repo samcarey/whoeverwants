@@ -1780,10 +1780,27 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         style={{
           paddingTop: `calc(${headerHeight}px + var(--group-card-gap, 0px))`,
           // Clear the floating BubbleBarPanel so the last card isn't
-          // hidden behind it when scrolled to the document bottom. Falls
-          // back to a generous estimate before the panel's ResizeObserver
-          // writes the CSS var on first paint.
-          paddingBottom: `calc(var(--bubble-bar-panel-height, 9rem) + 0.5rem)`,
+          // hidden behind it when scrolled to the document bottom.
+          //
+          // - var(--bubble-bar-panel-height, ...) is the measured panel
+          //   height (set by BubbleBarPanel's ResizeObserver). The
+          //   fallback (12rem ≈ 192px) covers a 3-row bubble bar +
+          //   heading + 34px safe-area inset — the upper bound across
+          //   devices — for the first paint before the observer fires.
+          // - calc(100lvh - 100svh) adds the UA-chrome (URL bar + bottom
+          //   toolbar) height. iOS Safari / iOS Firefox anchor
+          //   `position: fixed; bottom: 0` to the LAYOUT viewport (the
+          //   smaller `svh`), but `window.innerHeight` and the document
+          //   layout track the DYNAMIC viewport — so at scroll-bottom
+          //   with the URL bar collapsed, the panel sits a UA-chrome
+          //   height ABOVE the document bottom even though the in-flow
+          //   cards extend to it. Without this extra padding, the last
+          //   card slides under the panel on those browsers. On
+          //   browsers without URL bar wobble (desktop, Android Chrome
+          //   often), lvh == svh and this term is 0.
+          // - 1rem is the visible breathing room above the panel at
+          //   scroll-bottom.
+          paddingBottom: `calc(var(--bubble-bar-panel-height, 12rem) + (100lvh - 100svh) + 1rem)`,
           // Negative horizontal margin cancels the outer template wrapper's
           // `paddingLeft/Right: max(0.35rem, env(safe-area-inset-*))` so the
           // edge-to-edge poll rectangles + dividers butt against the body's
