@@ -55,6 +55,19 @@ async def receive_client_logs(batch: ClientLogBatch, request: Request):
             "clientIp": client_ip,
             "receivedAt": time.time(),
         })
+        # Mirror every received entry to stdout so `docker compose logs api`
+        # captures the trail regardless of which uvicorn worker the POST
+        # landed on. The in-memory _LOG_BUFFER is per-worker, so the
+        # /api/client-logs GET endpoint can return empty even right after
+        # a successful POST when the GET hits a different worker; the
+        # docker logs are the cross-worker source of truth.
+        logger.warning(
+            "[client-log] level=%s session=%s ua=%s msg=%s",
+            entry.level,
+            batch.sessionId or "(none)",
+            (entry.userAgent or "")[:60],
+            entry.message,
+        )
     return {"status": "ok", "accepted": len(batch.logs)}
 
 

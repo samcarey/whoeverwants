@@ -888,7 +888,7 @@ npm run debug:react question-123 revisit   # Debug vote retrieval
 
 ## Client Log Forwarding
 
-The browser forwards `console.*` output and unhandled errors/rejections to the API server via `POST /api/client-logs`. The endpoint is an in-memory ring buffer (last 10000 entries on the API server) — no disk writes, no persistence across restarts.
+The browser forwards `console.*` output and unhandled errors/rejections to the API server via `POST /api/client-logs`. The endpoint is an in-memory ring buffer (last 10000 entries on the API server) — no disk writes, no persistence across restarts. **The ring buffer is per-uvicorn-worker**, and the canary/prod containers run with `--workers 2`. A POST landing on worker B's buffer is invisible to a GET that hits worker A's buffer — both endpoints route through the same Caddy → uvicorn socket but the kernel dispatches connections across workers via accept-balancing, so the worker for each request is non-deterministic from the caller's POV. To work around this, `receive_client_logs` ALSO mirrors every received entry to stdout via `logger.warning("[client-log] ...")`; tail `docker compose logs api | grep '\[client-log\]'` for the cross-worker source of truth when the `/api/client-logs` GET returns suspiciously-empty. (The buffer is still useful for the FE itself when running in-process polls, and as a fallback when log volume is high enough that grepping the docker stdout becomes painful.)
 
 **Activation rules (`lib/clientLogForwarder.ts: isLogForwardingEnabled`):**
 - **Dev hosts** (`*.dev.whoeverwants.com`, `localhost`, `127.0.0.1`) — forward EVERYTHING (`log/warn/error/info/debug` + unhandled events). Low traffic; devs want full context.
