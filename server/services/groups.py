@@ -50,15 +50,25 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class UserVisibility:
-    """Snapshot of one browser's visibility state.
+    """Snapshot of one caller's visibility state.
 
     Built once per request via `load_user_visibility`; consumed by the
     visibility filter and by candidate-set construction.
+
+    The caller is identified by (browser_id, user_id). For anonymous
+    callers user_id is None — `joined_by_group` is keyed only on the
+    current browser_id. For signed-in callers, memberships from EVERY
+    browser linked to this user_id are unioned in, with the earliest
+    joined_at retained per group (the closed-before-join filter is
+    most permissive that way — the user "joined" when their earliest
+    browser did, not when they signed in on this device).
     """
 
     browser_id: str | None
+    user_id: str | None
     # group_id → joined_at watermark (drives closed_at filter for
-    # member-group polls).
+    # member-group polls). For signed-in users this is the MIN
+    # joined_at across all browsers linked to user_id.
     joined_by_group: dict[str, datetime] = field(default_factory=dict)
     # group_ids the legacy accessible_question_ids list resolves to.
     # Treated as group-level access with no closed_at filter for
@@ -70,17 +80,48 @@ def load_user_visibility(
     conn,
     browser_id: str | None,
     *,
+    user_id: str | None = None,
     legacy_question_ids: list[str] | None = None,
 ) -> UserVisibility:
-    """Read every membership/access signal for one browser in a single
-    place so callers can construct candidate sets and filter against the
-    same data without re-querying."""
+    """Read every membership/access signal for one caller in a single
+    place so route handlers can construct candidate sets and filter
+    against the same data without re-querying.
+
+    When `user_id` is set, the membership query walks `user_browsers`
+    to find every browser_id linked to this user and unions their
+    `group_members` rows. This is what makes "same user signed in on
+    Browser A and Browser B see the same groups" work — without the
+    user-aware lookup, each browser would only see groups it joined
+    directly, and a fresh sign-in on a second device would show an
+    empty home list.
+
+    Per-group `joined_at` is the MIN across all linked browsers'
+    rows: the most permissive choice for the closed-before-join
+    filter (a user who's been a member via any browser since t=0
+    sees polls that closed after t=0 regardless of which device
+    they're viewing from).
+    """
     joined_by_group: dict[str, datetime] = {}
-    if browser_id:
+    if browser_id or user_id:
+        # Build the candidate browser_id set: the current one + every
+        # browser the user has signed in on. Empty for fully-anonymous
+        # requests (no browser_id, no user_id — shouldn't happen with
+        # BrowserIdMiddleware in place, but defensive).
         rows = conn.execute(
-            "SELECT group_id, joined_at FROM group_members "
-            "WHERE browser_id = %(bid)s",
-            {"bid": browser_id},
+            """
+            SELECT group_id, MIN(joined_at) AS joined_at
+              FROM group_members
+             WHERE browser_id = %(bid)s::uuid
+                OR (
+                    %(uid)s::uuid IS NOT NULL
+                    AND browser_id IN (
+                      SELECT browser_id FROM user_browsers
+                       WHERE user_id = %(uid)s::uuid
+                    )
+                )
+             GROUP BY group_id
+            """,
+            {"bid": browser_id, "uid": user_id},
         ).fetchall()
         for r in rows:
             joined_by_group[str(r["group_id"])] = r["joined_at"]
@@ -93,6 +134,7 @@ def load_user_visibility(
 
     return UserVisibility(
         browser_id=browser_id,
+        user_id=user_id,
         joined_by_group=joined_by_group,
         bridged_group_ids=bridged_group_ids,
     )

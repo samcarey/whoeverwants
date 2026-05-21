@@ -75,21 +75,49 @@ def join_group_for_poll(poll_id: str | None, browser_id: str | None) -> None:
         )
 
 
-def leave_group(conn, group_id: str | None, browser_id: str | None) -> None:
-    """Delete the caller's `group_members` row. Counterpart to
+def leave_group(
+    conn,
+    group_id: str | None,
+    browser_id: str | None,
+    *,
+    user_id: str | None = None,
+) -> None:
+    """Delete the caller's `group_members` row(s). Counterpart to
     `join_group` — used by the explicit "leave group" endpoint.
 
+    When `user_id` is provided, deletes membership rows for every
+    browser the user has linked (not just the current one). The
+    visibility filter unions across linked browsers, so leaving only
+    on the current device wouldn't actually leave — the next visit
+    on another linked device would re-surface the group via that
+    device's still-present row. User intent on tapping "leave" is
+    "I'm leaving", not "this device is leaving."
+
     Unlike the join helpers, this runs on the caller's connection (the
-    leave endpoint already holds one to do route_id resolution, so reusing
-    it saves a round-trip). No-op when either id is missing; the DELETE
-    silently affects 0 rows when no membership row exists, which is the
-    intended idempotent semantics."""
-    if not group_id or not browser_id:
+    leave endpoint already holds one to do route_id resolution, so
+    reusing it saves a round-trip). No-op when group_id is missing;
+    the DELETE silently affects 0 rows when no membership exists,
+    which is the intended idempotent semantics."""
+    if not group_id:
+        return
+    if not browser_id and not user_id:
         return
     conn.execute(
-        "DELETE FROM group_members "
-        "WHERE group_id = %(group_id)s::uuid AND browser_id = %(browser_id)s",
-        {"group_id": group_id, "browser_id": browser_id},
+        """
+        DELETE FROM group_members
+         WHERE group_id = %(group_id)s::uuid
+           AND (
+                browser_id = %(browser_id)s::uuid
+                OR (
+                    %(user_id)s::uuid IS NOT NULL
+                    AND browser_id IN (
+                        SELECT browser_id FROM user_browsers
+                         WHERE user_id = %(user_id)s::uuid
+                    )
+                )
+           )
+        """,
+        {"group_id": group_id, "browser_id": browser_id, "user_id": user_id},
     )
 
 

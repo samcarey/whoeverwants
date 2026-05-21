@@ -305,3 +305,191 @@ class TestByRouteIdVisibility:
         assert resp.status_code == 200
         ids = {p["id"] for p in resp.json()}
         assert poll["id"] in ids
+
+
+# ---------------------------------------------------------------------------
+# Phase D — visibility spans all browsers linked to one user_id
+# ---------------------------------------------------------------------------
+
+
+def _link_browser_to_user(browser_id: str, user_id: str) -> None:
+    """Insert a user_browsers row to simulate signing the user in on
+    this browser. Bypasses the auth flow so tests don't need to drive a
+    full magic-link round-trip per fixture."""
+    with psycopg.connect(TEST_DB_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_browsers (browser_id, user_id, linked_at)
+                VALUES (%s::uuid, %s::uuid, NOW())
+                ON CONFLICT (browser_id) DO UPDATE SET user_id = EXCLUDED.user_id
+                """,
+                (browser_id, user_id),
+            )
+        conn.commit()
+
+
+def _new_user_id() -> str:
+    """Mint a fresh users row and return its uuid. Tests use this when
+    they need a user_id that's referentially valid for user_browsers
+    FK constraints."""
+    with psycopg.connect(TEST_DB_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO users DEFAULT VALUES RETURNING id")
+            user_id = str(cur.fetchone()[0])
+        conn.commit()
+    return user_id
+
+
+def _issue_session_for(user_id: str, browser_id: str) -> str:
+    """Mint a session row directly so tests can drive auth-gated
+    endpoints. Mirrors test_passkeys.py's same helper."""
+    import hashlib
+    import secrets as _secrets
+    token = _secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    with psycopg.connect(TEST_DB_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO sessions
+                  (token_hash, user_id, browser_id, expires_at, last_used_at)
+                VALUES
+                  (%s, %s::uuid, %s::uuid, NOW() + INTERVAL '90 days', NOW())
+                """,
+                (token_hash, user_id, browser_id),
+            )
+        conn.commit()
+    return token
+
+
+class TestMultiBrowserUserVisibility:
+    """Regression: a user signed in on browser A creates a group; the same
+    user signed in on browser B should see that group. Pre-fix the
+    visibility filter keyed only on browser_id, so the second browser saw
+    nothing — even though the membership row's browser_id was linked to
+    the same user_id."""
+
+    def test_mine_returns_membership_across_linked_browsers(
+        self, client, creator_secret, creator_browser, stranger_browser
+    ):
+        user_id = _new_user_id()
+        _link_browser_to_user(creator_browser, user_id)
+        _link_browser_to_user(stranger_browser, user_id)
+
+        # Browser A creates a poll → group_members row keyed on A.
+        poll = create_poll(client, creator_secret, browser_id=creator_browser)
+
+        # Browser B authenticates as the same user. /api/groups/mine
+        # should surface the poll even though B has no membership row.
+        token = _issue_session_for(user_id, stranger_browser)
+        resp = client.post(
+            "/api/groups/mine",
+            json={"accessible_question_ids": []},
+            headers={
+                "X-Browser-Id": stranger_browser,
+                "Authorization": f"Bearer {token}",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        ids = {p["id"] for p in resp.json()}
+        assert poll["id"] in ids
+
+    def test_by_route_id_visible_across_linked_browsers(
+        self, client, creator_secret, creator_browser, stranger_browser
+    ):
+        user_id = _new_user_id()
+        _link_browser_to_user(creator_browser, user_id)
+        _link_browser_to_user(stranger_browser, user_id)
+        poll = create_poll(client, creator_secret, browser_id=creator_browser)
+
+        token = _issue_session_for(user_id, stranger_browser)
+        resp = client.get(
+            f"/api/groups/by-route-id/{poll['short_id']}",
+            headers={
+                "X-Browser-Id": stranger_browser,
+                "Authorization": f"Bearer {token}",
+            },
+        )
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        assert poll["id"] in ids
+
+    def test_anonymous_other_browser_does_NOT_see_it(
+        self, client, creator_secret, creator_browser, stranger_browser
+    ):
+        """Sanity check: the expansion is gated on user_id. A bare other
+        browser (no session) still doesn't see the creator's groups."""
+        poll = create_poll(client, creator_secret, browser_id=creator_browser)
+        resp = client.post(
+            "/api/groups/mine",
+            json={"accessible_question_ids": []},
+            headers={"X-Browser-Id": stranger_browser},
+        )
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        assert poll["id"] not in ids
+
+    def test_empty_groups_listed_across_linked_browsers(
+        self, client, creator_browser, stranger_browser
+    ):
+        """POST /api/groups creates an empty group + auto-joins the
+        creator. The same user on a different browser should see it
+        in /api/groups/empty."""
+        user_id = _new_user_id()
+        _link_browser_to_user(creator_browser, user_id)
+        _link_browser_to_user(stranger_browser, user_id)
+
+        resp = client.post(
+            "/api/groups",
+            headers={"X-Browser-Id": creator_browser},
+        )
+        assert resp.status_code == 201
+        group_id = resp.json()["id"]
+
+        token = _issue_session_for(user_id, stranger_browser)
+        resp = client.post(
+            "/api/groups/empty",
+            headers={
+                "X-Browser-Id": stranger_browser,
+                "Authorization": f"Bearer {token}",
+            },
+        )
+        assert resp.status_code == 200
+        ids = {g["id"] for g in resp.json()}
+        assert group_id in ids
+
+    def test_leave_removes_all_linked_browsers(
+        self, client, creator_secret, creator_browser, stranger_browser
+    ):
+        """Tapping "leave" on one device should remove the user from the
+        group across ALL their linked browsers — otherwise the next
+        visit on another linked browser would re-surface the group via
+        that browser's still-present row."""
+        user_id = _new_user_id()
+        _link_browser_to_user(creator_browser, user_id)
+        _link_browser_to_user(stranger_browser, user_id)
+        poll = create_poll(client, creator_secret, browser_id=creator_browser)
+
+        # Sign in as the user on stranger_browser and call DELETE
+        # /membership. The current browser has no membership row, but
+        # creator_browser does — the expanded delete should remove it.
+        token = _issue_session_for(user_id, stranger_browser)
+        resp = client.delete(
+            f"/api/groups/{poll['short_id']}/membership",
+            headers={
+                "X-Browser-Id": stranger_browser,
+                "Authorization": f"Bearer {token}",
+            },
+        )
+        assert resp.status_code == 204
+
+        # /mine on the original creator browser should NOT see the
+        # poll anymore.
+        resp = client.post(
+            "/api/groups/mine",
+            json={"accessible_question_ids": []},
+            headers={"X-Browser-Id": creator_browser},
+        )
+        ids = {p["id"] for p in resp.json()}
+        assert poll["id"] not in ids
