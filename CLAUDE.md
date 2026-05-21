@@ -942,6 +942,122 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ---
 
+## Auth & Access Model
+
+> **Phase A + B shipped (migration 112).** User accounts via magic-link
+> email; OAuth (Apple, Google), passkey, group privacy, join requests,
+> invite links, and per-vote anonymity are scheduled phases on top.
+> Full plan + rationale in `docs/auth-access-model.md`.
+
+**Identity tables (migration 112):**
+- `users(id)` — one row per real person.
+- `user_identities(provider, provider_user_id, user_id, email)` — one row
+  per provider account. `provider ∈ {email, apple, google, passkey}`.
+  `provider_user_id` = normalized email for `email`, OAuth sub for
+  Apple/Google, credential id for passkey. PK is `(provider,
+  provider_user_id)`.
+- `user_browsers(browser_id PK, user_id)` — bridges a browser_id to a
+  user_id. PK on browser_id means one browser ↔ one user at a time;
+  re-sign-in as a different user `ON CONFLICT (browser_id) DO UPDATE`s.
+- `sessions(token_hash PK, user_id, browser_id, expires_at)` — opaque
+  bearer tokens, sha256-hash-only storage; raw token returned to the
+  FE exactly once at issue time. 90 day expiry, no sliding refresh.
+- `magic_link_tokens(token_hash PK, email, expires_at, used_at)` —
+  15-minute single-use email verification tokens. Same sha256-only
+  storage as sessions. Consumed atomically via
+  `UPDATE … SET used_at = NOW() WHERE used_at IS NULL AND expires_at > NOW() RETURNING email` —
+  two simultaneous clicks both run the UPDATE; only one row gets
+  returned.
+
+**`IdentityMiddleware` (`server/middleware.py`)** resolves
+`Authorization: Bearer <token>` into `request.state.user_id`.
+Anonymous requests (no header) skip the DB entirely — adds zero cost
+for the not-signed-in path. Three accessors expose intent at the
+callsite: `session_token_from_request`, `user_id_from_request`,
+`actor_id_from_request` ("user_id when present, else browser_id" — the
+canonical identity going forward).
+
+**`services/auth.py` is the single home for identity logic.** Routers
+import `resolve_or_merge_user` / `issue_session` /
+`link_browser_to_user` / `consume_magic_link` etc. and never
+re-implement them. When Phase C/D adds Apple/Google/passkey, those
+routers will do provider-specific token verification and then hand off
+to the same helpers — keeping the account-merge + session-issuance
+rules in one place. Account merge happens via the email lookup in
+`resolve_or_merge_user`: same verified email arriving from a second
+provider links to the existing user_id rather than minting a new one.
+No user-facing consent prompt — proof of email control on both ends is
+the merge authority.
+
+**Magic-link URL is host-derived from the request Origin** with
+allowlist validation in `routers/auth.py: _ALLOWED_ORIGIN_PATTERNS`.
+Prod → `https://whoeverwants.com`, canary → `https://latest...`, dev
+branch → `https://<slug>.dev.whoeverwants.com`. Origin missing /
+unmatched falls back to `FE_DEFAULT_ORIGIN` (defaults to
+`whoeverwants.com`). When adding a new tier or external embed, extend
+the allowlist.
+
+**Email provider: Resend.** `services/email.py` POSTs to
+`api.resend.com/emails` via httpx (no SDK dep). `RESEND_API_KEY` env
+var on each tier's `.env.api`; without it, `send_email` logs the
+message to stdout and returns success so dev tiers work zero-config
+(magic links surface in `/repo/api.log`). `RESEND_FROM_EMAIL` (default
+`noreply@whoeverwants.com`) must be on a Resend-verified domain.
+
+**FE session storage: `lib/session.ts`.** localStorage-backed (works on
+iOS Capacitor WebView and survives app updates; Keychain via
+`@capacitor/preferences` is a Phase I upgrade). Cached profile +
+session token; `SESSION_CHANGED_EVENT` for cross-component
+reactivity. `lib/api/_internal.ts: fetchWithBase` attaches
+`Authorization: Bearer <token>` on every request and auto-clears local
+session state on 401 (so a server-side revoke propagates without a
+manual sign-out tap).
+
+**`apiVerifyMagicLink(token)` writes the session on success** via
+`saveSession(token, user)`. Callers don't need to handle the storage
+side. `apiGetMe()` returns null + clears local state on 401 to keep
+the UI honest when the server says the session is gone.
+
+**Cross-device sign-in.** Magic link clicked on Device B issues a
+session for Device B (uses the verify request's browser_id, NOT the
+one stored on the magic_link_tokens row from the request). The stored
+browser_id is for fraud detection only. Document the limitation that
+dev-branch URLs aren't covered by `apple-app-site-association` — links
+sent from a dev API land in Safari, not the app.
+
+**Pitfall: `%`-formatting a SQL string with literal `%(name)s`
+placeholders.** Python's `%` operator tries to substitute EVERY
+`%(...)s` it sees. Inlining an interval via `sql % {"s": 60}` fails
+with KeyError on `%(e)s` (still meant for psycopg's binding). Use
+`%(window)s::interval` with the value passed through the bind params
+dict (`{"window": "60 seconds"}`) — see
+`services/auth.py: email_throttled`.
+
+**Pitfall: bootstrap-marker race + migration apply on dev upserts.**
+The dev container's per-branch volume persists `/repo/.dev-server-ready`
+across container recreations, so the next `apply_dev_migrations` step
+in `dev-server-manager.sh: cmd_upsert` runs immediately after launch.
+This is normally fine, but the webhook-driven upsert ran fast (~900ms)
+and migration 112 didn't apply — manually re-running
+`bash /opt/scripts/dev-server-manager.sh upsert <branch>` did apply
+it. When testing a new migration on dev, verify `_migrations` table
+contents directly; don't trust upsert completion alone. If migration
+doesn't appear, fire the upsert manually before debugging the
+migration content.
+
+**Open phases (see `docs/auth-access-model.md`):**
+- C: Sign in with Apple + Google (web + Capacitor).
+- D: Passkey (WebAuthn).
+- E: `groups.privacy` column, new groups default private, sign-in
+  required for private creation.
+- F: `group_join_requests` + push notification to creator.
+- G: `group_invites` with single + multi-use modes and optional
+  target_poll_id.
+- H: per-vote anonymity flags (`votes.anonymous_to_peers`,
+  `anonymous_to_creator`) + read-time filter audit.
+
+---
+
 ## Poll System
 
 > **Migration 105 retired `polls.follow_up_to` and moved `polls.group_title` to `groups.title`.**
