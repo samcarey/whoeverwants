@@ -15,6 +15,11 @@ import {
   googleConfigured,
   renderGoogleButton,
 } from "@/lib/oauth";
+import {
+  PasskeyCancelledError,
+  passkeySupported,
+  signInWithPasskey,
+} from "@/lib/passkeys";
 import { resolveActiveTheme } from "@/lib/theme";
 
 interface SignInModalProps {
@@ -45,7 +50,7 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
   const [serverProviders, setServerProviders] =
     useState<AuthProvidersResponse | null>(null);
   const [oauthSubmitting, setOAuthSubmitting] = useState<
-    "google" | "apple" | null
+    "google" | "apple" | "passkey" | null
   >(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const googleButtonRef = useRef<HTMLDivElement>(null);
@@ -173,6 +178,27 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
     }
   };
 
+  const handlePasskeySignIn = async () => {
+    setError(null);
+    setOAuthSubmitting("passkey");
+    try {
+      await signInWithPasskey();
+      onClose();
+    } catch (err) {
+      if (err instanceof PasskeyCancelledError) {
+        setError(null);
+      } else {
+        setError(
+          err instanceof ApiError && err.status === 400
+            ? err.message || "Passkey sign-in failed."
+            : "Couldn't sign you in with a passkey. Try again in a moment."
+        );
+      }
+    } finally {
+      setOAuthSubmitting(null);
+    }
+  };
+
   // Suppress backdrop dismissal in the first 400ms after open so the
   // synthesized click after a long-press / tap that opened the modal
   // doesn't immediately close it. Mirrors FollowUpModal's pattern.
@@ -250,7 +276,15 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
   // get a 503 (no server config).
   const showGoogle = !!serverProviders?.google && googleConfigured();
   const showApple = !!serverProviders?.apple && appleConfigured();
-  const showAnyOAuth = showGoogle || showApple;
+  // Passkey gating: server says it's enabled AND the browser supports
+  // the WebAuthn API. `passkeySupported()` is sync (just checks for
+  // PublicKeyCredential + navigator.credentials) so no async dance
+  // needed here — the stronger platformPasskeySupported check is
+  // reserved for the Settings registration flow where we need a
+  // platform authenticator specifically.
+  const showPasskey =
+    !!serverProviders?.passkey && passkeySupported();
+  const showAnyAlt = showGoogle || showApple || showPasskey;
 
   return (
     <ModalPortal>
@@ -343,7 +377,33 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
                     : "Sign in with Apple"}
                 </button>
               )}
-              {showAnyOAuth && (
+              {showPasskey && (
+                <button
+                  type="button"
+                  onClick={handlePasskeySignIn}
+                  disabled={oauthSubmitting !== null}
+                  className="w-full mb-3 flex items-center justify-center gap-2 rounded-md h-11 font-medium border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    aria-hidden
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M15 7a4 4 0 11-8 0 4 4 0 018 0zM12 12v5m0 0h-2m2 0h2m6-9l-3 3-1.5-1.5"
+                    />
+                  </svg>
+                  {oauthSubmitting === "passkey"
+                    ? "Signing in…"
+                    : "Sign in with a passkey"}
+                </button>
+              )}
+              {showAnyAlt && (
                 <div className="flex items-center gap-3 my-4">
                   <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
                   <span className="text-xs text-gray-500 dark:text-gray-400">

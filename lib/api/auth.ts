@@ -33,6 +33,29 @@ export interface AuthProvidersResponse {
   email: boolean;
   google: boolean;
   apple: boolean;
+  passkey: boolean;
+}
+
+// Phase D — Passkey / WebAuthn
+
+/** A passkey credential, as surfaced by `GET /passkeys`. */
+export interface PasskeySummary {
+  credential_id: string;
+  name: string | null;
+  aaguid: string | null;
+  transports: string | null;
+  created_at: string;
+  last_used_at: string;
+}
+
+export interface PasskeyListResponse {
+  passkeys: PasskeySummary[];
+}
+
+export interface PasskeyRegistrationResult {
+  credential_id: string;
+  aaguid: string | null;
+  transports: string | null;
 }
 
 export async function apiRequestMagicLink(
@@ -131,4 +154,85 @@ export async function apiGetAuthProviders(): Promise<AuthProvidersResponse> {
     });
   }
   return providersPromise;
+}
+
+// Phase D — Passkey ceremonies + management.
+//
+// The shape passed to / from these helpers mirrors WebAuthn's wire
+// format almost exactly. `lib/passkeys.ts` wraps the browser API and
+// converts between WebAuthn's binary-as-ArrayBuffer model and the
+// base64url-encoded JSON that crosses the wire.
+
+/** Step 1 of registration: ask the server for a fresh challenge +
+ *  options dict suitable for `navigator.credentials.create()`. */
+export async function apiPasskeyRegistrationOptions(): Promise<unknown> {
+  return authFetch<unknown>("/passkey/registration/options", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+/** Step 2 of registration: post the attestation back for verification.
+ *  Returns the saved credential's id + metadata so the FE can update its
+ *  local passkey list without a follow-up GET. */
+export async function apiPasskeyRegistrationVerify(
+  credential: unknown,
+  name: string | null,
+): Promise<PasskeyRegistrationResult> {
+  return authFetch<PasskeyRegistrationResult>("/passkey/registration/verify", {
+    method: "POST",
+    body: JSON.stringify({ credential, name }),
+  });
+}
+
+/** Step 1 of authentication: ask the server for a fresh challenge +
+ *  options dict suitable for `navigator.credentials.get()`. */
+export async function apiPasskeyAuthenticationOptions(): Promise<unknown> {
+  return authFetch<unknown>("/passkey/authentication/options", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+/** Step 2 of authentication: post the assertion back. On success the
+ *  server issues a session and we persist it locally so subsequent
+ *  fetches attach the bearer token. */
+export async function apiPasskeyAuthenticationVerify(
+  credential: unknown,
+): Promise<SessionResponse> {
+  const res = await authFetch<SessionResponse>("/passkey/authentication/verify", {
+    method: "POST",
+    body: JSON.stringify({ credential }),
+  });
+  saveSession(res.session_token, res.user);
+  return res;
+}
+
+/** List the signed-in user's registered passkeys. */
+export async function apiListPasskeys(): Promise<PasskeyListResponse> {
+  return authFetch<PasskeyListResponse>("/passkeys");
+}
+
+/** Drop a passkey by credential_id. Idempotent from the caller's POV
+ *  even though the server 404s on unknown id — the FE just removes the
+ *  row from its local list either way. */
+export async function apiDeletePasskey(credentialId: string): Promise<void> {
+  await authFetch<void>(`/passkeys/${encodeURIComponent(credentialId)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Rename a passkey. Empty string clears the name (defaults back to the
+ *  generic "Passkey" label). */
+export async function apiRenamePasskey(
+  credentialId: string,
+  name: string,
+): Promise<{ credential_id: string; name: string | null }> {
+  return authFetch<{ credential_id: string; name: string | null }>(
+    `/passkeys/${encodeURIComponent(credentialId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    },
+  );
 }

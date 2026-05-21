@@ -77,6 +77,13 @@ export {
   apiSignOut,
   apiSignInWithOAuth,
   apiGetAuthProviders,
+  apiPasskeyRegistrationOptions,
+  apiPasskeyRegistrationVerify,
+  apiPasskeyAuthenticationOptions,
+  apiPasskeyAuthenticationVerify,
+  apiListPasskeys,
+  apiDeletePasskey,
+  apiRenamePasskey,
   getCurrentUser,
 } from "./auth";
 export type {
@@ -84,4 +91,7 @@ export type {
   SessionResponse,
   AuthProvidersResponse,
   OAuthProvider,
+  PasskeySummary,
+  PasskeyListResponse,
+  PasskeyRegistrationResult,
 } from "./auth";

@@ -1,18 +1,20 @@
 """Auth endpoints — Phase A (foundation) + Phase B (magic link)
-+ Phase C (Apple / Google OAuth).
++ Phase C (Apple / Google OAuth) + Phase D (Passkey / WebAuthn).
 
-`POST /api/auth/magic-link/request`  start magic-link sign-in
-`POST /api/auth/magic-link/verify`   consume token, issue session
-`POST /api/auth/oauth/google`        verify Google ID token, issue session
-`POST /api/auth/oauth/apple`         verify Apple ID token, issue session
-`GET  /api/auth/providers`           list which sign-in methods are wired up
-`GET  /api/auth/me`                   resolve current session → user profile
-`POST /api/auth/sign-out`             revoke current session, unlink browser
-
-Phase D (Passkey) will add a sibling route that shares
-`services/auth.py`'s `resolve_or_merge_user` + `issue_session` +
-`link_browser_to_user` helpers — the OAuth routes already follow that
-pattern.
+`POST /api/auth/magic-link/request`            start magic-link sign-in
+`POST /api/auth/magic-link/verify`             consume token, issue session
+`POST /api/auth/oauth/google`                  verify Google ID token, issue session
+`POST /api/auth/oauth/apple`                   verify Apple ID token, issue session
+`POST /api/auth/passkey/registration/options`  start passkey registration
+`POST /api/auth/passkey/registration/verify`   finish passkey registration
+`POST /api/auth/passkey/authentication/options` start passkey sign-in
+`POST /api/auth/passkey/authentication/verify`  finish passkey sign-in, issue session
+`GET  /api/auth/passkeys`                       list current user's passkeys
+`DELETE /api/auth/passkeys/{credential_id}`     drop a passkey
+`PATCH /api/auth/passkeys/{credential_id}`      rename a passkey
+`GET  /api/auth/providers`                      list which sign-in methods are wired up
+`GET  /api/auth/me`                              resolve current session → user profile
+`POST /api/auth/sign-out`                        revoke current session, unlink browser
 
 Identity resolution for the current request is done by
 `IdentityMiddleware` in `server/middleware.py` (sets
@@ -55,6 +57,17 @@ from services.oauth import (
     google_configured,
     verify_apple_id_token,
     verify_google_id_token,
+)
+from services.passkeys import (
+    PasskeyError,
+    build_authentication_options,
+    build_registration_options,
+    complete_authentication,
+    complete_registration,
+    delete_passkey,
+    list_user_passkeys,
+    passkey_configured,
+    rename_passkey,
 )
 
 log = logging.getLogger("auth")
@@ -115,13 +128,17 @@ class OAuthSignInBody(BaseModel):
 
 class ProvidersResponse(BaseModel):
     """Which sign-in providers this API tier has configured. The FE
-    hides OAuth buttons when the matching provider is unconfigured so
-    users don't tap an inert button. Email is always available (the
-    Resend fallback logs to stdout when RESEND_API_KEY is unset)."""
+    hides OAuth / passkey buttons when the matching provider is
+    unconfigured so users don't tap an inert button. Email is always
+    available (the Resend fallback logs to stdout when RESEND_API_KEY
+    is unset). Passkeys are first-party (no third-party config) and
+    default on; gated behind `PASSKEYS_DISABLED=1` for tiers that want
+    to hide them."""
 
     email: bool
     google: bool
     apple: bool
+    passkey: bool
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +172,26 @@ def _resolve_fe_origin(request: Request) -> str:
     if origin and any(p.match(origin) for p in _ALLOWED_ORIGIN_PATTERNS):
         return origin
     return _DEFAULT_FE_ORIGIN
+
+
+def _resolve_rp_id(request: Request) -> str:
+    """Derive the WebAuthn RP id from the validated FE origin. RP id is
+    the hostname (`whoeverwants.com`, `latest.whoeverwants.com`,
+    `<slug>.dev.whoeverwants.com`, `localhost`), no scheme, no port.
+
+    Passkeys are scoped to the RP id, so a key registered against
+    `whoeverwants.com` cannot sign in on `latest.whoeverwants.com` and
+    vice versa. The RP id MUST match the FE's actual hostname at both
+    registration AND authentication time.
+    """
+    origin = _resolve_fe_origin(request)
+    # Strip scheme and any port. Origin format is always `<scheme>://<host>(:port)?`.
+    if "://" in origin:
+        host_with_port = origin.split("://", 1)[1]
+    else:
+        host_with_port = origin
+    host = host_with_port.split(":", 1)[0]
+    return host
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +403,7 @@ def get_providers():
         email=True,
         google=google_configured(),
         apple=apple_configured(),
+        passkey=passkey_configured(),
     )
 
 
@@ -410,3 +448,287 @@ def sign_out(request: Request):
         if token:
             revoke_session(conn, token)
         unlink_browser(conn, browser_id=browser_id)
+
+
+# ---------------------------------------------------------------------------
+# Passkey / WebAuthn — Phase D
+# ---------------------------------------------------------------------------
+#
+# Two ceremonies, each a two-step request/response: registration adds a
+# new credential to a signed-in user; authentication verifies an
+# existing credential and issues a session. Both flow through
+# `services/passkeys.py` so the ceremony logic + DB shape live in one
+# place; this router is mostly auth + serialization.
+#
+# `_require_passkey_configured` mirrors the OAuth 503 pattern so a tier
+# with `PASSKEYS_DISABLED=1` returns a clear failure mode rather than
+# 500ing on the missing table reads.
+
+
+class PasskeyRegistrationOptionsBody(BaseModel):
+    """Registration options request is empty — the user_id is read from
+    `request.state.user_id` and the browser_id from the middleware. A
+    body field is reserved for future flexibility (e.g. a per-tier
+    attestation policy override)."""
+
+
+class PasskeyRegistrationVerifyBody(BaseModel):
+    """The WebAuthn attestation as produced by
+    `navigator.credentials.create()` and serialized via the FE
+    helper. Pydantic accepts the raw dict; `services/passkeys.py`
+    feeds it to `verify_registration_response` which does the actual
+    structure validation. A user-supplied `name` is optional ("MacBook
+    Touch ID")."""
+
+    credential: dict
+    name: str | None = None
+
+
+class PasskeyAuthenticationOptionsBody(BaseModel):
+    """No body — server uses the browser_id from middleware to scope
+    the challenge."""
+
+
+class PasskeyAuthenticationVerifyBody(BaseModel):
+    """The WebAuthn assertion as produced by
+    `navigator.credentials.get()`."""
+
+    credential: dict
+
+
+class PasskeySummary(BaseModel):
+    """One row in `GET /passkeys`. The credential_id is returned so the
+    FE can target it for delete / rename; the public_key bytes are
+    intentionally omitted (no use case)."""
+
+    credential_id: str
+    name: str | None
+    aaguid: str | None
+    transports: str | None
+    created_at: datetime
+    last_used_at: datetime
+
+
+class PasskeyListResponse(BaseModel):
+    passkeys: list[PasskeySummary]
+
+
+class PasskeyRenameBody(BaseModel):
+    name: str = Field(min_length=0, max_length=120)
+
+
+def _require_passkey_configured():
+    if not passkey_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Passkey sign-in isn't available on this server",
+        )
+
+
+def _require_signed_in(request: Request) -> str:
+    user_id = _user_id(request)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not signed in",
+        )
+    return user_id
+
+
+def _require_browser_id(request: Request) -> str:
+    """Most callers can pass `None` because the middleware mints one,
+    but passkey ceremonies key the challenge cache on browser_id —
+    abort defensively if it's missing rather than silently using an
+    empty string as the PK."""
+    bid = _browser_id(request)
+    if not bid:
+        raise HTTPException(status_code=400, detail="Missing browser id")
+    return bid
+
+
+@router.post("/passkey/registration/options")
+def passkey_registration_options(
+    _: PasskeyRegistrationOptionsBody, request: Request
+) -> dict:
+    """Mint a fresh registration challenge for the signed-in user.
+
+    Requires sign-in: registration ADDS a new credential to an
+    existing account. A user with no other identity method can't
+    bootstrap a passkey via this endpoint — they sign in with magic
+    link / Google / Apple first, then register a passkey from
+    Settings.
+    """
+    _require_passkey_configured()
+    user_id = _require_signed_in(request)
+    browser_id = _require_browser_id(request)
+    rp_id = _resolve_rp_id(request)
+    with get_db() as conn:
+        profile = load_user_profile(conn, user_id)
+        if not profile:
+            # Should never happen — _require_signed_in guarantees the
+            # session resolves to a user — but be explicit.
+            raise HTTPException(status_code=401, detail="Account no longer exists")
+        # The "user label" is what the OS shows in the passkey prompt
+        # ("Sign in to WhoeverWants as <label>"). Prefer the user's
+        # email; fall back to a short user_id slice if they're
+        # passkey-only with no email (rare, but possible if they merge
+        # in via a passkey on a future flow).
+        user_label = profile.email or f"User {user_id[:8]}"
+        options = build_registration_options(
+            conn,
+            user_id=user_id,
+            user_label=user_label,
+            browser_id=browser_id,
+            rp_id=rp_id,
+        )
+    return options
+
+
+@router.post("/passkey/registration/verify")
+def passkey_registration_verify(
+    req: PasskeyRegistrationVerifyBody, request: Request
+) -> dict:
+    """Verify the registration attestation and persist the credential.
+
+    Returns a minimal `{credential_id, name}` shape so the FE can
+    update its local passkey list without a follow-up GET. On any
+    verification failure raises 400 with a user-safe message from
+    `PasskeyError`.
+    """
+    _require_passkey_configured()
+    user_id = _require_signed_in(request)
+    browser_id = _require_browser_id(request)
+    rp_id = _resolve_rp_id(request)
+    origin = _resolve_fe_origin(request)
+    try:
+        with get_db() as conn:
+            registered = complete_registration(
+                conn,
+                user_id=user_id,
+                browser_id=browser_id,
+                rp_id=rp_id,
+                origin=origin,
+                credential_json=req.credential,
+                name=req.name,
+            )
+    except PasskeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "credential_id": registered.credential_id,
+        "aaguid": registered.aaguid,
+        "transports": registered.transports,
+    }
+
+
+@router.post("/passkey/authentication/options")
+def passkey_authentication_options(
+    _: PasskeyAuthenticationOptionsBody, request: Request
+) -> dict:
+    """Mint a fresh authentication challenge. Anonymous: the user_id
+    isn't known until the assertion comes back. The browser_id from
+    middleware scopes the challenge so a second tab on the same
+    browser can't pick up another tab's in-flight challenge.
+    """
+    _require_passkey_configured()
+    browser_id = _require_browser_id(request)
+    rp_id = _resolve_rp_id(request)
+    with get_db() as conn:
+        options = build_authentication_options(
+            conn,
+            browser_id=browser_id,
+            rp_id=rp_id,
+        )
+    return options
+
+
+@router.post("/passkey/authentication/verify", response_model=SessionResponse)
+def passkey_authentication_verify(
+    req: PasskeyAuthenticationVerifyBody, request: Request
+):
+    """Verify the assertion and issue a session.
+
+    Funnels through `complete_sign_in` with `provider='passkey'` and
+    `provider_user_id=credential_id` — same account-merge rhythm as
+    magic-link / OAuth so a user who already has the credential row
+    (from a prior registration) signs into the same account here.
+    `email=None` because passkey authentication doesn't carry one.
+    """
+    _require_passkey_configured()
+    browser_id = _require_browser_id(request)
+    rp_id = _resolve_rp_id(request)
+    origin = _resolve_fe_origin(request)
+    try:
+        with get_db() as conn:
+            authed = complete_authentication(
+                conn,
+                browser_id=browser_id,
+                rp_id=rp_id,
+                origin=origin,
+                credential_json=req.credential,
+            )
+            completed = complete_sign_in(
+                conn,
+                provider="passkey",
+                provider_user_id=authed.credential_id,
+                email=None,
+                browser_id=browser_id,
+                user_agent=request.headers.get("user-agent"),
+            )
+    except PasskeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _signin_response(completed)
+
+
+@router.get("/passkeys", response_model=PasskeyListResponse)
+def list_passkeys(request: Request):
+    """List the signed-in user's registered passkeys. Used by the
+    Settings page to show "you have N passkeys" with delete + rename
+    affordances. Public-key bytes are intentionally not surfaced."""
+    user_id = _require_signed_in(request)
+    with get_db() as conn:
+        rows = list_user_passkeys(conn, user_id)
+    return PasskeyListResponse(
+        passkeys=[
+            PasskeySummary(
+                credential_id=r.credential_id,
+                name=r.name,
+                aaguid=r.aaguid,
+                transports=r.transports,
+                created_at=r.created_at,
+                last_used_at=r.last_used_at,
+            )
+            for r in rows
+        ]
+    )
+
+
+@router.delete(
+    "/passkeys/{credential_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_user_passkey(credential_id: str, request: Request):
+    """Drop a passkey by credential_id. Scoped to the signed-in user
+    via the WHERE in `delete_passkey` — a stranger can't drop someone
+    else's credential via id guessing. 404s when the row doesn't exist
+    (or belongs to someone else); 204s on successful delete."""
+    user_id = _require_signed_in(request)
+    with get_db() as conn:
+        ok = delete_passkey(conn, user_id=user_id, credential_id=credential_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Passkey not found")
+
+
+@router.patch("/passkeys/{credential_id}")
+def rename_user_passkey(
+    credential_id: str, req: PasskeyRenameBody, request: Request
+):
+    """Rename a passkey ("YubiKey" → "Office YubiKey"). Same identity
+    gate as delete. Empty string is accepted and clears the name."""
+    user_id = _require_signed_in(request)
+    with get_db() as conn:
+        ok = rename_passkey(
+            conn, user_id=user_id, credential_id=credential_id, name=req.name
+        )
+    if not ok:
+        raise HTTPException(status_code=404, detail="Passkey not found")
+    return {"credential_id": credential_id, "name": req.name.strip()[:120] or None}
