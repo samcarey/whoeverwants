@@ -1583,7 +1583,7 @@ export function CreateQuestionContent() {
             type="button"
             onClick={() => handleBubbleClick(entry.value)}
             disabled={isLoading}
-            className="shrink-0 flex items-center gap-1.5 px-[9px] py-[4.5px] rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
+            className="shrink-0 flex items-center gap-1.5 px-[9px] py-[4.5px] rounded-full bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none"
             aria-label={`Add ${entry.label} question`}
           >
             {entry.icon && (
