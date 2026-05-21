@@ -21,7 +21,14 @@ import {
   ApiError,
   QUESTION_VOTES_CHANGED_EVENT,
 } from "@/lib/api";
-import { POLL_HYDRATED_EVENT, type PollHydratedDetail } from "@/lib/eventChannels";
+import {
+  POLL_HYDRATED_EVENT,
+  SHOW_GROUP_BACKDROP_EVENT,
+  HIDE_GROUP_BACKDROP_EVENT,
+  type PollHydratedDetail,
+  type GroupBackdropShowDetail,
+} from "@/lib/eventChannels";
+import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
 import { slideToGroupRoot, slideToPollInfo } from "@/lib/slideOverlay";
 import {
   buildGroupFromPollDown,
@@ -213,6 +220,7 @@ interface PollDetailProps {
 }
 
 function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsOffset }: PollDetailProps) {
+  const router = useRouter();
   const scrollKey = pollScrollKey(pollShortId);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([], 80);
 
@@ -426,6 +434,27 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     };
   }, []);
 
+  // Swipe-back gesture (mirrors group→home in GroupContent). On commit
+  // we navigate directly with router.push — calling slideToGroupRoot
+  // would layer a second animation on top of the in-flight swipe; the
+  // backdrop is already showing the group view, so navigation just
+  // commits the URL.
+  const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
+    headerRef,
+    showBackdrop: () => {
+      window.dispatchEvent(
+        new CustomEvent<GroupBackdropShowDetail>(SHOW_GROUP_BACKDROP_EVENT, {
+          detail: { groupId },
+        }),
+      );
+    },
+    hideBackdrop: () => {
+      window.dispatchEvent(new Event(HIDE_GROUP_BACKDROP_EVENT));
+    },
+    onBeforeCommit: () => rememberCurrentScroll(scrollKey),
+    onCommit: () => router.push(`/g/${groupId}`),
+  });
+
   const subQuestions = poll.questions;
   const isMultiPoll = subQuestions.length > 1;
   const allYesNo = subQuestions.every((sp) => sp.question_type === "yes_no");
@@ -538,6 +567,20 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
         }
       />
 
+      {/* z-index:1 + opaque background keeps the group backdrop hidden
+          behind the page until the swipe moves the wrapper sideways. */}
+      <div
+        ref={swipeWrapperRef}
+        {...swipeTouchHandlers}
+        className="touch-pan-y"
+        style={{
+          willChange: "transform",
+          position: "relative",
+          zIndex: 1,
+          background: "var(--background)",
+          minHeight: "100dvh",
+        }}
+      >
       <div
         style={{
           paddingTop: `calc(${headerHeight}px + 1.5rem)`,
@@ -781,6 +824,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           />
         </div>
 
+      </div>
       </div>
 
       {(() => {
