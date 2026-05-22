@@ -254,3 +254,35 @@ export async function apiRenamePasskey(
     },
   );
 }
+
+/** Phase G: invite redemption.
+ *
+ *  Lives on /auth (not /groups) because the URL the joiner clicked
+ *  carries only a raw token — no route_id. The redeem endpoint
+ *  resolves the group from the token's stored group_id and writes a
+ *  `group_members` row for the requester's earliest-linked browser.
+ *
+ *  Throws `ApiError` on 401 (anonymous) and 404 (invalid / expired /
+ *  revoked / fully-used). The caller is responsible for surfacing
+ *  status-specific messages to the user (the FE's invite page does).
+ *
+ *  `already_member: true` is NOT an error — it means the user was
+ *  already a member (possibly approved via Phase F earlier), and
+ *  use_count was NOT bumped. The FE can still redirect into the
+ *  group but skip any "welcome!" toast. */
+export interface InviteRedeemResult {
+  group_id: string;
+  group_short_id: string | null;
+  target_poll_id: string | null;
+  target_poll_short_id: string | null;
+  already_member: boolean;
+}
+
+export async function apiRedeemInvite(
+  token: string,
+): Promise<InviteRedeemResult> {
+  return authFetch<InviteRedeemResult>(
+    `/invites/${encodeURIComponent(token)}/redeem`,
+    { method: "POST" },
+  );
+}

@@ -43,6 +43,13 @@ from middleware import (
     user_id_from_request as _user_id,
 )
 from models import PollResponse, UpdateGroupTitleRequest
+from services.invites import (
+    IssuedInvite,
+    InviteSummary,
+    issue_invite,
+    list_active_invites,
+    revoke_invite,
+)
 from services.join_requests import (
     create_join_request,
     decide_request,
@@ -1118,3 +1125,231 @@ def decide_group_join_request(
         request_id=decided.request_id,
         status=decided.status,
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase G: invite links
+# ---------------------------------------------------------------------------
+#
+# Creator-owned shareable URLs that grant private-group membership on
+# redemption. Complements Phase F join requests: invites are
+# creator-initiated (push from creator → joiner); join requests are
+# joiner-initiated (pull from joiner → creator approves).
+#
+# Storage: `services/invites.py` persists sha256(token) only. The raw
+# token is returned ONCE at create time and embedded in the shareable
+# URL. The redeem endpoint hashes the inbound raw token and matches.
+#
+# Authorization: create / list / revoke are creator-only (signed-in
+# AND `creator_user_id` matches the session). Redeem (in `routers/auth.py`)
+# requires signed-in but ANY user can redeem.
+
+
+class CreateInviteRequest(BaseModel):
+    """Body for `POST /api/groups/{route_id}/invites`.
+
+    `mode='single'` forces max_uses=1 server-side; `mode='multi'`
+    accepts an optional max_uses (NULL = unlimited).
+
+    `target_poll_id` is the optional auto-scroll target: the FE
+    redirects to `/g/<group>/p/<poll_short>` instead of `/g/<group>`
+    after redemption. Must be a poll in the same group; the server
+    silently drops cross-group target_poll_ids (returns NULL).
+
+    `expires_in_hours` is the time-to-live knob. NULL = never expires
+    (creator must revoke explicitly).
+    """
+
+    mode: str  # 'single' | 'multi'
+    max_uses: int | None = None
+    target_poll_id: str | None = None
+    expires_in_hours: int | None = None
+
+
+class InviteResponse(BaseModel):
+    """Shape returned by create + list. `token` and `url` are populated
+    ONLY on create (they're the one-time raw-token reveal); list
+    omits them since the creator already received the URL at create
+    time."""
+
+    id: str
+    group_id: str
+    mode: str
+    target_poll_id: str | None
+    max_uses: int | None
+    use_count: int
+    expires_at: str | None
+    created_at: str
+    token: str | None = None
+    url: str | None = None
+
+
+def _summary_to_invite_response(s) -> InviteResponse:
+    """List-side conversion. No token/url since list doesn't reveal."""
+    return InviteResponse(
+        id=s.id,
+        group_id=s.group_id,
+        mode=s.mode,
+        target_poll_id=s.target_poll_id,
+        max_uses=s.max_uses,
+        use_count=s.use_count,
+        expires_at=s.expires_at.isoformat() if s.expires_at else None,
+        created_at=s.created_at.isoformat() if s.created_at else "",
+    )
+
+
+def _issued_to_invite_response(
+    issued: IssuedInvite, url: str
+) -> InviteResponse:
+    """Create-side conversion. Carries the raw token + the FE-host-
+    derived shareable URL — both surfaced exactly once."""
+    return InviteResponse(
+        id=issued.id,
+        group_id=issued.group_id,
+        mode=issued.mode,
+        target_poll_id=issued.target_poll_id,
+        max_uses=issued.max_uses,
+        use_count=issued.use_count,
+        expires_at=issued.expires_at.isoformat() if issued.expires_at else None,
+        created_at=issued.created_at.isoformat(),
+        token=issued.token,
+        url=url,
+    )
+
+
+def _require_creator(conn, group_id: str, user_id: str | None) -> None:
+    """Raise 401/403 unless the caller is signed in AND matches the
+    group's recorded `creator_user_id`. Shared 3-way authorization
+    gate for every invite-management endpoint."""
+    if not user_id:
+        raise HTTPException(
+            status_code=401, detail="Sign in to manage invites"
+        )
+    meta = get_group_metadata(conn, group_id)
+    if not meta or not meta["creator_user_id"]:
+        raise HTTPException(
+            status_code=403, detail="Group has no recorded creator"
+        )
+    if meta["creator_user_id"] != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the group's creator can manage invites",
+        )
+
+
+@router.post(
+    "/{route_id}/invites",
+    response_model=InviteResponse,
+    status_code=201,
+)
+def create_group_invite(
+    route_id: str,
+    body: CreateInviteRequest,
+    request: Request,
+):
+    """Phase G: mint a new invite link. Creator-only.
+
+    The response is the ONLY time the raw token + URL are returned —
+    sha256(token) is what hits the DB. If the creator loses the URL,
+    they have to mint a new invite.
+    """
+    from services.fe_origin import resolve_fe_origin
+
+    user_id = _user_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        _require_creator(conn, group_id, user_id)
+
+        if body.mode not in ("single", "multi"):
+            raise HTTPException(
+                status_code=400, detail="mode must be 'single' or 'multi'"
+            )
+        if body.max_uses is not None and body.max_uses <= 0:
+            raise HTTPException(
+                status_code=400, detail="max_uses must be positive"
+            )
+        if body.expires_in_hours is not None and body.expires_in_hours <= 0:
+            raise HTTPException(
+                status_code=400, detail="expires_in_hours must be positive"
+            )
+
+        # Cross-group target_poll_id silently downgraded to NULL — a
+        # 400 would force the FE to handle "stale poll selection" as a
+        # distinct error path; falling back to "land on the group
+        # root" is more forgiving and matches what target_poll_id
+        # being NULL means at redeem time anyway.
+        target_poll_id: str | None = None
+        if body.target_poll_id:
+            poll_row = conn.execute(
+                """SELECT id FROM polls
+                    WHERE id = %(p)s::uuid AND group_id = %(g)s::uuid""",
+                {"p": body.target_poll_id, "g": group_id},
+            ).fetchone()
+            if poll_row:
+                target_poll_id = str(poll_row["id"])
+
+        issued = issue_invite(
+            conn,
+            group_id=group_id,
+            created_by_user_id=user_id,
+            mode=body.mode,
+            target_poll_id=target_poll_id,
+            max_uses=body.max_uses,
+            expires_in_hours=body.expires_in_hours,
+        )
+
+    # URL build runs OUTSIDE the get_db() block; no DB roundtrip
+    # needed. The token is embedded in the path; the FE's
+    # `/invite/[token]/page.tsx` resolves on receipt.
+    origin = resolve_fe_origin(request)
+    url = f"{origin}/invite/{issued.token}"
+    return _issued_to_invite_response(issued, url)
+
+
+@router.get(
+    "/{route_id}/invites",
+    response_model=list[InviteResponse],
+)
+def list_group_invites(route_id: str, request: Request):
+    """Phase G: list a group's active invites. Creator-only.
+
+    "Active" = not revoked, not expired, has remaining uses. Revoked
+    or fully-used invites are excluded — the UI doesn't need them.
+    """
+    user_id = _user_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        _require_creator(conn, group_id, user_id)
+        summaries = list_active_invites(conn, group_id)
+    return [_summary_to_invite_response(s) for s in summaries]
+
+
+@router.delete(
+    "/{route_id}/invites/{invite_id}",
+    status_code=204,
+)
+def revoke_group_invite(
+    route_id: str, invite_id: str, request: Request
+):
+    """Phase G: revoke an active invite. Creator-only.
+
+    Returns 204 on successful revoke. 404 when the invite doesn't
+    exist OR isn't owned by the caller OR was already revoked —
+    indistinguishable to the caller, no information leak about
+    invites belonging to other creators.
+    """
+    user_id = _user_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        _require_creator(conn, group_id, user_id)
+        ok = revoke_invite(conn, invite_id, user_id)
+    if not ok:
+        raise HTTPException(
+            status_code=404, detail="Invite not found or already revoked"
+        )

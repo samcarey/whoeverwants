@@ -10,6 +10,7 @@ import GroupShareButton from "@/components/GroupShareButton";
 import GroupPrivacySection from "@/components/GroupPrivacySection";
 import HeaderPortal from "@/components/HeaderPortal";
 import InitialBubble from "@/components/InitialBubble";
+import InviteLinksSection from "@/components/InviteLinksSection";
 import JoinRequestsSection from "@/components/JoinRequestsSection";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
@@ -129,6 +130,8 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         <GroupPrivacySection group={group} groupId={groupId} />
 
         <JoinRequestsSection groupId={groupId} enabled={viewerIsCreator} />
+
+        <InviteLinksSection groupId={groupId} enabled={viewerIsCreator} />
 
         <NotificationSettingsCard groupRouteId={groupId} className="mt-[0.96rem]" />
 

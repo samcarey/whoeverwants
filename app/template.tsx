@@ -133,6 +133,10 @@ function TemplateInner({ children }: AppTemplateProps) {
   // of the new group button + padding treatment via isGroupRootView.
   const isGroupLikePage = isGroupRootView(pathname);
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
+  // Phase G: /invite/<token> is a redemption landing page that renders
+  // its own full-screen redirect-or-sign-in UI. The template's
+  // fallback header would just sit above it as empty chrome.
+  const isInvitePage = pathname.startsWith('/invite/');
 
   // The draft poll card on every group-like page hosts the inline question
   // form (category/for fields + question fields) plus the staged-questions
@@ -143,8 +147,8 @@ function TemplateInner({ children }: AppTemplateProps) {
 
   return (
     <>
-      {/* Fallback header for pages without a page-specific header (not group, settings, home, or create-modal). */}
-      {!isGroupFamilyPage && !isSettingsPage && pathname !== '/' && (
+      {/* Fallback header for pages without a page-specific header (not group, settings, home, invite redemption, or create-modal). */}
+      {!isGroupFamilyPage && !isSettingsPage && !isInvitePage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">

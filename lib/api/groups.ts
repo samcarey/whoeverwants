@@ -409,6 +409,87 @@ export async function apiDecideGroupJoinRequest(
   };
 }
 
+/**
+ * Phase G: invite-link helpers.
+ *
+ * Three creator-side operations + one redeem (which lives on the
+ * `auth` namespace because the URL the joiner clicked has no
+ * route_id, only a raw token):
+ *   * `apiCreateGroupInvite(routeId, options)` — mint a new invite.
+ *     The response includes the raw `token` + a host-derived `url`
+ *     exactly ONCE; lose it and the creator has to mint again.
+ *   * `apiListGroupInvites(routeId)` — active invites for a group,
+ *     creator-only.
+ *   * `apiRevokeGroupInvite(routeId, inviteId)` — mark an invite
+ *     revoked.
+ *   * `apiRedeemInvite(token)` is exported from `lib/api/auth.ts`.
+ *
+ * The list endpoint deliberately omits `token` and `url` (one-shot at
+ * create time) — a lost URL means a new invite, not a "view the link
+ * again" affordance.
+ */
+
+export interface GroupInvite {
+  id: string;
+  group_id: string;
+  mode: 'single' | 'multi';
+  target_poll_id: string | null;
+  max_uses: number | null;
+  use_count: number;
+  expires_at: string | null;
+  created_at: string;
+  /** Populated only on the create-response shape, NEVER on list. */
+  token?: string | null;
+  /** Populated only on the create-response shape, NEVER on list. */
+  url?: string | null;
+}
+
+export interface CreateGroupInviteOptions {
+  mode?: 'single' | 'multi';
+  max_uses?: number | null;
+  target_poll_id?: string | null;
+  expires_in_hours?: number | null;
+}
+
+export async function apiCreateGroupInvite(
+  routeId: string,
+  options: CreateGroupInviteOptions = {},
+): Promise<GroupInvite> {
+  const body = {
+    mode: options.mode ?? 'multi',
+    max_uses: options.max_uses ?? null,
+    target_poll_id: options.target_poll_id ?? null,
+    expires_in_hours: options.expires_in_hours ?? null,
+  };
+  const data = await groupFetch<any>(
+    `/${encodeURIComponent(routeId)}/invites`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+  );
+  return data as GroupInvite;
+}
+
+export async function apiListGroupInvites(
+  routeId: string,
+): Promise<GroupInvite[]> {
+  const data = await groupFetch<any[]>(
+    `/${encodeURIComponent(routeId)}/invites`,
+  );
+  return Array.isArray(data) ? (data as GroupInvite[]) : [];
+}
+
+export async function apiRevokeGroupInvite(
+  routeId: string,
+  inviteId: string,
+): Promise<void> {
+  await groupFetch(
+    `/${encodeURIComponent(routeId)}/invites/${encodeURIComponent(inviteId)}`,
+    { method: 'DELETE' },
+  );
+}
+
 /** Encode an ArrayBuffer as base64. Chunked to avoid the `apply()`
  *  call-stack limit on big buffers — handles the 5 MiB max-image-size
  *  cap comfortably. */

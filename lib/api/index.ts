@@ -50,10 +50,15 @@ export {
   apiCreateGroupJoinRequest,
   apiListGroupJoinRequests,
   apiDecideGroupJoinRequest,
+  apiCreateGroupInvite,
+  apiListGroupInvites,
+  apiRevokeGroupInvite,
 } from "./groups";
 export type {
   GroupJoinRequest,
   CreateGroupJoinRequestResult,
+  GroupInvite,
+  CreateGroupInviteOptions,
 } from "./groups";
 
 export {
@@ -92,6 +97,7 @@ export {
   apiListPasskeys,
   apiDeletePasskey,
   apiRenamePasskey,
+  apiRedeemInvite,
   getCurrentUser,
 } from "./auth";
 export type {
@@ -102,4 +108,5 @@ export type {
   PasskeySummary,
   PasskeyListResponse,
   PasskeyRegistrationResult,
+  InviteRedeemResult,
 } from "./auth";
