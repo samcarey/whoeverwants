@@ -114,20 +114,11 @@ export default function GroupPrivacySection({
   };
 
   const stateLabel = isPrivate ? "Private" : "Public";
-  // Per-row help text. The creator gets a description of what flipping
-  // does; non-creators get a description of the current state. Anonymous
-  // viewers on a public group also get a sign-in nudge below the card.
-  const helpText = (() => {
-    if (isCreator) {
-      return isPrivate
-        ? "Only members can see this group. Share an invite link to add others."
-        : "Anyone with the URL can see this group.";
-    }
-    if (privacy === "private") {
-      return "Only members can see this group.";
-    }
-    return "Anyone with the URL can see this group.";
-  })();
+  // Base description by state; creator gets the invite-link nudge as a
+  // suffix when private (Phase F/G will deliver the actual invite UI).
+  const helpText =
+    (isPrivate ? "Only members can see this group." : "Anyone with the URL can see this group.")
+    + (isCreator && isPrivate ? " Share an invite link to add others." : "");
 
   // Sign-in nudge: anonymous viewer on a public group gets a quiet CTA
   // explaining how to create private groups in the future. Doesn't fire

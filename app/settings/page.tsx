@@ -104,15 +104,10 @@ export default function SettingsPage() {
   const [showDiscardImageConfirm, setShowDiscardImageConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Phase A+B: signed-in state. Initialized as null to match SSR (no
-  // localStorage on the server); a post-mount effect below seeds from
-  // the localStorage-cached profile, then `apiGetMe()` refreshes from
-  // the server. Seeding eagerly via `useState(() => getCurrentUser())`
-  // produces a hydration mismatch — SSR renders the "Sign in" button,
-  // client's first render reads localStorage and renders the "Account"
-  // row, React then complains the trees don't match. The brief flash
-  // from "Sign in" → "Account" on first paint for signed-in users is
-  // the cost of an SSR-safe init.
+  // Initialize null for SSR parity (no localStorage on the server); the
+  // mount effect below seeds from the cached profile, then apiGetMe()
+  // refreshes. Eager `useState(() => getCurrentUser())` produces a
+  // hydration mismatch when signed in.
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [signOutInFlight, setSignOutInFlight] = useState(false);

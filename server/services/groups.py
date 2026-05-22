@@ -255,7 +255,7 @@ def get_group_metadata(conn, group_id: str) -> dict | None:
     if not row:
         return None
     return {
-        "privacy": row.get("privacy") or "public",
+        "privacy": row["privacy"],
         "creator_user_id": (
             str(row["creator_user_id"]) if row.get("creator_user_id") else None
         ),

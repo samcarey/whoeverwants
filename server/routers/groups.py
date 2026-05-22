@@ -313,9 +313,7 @@ def create_group(request: Request):
             """,
             {"privacy": privacy, "creator_user_id": user_id},
         ).fetchone()
-        # Auto-join is safe regardless of privacy: the creator is always
-        # a member of their own group. Skip the privacy gate by passing
-        # privacy='public' explicitly so the helper doesn't bail.
+        # Bypass the helper's private-skip — creators are always members.
         grant_group_membership_inline(
             conn, str(row["id"]), browser_id, privacy="public"
         )
@@ -395,21 +393,14 @@ def get_group_by_route_id(
         meta = get_group_metadata(conn, group_id)
         privacy = meta["privacy"] if meta else "public"
 
-        # Phase E: private groups gate at the read boundary — strangers
-        # don't auto-join via URL and don't see any polls. Members and
-        # public-group visitors flow through the existing logic.
+        # Phase E: strangers don't auto-join private groups via URL and
+        # don't see any polls — 404 at the boundary instead.
         if privacy == "private":
             if not is_caller_member_of_group(
                 conn, group_id, browser_id=browser_id, user_id=user_id
             ):
                 raise HTTPException(status_code=404, detail="Group not found")
         else:
-            # Auto-join: every visit becomes a group member. Idempotent via
-            # ON CONFLICT, so re-visits don't advance joined_at — the
-            # closed-before-join filter compares against the FIRST visit's
-            # watermark. Phase E: private groups skip this entirely (handled
-            # above); the helper would no-op anyway with `privacy='private'`,
-            # but reading the privacy outside the helper lets us 404 cleanly.
             grant_group_membership_inline(
                 conn, group_id, browser_id, privacy=privacy
             )
