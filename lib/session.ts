@@ -105,22 +105,50 @@ export function getCachedSessionUser(): SessionUser | null {
 
 /** Persist the result of a successful sign-in. Dispatches
  *  SESSION_CHANGED_EVENT so listeners can refresh. */
+function invalidateAccessibleCacheLazy(): void {
+  // Lazy require to dodge any circular-import edge case at module
+  // initialization time. `clearSession`/`saveSession` are called from
+  // many surfaces; this keeps the import graph honest.
+  if (typeof window === 'undefined') return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { invalidateAccessibleQuestions } = require('@/lib/questionCache');
+    invalidateAccessibleQuestions?.();
+  } catch {
+    // Cache module not loaded yet (SSR, test harness). Safe to skip:
+    // there's nothing to invalidate.
+  }
+}
+
 export function saveSession(token: string, user: SessionUser): void {
   cachedToken = token;
   cachedProfile = user;
   writeToken(token);
   writeProfile(user);
+  // Membership-driven visibility changes on sign-in: the existing
+  // anonymous-state polls cache no longer reflects what the server
+  // would return for a signed-in caller. Drop it so the next
+  // `getMyGroups()` refetches.
+  invalidateAccessibleCacheLazy();
   dispatchChange();
 }
 
 /** Clear local session state. Server-side revocation is the caller's
- *  job (POST /api/auth/sign-out). */
+ *  job (POST /api/auth/sign-out).
+ *
+ *  Also invalidates the accessible-polls cache. Otherwise the signed-
+ *  in groups would remain in the in-memory cache and — because
+ *  `[].every(...) === true` makes an empty `accessibleQuestionIds`
+ *  list satisfy the cache freshness check — the anonymous post-sign-
+ *  out path would happily serve them for up to the 60s TTL, leaking
+ *  signed-in-fetched group data to the anonymous session. */
 export function clearSession(): void {
   const wasSignedIn = !!cachedToken || !!cachedProfile;
   cachedToken = null;
   cachedProfile = null;
   writeToken(null);
   writeProfile(null);
+  invalidateAccessibleCacheLazy();
   if (wasSignedIn) dispatchChange();
 }
 

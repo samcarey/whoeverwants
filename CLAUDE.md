@@ -945,14 +945,160 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Auth & Access Model
 
-> **Phases A + B + C shipped.** A+B = identity foundation +
+> **Phases A + B + C + D shipped.** A+B = identity foundation +
 > magic-link email sign-in (migration 112). C = "Sign in with Apple"
 > + "Sign in with Google" on web, plus native Apple Sign In on
-> Capacitor iOS via `@capgo/capacitor-social-login`. Passkey (D),
-> group privacy (E), join requests (F), invite links (G), per-vote
-> anonymity (H), and native Google on iOS (deferred sub-follow-up to C —
-> needs per-bundle iOS client IDs + URL-scheme patching) are still
-> scheduled. Full plan + rationale in `docs/auth-access-model.md`.
+> Capacitor iOS via `@capgo/capacitor-social-login`. D = passkey
+> (WebAuthn) registration + sign-in (migration 113), with anonymous
+> registration supported so a user can create an account directly
+> from a passkey. Group privacy (E), join requests (F), invite links
+> (G), per-vote anonymity (H), and native Google on iOS (deferred
+> sub-follow-up to C — needs per-bundle iOS client IDs + URL-scheme
+> patching) are still scheduled. Full plan + rationale in
+> `docs/auth-access-model.md`.
+
+**Cross-browser visibility for signed-in users.** Every read that
+asks "is the caller a member of this group?" must walk
+`user_browsers` to expand membership across every browser the user
+is signed in on — not just the current `browser_id`. The
+`group_members` table is keyed on `(group_id, browser_id)` but a
+signed-in user has N browser_ids, each potentially with its own row
+(or none). Visibility = "the current browser OR any browser linked
+to user_id has a row." Per-group `joined_at` uses `MIN` across
+linked rows so the closed-before-join filter is most permissive
+(the user "joined" when their earliest browser did). Canonical
+pattern in `services/groups.py: load_user_visibility` (signature
+`(conn, browser_id, *, user_id, legacy_question_ids)`); mirror it
+verbatim in any new endpoint that reads membership. **Three places
+in production today** — `/api/groups/mine`, `/api/groups/by-route-id/{id}`,
+`/api/groups/empty`. Phase E (private groups, visibility filter)
+and Phase F (join requests, "who requested?") will need the same
+expansion; if the SQL doesn't `OR browser_id IN (SELECT browser_id
+FROM user_browsers WHERE user_id = ...)`, the second browser bug
+recurs. Symmetric for writes: `leave_group` deletes across every
+linked browser when user_id is set — otherwise tapping "leave" on
+one device just leaves on that device, and the group reappears on
+the next visit from another linked browser.
+
+**Don't apply the forget bridge to signed-in users.** The
+`accessible_question_ids` localStorage list is per-device anonymous
+state — `/api/groups/mine` intersects member-groups with the
+bridge list to give "forget = group disappears from home"
+semantics on devices that never signed in. For signed-in callers,
+membership is the authoritative cross-device source of truth;
+applying the intersection drops their groups when their FE happens
+to send a localStorage list that doesn't include the new group's
+questions (typical state: legacy entries from before sign-in).
+Gate the intersection on `not user_id` and let signed-in users
+leave groups via the explicit DELETE /membership action instead.
+
+**FE short-circuits keyed on local state can hide server-side
+membership.** Two patterns to audit when adding sign-in to a new
+flow: (1) `getMyGroups()` in `lib/simpleQuestionQueries.ts` used to
+return `[]` synchronously when `accessibleIds.length === 0`,
+skipping the API call entirely; (2) `apiGetMyGroups()` in
+`lib/api/groups.ts` did the same one layer down. Both got fixed
+together when the second-browser bug surfaced. The general rule:
+any FE optimization that short-circuits on "the local list is
+empty so there's nothing to fetch" needs an `isSignedIn` carve-out
+(or, simpler, just drop the optimization — the server's empty-list
+response is microseconds anyway). Same caution applies to cache
+freshness checks: `[].every(x => set.has(x)) === true`, so an
+empty `accessiblePollsCache` paired with an empty `accessibleIds`
+list looks like a cache hit and serves `[]` indefinitely. Bypass
+the cache check entirely when signed in (`canUseCachedPolls =
+cached && !isSignedIn && accessibleIds.every(...)`); in-flight
+coalescing (`myGroupsInFlight`) prevents per-render fetch piling.
+
+**Pitfall: `cachedToken` in `lib/session.ts` is module-cached.**
+The first call to `getSessionToken()` reads localStorage and stores
+the result; subsequent calls return the cached value without
+re-reading. When writing FE tests that pre-seed localStorage, the
+seed must run BEFORE the page's JS imports `lib/session.ts` —
+Playwright's `context.addInitScript(...)` is the correct hook,
+NOT `page.evaluate(...)` after `page.goto(...)`. The latter sets
+localStorage AFTER `cachedToken = null` is already memoized, and
+the page sees "signed out" even with a valid token in storage.
+
+**Passkey ceremony lessons learned the hard way (Phase D security pass).**
+- **Anonymous /verify with a stashed signed-in user_id is a takeover
+  vector.** `complete_registration` reads `stash.user_id` from
+  `passkey_challenges` and uses it as the binding identity. If the
+  router accepts the verify call without an Authorization header
+  AND the stash was created by a signed-in /options call, the
+  credential gets bound to the original user AND a session is issued.
+  Sign-out can be reversed by completing an in-flight ceremony. Fix:
+  in the anonymous branch, require `stash.user_id` to belong to a
+  user with NO existing `user_identities` rows (i.e. the fresh mint
+  from the anonymous options branch). The two anonymous-create vs
+  signed-in-add code paths converge on the same `complete_registration`,
+  so the gate has to discriminate by stash state, not by request shape.
+- **Existing credentials must be rejected at /registration/verify.**
+  The OS prompt at the anonymous "Create account with a passkey" path
+  doesn't filter out credentials already known to the RP — the
+  `exclude_credentials` list is empty for a fresh user_id. A user can
+  pick their existing passkey and the server's `ON CONFLICT (credential_id)
+  DO UPDATE` would silently rebind it to the freshly-minted (orphan)
+  user_id while `user_identities` (ON CONFLICT DO NOTHING) keeps the
+  original. Result: tables desync; sign-in resolves to the original
+  user via `user_identities`, but `passkey_credentials.user_id` points
+  at the orphan; the original user can't manage their own credential.
+  Fix: SELECT `passkey_credentials` by credential_id BEFORE the INSERT;
+  if it exists, raise PasskeyError("already registered, sign in
+  instead"). Drop the ON CONFLICT DO UPDATE — the unique constraint
+  becomes the concurrency guard.
+- **Don't `_consume_challenge` before verifying.** The original code
+  DELETE...RETURNINGed the challenge atomically up front, then ran
+  parse + verify. A failing verify (garbage credential, signature
+  mismatch, replay attempt) consumed the challenge along with the
+  legitimate user's chance to retry. Combined with X-Browser-Id being
+  exposed in every response header (intentional for cross-tab
+  adoption), an attacker can DoS sign-in by spamming /verify with
+  garbage under the victim's browser_id. Fix: split into
+  `_peek_challenge` (read only) + `_delete_challenge` (called after
+  verify succeeds). Failing verify leaves the challenge for the
+  user's retry within the 5-minute TTL. The challenge predicate on
+  the delete (`AND challenge = %(c)s`) handles the rare two-ceremony
+  race where the user restarted /options between peek and delete.
+- **Catch `WebAuthnException`, not just `Invalid*Response`.** The
+  webauthn library raises `InvalidJSONStructure` / `InvalidCBORData`
+  / `InvalidAuthenticatorDataStructure` etc. as siblings of
+  `InvalidRegistrationResponse`. Catching only the latter lets
+  malformed input produce a 500 instead of a clean 400. The base
+  class `WebAuthnException` is the right catch surface for both
+  registration and authentication verify call sites.
+- **clearSession must invalidate `accessiblePollsCache`.** Sign-out
+  drops the session token but leaves the in-memory polls cache from
+  the signed-in fetch. Combined with `[].every(x=>set.has(x)) === true`
+  making an empty `accessibleQuestionIds` list satisfy the cache
+  freshness check, the anonymous post-sign-out path serves the
+  signed-in-fetched groups for up to the 60s TTL — a privacy leak.
+  `saveSession` and `clearSession` in `lib/session.ts` both call
+  `invalidateAccessibleCacheLazy()` (lazy `require()` to dodge any
+  circular-import surface).
+- **Last-identity safeguard on passkey delete.** A user who created
+  an account via anonymous passkey registration (no email, no OAuth)
+  can otherwise delete their only credential via Settings and lock
+  themselves out — the user row stays but no path back in exists.
+  `delete_user_passkey` checks `SELECT 1 FROM user_identities WHERE
+  user_id = ... AND NOT (provider = 'passkey' AND provider_user_id
+  = the-one-being-deleted)` and 400s when nothing else remains.
+- **`PASSKEYS_DISABLED=1` must gate ALL passkey endpoints, not just
+  registration/auth.** The kill switch model mirrors OAuth's
+  `google_configured()` / `apple_configured()` 503 pattern — but only
+  if every endpoint calls `_require_passkey_configured()`. The
+  management trio (list / delete / rename) is easy to forget; doing
+  so means an operator's kill switch leaves the dangerous
+  delete/rename surface alive.
+- **Delete the paired `user_identities` row when deleting a
+  passkey.** `delete_passkey` removes the `passkey_credentials` row;
+  `delete_user_passkey` (the route handler) additionally deletes the
+  matching `('passkey', credential_id)` `user_identities` row. Leaving
+  it orphans an identity record that would (silently) participate in
+  future `resolve_or_merge_user` lookups if the same credential_id is
+  ever re-registered (cryptographically improbable, but the orphan
+  shows up in `GET /api/auth/me`'s `providers` array if anything ever
+  joined to it).
 
 **Identity tables (migration 112):**
 - `users(id)` — one row per real person.

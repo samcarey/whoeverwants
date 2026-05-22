@@ -212,7 +212,7 @@ the original session for the rationale.
 | F | Join requests | `group_join_requests` table, request/approve/deny, push notification | E |
 | G | Invite links | `group_invites` table, create/redeem/revoke, target-poll on join | E |
 | H | Per-vote anonymity | anonymity flags on votes, read-time filter everywhere, audit test | A |
-| I | Polish | account settings (linked identities, sign out, delete), retire `creator_secret` | A–H |
+| I | Polish | account settings (linked identities, **add recovery email to passkey-only account**, sign out, delete), retire `creator_secret` | A–H |
 
 Phase A and B ship together as the first PR — A is invisible alone; B is
 the smallest end-to-end auth that proves the model.
@@ -310,6 +310,51 @@ the smallest end-to-end auth that proves the model.
   proposed z-80 so it stacks above everything (sign-in might be
   triggered FROM the create-poll modal when a user picks "private" and
   isn't signed in).
+
+## Adding a recovery email to a passkey-only account (Phase I)
+
+Phase D (anonymous passkey registration) lets users create an account
+with no email at all — `user_identities` carries only a `passkey` row,
+`email` is NULL. Recovery is the cost: lose the device with the only
+credential and the account is unreachable. Phase I will let those
+users attach an email after the fact as a recovery path.
+
+The mechanics reuse the existing magic-link flow with one twist:
+
+1. Settings → "Add a recovery email" (visible when signed in AND no
+   email identity exists yet) → user types address → `POST
+   /api/auth/recovery-email/request {email}`. Server validates,
+   throttles (existing `email_throttled` helper), mints a magic-link
+   token tagged with the current `user_id` (new column on
+   `magic_link_tokens` OR a separate `email_attach_tokens` table —
+   the former is lighter and the predicate `WHERE used_at IS NULL
+   AND user_id IS NULL` keeps sign-in flows uncrossed). Sends the
+   link.
+2. User clicks the link → `POST /api/auth/recovery-email/verify
+   {token}`. Server consumes the token, inserts a new
+   `user_identities` row `(provider='email', provider_user_id=<email>,
+   user_id=<original>, email=<email>)`, returns the updated profile.
+   No new session issued (the user was already signed in to confirm).
+
+Account-merge gotcha: if `email` is already in `user_identities`
+pointing at a DIFFERENT user_id, the attach must either (a) refuse
+with a clear "this email is already used by another account, sign
+in to that account instead and link from there" message, or (b)
+merge the two accounts (move every `user_identities` row, every
+`user_browsers` row, every `polls.creator_user_id`, every
+`votes.voter_user_id` from the passkey-only user to the email-owning
+user, then delete the now-empty user row). (a) is simpler and
+preserves the principle that account merge requires proving control
+of both sides at the same time; (b) is friendlier UX but the
+"clobber my passkey account" rollback story is messier. Go with
+(a) for v1.
+
+UI gating: the "Add a recovery email" affordance is **encouraged but
+not enforced** on Phase D account creation — a banner on Settings
+when the user has only a passkey identity ("Add a recovery email so
+you don't lose access if this device is lost"), but creation paths
+don't block. Forcing email collection at registration time defeats
+the point of passkey-as-account-creation (no friction).
 
 ## Out of scope for v1
 

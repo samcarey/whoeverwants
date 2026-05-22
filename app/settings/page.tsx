@@ -13,9 +13,19 @@ import {
   getCachedMyUserProfile,
   clearCachedMyUserProfile,
   apiGetMe,
+  apiGetAuthProviders,
   apiSignOut,
+  apiListPasskeys,
+  apiDeletePasskey,
   getCurrentUser,
+  type PasskeySummary,
 } from "@/lib/api";
+import {
+  PasskeyCancelledError,
+  passkeySupported,
+  platformPasskeySupported,
+  registerPasskey,
+} from "@/lib/passkeys";
 import { SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
 import SignInModal from "@/components/SignInModal";
 import { usePageReady } from "@/lib/usePageReady";
@@ -102,6 +112,20 @@ export default function SettingsPage() {
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [signOutInFlight, setSignOutInFlight] = useState(false);
 
+  // Phase D — passkeys. Only fetched + shown when signed in. The server
+  // tier capability + browser capability are both gates: the server
+  // tier check comes from /api/auth/providers (memoized in
+  // apiGetAuthProviders); the browser check is sync from
+  // passkeySupported(). Platform-authenticator availability is async
+  // and used to gate the "Add passkey" affordance — registration
+  // requires a real authenticator.
+  const [passkeys, setPasskeys] = useState<PasskeySummary[] | null>(null);
+  const [passkeyServerEnabled, setPasskeyServerEnabled] = useState<boolean | null>(null);
+  const [platformAuthAvailable, setPlatformAuthAvailable] = useState<boolean | null>(null);
+  const [passkeyRegisterInFlight, setPasskeyRegisterInFlight] = useState(false);
+  const [passkeyDeletePending, setPasskeyDeletePending] = useState<string | null>(null);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
+
   // Subscribe to session changes so sign-in (from the modal) and
   // sign-out (from this page or anywhere else) flip the displayed state
   // without a route navigation.
@@ -131,6 +155,95 @@ export default function SettingsPage() {
       await apiSignOut();
     } finally {
       setSignOutInFlight(false);
+    }
+  };
+
+  // Resolve server tier capability + platform authenticator availability
+  // once per page load. Both are gates on the passkey UI surfaces;
+  // checking on mount means the "Add passkey" button is correctly
+  // hidden / shown by the time it's relevant.
+  useEffect(() => {
+    apiGetAuthProviders()
+      .then((p) => setPasskeyServerEnabled(p.passkey))
+      .catch(() => setPasskeyServerEnabled(false));
+    platformPasskeySupported().then(setPlatformAuthAvailable);
+  }, []);
+
+  // Load the user's existing passkeys whenever sign-in flips to true.
+  // Cleared on sign-out (currentUser=null) so a subsequent sign-in
+  // doesn't briefly show the previous user's list.
+  useEffect(() => {
+    if (!currentUser) {
+      setPasskeys(null);
+      return;
+    }
+    if (!passkeySupported() || passkeyServerEnabled === false) {
+      setPasskeys(null);
+      return;
+    }
+    apiListPasskeys()
+      .then((r) => setPasskeys(r.passkeys))
+      .catch(() => {
+        // Network blip → empty list rather than infinite spinner.
+        // User can retry via the page refresh.
+        setPasskeys([]);
+      });
+  }, [currentUser, passkeyServerEnabled]);
+
+  const handleAddPasskey = async () => {
+    if (passkeyRegisterInFlight) return;
+    setPasskeyError(null);
+    setPasskeyRegisterInFlight(true);
+    try {
+      const registered = await registerPasskey(null);
+      // Refresh the list so the new entry shows up with its
+      // server-side timestamps + transports.
+      const r = await apiListPasskeys();
+      setPasskeys(r.passkeys);
+      // Faint success acknowledgement — re-use the existing message
+      // surface for consistency with other settings actions.
+      setMessage({
+        type: 'success',
+        text: `Passkey registered (${registered.credential_id.slice(0, 8)}…).`,
+      });
+    } catch (err) {
+      if (err instanceof PasskeyCancelledError) {
+        // User dismissed the prompt — silent.
+        return;
+      }
+      setPasskeyError(
+        err instanceof Error ? err.message : "Couldn't register passkey."
+      );
+    } finally {
+      setPasskeyRegisterInFlight(false);
+    }
+  };
+
+  const handleDeletePasskey = async (credentialId: string) => {
+    if (passkeyDeletePending) return;
+    setPasskeyError(null);
+    setPasskeyDeletePending(credentialId);
+    // Optimistic remove — server is the source of truth, but a 404
+    // (already gone) is the only realistic failure mode and we'd want
+    // to remove it from the list anyway.
+    setPasskeys((prev) =>
+      prev ? prev.filter((p) => p.credential_id !== credentialId) : prev
+    );
+    try {
+      await apiDeletePasskey(credentialId);
+    } catch (err) {
+      // Roll back on network failure so the user can retry.
+      try {
+        const r = await apiListPasskeys();
+        setPasskeys(r.passkeys);
+      } catch {
+        // ignore
+      }
+      setPasskeyError(
+        err instanceof Error ? err.message : "Couldn't remove passkey."
+      );
+    } finally {
+      setPasskeyDeletePending(null);
     }
   };
 
@@ -562,6 +675,82 @@ export default function SettingsPage() {
             : "Sign in to keep your polls and groups across devices."}
         </p>
       </div>
+
+      {/* Passkeys section — Phase D. Visible only when signed in AND
+          the server tier supports passkeys AND the browser exposes
+          WebAuthn. The "Add a passkey" button additionally requires a
+          platform authenticator (Touch ID, Windows Hello, etc.) since
+          a roaming key without a platform authenticator is the rare
+          case. */}
+      {currentUser && passkeyServerEnabled && passkeySupported() && (
+        <div className="mb-6">
+          <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 py-3">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <span className="text-base font-normal">Passkeys</span>
+              {platformAuthAvailable && (
+                <button
+                  type="button"
+                  onClick={handleAddPasskey}
+                  disabled={passkeyRegisterInFlight}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                >
+                  {passkeyRegisterInFlight ? "Adding…" : "Add a passkey"}
+                </button>
+              )}
+            </div>
+            {passkeys === null ? (
+              <p className="text-xs text-gray-500 dark:text-gray-400 py-2">
+                Loading…
+              </p>
+            ) : passkeys.length === 0 ? (
+              <p className="text-xs text-gray-500 dark:text-gray-400 py-2">
+                {platformAuthAvailable === false
+                  ? "This device doesn't have a passkey-compatible authenticator. Add one from a phone or laptop with Touch ID / Face ID / Windows Hello."
+                  : "No passkeys yet. Add one to skip the email step on next sign-in."}
+              </p>
+            ) : (
+              <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                {passkeys.map((p) => (
+                  <li
+                    key={p.credential_id}
+                    className="flex items-center justify-between py-2 gap-3 min-w-0"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {p.name || "Passkey"}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Added {new Date(p.created_at).toLocaleDateString()}
+                        {" · "}
+                        Used {new Date(p.last_used_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePasskey(p.credential_id)}
+                      disabled={passkeyDeletePending === p.credential_id}
+                      className="text-sm text-red-600 dark:text-red-400 hover:underline disabled:opacity-50 shrink-0"
+                    >
+                      {passkeyDeletePending === p.credential_id
+                        ? "Removing…"
+                        : "Remove"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {passkeyError && (
+              <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                {passkeyError}
+              </p>
+            )}
+          </section>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            Passkeys let you sign in with Touch ID, Face ID, or a hardware
+            key — no email link needed.
+          </p>
+        </div>
+      )}
 
       {message && (
         <div className={`mb-4 p-3 rounded-md text-sm ${

@@ -38,7 +38,10 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from database import get_db
-from middleware import browser_id_from_request as _browser_id
+from middleware import (
+    browser_id_from_request as _browser_id,
+    user_id_from_request as _user_id,
+)
 from models import PollResponse, UpdateGroupTitleRequest
 from services.memberships import leave_group as _leave_group_row
 from services.groups import (
@@ -152,17 +155,24 @@ def get_my_groups(req: MyGroupsRequest, request: Request):
     are surfaced by the sibling `POST /api/groups/empty` endpoint.
     """
     browser_id = _browser_id(request)
+    user_id = _user_id(request)
 
     with get_db() as conn:
         visibility = load_user_visibility(
             conn,
             browser_id,
+            user_id=user_id,
             legacy_question_ids=req.accessible_question_ids or None,
         )
 
         member_group_ids = set(visibility.joined_by_group.keys())
-        if req.accessible_question_ids:
+        if req.accessible_question_ids and not user_id:
             # Forget bridge: drop member-groups with no bridge signal.
+            # Anonymous-only — signed-in users' membership is authoritative
+            # and not subject to per-device localStorage forget.
+            # Signed-in users drop groups via the explicit "leave group"
+            # action (DELETE /membership), which removes the membership
+            # row across all linked browsers.
             member_group_ids &= visibility.bridged_group_ids
 
         # Candidate groups = bridge groups + filtered member groups.
@@ -192,19 +202,33 @@ def get_my_empty_groups(request: Request):
     filtering for groups that do have polls.
     """
     browser_id = _browser_id(request)
-    if not browser_id:
+    user_id = _user_id(request)
+    if not browser_id and not user_id:
         return []
     with get_db() as conn:
+        # Membership predicate matches `load_user_visibility`'s logic:
+        # current browser OR any browser linked to the caller's
+        # user_id. DISTINCT collapses duplicates when multiple linked
+        # browsers all have a row for the same group.
         rows = conn.execute(
-            """SELECT g.id, g.short_id, g.title, g.created_at, g.image_updated_at
+            """SELECT DISTINCT g.id, g.short_id, g.title, g.created_at, g.image_updated_at
                  FROM groups g
                  JOIN group_members m ON m.group_id = g.id
-                WHERE m.browser_id = %(bid)s
+                WHERE (
+                    m.browser_id = %(bid)s::uuid
+                    OR (
+                        %(uid)s::uuid IS NOT NULL
+                        AND m.browser_id IN (
+                            SELECT browser_id FROM user_browsers
+                             WHERE user_id = %(uid)s::uuid
+                        )
+                    )
+                )
                   AND NOT EXISTS (
                       SELECT 1 FROM polls p WHERE p.group_id = g.id
                   )
                 ORDER BY g.created_at DESC""",
-            {"bid": browser_id},
+            {"bid": browser_id, "uid": user_id},
         ).fetchall()
         return [_row_to_group_summary(r) for r in rows]
 
@@ -292,6 +316,7 @@ def get_group_by_route_id(
     still render its chrome (header + Share + Create Poll).
     """
     browser_id = _browser_id(request)
+    user_id = _user_id(request)
 
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
@@ -304,7 +329,7 @@ def get_group_by_route_id(
         # watermark.
         grant_group_membership_inline(conn, group_id, browser_id)
 
-        visibility = load_user_visibility(conn, browser_id)
+        visibility = load_user_visibility(conn, browser_id, user_id=user_id)
         group_pids = poll_ids_for_group_ids(conn, [group_id])
         visible_pids = filter_visible_polls(conn, group_pids, visibility)
         return polls_for_poll_ids(
@@ -587,8 +612,9 @@ def leave_group(route_id: str, request: Request):
     remove). Returns 204 either way.
     """
     browser_id = _browser_id(request)
+    user_id = _user_id(request)
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        _leave_group_row(conn, group_id, browser_id)
+        _leave_group_row(conn, group_id, browser_id, user_id=user_id)
