@@ -157,21 +157,13 @@ class ProvidersResponse(BaseModel):
 # Origin doesn't end up in the email body (otherwise users would click
 # links to attacker-controlled domains).
 
-_ALLOWED_ORIGIN_PATTERNS = [
-    re.compile(r"^https://whoeverwants\.com$"),
-    re.compile(r"^https://latest\.whoeverwants\.com$"),
-    re.compile(r"^https://[a-z0-9-]+\.dev\.whoeverwants\.com$"),
-    re.compile(r"^http://localhost:\d+$"),
-    re.compile(r"^http://127\.0\.0\.1:\d+$"),
-]
-_DEFAULT_FE_ORIGIN = os.environ.get("FE_DEFAULT_ORIGIN", "https://whoeverwants.com")
-
-
+# `services.fe_origin.resolve_fe_origin` is the canonical FE origin
+# allowlist now — same logic, shared across magic-link + invite URL
+# minting. Kept as a thin alias here so existing call sites in this
+# router keep working without a churnful rename.
 def _resolve_fe_origin(request: Request) -> str:
-    origin = request.headers.get("origin")
-    if origin and any(p.match(origin) for p in _ALLOWED_ORIGIN_PATTERNS):
-        return origin
-    return _DEFAULT_FE_ORIGIN
+    from services.fe_origin import resolve_fe_origin as _resolve
+    return _resolve(request)
 
 
 def _resolve_rp_id(request: Request) -> str:
@@ -830,3 +822,70 @@ def rename_user_passkey(
     if not ok:
         raise HTTPException(status_code=404, detail="Passkey not found")
     return {"credential_id": credential_id, "name": req.name.strip()[:120] or None}
+
+
+# ---------------------------------------------------------------------------
+# Phase G: invite redemption
+# ---------------------------------------------------------------------------
+#
+# Lives on /api/auth (not /api/groups/<route>/invites/<token>/redeem)
+# because the redeem flow is keyed solely on the raw token — there's
+# no group route_id in the URL the joiner clicked. The token + the
+# session token are the two inputs; the group falls out of the lookup.
+
+
+class InviteRedeemResponse(BaseModel):
+    """Result of `POST /api/auth/invites/{token}/redeem`. The FE uses
+    `group_short_id` (preferred) or `group_id` (fallback) to build the
+    redirect URL; when `target_poll_short_id` is set, the redirect goes
+    deep into the poll detail page. `already_member` lets the FE
+    differentiate "you just joined" toast vs "you were already here"
+    no-op so it doesn't double-show a welcome flow."""
+
+    group_id: str
+    group_short_id: str | None
+    target_poll_id: str | None
+    target_poll_short_id: str | None
+    already_member: bool
+
+
+@router.post(
+    "/invites/{token}/redeem",
+    response_model=InviteRedeemResponse,
+)
+def redeem_group_invite(token: str, request: Request):
+    """Phase G: consume an invite token + write membership.
+
+    Requires user_id (401 anonymous). Returns 404 on invalid /
+    expired / revoked / fully-used tokens — indistinguishable to the
+    caller (no leak about WHY redemption failed).
+
+    Already-a-member callers get a 200 with `already_member=true`
+    instead of an error. Same row count after their click as before
+    — they can re-share an invite they previously redeemed without
+    surprises.
+    """
+    # Local import: services/invites.py uses services/auth.py's
+    # hash_token; eager import here is fine but the deferred form
+    # keeps router imports tidy.
+    from services.invites import redeem_invite
+
+    user_id = _user_id(request)
+    if not user_id:
+        raise HTTPException(
+            status_code=401, detail="Sign in to redeem invites"
+        )
+
+    with get_db() as conn:
+        result = redeem_invite(conn, token, user_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404, detail="Invite invalid or expired"
+        )
+    return InviteRedeemResponse(
+        group_id=result.group_id,
+        group_short_id=result.group_short_id,
+        target_poll_id=result.target_poll_id,
+        target_poll_short_id=result.target_poll_short_id,
+        already_member=result.already_member,
+    )

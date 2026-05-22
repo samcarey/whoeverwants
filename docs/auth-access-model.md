@@ -142,28 +142,81 @@ group_invites
   created_at
 ```
 
-**Request flow** (Phase F):
+**Request flow** (Phase F — shipped):
 - `POST /api/groups/<route_id>/join-requests` body: `{message?}`. Requires
-  user_id. 409 if a pending request already exists.
-- Push notification fan-out to creator's `push_subscriptions` (same infra as
-  new-poll notifications, gated on the creator's per-group pref defaulting
-  ON for own groups).
-- `GET /api/groups/<route_id>/join-requests` — creator-only.
+  user_id (401 anonymous). Returns 200 with a status discriminator so
+  the FE doesn't have to branch on HTTP code:
+  * `status='already_member'` — caller is already a member or the
+    recorded creator. No row inserted, no push fired.
+  * `status='pending'` — fresh request inserted (HTTP still 200 for
+    consistency, but the FE shows "request sent").
+  * `status='already_pending'` — existing pending row returned as-is
+    (no overwrite of the prior message, no second push fire).
+  Idempotency comes from the partial unique index on (group_id,
+  requester_user_id) WHERE status='pending'. The
+  doc's original "409 on duplicate" rule was retired in favor of this
+  status-in-body design: simpler FE handling, and the existing-row
+  payload lets the FE surface "your request was sent N hours ago"
+  if a future iteration adds that affordance.
+- Push notification fan-out to the creator's `push_subscriptions`,
+  derived from `user_browsers WHERE user_id = creator` so the
+  creator gets notified on EVERY browser they're signed in on (not
+  just the one that received the request — they might have requested
+  notifications on Device A and be looking at Device B when the
+  request lands). Gated on the existing per-group `notify_new_poll`
+  pref (default ON, missing-row-is-on) — Phase F reuses the new-poll
+  pref as the single "I want to hear about this group" signal. Phase
+  I can add a dedicated `notify_join_request` column if join-request
+  volume needs to be muted independently.
+- `GET /api/groups/<route_id>/join-requests` — creator-only (401
+  anonymous, 403 non-creator, 403 group-with-no-creator). Returns
+  pending requests oldest first, with `requester_email` joined from
+  `user_identities` (NULL for passkey-only requesters).
 - `POST /api/groups/<route_id>/join-requests/<id>/decide` body:
-  `{action: 'approve'|'deny'}`. Approve → INSERT group_members. Deny →
-  mark denied. Requester gets no notification on deny (avoids "why
-  rejected" follow-ups).
+  `{action: 'approve'|'deny'}`. Approve → INSERT group_members keyed
+  on the requester's earliest-linked browser_id (per
+  `user_browsers`). `load_user_visibility`'s user_browsers walk
+  expands the single row to every device they're signed in on, so
+  one INSERT suffices. Deny → mark denied. Requester gets no
+  notification on deny (avoids "why rejected" follow-ups). The
+  request_id is scoped to (group_id, request_id) — a creator of
+  group A can't decide on a request in group B even with a guessed
+  request_id (returns 404 instead).
 
-**Invite flow** (Phase G):
+**Invite flow** (Phase G — shipped):
 - `POST /api/groups/<route_id>/invites` body:
-  `{mode, max_uses?, target_poll_id?, expires_in_hours?}`. Returns
-  `{token, url}`. Token is the raw value, only ever returned once.
-- `POST /api/auth/invites/<token>/redeem` — requires user_id; writes
-  `group_members` if not already a member, bumps use_count, returns
-  `{group_id, target_poll_id}` for FE redirect.
-- `DELETE /api/groups/<route_id>/invites/<id>` — revoke.
-- FE `/g/<id>/info` adds an "Invite link" section listing active invites
-  (with use counts) + a "Create invite link" button.
+  `{mode, max_uses?, target_poll_id?, expires_in_hours?}`. Creator-only.
+  Returns the full `InviteResponse` shape including raw `token` + a
+  host-derived `url`, returned EXACTLY ONCE. The server stores
+  sha256(token) only. `mode='single'` normalizes max_uses=1; cross-group
+  `target_poll_id`s are silently downgraded to NULL rather than 400'd.
+- `POST /api/auth/invites/<token>/redeem` — requires user_id. Atomic
+  conditional UPDATE bumps `use_count` only if the invite is
+  redeemable (not revoked, not expired, has remaining uses).
+  Writes `group_members` keyed on the requester's earliest-linked
+  browser_id (same pattern as Phase F approve). Returns
+  `{group_id, group_short_id, target_poll_id, target_poll_short_id,
+  already_member}` — short_ids pre-resolved so the FE doesn't need a
+  second round-trip to build the redirect URL. Already-member
+  redemptions roll back the use_count bump so a member re-clicking
+  the URL doesn't consume an invite use.
+- `GET /api/groups/<route_id>/invites` — creator-only. Lists active
+  invites (not revoked, not expired, has remaining uses). Omits raw
+  `token` / `url` from list responses — those are one-shot at create.
+- `DELETE /api/groups/<route_id>/invites/<id>` — creator-only revoke.
+  Idempotent: 204 on success, 404 if already revoked or not owned.
+- FE `/g/<id>/info` mounts `<InviteLinksSection>` (creator-only) with
+  a "Create invite link" button and a list of active invites (with
+  per-row Copy + Revoke). Copy is shown only on the freshly-minted
+  row in the current session — the list endpoint doesn't return raw
+  tokens, so previously-existing invites display "Link only shown
+  when first created" with a Revoke button. v1 minted invites are
+  multi-use, unlimited, no expiry; mode/max_uses/expires UI is a
+  follow-up.
+- FE `/invite/<token>` is the redemption landing page. Anonymous
+  viewers see a "Sign in to continue" CTA; signed-in viewers
+  auto-redeem on mount and `router.replace` to the destination
+  group / poll URL.
 
 ## Per-vote anonymity
 
@@ -209,8 +262,8 @@ the original session for the rationale.
 | C | OAuth (Apple, Google) | web + Capacitor flows, ID-token verify, account merge on shared email | A |
 | D | Passkey | WebAuthn server + browser; iOS native plugin | A; can ship after E/F if flaky |
 | E | Group privacy | `groups.privacy`, `groups.creator_user_id`, visibility filter, sign-in nudge | A, B |
-| F | Join requests | `group_join_requests` table, request/approve/deny, push notification | E |
-| G | Invite links | `group_invites` table, create/redeem/revoke, target-poll on join | E |
+| F | Join requests (shipped) | `group_join_requests` table (migration 115), request/approve/deny endpoints, push notification fan-out to creator's `user_browsers`, /info "Pending requests" creator section, "Request to join" CTA on signed-in 404 page | E |
+| G | Invite links (shipped) | `group_invites` table (migration 116), creator-side create/list/revoke endpoints, anonymous-allowed `/invite/<token>` landing page that auto-redeems for signed-in viewers, `InviteLinksSection` on /info | E |
 | H | Per-vote anonymity | anonymity flags on votes, read-time filter everywhere, audit test | A |
 | I | Polish | account settings (linked identities, **add recovery email to passkey-only account**, sign out, delete), retire `creator_secret` | A–H |
 

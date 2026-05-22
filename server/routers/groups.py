@@ -33,7 +33,7 @@ from __future__ import annotations
 import base64
 import binascii
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -43,6 +43,19 @@ from middleware import (
     user_id_from_request as _user_id,
 )
 from models import PollResponse, UpdateGroupTitleRequest
+from services.invites import (
+    IssuedInvite,
+    InviteSummary,
+    issue_invite,
+    list_active_invites,
+    revoke_invite,
+)
+from services.join_requests import (
+    create_join_request,
+    decide_request,
+    is_member_or_creator,
+    list_pending_requests,
+)
 from services.memberships import leave_group as _leave_group_row
 from services.groups import (
     filter_visible_polls,
@@ -54,6 +67,7 @@ from services.groups import (
     polls_for_poll_ids,
     resolve_group_id_from_route_id,
 )
+from services.push import fan_out_join_request
 
 
 class GroupSummary(BaseModel):
@@ -779,3 +793,563 @@ def leave_group(route_id: str, request: Request):
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
         _leave_group_row(conn, group_id, browser_id, user_id=user_id)
+
+
+# ---------------------------------------------------------------------------
+# Phase F: join requests
+# ---------------------------------------------------------------------------
+#
+# Signed-in non-members of a private group can request access. The creator
+# (`groups.creator_user_id`) approves or denies. On approve, the requester
+# gets a `group_members` row keyed on one of their linked browsers — and
+# `load_user_visibility`'s user_browsers walk makes the group visible on
+# every device they're signed in on.
+#
+# Anonymous browsers can't request (no durable identity to approve).
+#
+# Existence-leak surface: a signed-in non-member POSTing /join-requests
+# learns whether the route resolves (201 vs 404). That's the same leak
+# the existing /by-route-id surfaces (which 404s strangers on private
+# groups today), so no new channel.
+
+
+class JoinRequestCreate(BaseModel):
+    """Body for `POST /api/groups/{route_id}/join-requests`. `message`
+    is optional — the requester can include a brief "hi, it's Alice
+    from work" so the creator has context. Empty / whitespace-only
+    becomes NULL."""
+
+    message: str | None = None
+
+
+class JoinRequestSummaryResponse(BaseModel):
+    """Per-request shape returned to the creator (list endpoint) and
+    echoed by the create endpoint. `requester_email` is NULL for
+    passkey-only users (Phase D registration permits no-email accounts)
+    — the FE renders a "Passkey user" fallback."""
+
+    id: str
+    group_id: str
+    requester_user_id: str
+    requester_email: str | None
+    message: str | None
+    requested_at: str
+
+
+class JoinRequestCreateResponse(BaseModel):
+    """`status` walks 'pending' (newly created) | 'already_pending'
+    (re-request while one's still open) | 'already_member' (signed-in
+    creator or member POSTed, so no row was inserted). The FE collapses
+    'pending' and 'already_pending' into "request sent" — the distinction
+    is preserved here for observability."""
+
+    status: str  # 'pending' | 'already_pending' | 'already_member'
+    request: JoinRequestSummaryResponse | None = None
+
+
+class JoinRequestDecideBody(BaseModel):
+    """`action` is 'approve' or 'deny'. The route's `decided_at` is set
+    server-side; the creator can't backdate."""
+
+    action: str  # 'approve' | 'deny'
+
+
+class JoinRequestDecideResponse(BaseModel):
+    request_id: str
+    status: str  # 'approved' | 'denied'
+
+
+def _summary_to_response(s, fallback_email: str | None = None) -> JoinRequestSummaryResponse:
+    return JoinRequestSummaryResponse(
+        id=s.id,
+        group_id=s.group_id,
+        requester_user_id=s.requester_user_id,
+        requester_email=s.requester_email if s.requester_email is not None else fallback_email,
+        message=s.message,
+        requested_at=s.requested_at.isoformat() if s.requested_at else "",
+    )
+
+
+@router.post(
+    "/{route_id}/join-requests",
+    response_model=JoinRequestCreateResponse,
+)
+def create_group_join_request(
+    route_id: str,
+    body: JoinRequestCreate,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    """Phase F: signed-in non-member requests access to a (typically
+    private) group. Returns:
+
+      * 401 — not signed in. Anonymous browsers can't request because
+        there's no durable identity to approve.
+      * 404 — route doesn't resolve to any group.
+      * 200 + status='already_member' — caller is already a member or
+        the group's recorded creator. No row written, no push fired.
+      * 201 + status='pending' — fresh request inserted.
+      * 200 + status='already_pending' — an open request already
+        existed; the row is returned but no second push fires.
+
+    Push notification to the creator (when `creator_user_id` is
+    recorded) is dispatched via BackgroundTasks AFTER the response is
+    serialized, mirroring the new-poll fan-out pattern. Anonymous-
+    created / pre-Phase-E groups have no recorded creator and no push
+    is fired — the request still records, so a future "claim group"
+    Phase I action can surface the backlog.
+    """
+    user_id = _user_id(request)
+    if not user_id:
+        raise HTTPException(
+            status_code=401, detail="Sign in to request access"
+        )
+
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+
+        # Already-member / creator short-circuit. We return 200 (not 201)
+        # so the FE can show "you're already in this group" instead of
+        # "request sent". The row in group_members might be keyed on a
+        # different browser_id than the current one — that's fine, the
+        # user_browsers walk makes it visible on this device too.
+        if is_member_or_creator(conn, group_id, user_id):
+            return JoinRequestCreateResponse(
+                status="already_member", request=None
+            )
+
+        # Snapshot existence BEFORE the create so we know whether this
+        # call inserted a new row or returned an existing pending one.
+        # The partial-unique-index conflict path makes create_join_request
+        # idempotent; the SELECT distinguishes the two cases for the
+        # response status + the push-fire decision.
+        existing = conn.execute(
+            """
+            SELECT 1 FROM group_join_requests
+             WHERE group_id = %(g)s::uuid
+               AND requester_user_id = %(u)s::uuid
+               AND status = 'pending'
+             LIMIT 1
+            """,
+            {"g": group_id, "u": user_id},
+        ).fetchone()
+        is_new = existing is None
+
+        summary = create_join_request(conn, group_id, user_id, body.message)
+
+        # Fetch the requester's email for the response shape (the helper
+        # doesn't join — it's used for both create and list, but only
+        # list joins on user_identities). Inline lookup is cheaper than
+        # adding another helper.
+        email_row = conn.execute(
+            """
+            SELECT email FROM user_identities
+             WHERE user_id = %(u)s::uuid AND email IS NOT NULL
+             ORDER BY created_at DESC LIMIT 1
+            """,
+            {"u": user_id},
+        ).fetchone()
+        requester_email = email_row["email"] if email_row else None
+
+        # Read the creator for the push fan-out. Anonymous-created
+        # groups have NULL creator_user_id; skip the push in that case.
+        meta = get_group_metadata(conn, group_id)
+        creator_user_id = meta["creator_user_id"] if meta else None
+        group_short_id_row = conn.execute(
+            "SELECT short_id FROM groups WHERE id = %(g)s::uuid",
+            {"g": group_id},
+        ).fetchone()
+        group_short_id = (
+            group_short_id_row.get("short_id") if group_short_id_row else None
+        )
+
+    # Fire-and-forget push fan-out. Runs only on a brand-new request;
+    # a repeat-ping for an already-pending request would just noise the
+    # creator on every "polite re-request" tap.
+    if is_new and creator_user_id:
+        route_for_url = group_short_id or group_id
+        # Subject line is intentionally generic so passkey-only requesters
+        # (no email) don't surface as a literal "null wants to join".
+        # The /info page has full details once the creator taps in.
+        body_text = (
+            f"{requester_email} wants to join"
+            if requester_email
+            else "Someone wants to join your group"
+        )
+        background_tasks.add_task(
+            fan_out_join_request,
+            group_id,
+            creator_user_id,
+            {
+                "title": "Join request",
+                "body": body_text,
+                "url": f"/g/{route_for_url}/info",
+                "group_id": route_for_url,
+                "tag": f"join-request-{summary.id}",
+            },
+        )
+
+    return JoinRequestCreateResponse(
+        status="pending" if is_new else "already_pending",
+        request=_summary_to_response(summary, fallback_email=requester_email),
+    )
+
+
+@router.get(
+    "/{route_id}/join-requests",
+    response_model=list[JoinRequestSummaryResponse],
+)
+def list_group_join_requests(route_id: str, request: Request):
+    """Phase F: list pending requests for a group. Creator-only.
+
+    Authorization: must be signed in AND match the group's recorded
+    `creator_user_id`. Anonymous-created / pre-Phase-E groups have
+    NULL creator and can't have a creator viewer either, so they 403
+    here for everyone — the join-request system simply isn't available
+    on those groups.
+
+    404 on route resolution failure; 401 when not signed in; 403 when
+    signed in but not the creator (distinguishes "not your group" from
+    "no such group" — same convention as the privacy toggle).
+    """
+    user_id = _user_id(request)
+    if not user_id:
+        raise HTTPException(
+            status_code=401, detail="Sign in to view join requests"
+        )
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        meta = get_group_metadata(conn, group_id)
+        if not meta or not meta["creator_user_id"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Group has no recorded creator",
+            )
+        if meta["creator_user_id"] != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Only the group's creator can view join requests",
+            )
+        summaries = list_pending_requests(conn, group_id)
+    return [_summary_to_response(s) for s in summaries]
+
+
+@router.post(
+    "/{route_id}/join-requests/{request_id}/decide",
+    response_model=JoinRequestDecideResponse,
+)
+def decide_group_join_request(
+    route_id: str,
+    request_id: str,
+    body: JoinRequestDecideBody,
+    request: Request,
+):
+    """Phase F: creator approves or denies a pending request.
+
+    On approve: writes a `group_members` row for the requester's
+    earliest-linked browser_id (per `user_browsers`). The walk in
+    `load_user_visibility` expands that to every device the requester
+    is signed in on, so they see the group immediately on the next
+    refresh — no per-device approval needed.
+
+    On deny: the row's status walks to 'denied'. The requester gets no
+    notification (per `docs/auth-access-model.md`: "Requester gets no
+    notification on deny — avoids 'why rejected' follow-ups"). They
+    can re-request, since the partial unique index only blocks
+    pending duplicates.
+
+    Idempotent: a second decide on the same request returns 404 (the
+    row's no longer pending). Distinguishing 'already_decided' from
+    'never_existed' isn't worth a separate status code — both states
+    have the same "do nothing else" implication for the caller.
+    """
+    if body.action not in ("approve", "deny"):
+        raise HTTPException(
+            status_code=400, detail="action must be 'approve' or 'deny'"
+        )
+    user_id = _user_id(request)
+    if not user_id:
+        raise HTTPException(
+            status_code=401, detail="Sign in to decide join requests"
+        )
+    decision = "approved" if body.action == "approve" else "denied"
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        meta = get_group_metadata(conn, group_id)
+        if not meta or not meta["creator_user_id"]:
+            raise HTTPException(
+                status_code=403, detail="Group has no recorded creator"
+            )
+        if meta["creator_user_id"] != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Only the group's creator can decide join requests",
+            )
+        # Existence + group-scoping guard: the route-id MUST match the
+        # request's group_id. Without this, a creator of group A could
+        # decide on a request that belongs to group B by guessing
+        # request_ids (the join-request table is indexed but not
+        # secret). Tying decision authority to (group_id, request_id)
+        # together closes the cross-group manipulation channel.
+        ownership = conn.execute(
+            """
+            SELECT 1 FROM group_join_requests
+             WHERE id = %(r)s::uuid
+               AND group_id = %(g)s::uuid
+               AND status = 'pending'
+             LIMIT 1
+            """,
+            {"r": request_id, "g": group_id},
+        ).fetchone()
+        if not ownership:
+            raise HTTPException(
+                status_code=404,
+                detail="Request not found or already decided",
+            )
+        decided = decide_request(conn, request_id, decision, user_id)
+    if not decided:
+        # decide_request returns None only on race (a second click
+        # flipped the row between our SELECT and UPDATE). Treat the
+        # same as "already decided".
+        raise HTTPException(
+            status_code=404,
+            detail="Request not found or already decided",
+        )
+    return JoinRequestDecideResponse(
+        request_id=decided.request_id,
+        status=decided.status,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase G: invite links
+# ---------------------------------------------------------------------------
+#
+# Creator-owned shareable URLs that grant private-group membership on
+# redemption. Complements Phase F join requests: invites are
+# creator-initiated (push from creator → joiner); join requests are
+# joiner-initiated (pull from joiner → creator approves).
+#
+# Storage: `services/invites.py` persists sha256(token) only. The raw
+# token is returned ONCE at create time and embedded in the shareable
+# URL. The redeem endpoint hashes the inbound raw token and matches.
+#
+# Authorization: create / list / revoke are creator-only (signed-in
+# AND `creator_user_id` matches the session). Redeem (in `routers/auth.py`)
+# requires signed-in but ANY user can redeem.
+
+
+class CreateInviteRequest(BaseModel):
+    """Body for `POST /api/groups/{route_id}/invites`.
+
+    `mode='single'` forces max_uses=1 server-side; `mode='multi'`
+    accepts an optional max_uses (NULL = unlimited).
+
+    `target_poll_id` is the optional auto-scroll target: the FE
+    redirects to `/g/<group>/p/<poll_short>` instead of `/g/<group>`
+    after redemption. Must be a poll in the same group; the server
+    silently drops cross-group target_poll_ids (returns NULL).
+
+    `expires_in_hours` is the time-to-live knob. NULL = never expires
+    (creator must revoke explicitly).
+    """
+
+    mode: str  # 'single' | 'multi'
+    max_uses: int | None = None
+    target_poll_id: str | None = None
+    expires_in_hours: int | None = None
+
+
+class InviteResponse(BaseModel):
+    """Shape returned by create + list. `token` and `url` are populated
+    ONLY on create (they're the one-time raw-token reveal); list
+    omits them since the creator already received the URL at create
+    time."""
+
+    id: str
+    group_id: str
+    mode: str
+    target_poll_id: str | None
+    max_uses: int | None
+    use_count: int
+    expires_at: str | None
+    created_at: str
+    token: str | None = None
+    url: str | None = None
+
+
+def _summary_to_invite_response(s) -> InviteResponse:
+    """List-side conversion. No token/url since list doesn't reveal."""
+    return InviteResponse(
+        id=s.id,
+        group_id=s.group_id,
+        mode=s.mode,
+        target_poll_id=s.target_poll_id,
+        max_uses=s.max_uses,
+        use_count=s.use_count,
+        expires_at=s.expires_at.isoformat() if s.expires_at else None,
+        created_at=s.created_at.isoformat() if s.created_at else "",
+    )
+
+
+def _issued_to_invite_response(
+    issued: IssuedInvite, url: str
+) -> InviteResponse:
+    """Create-side conversion. Carries the raw token + the FE-host-
+    derived shareable URL — both surfaced exactly once."""
+    return InviteResponse(
+        id=issued.id,
+        group_id=issued.group_id,
+        mode=issued.mode,
+        target_poll_id=issued.target_poll_id,
+        max_uses=issued.max_uses,
+        use_count=issued.use_count,
+        expires_at=issued.expires_at.isoformat() if issued.expires_at else None,
+        created_at=issued.created_at.isoformat(),
+        token=issued.token,
+        url=url,
+    )
+
+
+def _require_creator(conn, group_id: str, user_id: str | None) -> None:
+    """Raise 401/403 unless the caller is signed in AND matches the
+    group's recorded `creator_user_id`. Shared 3-way authorization
+    gate for every invite-management endpoint."""
+    if not user_id:
+        raise HTTPException(
+            status_code=401, detail="Sign in to manage invites"
+        )
+    meta = get_group_metadata(conn, group_id)
+    if not meta or not meta["creator_user_id"]:
+        raise HTTPException(
+            status_code=403, detail="Group has no recorded creator"
+        )
+    if meta["creator_user_id"] != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the group's creator can manage invites",
+        )
+
+
+@router.post(
+    "/{route_id}/invites",
+    response_model=InviteResponse,
+    status_code=201,
+)
+def create_group_invite(
+    route_id: str,
+    body: CreateInviteRequest,
+    request: Request,
+):
+    """Phase G: mint a new invite link. Creator-only.
+
+    The response is the ONLY time the raw token + URL are returned —
+    sha256(token) is what hits the DB. If the creator loses the URL,
+    they have to mint a new invite.
+    """
+    from services.fe_origin import resolve_fe_origin
+
+    user_id = _user_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        _require_creator(conn, group_id, user_id)
+
+        if body.mode not in ("single", "multi"):
+            raise HTTPException(
+                status_code=400, detail="mode must be 'single' or 'multi'"
+            )
+        if body.max_uses is not None and body.max_uses <= 0:
+            raise HTTPException(
+                status_code=400, detail="max_uses must be positive"
+            )
+        if body.expires_in_hours is not None and body.expires_in_hours <= 0:
+            raise HTTPException(
+                status_code=400, detail="expires_in_hours must be positive"
+            )
+
+        # Cross-group target_poll_id silently downgraded to NULL — a
+        # 400 would force the FE to handle "stale poll selection" as a
+        # distinct error path; falling back to "land on the group
+        # root" is more forgiving and matches what target_poll_id
+        # being NULL means at redeem time anyway.
+        target_poll_id: str | None = None
+        if body.target_poll_id:
+            poll_row = conn.execute(
+                """SELECT id FROM polls
+                    WHERE id = %(p)s::uuid AND group_id = %(g)s::uuid""",
+                {"p": body.target_poll_id, "g": group_id},
+            ).fetchone()
+            if poll_row:
+                target_poll_id = str(poll_row["id"])
+
+        issued = issue_invite(
+            conn,
+            group_id=group_id,
+            created_by_user_id=user_id,
+            mode=body.mode,
+            target_poll_id=target_poll_id,
+            max_uses=body.max_uses,
+            expires_in_hours=body.expires_in_hours,
+        )
+
+    # URL build runs OUTSIDE the get_db() block; no DB roundtrip
+    # needed. The token is embedded in the path; the FE's
+    # `/invite/[token]/page.tsx` resolves on receipt.
+    origin = resolve_fe_origin(request)
+    url = f"{origin}/invite/{issued.token}"
+    return _issued_to_invite_response(issued, url)
+
+
+@router.get(
+    "/{route_id}/invites",
+    response_model=list[InviteResponse],
+)
+def list_group_invites(route_id: str, request: Request):
+    """Phase G: list a group's active invites. Creator-only.
+
+    "Active" = not revoked, not expired, has remaining uses. Revoked
+    or fully-used invites are excluded — the UI doesn't need them.
+    """
+    user_id = _user_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        _require_creator(conn, group_id, user_id)
+        summaries = list_active_invites(conn, group_id)
+    return [_summary_to_invite_response(s) for s in summaries]
+
+
+@router.delete(
+    "/{route_id}/invites/{invite_id}",
+    status_code=204,
+)
+def revoke_group_invite(
+    route_id: str, invite_id: str, request: Request
+):
+    """Phase G: revoke an active invite. Creator-only.
+
+    Returns 204 on successful revoke. 404 when the invite doesn't
+    exist OR isn't owned by the caller OR was already revoked —
+    indistinguishable to the caller, no information leak about
+    invites belonging to other creators.
+    """
+    user_id = _user_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        _require_creator(conn, group_id, user_id)
+        ok = revoke_invite(conn, invite_id, user_id)
+    if not ok:
+        raise HTTPException(
+            status_code=404, detail="Invite not found or already revoked"
+        )

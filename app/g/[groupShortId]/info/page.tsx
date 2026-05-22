@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { hasAppHistory } from "@/lib/viewTransitions";
 import { slideToGroupRoot, slideToGroupEditTitle } from "@/lib/slideOverlay";
@@ -10,10 +10,17 @@ import GroupShareButton from "@/components/GroupShareButton";
 import GroupPrivacySection from "@/components/GroupPrivacySection";
 import HeaderPortal from "@/components/HeaderPortal";
 import InitialBubble from "@/components/InitialBubble";
+import InviteLinksSection from "@/components/InviteLinksSection";
+import JoinRequestsSection from "@/components/JoinRequestsSection";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
+import {
+  getCachedSessionUser,
+  SESSION_CHANGED_EVENT,
+  type SessionUser,
+} from "@/lib/session";
 
 /** Prop-driven inner view. Exposed so the slide overlay can render this
  *  view directly without going through useParams() (the overlay mounts
@@ -22,12 +29,25 @@ export function GroupInfoView({ groupId }: { groupId: string }) {
   const { group, loading, error } = useGroup(groupId);
 
   if (loading) return <GroupLoading />;
-  if (error || !group) return <GroupNotFound />;
+  if (error || !group) return <GroupNotFound routeId={groupId} />;
   return <Info group={group} groupId={groupId} />;
 }
 
 function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; groupId: string }) {
   const myUserImageUrl = useMyUserImageUrl();
+  // Mirror GroupPrivacySection's session-tracking pattern: seed from
+  // the localStorage-cached profile on mount, then subscribe to live
+  // session changes so the JoinRequestsSection mounts/unmounts the
+  // moment the viewer signs in or out without a remount of the page.
+  const [session, setSession] = useState<SessionUser | null>(null);
+  useEffect(() => {
+    setSession(getCachedSessionUser());
+    const update = () => setSession(getCachedSessionUser());
+    window.addEventListener(SESSION_CHANGED_EVENT, update);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
+  }, []);
+  const viewerIsCreator =
+    !!session && !!group.creatorUserId && session.user_id === group.creatorUserId;
 
   const goBack = () => {
     // Slide overlay: mount the group root above the current page and slide
@@ -108,6 +128,10 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         </div>
 
         <GroupPrivacySection group={group} groupId={groupId} />
+
+        <JoinRequestsSection groupId={groupId} enabled={viewerIsCreator} />
+
+        <InviteLinksSection groupId={groupId} enabled={viewerIsCreator} />
 
         <NotificationSettingsCard groupRouteId={groupId} className="mt-[0.96rem]" />
 
