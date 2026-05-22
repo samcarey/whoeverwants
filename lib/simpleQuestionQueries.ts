@@ -116,6 +116,7 @@ export async function getMyGroups(): Promise<MyGroupsResult> {
     // accessibleIds list) would have the fetch short-circuited to []
     // and never see their existing groups.
     const isSignedIn = !!getSessionToken();
+    console.warn(`[diag-getMyGroups] accessibleIds.length=${accessibleIds.length} isSignedIn=${isSignedIn} cached=${!!getCachedAccessiblePolls()}`);
     const cached = getCachedAccessiblePolls();
     let canUseCachedPolls = false;
     if (cached && !isSignedIn) {
