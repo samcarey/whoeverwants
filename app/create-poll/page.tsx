@@ -86,15 +86,13 @@ const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
 // `width: min-content` shrinks the rectangle to the longest word in
 // its label (multi-word labels like "Yes / No" / "Video Game" wrap
 // by spaces, never breaking a word mid-character); `minWidth` floors
-// it at 2× the icon size so short labels still feel like buttons.
+// it at 1.75× the icon size so short labels still feel like buttons.
 // Fixed `height` keeps every rectangle the same vertical size — the
 // title wrapper takes `flex-1` and centers its child vertically, so
 // a 1-line label floats in the middle of the area below the icon
-// while a 4-line label fills it. `text-sm leading-tight` × 4 lines
-// = 72px; +32px icon + 24px vertical padding ≈ 128px+ height; 132px
-// gives a small breathing buffer for the line-clamp ellipsis.
+// while a 3-line label fills it.
 const BUBBLE_ICON_PX = 32;
-const BUBBLE_MIN_WIDTH_PX = BUBBLE_ICON_PX * 2;
+const BUBBLE_MIN_WIDTH_PX = Math.round(BUBBLE_ICON_PX * 1.75);
 const BUBBLE_HEIGHT_PX = 132;
 const BUBBLE_BUTTON_CLASS =
   "shrink-0 flex flex-col items-center px-2 py-3 rounded-2xl bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
@@ -107,15 +105,15 @@ const BUBBLE_ICON_STYLE: React.CSSProperties = {
   fontSize: `${BUBBLE_ICON_PX}px`,
   lineHeight: 1,
 };
-// `-webkit-line-clamp: 4` (with the matching `display: -webkit-box`
-// + `WebkitBoxOrient: vertical`) caps the title at 4 lines and
+// `-webkit-line-clamp: 3` (with the matching `display: -webkit-box`
+// + `WebkitBoxOrient: vertical`) caps the title at 3 lines and
 // truncates with an ellipsis past that. `wordBreak: normal` +
 // `overflowWrap: normal` keeps words intact so they wrap by spaces;
 // `min-content` sizing on the parent guarantees the longest word
 // always fits on its own line.
 const BUBBLE_TITLE_STYLE: React.CSSProperties = {
   display: "-webkit-box",
-  WebkitLineClamp: 4,
+  WebkitLineClamp: 3,
   WebkitBoxOrient: "vertical",
   overflow: "hidden",
   wordBreak: "normal",
