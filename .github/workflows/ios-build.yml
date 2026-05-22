@@ -251,13 +251,23 @@ jobs:
           #     →  com.googleusercontent.apps.<hash>-<random>
           REVERSED=$(echo "$CLIENT_ID" | awk -F. '{ for(i=NF;i>0;i--) printf "%s%s", $i, (i>1?".":"") }')
           echo "Reversed URL scheme: $REVERSED"
-          # Idempotent: a fresh checkout has no CFBundleURLTypes key, but
-          # if a future Info.plist edit adds one, replace cleanly.
-          plutil -remove CFBundleURLTypes ios/App/App/Info.plist 2>/dev/null || true
-          plutil -insert CFBundleURLTypes -xml \
-            "<array><dict><key>CFBundleURLSchemes</key><array><string>${REVERSED}</string></array></dict></array>" \
-            ios/App/App/Info.plist
-          plutil -extract CFBundleURLTypes xml1 ios/App/App/Info.plist
+          # Use /usr/libexec/PlistBuddy for the nested-structure insert.
+          # An earlier iteration of this step used `plutil -insert -xml`,
+          # which corrupted Info.plist on macOS — the root element ended
+          # up non-dict and xcodebuild's `builtin-infoPlistUtility` failed
+          # with "contents of file is not a dictionary". PlistBuddy is the
+          # canonical Apple tool for this and handles nested arrays/dicts
+          # without quoting traps.
+          PLIST="ios/App/App/Info.plist"
+          # Idempotent: a fresh checkout has no CFBundleURLTypes key.
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $REVERSED" "$PLIST"
+          # Verify the result and confirm the root is still a dict.
+          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$PLIST"
+          plutil -lint "$PLIST"
 
       - name: Rewrite bundle ID in project.pbxproj
         run: |
