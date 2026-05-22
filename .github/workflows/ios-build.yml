@@ -326,6 +326,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build
+          # `clean` before `archive` is load-bearing for prod (and any) builds:
+          # the Mac runner's DerivedData persists across workflow runs, and
+          # an incremental archive can re-use the previously-compiled App
+          # binary whose Mach-O __info_plist segment still has the prior
+          # build's CFBundleIdentifier baked in. The outer Info.plist
+          # generation runs fresh (gets the new patched PRODUCT_BUNDLE_IDENTIFIER),
+          # but the binary's embedded plist doesn't, leading to two
+          # disagreeing bundle ids in the IPA. ASC's altool validator reads
+          # both and rejects with `Validation failed (409) ... The bundle
+          # identifier cannot be changed from the current value, '<prior>'`.
+          # `clean` forces full re-link so the embedded plist regenerates
+          # from the patched pbxproj. Trade-off: slower archive (~30s →
+          # ~2min), acceptable because iOS builds only run on native-file
+          # changes / release publishes / push-to-main.
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
@@ -339,7 +353,7 @@ jobs:
             DEVELOPMENT_TEAM="$TEAM_ID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-            archive > build/xcodebuild-archive.log 2>&1 || {
+            clean archive > build/xcodebuild-archive.log 2>&1 || {
               echo "::error::Archive failed — tail of log:"
               tail -100 build/xcodebuild-archive.log
               exit 1
