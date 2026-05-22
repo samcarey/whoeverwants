@@ -1,6 +1,7 @@
 // Simple question queries using browser storage for access control
 // No fingerprinting, no complex RLS - just localStorage question lists
 
+import { getSessionToken } from '@/lib/session';
 import type { GroupSummary, Poll, Question } from '@/lib/types';
 import {
   apiGetAccessibleQuestions,
@@ -108,9 +109,24 @@ export async function getMyGroups(): Promise<MyGroupsResult> {
   if (typeof window === 'undefined') return { polls: [], emptyGroups: [] };
   try {
     const accessibleIds = getAccessibleQuestionIds();
+    // Signed-in users have authoritative membership server-side via
+    // group_members + user_browsers — their groups exist regardless of
+    // whether the per-device localStorage list has any question_ids.
+    // Without this, a signed-in user on a fresh browser (empty
+    // accessibleIds list) would have the fetch short-circuited to []
+    // and never see their existing groups.
+    const isSignedIn = !!getSessionToken();
     const cached = getCachedAccessiblePolls();
     let canUseCachedPolls = false;
-    if (cached) {
+    if (cached && !isSignedIn) {
+      // Cache check is sound for anonymous users (membership is purely
+      // localStorage-driven; the cache is authoritative if it covers
+      // every accessibleId). For signed-in users it isn't: the server
+      // can carry memberships the local cache has never seen, AND
+      // `[].every(...) === true` would let a stale empty cache satisfy
+      // an empty accessibleIds list, masking server-side memberships.
+      // Refetch on every call when signed in; the API call is itself
+      // in-flight coalesced via `myGroupsInFlight`.
       const cachedQuestionIds = new Set<string>();
       for (const mp of cached) for (const sp of mp.questions) cachedQuestionIds.add(sp.id);
       canUseCachedPolls = accessibleIds.every(id => cachedQuestionIds.has(id));
@@ -126,7 +142,7 @@ export async function getMyGroups(): Promise<MyGroupsResult> {
         const [polls, emptyGroups] = await Promise.all([
           canUseCachedPolls
             ? Promise.resolve(cached!)
-            : (accessibleIds.length === 0
+            : (accessibleIds.length === 0 && !isSignedIn
                 ? Promise.resolve<Poll[]>([])
                 : apiGetMyGroups(accessibleIds)),
           apiGetMyEmptyGroups(),
