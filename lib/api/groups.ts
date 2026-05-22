@@ -332,6 +332,83 @@ export async function apiUpdateGroupPrivacy(
   return result;
 }
 
+/**
+ * Phase F: join-request helpers.
+ *
+ * Three operations:
+ *   * `apiCreateGroupJoinRequest(routeId, message)` — signed-in
+ *     non-member requests access. Returns the request summary + a
+ *     status enum ('pending' | 'already_pending' | 'already_member')
+ *     so callers can differentiate UX states.
+ *   * `apiListGroupJoinRequests(routeId)` — creator-only list of
+ *     pending requests for their group.
+ *   * `apiDecideGroupJoinRequest(routeId, requestId, action)` —
+ *     creator approves or denies a pending request. Action 'approve'
+ *     writes a `group_members` row server-side; the approved user sees
+ *     the group on next refresh.
+ *
+ * All three throw `ApiError` on non-2xx (401 = signed out, 403 = not
+ * the creator, 404 = unknown group / already-decided request, etc.).
+ */
+
+export interface GroupJoinRequest {
+  id: string;
+  group_id: string;
+  requester_user_id: string;
+  requester_email: string | null;
+  message: string | null;
+  requested_at: string;
+}
+
+export interface CreateGroupJoinRequestResult {
+  status: 'pending' | 'already_pending' | 'already_member';
+  request: GroupJoinRequest | null;
+}
+
+export async function apiCreateGroupJoinRequest(
+  routeId: string,
+  message: string | null,
+): Promise<CreateGroupJoinRequestResult> {
+  const data = await groupFetch<any>(
+    `/${encodeURIComponent(routeId)}/join-requests`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ message: message ?? null }),
+    },
+  );
+  return {
+    status: data.status,
+    request: data.request ?? null,
+  };
+}
+
+export async function apiListGroupJoinRequests(
+  routeId: string,
+): Promise<GroupJoinRequest[]> {
+  const data = await groupFetch<any[]>(
+    `/${encodeURIComponent(routeId)}/join-requests`,
+  );
+  return Array.isArray(data) ? data : [];
+}
+
+export async function apiDecideGroupJoinRequest(
+  routeId: string,
+  requestId: string,
+  action: 'approve' | 'deny',
+): Promise<{ request_id: string; status: 'approved' | 'denied' }> {
+  const data = await groupFetch<any>(
+    `/${encodeURIComponent(routeId)}/join-requests/${encodeURIComponent(requestId)}/decide`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    },
+  );
+  return {
+    request_id: data.request_id,
+    status: data.status,
+  };
+}
+
 /** Encode an ArrayBuffer as base64. Chunked to avoid the `apply()`
  *  call-stack limit on big buffers — handles the 5 MiB max-image-size
  *  cap comfortably. */

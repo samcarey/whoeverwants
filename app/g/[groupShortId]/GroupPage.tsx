@@ -46,6 +46,7 @@ import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
 import { GroupCardItem, ROW_DIVIDER_CLASS, type GroupCardGroup } from "./GroupCardItem";
 import BubbleBarPanel, { PANEL_HEIGHT_VAR, PANEL_OFFSET_VAR } from "@/components/BubbleBarPanel";
+import { GroupNotFound as GroupNotFoundFallback } from "@/components/GroupLoadState";
 
 import type { Group } from "@/lib/groupUtils";
 
@@ -1706,20 +1707,11 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   }
 
   if (error || !group) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Group Not Found</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">This group may not exist or you don&apos;t have access.</p>
-          <button
-            onClick={() => router.push('/')}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-          >
-            Go Home
-          </button>
-        </div>
-      </div>
-    );
+    // Phase F: GroupNotFoundFallback surfaces the "Request to join"
+    // CTA for signed-in non-members of private groups. Passing
+    // routeId from `groupId` (the URL path id) lets it POST against
+    // the correct group on tap.
+    return <GroupNotFoundFallback routeId={groupId} />;
   }
 
   return (
@@ -2256,20 +2248,10 @@ function GroupPageInner() {
   }, [pollParam, rootPoll, groupShortId, router]);
 
   if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Group Not Found</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">This group may have been removed or the link is incorrect.</p>
-          <button
-            onClick={() => router.push("/")}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-          >
-            Go Home
-          </button>
-        </div>
-      </div>
-    );
+    // Phase F: same join-request affordance as the GroupContent error
+    // branch above. `groupShortId` here is the URL path id from
+    // useParams() — handed to GroupNotFoundFallback as `routeId`.
+    return <GroupNotFoundFallback routeId={groupShortId} />;
   }
 
   if (!rootPoll && !isEmptyGroup) {

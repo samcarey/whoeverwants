@@ -945,16 +945,22 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Auth & Access Model
 
-> **Phases A + B + C + D shipped.** A+B = identity foundation +
+> **Phases A + B + C + D + E + F shipped.** A+B = identity foundation +
 > magic-link email sign-in (migration 112). C = "Sign in with Apple"
 > + "Sign in with Google" on web, plus native Apple Sign In on
 > Capacitor iOS via `@capgo/capacitor-social-login`. D = passkey
 > (WebAuthn) registration + sign-in (migration 113), with anonymous
 > registration supported so a user can create an account directly
-> from a passkey. Group privacy (E), join requests (F), invite links
-> (G), per-vote anonymity (H), and native Google on iOS (deferred
-> sub-follow-up to C — needs per-bundle iOS client IDs + URL-scheme
-> patching) are still scheduled. Full plan + rationale in
+> from a passkey. E = group privacy (migration 114) — new groups
+> default private; visibility filter gates `/by-route-id` 404s for
+> non-members; creator-only privacy toggle on /info. F = group join
+> requests (migration 115) — signed-in non-members request access
+> via the /info-not-found page, creators approve/deny from a /info
+> "Pending requests" section, push notification fans out to every
+> browser the creator's signed in on. Invite links (G), per-vote
+> anonymity (H), and native Google on iOS (deferred sub-follow-up to
+> C — needs per-bundle iOS client IDs + URL-scheme patching) are
+> still scheduled. Full plan + rationale in
 > `docs/auth-access-model.md`.
 
 **Cross-browser visibility for signed-in users.** Every read that
@@ -1299,9 +1305,7 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
 **Open phases (see `docs/auth-access-model.md`):**
 - D: Passkey (WebAuthn). **Shipped.**
 - E: `groups.privacy` column, new groups default private. **Shipped.**
-- F: `group_join_requests` + push notification to creator. Closes
-  the signed-in sharing loop; the privacy-toggle escape hatch is
-  the bridge until then.
+- F: `group_join_requests` + push notification to creator. **Shipped.**
 - G: `group_invites` with single + multi-use modes and optional
   target_poll_id.
 - H: per-vote anonymity flags (`votes.anonymous_to_peers`,
@@ -1310,6 +1314,89 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
   creator_user_id can be set after-the-fact, enabling
   privacy-flip on grandfathered groups.
 - C-follow-up: native Google Sign In on iOS (Apple native shipped; Google needs per-bundle iOS client IDs + reversed-URL-scheme registration).
+
+**Phase F (group join requests) shipped in migration 115.** Adds
+`group_join_requests(id, group_id, requester_user_id, message,
+status, requested_at, decided_at, decided_by_user_id)` with status
+in `('pending', 'approved', 'denied', 'cancelled')`. A partial
+unique index on `(group_id, requester_user_id) WHERE
+status = 'pending'` enforces "one open request per (group, user)"
+without blocking re-requests after a denial. Three endpoints in
+`routers/groups.py`:
+  * `POST /api/groups/<route_id>/join-requests` (body `{message?}`)
+    — signed-in caller. Returns 200 + status discriminator
+    (`pending` | `already_pending` | `already_member`). 401
+    anonymous, 404 unknown group. Idempotent via the partial
+    unique index — second call doesn't re-fire the creator push.
+  * `GET /api/groups/<route_id>/join-requests` — creator-only.
+    Returns pending oldest first, with `requester_email` joined
+    in (NULL for passkey-only requesters). 401/403/404.
+  * `POST /api/groups/<route_id>/join-requests/<id>/decide` (body
+    `{action: 'approve' | 'deny'}`) — creator-only. Approve writes
+    a `group_members` row keyed on the requester's
+    earliest-linked `user_browsers.browser_id` (one row is enough
+    — `load_user_visibility`'s user-aware lookup expands to every
+    linked browser). Deny just walks the status. Returns 200 on
+    transition, 404 on cross-group / already-decided / unknown
+    request_id. The route_id + request_id pairing is enforced
+    server-side: a creator of group A can't decide on a request
+    that belongs to group B even with a guessed request_id.
+
+`services/join_requests.py` is the single home for the three
+operations (`create_join_request`, `list_pending_requests`,
+`decide_request`) + the membership-or-creator short-circuit. The
+membership write on approve uses the same `ON CONFLICT (group_id,
+browser_id) DO NOTHING` pattern as the auto-join paths so an
+existing membership row keeps its original `joined_at` watermark.
+
+Push fan-out: `services/push.py: fan_out_join_request(group_id,
+creator_user_id, payload)`. Walks `user_browsers WHERE user_id =
+creator_user_id` (NOT group_members) — the creator might have
+requested notifications on Device A and be looking at Device B
+when the request lands. Gated on the per-group `notify_new_poll`
+pref so muting a group still mutes join-request noise. Shares
+`_dispatch_pushes` with `fan_out_new_poll` (the send + record-
+outcomes loop is identical) — extracted on this PR so adding a
+third event type doesn't fork the loop.
+
+FE: `apiCreateGroupJoinRequest`, `apiListGroupJoinRequests`,
+`apiDecideGroupJoinRequest` in `lib/api/groups.ts`. The /info page
+mounts `<JoinRequestsSection groupId enabled />` when the viewer is
+the recorded creator (gated on `session.user_id ===
+group.creatorUserId`); the section renders nothing on an empty
+pending list. The `<GroupNotFound>` 404 page accepts an optional
+`routeId` prop — when signed in AND `routeId` is set, it surfaces
+a "Request to join" button that POSTs to the join-request endpoint
+and shows a "Request sent" / "Group not found" result. Anonymous
+viewers on the same page get a "Sign in to request access" CTA
+that opens `SignInModal`; signing in fires
+`SESSION_CHANGED_EVENT` and the button surfaces without remount.
+
+**Pitfall: requester-email surfaces are NULL for passkey-only
+accounts.** Phase D permits accounts with no email at all
+(`user_identities` carries only a passkey row). The
+`requester_email` field on `GroupJoinRequest` / the list endpoint
+returns null in that case; UI fallback is the literal string
+"Passkey user". When adding new identity-bearing surfaces, mirror
+this fallback rather than coercing the email to a placeholder
+server-side — the null is the truth.
+
+**Pitfall: the "Request to join" CTA only goes on group-level 404s,
+not poll-level 404s.** `/g/<group>/p/<poll>` 404s pass through
+`app/g/[groupShortId]/p/[pollShortId]/page.tsx`'s own "Poll Not
+Found" branch, which is intentionally kept distinct — the user
+might not need access to the whole group, they might just have a
+dead poll URL. If a future request adds "request access to a
+specific poll" semantics, that page is the place to mirror the
+join-request CTA.
+
+**Pitfall: my-emails normalization mismatch.** The server
+normalizes emails to lowercase + trimmed via `normalize_email`
+before persisting + comparing. Tests that mint an email and then
+assert against `requester_email` from a response must also
+normalize the expected value — or use a lowercase email to start.
+The `_sign_in` test helper in `test_join_requests.py` returns the
+normalized form for this reason.
 
 ---
 

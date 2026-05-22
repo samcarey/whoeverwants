@@ -251,7 +251,7 @@ export function GroupEditTitleView({ groupId }: { groupId: string }) {
   const { group, loading, error } = useGroup(groupId);
 
   if (loading) return <GroupLoading />;
-  if (error || !group) return <GroupNotFound />;
+  if (error || !group) return <GroupNotFound routeId={groupId} />;
   return <Editor group={group} groupId={groupId} />;
 }
 

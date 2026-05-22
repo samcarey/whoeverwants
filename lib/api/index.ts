@@ -47,6 +47,13 @@ export {
   apiUpdateGroupPrivacy,
   apiUploadGroupImage,
   apiDeleteGroupImage,
+  apiCreateGroupJoinRequest,
+  apiListGroupJoinRequests,
+  apiDecideGroupJoinRequest,
+} from "./groups";
+export type {
+  GroupJoinRequest,
+  CreateGroupJoinRequestResult,
 } from "./groups";
 
 export {

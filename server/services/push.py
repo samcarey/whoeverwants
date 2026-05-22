@@ -260,6 +260,57 @@ def _fetch_subscriptions(conn, browser_ids: Iterable[str]) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _dispatch_pushes(
+    subscriptions: list[dict],
+    payload: dict,
+    vapid: VapidKeys | None,
+) -> None:
+    """Run the actual web-push / APNS sends + record per-subscription
+    outcomes (success → reset failure_count; 410/BadDeviceToken → delete
+    the dead row; other failures → mark + log). Called from both
+    fan-out helpers below — extracted so adding a third event type
+    (e.g. Phase F's join-request notifications) doesn't fork the dispatch
+    logic.
+
+    The actual sends run OUTSIDE any `get_db()` block — holding a DB
+    connection while waiting on the push services would block other
+    inbound API requests. We only re-open a connection at the end to
+    persist per-subscription outcomes.
+    """
+    web_results: list[tuple[str, bool, str | None, bool]] = []
+    apns_results: list[tuple[str, bool, str | None, bool]] = []
+
+    web_subs = [s for s in subscriptions if s["kind"] == "web_push"]
+    apns_subs = [s for s in subscriptions if s["kind"] == "apns"]
+
+    if web_subs and vapid is not None:
+        for sub in web_subs:
+            ok, err, should_delete = _send_web_push(sub, payload, vapid)
+            web_results.append((sub["id"], ok, err, should_delete))
+
+    if apns_subs and apns_configured():
+        jwt_token = _apns_jwt(int(time.time()))
+        with httpx.Client(http2=True) as client:
+            for sub in apns_subs:
+                ok, err, should_delete = _send_apns(sub, payload, client, jwt_token)
+                apns_results.append((sub["id"], ok, err, should_delete))
+
+    with get_db() as conn:
+        for sub_id, ok, err, should_delete in web_results + apns_results:
+            if ok:
+                conn.execute(
+                    "UPDATE push_subscriptions SET failure_count = 0, last_error = NULL, "
+                    "updated_at = NOW() WHERE id = %(id)s",
+                    {"id": sub_id},
+                )
+            elif should_delete:
+                _delete_subscription(conn, sub_id)
+                log.info("Deleted dead push subscription %s: %s", sub_id, err)
+            else:
+                _mark_failure(conn, sub_id, err or "unknown")
+                log.warning("Push send failed for subscription %s: %s", sub_id, err)
+
+
 def fan_out_new_poll(group_id: str, creator_browser_id: str | None, payload: dict) -> None:
     """Send a 'new poll' push to every group member (except the creator)
     whose notification preference is on. Safe to call inline OR from a
@@ -291,41 +342,52 @@ def fan_out_new_poll(group_id: str, creator_browser_id: str | None, payload: dic
                 return
             vapid = _load_vapid_from_db(conn)
 
-        # The actual send happens outside the get_db() block so we don't
-        # hold a DB connection while waiting on the push services. We
-        # only re-open a connection to record success/failure outcomes.
-        web_results: list[tuple[str, bool, str | None, bool]] = []
-        apns_results: list[tuple[str, bool, str | None, bool]] = []
-
-        web_subs = [s for s in subscriptions if s["kind"] == "web_push"]
-        apns_subs = [s for s in subscriptions if s["kind"] == "apns"]
-
-        if web_subs and vapid is not None:
-            for sub in web_subs:
-                ok, err, should_delete = _send_web_push(sub, payload, vapid)
-                web_results.append((sub["id"], ok, err, should_delete))
-
-        if apns_subs and apns_configured():
-            jwt_token = _apns_jwt(int(time.time()))
-            with httpx.Client(http2=True) as client:
-                for sub in apns_subs:
-                    ok, err, should_delete = _send_apns(sub, payload, client, jwt_token)
-                    apns_results.append((sub["id"], ok, err, should_delete))
-
-        # Record outcomes
-        with get_db() as conn:
-            for sub_id, ok, err, should_delete in web_results + apns_results:
-                if ok:
-                    conn.execute(
-                        "UPDATE push_subscriptions SET failure_count = 0, last_error = NULL, "
-                        "updated_at = NOW() WHERE id = %(id)s",
-                        {"id": sub_id},
-                    )
-                elif should_delete:
-                    _delete_subscription(conn, sub_id)
-                    log.info("Deleted dead push subscription %s: %s", sub_id, err)
-                else:
-                    _mark_failure(conn, sub_id, err or "unknown")
-                    log.warning("Push send failed for subscription %s: %s", sub_id, err)
+        _dispatch_pushes(subscriptions, payload, vapid)
     except Exception as exc:  # noqa: BLE001
         log.exception("fan_out_new_poll failed: %s", exc)
+
+
+def fan_out_join_request(
+    group_id: str,
+    creator_user_id: str,
+    payload: dict,
+) -> None:
+    """Phase F: send a 'someone wants to join your group' push to every
+    browser the creator is signed in on, subject to the per-group
+    notification preference. Same safety contract as `fan_out_new_poll`:
+    every error caught, logged, and swallowed so a failing push service
+    can't block the request response.
+
+    Recipients are derived from `user_browsers WHERE user_id = creator`
+    (one per linked browser), filtered down to those with active push
+    subscriptions, and gated on the same `notify_new_poll` pref the
+    new-poll path uses — for v1 the per-group pref is the single signal
+    that the creator wants to hear about anything happening on the
+    group. Phase I can add a dedicated `notify_join_request` column if
+    we want to surface join requests separately from new-poll noise.
+    """
+    try:
+        with get_db() as conn:
+            recipients = conn.execute(
+                """
+                SELECT DISTINCT ub.browser_id::text AS browser_id
+                  FROM user_browsers ub
+                  LEFT JOIN group_notification_preferences pref
+                    ON pref.browser_id = ub.browser_id
+                   AND pref.group_id = %(gid)s::uuid
+                 WHERE ub.user_id = %(uid)s::uuid
+                   AND COALESCE(pref.notify_new_poll, TRUE) = TRUE
+                """,
+                {"gid": group_id, "uid": creator_user_id},
+            ).fetchall()
+            browser_ids = [r["browser_id"] for r in recipients]
+            if not browser_ids:
+                return
+            subscriptions = _fetch_subscriptions(conn, browser_ids)
+            if not subscriptions:
+                return
+            vapid = _load_vapid_from_db(conn)
+
+        _dispatch_pushes(subscriptions, payload, vapid)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("fan_out_join_request failed: %s", exc)
