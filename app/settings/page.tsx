@@ -104,11 +104,11 @@ export default function SettingsPage() {
   const [showDiscardImageConfirm, setShowDiscardImageConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Phase A+B: signed-in state. `currentUser` is seeded synchronously
-  // from the localStorage-cached profile so first paint already shows
-  // the signed-in row; the `apiGetMe()` round-trip below refreshes
-  // and detects server-side revocation.
-  const [currentUser, setCurrentUser] = useState<SessionUser | null>(() => getCurrentUser());
+  // Initialize null for SSR parity (no localStorage on the server); the
+  // mount effect below seeds from the cached profile, then apiGetMe()
+  // refreshes. Eager `useState(() => getCurrentUser())` produces a
+  // hydration mismatch when signed in.
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [signOutInFlight, setSignOutInFlight] = useState(false);
 
@@ -128,13 +128,14 @@ export default function SettingsPage() {
 
   // Subscribe to session changes so sign-in (from the modal) and
   // sign-out (from this page or anywhere else) flip the displayed state
-  // without a route navigation.
+  // without a route navigation. Also runs once on mount to seed from
+  // the localStorage-cached profile (the useState init above is null
+  // for SSR parity).
   useEffect(() => {
+    setCurrentUser(getCurrentUser());
     const handler = () => setCurrentUser(getCurrentUser());
-    if (typeof window !== "undefined") {
-      window.addEventListener(SESSION_CHANGED_EVENT, handler);
-      return () => window.removeEventListener(SESSION_CHANGED_EVENT, handler);
-    }
+    window.addEventListener(SESSION_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, handler);
   }, []);
 
   // Refresh from the server on mount — catches server-side revocation

@@ -44,6 +44,8 @@ function toGroupSummary(data: any): GroupSummary {
     title: data.title ?? null,
     created_at: data.created_at,
     image_updated_at: data.image_updated_at ?? null,
+    privacy: data.privacy ?? null,
+    creator_user_id: data.creator_user_id ?? null,
   };
 }
 
@@ -285,6 +287,49 @@ function invalidateGroupPolls(groupId: string) {
   }
   invalidateAccessibleQuestions();
   invalidateGroupSummary(groupId);
+}
+
+/** Phase E: flip a group's privacy (creator-only).
+ *
+ *  Requires the caller's session token (the fetch wrapper attaches it
+ *  automatically). The server verifies the session's user_id matches
+ *  the group's recorded `creator_user_id`. Returns the updated privacy
+ *  + creator_user_id on success.
+ *
+ *  Throws `ApiError` with status 401 (signed out), 403 (not the
+ *  creator OR legacy group with no recorded creator), 404 (unknown
+ *  group), or 400 (bad privacy value).
+ *
+ *  Invalidates every cached poll in the group (each carries
+ *  `group_privacy`) plus the accessible-polls cache so subsequent
+ *  reads pick up the flipped state.
+ */
+export async function apiUpdateGroupPrivacy(
+  routeId: string,
+  privacy: 'public' | 'private',
+): Promise<{
+  group_id: string;
+  group_short_id: string | null;
+  privacy: string;
+  creator_user_id: string | null;
+}> {
+  const data = await groupFetch<any>(
+    `/${encodeURIComponent(routeId)}/privacy`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ privacy }),
+    },
+  );
+  const result = {
+    group_id: data.group_id as string,
+    group_short_id: (data.group_short_id ?? null) as string | null,
+    privacy: data.privacy as string,
+    creator_user_id: (data.creator_user_id ?? null) as string | null,
+  };
+  // Same invalidation pattern as title/image: every poll in the group
+  // carries `group_privacy`, so evict each one to drop stale state.
+  invalidateGroupPolls(result.group_id);
+  return result;
 }
 
 /** Encode an ArrayBuffer as base64. Chunked to avoid the `apply()`

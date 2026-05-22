@@ -175,6 +175,15 @@ export interface Group {
    *  includes a `?v=<timestamp>` cache-buster so the browser refetches
    *  on every change. */
   imageUrl: string | null;
+  /** Migration 114 (Phase E): 'public' or 'private', or null for
+   *  synthesized placeholder/cached groups that predate the field.
+   *  Drives the /info privacy badge + creator-only toggle. */
+  privacy: string | null;
+  /** Migration 114 (Phase E): the signed-in creator's user_id if the
+   *  group was created while signed in, otherwise null. Required to
+   *  authorize the privacy-toggle endpoint (server-side gate also
+   *  enforces this — the FE check is just for showing/hiding the UI). */
+  creatorUserId: string | null;
 }
 
 /** Build the avatar image URL for a group from its route id + image-updated
@@ -391,6 +400,11 @@ function buildGroupFromPolls(
     latestPoll,
     anonymousRespondentCount,
     imageUrl,
+    // Migration 114 (Phase E): every poll in the group carries the same
+    // group_privacy / group_creator_user_id (sourced from groups via
+    // JOIN). Read off the latest poll for symmetry with group_title.
+    privacy: latestPoll.group_privacy ?? null,
+    creatorUserId: latestPoll.group_creator_user_id ?? null,
   };
 }
 
@@ -428,6 +442,8 @@ export function buildEmptyGroup(summary: GroupSummary): Group {
       summary.short_id ?? summary.id,
       summary.image_updated_at ?? null,
     ),
+    privacy: summary.privacy ?? null,
+    creatorUserId: summary.creator_user_id ?? null,
   };
 }
 

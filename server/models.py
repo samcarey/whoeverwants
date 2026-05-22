@@ -329,6 +329,13 @@ class PollResponse(BaseModel):
     # — every poll in the group carries the same value, so the FE knows
     # whether to render a fallback initials avatar or the uploaded image.
     group_image_updated_at: str | None = None
+    # Migration 114 (Phase E): group-level privacy state surfaced on every
+    # poll so the FE can render the privacy badge without a second lookup.
+    # `group_privacy` is 'public' or 'private'. `group_creator_user_id` is
+    # the signed-in creator's user_id (NULL for anonymous-created groups
+    # and pre-Phase-E groups, which are grandfathered public).
+    group_privacy: str | None = None
+    group_creator_user_id: str | None = None
     # Poll-level results-display + ranked-choice settings (migration 098).
     min_responses: int | None = None
     show_preliminary_results: bool = True

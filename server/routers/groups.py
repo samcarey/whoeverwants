@@ -46,7 +46,9 @@ from models import PollResponse, UpdateGroupTitleRequest
 from services.memberships import leave_group as _leave_group_row
 from services.groups import (
     filter_visible_polls,
+    get_group_metadata,
     grant_group_membership_inline,
+    is_caller_member_of_group,
     load_user_visibility,
     poll_ids_for_group_ids,
     polls_for_poll_ids,
@@ -65,6 +67,12 @@ class GroupSummary(BaseModel):
     group's avatar image was last set/cleared. Null when no custom image
     is set. The FE constructs `/api/groups/by-route-id/<id>/image?v=<ts>`
     using this value as the cache-buster.
+
+    `privacy` + `creator_user_id` (migration 114, Phase E) drive the
+    visibility filter and the /info privacy badge. `privacy` is
+    'public' or 'private'; `creator_user_id` is the signed-in creator's
+    user_id (NULL for anonymous-created groups and grandfathered
+    pre-Phase-E groups).
     """
 
     id: str
@@ -72,6 +80,27 @@ class GroupSummary(BaseModel):
     title: str | None = None
     created_at: str
     image_updated_at: str | None = None
+    privacy: str | None = None
+    creator_user_id: str | None = None
+
+
+class UpdateGroupPrivacyRequest(BaseModel):
+    """Body for `POST /api/groups/{route_id}/privacy`.
+
+    Only the group's recorded `creator_user_id` (set at create time
+    when the creator was signed in) can flip privacy. Phase F/G will
+    layer join requests + invite links on top of this so non-creators
+    can still get into private groups.
+    """
+
+    privacy: str  # 'public' or 'private'
+
+
+class UpdateGroupPrivacyResponse(BaseModel):
+    group_id: str
+    group_short_id: str | None = None
+    privacy: str
+    creator_user_id: str | None = None
 
 
 class GroupPreviewResponse(BaseModel):
@@ -211,7 +240,8 @@ def get_my_empty_groups(request: Request):
         # user_id. DISTINCT collapses duplicates when multiple linked
         # browsers all have a row for the same group.
         rows = conn.execute(
-            """SELECT DISTINCT g.id, g.short_id, g.title, g.created_at, g.image_updated_at
+            """SELECT DISTINCT g.id, g.short_id, g.title, g.created_at,
+                       g.image_updated_at, g.privacy, g.creator_user_id
                  FROM groups g
                  JOIN group_members m ON m.group_id = g.id
                 WHERE (
@@ -236,13 +266,21 @@ def get_my_empty_groups(request: Request):
 def _row_to_group_summary(row) -> GroupSummary:
     created_at = row.get("created_at")
     image_updated_at = row.get("image_updated_at")
+    creator_user_id = row.get("creator_user_id")
     return GroupSummary(
         id=str(row["id"]),
         short_id=row.get("short_id"),
         title=row.get("title"),
         created_at=created_at.isoformat() if created_at else "",
         image_updated_at=image_updated_at.isoformat() if image_updated_at else None,
+        privacy=row.get("privacy"),
+        creator_user_id=str(creator_user_id) if creator_user_id else None,
     )
+
+
+_GROUP_SUMMARY_COLUMNS = (
+    "id, short_id, title, created_at, image_updated_at, privacy, creator_user_id"
+)
 
 
 @router.post("", response_model=GroupSummary, status_code=201)
@@ -252,17 +290,33 @@ def create_group(request: Request):
     Requires `browser_id` (from `BrowserIdMiddleware`) — without one
     the group would be created but unreachable, so return 400 and let
     the FE retry after the middleware mints an id.
+
+    Phase E: privacy + creator_user_id are derived from the caller's
+    auth state. Signed-in callers get `privacy='private'` with
+    `creator_user_id` recorded; anonymous callers always get
+    `privacy='public'`. There's no body param for this — anonymous
+    browsers can't create private groups (the spec invariant: approval
+    authority can't be stranded on a wiped browser).
     """
     browser_id = _browser_id(request)
     if not browser_id:
         raise HTTPException(status_code=400, detail="Missing browser identity")
+    user_id = _user_id(request)
+    privacy = "private" if user_id else "public"
 
     with get_db() as conn:
         row = conn.execute(
-            "INSERT INTO groups DEFAULT VALUES "
-            "RETURNING id, short_id, title, created_at, image_updated_at"
+            f"""
+            INSERT INTO groups (privacy, creator_user_id)
+            VALUES (%(privacy)s, %(creator_user_id)s)
+            RETURNING {_GROUP_SUMMARY_COLUMNS}
+            """,
+            {"privacy": privacy, "creator_user_id": user_id},
         ).fetchone()
-        grant_group_membership_inline(conn, str(row["id"]), browser_id)
+        # Bypass the helper's private-skip — creators are always members.
+        grant_group_membership_inline(
+            conn, str(row["id"]), browser_id, privacy="public"
+        )
         return _row_to_group_summary(row)
 
 
@@ -270,20 +324,33 @@ def create_group(request: Request):
     "/by-route-id/{route_id}/summary",
     response_model=GroupSummary,
 )
-def get_group_summary(route_id: str):
-    """Group metadata (id, short_id, title, created_at) for the group
-    page header when `/by-route-id/{route_id}` returned no visible
-    polls. Identity-free + no membership writes, so it's safe to call
-    from preview crawlers or metadata routes. Returns 404 on route
-    resolution failure.
+def get_group_summary(route_id: str, request: Request):
+    """Group metadata for the group page header when
+    `/by-route-id/{route_id}` returned no visible polls (or for any
+    direct-URL load that needs the chrome before the polls list lands).
+
+    Phase E: gated by membership for private groups. Non-members hitting
+    a private group's URL get 404 here too — surfacing the group's title
+    + avatar to strangers would leak a private group's existence and
+    name. Public groups remain identity-free (no membership write, no
+    visibility check) so crawlers and direct-URL loads keep working.
+
+    Returns 404 on route resolution failure regardless of privacy.
     """
+    browser_id = _browser_id(request)
+    user_id = _user_id(request)
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
+        meta = get_group_metadata(conn, group_id)
+        if meta and meta["privacy"] == "private":
+            if not is_caller_member_of_group(
+                conn, group_id, browser_id=browser_id, user_id=user_id
+            ):
+                raise HTTPException(status_code=404, detail="Group not found")
         row = conn.execute(
-            "SELECT id, short_id, title, created_at, image_updated_at "
-            "FROM groups WHERE id = %(id)s",
+            f"SELECT {_GROUP_SUMMARY_COLUMNS} FROM groups WHERE id = %(id)s",
             {"id": group_id},
         ).fetchone()
         if not row:
@@ -323,11 +390,20 @@ def get_group_by_route_id(
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
 
-        # Auto-join: every visit becomes a group member. Idempotent via
-        # ON CONFLICT, so re-visits don't advance joined_at — the
-        # closed-before-join filter compares against the FIRST visit's
-        # watermark.
-        grant_group_membership_inline(conn, group_id, browser_id)
+        meta = get_group_metadata(conn, group_id)
+        privacy = meta["privacy"] if meta else "public"
+
+        # Phase E: strangers don't auto-join private groups via URL and
+        # don't see any polls — 404 at the boundary instead.
+        if privacy == "private":
+            if not is_caller_member_of_group(
+                conn, group_id, browser_id=browser_id, user_id=user_id
+            ):
+                raise HTTPException(status_code=404, detail="Group not found")
+        else:
+            grant_group_membership_inline(
+                conn, group_id, browser_id, privacy=privacy
+            )
 
         visibility = load_user_visibility(conn, browser_id, user_id=user_id)
         group_pids = poll_ids_for_group_ids(conn, [group_id])
@@ -559,10 +635,10 @@ def delete_group_image(route_id: str):
 
 
 @router.get("/by-route-id/{route_id}/image")
-def get_group_image(route_id: str):
+def get_group_image(route_id: str, request: Request):
     """Serve the group's avatar image bytes with the stored MIME type.
 
-    Public — no membership / browser-id check. The URL itself is
+    Public groups: no membership / browser-id check. The URL itself is
     unguessable (it requires the group's short_id or uuid), and the
     image surface is intentionally narrow (just the avatar). Cached
     via the FE's `?v=<image_updated_at>` query string; the response
@@ -570,12 +646,24 @@ def get_group_image(route_id: str):
     given URL never re-fetches once received (the next change bumps
     the timestamp, producing a new URL).
 
+    Private groups (Phase E): gated by membership. Strangers get 404 —
+    the avatar is private-group content too. Members get the bytes with
+    the same immutable cache headers.
+
     Returns 404 when no image is set (FE renders fallback initials).
     """
+    browser_id = _browser_id(request)
+    user_id = _user_id(request)
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
+        meta = get_group_metadata(conn, group_id)
+        if meta and meta["privacy"] == "private":
+            if not is_caller_member_of_group(
+                conn, group_id, browser_id=browser_id, user_id=user_id
+            ):
+                raise HTTPException(status_code=404, detail="Group not found")
         row = conn.execute(
             "SELECT image_data, image_mime_type FROM groups WHERE id = %(id)s",
             {"id": group_id},
@@ -587,6 +675,79 @@ def get_group_image(route_id: str):
             media_type=row.get("image_mime_type") or "application/octet-stream",
             headers={"Cache-Control": "public, max-age=31536000, immutable"},
         )
+
+
+@router.post(
+    "/{route_id}/privacy",
+    response_model=UpdateGroupPrivacyResponse,
+)
+def update_group_privacy(
+    route_id: str, req: UpdateGroupPrivacyRequest, request: Request
+):
+    """Phase E: flip a group between 'public' and 'private'.
+
+    Authorization: must be signed in AND match the group's
+    `creator_user_id`. Groups created anonymously (creator_user_id NULL)
+    and grandfathered pre-Phase-E groups can NOT be flipped — they stay
+    public forever. Phase I will add an "anonymous → claim → private"
+    upgrade path; deferred until then.
+
+    Without this endpoint, signed-in users who create a group get a
+    private group with no way to share it (Phase F/G aren't shipped
+    yet). The toggle is the escape hatch: flip to public until invites
+    land, then optionally flip back to private once the group is
+    bootstrapped.
+    """
+    if req.privacy not in ("public", "private"):
+        raise HTTPException(
+            status_code=400,
+            detail="privacy must be 'public' or 'private'",
+        )
+    user_id = _user_id(request)
+    if not user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Sign in to change group privacy",
+        )
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        meta = get_group_metadata(conn, group_id)
+        if not meta:
+            raise HTTPException(status_code=404, detail="Group not found")
+        # Anonymous-created or pre-Phase-E groups can't be re-keyed by
+        # any signed-in caller: there's no creator to authorize against.
+        # Returning 403 distinguishes "not your group" from "no such
+        # group" (404).
+        if not meta["creator_user_id"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Group has no recorded creator; cannot change privacy",
+            )
+        if meta["creator_user_id"] != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Only the group's creator can change privacy",
+            )
+        row = conn.execute(
+            """
+            UPDATE groups
+               SET privacy = %(privacy)s
+             WHERE id = %(id)s
+            RETURNING id, short_id, privacy, creator_user_id
+            """,
+            {"id": group_id, "privacy": req.privacy},
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Group not found")
+    creator_user_id = row.get("creator_user_id")
+    return UpdateGroupPrivacyResponse(
+        group_id=str(row["id"]),
+        group_short_id=row.get("short_id"),
+        privacy=row["privacy"],
+        creator_user_id=str(creator_user_id) if creator_user_id else None,
+    )
 
 
 @router.delete("/{route_id}/membership", status_code=204)

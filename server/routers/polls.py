@@ -9,7 +9,10 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from algorithms.poll_title import generate_poll_title
 from database import get_db
-from middleware import browser_id_from_request as _browser_id
+from middleware import (
+    browser_id_from_request as _browser_id,
+    user_id_from_request as _user_id,
+)
 from models import (
     CloseQuestionRequest,
     CreatePollRequest,
@@ -55,7 +58,9 @@ _SELECT_POLLS_WITH_GROUP = (
     "SELECT polls.*, "
     "t.short_id AS group_short_id, "
     "t.title AS group_title, "
-    "t.image_updated_at AS group_image_updated_at "
+    "t.image_updated_at AS group_image_updated_at, "
+    "t.privacy AS group_privacy, "
+    "t.creator_user_id AS group_creator_user_id "
     "FROM polls LEFT JOIN groups t ON polls.group_id = t.id"
 )
 
@@ -125,6 +130,8 @@ def _resolve_or_create_group(
     conn,
     requested_group_id: str | None,
     initial_title: str | None,
+    *,
+    creator_user_id: str | None,
 ) -> str:
     """Resolve `req.group_id` to an existing group, or mint a fresh one.
 
@@ -134,6 +141,12 @@ def _resolve_or_create_group(
     points at a real group, return it; otherwise create a new group
     (optionally with `title` set on creation so first-poll-with-name
     flows are a single transaction).
+
+    Phase E: minting a fresh group sets `privacy` from the caller's
+    auth state — signed-in (`creator_user_id` set) → 'private' + records
+    the creator; anonymous → 'public' (forced) + creator_user_id NULL.
+    Resolving to an existing group doesn't touch privacy or
+    creator_user_id; those are set-at-create-time fields.
 
     Unknown / malformed group ids fall through to "mint a fresh group"
     rather than 404 — the request still succeeds, it just lands in a new
@@ -156,9 +169,15 @@ def _resolve_or_create_group(
             "create_poll: requested group_id=%s not found; minting a fresh group",
             requested_group_id,
         )
+    privacy = "private" if creator_user_id else "public"
     row = conn.execute(
-        "INSERT INTO groups (title) VALUES (%(title)s) RETURNING id",
-        {"title": initial_title},
+        "INSERT INTO groups (title, privacy, creator_user_id) "
+        "VALUES (%(title)s, %(privacy)s, %(creator_user_id)s) RETURNING id",
+        {
+            "title": initial_title,
+            "privacy": privacy,
+            "creator_user_id": creator_user_id,
+        },
     ).fetchone()
     return str(row["id"])
 
@@ -176,32 +195,50 @@ def _attach_group_fields(conn, row) -> dict:
         out.get("group_short_id")
         and "group_title" in out
         and "group_image_updated_at" in out
+        and "group_privacy" in out
+        and "group_creator_user_id" in out
     ):
         t = conn.execute(
-            "SELECT short_id, title, image_updated_at FROM groups WHERE id = %(id)s",
+            "SELECT short_id, title, image_updated_at, privacy, creator_user_id "
+            "FROM groups WHERE id = %(id)s",
             {"id": out["group_id"]},
         ).fetchone()
         if t:
             out.setdefault("group_short_id", t.get("short_id"))
             out.setdefault("group_title", t.get("title"))
             out.setdefault("group_image_updated_at", t.get("image_updated_at"))
+            out.setdefault("group_privacy", t.get("privacy"))
+            out.setdefault("group_creator_user_id", t.get("creator_user_id"))
     return out
 
 
-def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
+def _insert_poll(
+    conn,
+    req: CreatePollRequest,
+    now: datetime,
+    *,
+    creator_user_id: str | None,
+) -> dict:
     """Insert a new poll under the requested (or freshly-minted) group.
 
     Migration 105 dropped `polls.follow_up_to` and `polls.group_title`:
     groups are first-class entities (one row in `groups`), and the
     group name override lives on `groups.title` rather than being
     duplicated across every poll.
+
+    Phase E: when minting a fresh group, the caller's `creator_user_id`
+    (resolved from the session token) drives privacy — see
+    `_resolve_or_create_group`.
     """
     # `req.group_title` only seeds the title when minting a fresh group.
     # For existing groups, it overwrites the title — kept for API symmetry
     # but the FE create flow doesn't pass it; group renames go through
     # `POST /api/groups/{route_id}/title` instead.
     group_id = _resolve_or_create_group(
-        conn, req.group_id, req.group_title
+        conn,
+        req.group_id,
+        req.group_title,
+        creator_user_id=creator_user_id,
     )
     row = conn.execute(
         """
@@ -367,6 +404,12 @@ def _row_to_poll(
         close_reason=row.get("close_reason"),
         group_title=row.get("group_title"),
         group_image_updated_at=_iso_or_none(row.get("group_image_updated_at")),
+        group_privacy=row.get("group_privacy"),
+        group_creator_user_id=(
+            str(row["group_creator_user_id"])
+            if row.get("group_creator_user_id")
+            else None
+        ),
         context=row.get("context"),
         details=row.get("details"),
         title=_compute_display_title(row, question_rows),
@@ -447,9 +490,10 @@ def create_poll(
     )
 
     now = datetime.now(timezone.utc)
+    creator_user_id = _user_id(request)
 
     with get_db() as conn:
-        poll_row = _insert_poll(conn, req, now)
+        poll_row = _insert_poll(conn, req, now, creator_user_id=creator_user_id)
         question_rows = [
             _insert_question(conn, poll_row, req, sub, index, question_title, now)
             for index, sub in enumerate(req.questions)

@@ -33,19 +33,32 @@ logger = logging.getLogger(__name__)
 # A poll P in group T is visible to browser B iff EITHER:
 #   1. B has a group_members row for T AND
 #      (P.is_closed = false OR P.closed_at >= members.joined_at), OR
-#   2. (transitional bridge) The legacy `accessible_question_ids` list
-#      passed by the FE contains a question_id whose poll lives in T.
+#   2. (transitional bridge, public groups only) The legacy
+#      `accessible_question_ids` list passed by the FE contains a
+#      question_id whose poll lives in T AND T.privacy = 'public'.
 #      Treated as GROUP-level access (every poll in T visible, no
 #      closed_at filter) — pre-B.3 votes never wrote browser_id, so the
 #      localStorage list is the only access signal those users have
 #      until they re-establish membership by voting. Applies to
-#      /api/groups/mine only.
+#      /api/groups/mine only. Private groups bypass this bridge entirely;
+#      see Phase E in docs/auth-access-model.md.
 #
 # `closed_at` proxy: we use `polls.updated_at`, which the existing close
 # trigger refreshes on every `is_closed` flip. Subsequent edits to a closed
 # poll bump updated_at forward; that makes the rule slightly more permissive
 # (a previously hidden closed poll becomes visible if touched after the
 # user joins), which fails open.
+#
+# Phase E (group privacy) consequences:
+#   * The legacy bridge filters to public groups only — see
+#     `load_user_visibility` below.
+#   * `grant_group_membership_inline` skips writing for private groups —
+#     callers (the `/by-route-id` read endpoint) pass the resolved
+#     `privacy` so we don't need a separate DB lookup. Private groups
+#     require an explicit Phase F/G invite or approval to join.
+#   * Non-members visiting a private group's `/by-route-id` get 404
+#     directly from the router — visibility is enforced at the read
+#     boundary, not silently via filtering.
 
 
 @dataclass
@@ -128,9 +141,21 @@ def load_user_visibility(
 
     bridged_group_ids: set[str] = set()
     if legacy_question_ids:
-        bridged_group_ids = set(
-            group_ids_for_question_ids(conn, legacy_question_ids)
-        )
+        candidate = set(group_ids_for_question_ids(conn, legacy_question_ids))
+        if candidate:
+            # Phase E: the legacy access bridge applies to PUBLIC groups
+            # only. Private groups require an explicit `group_members`
+            # row — pre-B.3 localStorage signals don't qualify, so a
+            # legacy voter on a group that later flipped private (or that
+            # was created private post-Phase-E) stops seeing it via the
+            # bridge. The membership leg above is unaffected — members
+            # see private groups regardless of privacy state.
+            public_rows = conn.execute(
+                "SELECT id FROM groups WHERE id = ANY(%(ids)s) "
+                "AND privacy = 'public'",
+                {"ids": list(candidate)},
+            ).fetchall()
+            bridged_group_ids = {str(r["id"]) for r in public_rows}
 
     return UserVisibility(
         browser_id=browser_id,
@@ -181,6 +206,8 @@ def grant_group_membership_inline(
     conn,
     group_id: str,
     browser_id: str | None,
+    *,
+    privacy: str | None = None,
 ) -> None:
     """Write `group_members(group_id, browser_id)` in the same
     transaction as the read that's about to use it. Used by
@@ -193,8 +220,17 @@ def grant_group_membership_inline(
     closed-before-join filter (a re-visit must NOT advance `joined_at`,
     or polls closed after the first visit but before the latest one
     would silently disappear).
+
+    Phase E: when `privacy='private'` the auto-join is skipped — the URL
+    is not enough to join a private group; an explicit Phase F approval
+    or Phase G invite redemption must write the row instead. Callers
+    should pass the resolved privacy so we don't need a separate DB
+    lookup. Treating an omitted `privacy` as 'public' preserves the
+    pre-Phase-E behavior for any caller that hasn't been updated yet.
     """
     if not browser_id:
+        return
+    if privacy == "private":
         return
     conn.execute(
         """
@@ -204,6 +240,60 @@ def grant_group_membership_inline(
         """,
         {"t": group_id, "b": browser_id},
     )
+
+
+def get_group_metadata(conn, group_id: str) -> dict | None:
+    """Read a group's privacy + creator_user_id in a single round-trip.
+    Used by the read-side endpoints (Phase E) to decide whether to
+    auto-join, 404 non-members, or accept the visit. Returns None when
+    the group doesn't exist.
+    """
+    row = conn.execute(
+        "SELECT privacy, creator_user_id FROM groups WHERE id = %(id)s",
+        {"id": group_id},
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "privacy": row["privacy"],
+        "creator_user_id": (
+            str(row["creator_user_id"]) if row.get("creator_user_id") else None
+        ),
+    }
+
+
+def is_caller_member_of_group(
+    conn,
+    group_id: str,
+    *,
+    browser_id: str | None,
+    user_id: str | None,
+) -> bool:
+    """True iff (browser_id OR any browser linked to user_id) has a
+    `group_members` row for `group_id`. Mirrors the union the visibility
+    filter does — used by the read endpoints to gate access to private
+    groups BEFORE running the full visibility pass."""
+    if not browser_id and not user_id:
+        return False
+    row = conn.execute(
+        """
+        SELECT 1 FROM group_members
+         WHERE group_id = %(t)s::uuid
+           AND (
+                browser_id = %(b)s::uuid
+                OR (
+                    %(u)s::uuid IS NOT NULL
+                    AND browser_id IN (
+                        SELECT browser_id FROM user_browsers
+                         WHERE user_id = %(u)s::uuid
+                    )
+                )
+           )
+         LIMIT 1
+        """,
+        {"t": group_id, "b": browser_id, "u": user_id},
+    ).fetchone()
+    return row is not None
 
 
 def polls_for_poll_ids(

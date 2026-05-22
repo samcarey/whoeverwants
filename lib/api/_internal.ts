@@ -266,6 +266,12 @@ export function toPoll(data: any): Poll {
     close_reason: data.close_reason ?? null,
     group_title: data.group_title ?? null,
     group_image_updated_at: data.group_image_updated_at ?? null,
+    // Migration 114 (Phase E): group-level privacy + creator user_id
+    // surfaced per poll so the FE can render the badge + creator-only
+    // toggle without an extra fetch. Tolerates absence on synthesized
+    // placeholder polls and pre-Phase-E cached polls.
+    group_privacy: data.group_privacy ?? null,
+    group_creator_user_id: data.group_creator_user_id ?? null,
     context: data.context ?? null,
     details: data.details ?? null,
     title: data.title,
