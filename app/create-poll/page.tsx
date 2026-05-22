@@ -95,7 +95,7 @@ const BUBBLE_ICON_PX = 32;
 const BUBBLE_MIN_WIDTH_PX = Math.round(BUBBLE_ICON_PX * 1.75);
 const BUBBLE_HEIGHT_PX = 132;
 const BUBBLE_BUTTON_CLASS =
-  "shrink-0 flex flex-col items-center px-2 py-3 rounded-2xl bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
+  "shrink-0 flex flex-col items-center px-2 py-3 rounded-2xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
 const BUBBLE_BUTTON_STYLE: React.CSSProperties = {
   width: "min-content",
   minWidth: `${BUBBLE_MIN_WIDTH_PX}px`,
