@@ -3,7 +3,8 @@ name: iOS Build & TestFlight
 # Runs on the Mac mini self-hosted runner to build the Capacitor iOS app
 # and upload it to TestFlight. Web assets load remotely via server.url in
 # capacitor.config.ts, so this workflow rarely needs to run — only when
-# native config changes (plugins, permissions, icons, etc.).
+# native config changes (plugins, permissions, icons, etc.) or a new
+# build is needed (e.g. to pick up secrets added after the prior failure).
 
 on:
   push:
