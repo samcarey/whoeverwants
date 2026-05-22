@@ -961,9 +961,11 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 > 116) — creators mint shareable URLs (`/invite/<token>`); raw token
 > + URL surfaced once at create time and persisted as sha256 hash;
 > signed-in viewers auto-redeem on landing, anonymous viewers get a
-> sign-in CTA. Per-vote anonymity (H) and native Google on iOS
-> (deferred sub-follow-up to C — needs per-bundle iOS client IDs +
-> URL-scheme patching) are still scheduled. Full plan + rationale in
+> sign-in CTA. Phase H (per-vote anonymity) is **retired** — anonymous
+> voting is "leave the voter name blank"; no per-vote on/off toggle is
+> planned. Native Google Sign In on iOS (C-follow-up — needs per-bundle
+> iOS client IDs + URL-scheme patching) is the only remaining
+> in-flight follow-up. Full plan + rationale in
 > `docs/auth-access-model.md`.
 
 **Cross-browser visibility for signed-in users.** Every read that
@@ -1311,8 +1313,9 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
 - F: `group_join_requests` + push notification to creator. **Shipped.**
 - G: `group_invites` with single + multi-use modes and optional
   target_poll_id. **Shipped.**
-- H: per-vote anonymity flags (`votes.anonymous_to_peers`,
-  `anonymous_to_creator`) + read-time filter audit.
+- H: ~~per-vote anonymity~~ **NOT PLANNED.** Voters can already submit
+  without a name (existing `voter_name` nullability); no per-vote on/off
+  toggle is on the roadmap.
 - I (partial): "claim an anonymous-created group" so legacy
   creator_user_id can be set after-the-fact, enabling
   privacy-flip on grandfathered groups.
