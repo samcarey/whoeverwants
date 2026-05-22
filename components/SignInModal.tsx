@@ -13,6 +13,8 @@ import {
   appleConfigured,
   appleSignIn,
   googleConfigured,
+  googleSignIn,
+  isNativeIOS,
   renderGoogleButton,
 } from "@/lib/oauth";
 import {
@@ -108,10 +110,13 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
   // Google's SDK renders its own branded button into a container we
   // supply. Initialize it whenever the container mounts AND the server
   // confirms Google is configured. The Promise resolves with the
-  // id_token on first successful sign-in.
+  // id_token on first successful sign-in. Skipped on native iOS — the
+  // Google web SDK is blocked in WebViews (403 disallowed_useragent); a
+  // custom-styled button below handles native via `handleGoogleSignIn`.
   useEffect(() => {
     if (!isOpen || sent) return;
     if (!googleConfigured() || !serverProviders?.google) return;
+    if (isNativeIOS()) return;
     const el = googleButtonRef.current;
     if (!el) return;
     let cancelled = false;
@@ -147,6 +152,36 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
       cancelled = true;
     };
   }, [isOpen, sent, serverProviders?.google]);
+
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setOAuthSubmitting("google");
+    try {
+      const idToken = await googleSignIn();
+      await apiSignInWithOAuth("google", idToken);
+      onClose();
+    } catch (err) {
+      // capgo plugin surfaces user-cancel as a thrown error — match
+      // defensively across plugin / iOS versions. Silent on cancel.
+      const message = err instanceof Error ? err.message : String(err);
+      const isCancel =
+        /cancell?ed|popup_closed_by_user|user_cancelled/i.test(message);
+      if (!isCancel) {
+        console.warn(`[google-signin] caught error: ${message}`);
+      }
+      if (isCancel) {
+        setError(null);
+      } else {
+        setError(
+          err instanceof ApiError && err.status === 400
+            ? err.message || "Google sign-in failed."
+            : "Couldn't sign you in with Google. Try again in a moment."
+        );
+      }
+    } finally {
+      setOAuthSubmitting(null);
+    }
+  };
 
   const handleAppleSignIn = async () => {
     setError(null);
@@ -403,13 +438,40 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
               </p>
 
               {showGoogle && (
-                <div className="mb-3">
-                  <div
-                    ref={googleButtonRef}
-                    className="flex justify-center min-h-[44px]"
-                    aria-label="Sign in with Google"
-                  />
-                </div>
+                isNativeIOS() ? (
+                  // Native iOS: Google's web SDK is blocked in WebViews
+                  // (403 disallowed_useragent). Render a custom button
+                  // styled like the others; the native plugin opens the
+                  // Google app or a SFSafariViewController fallback.
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    disabled={oauthSubmitting !== null}
+                    className="w-full mb-3 flex items-center justify-center gap-2 rounded-md h-11 font-medium border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      viewBox="0 0 18 18"
+                      aria-hidden
+                    >
+                      <path fill="#4285F4" d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" />
+                      <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" />
+                      <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" />
+                      <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" />
+                    </svg>
+                    {oauthSubmitting === "google"
+                      ? "Signing in…"
+                      : "Sign in with Google"}
+                  </button>
+                ) : (
+                  <div className="mb-3">
+                    <div
+                      ref={googleButtonRef}
+                      className="flex justify-center min-h-[44px]"
+                      aria-label="Sign in with Google"
+                    />
+                  </div>
+                )
               )}
               {showApple && (
                 <button

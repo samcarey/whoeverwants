@@ -1,7 +1,8 @@
 # Auth & Access Model
 
-The plan for adding user accounts, group privacy, join requests, invite links,
-and per-vote anonymity to a previously fully-anonymous app. See
+The plan for adding user accounts, group privacy, join requests, and invite
+links to a previously fully-anonymous app. (Per-vote anonymity was originally
+Phase H but has been retired — see below.) See
 `docs/poll-phasing.md` for the precedent on incremental rollouts that keep
 `main` shippable at every step.
 
@@ -24,10 +25,12 @@ on a wiped browser.
 with revocation, single-use invite token. All three can optionally carry a
 target poll so the joiner lands on a specific poll after auto-joining.
 
-**Anonymity** — per-vote, with two independent flags: `anonymous_to_peers`
-and `anonymous_to_creator`. The server *always* knows the voter internally
-(for "have I voted?" / quota / abuse), but read paths filter by the flags so
-peers + creator see only what they're allowed.
+**Anonymity** — per-vote anonymity is **not planned**. The original design
+called for `anonymous_to_peers` and `anonymous_to_creator` flags with
+read-path filtering everywhere, but the feature was retired before
+implementation. Voters who want to participate anonymously can leave their
+name blank; per-question on/off anonymity isn't on the roadmap. See "Phasing"
+below.
 
 ## Identity model
 
@@ -218,37 +221,16 @@ group_invites
   auto-redeem on mount and `router.replace` to the destination
   group / poll URL.
 
-## Per-vote anonymity
+## Per-vote anonymity (NOT PLANNED)
 
-```
-votes
-  + voter_user_id uuid NULL -> users.id
-  + voter_browser_id uuid NULL  -- always set going forward; backfill not possible
-  + anonymous_to_peers boolean DEFAULT false
-  + anonymous_to_creator boolean DEFAULT false
-```
-
-**Server-side read filter** (Phase H):
-- `polls_for_poll_ids` aggregates `voter_names`: filter
-  `WHERE NOT anonymous_to_peers OR voter_user_id = $caller_user_id` (peers
-  see their own name regardless of flag).
-- Creator-only read paths (vote drilldown, /info participant list): filter
-  `WHERE NOT anonymous_to_creator OR voter_user_id = $caller_user_id`.
-- The `VoterList` component currently has no caller-identity check —
-  Phase H adds it.
-
-**Single source of identity-bearing read.** Add an audit harness test
-(`server/tests/test_anonymity_leak.py`) that exercises every endpoint
-returning vote rows and asserts anonymous flags are honored. The bug class
-to fear most is "a new endpoint forgets the filter and leaks identity" —
-the test should fail at PR-time for any new endpoint that surfaces
-`voter_name`/`voter_user_id`/`voter_browser_id` without going through the
-shared filter.
-
-**UI for the toggle.** TBD per question type:
-- Ranked-choice / time / suggestion: add toggle to the wrapper Submit area.
-- Yes/No tap-to-vote-immediately has no room — likely a group-level
-  "default anonymous" setting + long-press to toggle on a single vote.
+Per-vote anonymity was originally Phase H of this plan. It has been
+retired. Voters who want to participate anonymously leave their name
+blank when submitting a vote — the existing `voter_name` nullability
+already handles that case end-to-end. There is no per-vote on/off toggle,
+no `anonymous_to_peers` / `anonymous_to_creator` flag schema, and no
+read-time filter audit test. If the requirement ever returns, the
+original design is preserved in git history (commit search for
+"Phase H").
 
 ## Phasing
 
@@ -264,8 +246,8 @@ the original session for the rationale.
 | E | Group privacy | `groups.privacy`, `groups.creator_user_id`, visibility filter, sign-in nudge | A, B |
 | F | Join requests (shipped) | `group_join_requests` table (migration 115), request/approve/deny endpoints, push notification fan-out to creator's `user_browsers`, /info "Pending requests" creator section, "Request to join" CTA on signed-in 404 page | E |
 | G | Invite links (shipped) | `group_invites` table (migration 116), creator-side create/list/revoke endpoints, anonymous-allowed `/invite/<token>` landing page that auto-redeems for signed-in viewers, `InviteLinksSection` on /info | E |
-| H | Per-vote anonymity | anonymity flags on votes, read-time filter everywhere, audit test | A |
-| I | Polish | account settings (linked identities, **add recovery email to passkey-only account**, sign out, delete), retire `creator_secret` | A–H |
+| H | ~~Per-vote anonymity~~ | **NOT PLANNED.** Anonymity flags on votes + read-time filter were originally designed but retired. Anonymous participation is "leave the voter name blank"; no per-vote on/off toggle. | — |
+| I | Polish | account settings (linked identities, **add recovery email to passkey-only account**, sign out, delete), retire `creator_secret` | A–G |
 
 Phase A and B ship together as the first PR — A is invisible alone; B is
 the smallest end-to-end auth that proves the model.
@@ -303,11 +285,6 @@ the smallest end-to-end auth that proves the model.
 
 ## Pitfalls to internalize before writing code
 
-- **Anonymity leak via aggregation.** Every read path that surfaces
-  voter identity has to filter on the flags. The `polls_for_poll_ids`
-  helper aggregates `voter_names` server-side; the `votes` table has
-  per-vote `voter_name` strings. Any join from a results query to votes
-  must filter. The audit test in Phase H is the safety net.
 - **Browser_id ≠ identity post-rollout.** Today CLAUDE.md says
   "every audit-write keys on browser_id." Post-Phase-A it's
   "user_id when present, else browser_id." Every callsite that reads
@@ -421,6 +398,6 @@ the point of passkey-as-account-creation (no friction).
   see; signed-in users still type a name per vote (defaulted from the
   last one). A `users.display_name` column is a small addition for
   later.
-- Per-group anonymous-default setting. Defer to Phase H follow-up.
+- Per-group anonymous-default setting. Off the roadmap with Phase H retired.
 - Web Push notification preference defaulting to ON for own groups
   (notifications to creator on join request) — design in Phase F.
