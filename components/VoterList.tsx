@@ -199,13 +199,24 @@ export default function VoterList({ questionId, className = "", label, filter, s
     ? allNamedVoters.filter(v => v.id !== currentUserVoteId)
     : allNamedVoters;
 
+  // Identify the viewer's own bubble. Static mode: name match against the
+  // saved profile name (the only identity signal available without per-vote
+  // ids). Live mode: voteId match (correct across renames). Used both for
+  // the `!includeSelf` exclude-self filter and for the `includeSelf` "You
+  // (name)" label below.
+  const savedNameLcForSelf = (getUserName() || '').trim().toLowerCase();
+  const isSelfVoter = (v: Voter): boolean => {
+    if (isStatic) {
+      if (!savedNameLcForSelf) return false;
+      return (v.voter_name || '').trim().toLowerCase() === savedNameLcForSelf;
+    }
+    return !!currentUserVoteId && v.id === currentUserVoteId;
+  };
+
   let currentUserIsAnonymous = false;
   if (isStatic) {
-    if (!includeSelf) {
-      const savedName = (getUserName() || '').trim().toLowerCase();
-      if (savedName) {
-        namedVoters = namedVoters.filter(v => (v.voter_name || '').trim().toLowerCase() !== savedName);
-      }
+    if (!includeSelf && savedNameLcForSelf) {
+      namedVoters = namedVoters.filter(v => !isSelfVoter(v));
     }
   } else {
     const currentUserVote = currentUserVoteId
@@ -216,6 +227,20 @@ export default function VoterList({ questionId, className = "", label, filter, s
     );
   }
   const adjustedAnonymousCount = !includeSelf && currentUserIsAnonymous ? anonymousCount - 1 : anonymousCount;
+
+  // Float the viewer's bubble to the front so the singleLine `+N` overflow
+  // never trims it — the user just submitted and the whole point of
+  // `includeSelf` is to surface their own bubble for confirmation.
+  if (includeSelf) {
+    const selfIdx = namedVoters.findIndex(isSelfVoter);
+    if (selfIdx > 0) {
+      const selfVoter = namedVoters[selfIdx];
+      namedVoters = [selfVoter, ...namedVoters.slice(0, selfIdx), ...namedVoters.slice(selfIdx + 1)];
+    }
+  }
+
+  const labelFor = (voter: Voter): string =>
+    isSelfVoter(voter) ? `You (${voter.voter_name})` : (voter.voter_name || '');
 
   const getVoterColor = (index: number) => {
     const colors = [
@@ -242,6 +267,7 @@ export default function VoterList({ questionId, className = "", label, filter, s
         namedVoters={namedVoters}
         adjustedAnonymousCount={adjustedAnonymousCount}
         getVoterColor={getVoterColor}
+        labelFor={labelFor}
         className={className}
       />
     );
@@ -258,7 +284,7 @@ export default function VoterList({ questionId, className = "", label, filter, s
           key={voter.id}
           className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${getVoterColor(index)}`}
         >
-          {voter.voter_name}
+          {labelFor(voter)}
         </span>
       ))}
 
@@ -275,6 +301,7 @@ interface SingleLineVotersProps {
   namedVoters: Voter[];
   adjustedAnonymousCount: number;
   getVoterColor: (index: number) => string;
+  labelFor: (voter: Voter) => string;
   className: string;
 }
 
@@ -282,6 +309,7 @@ function SingleLineVoters({
   namedVoters,
   adjustedAnonymousCount,
   getVoterColor,
+  labelFor,
   className,
 }: SingleLineVotersProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -351,7 +379,7 @@ function SingleLineVoters({
           ref={(el) => { bubbleRefs.current[index] = el; }}
           className={`inline-block shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium ${getVoterColor(index)}`}
         >
-          {voter.voter_name}
+          {labelFor(voter)}
         </span>
       ))}
       {adjustedAnonymousCount > 0 && (
