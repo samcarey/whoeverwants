@@ -24,7 +24,7 @@ import {
   findChainRoot,
   type Group,
 } from "./groupUtils";
-import { apiGetGroupByRouteId, apiGetGroupSummary } from "./api";
+import { apiGetGroupByRouteId, apiGetGroupSummary, ApiError } from "./api";
 import { addAccessibleQuestionId } from "./browserQuestionAccess";
 import { loadVotedQuestions } from "./votedQuestionsStorage";
 import { usePageReady } from "./usePageReady";
@@ -93,7 +93,15 @@ export function useGroup(groupId: string): UseGroupResult {
         if (!found) { setError(true); return; }
         setGroup(found);
       } catch (err) {
-        console.error("useGroup: load failed", err);
+        // 404 is an expected outcome of the privacy-gated read path
+        // (Phase E): non-members of a private group get a clean 404 so
+        // existence isn't leaked to strangers. Treat it as a clean
+        // "group not found" UI state — don't pollute the console with
+        // an error for every privacy-gated visit. Other errors (5xx,
+        // network) still log so genuine breakage stays visible.
+        if (!(err instanceof ApiError && err.status === 404)) {
+          console.error("useGroup: load failed", err);
+        }
         if (!cancelled) setError(true);
       } finally {
         if (!cancelled) setLoading(false);
