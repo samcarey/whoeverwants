@@ -732,7 +732,13 @@ def passkey_authentication_verify(
 def list_passkeys(request: Request):
     """List the signed-in user's registered passkeys. Used by the
     Settings page to show "you have N passkeys" with delete + rename
-    affordances. Public-key bytes are intentionally not surfaced."""
+    affordances. Public-key bytes are intentionally not surfaced.
+
+    Gated on `passkey_configured()` like the ceremony endpoints — a
+    tier with `PASSKEYS_DISABLED=1` returns 503 across all passkey
+    routes (not just registration/authentication) so the operator's
+    kill switch actually kills the feature."""
+    _require_passkey_configured()
     user_id = _require_signed_in(request)
     with get_db() as conn:
         rows = list_user_passkeys(conn, user_id)
@@ -759,10 +765,52 @@ def delete_user_passkey(credential_id: str, request: Request):
     """Drop a passkey by credential_id. Scoped to the signed-in user
     via the WHERE in `delete_passkey` — a stranger can't drop someone
     else's credential via id guessing. 404s when the row doesn't exist
-    (or belongs to someone else); 204s on successful delete."""
+    (or belongs to someone else); 204s on successful delete.
+
+    Refuses to remove the user's LAST sign-in method. A passkey-only
+    account (created via the anonymous `Create with a passkey` flow)
+    can otherwise lock itself out by deleting its single credential —
+    no email / OAuth to recover, no path back in. The check counts
+    user_identities rows excluding the one we're about to delete; 0
+    means deletion would orphan the account."""
+    _require_passkey_configured()
     user_id = _require_signed_in(request)
     with get_db() as conn:
+        # Last-identity safeguard. Refuse the delete if there are no
+        # other identities for this user.
+        remaining = conn.execute(
+            """
+            SELECT 1 FROM user_identities
+             WHERE user_id = %(u)s::uuid
+               AND NOT (provider = 'passkey' AND provider_user_id = %(c)s)
+             LIMIT 1
+            """,
+            {"u": user_id, "c": credential_id},
+        ).fetchone()
+        if not remaining:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Can't remove your only sign-in method. Add an email "
+                    "or another passkey first."
+                ),
+            )
         ok = delete_passkey(conn, user_id=user_id, credential_id=credential_id)
+        if ok:
+            # Mirror-row in user_identities was inserted alongside
+            # the credential at registration; remove it here so the
+            # provider list stays consistent and a future
+            # re-registration of a (cryptographically unrelated)
+            # credential doesn't have to fight a dead row.
+            conn.execute(
+                """
+                DELETE FROM user_identities
+                 WHERE provider = 'passkey'
+                   AND provider_user_id = %(c)s
+                   AND user_id = %(u)s::uuid
+                """,
+                {"c": credential_id, "u": user_id},
+            )
     if not ok:
         raise HTTPException(status_code=404, detail="Passkey not found")
 
@@ -773,6 +821,7 @@ def rename_user_passkey(
 ):
     """Rename a passkey ("YubiKey" → "Office YubiKey"). Same identity
     gate as delete. Empty string is accepted and clears the name."""
+    _require_passkey_configured()
     user_id = _require_signed_in(request)
     with get_db() as conn:
         ok = rename_passkey(

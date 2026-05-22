@@ -72,7 +72,11 @@ from webauthn import (
     verify_registration_response,
 )
 from webauthn.helpers import options_to_json, parse_authentication_credential_json
-from webauthn.helpers.exceptions import InvalidAuthenticationResponse, InvalidRegistrationResponse
+from webauthn.helpers.exceptions import (
+    InvalidAuthenticationResponse,
+    InvalidRegistrationResponse,
+    WebAuthnException,
+)
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
     PublicKeyCredentialDescriptor,
@@ -156,12 +160,63 @@ def _stash_challenge(
     return challenge_b64
 
 
+def _peek_challenge(
+    conn, *, browser_id: str, kind: str
+) -> StoredChallenge | None:
+    """Read the stashed challenge without deleting it. The consume
+    happens in a separate `_delete_challenge` call AFTER the ceremony's
+    verification step has succeeded.
+
+    Why split: an attacker who knows the victim's X-Browser-Id (sent
+    in every API response's X-Browser-Id header) could otherwise spam
+    /verify with garbage credential JSON. Each garbage call would
+    DELETE-RETURN the stashed challenge before the (failing) parse +
+    verify, denying the legitimate ceremony its challenge. With
+    peek-then-delete-on-success, a failing verify leaves the challenge
+    intact for the user's retry within the 5-min TTL."""
+    row = conn.execute(
+        """
+        SELECT challenge, user_id FROM passkey_challenges
+         WHERE browser_id = %(b)s::uuid
+           AND kind = %(k)s
+           AND expires_at > NOW()
+        """,
+        {"b": browser_id, "k": kind},
+    ).fetchone()
+    if not row:
+        return None
+    return StoredChallenge(
+        challenge=row["challenge"],
+        user_id=str(row["user_id"]) if row.get("user_id") else None,
+    )
+
+
+def _delete_challenge(
+    conn, *, browser_id: str, kind: str, challenge: str
+) -> None:
+    """Delete the stashed challenge after a successful ceremony. The
+    `challenge` predicate prevents a stale browser+kind from clobbering
+    a freshly-started ceremony if two cycles raced. No-op if the row
+    is already gone (concurrent verify, expired, etc.)."""
+    conn.execute(
+        """
+        DELETE FROM passkey_challenges
+         WHERE browser_id = %(b)s::uuid
+           AND kind = %(k)s
+           AND challenge = %(c)s
+        """,
+        {"b": browser_id, "k": kind, "c": challenge},
+    )
+
+
 def _consume_challenge(
     conn, *, browser_id: str, kind: str
 ) -> StoredChallenge | None:
-    """Atomically read + delete the stashed challenge. Returns None when
-    no in-flight challenge exists for this (browser, kind) or it's
-    expired."""
+    """Atomically read + delete the stashed challenge.
+
+    DEPRECATED for ceremony paths: use `_peek_challenge` + `_delete_challenge`
+    so a failing verify doesn't consume the legitimate challenge. Kept
+    only because the tests in `test_passkeys.py` exercise it directly."""
     row = conn.execute(
         """
         DELETE FROM passkey_challenges
@@ -385,8 +440,21 @@ def complete_registration(
     On success, also inserts the `user_identities` row for
     `provider='passkey'` so cross-provider account-merge by verified
     email continues to work (the email lookup in `resolve_or_merge_user`
-    spans all providers)."""
-    stash = _consume_challenge(conn, browser_id=browser_id, kind="registration")
+    spans all providers).
+
+    Three security-critical checks before INSERT:
+      1. Authenticated request → stash.user_id MUST match request_user_id.
+      2. Anonymous request → stash.user_id must be a brand-new mint
+         (no existing user_identities), otherwise a signed-in
+         user's in-flight ceremony could be hijacked by an anonymous
+         /verify call (account takeover via stale stash + dropped
+         bearer token).
+      3. credential_id must not already be registered (anywhere) —
+         re-registering an existing credential under a different
+         user_id would silently rebind it. The OS prompt may offer
+         existing credentials at the anonymous "Create account"
+         path; the user should sign in with them instead."""
+    stash = _peek_challenge(conn, browser_id=browser_id, kind="registration")
     if not stash:
         raise PasskeyError("Registration session expired. Try again.")
     if not stash.user_id:
@@ -394,10 +462,30 @@ def complete_registration(
         # one minted at options time). A missing value means the stash
         # was tampered with.
         raise PasskeyError("Registration session corrupted. Try again.")
-    if request_user_id and stash.user_id != request_user_id:
-        # Authenticated request, but the challenge belongs to a different
-        # user. Bearer token was swapped between options and verify.
-        raise PasskeyError("Registration session mismatch. Try again.")
+    if request_user_id:
+        # Authenticated: stash must belong to this user.
+        if stash.user_id != request_user_id:
+            raise PasskeyError("Registration session mismatch. Try again.")
+    else:
+        # Anonymous: stash must belong to a fresh user with no
+        # identities yet (i.e. the options-side anonymous branch
+        # minted it). Otherwise this is a signed-in user's stash
+        # being completed without their bearer token — refuse so
+        # sign-out can't be reversed and so a browser_id leak can't
+        # be parlayed into a session for the original user.
+        has_identities = conn.execute(
+            """
+            SELECT 1 FROM user_identities
+             WHERE user_id = %(u)s::uuid
+             LIMIT 1
+            """,
+            {"u": stash.user_id},
+        ).fetchone()
+        if has_identities:
+            raise PasskeyError(
+                "Registration session belongs to a signed-in account. "
+                "Sign in first to add this passkey."
+            )
     user_id = stash.user_id
 
     try:
@@ -408,11 +496,28 @@ def complete_registration(
             expected_origin=origin,
             require_user_verification=False,
         )
-    except InvalidRegistrationResponse as exc:
+    except WebAuthnException as exc:
+        # Covers InvalidRegistrationResponse (verify failures) AND
+        # InvalidJSONStructure / InvalidCBORData / etc. (malformed
+        # input). Without the broad catch, a hostile or buggy FE
+        # produces a 500 instead of a clean 400.
         log.warning("Registration verification failed: %s", exc)
         raise PasskeyError(f"Couldn't register passkey: {exc}")
 
     credential_id = _b64url_encode(verification.credential_id)
+
+    # Refuse re-registering an already-known credential. The OS prompt
+    # may offer an existing passkey for this RP at the anonymous
+    # "Create account" path (the browser doesn't have an
+    # exclude_credentials list to filter by — it's a fresh user_id).
+    # Picking it would otherwise rebind the credential to the freshly-
+    # minted user, corrupting the original owner's account.
+    existing = get_passkey_by_credential_id(conn, credential_id)
+    if existing:
+        raise PasskeyError(
+            "This passkey is already registered. Sign in with it instead."
+        )
+
     raw_aaguid = getattr(verification, "aaguid", None) or ""
     # Empty / all-zero aaguids are placeholders many authenticators emit
     # when they don't want to identify themselves; treat as "unknown".
@@ -423,31 +528,31 @@ def complete_registration(
     )
     # The FE submits raw `response.transports` (list of strings from the
     # browser). Stored as comma-separated text to avoid a separate
-    # subtable for a tiny enum-like field.
+    # subtable for a tiny enum-like field. Robust to hostile/garbage
+    # input shapes: a non-dict response (or one without a list
+    # transports field) just yields None.
+    response_dict = (
+        credential_json.get("response") if isinstance(credential_json, dict) else None
+    )
     transports_raw = (
-        credential_json.get("response", {}).get("transports")
-        if isinstance(credential_json, dict)
-        else None
+        response_dict.get("transports") if isinstance(response_dict, dict) else None
     )
     transports: str | None = None
     if isinstance(transports_raw, list):
         cleaned = [str(t).strip()[:16] for t in transports_raw if str(t).strip()]
         transports = ",".join(cleaned) if cleaned else None
 
+    # No ON CONFLICT needed — the `get_passkey_by_credential_id` guard
+    # above guarantees the row is new. Catching a concurrent-insert
+    # race (two parallel verify calls with the same credential_id) is
+    # the unique constraint's job; the second INSERT will raise and
+    # the caller's transaction rolls back.
     conn.execute(
         """
         INSERT INTO passkey_credentials
           (credential_id, user_id, public_key, sign_count, transports, aaguid, name)
         VALUES
           (%(c)s, %(u)s::uuid, %(pk)s, %(sc)s, %(t)s, %(a)s, %(n)s)
-        ON CONFLICT (credential_id) DO UPDATE SET
-          user_id = EXCLUDED.user_id,
-          public_key = EXCLUDED.public_key,
-          sign_count = EXCLUDED.sign_count,
-          transports = EXCLUDED.transports,
-          aaguid = EXCLUDED.aaguid,
-          name = COALESCE(EXCLUDED.name, passkey_credentials.name),
-          last_used_at = NOW()
         """,
         {
             "c": credential_id,
@@ -461,14 +566,20 @@ def complete_registration(
     )
     # Mirror the identity into `user_identities` so account-merge logic
     # (resolve_or_merge_user) can see the passkey as a linked provider.
-    # The credential_id is the natural provider_user_id.
+    # The credential_id is the natural provider_user_id. Match the
+    # uniqueness behavior of passkey_credentials above — INSERT only;
+    # an existing row indicates concurrency or corruption.
     conn.execute(
         """
         INSERT INTO user_identities (provider, provider_user_id, user_id, email)
         VALUES ('passkey', %(c)s, %(u)s::uuid, NULL)
-        ON CONFLICT (provider, provider_user_id) DO NOTHING
         """,
         {"c": credential_id, "u": user_id},
+    )
+
+    # Consume the challenge only after both INSERTs succeed.
+    _delete_challenge(
+        conn, browser_id=browser_id, kind="registration", challenge=stash.challenge
     )
 
     return RegisteredPasskey(
@@ -538,7 +649,12 @@ def complete_authentication(
     return 0 (the user's keychain is multi-device anyway — sign counter
     has no meaning); we accept those by the `stored != 0` guard.
     """
-    stash = _consume_challenge(conn, browser_id=browser_id, kind="authentication")
+    # Peek (not consume) so a failing verify doesn't deny the legitimate
+    # ceremony its challenge. An attacker who knows the victim's
+    # X-Browser-Id (exposed in every response header) would otherwise
+    # be able to spam /verify with garbage to DoS sign-in attempts.
+    # Delete only after a successful verify (below).
+    stash = _peek_challenge(conn, browser_id=browser_id, kind="authentication")
     if not stash:
         raise PasskeyError("Sign-in session expired. Try again.")
 
@@ -562,7 +678,9 @@ def complete_authentication(
             credential_current_sign_count=stored.sign_count,
             require_user_verification=False,
         )
-    except InvalidAuthenticationResponse as exc:
+    except WebAuthnException as exc:
+        # Broad catch for the same reasons as the registration verify
+        # above.
         log.warning("Authentication verification failed: %s", exc)
         raise PasskeyError(f"Couldn't sign in with passkey: {exc}")
 
@@ -587,6 +705,16 @@ def complete_authentication(
          WHERE credential_id = %(c)s
         """,
         {"sc": new_sign_count, "c": credential_id},
+    )
+
+    # Consume the challenge only after verification + sign_count
+    # update succeed. See `_peek_challenge` docstring for the DoS
+    # this guards against.
+    _delete_challenge(
+        conn,
+        browser_id=browser_id,
+        kind="authentication",
+        challenge=stash.challenge,
     )
 
     return AuthenticatedPasskey(user_id=stored.user_id, credential_id=credential_id)

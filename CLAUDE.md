@@ -1020,6 +1020,86 @@ NOT `page.evaluate(...)` after `page.goto(...)`. The latter sets
 localStorage AFTER `cachedToken = null` is already memoized, and
 the page sees "signed out" even with a valid token in storage.
 
+**Passkey ceremony lessons learned the hard way (Phase D security pass).**
+- **Anonymous /verify with a stashed signed-in user_id is a takeover
+  vector.** `complete_registration` reads `stash.user_id` from
+  `passkey_challenges` and uses it as the binding identity. If the
+  router accepts the verify call without an Authorization header
+  AND the stash was created by a signed-in /options call, the
+  credential gets bound to the original user AND a session is issued.
+  Sign-out can be reversed by completing an in-flight ceremony. Fix:
+  in the anonymous branch, require `stash.user_id` to belong to a
+  user with NO existing `user_identities` rows (i.e. the fresh mint
+  from the anonymous options branch). The two anonymous-create vs
+  signed-in-add code paths converge on the same `complete_registration`,
+  so the gate has to discriminate by stash state, not by request shape.
+- **Existing credentials must be rejected at /registration/verify.**
+  The OS prompt at the anonymous "Create account with a passkey" path
+  doesn't filter out credentials already known to the RP — the
+  `exclude_credentials` list is empty for a fresh user_id. A user can
+  pick their existing passkey and the server's `ON CONFLICT (credential_id)
+  DO UPDATE` would silently rebind it to the freshly-minted (orphan)
+  user_id while `user_identities` (ON CONFLICT DO NOTHING) keeps the
+  original. Result: tables desync; sign-in resolves to the original
+  user via `user_identities`, but `passkey_credentials.user_id` points
+  at the orphan; the original user can't manage their own credential.
+  Fix: SELECT `passkey_credentials` by credential_id BEFORE the INSERT;
+  if it exists, raise PasskeyError("already registered, sign in
+  instead"). Drop the ON CONFLICT DO UPDATE — the unique constraint
+  becomes the concurrency guard.
+- **Don't `_consume_challenge` before verifying.** The original code
+  DELETE...RETURNINGed the challenge atomically up front, then ran
+  parse + verify. A failing verify (garbage credential, signature
+  mismatch, replay attempt) consumed the challenge along with the
+  legitimate user's chance to retry. Combined with X-Browser-Id being
+  exposed in every response header (intentional for cross-tab
+  adoption), an attacker can DoS sign-in by spamming /verify with
+  garbage under the victim's browser_id. Fix: split into
+  `_peek_challenge` (read only) + `_delete_challenge` (called after
+  verify succeeds). Failing verify leaves the challenge for the
+  user's retry within the 5-minute TTL. The challenge predicate on
+  the delete (`AND challenge = %(c)s`) handles the rare two-ceremony
+  race where the user restarted /options between peek and delete.
+- **Catch `WebAuthnException`, not just `Invalid*Response`.** The
+  webauthn library raises `InvalidJSONStructure` / `InvalidCBORData`
+  / `InvalidAuthenticatorDataStructure` etc. as siblings of
+  `InvalidRegistrationResponse`. Catching only the latter lets
+  malformed input produce a 500 instead of a clean 400. The base
+  class `WebAuthnException` is the right catch surface for both
+  registration and authentication verify call sites.
+- **clearSession must invalidate `accessiblePollsCache`.** Sign-out
+  drops the session token but leaves the in-memory polls cache from
+  the signed-in fetch. Combined with `[].every(x=>set.has(x)) === true`
+  making an empty `accessibleQuestionIds` list satisfy the cache
+  freshness check, the anonymous post-sign-out path serves the
+  signed-in-fetched groups for up to the 60s TTL — a privacy leak.
+  `saveSession` and `clearSession` in `lib/session.ts` both call
+  `invalidateAccessibleCacheLazy()` (lazy `require()` to dodge any
+  circular-import surface).
+- **Last-identity safeguard on passkey delete.** A user who created
+  an account via anonymous passkey registration (no email, no OAuth)
+  can otherwise delete their only credential via Settings and lock
+  themselves out — the user row stays but no path back in exists.
+  `delete_user_passkey` checks `SELECT 1 FROM user_identities WHERE
+  user_id = ... AND NOT (provider = 'passkey' AND provider_user_id
+  = the-one-being-deleted)` and 400s when nothing else remains.
+- **`PASSKEYS_DISABLED=1` must gate ALL passkey endpoints, not just
+  registration/auth.** The kill switch model mirrors OAuth's
+  `google_configured()` / `apple_configured()` 503 pattern — but only
+  if every endpoint calls `_require_passkey_configured()`. The
+  management trio (list / delete / rename) is easy to forget; doing
+  so means an operator's kill switch leaves the dangerous
+  delete/rename surface alive.
+- **Delete the paired `user_identities` row when deleting a
+  passkey.** `delete_passkey` removes the `passkey_credentials` row;
+  `delete_user_passkey` (the route handler) additionally deletes the
+  matching `('passkey', credential_id)` `user_identities` row. Leaving
+  it orphans an identity record that would (silently) participate in
+  future `resolve_or_merge_user` lookups if the same credential_id is
+  ever re-registered (cryptographically improbable, but the orphan
+  shows up in `GET /api/auth/me`'s `providers` array if anything ever
+  joined to it).
+
 **Identity tables (migration 112):**
 - `users(id)` — one row per real person.
 - `user_identities(provider, provider_user_id, user_id, email)` — one row
