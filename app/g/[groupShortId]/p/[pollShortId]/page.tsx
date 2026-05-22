@@ -806,6 +806,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           </h2>
           <VoterList
             singleLine
+            includeSelf
             staticVoterNames={poll.voter_names ?? []}
             staticAnonymousCount={poll.anonymous_count ?? 0}
             emptyText="No voters yet"
