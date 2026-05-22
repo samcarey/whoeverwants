@@ -945,14 +945,80 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Auth & Access Model
 
-> **Phases A + B + C shipped.** A+B = identity foundation +
+> **Phases A + B + C + D shipped.** A+B = identity foundation +
 > magic-link email sign-in (migration 112). C = "Sign in with Apple"
 > + "Sign in with Google" on web, plus native Apple Sign In on
-> Capacitor iOS via `@capgo/capacitor-social-login`. Passkey (D),
-> group privacy (E), join requests (F), invite links (G), per-vote
-> anonymity (H), and native Google on iOS (deferred sub-follow-up to C —
-> needs per-bundle iOS client IDs + URL-scheme patching) are still
-> scheduled. Full plan + rationale in `docs/auth-access-model.md`.
+> Capacitor iOS via `@capgo/capacitor-social-login`. D = passkey
+> (WebAuthn) registration + sign-in (migration 113), with anonymous
+> registration supported so a user can create an account directly
+> from a passkey. Group privacy (E), join requests (F), invite links
+> (G), per-vote anonymity (H), and native Google on iOS (deferred
+> sub-follow-up to C — needs per-bundle iOS client IDs + URL-scheme
+> patching) are still scheduled. Full plan + rationale in
+> `docs/auth-access-model.md`.
+
+**Cross-browser visibility for signed-in users.** Every read that
+asks "is the caller a member of this group?" must walk
+`user_browsers` to expand membership across every browser the user
+is signed in on — not just the current `browser_id`. The
+`group_members` table is keyed on `(group_id, browser_id)` but a
+signed-in user has N browser_ids, each potentially with its own row
+(or none). Visibility = "the current browser OR any browser linked
+to user_id has a row." Per-group `joined_at` uses `MIN` across
+linked rows so the closed-before-join filter is most permissive
+(the user "joined" when their earliest browser did). Canonical
+pattern in `services/groups.py: load_user_visibility` (signature
+`(conn, browser_id, *, user_id, legacy_question_ids)`); mirror it
+verbatim in any new endpoint that reads membership. **Three places
+in production today** — `/api/groups/mine`, `/api/groups/by-route-id/{id}`,
+`/api/groups/empty`. Phase E (private groups, visibility filter)
+and Phase F (join requests, "who requested?") will need the same
+expansion; if the SQL doesn't `OR browser_id IN (SELECT browser_id
+FROM user_browsers WHERE user_id = ...)`, the second browser bug
+recurs. Symmetric for writes: `leave_group` deletes across every
+linked browser when user_id is set — otherwise tapping "leave" on
+one device just leaves on that device, and the group reappears on
+the next visit from another linked browser.
+
+**Don't apply the forget bridge to signed-in users.** The
+`accessible_question_ids` localStorage list is per-device anonymous
+state — `/api/groups/mine` intersects member-groups with the
+bridge list to give "forget = group disappears from home"
+semantics on devices that never signed in. For signed-in callers,
+membership is the authoritative cross-device source of truth;
+applying the intersection drops their groups when their FE happens
+to send a localStorage list that doesn't include the new group's
+questions (typical state: legacy entries from before sign-in).
+Gate the intersection on `not user_id` and let signed-in users
+leave groups via the explicit DELETE /membership action instead.
+
+**FE short-circuits keyed on local state can hide server-side
+membership.** Two patterns to audit when adding sign-in to a new
+flow: (1) `getMyGroups()` in `lib/simpleQuestionQueries.ts` used to
+return `[]` synchronously when `accessibleIds.length === 0`,
+skipping the API call entirely; (2) `apiGetMyGroups()` in
+`lib/api/groups.ts` did the same one layer down. Both got fixed
+together when the second-browser bug surfaced. The general rule:
+any FE optimization that short-circuits on "the local list is
+empty so there's nothing to fetch" needs an `isSignedIn` carve-out
+(or, simpler, just drop the optimization — the server's empty-list
+response is microseconds anyway). Same caution applies to cache
+freshness checks: `[].every(x => set.has(x)) === true`, so an
+empty `accessiblePollsCache` paired with an empty `accessibleIds`
+list looks like a cache hit and serves `[]` indefinitely. Bypass
+the cache check entirely when signed in (`canUseCachedPolls =
+cached && !isSignedIn && accessibleIds.every(...)`); in-flight
+coalescing (`myGroupsInFlight`) prevents per-render fetch piling.
+
+**Pitfall: `cachedToken` in `lib/session.ts` is module-cached.**
+The first call to `getSessionToken()` reads localStorage and stores
+the result; subsequent calls return the cached value without
+re-reading. When writing FE tests that pre-seed localStorage, the
+seed must run BEFORE the page's JS imports `lib/session.ts` —
+Playwright's `context.addInitScript(...)` is the correct hook,
+NOT `page.evaluate(...)` after `page.goto(...)`. The latter sets
+localStorage AFTER `cachedToken = null` is already memoized, and
+the page sees "signed out" even with a valid token in storage.
 
 **Identity tables (migration 112):**
 - `users(id)` — one row per real person.
