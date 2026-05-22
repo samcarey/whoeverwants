@@ -81,22 +81,23 @@ const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
 ];
 
-// Each bubble is a rounded rectangle stacking the icon on top + a
-// word-wrapped title below. `width: min-content` lets the rectangle
-// shrink to fit the longest word in its label (so multi-word labels
-// like "Yes / No" / "Video Game" wrap by spaces, never breaking a
-// word mid-character); `minWidth` floors it at 2× the icon size so
-// short labels still feel like buttons. Fixed `height` keeps every
-// rectangle the same vertical size — the inner `justify-center`
-// vertically centers the icon + title block, so 1-line labels float
-// to the middle while a 4-line label fills the available space.
-// `text-sm leading-tight` × 4 lines = 72px; +32px icon + 4px gap +
-// 24px vertical padding ≈ 132px total height.
+// Each bubble is a rounded rectangle: icon pinned to the top, title
+// word-wrapped below and vertically centered in the leftover space.
+// `width: min-content` shrinks the rectangle to the longest word in
+// its label (multi-word labels like "Yes / No" / "Video Game" wrap
+// by spaces, never breaking a word mid-character); `minWidth` floors
+// it at 2× the icon size so short labels still feel like buttons.
+// Fixed `height` keeps every rectangle the same vertical size — the
+// title wrapper takes `flex-1` and centers its child vertically, so
+// a 1-line label floats in the middle of the area below the icon
+// while a 4-line label fills it. `text-sm leading-tight` × 4 lines
+// = 72px; +32px icon + 24px vertical padding ≈ 128px+ height; 132px
+// gives a small breathing buffer for the line-clamp ellipsis.
 const BUBBLE_ICON_PX = 32;
 const BUBBLE_MIN_WIDTH_PX = BUBBLE_ICON_PX * 2;
 const BUBBLE_HEIGHT_PX = 132;
 const BUBBLE_BUTTON_CLASS =
-  "shrink-0 flex flex-col items-center justify-center gap-1 px-2 py-3 rounded-2xl bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
+  "shrink-0 flex flex-col items-center px-2 py-3 rounded-2xl bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
 const BUBBLE_BUTTON_STYLE: React.CSSProperties = {
   width: "min-content",
   minWidth: `${BUBBLE_MIN_WIDTH_PX}px`,
@@ -1624,7 +1625,9 @@ export function CreateQuestionContent() {
           aria-label="Create a new poll"
         >
           <span style={BUBBLE_ICON_STYLE} aria-hidden>+</span>
-          <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>New</span>
+          <span className="flex-1 w-full flex items-center justify-center min-h-0">
+            <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>New</span>
+          </span>
         </button>
         {BUBBLE_ENTRIES.map((entry) => (
           <button
@@ -1639,7 +1642,9 @@ export function CreateQuestionContent() {
             {entry.icon && (
               <span style={BUBBLE_ICON_STYLE} aria-hidden>{entry.icon}</span>
             )}
-            <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>{entry.label}</span>
+            <span className="flex-1 w-full flex items-center justify-center min-h-0">
+              <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>{entry.label}</span>
+            </span>
           </button>
         ))}
       </div>
