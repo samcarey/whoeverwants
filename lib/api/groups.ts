@@ -90,7 +90,13 @@ export async function apiGetMyGroups(
   accessibleQuestionIds: string[],
   options: { include_results?: boolean } = {},
 ): Promise<Poll[]> {
-  if (accessibleQuestionIds.length === 0) return [];
+  // Always fire the request — the server returns membership-based
+  // groups for signed-in users (via the bearer token + browser_id)
+  // regardless of accessibleQuestionIds. Pre-Phase-D this was an
+  // anonymous-only path where empty in = empty out, and the
+  // short-circuit saved a round-trip; with signed-in identity that
+  // shortcut hid every group whose only access signal was server-side
+  // membership.
   const data: any[] = await groupFetch('/mine', {
     method: 'POST',
     body: JSON.stringify({
