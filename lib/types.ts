@@ -141,6 +141,13 @@ export interface GroupSummary {
   // last set. Null when no custom image is set. Doubles as the cache-
   // buster query param on `/api/groups/by-route-id/<id>/image`.
   image_updated_at?: string | null;
+  // Migration 114 (Phase E): group-level privacy state.
+  // 'public' (default for anonymous-created groups; grandfathered for
+  // pre-Phase-E rows) or 'private' (signed-in-created groups by default).
+  // creator_user_id is the user_id that created the group while signed
+  // in — null for anonymous-created groups (which are always public).
+  privacy?: string | null;
+  creator_user_id?: string | null;
 }
 
 // Poll wrapper. Mirrors PollResponse in server/models.py.
@@ -171,6 +178,13 @@ export interface Poll {
   // the same group carries the same value (sourced from groups.image_updated_at
   // via JOIN). Doubles as the cache-buster query param on the image URL.
   group_image_updated_at?: string | null;
+  // Migration 114 (Phase E): group-level privacy state surfaced per poll
+  // so the FE can render the privacy badge + creator-only toggle without
+  // a second fetch. Every poll in the same group carries the same value.
+  // 'public' or 'private'; null on synthesized placeholder polls + pre-
+  // Phase-E cached polls that predate the field.
+  group_privacy?: string | null;
+  group_creator_user_id?: string | null;
   context?: string | null;
   details?: string | null;
   title: string;

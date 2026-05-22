@@ -7,6 +7,7 @@ import { slideToGroupRoot, slideToGroupEditTitle } from "@/lib/slideOverlay";
 import { useGroup } from "@/lib/useGroup";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupShareButton from "@/components/GroupShareButton";
+import GroupPrivacySection from "@/components/GroupPrivacySection";
 import HeaderPortal from "@/components/HeaderPortal";
 import InitialBubble from "@/components/InitialBubble";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
@@ -105,6 +106,8 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
             {displayTitle}
           </h1>
         </div>
+
+        <GroupPrivacySection group={group} groupId={groupId} />
 
         <NotificationSettingsCard groupRouteId={groupId} className="mt-[0.96rem]" />
 

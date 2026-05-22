@@ -1217,15 +1217,98 @@ migration content.
 
 **Pitfall: stale OAuth env vars after .env.api edit require `docker compose up -d --force-recreate api`.** The `env_file:` in `docker-compose.yml` is read only on container creation. `restart` reuses the existing container's env. Symptom: `GET /api/auth/providers` keeps reporting `google: false` even though `GOOGLE_OAUTH_CLIENT_IDS` is in `.env.api` because the running process's `os.environ` doesn't see the new value. Same idiom as the APNS env-var rule (see Push Notifications section).
 
+**Phase E (group privacy) shipped in migration 114.** Adds
+`groups.privacy` (`'public' | 'private'`, default `'private'`,
+existing rows backfilled to `'public'`) + `groups.creator_user_id`
+(nullable FK to `users(id)`). Signed-in creators get
+`privacy='private'` + `creator_user_id=user_id` at create time;
+anonymous creators always get `privacy='public'` + null
+`creator_user_id`. Three reads gate on privacy:
+`/api/groups/by-route-id/{id}` (full polls list),
+`/api/groups/by-route-id/{id}/summary` (chrome metadata), and
+`/api/groups/by-route-id/{id}/image` (avatar bytes) — all 404 to
+non-members of private groups. The `/preview` endpoint stays
+public (link-preview crawlers need it). `services/groups.py:
+filter_visible_polls` is unchanged in shape; the privacy
+enforcement happens upstream: (a) `load_user_visibility` filters
+the legacy `accessible_question_ids` bridge to public groups only,
+and (b) the routers `is_caller_member_of_group` + return 404
+directly for private + non-member. `grant_group_membership_inline`
+gained an optional `privacy=` kwarg — passing `'private'` makes it
+a no-op so the read endpoint doesn't auto-join non-members onto a
+private group.
+
+`POST /api/groups/{route_id}/privacy` (signed-in, creator-only)
+flips a group's privacy. Authorization is strict: must be signed
+in (`401`), `creator_user_id` must match the session's `user_id`
+(`403`), and groups without a recorded creator (anonymous-created
+or grandfathered) can't be flipped (`403`). The toggle is the
+escape hatch for signed-in users during the Phase F/G gap — a
+brand-new signed-in user creates a private group, realizes they
+can't share it yet, and flips public via /info. Phase I will add
+"claim an anonymous-created group" so legacy groups can also be
+flipped.
+
+FE wiring:
+- `Group.privacy` + `Group.creatorUserId` on the canonical `Group`
+  type (`lib/groupUtils.ts`); built from `latestPoll.group_privacy`
+  + `latestPoll.group_creator_user_id` for populated groups, or
+  from `GroupSummary` for empty groups.
+- `Poll.group_privacy` + `Poll.group_creator_user_id` on every
+  `Poll` (`lib/types.ts`); sourced from `_SELECT_POLLS_WITH_GROUP`'s
+  JOIN. Tolerates absence on synthesized placeholder polls.
+- `GroupSummary.privacy` + `GroupSummary.creator_user_id` on the
+  summary type (used by /summary, /empty, and POST /api/groups).
+- `apiUpdateGroupPrivacy(routeId, 'public' | 'private')` in
+  `lib/api/groups.ts`. Invalidates every cached poll in the group
+  (each carries `group_privacy`) via the existing
+  `invalidateGroupPolls` helper.
+- `components/GroupPrivacySection.tsx` renders on /info above the
+  notification settings card: shows the current privacy state,
+  exposes the toggle to the creator (and only when signed in), and
+  shows a passive "Sign in to create private groups" CTA to
+  anonymous viewers on public groups. Subscribes to
+  `SESSION_CHANGED_EVENT` so the toggle's visibility tracks
+  sign-in / sign-out without a remount.
+
+**Pitfall: privacy state is per-group, not per-poll, but surfaces on
+every PollResponse via JOIN.** When adding a new field to the
+`groups` table, extend `_SELECT_POLLS_WITH_GROUP` AND
+`_attach_group_fields` (the latter is the RETURNING* fallback for
+INSERT/UPDATE paths that don't go through the JOIN). Forgetting
+the second results in newly-created polls returning the new field
+as null until a fresh SELECT runs.
+
+**Pitfall: the auto-join in `grant_group_membership_inline` must
+not write a row for private groups.** Without the gate, a stranger
+hitting `/by-route-id/<privateGroup>` would silently join — making
+"private" no more restrictive than "public". The router gates on
+privacy BEFORE calling the helper, so the read returns 404 cleanly
+without a write; the helper's own `privacy='private'` short-circuit
+is belt-and-suspenders in case any future caller invokes it
+without doing the upstream check.
+
+**Pitfall: `is_caller_member_of_group` must walk `user_browsers` to
+union memberships across linked browsers** — same pattern as
+`load_user_visibility`. Without it, a user who signed in on
+Device B sees private groups they joined on Device A as 404
+because their B-browser doesn't have a `group_members` row. The
+helper mirrors the visibility query's `OR browser_id IN (SELECT
+... FROM user_browsers WHERE user_id = ...)` clause.
+
 **Open phases (see `docs/auth-access-model.md`):**
-- D: Passkey (WebAuthn).
-- E: `groups.privacy` column, new groups default private, sign-in
-  required for private creation.
-- F: `group_join_requests` + push notification to creator.
+- D: Passkey (WebAuthn). **Shipped.**
+- E: `groups.privacy` column, new groups default private. **Shipped.**
+- F: `group_join_requests` + push notification to creator. Closes
+  the signed-in sharing loop; the privacy-toggle escape hatch is
+  the bridge until then.
 - G: `group_invites` with single + multi-use modes and optional
   target_poll_id.
 - H: per-vote anonymity flags (`votes.anonymous_to_peers`,
   `anonymous_to_creator`) + read-time filter audit.
+- I (partial): "claim an anonymous-created group" so legacy
+  creator_user_id can be set after-the-fact, enabling
+  privacy-flip on grandfathered groups.
 - C-follow-up: native Google Sign In on iOS (Apple native shipped; Google needs per-bundle iOS client IDs + reversed-URL-scheme registration).
 
 ---

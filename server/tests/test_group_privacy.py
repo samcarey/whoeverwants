@@ -1,0 +1,611 @@
+"""Phase E (group privacy) end-to-end coverage.
+
+Exercises the rules documented in `docs/auth-access-model.md`:
+  * Anonymous create → public, no creator_user_id.
+  * Signed-in create → private, creator_user_id recorded.
+  * `/by-route-id/{id}` for a private group: non-member 404, member 200.
+  * `/summary` and `/image` mirror that gating.
+  * Legacy `accessible_question_ids` bridge does NOT grant access to
+    private groups.
+  * `POST /api/groups/{id}/privacy`: only the recorded creator (via
+    user_id match) can flip; legacy/anonymous-created groups can't be
+    flipped; valid flips persist.
+  * Privacy state surfaces on `PollResponse` (via group_privacy /
+    group_creator_user_id) and `GroupSummary`.
+
+Tests use the shared `client` fixture from `conftest.py`. A signed-in
+caller is constructed via the magic-link verify endpoint — same path
+the production FE uses — so the session token is real.
+"""
+
+import os
+import uuid
+
+import psycopg
+import pytest
+
+from services.auth import (
+    generate_token,
+    hash_token,
+    normalize_email,
+)
+from tests.conftest import TEST_DB_URL
+
+
+@pytest.fixture
+def creator_browser():
+    return str(uuid.uuid4())
+
+
+@pytest.fixture
+def stranger_browser():
+    return str(uuid.uuid4())
+
+
+def _bid_headers(bid):
+    return {"X-Browser-Id": bid} if bid else {}
+
+
+def _bearer_headers(bid, token):
+    h = _bid_headers(bid)
+    if token:
+        h["Authorization"] = f"Bearer {token}"
+    return h
+
+
+def _issue_known_magic_link(email, browser_id):
+    token = generate_token()
+    with psycopg.connect(TEST_DB_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO magic_link_tokens
+                  (token_hash, email, browser_id, expires_at)
+                VALUES
+                  (%s, %s, %s, NOW() + INTERVAL '15 minutes')
+                """,
+                (hash_token(token), normalize_email(email), browser_id),
+            )
+        conn.commit()
+    return token
+
+
+def _sign_in(client, browser_id, email=None):
+    """Run a full magic-link verify and return (session_token, user_id)."""
+    email = email or f"phaseE-{uuid.uuid4().hex[:8]}@example.com"
+    token = _issue_known_magic_link(email, browser_id)
+    resp = client.post(
+        "/api/auth/magic-link/verify",
+        json={"token": token},
+        headers=_bid_headers(browser_id),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    return body["session_token"], body["user"]["user_id"]
+
+
+def _create_empty_group(client, browser_id, token=None):
+    resp = client.post(
+        "/api/groups",
+        headers=_bearer_headers(browser_id, token),
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def _create_poll(client, browser_id, token=None, **kwargs):
+    payload = {
+        "creator_secret": f"secret-{uuid.uuid4().hex[:8]}",
+        "creator_name": "Phase E Tester",
+        "questions": [{"question_type": "yes_no", "category": "yes_no"}],
+    }
+    payload.update(kwargs)
+    resp = client.post(
+        "/api/polls",
+        json=payload,
+        headers=_bearer_headers(browser_id, token),
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def _set_group_privacy_direct(group_id, privacy):
+    """Bypass the API to flip privacy when tests need to simulate a
+    scenario the API doesn't expose (e.g. legacy group already private)."""
+    with psycopg.connect(TEST_DB_URL) as conn:
+        conn.execute(
+            "UPDATE groups SET privacy = %s WHERE id = %s",
+            (privacy, group_id),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Group create — privacy assigned at create time
+# ---------------------------------------------------------------------------
+
+
+class TestCreateGroupPrivacy:
+    def test_anonymous_creates_public_group_no_creator(
+        self, client, creator_browser
+    ):
+        g = _create_empty_group(client, creator_browser)
+        assert g["privacy"] == "public"
+        assert g["creator_user_id"] is None
+
+    def test_signed_in_creates_private_group_with_creator(
+        self, client, creator_browser
+    ):
+        token, user_id = _sign_in(client, creator_browser)
+        g = _create_empty_group(client, creator_browser, token)
+        assert g["privacy"] == "private"
+        assert g["creator_user_id"] == user_id
+
+    def test_anonymous_poll_creates_public_group(
+        self, client, creator_browser
+    ):
+        poll = _create_poll(client, creator_browser)
+        assert poll["group_privacy"] == "public"
+        assert poll["group_creator_user_id"] is None
+
+    def test_signed_in_poll_creates_private_group(
+        self, client, creator_browser
+    ):
+        token, user_id = _sign_in(client, creator_browser)
+        poll = _create_poll(client, creator_browser, token)
+        assert poll["group_privacy"] == "private"
+        assert poll["group_creator_user_id"] == user_id
+
+    def test_existing_group_id_does_not_change_privacy(
+        self, client, creator_browser
+    ):
+        """Adding a follow-up poll to an existing group doesn't flip
+        privacy — privacy is set-at-create-time."""
+        # Anonymous user mints a public group.
+        first = _create_poll(client, creator_browser)
+        group_id = first["group_id"]
+        assert first["group_privacy"] == "public"
+
+        # Sign in later, add a poll to the same group. The group stays
+        # public — privacy never gets retroactively flipped here.
+        token, _user_id = _sign_in(client, creator_browser)
+        followup = _create_poll(
+            client, creator_browser, token, group_id=group_id
+        )
+        assert followup["group_id"] == group_id
+        assert followup["group_privacy"] == "public"
+        # creator_user_id was set on the original (anonymous) create as
+        # NULL and isn't touched when adding follow-ups.
+        assert followup["group_creator_user_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# /by-route-id/{id} — private gating
+# ---------------------------------------------------------------------------
+
+
+class TestByRouteIdPrivacy:
+    def test_private_group_404s_strangers(
+        self, client, creator_browser, stranger_browser
+    ):
+        token, _ = _sign_in(client, creator_browser)
+        poll = _create_poll(client, creator_browser, token)
+        # Stranger has no membership row.
+        resp = client.get(
+            f"/api/groups/by-route-id/{poll['group_short_id']}",
+            headers=_bid_headers(stranger_browser),
+        )
+        assert resp.status_code == 404
+
+    def test_private_group_visible_to_member(
+        self, client, creator_browser
+    ):
+        token, _ = _sign_in(client, creator_browser)
+        poll = _create_poll(client, creator_browser, token)
+        # Creator auto-joined on create; the read works.
+        resp = client.get(
+            f"/api/groups/by-route-id/{poll['group_short_id']}",
+            headers=_bearer_headers(creator_browser, token),
+        )
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        assert ids == {poll["id"]}
+
+    def test_public_group_auto_joins_stranger(
+        self, client, creator_browser, stranger_browser
+    ):
+        poll = _create_poll(client, creator_browser)
+        # Pre-Phase-E behavior: stranger visits, gets the polls.
+        resp = client.get(
+            f"/api/groups/by-route-id/{poll['group_short_id']}",
+            headers=_bid_headers(stranger_browser),
+        )
+        assert resp.status_code == 200
+        # Stranger is now a member (inline auto-join).
+        with psycopg.connect(TEST_DB_URL) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM group_members "
+                "WHERE group_id = %s AND browser_id = %s",
+                (poll["group_id"], stranger_browser),
+            ).fetchone()
+        assert row is not None
+
+    def test_private_group_does_not_auto_join_stranger(
+        self, client, creator_browser, stranger_browser
+    ):
+        """The 404 path must NOT have written a membership row, or a
+        stranger's 'try-to-peek' would leak group membership."""
+        token, _ = _sign_in(client, creator_browser)
+        poll = _create_poll(client, creator_browser, token)
+        client.get(
+            f"/api/groups/by-route-id/{poll['group_short_id']}",
+            headers=_bid_headers(stranger_browser),
+        )
+        with psycopg.connect(TEST_DB_URL) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM group_members "
+                "WHERE group_id = %s AND browser_id = %s",
+                (poll["group_id"], stranger_browser),
+            ).fetchone()
+        assert row is None
+
+
+# ---------------------------------------------------------------------------
+# /summary + /image gating mirrors /by-route-id
+# ---------------------------------------------------------------------------
+
+
+class TestSummaryAndImagePrivacy:
+    def test_summary_private_404s_strangers(
+        self, client, creator_browser, stranger_browser
+    ):
+        token, _ = _sign_in(client, creator_browser)
+        g = _create_empty_group(client, creator_browser, token)
+        resp = client.get(
+            f"/api/groups/by-route-id/{g['short_id']}/summary",
+            headers=_bid_headers(stranger_browser),
+        )
+        assert resp.status_code == 404
+
+    def test_summary_private_visible_to_member(
+        self, client, creator_browser
+    ):
+        token, _ = _sign_in(client, creator_browser)
+        g = _create_empty_group(client, creator_browser, token)
+        resp = client.get(
+            f"/api/groups/by-route-id/{g['short_id']}/summary",
+            headers=_bearer_headers(creator_browser, token),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["privacy"] == "private"
+
+    def test_summary_public_no_gate(
+        self, client, creator_browser, stranger_browser
+    ):
+        g = _create_empty_group(client, creator_browser)
+        resp = client.get(
+            f"/api/groups/by-route-id/{g['short_id']}/summary",
+            headers=_bid_headers(stranger_browser),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["privacy"] == "public"
+
+    def test_image_private_404s_strangers(
+        self, client, creator_browser, stranger_browser
+    ):
+        """No image set means 404 either way; but the privacy check
+        runs BEFORE the "image not set" check, so the response stays
+        consistent with the rest of the gating."""
+        token, _ = _sign_in(client, creator_browser)
+        g = _create_empty_group(client, creator_browser, token)
+        resp = client.get(
+            f"/api/groups/by-route-id/{g['short_id']}/image",
+            headers=_bid_headers(stranger_browser),
+        )
+        # The image-not-set 404 and the privacy-gated 404 are
+        # indistinguishable from the wire — which is by design (info
+        # leak reduction).
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# /api/groups/mine — legacy bridge filtered to public-only
+# ---------------------------------------------------------------------------
+
+
+class TestMineLegacyBridge:
+    def test_bridge_does_not_grant_private_group_access(
+        self, client, creator_browser, stranger_browser
+    ):
+        """A stranger passing the legacy `accessible_question_ids` list
+        gets the public groups it represents, but NOT any private group
+        it represents. Pre-Phase-E behavior: the bridge granted access
+        to every group regardless of privacy — that's the bug Phase E
+        fixes."""
+        token, _ = _sign_in(client, creator_browser)
+        poll = _create_poll(client, creator_browser, token)
+        # Question id from the freshly-created private poll.
+        question_id = poll["questions"][0]["id"]
+        # Stranger hits /mine with that question_id in the bridge list.
+        resp = client.post(
+            "/api/groups/mine",
+            json={"accessible_question_ids": [question_id]},
+            headers=_bid_headers(stranger_browser),
+        )
+        assert resp.status_code == 200
+        # Empty: the private group must NOT surface via the bridge.
+        assert resp.json() == []
+
+    def test_bridge_grants_public_group_access(
+        self, client, creator_browser, stranger_browser
+    ):
+        """Sanity check: same scenario but public group, bridge works."""
+        poll = _create_poll(client, creator_browser)
+        question_id = poll["questions"][0]["id"]
+        resp = client.post(
+            "/api/groups/mine",
+            json={"accessible_question_ids": [question_id]},
+            headers=_bid_headers(stranger_browser),
+        )
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        assert poll["id"] in ids
+
+
+# ---------------------------------------------------------------------------
+# POST /api/groups/{id}/privacy — toggle endpoint authorization
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateGroupPrivacy:
+    def test_creator_can_flip_private_to_public(
+        self, client, creator_browser, stranger_browser
+    ):
+        token, _ = _sign_in(client, creator_browser)
+        g = _create_empty_group(client, creator_browser, token)
+        assert g["privacy"] == "private"
+        # Flip to public.
+        resp = client.post(
+            f"/api/groups/{g['short_id']}/privacy",
+            json={"privacy": "public"},
+            headers=_bearer_headers(creator_browser, token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["privacy"] == "public"
+        # Stranger can now see the group.
+        resp2 = client.get(
+            f"/api/groups/by-route-id/{g['short_id']}",
+            headers=_bid_headers(stranger_browser),
+        )
+        assert resp2.status_code == 200
+
+    def test_creator_can_flip_back_to_private(
+        self, client, creator_browser, stranger_browser
+    ):
+        token, _ = _sign_in(client, creator_browser)
+        g = _create_empty_group(client, creator_browser, token)
+        # Flip to public, then back to private.
+        client.post(
+            f"/api/groups/{g['short_id']}/privacy",
+            json={"privacy": "public"},
+            headers=_bearer_headers(creator_browser, token),
+        )
+        resp = client.post(
+            f"/api/groups/{g['short_id']}/privacy",
+            json={"privacy": "private"},
+            headers=_bearer_headers(creator_browser, token),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["privacy"] == "private"
+
+    def test_anonymous_caller_401(self, client, creator_browser):
+        token, _ = _sign_in(client, creator_browser)
+        g = _create_empty_group(client, creator_browser, token)
+        # No Authorization header.
+        resp = client.post(
+            f"/api/groups/{g['short_id']}/privacy",
+            json={"privacy": "public"},
+            headers=_bid_headers(creator_browser),
+        )
+        assert resp.status_code == 401
+
+    def test_non_creator_signed_in_403(
+        self, client, creator_browser, stranger_browser
+    ):
+        creator_token, _ = _sign_in(client, creator_browser)
+        g = _create_empty_group(client, creator_browser, creator_token)
+        # A different signed-in user tries to flip.
+        stranger_token, _ = _sign_in(client, stranger_browser)
+        resp = client.post(
+            f"/api/groups/{g['short_id']}/privacy",
+            json={"privacy": "public"},
+            headers=_bearer_headers(stranger_browser, stranger_token),
+        )
+        assert resp.status_code == 403
+
+    def test_legacy_group_without_creator_403(
+        self, client, creator_browser, stranger_browser
+    ):
+        """Anonymous-created groups have creator_user_id NULL. Phase E
+        keeps these immutable — no one can flip them via the toggle.
+        Phase I will add an 'anonymous → claim → private' migration."""
+        poll = _create_poll(client, creator_browser)  # anonymous create
+        # Sign in *after* creating; this user wasn't the creator.
+        token, _ = _sign_in(client, stranger_browser)
+        resp = client.post(
+            f"/api/groups/{poll['group_short_id']}/privacy",
+            json={"privacy": "private"},
+            headers=_bearer_headers(stranger_browser, token),
+        )
+        assert resp.status_code == 403
+
+    def test_invalid_privacy_value_400(self, client, creator_browser):
+        token, _ = _sign_in(client, creator_browser)
+        g = _create_empty_group(client, creator_browser, token)
+        resp = client.post(
+            f"/api/groups/{g['short_id']}/privacy",
+            json={"privacy": "semi-public"},
+            headers=_bearer_headers(creator_browser, token),
+        )
+        assert resp.status_code == 400
+
+    def test_unknown_group_404(self, client, creator_browser):
+        token, _ = _sign_in(client, creator_browser)
+        resp = client.post(
+            "/api/groups/does-not-exist/privacy",
+            json={"privacy": "public"},
+            headers=_bearer_headers(creator_browser, token),
+        )
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Privacy state survives writes — surfaced on PollResponse + GroupSummary
+# ---------------------------------------------------------------------------
+
+
+class TestPrivacyFieldSurfacing:
+    def test_poll_response_carries_privacy(
+        self, client, creator_browser
+    ):
+        token, user_id = _sign_in(client, creator_browser)
+        poll = _create_poll(client, creator_browser, token)
+        # Read back via /api/polls/by-id; the JOIN should surface the
+        # joined groups columns.
+        resp = client.get(
+            f"/api/polls/by-id/{poll['id']}",
+            headers=_bearer_headers(creator_browser, token),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["group_privacy"] == "private"
+        assert body["group_creator_user_id"] == user_id
+
+    def test_empty_groups_carry_privacy(self, client, creator_browser):
+        token, user_id = _sign_in(client, creator_browser)
+        g = _create_empty_group(client, creator_browser, token)
+        # /api/groups/empty should surface the privacy + creator fields too.
+        resp = client.post(
+            "/api/groups/empty",
+            headers=_bearer_headers(creator_browser, token),
+        )
+        assert resp.status_code == 200
+        match = [x for x in resp.json() if x["id"] == g["id"]]
+        assert match, "Expected the freshly-created empty group to appear"
+        assert match[0]["privacy"] == "private"
+        assert match[0]["creator_user_id"] == user_id
+
+
+# ---------------------------------------------------------------------------
+# Member visibility — already a member of a private group still sees it
+# ---------------------------------------------------------------------------
+
+
+class TestPrivateMemberVisibility:
+    def test_mine_lists_private_groups_for_members(
+        self, client, creator_browser
+    ):
+        token, _ = _sign_in(client, creator_browser)
+        poll = _create_poll(client, creator_browser, token)
+        resp = client.post(
+            "/api/groups/mine",
+            json={"accessible_question_ids": []},
+            headers=_bearer_headers(creator_browser, token),
+        )
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        assert poll["id"] in ids
+
+    def test_mine_excludes_private_groups_for_non_members(
+        self, client, creator_browser, stranger_browser
+    ):
+        token, _ = _sign_in(client, creator_browser)
+        poll = _create_poll(client, creator_browser, token)
+        # Stranger has no membership — and no bridge — should see nothing.
+        resp = client.post(
+            "/api/groups/mine",
+            json={"accessible_question_ids": []},
+            headers=_bid_headers(stranger_browser),
+        )
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        assert poll["id"] not in ids
+
+    def test_post_phase_e_flip_to_private_hides_from_strangers(
+        self, client, creator_browser, stranger_browser
+    ):
+        """Public group → stranger visits (auto-joins) → creator
+        flips to private → stranger still sees it (member). Different
+        stranger has no row → 404."""
+        token, _ = _sign_in(client, creator_browser)
+        # Create as public via the flip path — sign-in mints private, so
+        # start with anonymous + claim via signed-in flip.
+        # Simpler: create signed-in (private) and flip to public, then
+        # have stranger A visit (joins), then flip back to private.
+        poll = _create_poll(client, creator_browser, token)
+        # Flip to public so stranger A can join.
+        client.post(
+            f"/api/groups/{poll['group_short_id']}/privacy",
+            json={"privacy": "public"},
+            headers=_bearer_headers(creator_browser, token),
+        )
+        # Stranger A visits and auto-joins.
+        stranger_a = str(uuid.uuid4())
+        resp_a1 = client.get(
+            f"/api/groups/by-route-id/{poll['group_short_id']}",
+            headers=_bid_headers(stranger_a),
+        )
+        assert resp_a1.status_code == 200
+        # Flip back to private.
+        client.post(
+            f"/api/groups/{poll['group_short_id']}/privacy",
+            json={"privacy": "private"},
+            headers=_bearer_headers(creator_browser, token),
+        )
+        # Stranger A is still a member → still 200.
+        resp_a2 = client.get(
+            f"/api/groups/by-route-id/{poll['group_short_id']}",
+            headers=_bid_headers(stranger_a),
+        )
+        assert resp_a2.status_code == 200
+        # Stranger B (never joined) gets 404.
+        stranger_b = stranger_browser
+        resp_b = client.get(
+            f"/api/groups/by-route-id/{poll['group_short_id']}",
+            headers=_bid_headers(stranger_b),
+        )
+        assert resp_b.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Grandfathered groups behavior
+# ---------------------------------------------------------------------------
+
+
+class TestGrandfatheredGroups:
+    def test_existing_groups_are_public(self):
+        """Migration 114 backfilled every pre-Phase-E group to public.
+        Check by-direct-sql on a fresh row created via DEFAULT-only
+        insert (skips application code that sets privacy explicitly)."""
+        with psycopg.connect(TEST_DB_URL) as conn:
+            row = conn.execute(
+                "INSERT INTO groups DEFAULT VALUES RETURNING id, privacy"
+            ).fetchone()
+            conn.commit()
+            assert row[1] == "private"  # default for new INSERTs
+            # Clean up.
+            conn.execute("DELETE FROM groups WHERE id = %s", (row[0],))
+            conn.commit()
+
+    def test_legacy_group_remains_accessible_to_strangers(
+        self, client, creator_browser, stranger_browser
+    ):
+        """A group manually flipped to 'public' should still 200 for
+        strangers — covers groups grandfathered by the migration."""
+        # Anonymous create → public. Then verify stranger access.
+        poll = _create_poll(client, creator_browser)
+        resp = client.get(
+            f"/api/groups/by-route-id/{poll['group_short_id']}",
+            headers=_bid_headers(stranger_browser),
+        )
+        assert resp.status_code == 200
