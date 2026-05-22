@@ -166,8 +166,13 @@ def get_my_groups(req: MyGroupsRequest, request: Request):
         )
 
         member_group_ids = set(visibility.joined_by_group.keys())
-        if req.accessible_question_ids:
+        if req.accessible_question_ids and not user_id:
             # Forget bridge: drop member-groups with no bridge signal.
+            # Anonymous-only — signed-in users' membership is authoritative
+            # and not subject to per-device localStorage forget.
+            # Signed-in users drop groups via the explicit "leave group"
+            # action (DELETE /membership), which removes the membership
+            # row across all linked browsers.
             member_group_ids &= visibility.bridged_group_ids
 
         # Candidate groups = bridge groups + filtered member groups.

@@ -493,3 +493,62 @@ class TestMultiBrowserUserVisibility:
         )
         ids = {p["id"] for p in resp.json()}
         assert poll["id"] not in ids
+
+    def test_forget_bridge_does_not_drop_signed_in_user_membership(
+        self, client, creator_secret, creator_browser, stranger_browser
+    ):
+        """Regression: signed-in users on Browser B were losing visibility
+        of groups created on Browser A whenever Browser B's localStorage
+        held any accessible_question_ids that didn't reference the new
+        group's questions. The forget bridge was intersecting member
+        groups with the bridge list and dropping the membership signal.
+
+        Fix: the forget bridge is per-device-anonymous semantics — it
+        doesn't apply when the caller is signed in. Their membership is
+        authoritative; they leave groups via DELETE /membership."""
+        user_id = _new_user_id()
+        _link_browser_to_user(creator_browser, user_id)
+        _link_browser_to_user(stranger_browser, user_id)
+        poll = create_poll(client, creator_secret, browser_id=creator_browser)
+        token = _issue_session_for(user_id, stranger_browser)
+
+        # Browser B sends an accessible_question_ids that doesn't
+        # include the new poll's question (typical state: legacy
+        # localStorage from prior anonymous activity).
+        bogus_qid = str(uuid.uuid4())
+        resp = client.post(
+            "/api/groups/mine",
+            json={"accessible_question_ids": [bogus_qid]},
+            headers={
+                "X-Browser-Id": stranger_browser,
+                "Authorization": f"Bearer {token}",
+            },
+        )
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        assert poll["id"] in ids, (
+            "Signed-in user lost their membership signal to the forget bridge"
+        )
+
+    def test_forget_bridge_still_applies_for_anonymous(
+        self, client, creator_secret, creator_browser
+    ):
+        """Sanity check: anonymous callers (no Authorization header)
+        still get the forget-bridge intersection — that's the
+        load-bearing behavior for "forget this question and have its
+        group disappear from home" on devices that never signed in."""
+        poll = create_poll(client, creator_secret, browser_id=creator_browser)
+        # Same browser, no auth, sending a bogus accessible_question_ids
+        # that doesn't include the poll's question.
+        bogus_qid = str(uuid.uuid4())
+        resp = client.post(
+            "/api/groups/mine",
+            json={"accessible_question_ids": [bogus_qid]},
+            headers={"X-Browser-Id": creator_browser},
+        )
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()}
+        assert poll["id"] not in ids, (
+            "Anonymous forget bridge should drop member-groups with no "
+            "bridge signal"
+        )
