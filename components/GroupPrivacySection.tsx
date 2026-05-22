@@ -58,20 +58,23 @@ export default function GroupPrivacySection({
   groupId,
   className = "mt-[0.96rem]",
 }: Props) {
-  // Lazy-init from cache so the first paint has the right enabled
-  // state — no flash where the toggle renders disabled then becomes
-  // active after a useEffect.
-  const [session, setSession] = useState<SessionUser | null>(() =>
-    getCachedSessionUser(),
-  );
+  // Initialize as null to match SSR (no localStorage on the server);
+  // the mount effect below seeds from the localStorage-cached profile
+  // AND subscribes to live session changes. Eagerly reading via
+  // `useState(() => getCachedSessionUser())` would produce a hydration
+  // mismatch when signed in — server renders the no-toggle branch,
+  // client's first render reads localStorage and renders the toggle.
+  const [session, setSession] = useState<SessionUser | null>(null);
   const [privacy, setPrivacy] = useState<string | null>(group.privacy);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
 
-  // Subscribe to session changes (sign-in / sign-out / token refresh)
-  // so the toggle visibility tracks live state without a remount.
+  // Mount + subscribe: seed `session` from the localStorage cache and
+  // listen for live changes (sign-in via SignInModal, sign-out
+  // elsewhere) so toggle visibility tracks without a remount.
   useEffect(() => {
+    setSession(getCachedSessionUser());
     const update = () => setSession(getCachedSessionUser());
     window.addEventListener(SESSION_CHANGED_EVENT, update);
     return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
