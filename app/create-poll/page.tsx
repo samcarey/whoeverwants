@@ -81,11 +81,45 @@ const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
 ];
 
-// Shared classes for every chip in the bubble bar. Module-scope so the
-// string isn't re-allocated per render (same precedent as BUBBLE_ENTRIES
-// and THEME_OPTIONS — see CLAUDE.md on hoisting static template strings).
+// Each bubble is a rounded rectangle stacking the icon on top + a
+// word-wrapped title below. `width: min-content` lets the rectangle
+// shrink to fit the longest word in its label (so multi-word labels
+// like "Yes / No" / "Video Game" wrap by spaces, never breaking a
+// word mid-character); `minWidth` floors it at 2× the icon size so
+// short labels still feel like buttons. Fixed `height` keeps every
+// rectangle the same vertical size — the inner `justify-center`
+// vertically centers the icon + title block, so 1-line labels float
+// to the middle while a 4-line label fills the available space.
+// `text-sm leading-tight` × 4 lines = 72px; +32px icon + 4px gap +
+// 24px vertical padding ≈ 132px total height.
+const BUBBLE_ICON_PX = 32;
+const BUBBLE_MIN_WIDTH_PX = BUBBLE_ICON_PX * 2;
+const BUBBLE_HEIGHT_PX = 132;
 const BUBBLE_BUTTON_CLASS =
-  "shrink-0 flex items-center gap-1.5 px-[13.5px] py-[6.75px] rounded-full bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
+  "shrink-0 flex flex-col items-center justify-center gap-1 px-2 py-3 rounded-2xl bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
+const BUBBLE_BUTTON_STYLE: React.CSSProperties = {
+  width: "min-content",
+  minWidth: `${BUBBLE_MIN_WIDTH_PX}px`,
+  height: `${BUBBLE_HEIGHT_PX}px`,
+};
+const BUBBLE_ICON_STYLE: React.CSSProperties = {
+  fontSize: `${BUBBLE_ICON_PX}px`,
+  lineHeight: 1,
+};
+// `-webkit-line-clamp: 4` (with the matching `display: -webkit-box`
+// + `WebkitBoxOrient: vertical`) caps the title at 4 lines and
+// truncates with an ellipsis past that. `wordBreak: normal` +
+// `overflowWrap: normal` keeps words intact so they wrap by spaces;
+// `min-content` sizing on the parent guarantees the longest word
+// always fits on its own line.
+const BUBBLE_TITLE_STYLE: React.CSSProperties = {
+  display: "-webkit-box",
+  WebkitLineClamp: 4,
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+  wordBreak: "normal",
+  overflowWrap: "normal",
+};
 
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
@@ -1580,16 +1614,17 @@ export function CreateQuestionContent() {
   // reads as the primary "create a new poll" affordance.
   const bubbleBar = (
     <div className="py-2">
-      <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide px-3">
+      <div className="flex items-stretch gap-2 overflow-x-auto scrollbar-hide px-3">
         <button
           type="button"
           onClick={() => handleBubbleClick('custom')}
           disabled={isLoading}
           className={`${BUBBLE_BUTTON_CLASS} font-bold`}
+          style={BUBBLE_BUTTON_STYLE}
           aria-label="Create a new poll"
         >
-          <span className="text-[22.4px] leading-none" aria-hidden>+</span>
-          <span className="leading-none">New</span>
+          <span style={BUBBLE_ICON_STYLE} aria-hidden>+</span>
+          <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>New</span>
         </button>
         {BUBBLE_ENTRIES.map((entry) => (
           <button
@@ -1598,12 +1633,13 @@ export function CreateQuestionContent() {
             onClick={() => handleBubbleClick(entry.value)}
             disabled={isLoading}
             className={BUBBLE_BUTTON_CLASS}
+            style={BUBBLE_BUTTON_STYLE}
             aria-label={`Add ${entry.label} question`}
           >
             {entry.icon && (
-              <span className="text-base leading-none" aria-hidden>{entry.icon}</span>
+              <span style={BUBBLE_ICON_STYLE} aria-hidden>{entry.icon}</span>
             )}
-            <span>{entry.label}</span>
+            <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>{entry.label}</span>
           </button>
         ))}
       </div>
