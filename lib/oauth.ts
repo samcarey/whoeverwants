@@ -4,19 +4,27 @@
  * Two surfaces:
  *   1. Web / PWA — both providers load their browser SDKs lazily and
  *      hand us back an ID token from the popup-style flow.
- *   2. Capacitor iOS — Apple uses the `@capgo/capacitor-social-login`
- *      plugin (drives Apple's system sign-in sheet via
- *      ASAuthorizationController). Google native is deferred (per-bundle
- *      iOS client IDs + URL scheme patching add material complexity);
- *      the Google button is hidden on native iOS for now. Magic link
- *      remains as the email fallback there.
+ *   2. Capacitor iOS — Apple AND Google both use the
+ *      `@capgo/capacitor-social-login` plugin (Apple drives the system
+ *      sign-in sheet via ASAuthorizationController; Google opens the
+ *      installed Google app or a SFSafariViewController fallback). The
+ *      Google web SDK (`accounts.google.com/gsi/client`) is explicitly
+ *      blocked in iOS WebViews — embedded user-agent detection returns
+ *      403 `disallowed_useragent` mid-flow — so the native plugin is
+ *      the only viable iOS path.
  *
  * Whichever surface produces the token, it's POSTed to the same
  * `/api/auth/oauth/{provider}` endpoint and verified against the
- * provider's JWKS server-side (see `server/services/oauth.py`). The
- * server's `APPLE_OAUTH_AUDIENCES` env var must include BOTH the web
- * Service ID AND each iOS bundle id (com.whoeverwants.app +
- * com.whoeverwants.app.latest) so native tokens validate.
+ * provider's JWKS server-side (see `server/services/oauth.py`). Audience
+ * notes:
+ *   - Apple: server's `APPLE_OAUTH_AUDIENCES` must include the web
+ *     Service ID AND each iOS bundle id (com.whoeverwants.app +
+ *     com.whoeverwants.app.latest).
+ *   - Google: server's `GOOGLE_OAUTH_CLIENT_IDS` must include the web
+ *     client ID AND each per-bundle iOS client ID. iOS client IDs are
+ *     bound to a specific bundle id at Google Cloud Console create time,
+ *     so prod + canary need separate iOS clients (see
+ *     `GOOGLE_IOS_CLIENT_IDS` below).
  *
  * Apple Developer prereqs (per bundle id, one-time):
  *   - Enable "Sign In with Apple" capability on the bundle's identifier
@@ -41,6 +49,21 @@ const APPLE_JS_SRC =
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID || "";
 const APPLE_CLIENT_ID = process.env.NEXT_PUBLIC_APPLE_OAUTH_SERVICE_ID || "";
+
+// Per-bundle iOS Google client IDs. Bound to a specific iOS bundle id at
+// Google Cloud Console create time — the audience claim Google's JWKS
+// verifier sees in the id_token is the iOS client ID (NOT the web one),
+// so the server's GOOGLE_OAUTH_CLIENT_IDS allowlist must include all
+// three (web + both iOS). Public values (also baked into the iOS binary's
+// Info.plist as a CFBundleURLTypes scheme via ios-build.yml); committing
+// them in source is fine.
+const GOOGLE_IOS_CLIENT_IDS: Record<string, string> = {
+  "com.whoeverwants.app":
+    "641867957358-r25ftjoihrcam51ca3ilhnl08pl3vhur.apps.googleusercontent.com",
+  "com.whoeverwants.app.latest":
+    "641867957358-hqpgqhfi9j7hbjpnr7cmkq3c6nfdteph.apps.googleusercontent.com",
+};
+const GOOGLE_IOS_CLIENT_ID_DEFAULT = GOOGLE_IOS_CLIENT_IDS["com.whoeverwants.app"];
 
 // Module-level in-flight script loader promises so concurrent opens of
 // the sign-in modal (e.g. StrictMode double-mount in dev) don't fetch
@@ -98,7 +121,12 @@ function loadScript(src: string, existingPromise: Promise<void> | null): Promise
 // Capability flags (read by the SignInModal to decide which buttons to show)
 // ---------------------------------------------------------------------------
 
-function isNativeIOS(): boolean {
+/** True when running inside the Capacitor native iOS WebView (NOT in
+ *  Safari or PWA standalone mode). Exported so callers can fork between
+ *  the web flow and the native plugin flow without re-implementing the
+ *  Capacitor probe. SSR-safe — short-circuits to false when window is
+ *  unavailable. */
+export function isNativeIOS(): boolean {
   if (typeof window === "undefined") return false;
   try {
     return Capacitor.isNativePlatform();
@@ -108,12 +136,14 @@ function isNativeIOS(): boolean {
 }
 
 /** Whether Google Sign In is wired up for the current surface.
- *  Native iOS doesn't ship a Google flow yet (see top-of-file note);
- *  web/PWA require the web client id env var. Independent of the
- *  server-side `providers` endpoint — both must agree before the
- *  button is functional. */
+ *  Native iOS routes through the @capgo/capacitor-social-login plugin
+ *  with a per-bundle iOS client ID (see GOOGLE_IOS_CLIENT_IDS); we trust
+ *  the build pipeline configured the right one (mirrors Apple's "return
+ *  true on native" pattern). Web/PWA require the web client id env var.
+ *  Independent of the server-side `providers` endpoint — both must agree
+ *  before the button is functional. */
 export function googleConfigured(): boolean {
-  if (isNativeIOS()) return false;
+  if (isNativeIOS()) return true;
   return !!GOOGLE_CLIENT_ID;
 }
 
@@ -181,7 +211,15 @@ declare global {
 }
 
 async function ensureGoogleSdk(): Promise<GoogleAccountsIdentity> {
-  if (!googleConfigured()) {
+  if (isNativeIOS()) {
+    // Hard guard: Google's web SDK 403s with `disallowed_useragent` in
+    // WebViews. The native path is `googleNativeSignIn()`; callers must
+    // branch before reaching this helper.
+    throw new Error(
+      "Google web SDK is unavailable in iOS WebView; use googleSignIn() instead."
+    );
+  }
+  if (!GOOGLE_CLIENT_ID) {
     throw new Error("Google sign-in isn't configured on this client.");
   }
   googleScriptPromise = loadScript(GOOGLE_GSI_SRC, googleScriptPromise);
@@ -424,4 +462,107 @@ export async function appleSignIn(): Promise<string> {
     return appleNativeSignIn();
   }
   return appleWebSignIn();
+}
+
+// ---------------------------------------------------------------------------
+// Google — Capacitor native
+// ---------------------------------------------------------------------------
+//
+// Uses `@capgo/capacitor-social-login` (same plugin that drives Apple
+// native) which on iOS opens the installed Google app or a
+// SFSafariViewController fallback. Returns an id_token whose `aud` is
+// the per-bundle iOS client ID; POSTed to `/api/auth/oauth/google` and
+// verified by the same JWKS pipeline as the web flow.
+//
+// `SocialLogin.initialize` is provider-scoped — calling it with `{google:
+// ...}` configures Google without touching the Apple slot set up by
+// `ensureAppleNativeInit`. Keep the two inits separate so each can fail
+// + retry independently. Memoize the promise so concurrent modal opens
+// share one round-trip, matching the Apple pattern.
+
+let googleNativeInitPromise: Promise<void> | null = null;
+
+async function ensureGoogleNativeInit(): Promise<void> {
+  if (googleNativeInitPromise) return googleNativeInitPromise;
+  googleNativeInitPromise = (async () => {
+    const mod = await import("@capgo/capacitor-social-login").catch(() => null);
+    if (!mod) {
+      googleNativeInitPromise = null;
+      throw new Error("Google sign-in plugin failed to load.");
+    }
+    const { SocialLogin } = mod;
+    // Resolve the bundle id at runtime to pick the right iOS client ID
+    // (prod vs canary). Missing lookup falls back to the prod client —
+    // the server's audience allowlist includes both bundles' iOS clients
+    // so a wrong-bundle token would still verify; but the OS-level URL
+    // scheme handshake won't, so this fallback only saves us from a hard
+    // failure if App.getInfo() somehow misfires.
+    const appMod = await import("@capacitor/app").catch(() => null);
+    let iOSClientId = GOOGLE_IOS_CLIENT_ID_DEFAULT;
+    if (appMod) {
+      try {
+        const info = await appMod.App.getInfo();
+        const lookup = info?.id ? GOOGLE_IOS_CLIENT_IDS[info.id] : undefined;
+        if (lookup) iOSClientId = lookup;
+      } catch {
+        // Fall back to the prod client id below.
+      }
+    }
+    await SocialLogin.initialize({
+      google: {
+        iOSClientId,
+        mode: "online",
+      },
+    });
+  })().catch((err) => {
+    googleNativeInitPromise = null;
+    throw err;
+  });
+  return googleNativeInitPromise;
+}
+
+async function googleNativeSignIn(): Promise<string> {
+  await ensureGoogleNativeInit();
+  const mod = await import("@capgo/capacitor-social-login");
+  const { SocialLogin } = mod;
+  try {
+    const res = await SocialLogin.login({
+      provider: "google",
+      options: { scopes: ["email", "profile"] },
+    });
+    // Cast through `unknown` for the same reason as the Apple flow — the
+    // plugin's typed response shape doesn't accommodate the defensive
+    // fall-through paths some plugin versions surface.
+    const result = (res as unknown as { result?: Record<string, unknown> })
+      ?.result;
+    const idToken =
+      (result?.idToken as string | undefined) ??
+      (
+        (result?.profile as { token?: { id_token?: string } } | undefined)
+          ?.token?.id_token
+      );
+    if (!idToken) {
+      throw new Error("Google didn't return an identity token.");
+    }
+    return idToken;
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error(typeof err === "string" ? err : "Google sign-in failed.");
+  }
+}
+
+/** Trigger Google's native sign-in flow on Capacitor iOS.
+ *
+ *  The web/PWA path is `renderGoogleButton` (Google's branding rules
+ *  require their SDK-rendered button); the native path uses the capgo
+ *  plugin and a custom button. Callers must check `isNativeIOS()` before
+ *  picking which path to call — this helper throws on non-native to
+ *  surface that misuse loudly. */
+export async function googleSignIn(): Promise<string> {
+  if (!isNativeIOS()) {
+    throw new Error(
+      "googleSignIn() is the native-iOS path; web should call renderGoogleButton."
+    );
+  }
+  return googleNativeSignIn();
 }

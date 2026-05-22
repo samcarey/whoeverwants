@@ -225,6 +225,39 @@ jobs:
           plutil -replace CFBundleDisplayName -string "${{ steps.bundle.outputs.display_name }}" ios/App/App/Info.plist
           plutil -extract CFBundleDisplayName raw ios/App/App/Info.plist
 
+      - name: Stamp Info.plist with Google iOS URL scheme
+        env:
+          GOOGLE_IOS_CLIENT_ID_PROD: ${{ secrets.GOOGLE_IOS_CLIENT_ID_PROD }}
+          GOOGLE_IOS_CLIENT_ID_LATEST: ${{ secrets.GOOGLE_IOS_CLIENT_ID_LATEST }}
+        run: |
+          set -euo pipefail
+          # Native Google Sign In via @capgo/capacitor-social-login requires
+          # the reversed iOS client ID registered as a URL scheme so the
+          # system can hand control back to the app after the Google sheet
+          # completes. Client IDs are per-bundle (one per Google Cloud iOS
+          # OAuth client) — pick the right one based on CAP_ENV.
+          if [[ "$CAP_ENV" == "prod" ]]; then
+            CLIENT_ID="$GOOGLE_IOS_CLIENT_ID_PROD"
+          else
+            CLIENT_ID="$GOOGLE_IOS_CLIENT_ID_LATEST"
+          fi
+          if [[ -z "$CLIENT_ID" ]]; then
+            echo "::error::GOOGLE_IOS_CLIENT_ID secret is empty for CAP_ENV=$CAP_ENV — set GOOGLE_IOS_CLIENT_ID_PROD and GOOGLE_IOS_CLIENT_ID_LATEST in repo secrets."
+            exit 1
+          fi
+          # Reverse the dot-separated parts:
+          #   <hash>-<random>.apps.googleusercontent.com
+          #     →  com.googleusercontent.apps.<hash>-<random>
+          REVERSED=$(echo "$CLIENT_ID" | awk -F. '{ for(i=NF;i>0;i--) printf "%s%s", $i, (i>1?".":"") }')
+          echo "Reversed URL scheme: $REVERSED"
+          # Idempotent: a fresh checkout has no CFBundleURLTypes key, but
+          # if a future Info.plist edit adds one, replace cleanly.
+          plutil -remove CFBundleURLTypes ios/App/App/Info.plist 2>/dev/null || true
+          plutil -insert CFBundleURLTypes -xml \
+            "<array><dict><key>CFBundleURLSchemes</key><array><string>${REVERSED}</string></array></dict></array>" \
+            ios/App/App/Info.plist
+          plutil -extract CFBundleURLTypes xml1 ios/App/App/Info.plist
+
       - name: Rewrite bundle ID in project.pbxproj
         run: |
           set -euo pipefail
