@@ -151,6 +151,9 @@ export default function SettingsPage() {
   const initialNameRef = useRef(initialName);
   useEffect(() => { nameRef.current = name; }, [name]);
   useEffect(() => { initialNameRef.current = initialName; }, [initialName]);
+  // Tracks the last-seen signed-in user so we can detect an actual sign-in
+  // (or account switch) vs. an incidental session event for the same user.
+  const prevUserIdRef = useRef<string | null>(null);
 
   // Subscribe to session changes so sign-in (from the modal) and
   // sign-out (from this page or anywhere else) flip the displayed state
@@ -158,26 +161,34 @@ export default function SettingsPage() {
   // the localStorage-cached profile (the useState init above is null
   // for SSR parity).
   //
-  // A sign-in that carries an account name overwrites the local name in the
-  // auth layer (persistSignIn). Reflect that in the name field too — unless
-  // the user has an unsaved edit in progress (field dirty), in which case the
-  // edit wins.
-  //
-  // Conversely, if the user typed a name here and THEN created an account
-  // (the common "enter a name, then sign in / create a passkey" flow), the
-  // account has no name yet AND the typed value may never have been written
-  // to localStorage (the field only persists on Save) — so the sign-in seed
-  // had nothing to read. Tie the field's value to the account here so it
-  // follows the user to other devices.
+  // On an actual sign-in (the user_id changed to a new account):
+  //   - account HAS a name → it's authoritative: overwrite the field with it
+  //     (even over an unsaved edit — that edit belonged to the prior context).
+  //   - account has NO name but a name is entered here → tie it to the account
+  //     (covers "enter a name, then create a passkey account", where the typed
+  //     value may never have hit localStorage, so the sign-in seed read null).
+  // Otherwise (same user / sign-out) just reflect localStorage, without
+  // clobbering an in-progress unsaved edit.
   useEffect(() => {
     const sync = () => {
       const user = getCurrentUser();
       setCurrentUser(user);
+      const userId = user?.user_id ?? null;
+      const justSignedIn = userId !== null && userId !== prevUserIdRef.current;
+      prevUserIdRef.current = userId;
+
       const localName = getUserName() ?? "";
       const fieldName = nameRef.current.trim();
-      const accountHasName = !!(user?.name && user.name.trim());
+      const accountName = user?.name?.trim() || "";
 
-      if (user && !accountHasName && fieldName && isValidUserName(fieldName)) {
+      if (justSignedIn && accountName) {
+        // saveUserName mirrors it to localStorage too (no-op if already there).
+        saveUserName(accountName);
+        setName(accountName);
+        setInitialName(accountName);
+        return;
+      }
+      if (justSignedIn && fieldName && isValidUserName(fieldName)) {
         // saveUserName persists locally AND (signed in) pushes to the account.
         saveUserName(fieldName);
         setName(fieldName);
