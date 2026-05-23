@@ -31,6 +31,11 @@ export interface SessionUser {
   email: string | null;
   providers: string[];
   created_at: string; // ISO-8601
+  // Account-tied display name (null when unset). On sign-in this overwrites
+  // the local `whoeverwants_user_name`; changing the local name while signed
+  // in pushes it back to the account. Optional so pre-this-feature cached
+  // profiles (no `name`) deserialize cleanly until the next /me refresh.
+  name?: string | null;
 }
 
 let cachedToken: string | null | undefined; // undefined = not yet read

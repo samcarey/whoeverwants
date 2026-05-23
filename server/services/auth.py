@@ -564,11 +564,12 @@ class UserProfile:
     email: str | None  # most recent verified email across identities (None for passkey-only)
     providers: list[str]  # distinct provider names linked to this user
     created_at: datetime
+    display_name: str | None  # account-tied display name (None when unset)
 
 
 def load_user_profile(conn, user_id: str) -> UserProfile | None:
     user_row = conn.execute(
-        "SELECT id, created_at FROM users WHERE id = %(u)s::uuid",
+        "SELECT id, display_name, created_at FROM users WHERE id = %(u)s::uuid",
         {"u": user_id},
     ).fetchone()
     if not user_row:
@@ -588,6 +589,22 @@ def load_user_profile(conn, user_id: str) -> UserProfile | None:
         email=email,
         providers=providers,
         created_at=user_row["created_at"],
+        display_name=user_row["display_name"],
+    )
+
+
+def update_user_display_name(conn, *, user_id: str, display_name: str | None) -> None:
+    """Set (or clear, when `display_name` is None) the user's account-tied
+    display name. Callers validate / trim the value first; this just writes
+    it. `updated_at` is bumped so a future "name last changed" surface has
+    a timestamp."""
+    conn.execute(
+        """
+        UPDATE users
+           SET display_name = %(n)s, updated_at = NOW()
+         WHERE id = %(u)s::uuid
+        """,
+        {"n": display_name, "u": user_id},
     )
 
 

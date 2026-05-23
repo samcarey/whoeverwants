@@ -144,16 +144,36 @@ export default function SettingsPage() {
   const [passkeyDeletePending, setPasskeyDeletePending] = useState<string | null>(null);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
+  // Refs mirror the latest field state so the SESSION_CHANGED handler can
+  // read them without re-subscribing (and re-running) on every keystroke.
+  const nameRef = useRef(name);
+  const initialNameRef = useRef(initialName);
+  useEffect(() => { nameRef.current = name; }, [name]);
+  useEffect(() => { initialNameRef.current = initialName; }, [initialName]);
+
   // Subscribe to session changes so sign-in (from the modal) and
   // sign-out (from this page or anywhere else) flip the displayed state
   // without a route navigation. Also runs once on mount to seed from
   // the localStorage-cached profile (the useState init above is null
   // for SSR parity).
+  //
+  // A sign-in that carries an account name overwrites the local name in the
+  // auth layer (persistSignIn). Reflect that in the name field too — unless
+  // the user has an unsaved edit in progress (field dirty), in which case the
+  // edit wins.
   useEffect(() => {
-    setCurrentUser(getCurrentUser());
-    const handler = () => setCurrentUser(getCurrentUser());
-    window.addEventListener(SESSION_CHANGED_EVENT, handler);
-    return () => window.removeEventListener(SESSION_CHANGED_EVENT, handler);
+    const sync = () => {
+      setCurrentUser(getCurrentUser());
+      const localName = getUserName() ?? "";
+      const dirty = nameRef.current !== initialNameRef.current;
+      if (!dirty && nameRef.current !== localName) {
+        setName(localName);
+        setInitialName(localName);
+      }
+    };
+    sync();
+    window.addEventListener(SESSION_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, sync);
   }, []);
 
   // Refresh from the server on mount — catches server-side revocation

@@ -354,6 +354,125 @@ class TestMeAndSignOut:
 
 
 # ---------------------------------------------------------------------------
+# Account-tied display name (POST /me/name)
+# ---------------------------------------------------------------------------
+
+
+class TestDisplayName:
+    def _sign_in(self, client, browser_id) -> tuple[str, str]:
+        """Sign in via magic link, returning (session_token, email)."""
+        email = f"name-{uuid.uuid4().hex[:8]}@example.com"
+        token = _issue_known_magic_link(email, browser_id)
+        resp = client.post(
+            "/api/auth/magic-link/verify",
+            json={"token": token},
+            headers=_bid_headers(browser_id),
+        )
+        assert resp.status_code == 200, resp.text
+        return resp.json()["session_token"], email
+
+    def test_name_null_for_fresh_account(self, client, browser_id):
+        resp = client.post(
+            "/api/auth/magic-link/verify",
+            json={"token": _issue_known_magic_link(
+                f"freshname-{uuid.uuid4().hex[:8]}@example.com", browser_id)},
+            headers=_bid_headers(browser_id),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["user"]["name"] is None
+
+    def test_set_name_and_read_back(self, client, browser_id):
+        session_token, _ = self._sign_in(client, browser_id)
+
+        set_resp = client.post(
+            "/api/auth/me/name",
+            json={"name": "  Alice Example  "},  # trimmed server-side
+            headers=_bearer_headers(browser_id, session_token),
+        )
+        assert set_resp.status_code == 200, set_resp.text
+        assert set_resp.json()["name"] == "Alice Example"
+
+        me_resp = client.get(
+            "/api/auth/me",
+            headers=_bearer_headers(browser_id, session_token),
+        )
+        assert me_resp.status_code == 200
+        assert me_resp.json()["name"] == "Alice Example"
+
+    def test_name_persists_across_sign_ins(self, client, browser_id):
+        email = f"persistname-{uuid.uuid4().hex[:8]}@example.com"
+        token1 = _issue_known_magic_link(email, browser_id)
+        r1 = client.post(
+            "/api/auth/magic-link/verify",
+            json={"token": token1},
+            headers=_bid_headers(browser_id),
+        )
+        session_token = r1.json()["session_token"]
+        client.post(
+            "/api/auth/me/name",
+            json={"name": "Bob"},
+            headers=_bearer_headers(browser_id, session_token),
+        )
+
+        # A subsequent sign-in (same email → same user) surfaces the name.
+        token2 = _issue_known_magic_link(email, browser_id)
+        r2 = client.post(
+            "/api/auth/magic-link/verify",
+            json={"token": token2},
+            headers=_bid_headers(browser_id),
+        )
+        assert r2.status_code == 200
+        assert r2.json()["user"]["name"] == "Bob"
+
+    def test_clear_name_with_null(self, client, browser_id):
+        session_token, _ = self._sign_in(client, browser_id)
+        client.post(
+            "/api/auth/me/name",
+            json={"name": "Temp"},
+            headers=_bearer_headers(browser_id, session_token),
+        )
+        clear_resp = client.post(
+            "/api/auth/me/name",
+            json={"name": None},
+            headers=_bearer_headers(browser_id, session_token),
+        )
+        assert clear_resp.status_code == 200
+        assert clear_resp.json()["name"] is None
+
+    def test_clear_name_with_empty_string(self, client, browser_id):
+        session_token, _ = self._sign_in(client, browser_id)
+        client.post(
+            "/api/auth/me/name",
+            json={"name": "Temp"},
+            headers=_bearer_headers(browser_id, session_token),
+        )
+        clear_resp = client.post(
+            "/api/auth/me/name",
+            json={"name": "   "},  # whitespace-only clears
+            headers=_bearer_headers(browser_id, session_token),
+        )
+        assert clear_resp.status_code == 200
+        assert clear_resp.json()["name"] is None
+
+    def test_name_requires_session(self, client, browser_id):
+        resp = client.post(
+            "/api/auth/me/name",
+            json={"name": "Nobody"},
+            headers=_bid_headers(browser_id),
+        )
+        assert resp.status_code == 401
+
+    def test_rejects_too_long_name(self, client, browser_id):
+        session_token, _ = self._sign_in(client, browser_id)
+        resp = client.post(
+            "/api/auth/me/name",
+            json={"name": "x" * 51},
+            headers=_bearer_headers(browser_id, session_token),
+        )
+        assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
 # Account merge (direct service-level test — no provider router yet)
 # ---------------------------------------------------------------------------
 

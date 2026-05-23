@@ -13,10 +13,13 @@ import { authFetch, ApiError } from "./_internal";
 import {
   clearSession,
   getCachedSessionUser,
+  getSessionToken,
   saveSession,
   updateCachedSessionUser,
   type SessionUser,
 } from "@/lib/session";
+import { getUserName, saveUserNameLocalOnly } from "@/lib/userProfile";
+import { isValidUserName } from "@/lib/nameValidation";
 
 export interface MagicLinkRequestResponse {
   accepted: boolean;
@@ -65,6 +68,71 @@ export interface PasskeyRegistrationResult {
   session: SessionResponse | null;
 }
 
+/**
+ * Persist a freshly-issued session and reconcile the display name with the
+ * account. Every sign-in path (magic link, OAuth, passkey auth, anonymous
+ * passkey registration) funnels through here so the name-tie rule lives in
+ * one place:
+ *   - account has a name  → it's authoritative: mirror it down to local
+ *     storage (overwriting whatever was there) BEFORE saving the session, so
+ *     SESSION_CHANGED listeners read the updated local name.
+ *   - account has no name → seed it from this browser's local name (if any)
+ *     so the user's existing name follows them to other devices.
+ */
+function persistSignIn(token: string, user: SessionUser): void {
+  const accountName = user.name?.trim() || null;
+  if (accountName) {
+    if ((getUserName()?.trim() || null) !== accountName) {
+      saveUserNameLocalOnly(accountName);
+    }
+    saveSession(token, user);
+    return;
+  }
+  saveSession(token, user);
+  const localName = getUserName()?.trim() || null;
+  if (localName && isValidUserName(localName)) {
+    void pushLocalNameToAccount(localName);
+  }
+}
+
+/**
+ * Set or clear the signed-in user's account display name. Returns the
+ * updated profile and refreshes the cached session user. Caller-facing so
+ * the settings page (or any future name surface) can await it directly.
+ */
+export async function apiUpdateMyName(
+  name: string | null,
+): Promise<SessionUser> {
+  const user = await authFetch<SessionUser>("/me/name", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+  updateCachedSessionUser(user);
+  return user;
+}
+
+/**
+ * Mirror a locally-saved name up to the signed-in account. No-op when signed
+ * out or when the account already reflects this value (so the common
+ * "save the same name again" path costs nothing). Best-effort — a network
+ * failure leaves local storage as the source of truth for this session.
+ *
+ * Called from `saveUserName` (lib/userProfile.ts) so every name change in the
+ * app — voting forms, the name-required modal, settings — propagates without
+ * each callsite knowing about accounts.
+ */
+export async function pushLocalNameToAccount(name: string): Promise<void> {
+  if (!getSessionToken()) return;
+  const trimmed = name.trim();
+  const cachedName = getCachedSessionUser()?.name ?? null;
+  if ((cachedName ?? "") === trimmed) return;
+  try {
+    await apiUpdateMyName(trimmed.length ? trimmed : null);
+  } catch {
+    // best-effort
+  }
+}
+
 export async function apiRequestMagicLink(
   email: string,
 ): Promise<MagicLinkRequestResponse> {
@@ -79,7 +147,7 @@ export async function apiVerifyMagicLink(token: string): Promise<SessionResponse
     method: "POST",
     body: JSON.stringify({ token }),
   });
-  saveSession(res.session_token, res.user);
+  persistSignIn(res.session_token, res.user);
   return res;
 }
 
@@ -187,7 +255,7 @@ export async function apiSignInWithOAuth(
     method: "POST",
     body: JSON.stringify({ id_token: idToken }),
   });
-  saveSession(res.session_token, res.user);
+  persistSignIn(res.session_token, res.user);
   return res;
 }
 
@@ -247,7 +315,7 @@ export async function apiPasskeyRegistrationVerify(
     },
   );
   if (res.session) {
-    saveSession(res.session.session_token, res.session.user);
+    persistSignIn(res.session.session_token, res.session.user);
   }
   return res;
 }
@@ -271,7 +339,7 @@ export async function apiPasskeyAuthenticationVerify(
     method: "POST",
     body: JSON.stringify({ credential }),
   });
-  saveSession(res.session_token, res.user);
+  persistSignIn(res.session_token, res.user);
   return res;
 }
 
