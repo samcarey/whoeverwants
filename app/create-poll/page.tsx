@@ -1631,7 +1631,7 @@ export function CreateQuestionContent() {
         >
           <span style={BUBBLE_ICON_STYLE} aria-hidden>+</span>
           <span className="flex-1 w-full flex items-center justify-center min-h-0">
-            <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>New</span>
+            <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>New Poll</span>
           </span>
         </button>
         {BUBBLE_ENTRIES.map((entry) => (
