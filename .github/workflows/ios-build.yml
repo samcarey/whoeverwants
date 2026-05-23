@@ -331,6 +331,38 @@ jobs:
           # but is tolerant here — the default 5-min timeout is plenty.
           security set-keychain-settings -t 3600 "$KC" || true
 
+      - name: Clear cached provisioning profiles
+        run: |
+          set -euo pipefail
+          # Cached provisioning profiles live OUTSIDE DerivedData (so
+          # `xcodebuild clean` doesn't touch them). With automatic
+          # signing + `-allowProvisioningUpdates`, Xcode SHOULD fetch a
+          # fresh profile for the target bundle id — but in practice it
+          # often reuses a cached profile whose bundle id matches a
+          # SIBLING bundle (e.g. com.whoeverwants.app.latest left over
+          # from a canary build) and embeds that into the .app's
+          # embedded.mobileprovision. ASC then rejects with
+          #   `Validation failed (409) ... bundle identifier cannot be
+          #    changed from the current value, '<sibling-bundle>'`
+          # because the embedded profile's bundle id disagrees with the
+          # IPA's Info.plist. Nuking the cache before each build forces
+          # ASC fetch via `-allowProvisioningUpdates`, restoring profile-
+          # to-bundle-id consistency. Cost: a few seconds per build for
+          # the fetch round-trip.
+          DIRS=(
+            "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+            "$HOME/Library/MobileDevice/Provisioning Profiles"
+          )
+          for d in "${DIRS[@]}"; do
+            if [[ -d "$d" ]]; then
+              # List first for the build log, then delete contents.
+              echo "Clearing: $d"
+              ls -1 "$d" || true
+              find "$d" -mindepth 1 -delete
+            fi
+          done
+          echo "Provisioning profile cache cleared."
+
       - name: Archive
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
