@@ -37,6 +37,27 @@ export async function apiGetMyUserProfile(): Promise<UserProfile> {
   };
 }
 
+/** Recency-ordered poll categories the current browser (+ linked devices)
+ *  has created — `group` scoped to the passed group route id, `general`
+ *  across all groups. Drives the category bubble bar ordering on group
+ *  pages. Pass the current `<body data-group-id>` (the group uuid) as
+ *  `groupRouteId`; omit it on the empty `/g/` placeholder. */
+export interface PollCategoryHistory {
+  group: string[];
+  general: string[];
+}
+
+export async function apiGetPollCategoryHistory(
+  groupRouteId?: string | null,
+): Promise<PollCategoryHistory> {
+  const qs = groupRouteId ? `?group=${encodeURIComponent(groupRouteId)}` : '';
+  const data = await userFetch<any>(`/me/poll-category-history${qs}`);
+  return {
+    group: Array.isArray(data.group) ? (data.group as string[]) : [],
+    general: Array.isArray(data.general) ? (data.general as string[]) : [],
+  };
+}
+
 export async function apiUploadMyUserImage(imageBlob: Blob): Promise<UserProfile> {
   const mimeType = imageBlob.type || 'image/jpeg';
   const arrayBuffer = await imageBlob.arrayBuffer();

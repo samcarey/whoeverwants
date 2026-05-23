@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   apiCreatePoll,
   apiFindDuplicateQuestion,
+  apiGetPollCategoryHistory,
   CreateQuestionParams,
 } from "@/lib/api";
 import type { Poll, OptionsMetadata, Question } from "@/lib/types";
@@ -80,6 +81,49 @@ const SINGLE_LINE_INPUT_HEIGHT = 42;
 const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
 ];
+
+// Per-app-start random fallback order for category bubbles the user has
+// never created a poll for. Computed ONCE at module load (a fresh page
+// load / app cold-start reshuffles) so the order is stable across
+// re-renders within a session but varies between sessions, per the
+// spec's "random order generated each time the app is started". Module
+// scope is browser-only here (the file is `"use client"` + lazy-loaded),
+// so `Math.random()` never runs during SSR.
+const SESSION_BUBBLE_FALLBACK_ORDER: string[] = (() => {
+  const values = BUBBLE_ENTRIES.map((e) => e.value);
+  for (let i = values.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [values[i], values[j]] = [values[j], values[i]];
+  }
+  return values;
+})();
+
+// Order the category bubbles by: (1) categories the user created polls
+// for most recently in THIS group, (2) most recently in general, then
+// (3) the per-session random fallback for everything not yet seen. Only
+// the built-in category set (BUBBLE_ENTRIES) is ordered — the leading
+// bold "New Poll" catch-all is pinned separately at the row start, and
+// any custom-text categories in the history simply don't match a bubble.
+function orderBubbleEntries(
+  entries: typeof BUBBLE_ENTRIES,
+  groupRecency: string[],
+  generalRecency: string[],
+): typeof BUBBLE_ENTRIES {
+  const byValue = new Map(entries.map((e) => [e.value, e]));
+  const ordered: typeof BUBBLE_ENTRIES = [];
+  const seen = new Set<string>();
+  const take = (value: string) => {
+    const entry = byValue.get(value);
+    if (entry && !seen.has(value)) {
+      ordered.push(entry);
+      seen.add(value);
+    }
+  };
+  groupRecency.forEach(take);
+  generalRecency.forEach(take);
+  SESSION_BUBBLE_FALLBACK_ORDER.forEach(take);
+  return ordered;
+}
 
 // Each bubble is a rounded rectangle: icon pinned to the top, title
 // word-wrapped below and vertically centered in the leftover space.
@@ -832,6 +876,54 @@ export function CreateQuestionContent() {
     return () => observer.disconnect();
   }, []);
 
+  // Track the current group (the group page sets `<body data-group-id>`)
+  // so the category bubble bar can fetch + apply that group's recency
+  // ordering. CreateQuestionContent is persistent across navigation, so
+  // we observe the attribute rather than reading it once. Cleared to null
+  // on the empty `/g/` placeholder (group page removes the attribute).
+  const [currentGroupId, setCurrentGroupId] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => {
+      const value = document.body.getAttribute(GROUP_ID_ATTR);
+      setCurrentGroupId((prev) => (prev === value ? prev : value));
+    };
+    const observer = new MutationObserver(read);
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: [GROUP_ID_ATTR],
+    });
+    read();
+    return () => observer.disconnect();
+  }, []);
+
+  // Recency ordering for the category bubbles. `categoryRefreshTick` is
+  // bumped after a successful create so the just-used category floats to
+  // the front without a navigation. Failures leave the previous order
+  // intact (the bar must always render).
+  const [bubbleRecency, setBubbleRecency] = useState<{ group: string[]; general: string[] }>({
+    group: [],
+    general: [],
+  });
+  const [categoryRefreshTick, setCategoryRefreshTick] = useState(0);
+  useEffect(() => {
+    let ignore = false;
+    apiGetPollCategoryHistory(currentGroupId)
+      .then((history) => {
+        if (!ignore) setBubbleRecency(history);
+      })
+      .catch(() => {
+        /* keep prior order — bubble bar must always render */
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [currentGroupId, categoryRefreshTick]);
+
+  const orderedBubbleEntries = useMemo(
+    () => orderBubbleEntries(BUBBLE_ENTRIES, bubbleRecency.group, bubbleRecency.general),
+    [bubbleRecency],
+  );
+
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {
     if (typeof window === 'undefined') {
@@ -1388,6 +1480,11 @@ export function CreateQuestionContent() {
         }),
       );
 
+      // The server just recorded this poll's categories — refetch the
+      // recency ordering so the bubble bar reflects the new most-recent
+      // category on the next render.
+      setCategoryRefreshTick((t) => t + 1);
+
       if (onEmptyGroup) {
         // Land on the real group URL with the new poll expanded. The cache is
         // hot from the just-completed POLL_HYDRATED so re-mount is instant.
@@ -1648,7 +1745,7 @@ export function CreateQuestionContent() {
             <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>New Poll</span>
           </span>
         </button>
-        {BUBBLE_ENTRIES.map((entry) => (
+        {orderedBubbleEntries.map((entry) => (
           <button
             key={entry.value}
             type="button"
