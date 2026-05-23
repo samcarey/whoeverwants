@@ -90,3 +90,47 @@ class MainViewController: CAPBridgeViewController {
         view.backgroundColor = .systemBackground
     }
 }
+
+// Custom Capacitor plugin: peek at a copied web URL WITHOUT triggering iOS's
+// "Pasted from <app>" banner. `Clipboard.read()` (UIPasteboard.general.string)
+// forces that banner on every read, before JS can inspect the content. iOS 16's
+// pasteboard *detection* API (`detectValues`) is privacy-preserving: it returns
+// the matched URL silently, so JS can check the domain and only surface our own
+// "open link?" modal for actual whoeverwants links. On iOS < 16 detectValues is
+// unavailable, so we report `supported: false` and JS skips the auto-check
+// entirely rather than fall back to a banner-triggering read.
+//
+// Colocated in AppDelegate.swift for the same reason MainViewController is:
+// a new .swift file means hand-patching project.pbxproj in the headless CI
+// build. Capacitor auto-discovers CAPBridgedPlugin conformers at runtime, so
+// no project.pbxproj or cap-config change is needed beyond compiling this class.
+@objc(ClipboardUrlPlugin)
+public class ClipboardUrlPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "ClipboardUrlPlugin"
+    public let jsName = "ClipboardUrl"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "detectUrl", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc func detectUrl(_ call: CAPPluginCall) {
+        if #available(iOS 16.0, *) {
+            UIPasteboard.general.detectValues(for: [.probableWebURL]) { result in
+                var resolved: String? = nil
+                if case .success(let values) = result {
+                    if let url = values[.probableWebURL] as? URL {
+                        resolved = url.absoluteString
+                    } else if let str = values[.probableWebURL] as? String {
+                        resolved = str
+                    }
+                }
+                if let urlString = resolved {
+                    call.resolve(["supported": true, "url": urlString])
+                } else {
+                    call.resolve(["supported": true])
+                }
+            }
+        } else {
+            call.resolve(["supported": false])
+        }
+    }
+}

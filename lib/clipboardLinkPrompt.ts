@@ -1,15 +1,23 @@
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { pathFromUniversalLinkUrl } from "@/lib/universalLinks";
 import { normalizePath } from "@/lib/questionId";
 
-interface ClipboardReadResult {
-  value?: string;
-  type?: string;
+interface ClipboardUrlDetectResult {
+  // false on iOS < 16, where silent detection (detectValues) is unavailable.
+  supported: boolean;
+  // The copied web URL, when one is present on the pasteboard.
+  url?: string;
 }
 
-interface ClipboardPlugin {
-  read: () => Promise<ClipboardReadResult>;
+interface ClipboardUrlPlugin {
+  detectUrl: () => Promise<ClipboardUrlDetectResult>;
 }
+
+// Native plugin defined in ios/App/App/AppDelegate.swift (ClipboardUrlPlugin).
+// Reads a copied web URL via UIPasteboard's iOS 16 detection API WITHOUT the
+// "Pasted from <app>" banner — unlike @capacitor/clipboard's read(), which
+// triggers the banner on every call regardless of clipboard content.
+const ClipboardUrl = registerPlugin<ClipboardUrlPlugin>("ClipboardUrl");
 
 interface AppStateChangeEvent {
   isActive?: boolean;
@@ -55,31 +63,31 @@ export async function installClipboardLinkPrompt(
   // (StrictMode dev double-invoke) can't both pass the guard.
   installed = true;
 
-  const [appModule, clipboardModule] = await Promise.all([
-    import("@capacitor/app").catch(() => null),
-    import("@capacitor/clipboard").catch(() => null),
-  ]);
+  const appModule = await import("@capacitor/app").catch(() => null);
   const App = (appModule as unknown as { App?: AppPlugin } | null)?.App;
-  const Clipboard = (clipboardModule as unknown as { Clipboard?: ClipboardPlugin } | null)?.Clipboard;
-  if (!App || !Clipboard) {
+  if (!App) {
     installed = false;
     return null;
   }
 
   const checkClipboard = async () => {
     // Rapid foreground/background cycles can dispatch overlapping checks
-    // — coalesce so we only fire one iOS paste banner + one modal.
+    // — coalesce so we only fire at most one modal per activation.
     if (checking) return;
     checking = true;
     try {
-      let result: ClipboardReadResult;
+      let detect: ClipboardUrlDetectResult;
       try {
-        result = await Clipboard.read();
+        detect = await ClipboardUrl.detectUrl();
       } catch {
-        // Empty / denied / non-text — silent.
+        // Plugin missing / detection failed — silent.
         return;
       }
-      const raw = result?.value;
+      // iOS < 16: silent detection unavailable. Skip rather than fall back to
+      // a banner-triggering read — a prompt on every launch is the bug we're
+      // fixing, so iOS 15 just loses the copied-link convenience.
+      if (!detect?.supported) return;
+      const raw = detect.url;
       if (!raw || typeof raw !== "string") return;
       if (respondedUrls.has(raw)) return;
       const path = pathFromUniversalLinkUrl(raw);
