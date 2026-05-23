@@ -293,10 +293,23 @@ jobs:
       - name: Compute build number
         id: build_number
         run: |
-          # Use the total number of commits on the current ref for a
-          # monotonically increasing build number. TestFlight rejects
-          # duplicates, so this must never go down.
-          BN=$(git rev-list --count HEAD)
+          # Unix epoch seconds — monotonic, unique per build (sub-second
+          # builds aren't possible in this workflow), forward-proof
+          # forever. The earlier scheme used `git rev-list --count HEAD`,
+          # which is monotonic on a single branch but collides across
+          # branches when prod (main count) lags canary (per-branch count).
+          # The failure mode showed up after a canary build at #861 was
+          # uploaded successfully: every prod build attempt at #859 was
+          # then rejected by ASC with
+          #   `bundle version must be higher than the previously uploaded
+          #    version: '861'`
+          # — apparently `.app` and `.latest` share CFBundleVersion space
+          # at the App Store Connect team level (same Bundle ID Prefix
+          # `com.whoeverwants`). Switching to `date +%s` sidesteps the
+          # whole class of cross-bundle / cross-branch counter collisions
+          # because no two workflow runs ever share the same epoch second.
+          # Apple accepts up to 18 chars; current 10-digit epoch fits.
+          BN=$(date +%s)
           echo "build_number=$BN" >> "$GITHUB_OUTPUT"
           echo "Using CFBundleVersion=$BN"
 
