@@ -24,7 +24,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import QuestionDetails from "@/components/QuestionDetails";
 import SearchRadiusBubble from "@/components/SearchRadiusBubble";
 import { loadQuestionDraft, saveQuestionDraft, clearQuestionDraft, QuestionDraft } from "@/lib/ballotDraft";
-import { formatDurationLabel, isVoterAvailableForSlot } from "@/lib/timeUtils";
+import { isVoterAvailableForSlot } from "@/lib/timeUtils";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { hasVotedOnQuestion, getStoredVoteId, setStoredVoteId, setVotedQuestionFlag } from "@/lib/votedQuestionsStorage";
 import { buildVoteData, buildPollVoteItem, type BallotInputs } from "./QuestionBallot/voteDataBuilders";
@@ -153,21 +153,19 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   // Options the user saw when they last voted — used to detect newly added suggestions
   const [seenQuestionOptions, setSeenQuestionOptions] = useState<string[]>([]);
 
-  // Suggestion phase helpers: a ranked_choice question with suggestion_deadline or suggestion_deadline_minutes
-  // has an optional suggestion collection phase before ranking begins.
-  // When suggestion_deadline_minutes is set but suggestion_deadline is null, the timer hasn't started yet
-  // (waiting for first suggestion). This is still considered "in suggestion phase".
+  // Suggestion phase helpers: a ranked_choice question with a prephase
+  // deadline has a suggestion collection phase before ranking begins. The
+  // countdown starts at poll creation (no deferral), so the question is in its
+  // suggestion phase iff the deadline is set and hasn't passed.
   // Phase 5b: prephase_deadline lives on the poll wrapper (was
   // questions.suggestion_deadline). Local naming sticks with "suggestion" since
   // the rest of this component already uses that vocabulary.
   const wrapperSuggestionDeadline = poll.prephase_deadline ?? null;
   const hasSuggestionPhase = question.question_type === 'ranked_choice' && !!(wrapperSuggestionDeadline || question.suggestion_deadline_minutes);
   const effectiveSuggestionDeadline = suggestionDeadlineOverride || wrapperSuggestionDeadline;
-  const suggestionTimerStarted = !!effectiveSuggestionDeadline;
-  const inSuggestionPhase = hasSuggestionPhase && (
-    !suggestionTimerStarted // Timer hasn't started yet (waiting for first suggestion)
-    || (currentTime ? currentTime < new Date(effectiveSuggestionDeadline!) : true)
-  );
+  const inSuggestionPhase = hasSuggestionPhase
+    && !!effectiveSuggestionDeadline
+    && (currentTime ? currentTime < new Date(effectiveSuggestionDeadline) : true);
   const canSubmitSuggestions = hasSuggestionPhase && inSuggestionPhase;
   // Migration 098: allow_pre_ranking lives on the poll wrapper now.
   const canSubmitRankings = question.question_type === 'ranked_choice' && (
@@ -175,11 +173,10 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   );
 
   // Time question phase helpers: availability phase while options haven't been generated yet.
-  // This is the WRAPPER-level concept (drives deferred-deadline arming, summary labels,
-  // result winner caveats). The active-form gating uses `isAvailabilitySubmission` below,
-  // which diverges from this once a voter has submitted availability under pre-ranking.
+  // This is the WRAPPER-level concept (drives summary labels, result winner caveats). The
+  // active-form gating uses `isAvailabilitySubmission` below, which diverges from this once
+  // a voter has submitted availability under pre-ranking.
   const inAvailabilityPhase = question.question_type === 'time' && (!optionsOverride?.length) && (!question.options || question.options.length === 0);
-  const availabilityTimerStarted = !!(suggestionDeadlineOverride || wrapperSuggestionDeadline);
   // Pre-ranking flow for time questions: once the voter has submitted availability
   // and the server has surfaced tentative slots, advance the UI from the availability
   // input form to the preferences bubble UI even though the cutoff hasn't passed.
@@ -950,19 +947,8 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
 
       window.dispatchEvent(new CustomEvent(QUESTION_VOTES_CHANGED_EVENT, { detail: { questionId: question.id } }));
 
-      // Start deferred availability deadline on first time question availability submission
-      if (question.question_type === 'time' && inAvailabilityPhase && !availabilityTimerStarted && question.suggestion_deadline_minutes && !isEditingVote) {
-        const newDeadline = new Date(Date.now() + question.suggestion_deadline_minutes * 60 * 1000);
-        setSuggestionDeadlineOverride(newDeadline.toISOString());
-      }
-
       // Refresh suggestion list for questions with suggestion phase
       if (hasSuggestionPhase) {
-        // If this is the first suggestion on a deferred-deadline question, start the timer
-        if (!suggestionTimerStarted && question.suggestion_deadline_minutes && !isEditingVote) {
-          const newDeadline = new Date(Date.now() + question.suggestion_deadline_minutes * 60 * 1000);
-          setSuggestionDeadlineOverride(newDeadline.toISOString());
-        }
         // Reset abstain so the ranking ballot is usable after suggestion submission
         // (abstaining from suggestions shouldn't block ranking)
         if (isAbstaining && canSubmitRankings) {
@@ -1081,8 +1067,6 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     const capturedIsAbstaining = effectiveIsAbstaining;
     const capturedIsEditing = isEditing;
     const capturedQuestionOptions = questionOptions;
-    const capturedSuggestionTimerStarted = suggestionTimerStarted;
-    const capturedAvailabilityTimerStarted = availabilityTimerStarted;
 
     // commit handles QuestionBallot-internal state only. The wrapper-level
     // confirmPollSubmit owns shared cross-question work — votedQuestions /
@@ -1106,15 +1090,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
       if (!capturedIsEditing) {
         setHasQuestionDataState(true);
       }
-      if (question.question_type === 'time' && inAvailabilityPhase && !capturedAvailabilityTimerStarted && question.suggestion_deadline_minutes && !capturedIsEditing) {
-        const newDeadline = new Date(Date.now() + question.suggestion_deadline_minutes * 60 * 1000);
-        setSuggestionDeadlineOverride(newDeadline.toISOString());
-      }
       if (hasSuggestionPhase) {
-        if (!capturedSuggestionTimerStarted && question.suggestion_deadline_minutes && !capturedIsEditing) {
-          const newDeadline = new Date(Date.now() + question.suggestion_deadline_minutes * 60 * 1000);
-          setSuggestionDeadlineOverride(newDeadline.toISOString());
-        }
         if (capturedIsAbstaining && canSubmitRankings) {
           setIsAbstaining(false);
         }
@@ -1252,51 +1228,6 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
           </div>
         )}
 
-        {/* Question status card — only renders deferred-deadline notices. Closed
-             states (max-capacity, manual, expired) are surfaced in the
-             long-press modal so the card body stays focused on results. */}
-        {(() => {
-          const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
-          const now = currentTime || new Date();
-          const isExpired = deadline && deadline <= now;
-
-          // Case 1 (max_capacity), 2 (manual close), 3 (expired + closed) all
-          // render nothing here — the modal owns those labels now.
-
-          // Case 4: Question open, not expired. Live countdown is rendered
-          // above the card in the group view; only deferred-deadline
-          // notices render here, since they convey run-duration info
-          // ("X minutes after first submission") that the above-card
-          // "Taking Suggestions" label doesn't surface.
-          if (!isQuestionClosed && !isExpired && deadline) {
-            const mins = question.suggestion_deadline_minutes;
-            const isDeferredAvailability =
-              question.question_type === 'time' &&
-              inAvailabilityPhase &&
-              !suggestionDeadlineOverride &&
-              !wrapperSuggestionDeadline &&
-              mins;
-            if (isDeferredAvailability) {
-              return (
-                <div className="mb-3 text-center">
-                  <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                    {`Availability cutoff ${formatDurationLabel(mins!)} after first response`}
-                  </span>
-                </div>
-              );
-            }
-            return null;
-          }
-
-          // Case 5: Timer expired but question is still open - don't show a card
-          if (!isQuestionClosed && isExpired) {
-            return null;
-          }
-          
-          // No deadline set
-          return null;
-        })()}
-        
         {/* Preliminary results shown ABOVE ballot when user has already voted (hidden during suggestion phase) */}
         {/* For suggestion-phase questions, only show after user has submitted rankings, not just suggestions */}
         {hasVoted && !isEditingVote && !inSuggestionPhase && hasCompletedRanking && preliminaryResultsBlock("")}

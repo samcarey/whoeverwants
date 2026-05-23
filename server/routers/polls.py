@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
@@ -241,6 +241,21 @@ def _insert_poll(
         req.group_title,
         creator_user_id=creator_user_id,
     )
+    # The prephase (suggestion / availability) countdown starts at creation —
+    # there is no deferral to the first submission. A preset duration
+    # (`prephase_deadline_minutes`) is resolved to an absolute deadline right
+    # now; a custom absolute `prephase_deadline` passes through unchanged.
+    # Capped to just before the voting deadline so the prephase can't outlast
+    # voting.
+    prephase_deadline = req.prephase_deadline
+    if req.prephase_deadline_minutes:
+        prephase_deadline = now + timedelta(minutes=req.prephase_deadline_minutes)
+        if req.response_deadline:
+            response_dt = datetime.fromisoformat(
+                req.response_deadline.replace("Z", "+00:00")
+            )
+            if prephase_deadline >= response_dt:
+                prephase_deadline = response_dt - timedelta(minutes=1)
     row = conn.execute(
         """
         INSERT INTO polls (
@@ -265,12 +280,7 @@ def _insert_poll(
             "creator_secret": req.creator_secret,
             "creator_name": req.creator_name,
             "response_deadline": req.response_deadline,
-            # Defer the absolute deadline when *_minutes is set — mirrors the
-            # legacy suggestion_deadline split (see CLAUDE.md "Deferred
-            # Suggestion Deadline").
-            "prephase_deadline": (
-                None if req.prephase_deadline_minutes else req.prephase_deadline
-            ),
+            "prephase_deadline": prephase_deadline,
             "prephase_deadline_minutes": req.prephase_deadline_minutes,
             "context": req.context,
             "details": req.details,
@@ -687,14 +697,11 @@ def cutoff_poll_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
     with get_db() as conn:
         wrapper = _authorize_poll(conn, poll_id, req.creator_secret)
 
-        # Phase 5: prephase_deadline is wrapper-level. Validate that there's a
-        # phase to cut off (deadline in the future or minutes-deferred), and
-        # that at least one ranked_choice question has a suggestion submitted.
+        # Phase 5: prephase_deadline is wrapper-level. Validate that there's an
+        # open suggestion phase (deadline in the future), and that at least one
+        # ranked_choice question has a suggestion submitted.
         deadline = wrapper.get("prephase_deadline")
-        minutes = wrapper.get("prephase_deadline_minutes")
-        in_phase = (deadline is not None and deadline > now) or (
-            deadline is None and minutes is not None
-        )
+        in_phase = deadline is not None and deadline > now
         rc_questions = conn.execute(
             """SELECT p.id
                  FROM questions p
@@ -854,10 +861,7 @@ def cutoff_poll_availability(poll_id: str, req: CutoffSuggestionsRequest):
     with get_db() as conn:
         wrapper = _authorize_poll(conn, poll_id, req.creator_secret)
         deadline = wrapper.get("prephase_deadline")
-        minutes = wrapper.get("prephase_deadline_minutes")
-        in_phase = (deadline is not None and deadline > now) or (
-            deadline is None and minutes is not None
-        )
+        in_phase = deadline is not None and deadline > now
         time_questions = conn.execute(
             """SELECT p.id
                  FROM questions p

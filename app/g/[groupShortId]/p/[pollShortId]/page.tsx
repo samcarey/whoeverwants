@@ -487,13 +487,6 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     if (inSuggestions && wrapperPrephaseDeadline) {
       return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Suggestions" />;
     }
-    if (inSuggestions && anchor.suggestion_deadline_minutes) {
-      return (
-        <span className="font-semibold text-blue-600 dark:text-blue-400">
-          Taking Suggestions
-        </span>
-      );
-    }
     if (inTimeAvailability) {
       if (wrapperPrephaseDeadline) {
         return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" />;

@@ -8,7 +8,7 @@ imports.
 """
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
@@ -305,11 +305,8 @@ def _enforce_suggestion_phase_timing(question: dict, suggestions, ranked_choices
     suggestion-phase cutoff. Raises HTTPException(400) on violation. Returns
     `has_suggestion_phase` for downstream use by `validate_vote()`.
     """
-    has_suggestion_phase = (
-        question.get("suggestion_deadline") is not None
-        or question.get("suggestion_deadline_minutes") is not None
-    )
-    if has_suggestion_phase and question.get("suggestion_deadline"):
+    has_suggestion_phase = question.get("suggestion_deadline") is not None
+    if has_suggestion_phase:
         in_suggestion_phase = datetime.now(timezone.utc) < question["suggestion_deadline"]
 
         # Reject new suggestions after cutoff
@@ -333,10 +330,9 @@ def _submit_vote_to_question(conn, question_id: str, req: SubmitVoteRequest, now
     `submit_vote` endpoint and the poll batch-vote endpoint. Returns the
     inserted row. Raises HTTPException on validation failures."""
     question = conn.execute(
-        """SELECT p.id, p.question_type, p.poll_id, p.suggestion_deadline_minutes,
+        """SELECT p.id, p.question_type, p.poll_id,
                   mp.allow_pre_ranking,
-                  mp.is_closed, mp.prephase_deadline AS suggestion_deadline,
-                  mp.response_deadline
+                  mp.is_closed, mp.prephase_deadline AS suggestion_deadline
              FROM questions p
              LEFT JOIN polls mp ON p.poll_id = mp.id
             WHERE p.id = %(question_id)s""",
@@ -346,32 +342,6 @@ def _submit_vote_to_question(conn, question_id: str, req: SubmitVoteRequest, now
         raise HTTPException(status_code=404, detail="Question not found")
     if question["is_closed"]:
         raise HTTPException(status_code=400, detail="Question is closed")
-
-    has_deferred_deadline = (
-        question.get("suggestion_deadline_minutes")
-        and not question.get("suggestion_deadline")
-        and (
-            req.suggestions
-            or (question["question_type"] == "time" and req.voter_day_time_windows)
-        )
-    )
-    if has_deferred_deadline:
-        new_deadline = now + timedelta(minutes=question["suggestion_deadline_minutes"])
-        if question.get("response_deadline"):
-            response_dt = question["response_deadline"]
-            if not response_dt.tzinfo:
-                response_dt = response_dt.replace(tzinfo=timezone.utc)
-            if new_deadline >= response_dt:
-                new_deadline = response_dt - timedelta(minutes=1)
-        # Phase 5: write to the poll wrapper's prephase_deadline
-        # (formerly `questions.suggestion_deadline`).
-        if question.get("poll_id"):
-            conn.execute(
-                "UPDATE polls SET prephase_deadline = %(deadline)s, updated_at = %(now)s WHERE id = %(mp_id)s",
-                {"deadline": new_deadline, "now": now, "mp_id": str(question["poll_id"])},
-            )
-        question = dict(question)
-        question["suggestion_deadline"] = new_deadline
 
     has_suggestion_phase = _enforce_suggestion_phase_timing(
         question, req.suggestions, req.ranked_choices
@@ -455,7 +425,7 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
         raise HTTPException(status_code=404, detail="Vote not found")
 
     question = conn.execute(
-        """SELECT p.question_type, p.suggestion_deadline_minutes,
+        """SELECT p.question_type,
                   mp.allow_pre_ranking,
                   mp.is_closed, mp.prephase_deadline AS suggestion_deadline
              FROM questions p
@@ -469,7 +439,7 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
     has_suggestion_phase = _enforce_suggestion_phase_timing(
         question, req.suggestions, req.ranked_choices
     )
-    if has_suggestion_phase and question.get("suggestion_deadline"):
+    if has_suggestion_phase:
         in_suggestion_phase = datetime.now(timezone.utc) < question["suggestion_deadline"]
 
         if in_suggestion_phase and req.suggestions is not None:
