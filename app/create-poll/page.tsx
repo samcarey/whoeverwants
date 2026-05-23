@@ -785,9 +785,14 @@ export function CreateQuestionContent() {
   useEffect(() => {
     const justOpened = isModalOpen && !prevModalOpenRef.current;
     prevModalOpenRef.current = isModalOpen;
+    console.warn('[autofocus-debug] effect run', { isModalOpen, category, justOpened });
     if (!justOpened || category !== 'yes_no') return;
-    const id = requestAnimationFrame(() => titleInputRef.current?.focus());
-    return () => cancelAnimationFrame(id);
+    const id = requestAnimationFrame(() => {
+      console.warn('[autofocus-debug] rAF firing focus, ref=', !!titleInputRef.current);
+      titleInputRef.current?.focus();
+      console.warn('[autofocus-debug] after focus active=', document.activeElement?.id, document.activeElement?.tagName);
+    });
+    return () => { console.warn('[autofocus-debug] cleanup cancel'); cancelAnimationFrame(id); };
   }, [isModalOpen, category]);
 
   // Read showDiscardConfirm via a ref inside the Escape handler so toggling
