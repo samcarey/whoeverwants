@@ -81,11 +81,51 @@ const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
 ];
 
-// Shared classes for every chip in the bubble bar. Module-scope so the
-// string isn't re-allocated per render (same precedent as BUBBLE_ENTRIES
-// and THEME_OPTIONS — see CLAUDE.md on hoisting static template strings).
+// Each bubble is a rounded rectangle: icon pinned to the top, title
+// word-wrapped below and vertically centered in the leftover space.
+// `width: min-content` shrinks the rectangle to the longest word in
+// its label (multi-word labels like "Yes / No" / "Video Game" wrap
+// by spaces, never breaking a word mid-character); `minWidth` floors
+// it at 1.75× the icon size so short labels still feel like buttons.
+// Fixed `height` keeps every rectangle the same vertical size — the
+// title wrapper takes `flex-1` and centers its child vertically, so
+// a 1-line label floats in the middle of the area below the icon
+// while a 3-line label fills it. Height math: py-3 (12+12) + 32px
+// icon + 3 × ~17.5px (text-sm leading-tight) = ~109px content;
+// 112px = ~3px buffer for the line-clamp box's internal padding.
+const BUBBLE_ICON_PX = 32;
+const BUBBLE_MIN_WIDTH_PX = Math.round(BUBBLE_ICON_PX * 1.75);
+const BUBBLE_HEIGHT_PX = 112;
+// `pt-3` only (no `pb-*`): the title wrapper takes `flex-1` and
+// extends all the way to the bottom border, so its `items-center`
+// places equal vertical slack between (icon-bottom → title-top)
+// and (title-bottom → rectangle-bottom). Adding bottom padding
+// would tilt that balance toward the bottom.
 const BUBBLE_BUTTON_CLASS =
-  "shrink-0 flex items-center gap-1.5 px-[13.5px] py-[6.75px] rounded-full bg-blue-100 dark:bg-blue-900/40 text-gray-900 dark:text-white hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
+  "shrink-0 flex flex-col items-center px-2 pt-3 rounded-2xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
+const BUBBLE_BUTTON_STYLE: React.CSSProperties = {
+  width: "min-content",
+  minWidth: `${BUBBLE_MIN_WIDTH_PX}px`,
+  height: `${BUBBLE_HEIGHT_PX}px`,
+};
+const BUBBLE_ICON_STYLE: React.CSSProperties = {
+  fontSize: `${BUBBLE_ICON_PX}px`,
+  lineHeight: 1,
+};
+// `-webkit-line-clamp: 3` (with the matching `display: -webkit-box`
+// + `WebkitBoxOrient: vertical`) caps the title at 3 lines and
+// truncates with an ellipsis past that. `wordBreak: normal` +
+// `overflowWrap: normal` keeps words intact so they wrap by spaces;
+// `min-content` sizing on the parent guarantees the longest word
+// always fits on its own line.
+const BUBBLE_TITLE_STYLE: React.CSSProperties = {
+  display: "-webkit-box",
+  WebkitLineClamp: 3,
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+  wordBreak: "normal",
+  overflowWrap: "normal",
+};
 
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
@@ -1580,16 +1620,33 @@ export function CreateQuestionContent() {
   // reads as the primary "create a new poll" affordance.
   const bubbleBar = (
     <div className="py-2">
-      <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide px-3">
+      <div className="flex items-stretch gap-2 overflow-x-auto scrollbar-hide px-3">
         <button
           type="button"
           onClick={() => handleBubbleClick('custom')}
           disabled={isLoading}
           className={`${BUBBLE_BUTTON_CLASS} font-bold`}
+          style={BUBBLE_BUTTON_STYLE}
           aria-label="Create a new poll"
         >
-          <span className="text-[22.4px] leading-none" aria-hidden>+</span>
-          <span className="leading-none">New</span>
+          {/* SVG plus sized to match the emoji footprint (~32px tall,
+              wider than a text "+" glyph which only occupies ~18px of
+              its em-box). strokeWidth chosen to roughly match the
+              visual weight of the emoji glyphs. */}
+          <svg
+            aria-hidden
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={3}
+            strokeLinecap="round"
+            style={{ width: `${BUBBLE_ICON_PX}px`, height: `${BUBBLE_ICON_PX}px` }}
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          <span className="flex-1 w-full flex items-center justify-center min-h-0">
+            <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>New Poll</span>
+          </span>
         </button>
         {BUBBLE_ENTRIES.map((entry) => (
           <button
@@ -1598,12 +1655,15 @@ export function CreateQuestionContent() {
             onClick={() => handleBubbleClick(entry.value)}
             disabled={isLoading}
             className={BUBBLE_BUTTON_CLASS}
+            style={BUBBLE_BUTTON_STYLE}
             aria-label={`Add ${entry.label} question`}
           >
             {entry.icon && (
-              <span className="text-base leading-none" aria-hidden>{entry.icon}</span>
+              <span style={BUBBLE_ICON_STYLE} aria-hidden>{entry.icon}</span>
             )}
-            <span>{entry.label}</span>
+            <span className="flex-1 w-full flex items-center justify-center min-h-0">
+              <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>{entry.label}</span>
+            </span>
           </button>
         ))}
       </div>
