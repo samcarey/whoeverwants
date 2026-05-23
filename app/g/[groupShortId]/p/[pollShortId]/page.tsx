@@ -617,11 +617,29 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           zIndex: 1,
           background: "var(--background)",
           minHeight: "100dvh",
+          // Negative horizontal margins cancel the template/overlay wrapper's
+          // `px-4` (1rem) PLUS the outer `paddingLeft/Right: max(0.35rem,
+          // env(safe-area-inset-*))` so the swipeWrapper's
+          // `background: var(--background)` paints all the way to the screen
+          // edge — matching the full-width fixed header above it. Without
+          // this, a swipe-back exposes the GroupBackdropHost (z=0, full
+          // viewport) through the ~16px inset strips just below the header.
+          // The inner content div re-applies the same inset via padding so
+          // the cards don't move. Mirrors GroupContent's swipeWrapper margin
+          // (which only cancels the safe-area inset, since group routes have
+          // no px-4). On desktop the 1rem pull stays inside the centered
+          // max-w-4xl bounds.
+          marginLeft: "calc(-1rem - max(0.35rem, env(safe-area-inset-left, 0px)))",
+          marginRight: "calc(-1rem - max(0.35rem, env(safe-area-inset-right, 0px)))",
         }}
       >
       <div
         style={{
           paddingTop: `calc(${headerHeight}px + 1.5rem)`,
+          // Re-apply the inset the swipeWrapper's negative margins removed so
+          // the content sits exactly where the template padding would place it.
+          paddingLeft: "calc(1rem + max(0.35rem, env(safe-area-inset-left, 0px)))",
+          paddingRight: "calc(1rem + max(0.35rem, env(safe-area-inset-right, 0px)))",
           transform: overlayCardsOffset
             ? `translate3d(0, ${-overlayCardsOffset}px, 0)`
             : undefined,
