@@ -439,7 +439,7 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
     has_suggestion_phase = _enforce_suggestion_phase_timing(
         question, req.suggestions, req.ranked_choices
     )
-    if has_suggestion_phase and question.get("suggestion_deadline"):
+    if has_suggestion_phase:
         in_suggestion_phase = datetime.now(timezone.utc) < question["suggestion_deadline"]
 
         if in_suggestion_phase and req.suggestions is not None:
