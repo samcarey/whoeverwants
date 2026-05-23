@@ -11,13 +11,33 @@ export interface UserLocation extends Coords {
   label: string; // City/zip for display, e.g. "San Francisco, CA" or "90210"
 }
 
-export function saveUserName(name: string) {
+/**
+ * Write the name to this browser's localStorage only — no account sync.
+ * Used by the auth layer to mirror an account name down on sign-in without
+ * echoing the same value straight back up to the account.
+ */
+export function saveUserNameLocalOnly(name: string) {
   if (typeof window === 'undefined') return;
   if (name.trim()) {
     localStorage.setItem(USER_NAME_KEY, name.trim());
   } else {
     localStorage.removeItem(USER_NAME_KEY);
   }
+}
+
+export function saveUserName(name: string) {
+  if (typeof window === 'undefined') return;
+  saveUserNameLocalOnly(name);
+  // When signed in, the name is tied to the account: mirror every change up
+  // so it follows the user across devices. Best-effort + deduped in the auth
+  // layer (no-op when signed out or when the account already has this value).
+  // Lazy import keeps the network layer out of this low-level module's static
+  // graph and off the SSR path (the window guard above already returned).
+  void import('@/lib/api/auth')
+    .then((m) => m.pushLocalNameToAccount(name.trim()))
+    .catch(() => {
+      // Best-effort: local storage remains the source of truth this session.
+    });
 }
 
 export function getUserName(): string | null {

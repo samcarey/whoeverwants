@@ -1181,6 +1181,47 @@ manual sign-out tap).
 side. `apiGetMe()` returns null + clears local state on 401 to keep
 the UI honest when the server says the session is gone.
 
+**Account-tied display name (migration 118).** The per-browser local
+display name (`lib/userProfile.ts`, localStorage `whoeverwants_user_name`)
+is mirrored to an account-level `users.display_name` once signed in, so
+it follows the user across devices. Wiring:
+- Server: `users.display_name` (nullable); `name` on `UserSummary` (so it
+  rides every sign-in response + `/api/auth/me`); `POST /api/auth/me/name`
+  (`{name: str|null}`, signed-in-only, validated by the shared
+  `validate_user_name`; null/empty/whitespace clears it).
+  `services.auth.update_user_display_name` is the writer.
+- `SessionUser.name` (`lib/session.ts`, optional so pre-118 cached
+  profiles deserialize).
+- **`saveUserName` is the single FE chokepoint**: after writing localStorage
+  it lazily imports `lib/api/auth` and calls `pushLocalNameToAccount` (no-op
+  when signed out / when the account already has that value). So every
+  name-entry surface (settings Save, `NameRequiredModal`, vote/create name
+  saves) propagates to the account without each callsite knowing about
+  accounts. `saveUserNameLocalOnly` is the no-account-sync variant the auth
+  layer uses to mirror account→local without echoing back.
+- **`persistSignIn` (`lib/api/auth.ts`)** is the shared reconcile funnel for
+  EVERY sign-in path (magic link, OAuth, both passkey paths — replaced the 4
+  bare `saveSession` calls): account has a name → mirror it to local BEFORE
+  `saveSession` (so SESSION_CHANGED listeners read it); account has none →
+  seed it from the local name.
+- **Settings page reflects sign-in live.** On a `user_id` transition
+  (`prevUserIdRef`), the account name authoritatively overwrites the name
+  field (even over an unsaved edit); if the account has no name but the field
+  does, the field value is tied to the account. Incidental same-user
+  SESSION_CHANGED events use the gentle, edit-preserving path. Without the
+  transition gate the field only updated when "clean", so signing into a
+  named account required a manual refresh.
+- **Pitfall: the settings name field only persists to localStorage on
+  *Save*.** So "type a name, then create a passkey account" left the account
+  nameless — `persistSignIn`'s seed read `getUserName()` = null. The
+  settings-page tie (field value → account on a sign-in transition) is the
+  backstop for that flow; the seed alone isn't enough for typed-but-unsaved
+  names. The auth layer can't see the React field state, so this MUST live in
+  the settings component.
+- **Don't reconcile on `apiGetMe`.** It's a passive refresh, not a sign-in;
+  overwriting local on every `/me` would surprise and isn't required.
+  Cross-device name changes surface on the next real sign-in instead.
+
 **Cross-device sign-in.** Magic link clicked on Device B issues a
 session for Device B (uses the verify request's browser_id, NOT the
 one stored on the magic_link_tokens row from the request). The stored

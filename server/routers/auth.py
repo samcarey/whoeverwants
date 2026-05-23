@@ -56,8 +56,10 @@ from services.auth import (
     peek_recovery_email_token,
     revoke_session,
     unlink_browser,
+    update_user_display_name,
     user_has_email_identity,
 )
+from services.validation import validate_user_name
 from services.email import email_configured, send_magic_link, send_recovery_email
 from services.oauth import (
     OAuthVerificationError,
@@ -111,6 +113,9 @@ class UserSummary(BaseModel):
     email: str | None
     providers: list[str]
     created_at: datetime
+    # Account-tied display name. Mirrored down to the FE's local profile on
+    # sign-in; pushed back up via POST /me/name when changed while signed in.
+    name: str | None = None
 
 
 class SessionResponse(BaseModel):
@@ -258,6 +263,7 @@ def _signin_response(completed: CompletedSignIn) -> SessionResponse:
             email=completed.profile.email,
             providers=completed.profile.providers,
             created_at=completed.profile.created_at,
+            name=completed.profile.display_name,
         ),
     )
 
@@ -435,6 +441,45 @@ def get_me(request: Request):
         email=profile.email,
         providers=profile.providers,
         created_at=profile.created_at,
+        name=profile.display_name,
+    )
+
+
+class UpdateNameBody(BaseModel):
+    # Nullable / optional: a null or empty value clears the account name.
+    name: str | None = None
+
+
+@router.post("/me/name", response_model=UserSummary)
+def update_my_name(req: UpdateNameBody, request: Request):
+    """Set or clear the signed-in user's account-tied display name.
+
+    The name is the source of truth once signed in: the FE mirrors it down
+    to local storage on sign-in and calls this whenever the user changes
+    their name while signed in. A null / empty / whitespace-only value
+    clears it. Non-empty values run through the shared `validate_user_name`
+    (same length + control-char rules as poll creator/voter names) so a
+    bypassed FE can't store a garbage name."""
+    user_id = _require_signed_in(request)
+    raw = req.name
+    if raw is not None and raw.strip():
+        display_name: str | None = validate_user_name(raw, field="name")
+    else:
+        display_name = None
+    with get_db() as conn:
+        update_user_display_name(conn, user_id=user_id, display_name=display_name)
+        profile = load_user_profile(conn, user_id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account no longer exists",
+        )
+    return UserSummary(
+        user_id=profile.user_id,
+        email=profile.email,
+        providers=profile.providers,
+        created_at=profile.created_at,
+        name=profile.display_name,
     )
 
 

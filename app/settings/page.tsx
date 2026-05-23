@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getUserName, saveUserName, clearUserName, getUserLocation, saveUserLocation, clearUserLocation, type UserLocation } from "@/lib/userProfile";
+import { isValidUserName } from "@/lib/nameValidation";
 import {
   apiGeocode,
   apiGetMyUserProfile,
@@ -144,16 +145,66 @@ export default function SettingsPage() {
   const [passkeyDeletePending, setPasskeyDeletePending] = useState<string | null>(null);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
+  // Refs mirror the latest field state so the SESSION_CHANGED handler can
+  // read them without re-subscribing (and re-running) on every keystroke.
+  const nameRef = useRef(name);
+  const initialNameRef = useRef(initialName);
+  useEffect(() => { nameRef.current = name; }, [name]);
+  useEffect(() => { initialNameRef.current = initialName; }, [initialName]);
+  // Tracks the last-seen signed-in user so we can detect an actual sign-in
+  // (or account switch) vs. an incidental session event for the same user.
+  const prevUserIdRef = useRef<string | null>(null);
+
   // Subscribe to session changes so sign-in (from the modal) and
   // sign-out (from this page or anywhere else) flip the displayed state
   // without a route navigation. Also runs once on mount to seed from
   // the localStorage-cached profile (the useState init above is null
   // for SSR parity).
+  //
+  // On an actual sign-in (the user_id changed to a new account):
+  //   - account HAS a name → it's authoritative: overwrite the field with it
+  //     (even over an unsaved edit — that edit belonged to the prior context).
+  //   - account has NO name but a name is entered here → tie it to the account
+  //     (covers "enter a name, then create a passkey account", where the typed
+  //     value may never have hit localStorage, so the sign-in seed read null).
+  // Otherwise (same user / sign-out) just reflect localStorage, without
+  // clobbering an in-progress unsaved edit.
   useEffect(() => {
-    setCurrentUser(getCurrentUser());
-    const handler = () => setCurrentUser(getCurrentUser());
-    window.addEventListener(SESSION_CHANGED_EVENT, handler);
-    return () => window.removeEventListener(SESSION_CHANGED_EVENT, handler);
+    const sync = () => {
+      const user = getCurrentUser();
+      setCurrentUser(user);
+      const userId = user?.user_id ?? null;
+      const justSignedIn = userId !== null && userId !== prevUserIdRef.current;
+      prevUserIdRef.current = userId;
+
+      const localName = getUserName() ?? "";
+      const fieldName = nameRef.current.trim();
+      const accountName = user?.name?.trim() || "";
+
+      if (justSignedIn && accountName) {
+        // saveUserName mirrors it to localStorage too (no-op if already there).
+        saveUserName(accountName);
+        setName(accountName);
+        setInitialName(accountName);
+        return;
+      }
+      if (justSignedIn && fieldName && isValidUserName(fieldName)) {
+        // saveUserName persists locally AND (signed in) pushes to the account.
+        saveUserName(fieldName);
+        setName(fieldName);
+        setInitialName(fieldName);
+        return;
+      }
+
+      const dirty = nameRef.current !== initialNameRef.current;
+      if (!dirty && nameRef.current !== localName) {
+        setName(localName);
+        setInitialName(localName);
+      }
+    };
+    sync();
+    window.addEventListener(SESSION_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, sync);
   }, []);
 
   // Refresh from the server on mount — catches server-side revocation
