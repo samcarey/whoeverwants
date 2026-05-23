@@ -1629,7 +1629,21 @@ export function CreateQuestionContent() {
           style={BUBBLE_BUTTON_STYLE}
           aria-label="Create a new poll"
         >
-          <span style={BUBBLE_ICON_STYLE} aria-hidden>+</span>
+          {/* SVG plus sized to match the emoji footprint (~32px tall,
+              wider than a text "+" glyph which only occupies ~18px of
+              its em-box). strokeWidth chosen to roughly match the
+              visual weight of the emoji glyphs. */}
+          <svg
+            aria-hidden
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={3}
+            strokeLinecap="round"
+            style={{ width: `${BUBBLE_ICON_PX}px`, height: `${BUBBLE_ICON_PX}px` }}
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
           <span className="flex-1 w-full flex items-center justify-center min-h-0">
             <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>New Poll</span>
           </span>
