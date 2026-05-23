@@ -231,13 +231,47 @@ export function CreateQuestionContent() {
   // children to a later commit than the open — an effect would fire while the
   // input is still null and never re-run.
   const shouldFocusTitleRef = useRef(false);
+  // Throwaway off-screen input used to keep the iOS soft keyboard open while
+  // the real title input mounts (see primeKeyboard).
+  const keyboardPrimerRef = useRef<HTMLInputElement | null>(null);
+  const removeKeyboardPrimer = useCallback(() => {
+    const el = keyboardPrimerRef.current;
+    if (el) {
+      keyboardPrimerRef.current = null;
+      el.remove();
+    }
+  }, []);
+  // iOS WebKit only raises the soft keyboard when focus() runs synchronously
+  // inside the tap that triggered it. The title input mounts asynchronously
+  // (state update + <ModalPortal>'s deferred mount), so focusing it from the
+  // callback ref happens after the user-activation window closes — the caret
+  // lands but the keyboard stays down. Synchronously focusing a throwaway
+  // off-screen input during the tap claims the keyboard; once the real input
+  // mounts, setTitleInputRef transfers focus to it and iOS keeps the keyboard
+  // up across the move. Must be called within the tap handler's call stack.
+  const primeKeyboard = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    removeKeyboardPrimer();
+    const tmp = document.createElement('input');
+    tmp.type = 'text';
+    tmp.setAttribute('aria-hidden', 'true');
+    tmp.tabIndex = -1;
+    // 16px font-size avoids iOS focus-zoom; opacity 0 + 1px keeps it invisible.
+    tmp.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px;border:0;padding:0;margin:0;background:transparent;';
+    document.body.appendChild(tmp);
+    tmp.focus({ preventScroll: true });
+    keyboardPrimerRef.current = tmp;
+    // Safety net in case the real input never claims focus.
+    window.setTimeout(removeKeyboardPrimer, 1500);
+  }, [removeKeyboardPrimer]);
   const setTitleInputRef = useCallback((node: HTMLInputElement | null) => {
     titleInputRef.current = node;
     if (node && shouldFocusTitleRef.current) {
       shouldFocusTitleRef.current = false;
-      node.focus();
+      node.focus({ preventScroll: true });
+      removeKeyboardPrimer();
     }
-  }, []);
+  }, [removeKeyboardPrimer]);
 
   const [suggestionCutoff, setSuggestionCutoff] = useState("0.5x");
   const [customSuggestionDate, setCustomSuggestionDate] = useState('');
@@ -779,9 +813,12 @@ export function CreateQuestionContent() {
     setError(null);
     // For yes/no the title IS the question prompt, so focus it once the input
     // mounts (see setTitleInputRef). Other categories auto-generate the title.
+    // Prime the iOS keyboard synchronously here (still inside the tap) so it
+    // survives the async mount of the real input.
     shouldFocusTitleRef.current = cat === 'yes_no';
+    if (cat === 'yes_no') primeKeyboard();
     setIsModalOpen(true);
-  }, [applyDraftToState, drafts]);
+  }, [applyDraftToState, drafts, primeKeyboard]);
 
   const handleBubbleClick = useCallback((cat: string) => {
     if (!isValidUserName(getUserName())) {
