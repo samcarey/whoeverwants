@@ -122,9 +122,6 @@ function orderBubbleEntries(
   groupRecency.forEach(take);
   generalRecency.forEach(take);
   SESSION_BUBBLE_FALLBACK_ORDER.forEach(take);
-  // Defensive: any entry the fallback order somehow missed (e.g. a new
-  // built-in added without reshuffle) lands at the end in declared order.
-  entries.forEach((e) => take(e.value));
   return ordered;
 }
 
