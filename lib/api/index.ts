@@ -63,6 +63,7 @@ export type {
 
 export {
   apiGetMyUserProfile,
+  apiGetPollCategoryHistory,
   apiUploadMyUserImage,
   apiDeleteMyUserImage,
   buildUserImageUrl,
@@ -72,7 +73,7 @@ export {
   getMyUserImageUrl,
   USER_PROFILE_CHANGED_EVENT,
 } from "./users";
-export type { UserProfile } from "./users";
+export type { UserProfile, PollCategoryHistory } from "./users";
 
 export {
   apiSearchLocations,

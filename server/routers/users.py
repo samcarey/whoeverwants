@@ -30,7 +30,9 @@ from pydantic import BaseModel
 
 from database import get_db
 from middleware import browser_id_from_request as _browser_id
-from services.groups import require_uuid
+from middleware import user_id_from_request as _user_id
+from services.groups import require_uuid, resolve_group_id_from_route_id
+from services.poll_categories import load_category_recency
 
 
 class UserImageRequest(BaseModel):
@@ -61,6 +63,19 @@ class UserProfileResponse(BaseModel):
 
     browser_id: str
     image_updated_at: str | None = None
+
+
+class PollCategoryHistoryResponse(BaseModel):
+    """Returned by `GET /api/users/me/poll-category-history`.
+
+    Two recency-ordered (most-recent-first) category lists for the caller:
+    `group` is scoped to the `?group=` route id (empty when absent /
+    nothing created there yet); `general` spans every group. The FE orders
+    the category bubble bar by group recency, then general recency, then a
+    per-app-start random fallback for categories absent from both lists."""
+
+    group: list[str]
+    general: list[str]
 
 
 # Mirrors `MAX_IMAGE_BYTES` in routers/groups.py. 5 MiB is well above the
@@ -97,6 +112,32 @@ def get_my_profile(request: Request):
         browser_id=browser_id,
         image_updated_at=image_updated_at.isoformat() if image_updated_at else None,
     )
+
+
+@router.get("/me/poll-category-history", response_model=PollCategoryHistoryResponse)
+def get_my_poll_category_history(request: Request, group: str | None = None):
+    """Recency-ordered poll categories the caller has created.
+
+    Drives the group page's category bubble bar ordering. `group` is the
+    `/g/<routeId>` route id of the current group (resolved against the
+    same four forms as the other group endpoints); omit it on the empty
+    `/g/` placeholder. Identity is implicit (browser_id + signed-in
+    user_id from middleware), so the union spans every linked device.
+
+    Tolerant by design: an anonymous request, an unresolvable group, or a
+    user with no history all return empty lists rather than erroring — the
+    bubble bar must always render in *some* order.
+    """
+    browser_id = _browser_id(request)
+    user_id = _user_id(request)
+    if not browser_id and not user_id:
+        return PollCategoryHistoryResponse(group=[], general=[])
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, group) if group else None
+        recency = load_category_recency(
+            conn, browser_id, user_id=user_id, group_id=group_id
+        )
+    return PollCategoryHistoryResponse(group=recency.group, general=recency.general)
 
 
 @router.post("/me/image", response_model=UserImageResponse)

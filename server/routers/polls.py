@@ -29,6 +29,7 @@ from models import (
 )
 from services.groups import require_uuid
 from services.memberships import join_group, join_group_for_poll
+from services.poll_categories import record_poll_categories
 from services.push import fan_out_new_poll
 from services.validation import validate_user_name
 from services.questions import (
@@ -505,6 +506,17 @@ def create_poll(
     # Phase C.2: creator auto-joins the group. Runs after the create
     # commits — root polls' group_id only exists post-`_insert_poll`.
     join_group(group_id, creator_browser_id)
+
+    # Record which categories this browser created a poll for, so the
+    # group page's category bubble bar can order by recency (in-group +
+    # general). `_category_for_title` normalizes a time question's stored
+    # category ("custom") back to "time" so the recorded value matches
+    # the bubble the user tapped. Decoupled own-transaction write.
+    record_poll_categories(
+        creator_browser_id,
+        group_id,
+        [_category_for_title(qr) for qr in question_rows],
+    )
 
     # Fan-out "new poll" push notifications to other group members whose
     # preference is on (default ON, missing-row-is-on). Decoupled from
