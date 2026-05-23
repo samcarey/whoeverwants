@@ -123,6 +123,13 @@ async function fetchWithBase<T>(base: string, path: string, options?: RequestIni
     throw new ApiError(res.status, detail);
   }
 
+  // 204 No Content (sign-out, delete-passkey, delete-account) has an
+  // empty body — calling res.json() on it throws "Unexpected end of JSON
+  // input". Return undefined for void callers instead.
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
   return res.json();
 }
 

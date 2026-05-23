@@ -15,6 +15,9 @@
 `GET  /api/auth/providers`                      list which sign-in methods are wired up
 `GET  /api/auth/me`                              resolve current session → user profile
 `POST /api/auth/sign-out`                        revoke current session, unlink browser
+`POST /api/auth/recovery-email/request`         Phase I: send "confirm recovery email" link
+`POST /api/auth/recovery-email/verify`          Phase I: attach the confirmed email identity
+`DELETE /api/auth/me`                            Phase I: delete the signed-in account
 
 Identity resolution for the current request is done by
 `IdentityMiddleware` in `server/middleware.py` (sets
@@ -40,17 +43,22 @@ from middleware import (
 )
 from services.auth import (
     CompletedSignIn,
+    attach_email_identity,
     complete_sign_in,
     consume_magic_link,
+    consume_recovery_email_token,
+    delete_user_account,
     email_throttled,
     is_valid_email,
     issue_magic_link,
     load_user_profile,
     normalize_email,
+    peek_recovery_email_token,
     revoke_session,
     unlink_browser,
+    user_has_email_identity,
 )
-from services.email import email_configured, send_magic_link
+from services.email import email_configured, send_magic_link, send_recovery_email
 from services.oauth import (
     OAuthVerificationError,
     apple_configured,
@@ -440,6 +448,153 @@ def sign_out(request: Request):
         if token:
             revoke_session(conn, token)
         unlink_browser(conn, browser_id=browser_id)
+
+
+# ---------------------------------------------------------------------------
+# Account management — Phase I
+# ---------------------------------------------------------------------------
+#
+# Recovery email: attach an email-provider identity to an account that
+# lacks one (passkey-only, or OAuth-only). Two steps mirroring magic-link
+# sign-in — request (mints a user_id-tagged token + sends the link) and
+# verify (binds the email after confirming BOTH email control via the
+# token AND account control via the session). See
+# docs/auth-access-model.md → "Adding a recovery email".
+#
+# Account deletion: a single DELETE that cascades through every
+# users(id) FK (declared with the right ON DELETE action in migrations
+# 112–117). The browser keeps its group memberships + poll creator
+# secrets and reverts to anonymous.
+
+
+class RecoveryEmailRequestBody(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+
+class RecoveryEmailRequestResponse(BaseModel):
+    """Same shape as the magic-link request response. `accepted` is
+    always True for valid input (no per-step leak about whether the
+    address is already taken — that's surfaced at verify). `email_configured`
+    lets the FE warn on dev tiers that the link only appears in API logs."""
+
+    accepted: bool
+    email_configured: bool
+
+
+class RecoveryEmailVerifyBody(BaseModel):
+    token: str = Field(min_length=8, max_length=128)
+
+
+@router.post(
+    "/recovery-email/request",
+    response_model=RecoveryEmailRequestResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def request_recovery_email(req: RecoveryEmailRequestBody, request: Request):
+    """Send a "confirm your recovery email" link to `email`, tagged with
+    the current user_id. Signed-in only.
+
+    Rejects (400) when the account already has an email identity — this
+    feature ADDS an email to an account that lacks one; adding a second
+    email is out of scope (docs → "Out of scope for v1"). Throttling and
+    "email belongs to someone else" do NOT 4xx here — the former returns
+    a generic accepted, the latter is caught at verify so we don't leak
+    which addresses are registered."""
+    user_id = _require_signed_in(request)
+
+    if not is_valid_email(req.email):
+        raise HTTPException(status_code=400, detail="Invalid email address")
+
+    email = normalize_email(req.email)
+    browser_id = _browser_id(request)
+    fe_origin = _resolve_fe_origin(request)
+
+    with get_db() as conn:
+        if user_has_email_identity(conn, user_id):
+            raise HTTPException(
+                status_code=400,
+                detail="This account already has an email address.",
+            )
+        if email_throttled(conn, email):
+            log.info("Recovery-email request throttled for %s", email)
+            return RecoveryEmailRequestResponse(
+                accepted=True, email_configured=email_configured()
+            )
+        issued = issue_magic_link(
+            conn, email=email, browser_id=browser_id, user_id=user_id
+        )
+
+    verify_url = f"{fe_origin}/auth/recovery-email?token={issued.token}"
+    ok = send_recovery_email(to_email=email, verify_url=verify_url)
+    if not ok:
+        log.error("Recovery-email send failed for %s", email)
+
+    return RecoveryEmailRequestResponse(
+        accepted=True, email_configured=email_configured()
+    )
+
+
+@router.post("/recovery-email/verify", response_model=UserSummary)
+def verify_recovery_email(req: RecoveryEmailVerifyBody, request: Request):
+    """Confirm a recovery-email link and bind the email to the account.
+
+    Requires BOTH proofs at once (option (a) in the doc):
+      * email control — possession of the token sent to that address;
+      * account control — a signed-in session whose user_id matches the
+        token's user_id (403 otherwise, so a stranger who received a
+        mistyped link can't attach it to the requester's account).
+
+    The token is PEEKED (not consumed) until both checks pass, so a
+    wrong-device click or an already-taken email leaves it usable for a
+    correct retry within its 15-minute TTL. No new session is issued —
+    the user was already signed in to confirm.
+    """
+    user_id = _require_signed_in(request)
+    with get_db() as conn:
+        peeked = peek_recovery_email_token(conn, req.token)
+        if not peeked:
+            raise HTTPException(
+                status_code=400, detail="Invalid or expired link"
+            )
+        if peeked.user_id != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "This link belongs to a different account. Open it on "
+                    "the device where you're signed in to that account."
+                ),
+            )
+        result = attach_email_identity(conn, user_id=user_id, email=peeked.email)
+        if result == "conflict":
+            raise HTTPException(
+                status_code=409,
+                detail="That email is already used by another account.",
+            )
+        # Both checks passed (attached OR already_linked) → burn the token.
+        consume_recovery_email_token(conn, req.token)
+        profile = load_user_profile(conn, user_id)
+    if not profile:
+        raise HTTPException(status_code=401, detail="Account no longer exists")
+    return UserSummary(
+        user_id=profile.user_id,
+        email=profile.email,
+        providers=profile.providers,
+        created_at=profile.created_at,
+    )
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(request: Request):
+    """Delete the signed-in user's account. Cascades through every
+    users(id) FK (sessions, identities, browser links, passkeys, this
+    user's join requests + invites; groups they created keep working
+    with creator_user_id NULL). The caller's browser reverts to
+    anonymous — group memberships (browser-keyed) and poll creator
+    secrets survive, so previously-created polls remain manageable from
+    this browser."""
+    user_id = _require_signed_in(request)
+    with get_db() as conn:
+        delete_user_account(conn, user_id)
 
 
 # ---------------------------------------------------------------------------
