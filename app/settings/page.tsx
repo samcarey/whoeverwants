@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getUserName, saveUserName, clearUserName, getUserLocation, saveUserLocation, clearUserLocation, type UserLocation } from "@/lib/userProfile";
+import { isValidUserName } from "@/lib/nameValidation";
 import {
   apiGeocode,
   apiGetMyUserProfile,
@@ -161,10 +162,29 @@ export default function SettingsPage() {
   // auth layer (persistSignIn). Reflect that in the name field too — unless
   // the user has an unsaved edit in progress (field dirty), in which case the
   // edit wins.
+  //
+  // Conversely, if the user typed a name here and THEN created an account
+  // (the common "enter a name, then sign in / create a passkey" flow), the
+  // account has no name yet AND the typed value may never have been written
+  // to localStorage (the field only persists on Save) — so the sign-in seed
+  // had nothing to read. Tie the field's value to the account here so it
+  // follows the user to other devices.
   useEffect(() => {
     const sync = () => {
-      setCurrentUser(getCurrentUser());
+      const user = getCurrentUser();
+      setCurrentUser(user);
       const localName = getUserName() ?? "";
+      const fieldName = nameRef.current.trim();
+      const accountHasName = !!(user?.name && user.name.trim());
+
+      if (user && !accountHasName && fieldName && isValidUserName(fieldName)) {
+        // saveUserName persists locally AND (signed in) pushes to the account.
+        saveUserName(fieldName);
+        setName(fieldName);
+        setInitialName(fieldName);
+        return;
+      }
+
       const dirty = nameRef.current !== initialNameRef.current;
       if (!dirty && nameRef.current !== localName) {
         setName(localName);
