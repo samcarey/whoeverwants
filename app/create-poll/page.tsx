@@ -775,6 +775,21 @@ export function CreateQuestionContent() {
     openModalFor(cat);
   }, [openModalFor]);
 
+  // Auto-focus the title input when the create form first opens for a yes/no
+  // poll. The title IS the question prompt for yes/no (the only category whose
+  // title is user-typed rather than auto-generated), so the user opened the
+  // modal specifically to type it — focusing lets them start immediately.
+  // Gated on the closed→open transition so switching category mid-edit doesn't
+  // steal focus. rAF defers past the slide-up mount so the input exists.
+  const prevModalOpenRef = useRef(false);
+  useEffect(() => {
+    const justOpened = isModalOpen && !prevModalOpenRef.current;
+    prevModalOpenRef.current = isModalOpen;
+    if (!justOpened || category !== 'yes_no') return;
+    const id = requestAnimationFrame(() => titleInputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [isModalOpen, category]);
+
   // Read showDiscardConfirm via a ref inside the Escape handler so toggling
   // the inner confirm dialog doesn't tear down + rebuild the body-position
   // lock on every open/close.
