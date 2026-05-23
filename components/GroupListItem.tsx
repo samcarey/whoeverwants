@@ -8,7 +8,6 @@ import { relativeTime } from "@/lib/questionListUtils";
 import type { DeadlineKind } from "@/lib/groupUtils";
 
 const PENDING_DOT: Partial<Record<DeadlineKind, { label: string; bg: string }>> = {
-  'prephase-pending':  { label: 'Suggestions open',       bg: 'bg-blue-500 dark:bg-blue-400' },
   'response-pending':  { label: 'Awaiting your response', bg: 'bg-green-500 dark:bg-green-400' },
 };
 
@@ -38,8 +37,8 @@ export interface GroupListItemProps {
   soonestUnvotedDeadline?: string | null;
   /** Drives the left column's display: 'response' → green compact countdown,
    *  'prephase' → blue compact countdown (suggestion / availability timer
-   *  is ticking), 'prephase-pending' → solid blue circle (suggestions open
-   *  but timer hasn't started). undefined → empty slot. */
+   *  is ticking), 'response-pending' → solid green circle (unvoted work but
+   *  no deadline set anywhere). undefined → empty slot. */
   unvotedDeadlineKind?: DeadlineKind;
   hasUnvoted?: boolean;
   pressed?: boolean;

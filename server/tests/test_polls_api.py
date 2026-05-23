@@ -6,6 +6,7 @@ either the local Docker Compose db or the test database on the dev droplet.
 
 import os
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -255,6 +256,64 @@ class TestCreatePoll:
         )
         assert resp.status_code == 400
         assert "before" in resp.json()["detail"].lower()
+
+
+class TestPrephaseStartsAtCreation:
+    """The suggestion / availability countdown starts at poll creation — it is
+    no longer deferred until the first submission."""
+
+    def _suggestion_poll(self, client, creator_secret, **poll_overrides) -> dict:
+        body = {
+            "creator_secret": creator_secret,
+            "creator_name": "Test User",
+            "prephase_deadline_minutes": 120,
+            "questions": [
+                {
+                    "question_type": "ranked_choice",
+                    "category": "restaurant",
+                    "suggestion_deadline_minutes": 120,
+                }
+            ],
+        }
+        body.update(poll_overrides)
+        resp = client.post("/api/polls", json=body)
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    def _parse(self, iso: str) -> datetime:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00"))
+
+    def test_prephase_deadline_armed_at_creation(self, client, creator_secret):
+        data = self._suggestion_poll(client, creator_secret)
+        assert data["prephase_deadline"] is not None
+        delta = self._parse(data["prephase_deadline"]) - datetime.now(timezone.utc)
+        # ~120 minutes out, generous tolerance for clock + test latency.
+        assert timedelta(minutes=118) < delta < timedelta(minutes=122)
+
+    def test_prephase_deadline_capped_below_response_deadline(self, client, creator_secret):
+        response_deadline = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
+        data = self._suggestion_poll(client, creator_secret, response_deadline=response_deadline)
+        assert self._parse(data["prephase_deadline"]) < self._parse(response_deadline)
+
+    def test_submitting_a_suggestion_does_not_rearm_deadline(self, client, creator_secret):
+        data = self._suggestion_poll(client, creator_secret)
+        original = data["prephase_deadline"]
+        resp = client.post(
+            f"/api/polls/{data['id']}/votes",
+            json={
+                "voter_name": "Bob",
+                "items": [
+                    {
+                        "question_id": data["questions"][0]["id"],
+                        "vote_type": "ranked_choice",
+                        "suggestions": ["Tacos"],
+                    }
+                ],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        after = client.get(f"/api/polls/by-id/{data['id']}").json()
+        assert after["prephase_deadline"] == original
 
 
 class TestReadPoll:

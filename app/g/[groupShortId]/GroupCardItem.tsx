@@ -242,13 +242,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     if (inSuggestionPhase && wrapperPrephaseDeadline) {
       return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Suggestions" wide />;
     }
-    if (inSuggestionPhase && question.suggestion_deadline_minutes) {
-      return (
-        <span className="font-semibold text-blue-600 dark:text-blue-400">
-          Taking Suggestions
-        </span>
-      );
-    }
     if (inTimeAvailability) {
       if (wrapperPrephaseDeadline) {
         return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" wide />;

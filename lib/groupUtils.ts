@@ -89,9 +89,9 @@ export function findChainRoot(polls: Poll[]): Poll | null {
 
 /** State of a group's leading unvoted-poll cutoff, driving the home-list
  *  compact countdown column's color + style. See `Group.unvotedDeadlineKind`.
- *  `*-pending` variants render as a solid colored dot when no concrete
+ *  `response-pending` renders as a solid colored dot when no concrete
  *  deadline exists but the viewer still has un-actioned work. */
-export type DeadlineKind = 'prephase' | 'response' | 'prephase-pending' | 'response-pending';
+export type DeadlineKind = 'prephase' | 'response' | 'response-pending';
 
 export interface Group {
   /** ID of the root question (first question of the chain's earliest poll).
@@ -140,19 +140,14 @@ export interface Group {
    *     winning deadline → blue compact countdown.
    *   - `'response'`: the voting deadline is the winning deadline → green
    *     compact countdown.
-   *   - `'prephase-pending'`: no concrete deadline yet, but at least one
-   *     unvoted poll is in a deferred prephase (suggestion / availability
-   *     timer not started — fires on first response) → solid blue circle,
-   *     no countdown.
    *   - `'response-pending'`: viewer has unvoted polls but NO deadline is
-   *     set anywhere AND nothing surfaced as `prephase-pending` → solid
-   *     green circle. Without this, the right edge would render blank when
-   *     there's still work to do.
+   *     set anywhere → solid green circle. Without this, the right edge
+   *     would render blank when there's still work to do.
    *   - `undefined`: nothing to show (no unvoted polls at all).
    *  Within one poll, an active prephase always wins over response_deadline
    *  (we don't surface a voting deadline while suggestions are still being
    *  collected); across polls, the soonest deadline wins regardless of kind.
-   *  Pending variants only surface as fallbacks when no concrete deadline won. */
+   *  `response-pending` only surfaces as a fallback when no concrete deadline won. */
   unvotedDeadlineKind?: DeadlineKind;
   /** Pre-computed ms timestamp of latest poll created_at for sorting,
    *  or the group's `created_at` for empty groups. */
@@ -307,7 +302,6 @@ function buildGroupFromPolls(
   let unvotedCount = 0;
   let soonestUnvotedDeadline: string | undefined;
   let unvotedDeadlineKind: DeadlineKind | undefined;
-  let anyPendingPrephase = false;
 
   for (const mp of polls) {
     if (!isPollOpen(mp, now)) continue;
@@ -320,10 +314,6 @@ function buildGroupFromPolls(
     // Per-poll state: an active prephase deadline ALWAYS wins over the
     // voting deadline within the same poll — we don't surface the voting
     // deadline while suggestions / availability are still being collected.
-    // Deferred prephases (`prephase_deadline_minutes` set, `prephase_deadline`
-    // null) contribute no countdown of their own; they flag `anyPendingPrephase`
-    // so the home list can show a solid blue circle when no other poll in
-    // the group has a concrete deadline.
     let pollDeadline: string | undefined;
     let pollKind: 'prephase' | 'response' | undefined;
     if (mp.prephase_deadline && new Date(mp.prephase_deadline) > now) {
@@ -332,9 +322,6 @@ function buildGroupFromPolls(
     } else if (mp.response_deadline) {
       pollDeadline = mp.response_deadline;
       pollKind = 'response';
-    }
-    if (!mp.prephase_deadline && mp.prephase_deadline_minutes) {
-      anyPendingPrephase = true;
     }
 
     if (pollDeadline && pollKind) {
@@ -345,14 +332,9 @@ function buildGroupFromPolls(
     }
   }
 
-  // Pending prephase indicator only surfaces when no concrete deadline won.
-  if (!unvotedDeadlineKind && anyPendingPrephase) {
-    unvotedDeadlineKind = 'prephase-pending';
-  }
-  // Awaiting-response indicator: viewer has un-actioned voting work, no
-  // concrete deadline anywhere AND nothing surfaced by prephase-pending.
-  // Renders as a solid green dot so the right edge is never blank when
-  // there's something to do.
+  // Awaiting-response indicator: viewer has un-actioned voting work but NO
+  // concrete deadline anywhere. Renders as a solid green dot so the right
+  // edge is never blank when there's something to do.
   if (!unvotedDeadlineKind && unvotedCount > 0) {
     unvotedDeadlineKind = 'response-pending';
   }

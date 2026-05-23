@@ -1342,11 +1342,18 @@ export function CreateQuestionContent() {
       // Resolve the poll-level prephase cutoff once. Used both for the wrapper
       // field and for each draft that has a prephase (suggestion mode + time).
       const prephaseMinutes = pollHasPrephase ? getSuggestionCutoffMinutes() : null;
-      // Custom prephase deadline (absolute, not deferred): bypass minutes.
+      // Custom prephase deadline (absolute): bypass minutes.
       let prephaseDeadlineIso: string | null = null;
       if (pollHasPrephase && suggestionCutoff === 'custom' && customSuggestionDate && customSuggestionTime) {
         prephaseDeadlineIso = new Date(`${customSuggestionDate}T${customSuggestionTime}`).toISOString();
       }
+      // The prephase countdown starts at creation. Mirror the server's
+      // _insert_poll resolution (minutes → now + minutes) so the optimistic
+      // placeholder card shows the countdown right away.
+      const effectivePrephaseDeadlineIso = prephaseDeadlineIso
+        ?? (prephaseMinutes != null
+          ? new Date(Date.now() + Math.round(prephaseMinutes) * 60 * 1000).toISOString()
+          : null);
 
       // Wrapper title rule: when there's exactly one staged question and the
       // user typed its title (yes_no questions, where the prompt IS the
@@ -1413,6 +1420,7 @@ export function CreateQuestionContent() {
         groupId: effectiveGroupId ?? null,
         creatorName: creatorName.trim() || null,
         details: details.trim() || null,
+        prephaseDeadline: effectivePrephaseDeadlineIso,
       });
 
       // For new-root submissions on /g/ (the empty placeholder), the

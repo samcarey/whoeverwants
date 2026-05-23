@@ -99,16 +99,15 @@ export function compactDurationSince(dateStr: string): string {
 
 /** Phase 5b: takes the wrapper's `prephase_deadline` (legacy
  *  `suggestion_deadline`) as a separate arg — it lives on the poll, not
- *  the question. Sub-question-local `suggestion_deadline_minutes` (the duration
- *  setting) still drives the "deferred timer not yet started" branch. */
+ *  the question. The countdown starts at poll creation, so a ranked_choice
+ *  question is in its suggestion phase iff the deadline is set and still in
+ *  the future. */
 export function isInSuggestionPhase(
   question: Question,
   suggestionDeadline?: string | null,
 ): boolean {
   if (question.question_type !== 'ranked_choice') return false;
-  if (suggestionDeadline && new Date(suggestionDeadline) > new Date()) return true;
-  if (!suggestionDeadline && question.suggestion_deadline_minutes) return true;
-  return false;
+  return !!suggestionDeadline && new Date(suggestionDeadline) > new Date();
 }
 
 export function isInTimeAvailabilityPhase(question: Question): boolean {

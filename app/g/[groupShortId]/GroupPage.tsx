@@ -1522,14 +1522,11 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   }, []);
 
   // Refetch on vote-change events: when any question's votes change, the
-  // wrapper's voter_names may have shifted, AND `prephase_deadline` may
-  // have flipped from null → real timestamp (the deferred suggestion /
-  // availability timer starts on the first qualifying vote). Refresh
+  // wrapper's voter_names / anonymous_count may have shifted. Refresh
   // affected poll wrappers — cheap because the request is small and
   // cached. Updates flow through patchGroupPolls so the derived map stays
-  // in sync. Without `prephase_deadline` in the patch, the group card's
-  // status row stays stuck on "Taking Suggestions" / "Collecting
-  // Availability" until a manual refresh.
+  // in sync. `prephase_deadline` is carried through too so a concurrent
+  // suggestions/availability cutoff is reflected without a manual refresh.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { questionId?: string } | undefined;

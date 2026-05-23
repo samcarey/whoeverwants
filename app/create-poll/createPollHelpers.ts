@@ -258,7 +258,7 @@ function appendForSuffix(base: string, forField: string): string {
  */
 export function synthesizePlaceholderPoll(
   drafts: QuestionDraft[],
-  args: { wrapperTitle: string | null; responseDeadline: string | null; groupId: string | null; creatorName: string | null; details?: string | null },
+  args: { wrapperTitle: string | null; responseDeadline: string | null; groupId: string | null; creatorName: string | null; details?: string | null; prephaseDeadline?: string | null },
 ): Poll {
   const now = new Date().toISOString();
   const pollId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -298,7 +298,9 @@ export function synthesizePlaceholderPoll(
     creator_secret: null,
     creator_name: args.creatorName,
     response_deadline: args.responseDeadline,
-    prephase_deadline: null,
+    // The prephase countdown starts at creation, so reflect it on the
+    // placeholder immediately rather than waiting for POLL_HYDRATED.
+    prephase_deadline: args.prephaseDeadline ?? null,
     prephase_deadline_minutes: null,
     is_closed: false,
     close_reason: null,
