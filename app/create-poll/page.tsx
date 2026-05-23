@@ -225,6 +225,19 @@ export function CreateQuestionContent() {
   const [isAutoTitle, setIsAutoTitle] = useState(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const loadedTitleRef = useRef<string | null>(null);
+  // Set when the create form opens for a yes/no poll, consumed by the title
+  // input's callback ref the moment it attaches. A flag (not a focus()-in-effect)
+  // is required because the input mounts inside <ModalPortal>, which defers its
+  // children to a later commit than the open — an effect would fire while the
+  // input is still null and never re-run.
+  const shouldFocusTitleRef = useRef(false);
+  const setTitleInputRef = useCallback((node: HTMLInputElement | null) => {
+    titleInputRef.current = node;
+    if (node && shouldFocusTitleRef.current) {
+      shouldFocusTitleRef.current = false;
+      node.focus();
+    }
+  }, []);
 
   const [suggestionCutoff, setSuggestionCutoff] = useState("0.5x");
   const [customSuggestionDate, setCustomSuggestionDate] = useState('');
@@ -764,6 +777,9 @@ export function CreateQuestionContent() {
     applyDraftToState(emptyDraft({ category: cat, forField: inheritedForField }));
     setCreatorName(getUserName() ?? "");
     setError(null);
+    // For yes/no the title IS the question prompt, so focus it once the input
+    // mounts (see setTitleInputRef). Other categories auto-generate the title.
+    shouldFocusTitleRef.current = cat === 'yes_no';
     setIsModalOpen(true);
   }, [applyDraftToState, drafts]);
 
@@ -781,19 +797,6 @@ export function CreateQuestionContent() {
   // modal specifically to type it — focusing lets them start immediately.
   // Gated on the closed→open transition so switching category mid-edit doesn't
   // steal focus. rAF defers past the slide-up mount so the input exists.
-  const prevModalOpenRef = useRef(false);
-  useEffect(() => {
-    const justOpened = isModalOpen && !prevModalOpenRef.current;
-    prevModalOpenRef.current = isModalOpen;
-    console.warn('[autofocus-debug] effect run', { isModalOpen, category, justOpened });
-    if (!justOpened || category !== 'yes_no') return;
-    const id = requestAnimationFrame(() => {
-      console.warn('[autofocus-debug] rAF firing focus, ref=', !!titleInputRef.current);
-      titleInputRef.current?.focus();
-      console.warn('[autofocus-debug] after focus active=', document.activeElement?.id, document.activeElement?.tagName);
-    });
-    return () => { console.warn('[autofocus-debug] cleanup cancel'); cancelAnimationFrame(id); };
-  }, [isModalOpen, category]);
 
   // Read showDiscardConfirm via a ref inside the Escape handler so toggling
   // the inner confirm dialog doesn't tear down + rebuild the body-position
@@ -1528,7 +1531,7 @@ export function CreateQuestionContent() {
       <input
         type="text"
         id="title"
-        ref={titleInputRef}
+        ref={setTitleInputRef}
         value={title}
         onChange={(e) => {
           setTitle(e.target.value);
