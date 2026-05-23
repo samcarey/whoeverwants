@@ -209,16 +209,33 @@ jobs:
           # `xcrun altool --upload-app` can find them — otherwise the
           # upload step fails with "Cannot determine the Apple ID from
           # Bundle ID ... (12)".
+          #
+          # APPLE_ID is the numeric App Store Connect app id, passed to
+          # altool via `--apple-id` at upload time. This is load-bearing:
+          # altool's bundle-id auto-detection does a PREFIX match, so
+          # `com.whoeverwants.app` ambiguously matches `.app`, `.app.latest`,
+          # AND `.app.dev.samcarey`, and altool picks the wrong sibling
+          # (observed: prod uploads routed to the `.latest` app record,
+          # surfacing as `bundle identifier cannot be changed from the
+          # current value, 'com.whoeverwants.app.latest'` + `bundle version
+          # must be higher than '<canary build #>'`). Canary worked by luck
+          # — `.latest` has no sibling extending its prefix. Pinning the
+          # numeric Apple ID removes the ambiguity for both tiers. Look up a
+          # new tier's Apple ID via the ASC API (`GET /v1/apps`) or the app's
+          # ASC URL (`appstoreconnect.apple.com/apps/<APPLE_ID>/...`).
           if [[ "$CAP_ENV" == "prod" ]]; then
             BUNDLE_ID="com.whoeverwants.app"
             DISPLAY_NAME="WhoeverWants"
+            APPLE_ID="6762459339"
           else
             BUNDLE_ID="com.whoeverwants.app.latest"
             DISPLAY_NAME="WhoeverWants Latest"
+            APPLE_ID="6769589158"
           fi
           echo "bundle_id=$BUNDLE_ID"    >> "$GITHUB_OUTPUT"
           echo "display_name=$DISPLAY_NAME" >> "$GITHUB_OUTPUT"
-          echo "Building as $BUNDLE_ID / '$DISPLAY_NAME'"
+          echo "apple_id=$APPLE_ID" >> "$GITHUB_OUTPUT"
+          echo "Building as $BUNDLE_ID / '$DISPLAY_NAME' (Apple ID $APPLE_ID)"
 
       - name: Stamp Info.plist display name
         run: |
@@ -432,9 +449,14 @@ jobs:
           echo "Uploading $IPA to TestFlight..."
           # altool prints errors but sometimes returns 0 when it shouldn't.
           # Tee to a log and grep for UPLOAD FAILED as a belt-and-suspenders.
+          # --apple-id pins the exact App Store Connect app (see the
+          # "Compute bundle identity" step's comment) — without it,
+          # altool's bundle-id prefix auto-detection mis-routes the prod
+          # `.app` IPA to the `.latest` app record.
           xcrun altool --upload-app \
             --type ios \
             --file "$IPA" \
+            --apple-id "${{ steps.bundle.outputs.apple_id }}" \
             --apiKey "${{ steps.apikey.outputs.key_id }}" \
             --apiIssuer "${{ steps.apikey.outputs.issuer_id }}" \
             2>&1 | tee build/altool-upload.log
