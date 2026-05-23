@@ -385,24 +385,6 @@ jobs:
           # from the patched pbxproj. Trade-off: slower archive (~30s →
           # ~2min), acceptable because iOS builds only run on native-file
           # changes / release publishes / push-to-main.
-          #
-          # `CODE_SIGN_IDENTITY="Apple Distribution"` is also load-bearing.
-          # Without it, xcodebuild's automatic signing can pick a
-          # "Team Provisioning Profile" (Development type) even for Release
-          # archives, especially after the profile cache was cleared and
-          # `-allowProvisioningUpdates` re-fetches. The dev-signed IPA then
-          # uploads to App Store Connect and gets rejected with the
-          # cryptic `bundle identifier cannot be changed from the current
-          # value` error — Apple's poorly-worded way of saying "this
-          # binary's signing context doesn't match an App Store record."
-          # Pinning the cert identity to Distribution forces selection of
-          # a Store provisioning profile (dev certs can't sign with Store
-          # profiles), restoring the correct distribution-signing chain.
-          # This appears to be the canary-vs-prod difference: ASC accepted
-          # dev-signed IPAs for `.latest` (perhaps because it was first
-          # uploaded that way and inherited that signing state) but rejects
-          # them for `.app`, hence prod builds were failing while canary
-          # builds succeeded with the same workflow.
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
@@ -416,7 +398,6 @@ jobs:
             DEVELOPMENT_TEAM="$TEAM_ID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             clean archive > build/xcodebuild-archive.log 2>&1 || {
               echo "::error::Archive failed — tail of log:"
               tail -100 build/xcodebuild-archive.log
