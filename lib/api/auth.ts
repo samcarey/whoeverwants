@@ -115,6 +115,55 @@ export async function apiSignOut(): Promise<void> {
   clearSession();
 }
 
+// Phase I: account management — recovery email + delete account.
+
+export interface RecoveryEmailRequestResponse {
+  accepted: boolean;
+  email_configured: boolean;
+}
+
+/** Phase I: send a "confirm your recovery email" link to `email`,
+ *  tagged with the current (signed-in) user. The server gates on the
+ *  account not already having an email identity. Throws `ApiError` on
+ *  401 (not signed in) / 400 (invalid email OR account already has an
+ *  email). */
+export async function apiRequestRecoveryEmail(
+  email: string,
+): Promise<RecoveryEmailRequestResponse> {
+  return authFetch<RecoveryEmailRequestResponse>("/recovery-email/request", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** Phase I: confirm a recovery-email link, binding the email to the
+ *  current account. Returns the refreshed profile (now including the
+ *  'email' provider) and updates the cached session user so every
+ *  surface reflects the new identity. No new session is issued.
+ *
+ *  Throws `ApiError`: 401 (not signed in), 403 (link belongs to a
+ *  different account), 409 (email already used by another account),
+ *  400 (invalid / expired link). The verify page maps these to copy. */
+export async function apiVerifyRecoveryEmail(
+  token: string,
+): Promise<SessionUser> {
+  const user = await authFetch<SessionUser>("/recovery-email/verify", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+  updateCachedSessionUser(user);
+  return user;
+}
+
+/** Phase I: permanently delete the signed-in account. The server
+ *  cascades through every users(id) FK; this browser reverts to
+ *  anonymous (keeping its group memberships + poll creator secrets).
+ *  Clears local session state on success. */
+export async function apiDeleteAccount(): Promise<void> {
+  await authFetch<void>("/me", { method: "DELETE" });
+  clearSession();
+}
+
 /** Synchronous read of the currently-cached signed-in user. Use
  *  `apiGetMe()` to refresh from the server. */
 export function getCurrentUser(): SessionUser | null {

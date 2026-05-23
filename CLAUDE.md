@@ -945,7 +945,7 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Auth & Access Model
 
-> **Phases A + B + C + D + E + F + G shipped.** A+B = identity
+> **Phases A + B + C + D + E + F + G + I shipped.** A+B = identity
 > foundation + magic-link email sign-in (migration 112). C = "Sign in
 > with Apple" + "Sign in with Google" on web, plus native Apple AND
 > native Google Sign In on Capacitor iOS via
@@ -964,7 +964,10 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 > signed-in viewers auto-redeem on landing, anonymous viewers get a
 > sign-in CTA. Phase H (per-vote anonymity) is **retired** — anonymous
 > voting is "leave the voter name blank"; no per-vote on/off toggle is
-> planned. Full plan + rationale in `docs/auth-access-model.md`.
+> planned. I = account management (migration 118) — Settings shows
+> linked sign-in methods, passkey-only / OAuth-only accounts can attach
+> a recovery email, and any account can be deleted. Full plan +
+> rationale in `docs/auth-access-model.md`.
 
 **Cross-browser visibility for signed-in users.** Every read that
 asks "is the caller a member of this group?" must walk
@@ -1314,10 +1317,63 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
 - H: ~~per-vote anonymity~~ **NOT PLANNED.** Voters can already submit
   without a name (existing `voter_name` nullability); no per-vote on/off
   toggle is on the roadmap.
-- I (partial): "claim an anonymous-created group" so legacy
-  creator_user_id can be set after-the-fact, enabling
-  privacy-flip on grandfathered groups.
+- I (account settings — **shipped**): linked-identities display +
+  add-recovery-email + delete-account (migration 118). See "Phase I"
+  below. Still deferred within I: retire `creator_secret`; "claim an
+  anonymous-created group" so legacy creator_user_id can be set
+  after-the-fact, enabling privacy-flip on grandfathered groups.
 - C-follow-up: ~~native Google Sign In on iOS~~ **shipped** (per-bundle iOS client IDs hardcoded in `lib/oauth.ts: GOOGLE_IOS_CLIENT_IDS`; reversed URL scheme stamped into `Info.plist: CFBundleURLTypes` by `ios-build.yml`; uses the same `@capgo/capacitor-social-login` plugin as Apple native).
+
+**Phase I (account management) shipped in migration 118.** Adds a
+nullable `magic_link_tokens.user_id` (ON DELETE CASCADE) that tags a
+magic-link token as a recovery-email-ATTACH token rather than a
+SIGN-IN token. The two flows are kept uncrossed by predicate:
+`consume_magic_link` (sign-in) adds `AND user_id IS NULL`;
+`peek_recovery_email_token` / `consume_recovery_email_token` (attach)
+add `AND user_id IS NOT NULL`. Three new auth endpoints + a delete:
+  * `POST /api/auth/recovery-email/request {email}` — signed-in only
+    (401 anon). Rejects (400) accounts that ALREADY have an 'email'
+    identity (adding a 2nd email is out of scope — recovery email is for
+    passkey-only / OAuth-only accounts that lack one). Mints a
+    user_id-tagged token + sends "confirm recovery email" via
+    `send_recovery_email`. Throttled (reuses `email_throttled`) — a
+    throttled request still returns 202 accepted (no leak).
+  * `POST /api/auth/recovery-email/verify {token}` — requires BOTH
+    proofs: the token (email control) AND a signed-in session whose
+    user_id matches the token's user_id (account control, else 403).
+    The token is PEEKED, not consumed, until both checks pass — a
+    wrong-device click (403) or already-taken email (409) leaves it
+    usable for a correct retry within its TTL. Returns the refreshed
+    `UserSummary` (no new session issued). FE landing page:
+    `app/auth/recovery-email/page.tsx` (distinct from `/auth/verify`).
+  * `DELETE /api/auth/me` — signed-in only. Single
+    `DELETE FROM users WHERE id=...`; every users(id) FK declared in
+    migrations 112–117 CASCADEs (sessions, identities, browser links,
+    passkeys, this user's join requests + invites, recovery tokens) or
+    SET NULLs (`groups.creator_user_id`,
+    `group_join_requests.decided_by_user_id`). `group_members` is
+    browser-keyed (no user_id col) so the browser keeps its memberships
+    + poll creator_secrets and reverts to anonymous. 204.
+  * `attach_email_identity(conn, user_id, email)` returns
+    `'attached' | 'already_linked' | 'conflict'`. Conflict spans ALL
+    providers: an email another user proved via Google can't be claimed
+    here as a sign-in email. Idempotent on re-attach (already_linked).
+
+  **`fetchWithBase` now returns `undefined` on HTTP 204** (was an
+  unconditional `res.json()`, which throws "Unexpected end of JSON
+  input" on an empty body). Fixes a latent issue for every `<void>`
+  DELETE/POST endpoint (sign-out, delete-passkey, delete-account).
+
+  FE: `apiRequestRecoveryEmail` / `apiVerifyRecoveryEmail` /
+  `apiDeleteAccount` in `lib/api/auth.ts`. Settings page (`app/settings/page.tsx`)
+  gains: a "Sign-in methods" row listing linked providers
+  (`formatProviders`), an "Add a recovery email" affordance (gated on
+  `currentUser && !providers.includes('email')`), and a red "Delete
+  account" button → `ConfirmationModal`. `apiVerifyRecoveryEmail`
+  updates the cached session user so the new 'email' provider surfaces
+  everywhere; `apiDeleteAccount` clears local session (fires
+  `SESSION_CHANGED_EVENT` → settings reverts to anonymous without a nav).
+  Tests: `server/tests/test_account_management.py` (15 tests).
 
 **Phase F (group join requests) shipped in migration 115.** Adds
 `group_join_requests(id, group_id, requester_user_id, message,

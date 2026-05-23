@@ -299,23 +299,30 @@ def issue_magic_link(
     *,
     email: str,
     browser_id: str | None,
+    user_id: str | None = None,
 ) -> IssuedMagicLink:
     """Mint a new magic-link token for `email`. Caller is responsible
     for sending the email containing the raw token. Throttling is
-    enforced via `email_throttled` BEFORE this is called."""
+    enforced via `email_throttled` BEFORE this is called.
+
+    `user_id` is NULL for sign-in tokens (Phase B) and set for
+    recovery-email-attach tokens (Phase I). The two flows are kept
+    uncrossed by the consume predicates — see `consume_magic_link`
+    (NULL only) and `consume_recovery_email_token` (NOT NULL only)."""
     token = generate_token()
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=MAGIC_LINK_TTL_MINUTES)
     conn.execute(
         """
         INSERT INTO magic_link_tokens
-          (token_hash, email, browser_id, expires_at)
+          (token_hash, email, browser_id, user_id, expires_at)
         VALUES
-          (%(h)s, %(e)s, %(b)s, %(exp)s)
+          (%(h)s, %(e)s, %(b)s, %(u)s, %(exp)s)
         """,
         {
             "h": hash_token(token),
             "e": normalize_email(email),
             "b": browser_id,
+            "u": user_id,
             "exp": expires_at,
         },
     )
@@ -354,6 +361,10 @@ def consume_magic_link(conn, token: str) -> ConsumedMagicLink | None:
     """Atomically validate + mark-used. Returns the email if the token
     was valid and not yet used; None otherwise. Wrap the predicate + the
     UPDATE in one statement so two simultaneous clicks don't both pass.
+
+    `AND user_id IS NULL` scopes this to SIGN-IN tokens — a Phase I
+    recovery-email-attach token (which carries a user_id) can never be
+    redeemed here as a fresh sign-in.
     """
     if not token:
         return None
@@ -363,6 +374,7 @@ def consume_magic_link(conn, token: str) -> ConsumedMagicLink | None:
            SET used_at = NOW()
          WHERE token_hash = %(h)s
            AND used_at IS NULL
+           AND user_id IS NULL
            AND expires_at > NOW()
         RETURNING email, browser_id
         """,
@@ -374,6 +386,171 @@ def consume_magic_link(conn, token: str) -> ConsumedMagicLink | None:
         email=row["email"],
         requesting_browser_id=str(row["browser_id"]) if row.get("browser_id") else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Recovery email — Phase I
+# ---------------------------------------------------------------------------
+#
+# Attach an email identity to an account that doesn't have one yet
+# (passkey-only, or OAuth-only without an 'email' provider row). Reuses
+# the magic-link table (tokens tagged with user_id) for email-control
+# proof. The verify step additionally requires the caller's session to
+# match the token's user_id, so possessing the link alone can't bind an
+# email to someone else's account.
+
+
+@dataclass
+class RecoveryEmailToken:
+    email: str
+    user_id: str
+
+
+def peek_recovery_email_token(conn, token: str) -> RecoveryEmailToken | None:
+    """Read a recovery-email-attach token WITHOUT marking it used.
+
+    `AND user_id IS NOT NULL` scopes this to attach tokens (a sign-in
+    token can't be redeemed here). Peeking (rather than the atomic
+    consume) lets the verify endpoint validate session-ownership +
+    email-conflict BEFORE burning the token — so a wrong-device click or
+    an already-taken email leaves the token usable for a correct retry
+    within its TTL. `consume_recovery_email_token` is called only after
+    those checks pass.
+    """
+    if not token:
+        return None
+    row = conn.execute(
+        """
+        SELECT email, user_id FROM magic_link_tokens
+         WHERE token_hash = %(h)s
+           AND used_at IS NULL
+           AND user_id IS NOT NULL
+           AND expires_at > NOW()
+        """,
+        {"h": hash_token(token)},
+    ).fetchone()
+    if not row:
+        return None
+    return RecoveryEmailToken(email=row["email"], user_id=str(row["user_id"]))
+
+
+def consume_recovery_email_token(conn, token: str) -> RecoveryEmailToken | None:
+    """Mark a recovery-email token used and return its (email, user_id).
+
+    The `used_at IS NULL` predicate is the concurrency guard — two
+    simultaneous verifies both peek successfully but only one wins the
+    UPDATE. Returns None if the token was already consumed between peek
+    and consume (rare two-tab race)."""
+    if not token:
+        return None
+    row = conn.execute(
+        """
+        UPDATE magic_link_tokens
+           SET used_at = NOW()
+         WHERE token_hash = %(h)s
+           AND used_at IS NULL
+           AND user_id IS NOT NULL
+           AND expires_at > NOW()
+        RETURNING email, user_id
+        """,
+        {"h": hash_token(token)},
+    ).fetchone()
+    if not row:
+        return None
+    return RecoveryEmailToken(email=row["email"], user_id=str(row["user_id"]))
+
+
+def user_has_email_identity(conn, user_id: str) -> bool:
+    """True if this user already has an 'email'-provider identity. Gates
+    the recovery-email request endpoint: the feature only adds an email
+    to accounts that lack one (adding a SECOND email is out of scope —
+    see docs/auth-access-model.md → 'Out of scope for v1')."""
+    row = conn.execute(
+        """
+        SELECT 1 FROM user_identities
+         WHERE user_id = %(u)s::uuid AND provider = 'email'
+         LIMIT 1
+        """,
+        {"u": user_id},
+    ).fetchone()
+    return row is not None
+
+
+def attach_email_identity(conn, *, user_id: str, email: str) -> str:
+    """Bind an email-provider identity to `user_id`.
+
+    Returns a status discriminator:
+      * 'attached'       — new identity row inserted.
+      * 'already_linked' — this user already has this exact email
+                           identity (idempotent no-op).
+      * 'conflict'       — the email is already used by a DIFFERENT
+                           user (via any provider). Refused — binding it
+                           would let this user hijack magic-link sign-in
+                           for an address another account proved control
+                           of. (Option (a) in the doc: account merge
+                           requires proving control of both sides at the
+                           same time, which an attach can't.)
+
+    The conflict check spans ALL providers, not just 'email': if user B
+    signed in with Google using foo@x.com, that address is "theirs" and
+    user A can't claim it as a sign-in email.
+    """
+    normalized = normalize_email(email)
+    rows = conn.execute(
+        """
+        SELECT user_id, provider, provider_user_id FROM user_identities
+         WHERE email = %(e)s
+        """,
+        {"e": normalized},
+    ).fetchall()
+
+    for r in rows:
+        if r["provider"] == "email" and r["provider_user_id"] == normalized:
+            return "already_linked" if str(r["user_id"]) == user_id else "conflict"
+
+    if any(str(r["user_id"]) != user_id for r in rows):
+        return "conflict"
+
+    # Email is unused, or only carried by THIS user via a non-email
+    # provider (e.g. they signed in with Google using this address).
+    # Safe to add the email-provider identity so they gain magic-link
+    # sign-in / recovery too.
+    conn.execute(
+        """
+        INSERT INTO user_identities (provider, provider_user_id, user_id, email)
+        VALUES ('email', %(e)s, %(u)s::uuid, %(e)s)
+        ON CONFLICT (provider, provider_user_id) DO NOTHING
+        """,
+        {"e": normalized, "u": user_id},
+    )
+    return "attached"
+
+
+def delete_user_account(conn, user_id: str) -> bool:
+    """Delete a user and everything that cascades from it.
+
+    Every FK that references `users(id)` was declared in migrations
+    112–117 with the right ON DELETE action for this single statement to
+    be a clean teardown:
+      * user_identities, user_browsers, sessions, passkey_credentials,
+        passkey_challenges, group_join_requests.requester_user_id,
+        group_invites.created_by_user_id, magic_link_tokens.user_id
+        → CASCADE (rows deleted).
+      * groups.creator_user_id, group_join_requests.decided_by_user_id
+        → SET NULL (group / decision survives, ownership cleared).
+
+    `group_members` is keyed on browser_id (no user_id column), so the
+    browser keeps its memberships and works anonymously after deletion —
+    which is the intended "drop the user layer, keep the browser"
+    behavior. Polls / votes have no user FK either, so they survive
+    intact (creator_secret still authorizes the original creator's
+    browser). Returns True if a row was deleted, False if the user was
+    already gone (idempotent)."""
+    row = conn.execute(
+        "DELETE FROM users WHERE id = %(u)s::uuid RETURNING id",
+        {"u": user_id},
+    ).fetchone()
+    return row is not None
 
 
 # ---------------------------------------------------------------------------

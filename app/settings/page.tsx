@@ -17,7 +17,10 @@ import {
   apiSignOut,
   apiListPasskeys,
   apiDeletePasskey,
+  apiRequestRecoveryEmail,
+  apiDeleteAccount,
   getCurrentUser,
+  ApiError,
   type PasskeySummary,
 } from "@/lib/api";
 import {
@@ -112,6 +115,21 @@ export default function SettingsPage() {
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [signOutInFlight, setSignOutInFlight] = useState(false);
 
+  // Phase I — recovery email + delete account. The recovery affordance
+  // is shown only when signed in AND the account has no 'email' provider
+  // (passkey-only / OAuth-only). `recoveryOpen` reveals the inline input;
+  // `recoverySent` swaps it for a "check your inbox" acknowledgement.
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [recoveryInFlight, setRecoveryInFlight] = useState(false);
+  const [recoverySent, setRecoverySent] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoveryEmailConfigured, setRecoveryEmailConfigured] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteInFlight, setDeleteInFlight] = useState(false);
+
+  const hasEmailIdentity = !!currentUser?.providers?.includes("email");
+
   // Phase D — passkeys. Only fetched + shown when signed in. The server
   // tier capability + browser capability are both gates: the server
   // tier check comes from /api/auth/providers (memoized in
@@ -149,6 +167,16 @@ export default function SettingsPage() {
       });
   }, []);
 
+  // Reset the recovery-email form whenever the signed-in identity
+  // changes (sign-out, or sign-in as a different user) so a previous
+  // session's "check your inbox" state doesn't leak into the next.
+  useEffect(() => {
+    setRecoveryOpen(false);
+    setRecoverySent(false);
+    setRecoveryEmail("");
+    setRecoveryError(null);
+  }, [currentUser?.user_id]);
+
   const handleSignOut = async () => {
     if (signOutInFlight) return;
     setSignOutInFlight(true);
@@ -156,6 +184,49 @@ export default function SettingsPage() {
       await apiSignOut();
     } finally {
       setSignOutInFlight(false);
+    }
+  };
+
+  const handleSendRecoveryEmail = async () => {
+    if (recoveryInFlight) return;
+    const email = recoveryEmail.trim();
+    if (!email) return;
+    setRecoveryError(null);
+    setRecoveryInFlight(true);
+    try {
+      const res = await apiRequestRecoveryEmail(email);
+      setRecoveryEmailConfigured(res.email_configured);
+      setRecoverySent(true);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setRecoveryError(err.message || "Couldn't send the confirmation email.");
+      } else {
+        setRecoveryError("Couldn't reach the server. Try again in a moment.");
+      }
+    } finally {
+      setRecoveryInFlight(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteInFlight) return;
+    setDeleteInFlight(true);
+    try {
+      await apiDeleteAccount();
+      setShowDeleteConfirm(false);
+      // clearSession (inside apiDeleteAccount) fires SESSION_CHANGED_EVENT,
+      // so the subscribed effect flips currentUser → null and the UI
+      // reverts to the anonymous state without a navigation.
+      setMessage({ type: "success", text: "Your account was deleted." });
+    } catch (err) {
+      setShowDeleteConfirm(false);
+      setMessage({
+        type: "error",
+        text:
+          err instanceof Error ? err.message : "Couldn't delete your account.",
+      });
+    } finally {
+      setDeleteInFlight(false);
     }
   };
 
@@ -637,10 +708,10 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Account section — Phase A + B. Single-line row with the
-          signed-in email + Sign Out, or a Sign In CTA when anonymous.
-          Sits below Theme so it groups visually with the other
-          single-row settings. */}
+      {/* Account section — Phase A + B (sign in/out) + Phase I (linked
+          identities, recovery email, delete). Single-row "Account" +
+          Sign out / Sign in header; when signed in, a second row lists
+          the linked sign-in methods. */}
       <div className="mb-6">
         <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
           <div className="flex items-center justify-between gap-3 h-12">
@@ -669,6 +740,16 @@ export default function SettingsPage() {
               </button>
             )}
           </div>
+          {currentUser && (
+            <div className="flex items-center justify-between gap-3 h-12 border-t border-gray-200 dark:border-gray-700">
+              <span className="text-base font-normal shrink-0">
+                Sign-in methods
+              </span>
+              <span className="text-base font-normal text-gray-500 dark:text-gray-500 truncate">
+                {formatProviders(currentUser.providers)}
+              </span>
+            </div>
+          )}
         </section>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           {currentUser
@@ -676,6 +757,82 @@ export default function SettingsPage() {
             : "Sign in to keep your polls and groups across devices."}
         </p>
       </div>
+
+      {/* Recovery email — Phase I. Only for signed-in accounts that lack
+          an email identity (passkey-only / OAuth-only). Adds an email
+          they can sign in with if they lose their device. */}
+      {currentUser && !hasEmailIdentity && (
+        <div className="mb-6">
+          <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-base font-normal">Recovery email</span>
+              {!recoveryOpen && !recoverySent && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecoveryOpen(true);
+                    setRecoveryError(null);
+                  }}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  Add a recovery email
+                </button>
+              )}
+            </div>
+            {recoverySent ? (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {recoveryEmailConfigured
+                  ? "Check your inbox for a confirmation link. It expires in 15 minutes."
+                  : "Email isn't configured on this server — the confirmation link was written to the API logs."}
+              </p>
+            ) : recoveryOpen ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={recoveryEmail}
+                  onChange={(e) => setRecoveryEmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSendRecoveryEmail();
+                  }}
+                  placeholder="you@example.com"
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 h-11 text-base"
+                />
+                <div className="flex items-center gap-3 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRecoveryOpen(false);
+                      setRecoveryEmail("");
+                      setRecoveryError(null);
+                    }}
+                    className="text-sm text-gray-500 dark:text-gray-400 hover:underline"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendRecoveryEmail}
+                    disabled={recoveryInFlight || !recoveryEmail.trim()}
+                    className="rounded-full bg-blue-600 hover:bg-blue-700 text-white px-5 h-9 text-sm font-medium disabled:opacity-50"
+                  >
+                    {recoveryInFlight ? "Sending…" : "Send link"}
+                  </button>
+                </div>
+                {recoveryError && (
+                  <p className="text-xs text-red-600 dark:text-red-400">
+                    {recoveryError}
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </section>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            Add an email so you can still sign in if you lose this device.
+          </p>
+        </div>
+      )}
 
       {/* Passkeys section — Phase D. Visible only when signed in AND
           the server tier supports passkeys AND the browser exposes
@@ -784,6 +941,25 @@ export default function SettingsPage() {
         </p>
       </div>
 
+      {/* Delete account — Phase I. Only when signed in. Cascades through
+          every users(id) FK server-side; this browser reverts to
+          anonymous (groups + created polls stay reachable). */}
+      {currentUser && (
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => setShowDeleteConfirm(true)}
+            className="w-full rounded-full border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center font-medium text-base h-12"
+          >
+            Delete account
+          </button>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+            Permanently removes your account and sign-in methods. Polls and
+            groups you created stay on this device.
+          </p>
+        </div>
+      )}
+
       {/* About Section */}
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 text-center">
@@ -831,12 +1007,39 @@ export default function SettingsPage() {
         onCancel={() => setShowDiscardImageConfirm(false)}
       />
 
+      <ConfirmationModal
+        isOpen={showDeleteConfirm}
+        title="Delete account?"
+        message="This permanently deletes your account and all sign-in methods (email, passkeys, connected accounts). This can't be undone. Polls and groups you created stay on this device."
+        confirmText={deleteInFlight ? "Deleting…" : "Delete account"}
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        onConfirm={handleDeleteAccount}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
+
       <SignInModal
         isOpen={signInModalOpen}
         onClose={() => setSignInModalOpen(false)}
       />
     </div>
   );
+}
+
+// Human-readable labels for the provider strings the server returns
+// (`user_identities.provider`). Anything unrecognized falls through to a
+// title-cased form so a future provider doesn't render as a raw token.
+const PROVIDER_LABELS: Record<string, string> = {
+  email: "Email",
+  google: "Google",
+  apple: "Apple",
+  passkey: "Passkey",
+};
+
+function formatProviders(providers: string[]): string {
+  if (!providers || providers.length === 0) return "—";
+  return providers
+    .map((p) => PROVIDER_LABELS[p] || p.charAt(0).toUpperCase() + p.slice(1))
+    .join(", ");
 }
 
 function CameraPencilIcon() {

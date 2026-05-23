@@ -99,6 +99,9 @@ export {
   apiDeletePasskey,
   apiRenamePasskey,
   apiRedeemInvite,
+  apiRequestRecoveryEmail,
+  apiVerifyRecoveryEmail,
+  apiDeleteAccount,
   getCurrentUser,
 } from "./auth";
 export type {
@@ -110,4 +113,5 @@ export type {
   PasskeyListResponse,
   PasskeyRegistrationResult,
   InviteRedeemResult,
+  RecoveryEmailRequestResponse,
 } from "./auth";

@@ -247,7 +247,7 @@ the original session for the rationale.
 | F | Join requests (shipped) | `group_join_requests` table (migration 115), request/approve/deny endpoints, push notification fan-out to creator's `user_browsers`, /info "Pending requests" creator section, "Request to join" CTA on signed-in 404 page | E |
 | G | Invite links (shipped) | `group_invites` table (migration 116), creator-side create/list/revoke endpoints, anonymous-allowed `/invite/<token>` landing page that auto-redeems for signed-in viewers, `InviteLinksSection` on /info | E |
 | H | ~~Per-vote anonymity~~ | **NOT PLANNED.** Anonymity flags on votes + read-time filter were originally designed but retired. Anonymous participation is "leave the voter name blank"; no per-vote on/off toggle. | — |
-| I | Polish | account settings (linked identities, **add recovery email to passkey-only account**, sign out, delete), retire `creator_secret` | A–G |
+| I | Polish (partial — **shipped**) | linked-identities display, **add recovery email** (migration 118: `magic_link_tokens.user_id`; `POST /api/auth/recovery-email/{request,verify}`), **delete account** (`DELETE /api/auth/me`), sign out (Phase A). Still deferred: retire `creator_secret`; "claim an anonymous-created group". | A–G |
 
 Phase A and B ship together as the first PR — A is invisible alone; B is
 the smallest end-to-end auth that proves the model.
@@ -341,12 +341,25 @@ the smallest end-to-end auth that proves the model.
   triggered FROM the create-poll modal when a user picks "private" and
   isn't signed in).
 
-## Adding a recovery email to a passkey-only account (Phase I)
+## Adding a recovery email to a passkey-only account (Phase I — SHIPPED)
+
+> **Shipped** (migration 118 + `POST /api/auth/recovery-email/{request,verify}`).
+> Went with option (a) for the merge conflict (refuse, don't merge).
+> One hardening beyond the original sketch: `verify` requires BOTH the
+> token (email control) AND a signed-in session whose `user_id` matches
+> the token's `user_id` (account control) — so a stranger who receives
+> a mistyped link can't bind it to the requester's account. The token is
+> PEEKED (not consumed) until both checks pass, so a wrong-device click
+> or an already-taken email leaves it usable for a correct retry within
+> its TTL. The gate also spans ALL providers: an email another user
+> proved via Google can't be claimed here as a sign-in email. The
+> request endpoint rejects accounts that already have an 'email'
+> identity (adding a SECOND email is out of scope).
 
 Phase D (anonymous passkey registration) lets users create an account
 with no email at all — `user_identities` carries only a `passkey` row,
 `email` is NULL. Recovery is the cost: lose the device with the only
-credential and the account is unreachable. Phase I will let those
+credential and the account is unreachable. Phase I lets those
 users attach an email after the fact as a recovery path.
 
 The mechanics reuse the existing magic-link flow with one twist:

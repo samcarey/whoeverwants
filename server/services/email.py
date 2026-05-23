@@ -124,3 +124,32 @@ def send_magic_link(*, to_email: str, magic_url: str) -> bool:
 </body></html>
 """
     return send_email(EmailMessage(to=to_email, subject=subject, html=html, text=text))
+
+
+def send_recovery_email(*, to_email: str, verify_url: str) -> bool:
+    """Send the Phase I "confirm this recovery email" link. `verify_url`
+    is the full FE URL (e.g.
+    `https://whoeverwants.com/auth/recovery-email?token=...`). Copy
+    differs from the sign-in link: this CONFIRMS an email the user is
+    adding to an existing account, so the "if you didn't request this"
+    line is reassuring rather than a security warning."""
+    subject = "Confirm your WhoeverWants recovery email"
+    text = (
+        "Tap the link below to confirm this email as a way to sign in to "
+        "your WhoeverWants account. It expires in 15 minutes and can only "
+        "be used once.\n\n"
+        f"{verify_url}\n\n"
+        "If you didn't request this, you can ignore this email — nothing "
+        "will be added to any account."
+    )
+    html = f"""<!doctype html>
+<html><body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111; line-height: 1.5;">
+  <p>Tap the link below to confirm this email as a way to sign in to your WhoeverWants account. It expires in 15 minutes and can only be used once.</p>
+  <p style="margin: 24px 0;">
+    <a href="{verify_url}" style="background: #2563eb; color: white; padding: 12px 20px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 500;">Confirm recovery email</a>
+  </p>
+  <p style="font-size: 12px; color: #6b7280;">Or copy this URL: <br/><span style="word-break: break-all;">{verify_url}</span></p>
+  <p style="font-size: 12px; color: #6b7280; margin-top: 24px;">If you didn't request this, you can ignore this email — nothing will be added to any account.</p>
+</body></html>
+"""
+    return send_email(EmailMessage(to=to_email, subject=subject, html=html, text=text))
