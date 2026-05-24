@@ -133,6 +133,29 @@ export async function pushLocalNameToAccount(name: string): Promise<void> {
   }
 }
 
+/**
+ * Set the signed-in user's account-synced app-icon badge preferences. Returns
+ * the updated profile and refreshes the cached session user so every surface
+ * (and the client-side badge resync) reflects the change immediately. Signed-in
+ * only — anonymous callers persist locally via `lib/badgeSettings.ts`.
+ */
+export async function apiUpdateBadgeSettings(settings: {
+  todoMode: boolean;
+  onVotingOpen: boolean;
+  onResults: boolean;
+}): Promise<SessionUser> {
+  const user = await authFetch<SessionUser>("/me/badge-settings", {
+    method: "POST",
+    body: JSON.stringify({
+      badge_todo_mode: settings.todoMode,
+      badge_on_voting_open: settings.onVotingOpen,
+      badge_on_results: settings.onResults,
+    }),
+  });
+  updateCachedSessionUser(user);
+  return user;
+}
+
 export async function apiRequestMagicLink(
   email: string,
 ): Promise<MagicLinkRequestResponse> {

@@ -404,6 +404,7 @@ def _row_to_poll(
     question_rows: list[dict],
     voter_names: list[str] | None = None,
     anonymous_count: int = 0,
+    viewed_ignored_count: int = 0,
 ) -> PollResponse:
     return PollResponse(
         id=str(row["id"]),
@@ -436,6 +437,7 @@ def _row_to_poll(
         questions=[_row_to_question(sp) for sp in question_rows],
         voter_names=voter_names or [],
         anonymous_count=anonymous_count,
+        viewed_ignored_count=viewed_ignored_count,
     )
 
 
@@ -450,7 +452,7 @@ def _fetch_questions(conn, poll_id: str) -> list[dict]:
     ).fetchall()
 
 
-def _compute_poll_voter_data(conn, poll_id: str) -> tuple[list[str], int]:
+def _compute_poll_voter_data(conn, poll_id: str) -> tuple[list[str], int, int]:
     """Poll-level voter aggregation. Per the addressability
     paradigm, the FE never sums per-question vote rows — it consumes these
     server-computed fields instead. Named voters are deduped (case-sensitive,
@@ -482,7 +484,31 @@ def _compute_poll_voter_data(conn, poll_id: str) -> tuple[list[str], int]:
         """,
         {"mid": poll_id},
     ).fetchone()
-    return list(row["voter_names"] or []), int(row["anonymous_count"] or 0)
+    # "Viewed (N)" roster: browsers that opened the poll (>5 min ago, so they've
+    # had time to decide) but never voted or abstained = "ignored". Mostly
+    # nameless (no voter_name submitted), so surfaced as a muted count rather
+    # than chips. See CLAUDE.md 'App-Icon Badge Model + Viewed Tracking'.
+    viewed_row = conn.execute(
+        """
+        SELECT COUNT(*) AS c FROM (
+          SELECT pv.browser_id
+            FROM poll_views pv
+           WHERE pv.poll_id = %(mid)s
+             AND pv.first_viewed_at < NOW() - INTERVAL '5 minutes'
+             AND NOT EXISTS (
+               SELECT 1 FROM votes v
+                 JOIN questions q ON v.question_id = q.id
+                WHERE q.poll_id = %(mid)s AND v.browser_id = pv.browser_id
+             )
+        ) t
+        """,
+        {"mid": poll_id},
+    ).fetchone()
+    return (
+        list(row["voter_names"] or []),
+        int(row["anonymous_count"] or 0),
+        int(viewed_row["c"] or 0),
+    )
 
 
 def _record_poll_view(conn, browser_id: str | None, poll_id: str, now: datetime) -> None:
@@ -687,8 +713,8 @@ def get_poll_by_id(poll_id: str):
         if not row:
             raise HTTPException(status_code=404, detail="Poll not found")
         question_rows = _fetch_questions(conn, str(row["id"]))
-        voter_names, anonymous_count = _compute_poll_voter_data(conn, str(row["id"]))
-    return _row_to_poll(row, question_rows, voter_names, anonymous_count)
+        voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, str(row["id"]))
+    return _row_to_poll(row, question_rows, voter_names, anonymous_count, viewed_ignored)
 
 
 @router.get("/{short_id}", response_model=PollResponse)
@@ -701,8 +727,8 @@ def get_poll(short_id: str):
         if not row:
             raise HTTPException(status_code=404, detail="Poll not found")
         question_rows = _fetch_questions(conn, str(row["id"]))
-        voter_names, anonymous_count = _compute_poll_voter_data(conn, str(row["id"]))
-    return _row_to_poll(row, question_rows, voter_names, anonymous_count)
+        voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, str(row["id"]))
+    return _row_to_poll(row, question_rows, voter_names, anonymous_count, viewed_ignored)
 
 
 # ---------------------------------------------------------------------------
@@ -788,9 +814,9 @@ def close_poll(poll_id: str, req: CloseQuestionRequest, background_tasks: Backgr
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
-        voter_names, anonymous_count = _compute_poll_voter_data(conn, poll_id)
+        voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, poll_id)
 
-    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count)
+    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored)
 
 
 @router.post("/{poll_id}/reopen", response_model=PollResponse)
@@ -816,9 +842,9 @@ def reopen_poll(poll_id: str, req: ReopenQuestionRequest):
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
-        voter_names, anonymous_count = _compute_poll_voter_data(conn, poll_id)
+        voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, poll_id)
 
-    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count)
+    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored)
 
 
 @router.post("/{poll_id}/cutoff-suggestions", response_model=PollResponse)
@@ -883,9 +909,9 @@ def cutoff_poll_suggestions(
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
-        voter_names, anonymous_count = _compute_poll_voter_data(conn, poll_id)
+        voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, poll_id)
 
-    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count)
+    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored)
 
 
 def _vote_item_to_submit_req(item: PollVoteItem, voter_name: str | None) -> SubmitVoteRequest:
@@ -1063,9 +1089,9 @@ def cutoff_poll_availability(
             {"id": poll_id},
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
-        voter_names, anonymous_count = _compute_poll_voter_data(conn, poll_id)
+        voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, poll_id)
 
-    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count)
+    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored)
 
 
 @router.post("/{poll_id}/viewed", status_code=204)

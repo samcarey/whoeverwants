@@ -39,6 +39,13 @@ import InitialBubble from "@/components/InitialBubble";
 import ImageCropModal from "@/components/ImageCropModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { getStoredTheme, saveTheme, type ThemePreference } from "@/lib/theme";
+import {
+  getEffectiveBadgeSettings,
+  saveBadgeSettings,
+  DEFAULT_BADGE_SETTINGS,
+  type BadgeSettings,
+} from "@/lib/badgeSettings";
+import SliderSwitch from "@/components/SliderSwitch";
 import { haptic } from "@/lib/haptics";
 
 const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; icon: React.ReactNode }> = [
@@ -85,6 +92,10 @@ export default function SettingsPage() {
   const [locationInput, setLocationInput] = useState("");
   const [savedLocation, setSavedLocation] = useState<UserLocation | null>(null);
   const [theme, setTheme] = useState<ThemePreference>("system");
+  // App-icon badge model. Init to defaults (SSR-safe); pulled from the
+  // effective settings (account when signed in, else localStorage) on mount
+  // and whenever the signed-in identity changes.
+  const [badge, setBadge] = useState<BadgeSettings>(DEFAULT_BADGE_SETTINGS);
   const [isLoading, setIsLoading] = useState(false);
   const [isGeolocating, setIsGeolocating] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -227,6 +238,18 @@ export default function SettingsPage() {
     setRecoveryEmail("");
     setRecoveryError(null);
   }, [currentUser?.user_id]);
+
+  // Pull effective badge settings on mount AND whenever the signed-in
+  // identity changes — signing into a named account makes its synced badge
+  // preferences authoritative over the local copy.
+  useEffect(() => {
+    setBadge(getEffectiveBadgeSettings());
+  }, [currentUser?.user_id]);
+
+  const updateBadge = (next: BadgeSettings) => {
+    setBadge(next);
+    saveBadgeSettings(next);
+  };
 
   const handleSignOut = async () => {
     if (signOutInFlight) return;
@@ -756,6 +779,77 @@ export default function SettingsPage() {
         </section>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           System follows your device&apos;s appearance setting
+        </p>
+      </div>
+
+      {/* App-icon badge model. Three account-synced switches. To-do mode
+          gates the two re-light toggles (inert in to-do mode, where the
+          badge is purely the awaiting-action count). */}
+      <div className="mb-6">
+        <h2 className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+          App badge
+        </h2>
+        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
+          <div
+            className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+            onClick={() => updateBadge({ ...badge, todoMode: !badge.todoMode })}
+          >
+            <span className="text-base font-normal shrink-0">To-do badge</span>
+            <SliderSwitch
+              checked={badge.todoMode}
+              onChange={(v) => updateBadge({ ...badge, todoMode: v })}
+              aria-label="To-do badge"
+            />
+          </div>
+          <div
+            className={`flex items-center justify-between gap-3 h-12 ${
+              badge.todoMode ? "cursor-not-allowed" : "cursor-pointer"
+            }`}
+            onClick={() => {
+              if (!badge.todoMode) updateBadge({ ...badge, onVotingOpen: !badge.onVotingOpen });
+            }}
+          >
+            <span
+              className={`text-base font-normal shrink-0 ${
+                badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
+              }`}
+            >
+              Badge when voting opens
+            </span>
+            <SliderSwitch
+              checked={badge.onVotingOpen}
+              onChange={(v) => updateBadge({ ...badge, onVotingOpen: v })}
+              disabled={badge.todoMode}
+              aria-label="Badge when voting opens"
+            />
+          </div>
+          <div
+            className={`flex items-center justify-between gap-3 h-12 ${
+              badge.todoMode ? "cursor-not-allowed" : "cursor-pointer"
+            }`}
+            onClick={() => {
+              if (!badge.todoMode) updateBadge({ ...badge, onResults: !badge.onResults });
+            }}
+          >
+            <span
+              className={`text-base font-normal shrink-0 ${
+                badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
+              }`}
+            >
+              Badge when results arrive
+            </span>
+            <SliderSwitch
+              checked={badge.onResults}
+              onChange={(v) => updateBadge({ ...badge, onResults: v })}
+              disabled={badge.todoMode}
+              aria-label="Badge when results arrive"
+            />
+          </div>
+        </section>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          {badge.todoMode
+            ? "To-do: the badge counts open polls awaiting your vote. Only voting or abstaining clears one — seeing a poll doesn't."
+            : "Unread: the badge counts polls with new activity. Opening a poll clears it."}
         </p>
       </div>
 

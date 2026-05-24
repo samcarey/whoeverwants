@@ -2589,6 +2589,47 @@ Real-device feedback after shipping surfaced four refinements. None are blockers
 3. **Clicking the banner itself should enter edit mode with the new options pre-placed.** Tapping the new-options banner should drop the user straight into ranking-edit mode, with the newly-added options sitting in the **excluded / unranked** pool of the ballot and the user's **original rankings (if any) preserved in the ranked area**. (RankableOptions + the QuestionBallot edit flow — the restore path already repopulates prior rankings; the new bit is auto-entering edit + putting only-the-new options in the excluded area.)
 4. **Rich-option metadata (favicon/underline/clickable) doesn't propagate cross-browser.** When voter A adds a suggestion picked from search (a restaurant with `options_metadata` → rich `OptionLabel` rendering), voter B (seen on iOS) gets it as **plain text**. `_submit_vote_to_question` merges `req.options_metadata` into `questions.options_metadata` only when BOTH `options_metadata` AND `suggestions` are present — so the persistence path exists, but something in the chain is dropping it. Investigate, in order: (a) does the FE actually SEND `options_metadata` with the suggestion vote (`buildPollVoteItem` / `voteDataBuilders.ts`)? (b) does the merge land on the question row? (c) do the finalized `options` + `options_metadata` reach OTHER viewers' ballot/results (the bulk `polls_for_poll_ids` / per-question results path)? (d) does the receiving `OptionLabel` read `question.options_metadata` for that option? Repro: browser A adds a from-search restaurant suggestion; browser B opens the poll → plain text instead of rich chip.
 
+## App-Icon Badge Model + Viewed Tracking (migration 121)
+
+> **Intent doc + spec.** The app-icon badge is no longer a hardcoded "1" dot. Its *meaning* is a per-user choice, exposed as **three account-synced switches** in Settings. Same notification triggers as migration 120 (new poll / poll closed / prephase→voting); this layer decides how those events translate into a *number* on the icon, and reframes the per-poll "respondents" roster into a **"Viewed (N)"** list.
+
+### The two badge meanings + the three switches
+
+Settings exposes three `SliderSwitch`es (account-synced — see storage below). Sensible defaults chosen so a casual user who never touches Settings gets the "unread" behavior:
+
+1. **`badge_todo_mode`** (default **OFF**). The headline switch.
+   - **OFF = Unread model** (casual default): badge = count of polls with *notification activity you haven't looked at*. **Opening a poll's detail page clears it** from the badge. This is the "open the app, the number goes away" behavior casual users expect.
+   - **ON = To-do model** (power users): badge = count of *open, votable polls you haven't voted or abstained on*. **Only voting or abstaining clears a poll** — merely seeing it never does. This is what forces power users to explicitly abstain on polls they don't want, instead of looking-and-ignoring.
+2. **`badge_on_voting_open`** (default **ON**). Whether a prephase→voting transition re-lights a poll on the badge. **Applies to the unread model only**; inert (and rendered disabled) when `badge_todo_mode` is ON, where the badge is purely the awaiting-action set.
+3. **`badge_on_results`** (default **ON**). Whether a poll closing ("results are in") re-lights a poll on the badge. Same unread-only applicability as #2.
+
+New polls always contribute (no switch) — in unread they're a never-opened poll, in to-do they're a fresh awaiting poll. Switches 2/3 are the Q4 "re-light" fork turned into user-tunable knobs.
+
+**Badge set, precisely.** A poll P contributes to browser B's badge iff B is a `group_members` row for P's group AND:
+- **To-do mode**: P is not closed, votable now (`prephase_deadline` IS NULL or passed), deadline not passed, AND B has no `votes` row on any of P's questions (vote OR abstain — both insert a row). Views never matter.
+- **Unread mode** (any of, gated by the toggles): (a) P never viewed-since-created (`poll_views.last_viewed_at` IS NULL or `< P.created_at`); (b) `badge_on_voting_open` AND P transitioned (`prephase_deadline` passed) since last view; (c) `badge_on_results` AND P closed (`updated_at` close-proxy) since last view. Opening P's detail page bumps `last_viewed_at`, clearing all three.
+
+### "Seen" + "Ignored" + the Viewed (N) list
+
+- **"Seen" = opening the poll detail page** (`/g/<g>/p/<p>`). The FE pings `POST /api/polls/{id}/viewed` on **every** detail-page open (migration 120 added the endpoint + `_record_poll_view`; this broadens the ping from prephase-only to always). That single watermark (`poll_views.last_viewed_at`) feeds BOTH the unread badge (clears it) and the viewed list.
+- **`poll_views.first_viewed_at`** (added in migration 121, set on insert, NOT bumped on re-view) is the stable clock for "ignored": a viewer is **ignored** when they have a `poll_views` row, `first_viewed_at` is older than **5 minutes**, and they have no vote/abstain on the poll. Within the 5-minute window a no-action viewer is "still looking" (not yet ignored). Derived at read time — no cron, no client beacon needed; "navigates away" and "5 min elapsed" both collapse to "first saw it ≥5 min ago without acting".
+- **The respondents roster becomes "Viewed (N)".** N = everyone who opened the poll = named voters + anonymous voters + ignored (viewed-no-action) viewers. Vote state is a **secondary per-person marker**: named/anon voters render as chips (via the existing `VoterList`), and the ignored viewers — mostly nameless (they never submitted a `voter_name`) — surface as a muted "N viewed but haven't responded yet" sub-line. Backend adds `viewed_ignored_count` to the poll-level voter aggregate (alongside `voter_names` + `anonymous_count`) via `_compute_poll_voter_data` (a 3-tuple now — all 7 callsites + `_row_to_poll` updated); FE threads it `PollResponse` → `Poll` (`toPoll`). **The relabel lives at the poll-detail page level, NOT in `VoterList`**: the detail page's "Respondents" `<h2>` becomes "Viewed ({named + anon + ignored})" and renders the muted sub-line when `viewed_ignored_count > 0`. `VoterList` itself is unchanged — it still renders the voter chips below the heading. (An earlier pass added a `staticIgnoredCount` prop + a multi-line "Viewed (N)" branch to `VoterList`, but both static callers — poll detail + group card — use `singleLine`, so that branch was unreachable; it was reverted. If a future multi-line static roster needs the count, do the relabel at that callsite too rather than reviving the dead `VoterList` branch.)
+
+### Storage (per account, synced)
+
+- Authoritative location: `users.badge_todo_mode` / `users.badge_on_voting_open` / `users.badge_on_results` (BOOLEAN, defaults false/true/true). Surfaced on `UserSummary` (rides every sign-in response + `/api/auth/me`) and `SessionUser` (FE). Written via `POST /api/auth/me/badge-settings` (signed-in only). On sign-in the account values are authoritative; mirrored to a localStorage cache for the client-side badge resync.
+- **Anonymous fallback**: anonymous users have no `users` row, so their preference lives in localStorage only and shapes the **client-side** badge (web/PWA `setAppBadge`). Their **server push** badge uses the defaults (unread, both re-light ON) — once they sign in, the account settings apply to pushes too. Documented limitation, mirrors the display-name local↔account pattern.
+
+### Badge computation — where the number comes from
+
+- **Server (push payloads), per recipient.** `_send_apns` reads `payload["badge"]` (it previously hardcoded `1`), and `_dispatch_pushes` injects a per-recipient `badge` computed by `compute_badge_count(conn, browser_id, settings)` in `services/push.py`. Settings per recipient = account columns via browser→user, else defaults. Recipient sets are small (group membership), so a per-recipient count query in the dispatch loop is acceptable at current scale (documented; batch later if needed).
+- **Client (web/PWA), on focus.** `GET /api/notifications/badge` returns `{count}` for the current browser+settings (the single source of truth shared with the push path). `PushAutoRegister`'s focus/visibility handler calls it and `setAppBadge(count)` — replacing the old blind `clearAppBadge()`. So an unread-mode user who reads on device A sees device B's badge correct itself on next focus.
+- **Native iOS (Capacitor).** Badge is push-driven (`aps.badge` from the per-recipient payload) and cleared on notification tap. **Live resync on app-open is NOT available** (no Capacitor badge plugin; would need one + an iOS rebuild) — deferred. So native badges are eventually-correct (next push or tap), not instantly-correct, on cross-device reads. This is the known constraint from the original design discussion.
+
+### Status / sequencing
+
+Built as coherent increments on `claude/ios-badge-model-1Ennb`: (1) schema + account-synced settings + Settings switches + client/server badge honoring the model; (2) seen-ping broadening + Viewed (N) list. Native-iOS live resync deferred (plugin + rebuild).
+
 ## Geolocation (Native + Web)
 
 `lib/geolocation.ts` is the canonical entry point for "where is the user?" — every callsite must route through it, not directly through `navigator.geolocation`.

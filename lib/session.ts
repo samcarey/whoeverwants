@@ -36,6 +36,12 @@ export interface SessionUser {
   // in pushes it back to the account. Optional so pre-this-feature cached
   // profiles (no `name`) deserialize cleanly until the next /me refresh.
   name?: string | null;
+  // Account-synced app-icon badge preferences (migration 121). Optional so
+  // pre-feature cached profiles deserialize; defaults applied by
+  // `lib/badgeSettings.ts` when absent. See CLAUDE.md 'App-Icon Badge Model'.
+  badge_todo_mode?: boolean;
+  badge_on_voting_open?: boolean;
+  badge_on_results?: boolean;
 }
 
 let cachedToken: string | null | undefined; // undefined = not yet read

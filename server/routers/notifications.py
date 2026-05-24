@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from database import get_db
 from middleware import browser_id_from_request as _browser_id
 from services.groups import resolve_group_id_from_route_id
-from services.push import apns_configured, get_vapid_keys
+from services.push import apns_configured, compute_badge_count, get_vapid_keys
 
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -90,6 +90,37 @@ def _require_browser_id(request: Request) -> str:
     if not browser_id:
         raise HTTPException(status_code=400, detail="Missing browser identity")
     return browser_id
+
+
+class BadgeCountResponse(BaseModel):
+    count: int
+
+
+@router.get("/badge", response_model=BadgeCountResponse)
+def get_badge_count(
+    request: Request,
+    todo_mode: bool = False,
+    on_voting_open: bool = True,
+    on_results: bool = True,
+):
+    """The app-icon badge number for the calling browser under the supplied
+    settings. The FE passes its EFFECTIVE settings (account-synced when signed
+    in, else localStorage) so this works for anonymous users too — unlike the
+    push path, which can only see account/default settings. Called on app focus
+    for the client-side `setAppBadge` resync. See CLAUDE.md 'App-Icon Badge
+    Model'. Returns 0 for an unidentified browser rather than erroring."""
+    browser_id = _browser_id(request)
+    if not browser_id:
+        return BadgeCountResponse(count=0)
+    with get_db() as conn:
+        count = compute_badge_count(
+            conn,
+            browser_id,
+            todo_mode=todo_mode,
+            on_voting_open=on_voting_open,
+            on_results=on_results,
+        )
+    return BadgeCountResponse(count=count)
 
 
 @router.get("/config", response_model=NotificationConfig)
