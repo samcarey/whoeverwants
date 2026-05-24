@@ -68,6 +68,13 @@ interface QuestionBallotProps {
   // say" so the wrapper's Submit visibility/label match the original
   // gating across initial-vote / voted / edit-mode transitions.
   onWrapperSubmitStateChange?: (questionId: string, state: { visible: boolean; label: string }) => void;
+  // For location/restaurant polls, the "Near X" reference line moves out from
+  // under the ballot card and renders BELOW the card once results are on
+  // display. QuestionBallot can't escape its own card wrapper, so it reports
+  // when the line should sit below and the parent renders it there. When this
+  // callback is absent, QuestionBallot falls back to rendering the line at the
+  // bottom inside its card so the context isn't lost.
+  onReferenceLocationStateChange?: (questionId: string, state: { showBelow: boolean }) => void;
   // Early-voting ranked-choice (suggestion phase + pre-ranking allowed): split
   // the suggestion entry and the ranking ballot into two separate cards, with
   // the "Early Voting" header/countdown/warning rendered outside (between)
@@ -90,7 +97,7 @@ export interface QuestionBallotHandle {
   prepareBatchVoteItem: () => PrepareBatchVoteItemResult;
 }
 
-const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(function QuestionBallot({ question, poll, createdDate, questionId, externalYesNoResults, isExpanded = true, partOfPollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange, splitEarlyVotingCards = false }: QuestionBallotProps, ref) {
+const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(function QuestionBallot({ question, poll, createdDate, questionId, externalYesNoResults, isExpanded = true, partOfPollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange, onReferenceLocationStateChange, splitEarlyVotingCards = false }: QuestionBallotProps, ref) {
   // Set the page title in the template header
   usePageTitle(question.title);
 
@@ -1224,6 +1231,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const closedResultsShownAbove = isQuestionClosed && !suppressYesNoHere;
   const resultsShownAbove = prelimResultsShownAbove || closedResultsShownAbove;
 
+  // When results are on display, the line belongs BELOW the ballot card —
+  // rendered by the parent (it owns the card wrapper QuestionBallot can't
+  // escape). The parent is told via onReferenceLocationStateChange; without
+  // that callback we fall back to rendering at the bottom inside our card.
+  const showReferenceBelowCard = showReferenceLocation && resultsShownAbove;
   const referenceLocationBlock = showReferenceLocation ? (
     <div className="mb-1.5 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
       <div className="flex items-center gap-1.5">
@@ -1238,6 +1250,10 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
       )}
     </div>
   ) : null;
+
+  useEffect(() => {
+    onReferenceLocationStateChange?.(question.id, { showBelow: showReferenceBelowCard });
+  }, [question.id, showReferenceBelowCard, onReferenceLocationStateChange]);
 
   return (
     <>
@@ -1278,8 +1294,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
           </div>
         )}
 
-        {/* Once results are on display, "Near X" reads as a footnote beneath them. */}
-        {resultsShownAbove && (
+        {/* Once results are on display, "Near X" belongs below the ballot card.
+            The parent renders it there via onReferenceLocationStateChange; this
+            bottom-inside-card placement is only the fallback when no parent owns
+            the slot (so the context is never dropped). */}
+        {showReferenceBelowCard && !onReferenceLocationStateChange && (
           <div className="mt-1.5">{referenceLocationBlock}</div>
         )}
 
