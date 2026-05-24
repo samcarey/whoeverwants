@@ -199,4 +199,8 @@ export interface Poll {
   // iterating questions — see CLAUDE.md → "Addressability paradigm".
   voter_names: string[];
   anonymous_count: number;
+  // "Viewed (N)" roster: browsers that opened the poll (>5 min ago) but never
+  // voted/abstained. Optional for pre-feature cached polls. See CLAUDE.md
+  // 'App-Icon Badge Model + Viewed Tracking'.
+  viewed_ignored_count?: number;
 }

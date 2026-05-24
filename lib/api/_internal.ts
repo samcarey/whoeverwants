@@ -290,5 +290,6 @@ export function toPoll(data: any): Poll {
     questions: Array.isArray(data.questions) ? data.questions.map(toQuestion) : [],
     voter_names: Array.isArray(data.voter_names) ? data.voter_names : [],
     anonymous_count: typeof data.anonymous_count === 'number' ? data.anonymous_count : 0,
+    viewed_ignored_count: typeof data.viewed_ignored_count === 'number' ? data.viewed_ignored_count : 0,
   };
 }

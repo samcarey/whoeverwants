@@ -350,6 +350,10 @@ class PollResponse(BaseModel):
     # closer to truth than summing, which would double-count).
     voter_names: list[str] = Field(default_factory=list)
     anonymous_count: int = 0
+    # "Viewed (N)" roster: browsers that opened the poll (>5 min ago) but never
+    # voted/abstained = "ignored" viewers. Mostly nameless; surfaced as a muted
+    # count. See CLAUDE.md 'App-Icon Badge Model + Viewed Tracking'.
+    viewed_ignored_count: int = 0
 
 
 # Resolve forward references (QuestionResponse.results -> QuestionResultsResponse)
