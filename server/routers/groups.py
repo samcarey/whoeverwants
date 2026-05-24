@@ -61,7 +61,7 @@ from services.groups import (
     filter_visible_polls,
     get_group_metadata,
     grant_group_membership_inline,
-    group_display_name,
+    group_name_phrase,
     is_caller_member_of_group,
     load_user_visibility,
     poll_ids_for_group_ids,
@@ -963,7 +963,7 @@ def create_group_join_request(
             {"g": group_id},
         ).fetchone()
         group_short_id = group_row.get("short_id") if group_row else None
-        group_name = group_display_name(
+        group_phrase = group_name_phrase(
             conn, group_id, override=group_row.get("title") if group_row else None
         )
 
@@ -986,7 +986,7 @@ def create_group_join_request(
             group_id,
             creator_user_id,
             {
-                "title": f"Join request for {group_name}",
+                "title": f"Join request for {group_phrase}",
                 "body": body_text,
                 "url": f"/g/{route_for_url}/info",
                 "group_id": route_for_url,

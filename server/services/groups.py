@@ -262,15 +262,13 @@ def get_group_metadata(conn, group_id: str) -> dict | None:
     }
 
 
-def group_display_name(conn, group_id: str, *, override: str | None) -> str:
-    """The group's human-facing name for notification titles ("... in
-    <Group name>"). Resolution order mirrors what the FE renders as the
-    group title:
+def group_display_name(conn, group_id: str, *, override: str | None) -> str | None:
+    """The group's human-facing name, or None when it has no name and no
+    named participants yet. Resolution order mirrors what the FE renders
+    as the group title:
       1. The `groups.title` override (`override` arg) when set.
       2. The deduplicated list of participant names (poll creators +
          voters across the group), creators first, in creation order.
-      3. The literal "your group" when the group has no name and no
-         named participants yet.
 
     The participant query only runs when no override is set, so the
     common (named-group) path is a single string check.
@@ -300,9 +298,15 @@ def group_display_name(conn, group_id: str, *, override: str | None) -> str:
         nm = (r["name"] or "").strip()
         if nm and nm not in seen:
             seen.append(nm)
-    if seen:
-        return ", ".join(seen)
-    return "your group"
+    return ", ".join(seen) if seen else None
+
+
+def group_name_phrase(conn, group_id: str, *, override: str | None) -> str:
+    """Ready-to-interpolate group reference for notification titles
+    ("... in <phrase>"): the group name in double quotes, or the unquoted
+    literal "your group" when there's no name and no named participants."""
+    name = group_display_name(conn, group_id, override=override)
+    return f'"{name}"' if name else "your group"
 
 
 def is_caller_member_of_group(

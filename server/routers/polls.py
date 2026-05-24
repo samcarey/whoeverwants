@@ -27,7 +27,7 @@ from models import (
     SubmitVoteRequest,
     VoteResponse,
 )
-from services.groups import group_display_name, require_uuid
+from services.groups import group_name_phrase, require_uuid
 from services.memberships import join_group, join_group_for_poll
 from services.poll_categories import record_poll_categories
 from services.push import (
@@ -406,6 +406,47 @@ def _compute_display_title(row: dict, question_rows: list[dict]) -> str:
     return _poll_own_title(row, question_rows)
 
 
+# Mirror of the FE icon resolution (components/TypeFieldInput.tsx
+# BUILT_IN_TYPES + lib/questionListUtils.ts QUESTION_TYPE_SYMBOLS /
+# getCategoryIcon). Used to prefix a single-question poll's title in push
+# notifications. Keep in sync with the FE constants.
+_CATEGORY_ICONS = {
+    "yes_no": "👍",
+    "time": "📅",
+    "restaurant": "🍽️",
+    "location": "📍",
+    "movie": "🎬",
+    "video_game": "🎮",
+}
+_QUESTION_TYPE_SYMBOLS = {
+    "yes_no": "👍",
+    "ranked_choice": "🗳️",
+    "time": "📅",
+}
+
+
+def _question_icon(question_row: dict) -> str:
+    """The category icon for a question, falling back to its question-type
+    symbol (matches FE `getCategoryIcon`). A time question stores
+    category="custom" but resolves to 📅 via the type-symbol fallback."""
+    category = question_row.get("category")
+    if category and category != "custom":
+        icon = _CATEGORY_ICONS.get(category)
+        if icon:
+            return icon
+    return _QUESTION_TYPE_SYMBOLS.get(question_row.get("question_type"), "☰")
+
+
+def _poll_body(row: dict, question_rows: list[dict]) -> str:
+    """The notification line-2 text: the poll's own title, prefixed with the
+    category/type icon when the poll has exactly one question. Multi-question
+    polls have no single category, so they show the title alone."""
+    title = _poll_own_title(row, question_rows)
+    if len(question_rows) == 1:
+        return f"{_question_icon(question_rows[0])} {title}"
+    return title
+
+
 def _row_to_poll(
     row: dict,
     question_rows: list[dict],
@@ -539,11 +580,12 @@ def _record_poll_view(conn, browser_id: str | None, poll_id: str, now: datetime)
 
 
 def _notification_base(conn, poll_id: str):
-    """(group_db_id, base_payload, poll_row, group_name) shared by the close +
-    transition payload builders, or None when the poll can't be routed (no
-    group). The base carries body/url/group_id/badge; the `body` is the poll's
-    OWN title (notification line 2). Callers build the title (line 1) as
-    "<event> in <group_name>" + add a tag."""
+    """(group_db_id, base_payload, poll_row, group_phrase) shared by the close
+    + transition payload builders, or None when the poll can't be routed (no
+    group). The base carries body/url/group_id/badge; the `body` (line 2) is
+    the poll's own title prefixed with its category icon. Callers build the
+    title (line 1) as "<event> in <group_phrase>" + add a tag, where
+    `group_phrase` is the quoted group name."""
     row = conn.execute(
         f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
         {"id": poll_id},
@@ -552,16 +594,16 @@ def _notification_base(conn, poll_id: str):
         return None
     question_rows = _fetch_questions(conn, poll_id)
     group_route = row.get("group_short_id") or str(row["group_id"])
-    group_name = group_display_name(
+    group_phrase = group_name_phrase(
         conn, str(row["group_id"]), override=row.get("group_title")
     )
     base = {
-        "body": _poll_own_title(row, question_rows),
+        "body": _poll_body(row, question_rows),
         "url": f"/g/{group_route}?p={row.get('short_id') or ''}",
         "group_id": group_route,
         "badge": 1,
     }
-    return str(row["group_id"]), base, row, group_name
+    return str(row["group_id"]), base, row, group_phrase
 
 
 def _build_close_notification(conn, poll_id: str) -> tuple[str, dict] | None:
@@ -570,10 +612,10 @@ def _build_close_notification(conn, poll_id: str) -> tuple[str, dict] | None:
     built = _notification_base(conn, poll_id)
     if not built:
         return None
-    group_id, base, _row, group_name = built
+    group_id, base, _row, group_phrase = built
     return group_id, {
         **base,
-        "title": f"Poll closed in {group_name}",
+        "title": f"Poll closed in {group_phrase}",
         "tag": f"poll-closed-{poll_id}",
     }
 
@@ -605,10 +647,10 @@ def _build_transition_notification(conn, poll_id: str):
     built = _notification_base(conn, poll_id)
     if not built:
         return None
-    group_id, base, row, group_name = built
+    group_id, base, row, group_phrase = built
     payload = {
         **base,
-        "title": f"Voting is open in {group_name}",
+        "title": f"Voting is open in {group_phrase}",
         "tag": f"poll-voting-{poll_id}",
     }
     return (
@@ -676,16 +718,18 @@ def create_poll(
             _insert_question(conn, poll_row, req, sub, index, question_title, now)
             for index, sub in enumerate(req.questions)
         ]
-        # Group display name for the "New poll in <Group>" notification title.
-        # Computed while the conn is open; the participant-names fallback only
-        # queries when the group has no title override.
-        new_poll_group_name = (
-            group_display_name(
+        # Notification strings for the "New poll in <Group>" push, computed
+        # while the conn is open. The group phrase's participant-names fallback
+        # only queries when the group has no title override; the body is the
+        # poll's own title prefixed with its category icon.
+        if poll_row.get("group_id"):
+            new_poll_group_phrase = group_name_phrase(
                 conn, str(poll_row["group_id"]), override=poll_row.get("group_title")
             )
-            if poll_row.get("group_id")
-            else None
-        )
+            new_poll_body = _poll_body(poll_row, question_rows)
+        else:
+            new_poll_group_phrase = None
+            new_poll_body = None
 
     creator_browser_id = _browser_id(request)
     group_id = str(poll_row["group_id"]) if poll_row.get("group_id") else None
@@ -711,13 +755,11 @@ def create_poll(
     # serialized + sent so a slow push service can't block the user.
     if group_id:
         # Line 1 names the event + group ("New poll in <Group>"); line 2 (body)
-        # is the poll's own title. Prefer the explicit title; fall back to the
-        # auto-generated one already computed above.
-        poll_title = poll_row.get("title") or question_title or "New poll"
+        # is the icon-prefixed poll title (both computed in the block above).
         group_route_id = poll_row.get("group_short_id") or group_id
         notif_title = (
-            f"New poll in {new_poll_group_name}"
-            if new_poll_group_name
+            f"New poll in {new_poll_group_phrase}"
+            if new_poll_group_phrase
             else "New poll"
         )
         background_tasks.add_task(
@@ -726,7 +768,7 @@ def create_poll(
             creator_browser_id,
             {
                 "title": notif_title,
-                "body": poll_title,
+                "body": new_poll_body or question_title or "New poll",
                 "url": f"/g/{group_route_id}?p={poll_row.get('short_id') or ''}",
                 "group_id": group_route_id,
                 "badge": 1,
