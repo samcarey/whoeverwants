@@ -31,11 +31,6 @@ interface VoterListProps {
    *  per-question voteId to disambiguate by here. */
   staticVoterNames?: string[];
   staticAnonymousCount?: number;
-  /** Static mode only: count of browsers that opened the poll (>5 min ago)
-   *  but never voted/abstained. Reframes the multi-line roster as "Viewed (N)"
-   *  with these surfaced as a muted "N viewed" badge. See CLAUDE.md
-   *  'App-Icon Badge Model + Viewed Tracking'. */
-  staticIgnoredCount?: number;
   /** When true, the current user is NOT excluded from the singleLine row.
    *  Used by the suggestion-phase below-card row so the suggester sees their
    *  own bubble there even when they're the only respondent. */
@@ -63,12 +58,8 @@ function EmptyPlaceholder({ text, className }: { text: string; className: string
   );
 }
 
-export default function VoterList({ questionId, className = "", label, filter, singleLine = false, emptyText, staticVoterNames, staticAnonymousCount, staticIgnoredCount, includeSelf = false }: VoterListProps) {
+export default function VoterList({ questionId, className = "", label, filter, singleLine = false, emptyText, staticVoterNames, staticAnonymousCount, includeSelf = false }: VoterListProps) {
   const isStatic = !!staticVoterNames;
-  // "Viewed (N)" reframe: only meaningful in static (poll-level) mode, and
-  // only surfaced in the multi-line roster (the compact singleLine group-card
-  // row stays a voter preview).
-  const ignoredCount = isStatic ? Math.max(0, staticIgnoredCount ?? 0) : 0;
 
   // Seed from the shared votes cache (or from static props) so warm
   // navigations render bubbles on the first paint instead of flashing
@@ -175,7 +166,7 @@ export default function VoterList({ questionId, className = "", label, filter, s
     return null;
   }
 
-  if (voters.length === 0 && ignoredCount === 0) {
+  if (voters.length === 0) {
     if (singleLine && emptyText) return <EmptyPlaceholder text={emptyText} className={className} />;
     return null;
   }
@@ -282,15 +273,10 @@ export default function VoterList({ questionId, className = "", label, filter, s
     );
   }
 
-  // In static (poll-level) mode the roster is a "Viewed (N)" list: everyone
-  // who opened the poll = named voters + anon voters + ignored (viewed-no-
-  // action) viewers, with vote state as a per-person marker.
-  const totalViewed = namedVoters.length + adjustedAnonymousCount + ignoredCount;
-
   return (
     <div className={`flex flex-wrap items-center justify-center gap-1.5 ${className}`}>
-      <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || (isStatic ? "Viewed" : "Respondents")}>
-        {isStatic ? `Viewed (${totalViewed})` : `${voters.length} 👥`}
+      <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>
+        {voters.length} 👥
       </span>
 
       {namedVoters.map((voter, index) => (
@@ -305,12 +291,6 @@ export default function VoterList({ questionId, className = "", label, filter, s
       {adjustedAnonymousCount > 0 && (
         <span className="inline-block px-2.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600 text-xs text-gray-600 dark:text-gray-300 italic">
           {adjustedAnonymousCount} × Anon
-        </span>
-      )}
-
-      {ignoredCount > 0 && (
-        <span className="inline-block px-2.5 py-0.5 bg-gray-50 dark:bg-gray-800 rounded-full border border-dashed border-gray-300 dark:border-gray-600 text-xs text-gray-400 dark:text-gray-500 italic">
-          {ignoredCount} viewed
         </span>
       )}
     </div>
