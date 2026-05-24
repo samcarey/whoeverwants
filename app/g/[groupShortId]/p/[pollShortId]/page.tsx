@@ -18,6 +18,7 @@ import {
   apiGetPollByShortId,
   apiGetQuestionResults,
   apiGetVotes,
+  apiRecordPollView,
   ApiError,
   QUESTION_VOTES_CHANGED_EVENT,
 } from "@/lib/api";
@@ -333,6 +334,19 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   useEffect(() => {
     for (const sp of poll.questions) void fetchOneResults(sp);
   }, [poll.id, poll.questions, fetchOneResults]);
+
+  // While the prephase (suggestions / availability) is still open, record
+  // that we've seen the current options. The phase-transition push skips a
+  // prevoter only when no new option arrived after their last view, so this
+  // watermark keeps "I already looked, nothing's changed" members quiet.
+  useEffect(() => {
+    const deadline = poll.prephase_deadline
+      ? new Date(poll.prephase_deadline).getTime()
+      : null;
+    if (deadline !== null && deadline > Date.now()) {
+      void apiRecordPollView(poll.id);
+    }
+  }, [poll.id, poll.prephase_deadline]);
 
   // Wrapper refetch keeps voter_names + prephase_deadline + closed-state
   // fresh in the respondent row and status label after a vote.

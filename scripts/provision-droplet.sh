@@ -382,6 +382,22 @@ mkdir -p /root/dev-servers /etc/caddy/dev-servers
 (crontab -l 2>/dev/null | grep -v 'dev-server-manager.sh' || true; \
  echo "30 4 * * * /root/whoeverwants/scripts/dev-server-manager.sh cleanup 7 >> /var/log/whoeverwants-dev-cleanup.log 2>&1") | crontab -
 
+# --- Notification tick (every minute) ---
+# Server-local cron drives the deadline-based poll-closed + phase-transition
+# pushes. The app computes "closed"/"prephase over" lazily on read; nothing
+# else acts on deadlines passing, so without this the only notifications that
+# fire are the inline ones from explicit close/cutoff/create. Bearer-secret
+# gated; the secret lives in .env.api so the cron and the API container share
+# one value. Generated here if absent — the API container must be (re)created
+# afterward (`docker compose up -d --force-recreate api`) to read the new env.
+chmod +x /root/whoeverwants/scripts/notification-tick.sh
+touch /root/whoeverwants/.env.api
+if ! grep -q '^INTERNAL_TICK_SECRET=' /root/whoeverwants/.env.api 2>/dev/null; then
+  echo "INTERNAL_TICK_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" >> /root/whoeverwants/.env.api
+fi
+(crontab -l 2>/dev/null | grep -v 'notification-tick.sh' || true; \
+ echo "* * * * * /root/whoeverwants/scripts/notification-tick.sh >> /var/log/whoeverwants-notification-tick.log 2>&1") | crontab -
+
 echo "Cron jobs installed:"
 crontab -l
 

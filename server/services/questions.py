@@ -325,10 +325,20 @@ def _enforce_suggestion_phase_timing(question: dict, suggestions, ranked_choices
     return has_suggestion_phase
 
 
-def _submit_vote_to_question(conn, question_id: str, req: SubmitVoteRequest, now: datetime) -> dict:
+def _submit_vote_to_question(
+    conn,
+    question_id: str,
+    req: SubmitVoteRequest,
+    now: datetime,
+    browser_id: str | None = None,
+) -> dict:
     """Insert a vote row inside an existing transaction. Shared by the per-question
     `submit_vote` endpoint and the poll batch-vote endpoint. Returns the
-    inserted row. Raises HTTPException on validation failures."""
+    inserted row. Raises HTTPException on validation failures.
+
+    `browser_id` is recorded so the phase-transition notification can tell
+    which group members prevoted (and therefore may already have seen the
+    finalized options). Only set on insert — edits keep the original."""
     question = conn.execute(
         """SELECT p.id, p.question_type, p.poll_id,
                   mp.allow_pre_ranking,
@@ -368,13 +378,13 @@ def _submit_vote_to_question(conn, question_id: str, req: SubmitVoteRequest, now
                            ranked_choice_tiers,
                            suggestions, is_abstain, is_ranking_abstain, voter_name,
                            voter_day_time_windows, voter_duration,
-                           liked_slots, disliked_slots,
+                           liked_slots, disliked_slots, browser_id,
                            created_at, updated_at)
         VALUES (%(question_id)s, %(vote_type)s, %(yes_no_choice)s, %(ranked_choices)s,
                 %(ranked_choice_tiers)s::jsonb,
                 %(suggestions)s, %(is_abstain)s, %(is_ranking_abstain)s, %(voter_name)s,
                 %(voter_day_time_windows)s::jsonb, %(voter_duration)s::jsonb,
-                %(liked_slots)s::jsonb, %(disliked_slots)s::jsonb,
+                %(liked_slots)s::jsonb, %(disliked_slots)s::jsonb, %(browser_id)s,
                 %(now)s, %(now)s)
         RETURNING *
         """,
@@ -392,6 +402,7 @@ def _submit_vote_to_question(conn, question_id: str, req: SubmitVoteRequest, now
             "voter_duration": json.dumps(req.voter_duration) if req.voter_duration else None,
             "liked_slots": json.dumps(req.liked_slots) if req.liked_slots is not None else None,
             "disliked_slots": json.dumps(req.disliked_slots) if req.disliked_slots is not None else None,
+            "browser_id": browser_id,
             "now": now,
         },
     ).fetchone()

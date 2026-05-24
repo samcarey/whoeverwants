@@ -13,6 +13,7 @@ from routers.client_logs import router as client_logs_router
 from routers.groups import router as groups_router
 from routers.users import router as users_router
 from routers.notifications import router as notifications_router
+from routers.internal import router as internal_router
 
 app = FastAPI(title="WhoeverWants API", redirect_slashes=False)
 
@@ -53,6 +54,7 @@ app.include_router(polls_router)
 app.include_router(groups_router)
 app.include_router(users_router)
 app.include_router(notifications_router)
+app.include_router(internal_router)
 app.include_router(search_router)
 app.include_router(client_logs_router)
 

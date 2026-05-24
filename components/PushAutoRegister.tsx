@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { bootstrapCapacitorPushSubscription } from "@/lib/pushNotifications";
+import { bootstrapCapacitorPushSubscription, clearAppBadge } from "@/lib/pushNotifications";
 
 /**
  * Bootstraps push notifications on Capacitor iOS:
@@ -28,6 +28,18 @@ import { bootstrapCapacitorPushSubscription } from "@/lib/pushNotifications";
 export function PushAutoRegister() {
   useEffect(() => {
     void bootstrapCapacitorPushSubscription();
+    // Clear the app-icon badge whenever the app is opened or refocused — the
+    // user has now seen whatever a close / phase-transition push was flagging.
+    clearAppBadge();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") clearAppBadge();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", clearAppBadge);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", clearAppBadge);
+    };
   }, []);
   return null;
 }

@@ -1,8 +1,10 @@
 /**
  * Notification settings card. Rendered on the group info page below the
- * members roster. Today it holds one toggle ("New Poll"); future
- * notification kinds (votes, suggestions cutoff, etc.) plug into the
- * same divide-y card.
+ * members roster. One toggle ("Activity") governs every per-group push:
+ * new polls, a poll closing, and a poll's suggestion/availability phase
+ * ending (voting opening). They share the single `notify_new_poll` pref
+ * column server-side — the column name is historical; the toggle covers all
+ * three events.
  *
  * Capability gating: the toggle greys out + sits unchecked when the
  * runtime can't receive push notifications (e.g. iOS Safari without
@@ -193,13 +195,13 @@ export default function NotificationSettingsCard({ groupRouteId, className = "mt
                 disabled ? "text-gray-400 dark:text-gray-500" : ""
               }`}
             >
-              New Poll
+              Activity
             </span>
             <SliderSwitch
               checked={checked}
               onChange={onToggle}
               disabled={disabled}
-              aria-label="Notify me when someone creates a new poll in this group"
+              aria-label="Notify me about activity in this group: new polls, a poll closing, or voting opening"
             />
           </div>
         </div>
