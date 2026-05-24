@@ -95,6 +95,20 @@ export async function apiGetPollById(pollId: string): Promise<Poll> {
   );
 }
 
+/** Record that this browser viewed the poll right now (fire-and-forget).
+ *  Feeds the phase-transition notification's skip-logic — a member who's
+ *  already seen the latest options isn't pinged when voting opens. Only worth
+ *  calling while the poll's prephase is still active; the server upsert is a
+ *  no-op for unknown poll ids. Best-effort: failures are swallowed because the
+ *  watermark is an optimization, not correctness-critical. */
+export async function apiRecordPollView(pollId: string): Promise<void> {
+  try {
+    await pollFetch(`/${encodeURIComponent(pollId)}/viewed`, { method: 'POST' });
+  } catch {
+    // ignore — the next view (or a vote) re-records the watermark
+  }
+}
+
 // Poll-level operations: close/reopen/cutoff the wrapper + every question
 // atomically. Each helper invalidates the poll cache (which cascades to
 // every question) and the accessible-questions cache so the next read reflects

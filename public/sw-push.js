@@ -11,9 +11,14 @@
  * same way. This is the only SW registered on dev servers — the
  * caching SW is unregistered there per layout.tsx.
  *
- * Payload schema is defined by the server's `fan_out_new_poll` (see
+ * Payload schema is defined by the server's fan-out helpers (see
  * server/services/push.py):
- *   { title: string, body: string, url: string, group_id: string, tag: string }
+ *   { title: string, body: string, url: string, group_id: string,
+ *     tag: string, badge?: number }
+ * `badge` is the app-icon badge count (currently always 1 — the "you have
+ * something unseen" dot, not a real unread count). Set via setAppBadge on
+ * push, cleared on notification click and on app focus (see
+ * lib/pushNotifications.ts: clearAppBadge).
  */
 
 self.addEventListener('install', function (event) {
@@ -48,11 +53,22 @@ self.addEventListener('push', function (event) {
     },
   };
 
+  // App-icon badge. `navigator.setAppBadge` is supported in the SW global
+  // scope on Chromium / installed PWAs; iOS APNS carries its own aps.badge.
+  // Guarded so unsupported browsers (and the value being absent) no-op.
+  if (typeof payload.badge === 'number' && self.navigator && self.navigator.setAppBadge) {
+    self.navigator.setAppBadge(payload.badge).catch(function () {});
+  }
+
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
+  // Opening the notification clears the badge — the user has now seen it.
+  if (self.navigator && self.navigator.clearAppBadge) {
+    self.navigator.clearAppBadge().catch(function () {});
+  }
   var url = (event.notification.data && event.notification.data.url) || '/';
 
   event.waitUntil(

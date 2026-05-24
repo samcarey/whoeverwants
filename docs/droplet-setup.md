@@ -161,6 +161,7 @@ Internet
 Cron jobs:
   - 3:00 AM daily  ──► backup-db.sh (pg_dump + rotate)
   - Every 5 min    ──► health-check.sh (service checks + auto-recovery)
+  - Every minute   ──► notification-tick.sh (deadline-driven poll-closed + phase-transition pushes)
   - 4:00 AM daily  ──► preview-manager.sh cleanup (destroy previews >7 days old)
   - 4:30 AM daily  ──► dev-server-manager.sh cleanup (destroy dev servers >7 days idle)
 ```
@@ -184,6 +185,7 @@ Cron jobs:
 | `0 4 * * *` | `scripts/preview-manager.sh cleanup` | Destroy preview environments older than 7 days |
 | `30 4 * * *` | `scripts/dev-server-manager.sh cleanup` | Destroy dev servers idle for 7+ days |
 | `*/5 * * * *` | `scripts/health-check.sh` | Service health checks with auto-recovery |
+| `* * * * *` | `scripts/notification-tick.sh` | POST `/api/internal/tick`: close past-deadline polls + send poll-closed / phase-transition pushes (bearer-gated by `INTERNAL_TICK_SECRET` in `.env.api`) |
 
 ### Key Files on Droplet
 

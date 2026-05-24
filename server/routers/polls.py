@@ -30,7 +30,11 @@ from models import (
 from services.groups import require_uuid
 from services.memberships import join_group, join_group_for_poll
 from services.poll_categories import record_poll_categories
-from services.push import fan_out_new_poll
+from services.push import (
+    fan_out_new_poll,
+    fan_out_phase_transition,
+    fan_out_poll_closed,
+)
 from services.validation import validate_user_name
 from services.questions import (
     _edit_vote_on_question,
@@ -481,6 +485,123 @@ def _compute_poll_voter_data(conn, poll_id: str) -> tuple[list[str], int]:
     return list(row["voter_names"] or []), int(row["anonymous_count"] or 0)
 
 
+def _record_poll_view(conn, browser_id: str | None, poll_id: str, now: datetime) -> None:
+    """Upsert this browser's last-viewed watermark for the poll. Drives the
+    phase-transition skip-logic ("has this member already seen the final
+    options?"). No-op when browser_id is absent."""
+    if not browser_id:
+        return
+    # SELECT-from-polls guard so an unknown poll_id is a no-op instead of an
+    # FK-violation 500 (the /viewed endpoint takes a client-supplied id).
+    conn.execute(
+        """
+        INSERT INTO poll_views (browser_id, poll_id, last_viewed_at)
+        SELECT %(b)s, %(p)s, %(now)s
+        WHERE EXISTS (SELECT 1 FROM polls WHERE id = %(p)s)
+        ON CONFLICT (browser_id, poll_id)
+          DO UPDATE SET last_viewed_at = EXCLUDED.last_viewed_at
+        """,
+        {"b": browser_id, "p": poll_id, "now": now},
+    )
+
+
+def _notification_base(conn, poll_id: str):
+    """(group_db_id, base_payload, poll_row) shared by the close + transition
+    payload builders, or None when the poll can't be routed (no group). The
+    base carries body/url/group_id/badge; callers add title + tag."""
+    row = conn.execute(
+        f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
+        {"id": poll_id},
+    ).fetchone()
+    if not row or not row.get("group_id"):
+        return None
+    question_rows = _fetch_questions(conn, poll_id)
+    group_route = row.get("group_short_id") or str(row["group_id"])
+    base = {
+        "body": _compute_display_title(row, question_rows),
+        "url": f"/g/{group_route}?p={row.get('short_id') or ''}",
+        "group_id": group_route,
+        "badge": 1,
+    }
+    return str(row["group_id"]), base, row
+
+
+def _build_close_notification(conn, poll_id: str) -> tuple[str, dict] | None:
+    """(group_id, payload) for a poll-closed push, or None when unroutable.
+    Shared by the inline close endpoint and the cron tick."""
+    built = _notification_base(conn, poll_id)
+    if not built:
+        return None
+    group_id, base, _row = built
+    return group_id, {**base, "title": "Poll closed", "tag": f"poll-closed-{poll_id}"}
+
+
+def _latest_prephase_contribution(conn, poll_id: str):
+    """Timestamp of the most recent option-adding vote (a suggestion or an
+    availability submission) across the poll's questions, or None. Feeds the
+    transition skip-logic's "did new options appear since they last looked?"."""
+    row = conn.execute(
+        """
+        SELECT MAX(v.created_at) AS latest
+          FROM votes v
+          JOIN questions q ON v.question_id = q.id
+         WHERE q.poll_id = %(pid)s
+           AND (
+             (v.suggestions IS NOT NULL AND array_length(v.suggestions, 1) > 0)
+             OR v.voter_day_time_windows IS NOT NULL
+           )
+        """,
+        {"pid": poll_id},
+    ).fetchone()
+    return row["latest"] if row else None
+
+
+def _build_transition_notification(conn, poll_id: str):
+    """(group_id, payload, prevoting_on, latest_contribution) for a
+    phase-transition push, or None when unroutable. Shared by the inline
+    cutoff endpoints and the cron tick."""
+    built = _notification_base(conn, poll_id)
+    if not built:
+        return None
+    group_id, base, row = built
+    payload = {**base, "title": "Voting is open", "tag": f"poll-voting-{poll_id}"}
+    return (
+        group_id,
+        payload,
+        row.get("allow_pre_ranking") is not False,
+        _latest_prephase_contribution(conn, poll_id),
+    )
+
+
+def _schedule_close_notification(conn, poll_id, *, already_notified, background_tasks):
+    """Build + schedule the poll-closed push, unless the poll was already
+    close-notified. No-op when unroutable. Fan-out runs after the response."""
+    if already_notified:
+        return
+    built = _build_close_notification(conn, poll_id)
+    if built:
+        group_id, payload = built
+        background_tasks.add_task(fan_out_poll_closed, group_id, poll_id, payload)
+
+
+def _schedule_transition_notification(conn, poll_id, *, already_notified, background_tasks):
+    """Build + schedule the phase-transition push, unless the poll was already
+    transition-notified. No-op when unroutable."""
+    if already_notified:
+        return
+    built = _build_transition_notification(conn, poll_id)
+    if built:
+        group_id, payload, prevoting_on, latest = built
+        background_tasks.add_task(
+            fan_out_phase_transition,
+            group_id,
+            poll_id,
+            payload,
+            prevoting_on=prevoting_on,
+            latest_contribution=latest,
+        )
+
+
 @router.post("", response_model=PollResponse, status_code=201)
 def create_poll(
     req: CreatePollRequest, request: Request, background_tasks: BackgroundTasks
@@ -610,12 +731,18 @@ def _authorize_poll(conn, poll_id: str, creator_secret: str) -> dict:
 
 
 @router.post("/{poll_id}/close", response_model=PollResponse)
-def close_poll(poll_id: str, req: CloseQuestionRequest):
+def close_poll(poll_id: str, req: CloseQuestionRequest, background_tasks: BackgroundTasks):
     """Close a poll. Phase 5: only the wrapper carries is_closed/close_reason —
     closing the wrapper closes every question automatically.
 
     For each ranked_choice question mid-suggestion-phase, finalizes its options
     so results are computable immediately.
+
+    Sets `close_notified` and fires the poll-closed push inline (best-effort,
+    via BackgroundTasks) so an explicit close notifies instantly. The cron
+    tick is the backstop for deadline-driven and auto (max_capacity) closes,
+    which never reach this endpoint — it claims any `close_notified=false`
+    closed poll, so the flag set here keeps the tick from double-sending.
     """
     now = datetime.now(timezone.utc)
     with get_db() as conn:
@@ -625,6 +752,7 @@ def close_poll(poll_id: str, req: CloseQuestionRequest):
             UPDATE polls
             SET is_closed = true,
                 close_reason = %(close_reason)s,
+                close_notified = true,
                 updated_at = %(now)s
             WHERE id = %(poll_id)s
             """,
@@ -645,6 +773,15 @@ def close_poll(poll_id: str, req: CloseQuestionRequest):
             ).fetchall()
             for sp in question_rows:
                 _finalize_suggestion_options(conn, str(sp["id"]), now)
+
+        # Skip the push if this poll was already close-notified (a redundant
+        # close on an already-closed poll mustn't re-notify).
+        _schedule_close_notification(
+            conn,
+            poll_id,
+            already_notified=bool(wrapper.get("close_notified")),
+            background_tasks=background_tasks,
+        )
 
         poll_row = conn.execute(
             f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
@@ -668,6 +805,7 @@ def reopen_poll(poll_id: str, req: ReopenQuestionRequest):
             UPDATE polls
             SET is_closed = false,
                 close_reason = NULL,
+                close_notified = false,
                 updated_at = %(now)s
             WHERE id = %(poll_id)s
             """,
@@ -684,7 +822,9 @@ def reopen_poll(poll_id: str, req: ReopenQuestionRequest):
 
 
 @router.post("/{poll_id}/cutoff-suggestions", response_model=PollResponse)
-def cutoff_poll_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
+def cutoff_poll_suggestions(
+    poll_id: str, req: CutoffSuggestionsRequest, background_tasks: BackgroundTasks
+):
     """End the suggestion phase across every question that's still in it.
 
     Unlike the per-question endpoint, this is a no-op-ok operation: questions not
@@ -692,6 +832,10 @@ def cutoff_poll_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
     submitted suggestions yet (the poll wrapper has multiple questions,
     most of which never had a suggestion phase). Returns 400 only if NO
     question's suggestion phase advanced.
+
+    Sets `prephase_notified` and fires the 'voting is open' push inline. The
+    cron tick is the backstop for deadline-driven transitions (where no
+    endpoint runs); the flag keeps it from double-sending.
     """
     now = datetime.now(timezone.utc)
     with get_db() as conn:
@@ -720,11 +864,19 @@ def cutoff_poll_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
             )
 
         conn.execute(
-            "UPDATE polls SET prephase_deadline = %(now)s, updated_at = %(now)s WHERE id = %(mid)s",
+            "UPDATE polls SET prephase_deadline = %(now)s, prephase_notified = true, "
+            "updated_at = %(now)s WHERE id = %(mid)s",
             {"mid": poll_id, "now": now},
         )
         for row in rc_questions:
             _finalize_suggestion_options(conn, str(row["id"]), now)
+
+        _schedule_transition_notification(
+            conn,
+            poll_id,
+            already_notified=bool(wrapper.get("prephase_notified")),
+            background_tasks=background_tasks,
+        )
 
         poll_row = conn.execute(
             f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
@@ -792,11 +944,12 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
     require_uuid(poll_id, "poll_id")
     req.voter_name = validate_user_name(req.voter_name, field="Voter name")
     now = datetime.now(timezone.utc)
+    browser_id = _browser_id(request)
 
     # Phase C.2: group join runs BEFORE the vote in its own transaction so
     # "attempted to participate" is the membership trigger — a vote that
     # fails validation still leaves the user as a group member.
-    join_group_for_poll(poll_id, _browser_id(request))
+    join_group_for_poll(poll_id, browser_id)
 
     question_ids = [item.question_id for item in req.items]
     if len(set(question_ids)) != len(question_ids):
@@ -847,16 +1000,28 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
                     item.question_id,
                     _vote_item_to_submit_req(item, req.voter_name),
                     now,
+                    browser_id=browser_id,
                 )
             result_rows.append(row)
+
+        # Voting IS viewing — record the watermark so the phase-transition
+        # skip-logic treats this voter as having seen the options they just
+        # acted on. The FE also pings /viewed on poll open; this covers the
+        # vote-without-a-separate-view path.
+        _record_poll_view(conn, browser_id, poll_id, now)
 
     return [_row_to_vote(r) for r in result_rows]
 
 
 @router.post("/{poll_id}/cutoff-availability", response_model=PollResponse)
-def cutoff_poll_availability(poll_id: str, req: CutoffSuggestionsRequest):
+def cutoff_poll_availability(
+    poll_id: str, req: CutoffSuggestionsRequest, background_tasks: BackgroundTasks
+):
     """End the availability phase of the poll's time question (≤1 enforced
-    on create). Phase 5: prephase_deadline is wrapper-level."""
+    on create). Phase 5: prephase_deadline is wrapper-level.
+
+    Sets `prephase_notified` and fires the 'voting is open' push inline (same
+    contract as cutoff-suggestions)."""
     now = datetime.now(timezone.utc)
     with get_db() as conn:
         wrapper = _authorize_poll(conn, poll_id, req.creator_secret)
@@ -879,11 +1044,19 @@ def cutoff_poll_availability(poll_id: str, req: CutoffSuggestionsRequest):
             )
 
         conn.execute(
-            "UPDATE polls SET prephase_deadline = %(now)s, updated_at = %(now)s WHERE id = %(mid)s",
+            "UPDATE polls SET prephase_deadline = %(now)s, prephase_notified = true, "
+            "updated_at = %(now)s WHERE id = %(mid)s",
             {"mid": poll_id, "now": now},
         )
         for row in time_questions:
             _finalize_time_slots(conn, str(row["id"]), now)
+
+        _schedule_transition_notification(
+            conn,
+            poll_id,
+            already_notified=bool(wrapper.get("prephase_notified")),
+            background_tasks=background_tasks,
+        )
 
         poll_row = conn.execute(
             f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
@@ -893,5 +1066,18 @@ def cutoff_poll_availability(poll_id: str, req: CutoffSuggestionsRequest):
         voter_names, anonymous_count = _compute_poll_voter_data(conn, poll_id)
 
     return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count)
+
+
+@router.post("/{poll_id}/viewed", status_code=204)
+def record_poll_viewed(poll_id: str, request: Request):
+    """Record that the calling browser viewed this poll right now. The FE
+    pings this when opening a poll whose prephase is still active; the
+    watermark lets the phase-transition notification skip members who've
+    already seen the latest options. Idempotent + best-effort — unknown
+    poll ids no-op (see `_record_poll_view`)."""
+    require_uuid(poll_id, "poll_id")
+    now = datetime.now(timezone.utc)
+    with get_db() as conn:
+        _record_poll_view(conn, _browser_id(request), poll_id, now)
 
 

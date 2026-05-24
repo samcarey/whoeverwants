@@ -429,3 +429,23 @@ export async function tearDownPushSubscription(): Promise<void> {
   }
   await apiUnregisterPushSubscription(endpoint).catch(() => {});
 }
+
+/**
+ * Clear the app-icon badge. Called when the user opens or refocuses the app —
+ * they've now seen whatever the badge was flagging. The badge is set by the
+ * push service worker (`sw-push.js`) from the notification payload's `badge`
+ * field, which is currently always 1 (a "something's waiting" dot, not a real
+ * unread count).
+ *
+ * Web / installed PWA only — uses the Badging API where present, no-ops
+ * otherwise. iOS native (Capacitor) badge zeroing would need a Capacitor
+ * plugin (and an iOS rebuild), so it's out of scope; the iOS badge clears when
+ * the user taps the notification itself (handled in sw-push.js notificationclick).
+ */
+export function clearAppBadge(): void {
+  if (typeof navigator === "undefined") return;
+  const nav = navigator as Navigator & { clearAppBadge?: () => Promise<void> };
+  if (typeof nav.clearAppBadge === "function") {
+    void nav.clearAppBadge().catch(() => {});
+  }
+}

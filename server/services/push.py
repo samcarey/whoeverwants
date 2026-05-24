@@ -391,3 +391,121 @@ def fan_out_join_request(
         _dispatch_pushes(subscriptions, payload, vapid)
     except Exception as exc:  # noqa: BLE001
         log.exception("fan_out_join_request failed: %s", exc)
+
+
+def fan_out_poll_closed(group_id: str, poll_id: str, payload: dict) -> None:
+    """Send a 'poll closed' push to every group member whose notification
+    preference is on. Same safety contract + default-ON pref semantics as
+    `fan_out_new_poll`.
+
+    Audience is the whole group with NO actor exclusion (unlike new-poll,
+    which excludes the creator): a close is detected by the cron tick
+    decoupled from whoever closed it, deadline closes have no actor at all,
+    and the poll's creator legitimately wants the 'your poll closed — results
+    are in' nudge. `poll_id` is unused by the query (the payload already
+    carries the routing url) but kept in the signature so callers read
+    symmetrically with `fan_out_phase_transition`.
+    """
+    try:
+        with get_db() as conn:
+            recipients = conn.execute(
+                """
+                SELECT gm.browser_id::text AS browser_id
+                FROM group_members gm
+                LEFT JOIN group_notification_preferences pref
+                  ON pref.browser_id = gm.browser_id AND pref.group_id = gm.group_id
+                WHERE gm.group_id = %(gid)s
+                  AND COALESCE(pref.notify_new_poll, TRUE) = TRUE
+                """,
+                {"gid": group_id},
+            ).fetchall()
+            browser_ids = [r["browser_id"] for r in recipients]
+            if not browser_ids:
+                return
+            subscriptions = _fetch_subscriptions(conn, browser_ids)
+            if not subscriptions:
+                return
+            vapid = _load_vapid_from_db(conn)
+
+        _dispatch_pushes(subscriptions, payload, vapid)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("fan_out_poll_closed failed: %s", exc)
+
+
+def fan_out_phase_transition(
+    group_id: str,
+    poll_id: str,
+    payload: dict,
+    *,
+    prevoting_on: bool,
+    latest_contribution,
+) -> None:
+    """Send a 'voting is open' push when a poll leaves its suggestion /
+    availability prephase. Same safety contract + default-ON pref semantics
+    as `fan_out_new_poll`.
+
+    Audience is the whole group with the prephase pref on, MINUS members who
+    are already done — the single skip-case the user specified:
+
+        prevoting was on  AND  the member prevoted  AND  no option-adding
+        contribution arrived after their last view of the poll.
+
+    Everyone else is notified, including members who never prevoted (they may
+    have been deliberately holding off until the option set settled) and
+    prevoters who'd see new options they haven't looked at yet.
+
+    `prevoting_on` is the poll's `allow_pre_ranking` (default true).
+    `latest_contribution` is the timestamp of the most recent option-adding
+    vote (a suggestion or an availability submission) anywhere in the poll, or
+    None when the prephase drew no contributions. When it's None nobody can be
+    "satisfied" (there were no options to have seen), so everyone is notified.
+
+    Membership is keyed per browser_id (matching new-poll fan-out): a person
+    signed in on two browsers who prevoted on one may still be notified on the
+    other. Accepted for v1 — the cross-browser union would add a
+    `user_browsers` walk for a marginal dedup.
+    """
+    try:
+        with get_db() as conn:
+            recipients = conn.execute(
+                """
+                SELECT gm.browser_id::text AS browser_id
+                FROM group_members gm
+                LEFT JOIN group_notification_preferences pref
+                  ON pref.browser_id = gm.browser_id AND pref.group_id = gm.group_id
+                WHERE gm.group_id = %(gid)s
+                  AND COALESCE(pref.notify_new_poll, TRUE) = TRUE
+                  AND NOT (
+                    %(prevoting_on)s
+                    AND EXISTS (
+                      SELECT 1 FROM votes v
+                      JOIN questions q ON v.question_id = q.id
+                      WHERE q.poll_id = %(pid)s AND v.browser_id = gm.browser_id
+                    )
+                    AND %(latest)s IS NOT NULL
+                    AND EXISTS (
+                      SELECT 1 FROM poll_views pv
+                      WHERE pv.poll_id = %(pid)s
+                        AND pv.browser_id = gm.browser_id
+                        AND pv.last_viewed_at >= %(latest)s
+                    )
+                  )
+                """,
+                {
+                    "gid": group_id,
+                    "pid": poll_id,
+                    "prevoting_on": prevoting_on,
+                    "latest": latest_contribution,
+                },
+            ).fetchall()
+            browser_ids = [r["browser_id"] for r in recipients]
+            if not browser_ids:
+                return
+            subscriptions = _fetch_subscriptions(conn, browser_ids)
+            if not subscriptions:
+                return
+            vapid = _load_vapid_from_db(conn)
+
+        _dispatch_pushes(subscriptions, payload, vapid)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("fan_out_phase_transition failed: %s", exc)

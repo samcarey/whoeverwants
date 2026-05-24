@@ -63,8 +63,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if os.environ.get("DISABLE_RATE_LIMIT") == "1":
             return await call_next(request)
 
-        # Skip rate limiting for health checks
-        if request.url.path == "/health":
+        # Skip rate limiting for health checks and the server-local cron
+        # tick (/api/internal/*). The tick is bearer-secret gated and hit
+        # once a minute from the host crontab; a write-rate cap could stall it.
+        if request.url.path == "/health" or request.url.path.startswith("/api/internal/"):
             return await call_next(request)
 
         ip = self._get_client_ip(request)
