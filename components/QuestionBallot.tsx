@@ -31,6 +31,13 @@ import { buildVoteData, buildPollVoteItem, type BallotInputs } from "./QuestionB
 import TimeBallotSection from "./QuestionBallot/TimeBallotSection";
 import { haptic } from "@/lib/haptics";
 
+/** Card chrome shared between the poll detail page's per-question card and
+ *  the two cards QuestionBallot renders itself when splitEarlyVotingCards is
+ *  on. Keeping it here as the single source of truth so the suggestion card,
+ *  the ballot card, and the page's normal card stay visually identical. */
+export const POLL_SUBCARD_CLASS =
+  "rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 shadow-sm px-3 py-3";
+
 interface QuestionBallotProps {
   question: Question;
   // Phase 5b: wrapper-level fields (response_deadline, is_closed,
@@ -61,6 +68,11 @@ interface QuestionBallotProps {
   // say" so the wrapper's Submit visibility/label match the original
   // gating across initial-vote / voted / edit-mode transitions.
   onWrapperSubmitStateChange?: (questionId: string, state: { visible: boolean; label: string }) => void;
+  // Early-voting ranked-choice (suggestion phase + pre-ranking allowed): split
+  // the suggestion entry and the ranking ballot into two separate cards, with
+  // the "Early Voting" header/countdown/warning rendered outside (between)
+  // them. The caller omits its own card wrapper in this case to avoid nesting.
+  splitEarlyVotingCards?: boolean;
 }
 
 export type PrepareBatchVoteItemResult =
@@ -78,7 +90,7 @@ export interface QuestionBallotHandle {
   prepareBatchVoteItem: () => PrepareBatchVoteItemResult;
 }
 
-const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(function QuestionBallot({ question, poll, createdDate, questionId, externalYesNoResults, isExpanded = true, partOfPollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange }: QuestionBallotProps, ref) {
+const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(function QuestionBallot({ question, poll, createdDate, questionId, externalYesNoResults, isExpanded = true, partOfPollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange, splitEarlyVotingCards = false }: QuestionBallotProps, ref) {
   // Set the page title in the template header
   usePageTitle(question.title);
 
@@ -1381,40 +1393,48 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                 </div>
               ) : (
                 <>
-                  {/* Suggestion phase UI for questions with suggestion deadline */}
-                  {canSubmitSuggestions && (
-                    <SuggestionVotingInterface
-                      question={question}
-                      existingSuggestions={existingSuggestions}
-                      suggestionChoices={suggestionChoices}
-                      setSuggestionChoices={setSuggestionChoices}
-                      isAbstaining={isAbstaining}
-                      handleAbstain={handleAbstain}
-                      voteError={voteError}
-                      voterName={voterName}
-                      setVoterName={setVoterName}
-                      handleVoteClick={handleVoteClick}
-                      isSubmitting={isSubmitting}
-                      isQuestionClosed={!!isQuestionClosed}
-                      isCreator={isCreator}
-                      hasVoted={hasVoted}
-                      isEditingVote={isEditingVote}
-                      setIsEditingVote={setIsEditingVote}
-                      userVoteData={userVoteData}
-                      isLoadingVoteData={isLoadingVoteData}
-                      questionResults={questionResults}
-                      loadingResults={loadingResults}
-                      loadExistingSuggestions={loadExistingSuggestions}
-                      suggestionMetadata={suggestionMetadata}
-                      onSuggestionMetadataChange={setSuggestionMetadata}
-                      optionsMetadata={optionsMetadataLocal}
-                      searchRadius={searchRadius}
-                      wrapperHandlesSubmit={wrapperHandlesSubmit}
-                    />
-                  )}
+                  {/* Suggestion phase UI for questions with suggestion deadline.
+                      In the early-voting split, this gets its own card and the
+                      ranking ballot lands in a separate card below. */}
+                  {canSubmitSuggestions && (() => {
+                    const suggestionUi = (
+                      <SuggestionVotingInterface
+                        question={question}
+                        existingSuggestions={existingSuggestions}
+                        suggestionChoices={suggestionChoices}
+                        setSuggestionChoices={setSuggestionChoices}
+                        isAbstaining={isAbstaining}
+                        handleAbstain={handleAbstain}
+                        voteError={voteError}
+                        voterName={voterName}
+                        setVoterName={setVoterName}
+                        handleVoteClick={handleVoteClick}
+                        isSubmitting={isSubmitting}
+                        isQuestionClosed={!!isQuestionClosed}
+                        isCreator={isCreator}
+                        hasVoted={hasVoted}
+                        isEditingVote={isEditingVote}
+                        setIsEditingVote={setIsEditingVote}
+                        userVoteData={userVoteData}
+                        isLoadingVoteData={isLoadingVoteData}
+                        questionResults={questionResults}
+                        loadingResults={loadingResults}
+                        loadExistingSuggestions={loadExistingSuggestions}
+                        suggestionMetadata={suggestionMetadata}
+                        onSuggestionMetadataChange={setSuggestionMetadata}
+                        optionsMetadata={optionsMetadataLocal}
+                        searchRadius={searchRadius}
+                        wrapperHandlesSubmit={wrapperHandlesSubmit}
+                      />
+                    );
+                    return splitEarlyVotingCards
+                      ? <div className={POLL_SUBCARD_CLASS}>{suggestionUi}</div>
+                      : suggestionUi;
+                  })()}
 
                   {/* Ranking section — independent component with its own edit state */}
                   <RankingSection
+                    cardClass={splitEarlyVotingCards ? `${POLL_SUBCARD_CLASS} mt-3` : undefined}
                     question={question}
                     suggestionDeadline={effectiveSuggestionDeadline ?? null}
                     responseDeadline={poll.response_deadline ?? null}
