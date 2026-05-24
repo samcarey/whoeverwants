@@ -910,7 +910,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                 />
                 {ignored > 0 && (
                   <p className="px-1 mt-1.5 text-xs italic text-gray-400 dark:text-gray-500">
-                    {ignored} viewed but haven&apos;t responded yet
+                    {`${ignored} viewed but haven't responded yet`}
                   </p>
                 )}
               </>
