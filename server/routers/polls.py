@@ -505,9 +505,10 @@ def _record_poll_view(conn, browser_id: str | None, poll_id: str, now: datetime)
     )
 
 
-def _build_close_notification(conn, poll_id: str) -> tuple[str, dict] | None:
-    """(group_id, payload) for a poll-closed push, or None when the poll can't
-    be routed (no group). Shared by the inline close endpoint and the cron tick."""
+def _notification_base(conn, poll_id: str):
+    """(group_db_id, base_payload, poll_row) shared by the close + transition
+    payload builders, or None when the poll can't be routed (no group). The
+    base carries body/url/group_id/badge; callers add title + tag."""
     row = conn.execute(
         f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
         {"id": poll_id},
@@ -515,17 +516,24 @@ def _build_close_notification(conn, poll_id: str) -> tuple[str, dict] | None:
     if not row or not row.get("group_id"):
         return None
     question_rows = _fetch_questions(conn, poll_id)
-    title = _compute_display_title(row, question_rows)
     group_route = row.get("group_short_id") or str(row["group_id"])
-    payload = {
-        "title": "Poll closed",
-        "body": title,
+    base = {
+        "body": _compute_display_title(row, question_rows),
         "url": f"/g/{group_route}?p={row.get('short_id') or ''}",
         "group_id": group_route,
-        "tag": f"poll-closed-{poll_id}",
         "badge": 1,
     }
-    return str(row["group_id"]), payload
+    return str(row["group_id"]), base, row
+
+
+def _build_close_notification(conn, poll_id: str) -> tuple[str, dict] | None:
+    """(group_id, payload) for a poll-closed push, or None when unroutable.
+    Shared by the inline close endpoint and the cron tick."""
+    built = _notification_base(conn, poll_id)
+    if not built:
+        return None
+    group_id, base, _row = built
+    return group_id, {**base, "title": "Poll closed", "tag": f"poll-closed-{poll_id}"}
 
 
 def _latest_prephase_contribution(conn, poll_id: str):
@@ -552,26 +560,46 @@ def _build_transition_notification(conn, poll_id: str):
     """(group_id, payload, prevoting_on, latest_contribution) for a
     phase-transition push, or None when unroutable. Shared by the inline
     cutoff endpoints and the cron tick."""
-    row = conn.execute(
-        f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
-        {"id": poll_id},
-    ).fetchone()
-    if not row or not row.get("group_id"):
+    built = _notification_base(conn, poll_id)
+    if not built:
         return None
-    question_rows = _fetch_questions(conn, poll_id)
-    title = _compute_display_title(row, question_rows)
-    group_route = row.get("group_short_id") or str(row["group_id"])
-    payload = {
-        "title": "Voting is open",
-        "body": title,
-        "url": f"/g/{group_route}?p={row.get('short_id') or ''}",
-        "group_id": group_route,
-        "tag": f"poll-voting-{poll_id}",
-        "badge": 1,
-    }
-    prevoting_on = row.get("allow_pre_ranking") is not False
-    latest = _latest_prephase_contribution(conn, poll_id)
-    return str(row["group_id"]), payload, prevoting_on, latest
+    group_id, base, row = built
+    payload = {**base, "title": "Voting is open", "tag": f"poll-voting-{poll_id}"}
+    return (
+        group_id,
+        payload,
+        row.get("allow_pre_ranking") is not False,
+        _latest_prephase_contribution(conn, poll_id),
+    )
+
+
+def _schedule_close_notification(conn, poll_id, *, already_notified, background_tasks):
+    """Build + schedule the poll-closed push, unless the poll was already
+    close-notified. No-op when unroutable. Fan-out runs after the response."""
+    if already_notified:
+        return
+    built = _build_close_notification(conn, poll_id)
+    if built:
+        group_id, payload = built
+        background_tasks.add_task(fan_out_poll_closed, group_id, poll_id, payload)
+
+
+def _schedule_transition_notification(conn, poll_id, *, already_notified, background_tasks):
+    """Build + schedule the phase-transition push, unless the poll was already
+    transition-notified. No-op when unroutable."""
+    if already_notified:
+        return
+    built = _build_transition_notification(conn, poll_id)
+    if built:
+        group_id, payload, prevoting_on, latest = built
+        background_tasks.add_task(
+            fan_out_phase_transition,
+            group_id,
+            poll_id,
+            payload,
+            prevoting_on=prevoting_on,
+            latest_contribution=latest,
+        )
 
 
 @router.post("", response_model=PollResponse, status_code=201)
@@ -719,7 +747,6 @@ def close_poll(poll_id: str, req: CloseQuestionRequest, background_tasks: Backgr
     now = datetime.now(timezone.utc)
     with get_db() as conn:
         wrapper = _authorize_poll(conn, poll_id, req.creator_secret)
-        already_notified = bool(wrapper.get("close_notified"))
         conn.execute(
             """
             UPDATE polls
@@ -747,11 +774,13 @@ def close_poll(poll_id: str, req: CloseQuestionRequest, background_tasks: Backgr
             for sp in question_rows:
                 _finalize_suggestion_options(conn, str(sp["id"]), now)
 
-        # Build the push payload while we hold the connection. Only fire when
-        # this close is a fresh transition (was open / not-yet-notified) so a
-        # redundant close call on an already-closed poll doesn't re-notify.
-        close_notification = (
-            None if already_notified else _build_close_notification(conn, poll_id)
+        # Skip the push if this poll was already close-notified (a redundant
+        # close on an already-closed poll mustn't re-notify).
+        _schedule_close_notification(
+            conn,
+            poll_id,
+            already_notified=bool(wrapper.get("close_notified")),
+            background_tasks=background_tasks,
         )
 
         poll_row = conn.execute(
@@ -760,10 +789,6 @@ def close_poll(poll_id: str, req: CloseQuestionRequest, background_tasks: Backgr
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
         voter_names, anonymous_count = _compute_poll_voter_data(conn, poll_id)
-
-    if close_notification:
-        group_id, payload = close_notification
-        background_tasks.add_task(fan_out_poll_closed, group_id, poll_id, payload)
 
     return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count)
 
@@ -846,9 +871,11 @@ def cutoff_poll_suggestions(
         for row in rc_questions:
             _finalize_suggestion_options(conn, str(row["id"]), now)
 
-        transition_notification = (
-            None if wrapper.get("prephase_notified")
-            else _build_transition_notification(conn, poll_id)
+        _schedule_transition_notification(
+            conn,
+            poll_id,
+            already_notified=bool(wrapper.get("prephase_notified")),
+            background_tasks=background_tasks,
         )
 
         poll_row = conn.execute(
@@ -857,17 +884,6 @@ def cutoff_poll_suggestions(
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
         voter_names, anonymous_count = _compute_poll_voter_data(conn, poll_id)
-
-    if transition_notification:
-        group_id, payload, prevoting_on, latest = transition_notification
-        background_tasks.add_task(
-            fan_out_phase_transition,
-            group_id,
-            poll_id,
-            payload,
-            prevoting_on=prevoting_on,
-            latest_contribution=latest,
-        )
 
     return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count)
 
@@ -1035,9 +1051,11 @@ def cutoff_poll_availability(
         for row in time_questions:
             _finalize_time_slots(conn, str(row["id"]), now)
 
-        transition_notification = (
-            None if wrapper.get("prephase_notified")
-            else _build_transition_notification(conn, poll_id)
+        _schedule_transition_notification(
+            conn,
+            poll_id,
+            already_notified=bool(wrapper.get("prephase_notified")),
+            background_tasks=background_tasks,
         )
 
         poll_row = conn.execute(
@@ -1046,17 +1064,6 @@ def cutoff_poll_availability(
         ).fetchone()
         question_rows = _fetch_questions(conn, poll_id)
         voter_names, anonymous_count = _compute_poll_voter_data(conn, poll_id)
-
-    if transition_notification:
-        group_id, payload, prevoting_on, latest = transition_notification
-        background_tasks.add_task(
-            fan_out_phase_transition,
-            group_id,
-            poll_id,
-            payload,
-            prevoting_on=prevoting_on,
-            latest_contribution=latest,
-        )
 
     return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count)
 
