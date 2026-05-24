@@ -262,6 +262,49 @@ def get_group_metadata(conn, group_id: str) -> dict | None:
     }
 
 
+def group_display_name(conn, group_id: str, *, override: str | None) -> str:
+    """The group's human-facing name for notification titles ("... in
+    <Group name>"). Resolution order mirrors what the FE renders as the
+    group title:
+      1. The `groups.title` override (`override` arg) when set.
+      2. The deduplicated list of participant names (poll creators +
+         voters across the group), creators first, in creation order.
+      3. The literal "your group" when the group has no name and no
+         named participants yet.
+
+    The participant query only runs when no override is set, so the
+    common (named-group) path is a single string check.
+    """
+    if override and override.strip():
+        return override.strip()
+    rows = conn.execute(
+        """
+        SELECT name FROM (
+            SELECT p.creator_name AS name, 0 AS kind, p.created_at AS ts
+              FROM polls p
+             WHERE p.group_id = %(gid)s::uuid
+            UNION ALL
+            SELECT v.voter_name AS name, 1 AS kind, v.created_at AS ts
+              FROM votes v
+              JOIN questions q ON v.question_id = q.id
+              JOIN polls p ON q.poll_id = p.id
+             WHERE p.group_id = %(gid)s::uuid
+        ) participants
+        WHERE name IS NOT NULL AND btrim(name) <> ''
+        ORDER BY kind, ts
+        """,
+        {"gid": group_id},
+    ).fetchall()
+    seen: list[str] = []
+    for r in rows:
+        nm = (r["name"] or "").strip()
+        if nm and nm not in seen:
+            seen.append(nm)
+    if seen:
+        return ", ".join(seen)
+    return "your group"
+
+
 def is_caller_member_of_group(
     conn,
     group_id: str,

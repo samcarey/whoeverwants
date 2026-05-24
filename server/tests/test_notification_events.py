@@ -193,7 +193,11 @@ def test_close_sets_flag_and_fires(client, creator_secret, monkeypatch):
     assert flag is True
     assert len(calls) == 1
     assert calls[0][0] == poll["id"]
-    assert calls[0][1]["title"] == "Poll closed"
+    # Line 1 = "<event> in <group name>"; line 2 (body) = the poll's own title.
+    # No group_title override here, so the group name falls back to the
+    # deduplicated participant names (just the creator so far).
+    assert calls[0][1]["title"] == "Poll closed in Test User"
+    assert calls[0][1]["body"] == poll["title"]
     assert calls[0][1]["badge"] == 1
 
 
@@ -247,7 +251,9 @@ def test_cutoff_suggestions_sets_flag_and_fires(client, creator_secret, monkeypa
         ).fetchone()[0]
     assert flag is True
     assert len(calls) == 1
-    assert calls[0][1]["title"] == "Voting is open"
+    # Group name = deduplicated participants, creator first then voters.
+    assert calls[0][1]["title"] == "Voting is open in Creator, Ann"
+    assert calls[0][1]["body"] == poll["title"]
     assert "prevoting_on" in calls[0][2]
 
 
