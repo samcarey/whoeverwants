@@ -10,7 +10,7 @@
  * on the next rAF. Back arrow slides back to the group root.
  */
 
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { flushSync } from "react-dom";
 import {
@@ -277,6 +277,22 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   });
 
   const subQuestionBallotRefs = useMemo(() => new Map<string, QuestionBallotHandle>(), []);
+
+  // For location/restaurant sub-questions, QuestionBallot reports when its
+  // "Near X" line should sit BELOW the ballot card (i.e. once results are on
+  // display). We render the line outside the card based on this map. Stable
+  // setter keeps the callback identity fixed so the child effect doesn't churn.
+  const [referenceBelowMap, setReferenceBelowMap] = useState<Map<string, boolean>>(new Map());
+  const handleReferenceLocationStateChange = useRef(
+    (questionId: string, state: { showBelow: boolean }) => {
+      setReferenceBelowMap((prev) => {
+        if ((prev.get(questionId) ?? false) === state.showBelow) return prev;
+        const next = new Map(prev);
+        next.set(questionId, state.showBelow);
+        return next;
+      });
+    },
+  ).current;
 
   // Ref so the QUESTION_VOTES_CHANGED listener can stay registered with
   // empty deps — re-attaching on every poll mutation would also re-fan-out
@@ -720,8 +736,24 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               onWrapperSubmitStateChange={
                 wrapperOwnsSubmit ? handleWrapperSubmitStateChange : undefined
               }
+              onReferenceLocationStateChange={handleReferenceLocationStateChange}
             />
           );
+
+          // "Near X" footnote rendered BELOW the ballot card once results are
+          // on display (QuestionBallot reports the placement via the callback
+          // above). The early-voting branch is always pre-results, so it never
+          // shows it.
+          const referenceBelow =
+            referenceBelowMap.get(sp.id) && sp.reference_location_label ? (
+              <div className="mt-1.5 flex items-center justify-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>Near {sp.reference_location_label}</span>
+              </div>
+            ) : null;
 
           if (isEarlyVoting) {
             return (
@@ -740,8 +772,8 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           }
 
           return (
+            <Fragment key={sp.id}>
             <div
-              key={sp.id}
               className={`${idx > 0 ? "mt-3" : "mt-2"} ${POLL_SUBCARD_CLASS}`}
             >
               {isMultiPoll && (
@@ -790,6 +822,8 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
 
               {ballot}
             </div>
+            {referenceBelow}
+            </Fragment>
           );
         })}
 
