@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Countdown from "@/components/Countdown";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import RankableOptions from "@/components/RankableOptions";
@@ -56,6 +57,11 @@ interface RankingSectionProps {
   // (matches yes/no tap UX). Called only on the BinaryRankedChoiceBallot
   // path; the multi-option drag-to-rank list keeps the explicit Submit flow.
   onBinaryRankedChoiceTap?: (option: string) => void;
+  // Early-voting split: when set, the ranking ballot body is wrapped in this
+  // card chrome while the "Early Voting" header/countdown/warning is rendered
+  // outside (above) the card. Undefined keeps the legacy single-card layout
+  // where the caller owns the card.
+  cardClass?: string;
 }
 
 export default function RankingSection({
@@ -92,7 +98,13 @@ export default function RankingSection({
   wrapperHandlesSubmit = false,
   questionResults,
   onBinaryRankedChoiceTap,
+  cardClass,
 }: RankingSectionProps) {
+  // Wrap visible ballot content in card chrome when the early-voting split is
+  // active; pass through unchanged otherwise. Returning null still produces no
+  // card, so an empty ballot never leaves a stray empty box.
+  const card = (content: ReactNode) =>
+    cardClass ? <div className={cardClass}>{content}</div> : <>{content}</>;
   const hasSubmittedRankings = hasVoted && userVoteData?.ranked_choices?.length > 0;
   // For suggestion questions, is_abstain means "abstained from suggestions" not "abstained from ranking".
   // Only is_ranking_abstain explicitly means ranking abstain.
@@ -122,7 +134,7 @@ export default function RankingSection({
 
   if (!canSubmitRankings || questionOptions.length === 0) {
     if (canSubmitSuggestions && hasVoted && !isEditingSuggestions) {
-      return (
+      return card(
         <div className="text-center text-sm text-gray-600 dark:text-gray-400">
           {suggestionDeadline ? (
             <>Ranking will open after suggestions cutoff in{' '}<SimpleCountdown deadline={suggestionDeadline} colorClass="text-gray-600 dark:text-gray-400" /></>
@@ -151,6 +163,8 @@ export default function RankingSection({
 
   return (
     <>
+      {/* "Early Voting" header/countdown/warning stays OUTSIDE the ballot
+          card (the "extra stuff") in split mode. */}
       {canSubmitSuggestions && !isEditingRanking && (
         <>
           <h3 className="text-lg font-semibold text-center text-gray-900 dark:text-white mt-4 mb-1">Early Voting</h3>
@@ -161,6 +175,8 @@ export default function RankingSection({
         </>
       )}
 
+      {card(
+      <>
       {hasNewOptions && (
         <div className="mb-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg flex items-center gap-2">
           <svg className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -269,6 +285,8 @@ export default function RankingSection({
             {isSubmitting ? 'Submitting...' : 'Submit Vote'}
           </button>
         </>
+      )}
+      </>
       )}
     </>
   );

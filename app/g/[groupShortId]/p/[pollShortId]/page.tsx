@@ -68,7 +68,7 @@ import {
 import ClientOnly from "@/components/ClientOnly";
 import GroupHeader from "@/components/GroupHeader";
 import InitialBubble from "@/components/InitialBubble";
-import QuestionBallot, { type QuestionBallotHandle } from "@/components/QuestionBallot";
+import QuestionBallot, { type QuestionBallotHandle, POLL_SUBCARD_CLASS } from "@/components/QuestionBallot";
 import QuestionDetails from "@/components/QuestionDetails";
 import QuestionResultsDisplay from "@/components/QuestionResults";
 import VoterList from "@/components/VoterList";
@@ -678,10 +678,57 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           const r = questionResultsMap.get(sp.id);
           const userVote = userVoteMap.get(sp.id);
           const wrapperOwnsSubmit = useWrapperSubmit || (usePollSubmit && !isYesNo);
+          // Early-voting ranked choice: the suggestion entry and the ranking
+          // ballot each get their own card (rendered inside QuestionBallot via
+          // splitEarlyVotingCards) with the "Early Voting" header outside, so
+          // we drop the single outer card here to avoid nesting.
+          const isEarlyVoting =
+            sp.question_type === "ranked_choice" &&
+            poll.allow_pre_ranking !== false &&
+            isInSuggestionPhase(sp, poll.prephase_deadline ?? null);
+
+          const ballot = (
+            <QuestionBallot
+              ref={(handle) => {
+                if (handle) subQuestionBallotRefs.set(sp.id, handle);
+                else subQuestionBallotRefs.delete(sp.id);
+              }}
+              question={sp}
+              poll={poll}
+              createdDate=""
+              questionId={sp.id}
+              externalYesNoResults={isYesNo}
+              isExpanded={true}
+              partOfPollGroup={isMultiPoll}
+              splitEarlyVotingCards={isEarlyVoting}
+              wrapperHandlesSubmit={!!poll.id && wrapperOwnsSubmit}
+              externalVoterName={wrapperOwnsSubmit ? savedUserName : undefined}
+              onWrapperSubmitStateChange={
+                wrapperOwnsSubmit ? handleWrapperSubmitStateChange : undefined
+              }
+            />
+          );
+
+          if (isEarlyVoting) {
+            return (
+              <div key={sp.id} className={idx > 0 ? "mt-3" : "mt-2"}>
+                {isMultiPoll && (
+                  <div className="mb-2 flex items-center gap-2 px-1">
+                    <InlineCategoryIcon question={sp} isClosed={isClosed} />
+                    <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
+                      {getQuestionSectionTitle(sp)}
+                    </div>
+                  </div>
+                )}
+                {ballot}
+              </div>
+            );
+          }
+
           return (
             <div
               key={sp.id}
-              className={`${idx > 0 ? "mt-3" : "mt-2"} rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 shadow-sm px-3 py-3`}
+              className={`${idx > 0 ? "mt-3" : "mt-2"} ${POLL_SUBCARD_CLASS}`}
             >
               {isMultiPoll && (
                 <div className="mb-2 flex items-center gap-2">
@@ -727,24 +774,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                 );
               })()}
 
-              <QuestionBallot
-                ref={(handle) => {
-                  if (handle) subQuestionBallotRefs.set(sp.id, handle);
-                  else subQuestionBallotRefs.delete(sp.id);
-                }}
-                question={sp}
-                poll={poll}
-                createdDate=""
-                questionId={sp.id}
-                externalYesNoResults={isYesNo}
-                isExpanded={true}
-                partOfPollGroup={isMultiPoll}
-                wrapperHandlesSubmit={!!poll.id && wrapperOwnsSubmit}
-                externalVoterName={wrapperOwnsSubmit ? savedUserName : undefined}
-                onWrapperSubmitStateChange={
-                  wrapperOwnsSubmit ? handleWrapperSubmitStateChange : undefined
-                }
-              />
+              {ballot}
             </div>
           );
         })}
