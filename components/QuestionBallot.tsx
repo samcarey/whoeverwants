@@ -1213,6 +1213,32 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     ) : null
   );
 
+  // The "Near X" reference-location line is contextual: while voting/suggesting it
+  // anchors the search radius at the top, but once results are on display it reads
+  // better as a footnote UNDER the results card. `resultsShownAbove` mirrors the two
+  // result-display gates below (preliminary-above-ballot and closed) so the line
+  // doesn't get orphaned when no results actually render.
+  const prelimResultsShownAbove =
+    hasVoted && !isEditingVote && !inSuggestionPhase && hasCompletedRanking &&
+    showPrelimResults && !isQuestionClosed && !suppressYesNoHere && !suppressBinaryRcHere;
+  const closedResultsShownAbove = isQuestionClosed && !suppressYesNoHere;
+  const resultsShownAbove = prelimResultsShownAbove || closedResultsShownAbove;
+
+  const referenceLocationBlock = showReferenceLocation ? (
+    <div className="mb-1.5 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+      <div className="flex items-center gap-1.5">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        <span>Near {question.reference_location_label}</span>
+      </div>
+      {canSubmitSuggestions && isLocationLikeCategory(question.category ?? '') && (
+        <SearchRadiusBubble searchRadius={searchRadius} onSearchRadiusChange={setSearchRadius} />
+      )}
+    </div>
+  ) : null;
+
   return (
     <>
       <div className="question-content">
@@ -1225,20 +1251,8 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
              string shows up twice (once as the title, once as a subtitle). */}
         {question.details && !partOfPollGroup && question.is_auto_title !== true && <QuestionDetails details={question.details} />}
 
-        {showReferenceLocation && (
-          <div className="mb-1.5 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-            <div className="flex items-center gap-1.5">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <span>Near {question.reference_location_label}</span>
-            </div>
-            {canSubmitSuggestions && isLocationLikeCategory(question.category ?? '') && (
-              <SearchRadiusBubble searchRadius={searchRadius} onSearchRadiusChange={setSearchRadius} />
-            )}
-          </div>
-        )}
+        {/* While voting/suggesting, "Near X" anchors the search radius at the top. */}
+        {!resultsShownAbove && referenceLocationBlock}
 
         {/* Preliminary results shown ABOVE ballot when user has already voted (hidden during suggestion phase) */}
         {/* For suggestion-phase questions, only show after user has submitted rankings, not just suggestions */}
@@ -1262,6 +1276,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
               </div>
             )}
           </div>
+        )}
+
+        {/* Once results are on display, "Near X" reads as a footnote beneath them. */}
+        {resultsShownAbove && (
+          <div className="mt-1.5">{referenceLocationBlock}</div>
         )}
 
         {/* Question Content Based on Type */}
