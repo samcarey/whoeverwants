@@ -217,7 +217,9 @@ def _send_apns(
                 "body": payload.get("body", ""),
             },
             "sound": "default",
-            "badge": 1,
+            # Per-recipient count injected by _dispatch_pushes; falls back to 1
+            # ("you have something") if a count wasn't computed.
+            "badge": payload.get("badge", 1),
         },
         # Custom data — read by the iOS app's notification tap handler
         # to route into the right group.
@@ -260,6 +262,109 @@ def _fetch_subscriptions(conn, browser_ids: Iterable[str]) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _badge_settings_for_browser(conn, browser_id: str) -> tuple[bool, bool, bool]:
+    """(todo_mode, on_voting_open, on_results) for a browser. Signed-in →
+    account columns; anonymous (no user_browsers row) → defaults (unread, both
+    re-light on). The push path can only see account/default settings — an
+    anonymous user's localStorage preference shapes only the client-side badge.
+    """
+    row = conn.execute(
+        """
+        SELECT u.badge_todo_mode, u.badge_on_voting_open, u.badge_on_results
+          FROM user_browsers ub
+          JOIN users u ON u.id = ub.user_id
+         WHERE ub.browser_id = %(b)s::uuid
+        """,
+        {"b": browser_id},
+    ).fetchone()
+    if not row:
+        return (False, True, True)
+    return (
+        bool(row["badge_todo_mode"]),
+        bool(row["badge_on_voting_open"]),
+        bool(row["badge_on_results"]),
+    )
+
+
+def compute_badge_count(
+    conn,
+    browser_id: str | None,
+    *,
+    todo_mode: bool,
+    on_voting_open: bool,
+    on_results: bool,
+) -> int:
+    """The app-icon badge number for a browser under the given settings.
+
+    Single source of truth shared by the push fan-out (per recipient) and the
+    GET /api/notifications/badge endpoint (client-side resync). See the
+    'App-Icon Badge Model' section in CLAUDE.md. Per-browser only — no
+    cross-linked-browser dedup (matches the rest of the push layer).
+
+    - to-do: open, votable (prephase passed / none), deadline not passed, and
+      no vote/abstain by this browser on any of the poll's questions.
+    - unread: a notification event the browser hasn't seen since — never-viewed
+      (new), or (gated) a transition / close after the last view.
+    """
+    if not browser_id:
+        return 0
+    if todo_mode:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS c FROM (
+              SELECT DISTINCT p.id
+                FROM group_members gm
+                JOIN polls p ON p.group_id = gm.group_id
+               WHERE gm.browser_id = %(b)s::uuid
+                 AND p.is_closed = false
+                 AND (p.response_deadline IS NULL OR p.response_deadline > NOW())
+                 AND (p.prephase_deadline IS NULL OR p.prephase_deadline <= NOW())
+                 AND NOT EXISTS (
+                   SELECT 1 FROM votes v
+                     JOIN questions q ON v.question_id = q.id
+                    WHERE q.poll_id = p.id AND v.browser_id = %(b)s::uuid
+                 )
+            ) t
+            """,
+            {"b": browser_id},
+        ).fetchone()
+        return int(row["c"] or 0)
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS c FROM (
+          SELECT DISTINCT p.id
+            FROM group_members gm
+            JOIN polls p ON p.group_id = gm.group_id
+            LEFT JOIN poll_views pv
+              ON pv.poll_id = p.id AND pv.browser_id = %(b)s::uuid
+           WHERE gm.browser_id = %(b)s::uuid
+             AND (
+               (pv.last_viewed_at IS NULL OR pv.last_viewed_at < p.created_at)
+               OR (%(voting)s AND p.prephase_deadline IS NOT NULL
+                   AND p.prephase_deadline <= NOW()
+                   AND (pv.last_viewed_at IS NULL OR pv.last_viewed_at < p.prephase_deadline))
+               OR (%(results)s AND p.is_closed = true
+                   AND (pv.last_viewed_at IS NULL OR pv.last_viewed_at < p.updated_at))
+             )
+        ) t
+        """,
+        {"b": browser_id, "voting": on_voting_open, "results": on_results},
+    ).fetchone()
+    return int(row["c"] or 0)
+
+
+def _badge_counts_for_browsers(conn, browser_ids: set[str]) -> dict[str, int]:
+    """Resolve each recipient's settings + compute their badge count, in one
+    short connection block (so the network sends don't hold a DB connection)."""
+    out: dict[str, int] = {}
+    for bid in browser_ids:
+        todo, voting, results = _badge_settings_for_browser(conn, bid)
+        out[bid] = compute_badge_count(
+            conn, bid, todo_mode=todo, on_voting_open=voting, on_results=results
+        )
+    return out
+
+
 def _dispatch_pushes(
     subscriptions: list[dict],
     payload: dict,
@@ -283,16 +388,32 @@ def _dispatch_pushes(
     web_subs = [s for s in subscriptions if s["kind"] == "web_push"]
     apns_subs = [s for s in subscriptions if s["kind"] == "apns"]
 
+    # Per-recipient app-icon badge count, computed up front in one short
+    # connection block so the network sends below don't hold a DB connection.
+    browser_ids = {s["browser_id"] for s in subscriptions if s.get("browser_id")}
+    badge_by_browser: dict[str, int] = {}
+    if browser_ids:
+        try:
+            with get_db() as conn:
+                badge_by_browser = _badge_counts_for_browsers(conn, browser_ids)
+        except Exception as exc:  # noqa: BLE001
+            # Badge is best-effort; fall back to the payload's default badge.
+            log.warning("badge count computation failed: %s", exc)
+
+    def _payload_for(sub: dict) -> dict:
+        count = badge_by_browser.get(sub.get("browser_id"))
+        return {**payload, "badge": count} if count is not None else payload
+
     if web_subs and vapid is not None:
         for sub in web_subs:
-            ok, err, should_delete = _send_web_push(sub, payload, vapid)
+            ok, err, should_delete = _send_web_push(sub, _payload_for(sub), vapid)
             web_results.append((sub["id"], ok, err, should_delete))
 
     if apns_subs and apns_configured():
         jwt_token = _apns_jwt(int(time.time()))
         with httpx.Client(http2=True) as client:
             for sub in apns_subs:
-                ok, err, should_delete = _send_apns(sub, payload, client, jwt_token)
+                ok, err, should_delete = _send_apns(sub, _payload_for(sub), client, jwt_token)
                 apns_results.append((sub["id"], ok, err, should_delete))
 
     with get_db() as conn:

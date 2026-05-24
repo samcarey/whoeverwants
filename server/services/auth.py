@@ -565,11 +565,17 @@ class UserProfile:
     providers: list[str]  # distinct provider names linked to this user
     created_at: datetime
     display_name: str | None  # account-tied display name (None when unset)
+    # Account-synced app-icon badge preferences (migration 121).
+    badge_todo_mode: bool = False
+    badge_on_voting_open: bool = True
+    badge_on_results: bool = True
 
 
 def load_user_profile(conn, user_id: str) -> UserProfile | None:
     user_row = conn.execute(
-        "SELECT id, display_name, created_at FROM users WHERE id = %(u)s::uuid",
+        "SELECT id, display_name, created_at, badge_todo_mode, "
+        "badge_on_voting_open, badge_on_results "
+        "FROM users WHERE id = %(u)s::uuid",
         {"u": user_id},
     ).fetchone()
     if not user_row:
@@ -590,6 +596,32 @@ def load_user_profile(conn, user_id: str) -> UserProfile | None:
         providers=providers,
         created_at=user_row["created_at"],
         display_name=user_row["display_name"],
+        badge_todo_mode=bool(user_row["badge_todo_mode"]),
+        badge_on_voting_open=bool(user_row["badge_on_voting_open"]),
+        badge_on_results=bool(user_row["badge_on_results"]),
+    )
+
+
+def update_user_badge_settings(
+    conn,
+    *,
+    user_id: str,
+    todo_mode: bool,
+    on_voting_open: bool,
+    on_results: bool,
+) -> None:
+    """Set the account-synced app-icon badge preferences. Booleans only —
+    the caller has already coerced. Bumps `updated_at` like the name writer."""
+    conn.execute(
+        """
+        UPDATE users
+           SET badge_todo_mode = %(todo)s,
+               badge_on_voting_open = %(voting)s,
+               badge_on_results = %(results)s,
+               updated_at = NOW()
+         WHERE id = %(u)s::uuid
+        """,
+        {"todo": todo_mode, "voting": on_voting_open, "results": on_results, "u": user_id},
     )
 
 

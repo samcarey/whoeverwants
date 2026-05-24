@@ -351,18 +351,15 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     for (const sp of poll.questions) void fetchOneResults(sp);
   }, [poll.id, poll.questions, fetchOneResults]);
 
-  // While the prephase (suggestions / availability) is still open, record
-  // that we've seen the current options. The phase-transition push skips a
-  // prevoter only when no new option arrived after their last view, so this
-  // watermark keeps "I already looked, nothing's changed" members quiet.
+  // Record that we've opened this poll. This single "seen" watermark
+  // (poll_views.last_viewed_at) drives three things: (1) the phase-transition
+  // push skips a prevoter only when no new option arrived after their last
+  // view; (2) the unread app-icon badge clears a poll once it's been opened;
+  // (3) the "Viewed (N)" roster. Fires on every open now (was prephase-only)
+  // — opening the poll page IS the "seen" signal per the badge model.
   useEffect(() => {
-    const deadline = poll.prephase_deadline
-      ? new Date(poll.prephase_deadline).getTime()
-      : null;
-    if (deadline !== null && deadline > Date.now()) {
-      void apiRecordPollView(poll.id);
-    }
-  }, [poll.id, poll.prephase_deadline]);
+    void apiRecordPollView(poll.id);
+  }, [poll.id]);
 
   // Wrapper refetch keeps voter_names + prephase_deadline + closed-state
   // fresh in the respondent row and status label after a vote.

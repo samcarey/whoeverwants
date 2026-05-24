@@ -47,6 +47,24 @@ export async function apiUnregisterPushSubscription(endpoint: string): Promise<v
   });
 }
 
+/** The app-icon badge count for the calling browser under `settings`. The
+ *  client passes its EFFECTIVE settings (account-synced when signed in, else
+ *  localStorage) so anonymous users get the right count too. Used by the
+ *  on-focus client-side badge resync. */
+export async function apiGetBadgeCount(settings: {
+  todoMode: boolean;
+  onVotingOpen: boolean;
+  onResults: boolean;
+}): Promise<number> {
+  const qs = new URLSearchParams({
+    todo_mode: String(settings.todoMode),
+    on_voting_open: String(settings.onVotingOpen),
+    on_results: String(settings.onResults),
+  });
+  const res = await notificationsFetch<{ count: number }>(`/badge?${qs.toString()}`);
+  return res?.count ?? 0;
+}
+
 export async function apiGetGroupNotificationPref(
   routeId: string,
 ): Promise<GroupNotificationPreference> {

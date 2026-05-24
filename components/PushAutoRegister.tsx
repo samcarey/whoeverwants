@@ -2,7 +2,9 @@
 
 import { useEffect } from "react";
 
-import { bootstrapCapacitorPushSubscription, clearAppBadge } from "@/lib/pushNotifications";
+import { bootstrapCapacitorPushSubscription, refreshAppBadge } from "@/lib/pushNotifications";
+import { BADGE_SETTINGS_CHANGED_EVENT } from "@/lib/badgeSettings";
+import { SESSION_CHANGED_EVENT } from "@/lib/session";
 
 /**
  * Bootstraps push notifications on Capacitor iOS:
@@ -28,17 +30,25 @@ import { bootstrapCapacitorPushSubscription, clearAppBadge } from "@/lib/pushNot
 export function PushAutoRegister() {
   useEffect(() => {
     void bootstrapCapacitorPushSubscription();
-    // Clear the app-icon badge whenever the app is opened or refocused — the
-    // user has now seen whatever a close / phase-transition push was flagging.
-    clearAppBadge();
+    // Recompute the true app-icon badge whenever the app is opened or
+    // refocused, or when the badge model / sign-in state changes — so the
+    // badge reflects the user's unread/to-do choice and self-corrects after
+    // they act on another device. (Web / PWA; native iOS badge stays
+    // push-driven — no setAppBadge plugin yet.)
+    const resync = () => void refreshAppBadge();
+    resync();
     const onVisible = () => {
-      if (document.visibilityState === "visible") clearAppBadge();
+      if (document.visibilityState === "visible") resync();
     };
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", clearAppBadge);
+    window.addEventListener("focus", resync);
+    window.addEventListener(BADGE_SETTINGS_CHANGED_EVENT, resync);
+    window.addEventListener(SESSION_CHANGED_EVENT, resync);
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", clearAppBadge);
+      window.removeEventListener("focus", resync);
+      window.removeEventListener(BADGE_SETTINGS_CHANGED_EVENT, resync);
+      window.removeEventListener(SESSION_CHANGED_EVENT, resync);
     };
   }, []);
   return null;

@@ -56,6 +56,7 @@ from services.auth import (
     peek_recovery_email_token,
     revoke_session,
     unlink_browser,
+    update_user_badge_settings,
     update_user_display_name,
     user_has_email_identity,
 )
@@ -116,6 +117,27 @@ class UserSummary(BaseModel):
     # Account-tied display name. Mirrored down to the FE's local profile on
     # sign-in; pushed back up via POST /me/name when changed while signed in.
     name: str | None = None
+    # Account-synced app-icon badge preferences (migration 121). Ride every
+    # sign-in response + /me so the FE's local cache + client-side badge
+    # resync stay in lockstep with the account.
+    badge_todo_mode: bool = False
+    badge_on_voting_open: bool = True
+    badge_on_results: bool = True
+
+
+def _summary_from_profile(profile) -> "UserSummary":
+    """Single profile→UserSummary mapping so the sign-in / me / name / badge
+    endpoints can't drift on which fields they surface."""
+    return UserSummary(
+        user_id=profile.user_id,
+        email=profile.email,
+        providers=profile.providers,
+        created_at=profile.created_at,
+        name=profile.display_name,
+        badge_todo_mode=profile.badge_todo_mode,
+        badge_on_voting_open=profile.badge_on_voting_open,
+        badge_on_results=profile.badge_on_results,
+    )
 
 
 class SessionResponse(BaseModel):
@@ -258,13 +280,7 @@ def _signin_response(completed: CompletedSignIn) -> SessionResponse:
     return SessionResponse(
         session_token=completed.session.token,
         expires_at=completed.session.expires_at,
-        user=UserSummary(
-            user_id=completed.profile.user_id,
-            email=completed.profile.email,
-            providers=completed.profile.providers,
-            created_at=completed.profile.created_at,
-            name=completed.profile.display_name,
-        ),
+        user=_summary_from_profile(completed.profile),
     )
 
 
@@ -436,13 +452,7 @@ def get_me(request: Request):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account no longer exists",
         )
-    return UserSummary(
-        user_id=profile.user_id,
-        email=profile.email,
-        providers=profile.providers,
-        created_at=profile.created_at,
-        name=profile.display_name,
-    )
+    return _summary_from_profile(profile)
 
 
 class UpdateNameBody(BaseModel):
@@ -474,13 +484,37 @@ def update_my_name(req: UpdateNameBody, request: Request):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account no longer exists",
         )
-    return UserSummary(
-        user_id=profile.user_id,
-        email=profile.email,
-        providers=profile.providers,
-        created_at=profile.created_at,
-        name=profile.display_name,
-    )
+    return _summary_from_profile(profile)
+
+
+class UpdateBadgeSettingsBody(BaseModel):
+    badge_todo_mode: bool = False
+    badge_on_voting_open: bool = True
+    badge_on_results: bool = True
+
+
+@router.post("/me/badge-settings", response_model=UserSummary)
+def update_my_badge_settings(req: UpdateBadgeSettingsBody, request: Request):
+    """Set the signed-in user's account-synced app-icon badge preferences.
+    See the 'App-Icon Badge Model' section in CLAUDE.md. Signed-in only;
+    anonymous browsers keep their preference in localStorage (client-side
+    badge only)."""
+    user_id = _require_signed_in(request)
+    with get_db() as conn:
+        update_user_badge_settings(
+            conn,
+            user_id=user_id,
+            todo_mode=req.badge_todo_mode,
+            on_voting_open=req.badge_on_voting_open,
+            on_results=req.badge_on_results,
+        )
+        profile = load_user_profile(conn, user_id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account no longer exists",
+        )
+    return _summary_from_profile(profile)
 
 
 @router.post("/sign-out", status_code=status.HTTP_204_NO_CONTENT)

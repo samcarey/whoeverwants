@@ -431,21 +431,52 @@ export async function tearDownPushSubscription(): Promise<void> {
 }
 
 /**
- * Clear the app-icon badge. Called when the user opens or refocuses the app —
- * they've now seen whatever the badge was flagging. The badge is set by the
- * push service worker (`sw-push.js`) from the notification payload's `badge`
- * field, which is currently always 1 (a "something's waiting" dot, not a real
- * unread count).
- *
- * Web / installed PWA only — uses the Badging API where present, no-ops
- * otherwise. iOS native (Capacitor) badge zeroing would need a Capacitor
- * plugin (and an iOS rebuild), so it's out of scope; the iOS badge clears when
- * the user taps the notification itself (handled in sw-push.js notificationclick).
+ * Clear the app-icon badge. Web / installed PWA only — uses the Badging API
+ * where present, no-ops otherwise. iOS native (Capacitor) badge zeroing would
+ * need a Capacitor plugin (+ iOS rebuild), out of scope; the iOS badge clears
+ * when the user taps the notification (handled in sw-push.js notificationclick).
  */
 export function clearAppBadge(): void {
   if (typeof navigator === "undefined") return;
   const nav = navigator as Navigator & { clearAppBadge?: () => Promise<void> };
   if (typeof nav.clearAppBadge === "function") {
     void nav.clearAppBadge().catch(() => {});
+  }
+}
+
+function setAppBadge(count: number): void {
+  if (typeof navigator === "undefined") return;
+  const nav = navigator as Navigator & {
+    setAppBadge?: (n?: number) => Promise<void>;
+    clearAppBadge?: () => Promise<void>;
+  };
+  if (count <= 0) {
+    clearAppBadge();
+    return;
+  }
+  if (typeof nav.setAppBadge === "function") {
+    void nav.setAppBadge(count).catch(() => {});
+  }
+}
+
+/**
+ * Recompute the true app-icon badge count from the server (honoring the user's
+ * effective badge settings — unread vs to-do, re-light toggles) and apply it.
+ * Called on app open / focus so the badge self-corrects on this device even if
+ * the user acted on another device. See CLAUDE.md 'App-Icon Badge Model'.
+ *
+ * Web / installed PWA only (the Badging API). On native iOS this is still a
+ * no-op for the *set* (no plugin) — the native badge stays push-driven — but
+ * the call is harmless. Best-effort: a failed fetch leaves the current badge.
+ */
+export async function refreshAppBadge(): Promise<void> {
+  if (typeof navigator === "undefined") return;
+  try {
+    const { apiGetBadgeCount } = await import("@/lib/api/notifications");
+    const { getEffectiveBadgeSettings } = await import("@/lib/badgeSettings");
+    const count = await apiGetBadgeCount(getEffectiveBadgeSettings());
+    setAppBadge(count);
+  } catch {
+    // best-effort — leave the existing badge in place
   }
 }
