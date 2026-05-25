@@ -36,6 +36,11 @@ import InitialBubble from "@/components/InitialBubble";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import PollActionButton, { CutoffIcon } from "@/components/PollActionButton";
 import { getCreatorSecret } from "@/lib/browserQuestionAccess";
+import {
+  getCachedSessionUser,
+  SESSION_CHANGED_EVENT,
+  type SessionUser,
+} from "@/lib/session";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import {
@@ -185,8 +190,24 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
     () => (anchor ? getCreatorSecret(anchor.id) : null),
     [anchor?.id],
   );
+  // Account-owned authorship (migration 122): the signed-in creator can
+  // manage their poll from any device — even one without the per-browser
+  // creator_secret. Subscribe to SESSION_CHANGED so the controls appear/
+  // disappear on sign-in/out without a remount.
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  useEffect(() => {
+    setSessionUser(getCachedSessionUser());
+    const update = () => setSessionUser(getCachedSessionUser());
+    window.addEventListener(SESSION_CHANGED_EVENT, update);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
+  }, []);
+  const viewerIsCreator =
+    !!creatorSecret ||
+    (!!sessionUser &&
+      !!poll.creator_user_id &&
+      sessionUser.user_id === poll.creator_user_id);
   const isCreatorOrDev =
-    !!creatorSecret || process.env.NODE_ENV === "development";
+    viewerIsCreator || process.env.NODE_ENV === "development";
 
   const canReopen = isClosed && isCreatorOrDev;
   const canClose = !isClosed && isCreatorOrDev;
@@ -242,11 +263,11 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
       return;
     }
 
-    const secret = creatorSecret || (process.env.NODE_ENV === "development" ? "dev-override" : "");
-    if (!secret) {
-      console.error(`Missing creator secret for ${kind}`);
-      return;
-    }
+    // The per-browser secret authorizes anonymous-created polls + the
+    // creating browser. A signed-in creator on another device has no secret
+    // here — they send an empty one and the server authorizes against their
+    // session (the poll's creator_user_id matches their user_id).
+    const secret = creatorSecret ?? "";
 
     try {
       setSubmitting(true);

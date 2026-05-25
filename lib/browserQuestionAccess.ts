@@ -1,3 +1,5 @@
+import { getCachedSessionUser } from './session';
+
 // Browser storage for poll-ownership creator secrets + per-question
 // "seen options" snapshots.
 //
@@ -88,6 +90,25 @@ export function getCreatorSecret(questionId: string): string | null {
 // Check if this browser created a specific question
 export function isCreatedByThisBrowser(questionId: string): boolean {
   return getCreatorSecret(questionId) !== null;
+}
+
+// Is the current viewer the creator of this poll? Mirrors the server's
+// `_authorize_poll` (migration 122): authorized via EITHER the per-browser
+// creator_secret for `anchorQuestionId` (the browser that created it), OR a
+// signed-in session matching the poll's recorded `creator_user_id` (which
+// works on any device the creator is signed in on — the secret never followed
+// them across browsers). Callers that need to re-render on sign-in/out must
+// also subscribe to SESSION_CHANGED_EVENT; this reads the cached user
+// synchronously.
+export function isPollCreatedByViewer(
+  poll: { creator_user_id?: string | null } | null | undefined,
+  anchorQuestionId: string | null | undefined,
+): boolean {
+  if (anchorQuestionId && isCreatedByThisBrowser(anchorQuestionId)) return true;
+  const creatorUserId = poll?.creator_user_id;
+  if (!creatorUserId) return false;
+  const user = getCachedSessionUser();
+  return !!user && user.user_id === creatorUserId;
 }
 
 // Record question creation. Persists the creator secret (poll-ownership

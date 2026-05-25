@@ -102,13 +102,18 @@ class SubmitPollVotesRequest(BaseModel):
     items: list[PollVoteItem] = Field(..., min_length=1)
 
 
+# `creator_secret` is optional on the poll-mutation requests: a signed-in
+# creator managing their poll from another device has no per-browser secret,
+# so they authorize via their session bearer token instead (the poll's
+# `creator_user_id` matches their user_id). Anonymous-created polls still
+# require the matching secret — see `_authorize_poll` in routers/polls.py.
 class CloseQuestionRequest(BaseModel):
-    creator_secret: str
+    creator_secret: str | None = None
     close_reason: CloseReason = CloseReason.manual
 
 
 class ReopenQuestionRequest(BaseModel):
-    creator_secret: str
+    creator_secret: str | None = None
 
 
 class UpdateGroupTitleRequest(BaseModel):
@@ -117,7 +122,7 @@ class UpdateGroupTitleRequest(BaseModel):
 
 
 class CutoffSuggestionsRequest(BaseModel):
-    creator_secret: str
+    creator_secret: str | None = None
 
 
 class AccessibleQuestionsRequest(BaseModel):
@@ -304,6 +309,12 @@ class PollResponse(BaseModel):
     short_id: str | None = None
     creator_secret: str | None = None
     creator_name: str | None = None
+    # Migration 122: the signed-in creator's user_id, recorded at create
+    # time (NULL for anonymous-created polls). When set, the FE shows the
+    # creator's close/reopen/cutoff controls to that account on any device,
+    # and the server authorizes those mutations against the session — not
+    # just the per-browser `creator_secret`.
+    creator_user_id: str | None = None
     response_deadline: str | None = None
     prephase_deadline: str | None = None
     prephase_deadline_minutes: int | None = None

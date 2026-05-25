@@ -263,7 +263,7 @@ def _insert_poll(
     row = conn.execute(
         """
         INSERT INTO polls (
-            creator_secret, creator_name, response_deadline,
+            creator_secret, creator_name, creator_user_id, response_deadline,
             prephase_deadline, prephase_deadline_minutes,
             context, details,
             min_responses, show_preliminary_results, allow_pre_ranking,
@@ -271,7 +271,7 @@ def _insert_poll(
             created_at, updated_at
         )
         VALUES (
-            %(creator_secret)s, %(creator_name)s, %(response_deadline)s,
+            %(creator_secret)s, %(creator_name)s, %(creator_user_id)s, %(response_deadline)s,
             %(prephase_deadline)s, %(prephase_deadline_minutes)s,
             %(context)s, %(details)s,
             %(min_responses)s, %(show_preliminary_results)s, %(allow_pre_ranking)s,
@@ -283,6 +283,7 @@ def _insert_poll(
         {
             "creator_secret": req.creator_secret,
             "creator_name": req.creator_name,
+            "creator_user_id": creator_user_id,
             "response_deadline": req.response_deadline,
             "prephase_deadline": prephase_deadline,
             "prephase_deadline_minutes": req.prephase_deadline_minutes,
@@ -461,6 +462,9 @@ def _row_to_poll(
         group_short_id=row.get("group_short_id"),
         creator_secret=row.get("creator_secret"),
         creator_name=row.get("creator_name"),
+        creator_user_id=(
+            str(row["creator_user_id"]) if row.get("creator_user_id") else None
+        ),
         response_deadline=_iso_or_none(row.get("response_deadline")),
         prephase_deadline=_iso_or_none(row.get("prephase_deadline")),
         prephase_deadline_minutes=row.get("prephase_deadline_minutes"),
@@ -832,15 +836,21 @@ def get_poll(short_id: str):
 # Poll-level operations (Phase 3)
 #
 # These mirror the per-question close/reopen/cutoff endpoints but operate on the
-# poll wrapper + every question atomically. Authorization is gated on
-# polls.creator_secret; question secrets match because they were copied at
-# creation time. After Phase 5 the wrapper-level fields will be the sole source
-# of truth, but until then we maintain both copies so legacy per-question readers
-# (results, votes) keep working unchanged.
+# poll wrapper + every question atomically.
+#
+# Authorization is account-aware (migration 122). A poll created by a signed-in
+# user records `creator_user_id`; that account may mutate the poll from any
+# device it's signed in on, authorized by the session bearer token alone. The
+# per-browser `creator_secret` remains valid too — it's the ONLY authority for
+# anonymous-created polls (creator_user_id NULL), and a backwards-compatible
+# fallback for the signed-in creator's original browser. The check is additive:
+# session-match OR secret-match passes.
 # ---------------------------------------------------------------------------
 
 
-def _authorize_poll(conn, poll_id: str, creator_secret: str) -> dict:
+def _authorize_poll(
+    conn, poll_id: str, creator_secret: str | None, request: Request
+) -> dict:
     require_uuid(poll_id, "poll_id")
     row = conn.execute(
         "SELECT * FROM polls WHERE id = %(id)s",
@@ -848,13 +858,27 @@ def _authorize_poll(conn, poll_id: str, creator_secret: str) -> dict:
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Poll not found")
-    if row.get("creator_secret") != creator_secret:
-        raise HTTPException(status_code=403, detail="Invalid creator secret")
-    return dict(row)
+    poll = dict(row)
+    # Account-owned poll: a signed-in session matching the recorded creator
+    # is sufficient — works cross-device, no per-browser secret needed.
+    creator_user_id = poll.get("creator_user_id")
+    user_id = _user_id(request)
+    if creator_user_id is not None and user_id is not None and str(creator_user_id) == str(user_id):
+        return poll
+    # Fall back to the per-browser secret (sole authority for anonymous polls;
+    # backwards-compat for the signed-in creator's original browser).
+    if creator_secret and poll.get("creator_secret") == creator_secret:
+        return poll
+    raise HTTPException(status_code=403, detail="Invalid creator secret")
 
 
 @router.post("/{poll_id}/close", response_model=PollResponse)
-def close_poll(poll_id: str, req: CloseQuestionRequest, background_tasks: BackgroundTasks):
+def close_poll(
+    poll_id: str,
+    req: CloseQuestionRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
     """Close a poll. Phase 5: only the wrapper carries is_closed/close_reason —
     closing the wrapper closes every question automatically.
 
@@ -869,7 +893,7 @@ def close_poll(poll_id: str, req: CloseQuestionRequest, background_tasks: Backgr
     """
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        wrapper = _authorize_poll(conn, poll_id, req.creator_secret)
+        wrapper = _authorize_poll(conn, poll_id, req.creator_secret, request)
         conn.execute(
             """
             UPDATE polls
@@ -917,12 +941,12 @@ def close_poll(poll_id: str, req: CloseQuestionRequest, background_tasks: Backgr
 
 
 @router.post("/{poll_id}/reopen", response_model=PollResponse)
-def reopen_poll(poll_id: str, req: ReopenQuestionRequest):
+def reopen_poll(poll_id: str, req: ReopenQuestionRequest, request: Request):
     """Reopen a closed poll. Phase 5: only the wrapper's is_closed
     matters; questions inherit it via JOIN."""
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        _authorize_poll(conn, poll_id, req.creator_secret)
+        _authorize_poll(conn, poll_id, req.creator_secret, request)
         conn.execute(
             """
             UPDATE polls
@@ -946,7 +970,10 @@ def reopen_poll(poll_id: str, req: ReopenQuestionRequest):
 
 @router.post("/{poll_id}/cutoff-suggestions", response_model=PollResponse)
 def cutoff_poll_suggestions(
-    poll_id: str, req: CutoffSuggestionsRequest, background_tasks: BackgroundTasks
+    poll_id: str,
+    req: CutoffSuggestionsRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
 ):
     """End the suggestion phase across every question that's still in it.
 
@@ -962,7 +989,7 @@ def cutoff_poll_suggestions(
     """
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        wrapper = _authorize_poll(conn, poll_id, req.creator_secret)
+        wrapper = _authorize_poll(conn, poll_id, req.creator_secret, request)
 
         # Phase 5: prephase_deadline is wrapper-level. Validate that there's an
         # open suggestion phase (deadline in the future), and that at least one
@@ -1139,7 +1166,10 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
 
 @router.post("/{poll_id}/cutoff-availability", response_model=PollResponse)
 def cutoff_poll_availability(
-    poll_id: str, req: CutoffSuggestionsRequest, background_tasks: BackgroundTasks
+    poll_id: str,
+    req: CutoffSuggestionsRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
 ):
     """End the availability phase of the poll's time question (≤1 enforced
     on create). Phase 5: prephase_deadline is wrapper-level.
@@ -1148,7 +1178,7 @@ def cutoff_poll_availability(
     contract as cutoff-suggestions)."""
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        wrapper = _authorize_poll(conn, poll_id, req.creator_secret)
+        wrapper = _authorize_poll(conn, poll_id, req.creator_secret, request)
         deadline = wrapper.get("prephase_deadline")
         in_phase = deadline is not None and deadline > now
         time_questions = conn.execute(

@@ -13,7 +13,7 @@ import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGet
 import type { Poll } from "@/lib/types";
 import { useGroupVoting } from "@/lib/useGroupVoting";
 import type { QuestionResults } from "@/lib/types";
-import { getCreatorSecret } from "@/lib/browserQuestionAccess";
+import { getCreatorSecret, isPollCreatedByViewer } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls, getCachedGroupSummary, getCachedPollById, getCachedPollByShortId } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
@@ -1885,6 +1885,10 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         const modalWrapper = wrapperFor(modalQuestion);
         if (!modalWrapper) return null;
         const isModalClosed = !!modalWrapper.is_closed;
+        // Creator via per-browser secret OR signed-in account (migration 122).
+        const isCreatorOrDev =
+          isPollCreatedByViewer(modalWrapper, modalQuestion.id) ||
+          process.env.NODE_ENV === 'development';
         return (
           <FollowUpModal
             isOpen={showModal}
@@ -1894,28 +1898,26 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
             onClose={() => setShowModal(false)}
             onDelete={() => setPendingAction({ kind: 'forget', question: modalQuestion })}
             onReopen={
-              isModalClosed &&
-              (!!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === 'development')
+              isModalClosed && isCreatorOrDev
                 ? () => setPendingAction({ kind: 'reopen', question: modalQuestion })
                 : undefined
             }
             onCloseQuestion={
-              !isModalClosed &&
-              (!!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === 'development')
+              !isModalClosed && isCreatorOrDev
                 ? () => setPendingAction({ kind: 'close', question: modalQuestion })
                 : undefined
             }
             onCutoffAvailability={
               !isModalClosed &&
               isInTimeAvailabilityPhase(modalQuestion) &&
-              (!!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === 'development')
+              isCreatorOrDev
                 ? () => setPendingAction({ kind: 'cutoff-availability', question: modalQuestion })
                 : undefined
             }
             onCutoffSuggestions={
               !isModalClosed &&
               isInSuggestionPhase(modalQuestion, modalWrapper.prephase_deadline ?? null) &&
-              (!!getCreatorSecret(modalQuestion.id) || process.env.NODE_ENV === 'development')
+              isCreatorOrDev
                 ? () => setPendingAction({ kind: 'cutoff-suggestions', question: modalQuestion })
                 : undefined
             }
@@ -1953,7 +1955,9 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
             }
           } else if (action.kind === 'reopen') {
             try {
-              const secret = getCreatorSecret(action.question.id) || 'dev-override';
+              // Empty when the viewer is the signed-in creator on another
+              // device — the bearer token authorizes via creator_user_id.
+              const secret = getCreatorSecret(action.question.id) ?? '';
               const pollId = action.question.poll_id;
               if (!pollId) {
                 console.error('Cannot reopen question without poll_id');
@@ -1992,11 +1996,9 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
               ? apiCutoffPollSuggestions
               : apiCutoffPollAvailability;
             try {
-              const secret = getCreatorSecret(action.question.id);
-              if (!secret) {
-                console.error(`Missing creator secret for ${action.kind}`);
-                return;
-              }
+              // Empty when the viewer is the signed-in creator on another
+              // device — the bearer token authorizes via creator_user_id.
+              const secret = getCreatorSecret(action.question.id) ?? '';
               const pollId = action.question.poll_id;
               if (!pollId) {
                 console.error(`Cannot ${action.kind} without poll_id`);
