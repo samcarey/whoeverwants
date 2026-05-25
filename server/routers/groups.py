@@ -61,6 +61,7 @@ from services.groups import (
     filter_visible_polls,
     get_group_metadata,
     grant_group_membership_inline,
+    group_name_phrase,
     is_caller_member_of_group,
     load_user_visibility,
     poll_ids_for_group_ids,
@@ -957,12 +958,13 @@ def create_group_join_request(
         # groups have NULL creator_user_id; skip the push in that case.
         meta = get_group_metadata(conn, group_id)
         creator_user_id = meta["creator_user_id"] if meta else None
-        group_short_id_row = conn.execute(
-            "SELECT short_id FROM groups WHERE id = %(g)s::uuid",
+        group_row = conn.execute(
+            "SELECT short_id, title FROM groups WHERE id = %(g)s::uuid",
             {"g": group_id},
         ).fetchone()
-        group_short_id = (
-            group_short_id_row.get("short_id") if group_short_id_row else None
+        group_short_id = group_row.get("short_id") if group_row else None
+        group_phrase = group_name_phrase(
+            conn, group_id, override=group_row.get("title") if group_row else None
         )
 
     # Fire-and-forget push fan-out. Runs only on a brand-new request;
@@ -970,23 +972,25 @@ def create_group_join_request(
     # creator on every "polite re-request" tap.
     if is_new and creator_user_id:
         route_for_url = group_short_id or group_id
-        # Subject line is intentionally generic so passkey-only requesters
-        # (no email) don't surface as a literal "null wants to join".
+        # Line 1 names the event + group ("Join request for <Group>"); line 2
+        # is who's asking. Body stays generic for passkey-only requesters
+        # (no email) so they don't surface as a literal "null wants to join".
         # The /info page has full details once the creator taps in.
         body_text = (
             f"{requester_email} wants to join"
             if requester_email
-            else "Someone wants to join your group"
+            else "Someone wants to join"
         )
         background_tasks.add_task(
             fan_out_join_request,
             group_id,
             creator_user_id,
             {
-                "title": "Join request",
+                "title": f"Join request for {group_phrase}",
                 "body": body_text,
                 "url": f"/g/{route_for_url}/info",
                 "group_id": route_for_url,
+                "badge": 1,
                 "tag": f"join-request-{summary.id}",
             },
         )
