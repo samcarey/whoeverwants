@@ -315,10 +315,16 @@ def polls_for_poll_ids(
     poll_ids: list[str],
     *,
     include_results: bool,
+    viewer_user_id: str | None = None,
 ) -> list[PollResponse]:
     """Build PollResponse[] (with inline results / voter aggregates) for the
     given poll_ids. Order: most recently created first. Empty list in →
-    empty list out (no DB roundtrip)."""
+    empty list out (no DB roundtrip).
+
+    `viewer_user_id` (the caller's resolved user_id — bearer session or the
+    account linked to their browser) is threaded into each `_row_to_poll`
+    so every returned poll carries the per-viewer `viewer_is_creator` flag
+    that gates the FE's creator controls."""
     # Local import keeps services/* free of router cycles. Reusing
     # `_SELECT_POLLS_WITH_GROUP` (rather than re-writing the JOIN) is what
     # actually keeps this read in lockstep with the rest of the polls reads —
@@ -443,7 +449,10 @@ def polls_for_poll_ids(
         mp_id = str(mp_row["id"])
         sp_rows = questions_by_mp.get(mp_id, [])
         voter_names, anon_count, viewed_ignored = voter_data_by_mp.get(mp_id, ([], 0, 0))
-        mp_resp = _row_to_poll(mp_row, sp_rows, voter_names, anon_count, viewed_ignored)
+        mp_resp = _row_to_poll(
+            mp_row, sp_rows, voter_names, anon_count, viewed_ignored,
+            viewer_user_id=viewer_user_id,
+        )
         if include_results:
             for sp_resp in mp_resp.questions:
                 pid = sp_resp.id

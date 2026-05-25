@@ -40,7 +40,6 @@ from algorithms.yes_no import count_yes_no_votes
 _SELECT_QUESTION_FULL = """
     SELECT p.*,
            mp.short_id AS short_id,
-           mp.creator_secret AS creator_secret,
            mp.creator_name AS creator_name,
            mp.response_deadline AS response_deadline,
            mp.is_closed AS is_closed,
@@ -85,7 +84,6 @@ def _attach_wrapper_fields(conn, row) -> dict | None:
     if not poll_id:
         for key in (
             "short_id",
-            "creator_secret",
             "creator_name",
             "response_deadline",
             "is_closed",
@@ -101,7 +99,7 @@ def _attach_wrapper_fields(conn, row) -> dict | None:
         return row
     mp_row = conn.execute(
         """
-        SELECT mp.short_id, mp.creator_secret, mp.creator_name, mp.response_deadline,
+        SELECT mp.short_id, mp.creator_name, mp.response_deadline,
                mp.is_closed, mp.close_reason, mp.group_id, t.title AS group_title,
                mp.prephase_deadline, mp.min_responses, mp.show_preliminary_results,
                mp.allow_pre_ranking
@@ -113,7 +111,6 @@ def _attach_wrapper_fields(conn, row) -> dict | None:
     ).fetchone()
     if mp_row:
         row["short_id"] = mp_row["short_id"]
-        row["creator_secret"] = mp_row["creator_secret"]
         row["creator_name"] = mp_row["creator_name"]
         row["response_deadline"] = mp_row["response_deadline"]
         row["is_closed"] = mp_row["is_closed"]
@@ -249,8 +246,8 @@ def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
 def _row_to_question(row: dict) -> QuestionResponse:
     """Convert a database row to a QuestionResponse.
 
-    Phase 5b: wrapper-level fields (response_deadline, creator_secret,
-    creator_name, is_closed, close_reason, short_id, group_title,
+    Phase 5b: wrapper-level fields (response_deadline, creator_name,
+    is_closed, close_reason, short_id, group_title,
     suggestion_deadline) are no longer surfaced on QuestionResponse — the FE
     sources them from the parent Poll. Migration 105 also removed the
     `poll_follow_up_to` chain pointer along with `polls.follow_up_to`."""

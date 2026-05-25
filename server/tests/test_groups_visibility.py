@@ -27,7 +27,7 @@ import uuid
 import psycopg
 import pytest
 
-from tests.conftest import TEST_DB_URL, create_poll
+from tests.conftest import TEST_DB_URL, create_poll, creator_headers
 
 
 @pytest.fixture
@@ -40,10 +40,13 @@ def stranger_browser():
     return str(uuid.uuid4())
 
 
-def _close_poll(poll_id: str, creator_secret: str, client):
+def _close_poll(poll: dict, client):
+    """Close as the creator. Migration 123: authorization is identity-based,
+    so replay the creating browser_id (recorded by conftest.create_poll)."""
     resp = client.post(
-        f"/api/polls/{poll_id}/close",
-        json={"creator_secret": creator_secret, "close_reason": "manual"},
+        f"/api/polls/{poll['id']}/close",
+        json={"close_reason": "manual"},
+        headers=creator_headers(poll),
     )
     assert resp.status_code == 200, resp.text
 
@@ -164,7 +167,7 @@ class TestMyGroupsVisibility:
         polls.updated_at."""
         # Creator opens + closes a poll.
         poll = create_poll(client, creator_secret, browser_id=creator_browser)
-        _close_poll(poll["id"], creator_secret, client)
+        _close_poll(poll, client)
         # Backdate the close so it lives in the distant past.
         _set_poll_updated_at(poll["id"], "2000-01-01T00:00:00Z")
 
@@ -250,7 +253,7 @@ class TestByRouteIdVisibility:
         poll is filtered out."""
         root = create_poll(client, creator_secret, browser_id=creator_browser)
         # Close root in the distant past — before the stranger joins.
-        _close_poll(root["id"], creator_secret, client)
+        _close_poll(root, client)
         _set_poll_updated_at(root["id"], "2000-01-01T00:00:00Z")
         # Add a still-open follow-up.
         followup = create_poll(
@@ -278,7 +281,7 @@ class TestByRouteIdVisibility:
         """A member who closed their own poll still sees it — joined_at <=
         closed_at since membership predates the close."""
         poll = create_poll(client, creator_secret, browser_id=creator_browser)
-        _close_poll(poll["id"], creator_secret, client)
+        _close_poll(poll, client)
         resp = client.get(
             f"/api/groups/by-route-id/{poll['short_id']}",
             headers={"X-Browser-Id": creator_browser},

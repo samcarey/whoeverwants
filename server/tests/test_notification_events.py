@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg
 import pytest
 
-from tests.conftest import TEST_DB_URL, bid_headers, create_poll
+from tests.conftest import TEST_DB_URL, bid_headers, create_poll, creator_headers
 
 import routers.internal
 import routers.polls
@@ -225,7 +225,8 @@ def test_close_sets_flag_and_fires(client, creator_secret, monkeypatch):
     poll = create_poll(client, creator_secret, browser_id=str(uuid.uuid4()))
     resp = client.post(
         f"/api/polls/{poll['id']}/close",
-        json={"creator_secret": creator_secret, "close_reason": "manual"},
+        json={"close_reason": "manual"},
+        headers=creator_headers(poll),
     )
     assert resp.status_code == 200, resp.text
     with _db() as conn:
@@ -254,21 +255,25 @@ def test_close_twice_fires_once(client, creator_secret, monkeypatch):
         lambda group_id, poll_id, payload: calls.append(poll_id),
     )
     poll = create_poll(client, creator_secret, browser_id=str(uuid.uuid4()))
-    body = {"creator_secret": creator_secret, "close_reason": "manual"}
-    client.post(f"/api/polls/{poll['id']}/close", json=body)
-    client.post(f"/api/polls/{poll['id']}/close", json=body)
+    body = {"close_reason": "manual"}
+    hdrs = creator_headers(poll)
+    client.post(f"/api/polls/{poll['id']}/close", json=body, headers=hdrs)
+    client.post(f"/api/polls/{poll['id']}/close", json=body, headers=hdrs)
     assert calls.count(poll["id"]) == 1
 
 
 def test_reopen_resets_close_notified(client, creator_secret):
     poll = create_poll(client, creator_secret, browser_id=str(uuid.uuid4()))
+    hdrs = creator_headers(poll)
     client.post(
         f"/api/polls/{poll['id']}/close",
-        json={"creator_secret": creator_secret, "close_reason": "manual"},
+        json={"close_reason": "manual"},
+        headers=hdrs,
     )
     client.post(
         f"/api/polls/{poll['id']}/reopen",
-        json={"creator_secret": creator_secret},
+        json={},
+        headers=hdrs,
     )
     with _db() as conn:
         flag = conn.execute(
@@ -288,7 +293,8 @@ def test_cutoff_suggestions_sets_flag_and_fires(client, creator_secret, monkeypa
     _submit_suggestion(client, poll, str(uuid.uuid4()), "Ann", "Tacos")
     resp = client.post(
         f"/api/polls/{poll['id']}/cutoff-suggestions",
-        json={"creator_secret": creator_secret},
+        json={},
+        headers=bid_headers(cbid),
     )
     assert resp.status_code == 200, resp.text
     with _db() as conn:
@@ -314,11 +320,13 @@ def test_cutoff_availability_uses_time_to_vote_copy(client, creator_secret, monk
         routers.polls, "fan_out_phase_transition",
         lambda group_id, poll_id, payload, **kw: calls.append((poll_id, payload, kw)),
     )
-    poll = _time_poll(client, creator_secret, str(uuid.uuid4()))
+    cbid = str(uuid.uuid4())
+    poll = _time_poll(client, creator_secret, cbid)
     _submit_availability(client, poll, str(uuid.uuid4()), "Ann")
     resp = client.post(
         f"/api/polls/{poll['id']}/cutoff-availability",
-        json={"creator_secret": creator_secret},
+        json={},
+        headers=bid_headers(cbid),
     )
     assert resp.status_code == 200, resp.text
     assert len(calls) == 1

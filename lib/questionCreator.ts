@@ -1,81 +1,12 @@
-// Utility functions for managing question creator information in localStorage
+// Snapshot builder for duplicate / follow-up create flows.
+//
+// The legacy per-question creator-secret storage that used to live here
+// (and in the now-deleted lib/pollAccess.ts) is gone — migration 123 retired
+// `creator_secret` entirely. Poll authorship is identity-based server-side
+// (`creator_user_id` + the per-viewer `viewer_is_creator` flag). The
+// orphaned localStorage keys are cleaned up once on module load below.
 
 import type { Poll, Question } from '@/lib/types';
-
-const QUESTION_CREATOR_STORAGE_KEY = 'question_creator_data';
-const CLEANUP_INTERVAL_DAYS = 30; // Clean up questions older than 30 days
-
-interface QuestionCreatorData {
-  questionId: string;
-  creatorSecret: string;
-  createdAt: string;
-}
-
-// Generate a random creator secret
-export function generateCreatorSecret(): string {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-}
-
-// Store question creation data in localStorage
-export function storeQuestionCreation(questionId: string, creatorSecret: string): void {
-  if (typeof window === 'undefined') return; // SSR safety
-
-  const existingData = getStoredQuestionData();
-  const newData: QuestionCreatorData = {
-    questionId,
-    creatorSecret,
-    createdAt: new Date().toISOString()
-  };
-
-  const updatedData = [...existingData, newData];
-  localStorage.setItem(QUESTION_CREATOR_STORAGE_KEY, JSON.stringify(updatedData));
-}
-
-// Get stored question data from localStorage
-function getStoredQuestionData(): QuestionCreatorData[] {
-  if (typeof window === 'undefined') return []; // SSR safety
-
-  try {
-    const stored = localStorage.getItem(QUESTION_CREATOR_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch (error) {
-    console.error('Error parsing stored question data:', error);
-    return [];
-  }
-}
-
-// Check if a question was created by this device
-export function isCreatedByThisDevice(questionId: string): boolean {
-  const questionData = getStoredQuestionData();
-  return questionData.some(data => data.questionId === questionId);
-}
-
-// Get the creator secret for a question created by this device
-export function getQuestionCreatorSecret(questionId: string): string | null {
-  const questionData = getStoredQuestionData();
-  const found = questionData.find(data => data.questionId === questionId);
-  return found ? found.creatorSecret : null;
-}
-
-// Clean up old question data to prevent localStorage from growing indefinitely
-export function cleanupOldQuestions(): void {
-  if (typeof window === 'undefined') return; // SSR safety
-
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - CLEANUP_INTERVAL_DAYS);
-
-  const questionData = getStoredQuestionData();
-  const filteredData = questionData.filter(data => {
-    const createdDate = new Date(data.createdAt);
-    return createdDate >= cutoffDate;
-  });
-
-  // Only update localStorage if we actually removed something
-  if (filteredData.length !== questionData.length) {
-    localStorage.setItem(QUESTION_CREATOR_STORAGE_KEY, JSON.stringify(filteredData));
-    console.log(`Cleaned up ${questionData.length - filteredData.length} old question records`);
-  }
-}
 
 // Build a snapshot of question fields used for duplicate/follow-up forms.
 // Centralized here to avoid drift when fields are added or renamed.
@@ -106,17 +37,13 @@ export function buildQuestionSnapshot(question: Question, poll?: Poll | null) {
   };
 }
 
-// Initialize cleanup on module load (only in browser)
+// One-time cleanup of orphaned localStorage keys from retired creator-secret
+// plumbing, so they don't linger on existing installs.
 if (typeof window !== 'undefined') {
-  // Run cleanup immediately
-  cleanupOldQuestions();
-  
-  // Set up periodic cleanup (run once per day when the module is loaded)
-  const lastCleanup = localStorage.getItem('last_question_cleanup');
-  const today = new Date().toDateString();
-  
-  if (lastCleanup !== today) {
-    cleanupOldQuestions();
-    localStorage.setItem('last_question_cleanup', today);
+  try {
+    localStorage.removeItem('question_creator_data');
+    localStorage.removeItem('question_access_data');
+  } catch {
+    // Best-effort; storage access can throw in locked-down contexts.
   }
 }

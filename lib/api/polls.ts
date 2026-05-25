@@ -31,7 +31,6 @@ export interface CreateQuestionParams {
 }
 
 export interface CreatePollParams {
-  creator_secret: string;
   creator_name?: string | null;
   response_deadline?: string | null;
   prephase_deadline?: string | null;
@@ -112,11 +111,13 @@ export async function apiRecordPollView(pollId: string): Promise<void> {
 // Poll-level operations: close/reopen/cutoff the wrapper + every question
 // atomically. Each helper invalidates the poll cache (which cascades to
 // every question) and the accessible-questions cache so the next read reflects
-// the mutation.
+// the mutation. Authorization is identity-based server-side (migration 123
+// retired the per-browser secret): the caller's session / browser-linked
+// account must match the poll's creator_user_id — no secret in the body.
 async function pollOperation(
   pollId: string,
   path: 'close' | 'reopen' | 'cutoff-suggestions' | 'cutoff-availability',
-  body: Record<string, unknown>,
+  body: Record<string, unknown> = {},
 ): Promise<Poll> {
   const data = await pollFetch(`/${encodeURIComponent(pollId)}/${path}`, {
     method: 'POST',
@@ -130,33 +131,20 @@ async function pollOperation(
 
 export async function apiClosePoll(
   pollId: string,
-  creatorSecret: string,
   closeReason: string = 'manual',
 ): Promise<Poll> {
-  return pollOperation(pollId, 'close', {
-    creator_secret: creatorSecret,
-    close_reason: closeReason,
-  });
+  return pollOperation(pollId, 'close', { close_reason: closeReason });
 }
 
-export async function apiReopenPoll(
-  pollId: string,
-  creatorSecret: string,
-): Promise<Poll> {
-  return pollOperation(pollId, 'reopen', { creator_secret: creatorSecret });
+export async function apiReopenPoll(pollId: string): Promise<Poll> {
+  return pollOperation(pollId, 'reopen');
 }
 
-export async function apiCutoffPollSuggestions(
-  pollId: string,
-  creatorSecret: string,
-): Promise<Poll> {
-  return pollOperation(pollId, 'cutoff-suggestions', { creator_secret: creatorSecret });
+export async function apiCutoffPollSuggestions(pollId: string): Promise<Poll> {
+  return pollOperation(pollId, 'cutoff-suggestions');
 }
 
-export async function apiCutoffPollAvailability(
-  pollId: string,
-  creatorSecret: string,
-): Promise<Poll> {
-  return pollOperation(pollId, 'cutoff-availability', { creator_secret: creatorSecret });
+export async function apiCutoffPollAvailability(pollId: string): Promise<Poll> {
+  return pollOperation(pollId, 'cutoff-availability');
 }
 

@@ -197,7 +197,7 @@ export interface ApiRankedChoiceRound {
 export type Results = QuestionResults & { ranked_choice_rounds?: ApiRankedChoiceRound[]; ranked_choice_winner?: string };
 
 export function toQuestion(data: any): Question {
-  // Phase 5b: wrapper-level fields (response_deadline, creator_secret,
+  // Phase 5b: wrapper-level fields (response_deadline,
   // creator_name, is_closed, close_reason, short_id, group_title,
   // suggestion_deadline) are sourced from the parent Poll. Migration 105
   // also dropped the FE-only `poll_follow_up_to` chain pointer.
@@ -264,9 +264,9 @@ export function toPoll(data: any): Poll {
     // fields).
     group_id: data.group_id ?? null,
     group_short_id: data.group_short_id ?? null,
-    creator_secret: data.creator_secret ?? null,
     creator_name: data.creator_name ?? null,
     creator_user_id: data.creator_user_id ?? null,
+    viewer_is_creator: data.viewer_is_creator ?? false,
     response_deadline: data.response_deadline ?? null,
     prephase_deadline: data.prephase_deadline ?? null,
     prephase_deadline_minutes: data.prephase_deadline_minutes ?? null,

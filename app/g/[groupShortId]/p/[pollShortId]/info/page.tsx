@@ -35,12 +35,6 @@ import GroupHeader from "@/components/GroupHeader";
 import InitialBubble from "@/components/InitialBubble";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import PollActionButton, { CutoffIcon } from "@/components/PollActionButton";
-import { getCreatorSecret } from "@/lib/browserQuestionAccess";
-import {
-  getCachedSessionUser,
-  SESSION_CHANGED_EVENT,
-  type SessionUser,
-} from "@/lib/session";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import {
@@ -157,7 +151,7 @@ function SimpleFrame({
 
 const POLL_ACTION_APIS: Record<
   Exclude<PendingActionKind, "forget">,
-  (pollId: string, secret: string) => Promise<Poll>
+  (pollId: string) => Promise<Poll>
 > = {
   reopen: apiReopenPoll,
   close: apiClosePoll,
@@ -183,29 +177,13 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
   const prephaseDeadline = poll.prephase_deadline ?? null;
   const title = poll.title || anchor?.title || "Poll";
 
-  // One localStorage parse per render instead of one per action / per render
-  // hot path. getCreatorSecret walks the secrets array; isCurrentUserName
-  // reads getUserName(). Memo-bound to anchor identity.
-  const creatorSecret = useMemo(
-    () => (anchor ? getCreatorSecret(anchor.id) : null),
-    [anchor?.id],
-  );
-  // Account-owned authorship (migration 122): the signed-in creator can
-  // manage their poll from any device — even one without the per-browser
-  // creator_secret. Subscribe to SESSION_CHANGED so the controls appear/
-  // disappear on sign-in/out without a remount.
-  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
-  useEffect(() => {
-    setSessionUser(getCachedSessionUser());
-    const update = () => setSessionUser(getCachedSessionUser());
-    window.addEventListener(SESSION_CHANGED_EVENT, update);
-    return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
-  }, []);
-  const viewerIsCreator =
-    !!creatorSecret ||
-    (!!sessionUser &&
-      !!poll.creator_user_id &&
-      sessionUser.user_id === poll.creator_user_id);
+  // Whether the viewer is this poll's creator is computed server-side
+  // (migration 123 retired the per-browser secret): the response's
+  // viewer_is_creator is true when the caller's resolved identity — bearer
+  // session OR the account auto-linked to their browser_id — matches the
+  // poll's creator_user_id. Works on any device the creator's identity
+  // resolves on, for signed-in and anonymous-with-account creators alike.
+  const viewerIsCreator = poll.viewer_is_creator === true;
   const isCreatorOrDev =
     viewerIsCreator || process.env.NODE_ENV === "development";
 
@@ -263,15 +241,11 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
       return;
     }
 
-    // The per-browser secret authorizes anonymous-created polls + the
-    // creating browser. A signed-in creator on another device has no secret
-    // here — they send an empty one and the server authorizes against their
-    // session (the poll's creator_user_id matches their user_id).
-    const secret = creatorSecret ?? "";
-
+    // Authorization is identity-based server-side (migration 123): the
+    // caller's session / browser-linked account must match creator_user_id.
     try {
       setSubmitting(true);
-      const updated = await POLL_ACTION_APIS[kind](poll.id, secret);
+      const updated = await POLL_ACTION_APIS[kind](poll.id);
       setPoll((prev) => (prev ? { ...prev, ...updated } : updated));
       onBack();
     } catch (err) {

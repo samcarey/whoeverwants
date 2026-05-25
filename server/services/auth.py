@@ -214,6 +214,58 @@ def get_user_id_for_browser(conn, browser_id: str | None) -> str | None:
     return str(row["user_id"]) if row else None
 
 
+def resolve_actor_user_id(
+    conn, *, user_id: str | None, browser_id: str | None
+) -> str | None:
+    """The caller's effective user_id: the bearer-resolved session user_id
+    when signed in, else the account linked to this browser (auto-created
+    the first time the browser created a poll — see
+    `create_anonymous_user`). Returns None when neither resolves (a brand-
+    new anonymous browser that has never created anything).
+
+    This is the single primitive poll authorship + `viewer_is_creator`
+    are built on now that `creator_secret` is retired: a poll's
+    `creator_user_id` is compared against this value. Cross-device works
+    for free — signing in links the browser to the real user_id, so every
+    linked browser resolves to the same account.
+
+    Takes the already-resolved bearer user_id + browser_id as args (rather
+    than the Request) to avoid a circular import on `middleware`."""
+    if user_id:
+        return user_id
+    return get_user_id_for_browser(conn, browser_id)
+
+
+def create_anonymous_user(
+    conn, *, browser_id: str | None, display_name: str | None
+) -> str:
+    """Mint a lightweight account for an anonymous creator and bind it to
+    their browser. Used when someone who isn't signed in provides a name
+    (already required to create a poll) — the name minting an account is
+    what lets the server authorize their later close/reopen/cutoff without
+    a per-browser secret.
+
+    No session token is issued: the account is resolved on subsequent
+    requests via the persistent `user_browsers` link (so the FE never
+    perceives a "signed in" state). If `browser_id` is missing (shouldn't
+    happen with BrowserIdMiddleware), the account is created unlinked and
+    is effectively unmanageable — a defensive edge, not a real path.
+
+    TODO (account merge): if this browser later signs in with a real
+    identity (email / OAuth / passkey), `link_browser_to_user` repoints
+    the browser to the real user_id, orphaning this anonymous account and
+    its polls/groups. A future PR should merge the anonymous account into
+    the signed-in one (move creator_user_id on polls + groups, memberships,
+    etc., then delete the orphan). See docs/auth-access-model.md."""
+    row = conn.execute(
+        "INSERT INTO users (display_name) VALUES (%(n)s) RETURNING id",
+        {"n": display_name},
+    ).fetchone()
+    user_id = str(row["id"])
+    link_browser_to_user(conn, user_id=user_id, browser_id=browser_id)
+    return user_id
+
+
 # ---------------------------------------------------------------------------
 # Sessions
 # ---------------------------------------------------------------------------
@@ -536,16 +588,19 @@ def delete_user_account(conn, user_id: str) -> bool:
         passkey_challenges, group_join_requests.requester_user_id,
         group_invites.created_by_user_id, magic_link_tokens.user_id
         → CASCADE (rows deleted).
-      * groups.creator_user_id, group_join_requests.decided_by_user_id
-        → SET NULL (group / decision survives, ownership cleared).
+      * groups.creator_user_id, group_join_requests.decided_by_user_id,
+        polls.creator_user_id → SET NULL (group / decision / poll
+        survives, ownership cleared).
 
     `group_members` is keyed on browser_id (no user_id column), so the
     browser keeps its memberships and works anonymously after deletion —
     which is the intended "drop the user layer, keep the browser"
-    behavior. Polls / votes have no user FK either, so they survive
-    intact (creator_secret still authorizes the original creator's
-    browser). Returns True if a row was deleted, False if the user was
-    already gone (idempotent)."""
+    behavior. Votes have no user FK so they survive intact. Polls survive
+    too, but their `creator_user_id` is SET NULL (migration 122) — since
+    that's now the sole poll-mutation authority (migration 123 retired
+    `creator_secret`), a deleted creator's polls become immutable
+    (close/reopen/cutoff no longer authorize). Returns True if a row was
+    deleted, False if the user was already gone (idempotent)."""
     row = conn.execute(
         "DELETE FROM users WHERE id = %(u)s::uuid RETURNING id",
         {"u": user_id},

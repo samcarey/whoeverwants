@@ -65,21 +65,21 @@ class TestBadUuidPaths:
     def test_close_poll_with_bad_uuid_404s(self, client):
         resp = client.post(
             "/api/polls/NOT-A-UUID/close",
-            json={"creator_secret": "x", "close_reason": "manual"},
+            json={"close_reason": "manual"},
         )
         assert resp.status_code == 404
 
     def test_reopen_poll_with_bad_uuid_404s(self, client):
         resp = client.post(
             "/api/polls/NOT-A-UUID/reopen",
-            json={"creator_secret": "x"},
+            json={},
         )
         assert resp.status_code == 404
 
     def test_cutoff_suggestions_with_bad_uuid_404s(self, client):
         resp = client.post(
             "/api/polls/NOT-A-UUID/cutoff-suggestions",
-            json={"creator_secret": "x"},
+            json={},
         )
         assert resp.status_code == 404
 
