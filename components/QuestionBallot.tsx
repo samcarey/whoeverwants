@@ -6,6 +6,7 @@ import { useAppPrefetch } from "@/lib/prefetch";
 import QuestionResultsDisplay from "@/components/QuestionResults";
 import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
 import RankingSection from "@/components/RankingSection";
+import NewOptionsBanner from "@/components/NewOptionsBanner";
 import ConfirmationModal from "@/components/ConfirmationModal";
 
 import OptionLabel from "@/components/OptionLabel";
@@ -1444,16 +1445,27 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                   )}
                 </div>
               ) : hasVoted && !isEditingVote && !canSubmitSuggestions && hasCompletedRanking && questionOptions.length !== 2 ? (
-                <div className="text-center">
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingVote(true)}
-                    disabled={isLoadingVoteData}
-                    className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
-                  >
-                    Your Ballot
-                  </button>
-                </div>
+                <>
+                  {/* Surface the "new options added" banner up-front on poll
+                      open, so the user sees it without first tapping into the
+                      ballot. Tapping it enters edit mode (same as "Your Ballot"),
+                      where RankingSection drops the new options into the unranked
+                      pool. RankingSection shows the same banner once editing. */}
+                  <NewOptionsBanner
+                    count={newOptions.length}
+                    onClick={isLoadingVoteData ? undefined : () => setIsEditingVote(true)}
+                  />
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingVote(true)}
+                      disabled={isLoadingVoteData}
+                      className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
+                    >
+                      Your Ballot
+                    </button>
+                  </div>
+                </>
               ) : (
                 <>
                   {/* Suggestion phase UI for questions with suggestion deadline.
