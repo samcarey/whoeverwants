@@ -6,7 +6,13 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+
+from middleware import (
+    browser_id_from_request as _browser_id,
+    user_id_from_request as _user_id,
+)
+from services.auth import resolve_actor_user_id
 
 from database import get_db
 from models import (
@@ -195,7 +201,7 @@ def get_results(question_id: str):
 
 
 @router.post("/accessible", response_model=list[PollResponse])
-def get_accessible_questions(req: AccessibleQuestionsRequest):
+def get_accessible_questions(req: AccessibleQuestionsRequest, request: Request):
     """Return the poll wrappers covering the user's accessible question IDs.
 
     Phase 5b: returns `PollResponse[]` instead of flat `QuestionResponse[]`.
@@ -224,7 +230,13 @@ def get_accessible_questions(req: AccessibleQuestionsRequest):
             {"ids": req.question_ids},
         ).fetchall()
         poll_ids = [str(r["poll_id"]) for r in mp_id_rows]
-        return polls_for_poll_ids(conn, poll_ids, include_results=req.include_results)
+        viewer_user_id = resolve_actor_user_id(
+            conn, user_id=_user_id(request), browser_id=_browser_id(request)
+        )
+        return polls_for_poll_ids(
+            conn, poll_ids, include_results=req.include_results,
+            viewer_user_id=viewer_user_id,
+        )
 
 
 @router.post("/related", response_model=RelatedQuestionsResponse)

@@ -4,9 +4,9 @@ import type { Group } from '@/lib/groupUtils';
 
 // "Forget a group" is now "leave the group": drop the server-side
 // `group_members` row (the single source of truth for visibility) and
-// clear local voted-state + creator secrets + in-memory caches for the
-// group's questions. The group disappears from home on the next
-// /api/groups/mine call because the membership row is gone.
+// clear local voted-state + in-memory caches for the group's questions.
+// The group disappears from home on the next /api/groups/mine call
+// because the membership row is gone.
 export function forgetGroup(group: Group): void {
   for (const question of group.questions) {
     forgetQuestion(question.id);
@@ -16,9 +16,9 @@ export function forgetGroup(group: Group): void {
 }
 
 // Clear a single question's local browser state: voted/abstained flags,
-// stored vote id, creator secret, and in-memory caches. Does NOT touch
-// any access list — group membership is server-authoritative now, so
-// removing the localStorage row would have no effect on visibility.
+// stored vote id, and in-memory caches. Does NOT touch any access list —
+// group membership is server-authoritative now, so removing the localStorage
+// row would have no effect on visibility.
 export function forgetQuestion(questionId: string): void {
   if (typeof window === 'undefined' || !questionId) {
     return;
@@ -32,10 +32,6 @@ export function forgetQuestion(questionId: string): void {
     const voteIds = JSON.parse(localStorage.getItem('questionVoteIds') || '{}');
     delete voteIds[questionId];
     localStorage.setItem('questionVoteIds', JSON.stringify(voteIds));
-
-    const creatorSecrets = JSON.parse(localStorage.getItem('question_creator_secrets') || '[]');
-    const filteredSecrets = creatorSecrets.filter((s: any) => s.questionId !== questionId);
-    localStorage.setItem('question_creator_secrets', JSON.stringify(filteredSecrets));
 
     // Drop in-memory caches so subsequent navigations (e.g. back to the
     // containing group) don't rebuild views from stale data that still
@@ -51,9 +47,9 @@ export function forgetQuestion(questionId: string): void {
   }
 }
 
-// Check if question has any local browser state (voted flag, vote id, or
-// creator secret). Used to decide whether a "forget" affordance is worth
-// showing. No longer consults any access list.
+// Check if question has any local browser state (voted flag or vote id).
+// Used to decide whether a "forget" affordance is worth showing. No longer
+// consults any access list or creator secret.
 export function hasQuestionData(questionId: string): boolean {
   if (typeof window === 'undefined' || !questionId) {
     return false;
@@ -67,10 +63,6 @@ export function hasQuestionData(questionId: string): boolean {
     // Check vote IDs
     const voteIds = JSON.parse(localStorage.getItem('questionVoteIds') || '{}');
     if (voteIds[questionId]) return true;
-
-    // Check creator secrets
-    const creatorSecrets = JSON.parse(localStorage.getItem('question_creator_secrets') || '[]');
-    if (creatorSecrets.some((s: any) => s.questionId === questionId)) return true;
 
     return false;
   } catch (error) {

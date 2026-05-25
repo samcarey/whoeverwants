@@ -27,7 +27,7 @@ export interface Question {
   created_at: string;
   updated_at: string;
   // Phase 5b: wrapper-level fields (response_deadline, is_closed,
-  // close_reason, creator_secret, creator_name, short_id, group_title,
+  // close_reason, creator_name, short_id, group_title,
   // suggestion_deadline) live on the parent Poll. Resolve via
   // questionCache.getPollForQuestion() or accept a Poll prop. Migration
   // 105 retired `polls.follow_up_to` (and the FE-only mirror
@@ -162,14 +162,18 @@ export interface Poll {
   // pre-Phase-B.4 cached polls (in-memory across a deploy) won't either.
   group_id?: string | null;
   group_short_id?: string | null;
-  creator_secret?: string | null;
   creator_name?: string | null;
-  // Migration 122: the signed-in creator's user_id (null for anonymous-created
-  // polls + pre-122 cached polls). When it matches the current session's
-  // user_id, the viewer is the poll's creator on ANY device — the
-  // close/reopen/cutoff controls show and the server authorizes those
-  // mutations against the session, not just the per-browser creator_secret.
+  // Migration 122/123: the creator's user_id. Every poll has one now — a
+  // signed-in creator's account, or the lightweight account auto-minted for
+  // an anonymous creator at create time. Null only on pre-122 cached polls.
   creator_user_id?: string | null;
+  // Per-viewer flag computed server-side: true when the caller is this
+  // poll's creator (their resolved user_id — bearer session OR the account
+  // linked to their browser_id — matches creator_user_id). The FE gates the
+  // close/reopen/cutoff controls on this; it can't compare creator_user_id
+  // locally because an anonymous-with-account viewer doesn't know its own
+  // user_id. Absent on synthesized placeholder / pre-this-change cached polls.
+  viewer_is_creator?: boolean;
   response_deadline?: string | null;
   prephase_deadline?: string | null;
   prephase_deadline_minutes?: number | null;

@@ -626,24 +626,38 @@ class TestGroupId:
 
 
 class TestPollOperations:
-    """Poll-level close/reopen/cutoff endpoints (Phase 3)."""
+    """Poll-level close/reopen/cutoff endpoints (Phase 3).
 
-    def _create_multi(self, client, creator_secret, questions=None):
+    Migration 123: authorization is identity-based. `_create_multi` pins a
+    browser_id (the anonymous creator's auto-account is bound to it) and
+    `_hdr` replays it on the mutation calls so they authorize as the creator.
+    """
+
+    def _create_multi(self, client, questions=None):
+        bid = str(uuid.uuid4())
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret, "creator_name": "Test User",
+                "creator_name": "Test User",
                 "questions": questions or [_yes_no_question(), _restaurant_question()],
             },
+            headers={"X-Browser-Id": bid},
         )
         assert resp.status_code == 201, resp.text
-        return resp.json()
+        data = resp.json()
+        data["_bid"] = bid
+        return data
 
-    def test_close_poll_closes_wrapper_and_all_questions(self, client, creator_secret):
-        multi = self._create_multi(client, creator_secret)
+    @staticmethod
+    def _hdr(multi):
+        return {"X-Browser-Id": multi["_bid"]}
+
+    def test_close_poll_closes_wrapper_and_all_questions(self, client):
+        multi = self._create_multi(client)
         resp = client.post(
             f"/api/polls/{multi['id']}/close",
-            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
+            json={"close_reason": "manual"},
+            headers=self._hdr(multi),
         )
         assert resp.status_code == 200, resp.text
         data = resp.json()
@@ -653,30 +667,35 @@ class TestPollOperations:
             assert "is_closed" not in sp
             assert "close_reason" not in sp
 
-    def test_close_rejects_wrong_secret(self, client, creator_secret):
-        multi = self._create_multi(client, creator_secret)
+    def test_close_rejects_non_creator(self, client):
+        multi = self._create_multi(client)
+        # A different browser (no account link to the creator) can't close.
         resp = client.post(
             f"/api/polls/{multi['id']}/close",
-            json={"creator_secret": "wrong-secret", "close_reason": "manual"},
+            json={"close_reason": "manual"},
+            headers={"X-Browser-Id": str(uuid.uuid4())},
         )
         assert resp.status_code == 403
 
-    def test_close_404_on_unknown_id(self, client, creator_secret):
+    def test_close_404_on_unknown_id(self, client):
         resp = client.post(
             f"/api/polls/{uuid.uuid4()}/close",
-            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
+            json={"close_reason": "manual"},
+            headers={"X-Browser-Id": str(uuid.uuid4())},
         )
         assert resp.status_code == 404
 
-    def test_reopen_poll_reopens_wrapper_and_all_questions(self, client, creator_secret):
-        multi = self._create_multi(client, creator_secret)
+    def test_reopen_poll_reopens_wrapper_and_all_questions(self, client):
+        multi = self._create_multi(client)
         client.post(
             f"/api/polls/{multi['id']}/close",
-            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
+            json={"close_reason": "manual"},
+            headers=self._hdr(multi),
         )
         resp = client.post(
             f"/api/polls/{multi['id']}/reopen",
-            json={"creator_secret": creator_secret},
+            json={},
+            headers=self._hdr(multi),
         )
         assert resp.status_code == 200, resp.text
         data = resp.json()
@@ -686,45 +705,49 @@ class TestPollOperations:
             assert "is_closed" not in sp
             assert "close_reason" not in sp
 
-    def test_reopen_rejects_wrong_secret(self, client, creator_secret):
-        multi = self._create_multi(client, creator_secret)
+    def test_reopen_rejects_non_creator(self, client):
+        multi = self._create_multi(client)
         resp = client.post(
             f"/api/polls/{multi['id']}/reopen",
-            json={"creator_secret": "wrong"},
+            json={},
+            headers={"X-Browser-Id": str(uuid.uuid4())},
         )
         assert resp.status_code == 403
 
-    def test_cutoff_suggestions_400_when_nothing_to_cutoff(self, client, creator_secret):
+    def test_cutoff_suggestions_400_when_nothing_to_cutoff(self, client):
         # Default questions don't have suggestion_deadline / no votes — nothing
         # is in a suggestion phase to begin with.
-        multi = self._create_multi(client, creator_secret)
+        multi = self._create_multi(client)
         resp = client.post(
             f"/api/polls/{multi['id']}/cutoff-suggestions",
-            json={"creator_secret": creator_secret},
+            json={},
+            headers=self._hdr(multi),
         )
         assert resp.status_code == 400
 
-    def test_cutoff_availability_400_when_no_time_question(self, client, creator_secret):
-        multi = self._create_multi(client, creator_secret)
+    def test_cutoff_availability_400_when_no_time_question(self, client):
+        multi = self._create_multi(client)
         resp = client.post(
             f"/api/polls/{multi['id']}/cutoff-availability",
-            json={"creator_secret": creator_secret},
+            json={},
+            headers=self._hdr(multi),
         )
         assert resp.status_code == 400
 
-    def test_close_then_reopen_round_trip(self, client, creator_secret):
+    def test_close_then_reopen_round_trip(self, client):
         multi = self._create_multi(
             client,
-            creator_secret,
             questions=[_yes_no_question(), _restaurant_question(), _yes_no_question(category="custom")],
         )
         client.post(
             f"/api/polls/{multi['id']}/close",
-            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
+            json={"close_reason": "manual"},
+            headers=self._hdr(multi),
         )
         reopened = client.post(
             f"/api/polls/{multi['id']}/reopen",
-            json={"creator_secret": creator_secret},
+            json={},
+            headers=self._hdr(multi),
         ).json()
         assert reopened["is_closed"] is False
         assert len(reopened["questions"]) == 3
@@ -756,20 +779,24 @@ class TestPollVoterAggregation:
         )
         assert resp.status_code in (200, 201), resp.text
 
-    def _make_two_yes_no_multi(self, client, creator_secret):
+    def _make_two_yes_no_multi(self, client, creator_secret=None):
+        bid = str(uuid.uuid4())
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret, "creator_name": "Test User",
+                "creator_name": "Test User",
                 "context": "Test",
                 "questions": [
                     _yes_no_question(context="A"),
                     _yes_no_question(context="B"),
                 ],
             },
+            headers={"X-Browser-Id": bid},
         )
         assert resp.status_code == 201, resp.text
-        return resp.json()
+        data = resp.json()
+        data["_bid"] = bid
+        return data
 
     def test_empty_poll_has_zero_respondents(self, client, creator_secret):
         multi = self._make_two_yes_no_multi(client, creator_secret)
@@ -826,7 +853,8 @@ class TestPollVoterAggregation:
         self._vote(client, sp_a["id"], "Alice", poll_id=multi["id"])
         closed = client.post(
             f"/api/polls/{multi['id']}/close",
-            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
+            json={"close_reason": "manual"},
+            headers={"X-Browser-Id": multi["_bid"]},
         ).json()
         assert closed["voter_names"] == ["Alice"]
 
@@ -846,18 +874,22 @@ class TestPollUnifiedVoting:
     whole batch.
     """
 
-    def _make_multi(self, client, creator_secret, questions=None):
+    def _make_multi(self, client, creator_secret=None, questions=None):
+        bid = str(uuid.uuid4())
         resp = client.post(
             "/api/polls",
             json={
-                "creator_secret": creator_secret, "creator_name": "Test User",
+                "creator_name": "Test User",
                 "context": "Voting",
                 "questions": questions
                 or [_yes_no_question(context="A"), _yes_no_question(context="B")],
             },
+            headers={"X-Browser-Id": bid},
         )
         assert resp.status_code == 201, resp.text
-        return resp.json()
+        data = resp.json()
+        data["_bid"] = bid
+        return data
 
     def test_submits_votes_across_two_questions_atomically(self, client, creator_secret):
         multi = self._make_multi(client, creator_secret)
@@ -1078,7 +1110,8 @@ class TestPollUnifiedVoting:
         multi = self._make_multi(client, creator_secret)
         client.post(
             f"/api/polls/{multi['id']}/close",
-            json={"creator_secret": creator_secret, "creator_name": "Test User", "close_reason": "manual"},
+            json={"close_reason": "manual"},
+            headers={"X-Browser-Id": multi["_bid"]},
         )
         sp_a = multi["questions"][0]
         resp = client.post(

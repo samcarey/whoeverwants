@@ -5,7 +5,6 @@ import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
 import { apiCreatePoll } from "@/lib/api";
 import { getCachedGroupIdForQuestion } from "@/lib/questionCache";
-import { generateCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
 import { getUserName } from "@/lib/userProfile";
 
 interface VoteOnItModalProps {
@@ -51,7 +50,6 @@ export default function VoteOnItModal({ isOpen, questionId, questionTitle, sugge
       const option = DEADLINE_OPTIONS.find(opt => opt.value === deadlineOption);
       const deadline = new Date(Date.now() + (option?.minutes ?? 10) * 60 * 1000);
 
-      const creatorSecret = generateCreatorSecret();
       const creatorName = getUserName() || undefined;
 
       // Migration 105: resolve the source question's group_id from cache.
@@ -60,7 +58,6 @@ export default function VoteOnItModal({ isOpen, questionId, questionTitle, sugge
       const groupId = getCachedGroupIdForQuestion(questionId);
 
       const poll = await apiCreatePoll({
-        creator_secret: creatorSecret,
         creator_name: creatorName,
         response_deadline: deadline.toISOString(),
         group_id: groupId,
@@ -75,7 +72,6 @@ export default function VoteOnItModal({ isOpen, questionId, questionTitle, sugge
       });
 
       const subQuestion = poll.questions[0];
-      recordQuestionCreation(subQuestion.id, creatorSecret);
       const shortId = poll.short_id || subQuestion.id;
       router.push(`/p/${shortId}`);
       onClose();

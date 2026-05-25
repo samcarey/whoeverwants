@@ -1380,80 +1380,76 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
   below. Still deferred within I: "claim an anonymous-created group" so
   legacy `creator_user_id` can be set after-the-fact, enabling
   privacy-flip on grandfathered groups.
-  - **Account-owned poll authorship — SHIPPED (migration 122).** Polls
-    now record `creator_user_id` (the signed-in creator's user_id; NULL
-    for anonymous-created polls), mirroring `groups.creator_user_id`.
-    The shared `_authorize_poll` chokepoint in `routers/polls.py`
-    (close / reopen / cutoff-suggestions / cutoff-availability) is
-    **additive**: a mutation is authorized if EITHER the session's
-    `user_id` matches the poll's `creator_user_id` (account path — works
-    on any device the creator is signed in on, no per-browser secret
-    needed) OR the request's `creator_secret` matches (the sole
-    authority for anonymous polls + a backwards-compatible fallback for
-    the signed-in creator's original browser). So `creator_secret` is
-    **NOT retired** — it still exists and is still written on every poll
-    — but it's no longer the ONLY authority, and the cross-device gap it
-    left is closed for signed-in creators. The four poll-mutation
-    request models' `creator_secret` became `str | None = None`; the FE
-    sends an empty secret from a device without one and the bearer token
-    authorizes. FE gating goes through `isPollCreatedByViewer(poll,
-    anchorQuestionId)` in `lib/browserQuestionAccess.ts` (secret-OR-
-    session, mirroring the server). The avatar "creatorIsMe" check
-    (`app/g/[groupShortId]/p/[pollShortId]/page.tsx`) and the create-poll
-    30s duplicate-redirect dedup (`getCreatorSecret(existing.id)`) are
-    display / double-submit concerns and intentionally still use the
-    per-browser secret — they're not authorization. **Still genuinely
-    deferred**: fully removing `creator_secret` (see the TODO below), and
-    "edit poll/question" (title/options) — there is no poll-edit-mutation
-    endpoint today, so the TODO's "edit" reduces to the four
-    close/reopen/cutoff endpoints. Tests:
-    `server/tests/test_poll_authorship.py`.
-  - **TODO — fully retire `creator_secret` (separate session/PR; needs
-    design first).** Migration 122 made auth additive (session OR
-    secret) but did NOT remove the secret, because it's still the *only*
-    authority in two cases:
-    1. **Anonymous polls** (`creator_user_id` NULL) — no account to
-       match against, so the secret is the sole way to authorize a
-       close/reopen/cutoff.
-    2. **A signed-in creator's original browser after sign-out** — the
-       session is gone so the account branch fails, but the secret in
-       that browser's localStorage still authorizes.
-    To delete the column + all FE secret plumbing
-    (`generateCreatorSecret` / `storeCreatorSecret` / `getCreatorSecret` /
-    `recordQuestionCreation`, the `question_creator_secrets` localStorage
-    key, the `creator_secret` request/response fields), both cases must
-    be re-homed onto the identity model that already governs group
-    membership: `browser_id` (+ `user_browsers` → `user_id`). Candidate
-    approach: record the creating `browser_id` on the poll (a
-    `creator_browser_id` column, mirroring `creator_user_id`) and
-    authorize a mutation when the request's `browser_id` equals
-    `creator_browser_id` OR is linked via `user_browsers` to the poll's
-    `creator_user_id` (same expansion `load_user_visibility` already
-    does). That unifies on one primitive and resolves BOTH cases at once
-    (anon → browser_id match; signed-out creating browser → still its own
-    browser_id). Open questions that need a human decision (hence a
-    separate PR):
-    - **Threat model.** `browser_id` is echoed in the `X-Browser-Id`
-      response header on EVERY request (intentional, for cross-tab
-      adoption), so it's more observable than the secret (localStorage-
-      only, sent only on mutations). Authorizing on `browser_id` means
-      anyone who learns a victim's `browser_id` could mutate their
-      anonymous polls. Decide if that's acceptable, or whether anonymous
-      poll mutation should instead require sign-in / a claim.
-    - **Legacy polls can't be backfilled.** Existing rows recorded only
-      the secret — the creating `browser_id` was never stored on the poll
-      (`group_members` is group-level, not poll-creator). So either keep
-      the column as a read-only fallback for pre-migration polls (a long
-      transition window) or accept that legacy anonymous polls become
-      immutable.
-    - **"Claim an anonymous poll" flow** (parallel to the already-
-      deferred "claim an anonymous-created group"): lets a signed-in user
-      adopt a poll they created while anonymous, setting `creator_user_id`
-      after the fact — needed for the anonymous-then-sign-in creator to
-      manage it cross-device without the secret.
-    - **Product call:** is account-gated poll creation on the table
-      (every poll always gets a `creator_user_id`)? That makes retirement
-      trivial but breaks the app's anonymous-first stance.
+  - **Account-owned poll authorship — SHIPPED (migrations 122 + 123).**
+    `creator_secret` is **fully retired** (migration 123 dropped
+    `polls.creator_secret` + all FE secret plumbing). Authorship is now
+    purely identity-based: **every poll records a `creator_user_id`** —
+    a signed-in creator's account, or a lightweight account auto-minted
+    for an anonymous creator at create time. The shared `_authorize_poll`
+    chokepoint in `routers/polls.py` (close / reopen / cutoff-suggestions /
+    cutoff-availability) authorizes a mutation iff the caller's resolved
+    user_id matches the poll's `creator_user_id`. "Caller's resolved
+    user_id" = `resolve_actor_user_id(conn, user_id=<bearer>, browser_id=<X-Browser-Id>)`
+    in `services/auth.py`: the bearer-session user_id if signed in, else
+    the account linked to their browser via `user_browsers`. Cross-device
+    works for free (sign-in links every browser to the same account); the
+    anonymous creator's creating browser keeps authority via the
+    auto-account. The poll-mutation request models carry NO authorization
+    field anymore. Key pieces:
+    - **Auto-account on anonymous create.** `create_poll` →
+      `_resolve_or_create_creator(conn, request, creator_name)`: resolve
+      existing (bearer or browser→user), else `create_anonymous_user`
+      (`services/auth.py`) mints a `users` row (display_name = the
+      required creator name) + a `user_browsers(browser_id → user_id)`
+      link. **No session is issued** — the FE never perceives a "signed
+      in" state; the account is resolved on later requests via the
+      persistent `user_browsers` link. One account per browser (reused
+      across that browser's polls).
+    - **`viewer_is_creator` (per-response, server-computed).** Since an
+      anonymous-with-account viewer doesn't know its own user_id, the FE
+      can't compare `creator_user_id` locally. `_row_to_poll` takes a
+      `viewer_user_id` (the caller's resolved id, threaded through
+      `polls_for_poll_ids` + the get/create/mutation endpoints) and sets
+      `PollResponse.viewer_is_creator`. The FE gates all creator controls
+      on `poll.viewer_is_creator` via `isPollCreatedByViewer(poll)` in
+      `lib/browserQuestionAccess.ts` (no args now — reads the flag).
+      Avatar "creatorIsMe" + the create-poll 30s duplicate-redirect dedup
+      also use `viewer_is_creator` (the optimistic placeholder seeds it
+      `true`).
+    - **Group privacy keys on GENUINE sign-in, NOT the auto-account.**
+      Critical: `_insert_poll` takes BOTH `creator_user_id` (the poll's,
+      always set — auto for anon) AND `group_creator_user_id` (the
+      SIGNED-IN user only, None for anon). `_resolve_or_create_group`
+      uses the latter to decide a freshly-minted group's privacy
+      (signed-in → private + recorded group creator; anonymous → public +
+      NULL group creator). If you derive privacy from the poll's
+      `creator_user_id` (now always set), EVERY anonymous group goes
+      private and the anonymous-first URL-sharing flow breaks — this was
+      a real regression caught by `test_groups_visibility.py`.
+    - **Deleting a user SET NULLs `polls.creator_user_id`** (migration
+      122 FK), so a deleted creator's polls become immutable (no authority
+      left). Documented in `services/auth.py: delete_user_account`.
+    - Tests: `server/tests/test_poll_authorship.py` (identity-based
+      authorship + auto-account + viewer_is_creator). The conftest
+      `create_poll` pins a creating browser_id and `creator_headers(poll)` /
+      `close_poll` / `reopen_poll` / `cutoff_poll` replay it so mutations
+      authorize.
+  - **TODO — merge an auto-created anonymous account into a real one on
+    sign-in.** When an anonymous-account browser later signs in with a
+    real identity (email / OAuth / passkey), `link_browser_to_user`
+    repoints the browser to the real user_id — orphaning the anonymous
+    account AND its polls/groups (whose `creator_user_id` still points at
+    the orphan). Effect: the just-signed-in user loses creator authority
+    over polls they made while anonymous (until they're back on... nothing
+    — the browser is repointed). A future PR should, at sign-in, move the
+    anonymous account's `creator_user_id` rows (polls + groups), its
+    `group_members`/poll authorship, etc. onto the signed-in account, then
+    delete the orphan. Parallel to the already-deferred "claim an
+    anonymous-created group". The anonymous group stays PUBLIC so
+    URL-sharing keeps working regardless; this is purely about restoring
+    the creator's management controls cross-identity. **Still no
+    poll-edit-mutation endpoint** (title/options), so "edit" remains the
+    four close/reopen/cutoff endpoints.
 - C-follow-up: ~~native Google Sign In on iOS~~ **shipped** (per-bundle iOS client IDs hardcoded in `lib/oauth.ts: GOOGLE_IOS_CLIENT_IDS`; reversed URL scheme stamped into `Info.plist: CFBundleURLTypes` by `ios-build.yml`; uses the same `@capgo/capacitor-social-login` plugin as Apple native).
 
 **Phase I (account management) shipped in migration 118.** Adds a

@@ -13,7 +13,7 @@ import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGet
 import type { Poll } from "@/lib/types";
 import { useGroupVoting } from "@/lib/useGroupVoting";
 import type { QuestionResults } from "@/lib/types";
-import { getCreatorSecret, isPollCreatedByViewer } from "@/lib/browserQuestionAccess";
+import { isPollCreatedByViewer } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls, getCachedGroupSummary, getCachedPollById, getCachedPollByShortId } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
@@ -1885,9 +1885,9 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         const modalWrapper = wrapperFor(modalQuestion);
         if (!modalWrapper) return null;
         const isModalClosed = !!modalWrapper.is_closed;
-        // Creator via per-browser secret OR signed-in account (migration 122).
+        // Server-computed creator flag (migration 123 retired the secret).
         const isCreatorOrDev =
-          isPollCreatedByViewer(modalWrapper, modalQuestion.id) ||
+          isPollCreatedByViewer(modalWrapper) ||
           process.env.NODE_ENV === 'development';
         return (
           <FollowUpModal
@@ -1955,15 +1955,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
             }
           } else if (action.kind === 'reopen') {
             try {
-              // Empty when the viewer is the signed-in creator on another
-              // device — the bearer token authorizes via creator_user_id.
-              const secret = getCreatorSecret(action.question.id) ?? '';
+              // Identity-based authorization server-side (migration 123).
               const pollId = action.question.poll_id;
               if (!pollId) {
                 console.error('Cannot reopen question without poll_id');
                 return;
               }
-              const updated = await apiReopenPoll(pollId, secret);
+              const updated = await apiReopenPoll(pollId);
               patchGroupPolls(
                 (mp) => mp.id === pollId,
                 () => ({
@@ -1977,13 +1975,12 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
             }
           } else if (action.kind === 'close') {
             try {
-              const secret = getCreatorSecret(action.question.id) || '';
               const pollId = action.question.poll_id;
               if (!pollId) {
                 console.error('Cannot close question without poll_id');
                 return;
               }
-              await apiClosePoll(pollId, secret);
+              await apiClosePoll(pollId);
               patchGroupPolls(
                 (mp) => mp.id === pollId,
                 () => ({ is_closed: true, close_reason: 'manual' }),
@@ -1996,15 +1993,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
               ? apiCutoffPollSuggestions
               : apiCutoffPollAvailability;
             try {
-              // Empty when the viewer is the signed-in creator on another
-              // device — the bearer token authorizes via creator_user_id.
-              const secret = getCreatorSecret(action.question.id) ?? '';
+              // Identity-based authorization server-side (migration 123).
               const pollId = action.question.poll_id;
               if (!pollId) {
                 console.error(`Cannot ${action.kind} without poll_id`);
                 return;
               }
-              const wrapper = await apiFn(pollId, secret);
+              const wrapper = await apiFn(pollId);
               patchGroupPolls(
                 (mp) => mp.id === pollId,
                 () => ({ prephase_deadline: wrapper.prephase_deadline ?? null }),

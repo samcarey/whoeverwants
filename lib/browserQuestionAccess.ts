@@ -1,123 +1,41 @@
-import { getCachedSessionUser } from './session';
-
-// Browser storage for poll-ownership creator secrets + per-question
-// "seen options" snapshots.
+// Browser storage for per-question "seen options" snapshots.
 //
-// The legacy per-browser "accessible question ids" + "forgotten question
-// ids" lists (and their localStorage keys) have been REMOVED. Group
-// visibility is now driven entirely by server-side `group_members`
-// (the single source of truth); "forget a group" is "leave the group"
-// (DELETE /api/groups/{routeId}/membership). Creator secrets are kept
-// here purely as poll-ownership authorization (out of scope for the
-// membership change).
+// Poll-ownership authorization is no longer stored here. Migration 123
+// retired the per-browser `creator_secret`; poll authorship is purely
+// identity-based server-side (every poll records `creator_user_id`,
+// auto-minting a lightweight account for anonymous creators). Whether the
+// current viewer is the creator is computed server-side per response and
+// surfaced as `poll.viewer_is_creator`.
+//
+// Group visibility is likewise driven entirely by server-side
+// `group_members` (the single source of truth); "forget a group" is "leave
+// the group" (DELETE /api/groups/{routeId}/membership).
 
-const CREATOR_SECRETS_KEY = 'question_creator_secrets';
-
-// One-time cleanup of the now-orphaned localStorage keys so they don't
-// linger on existing installs. Runs once at module load (browser only).
-const LEGACY_ACCESSIBLE_KEY = 'accessible_question_ids';
-const LEGACY_FORGOTTEN_KEY = 'forgotten_question_ids';
+// One-time cleanup of now-orphaned localStorage keys so they don't linger
+// on existing installs. Runs once at module load (browser only).
+const ORPHANED_KEYS = [
+  'accessible_question_ids',
+  'forgotten_question_ids',
+  'question_creator_secrets', // retired with creator_secret (migration 123)
+];
 if (typeof window !== 'undefined') {
   try {
-    localStorage.removeItem(LEGACY_ACCESSIBLE_KEY);
-    localStorage.removeItem(LEGACY_FORGOTTEN_KEY);
+    for (const key of ORPHANED_KEYS) localStorage.removeItem(key);
   } catch {
     // Best-effort; storage access can throw in locked-down contexts.
   }
 }
 
-interface CreatorSecret {
-  questionId: string;
-  secret: string;
-  createdAt: string;
-}
-
-// Generate a random creator secret
-export function generateCreatorSecret(): string {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-}
-
-// Store creator secret for a question
-export function storeCreatorSecret(questionId: string, secret: string): void {
-  if (typeof window === 'undefined' || !questionId || !secret) {
-    return;
-  }
-
-  try {
-    const existingSecrets = getCreatorSecrets();
-    
-    // Add new secret (replace if already exists)
-    const filteredSecrets = existingSecrets.filter(s => s.questionId !== questionId);
-    filteredSecrets.push({
-      questionId,
-      secret,
-      createdAt: new Date().toISOString()
-    });
-    
-    localStorage.setItem(CREATOR_SECRETS_KEY, JSON.stringify(filteredSecrets));
-  } catch (error) {
-    console.error('Error storing creator secret:', error);
-  }
-}
-
-// Get stored creator secrets
-function getCreatorSecrets(): CreatorSecret[] {
-  if (typeof window === 'undefined') {
-    return [];
-  }
-
-  try {
-    const stored = localStorage.getItem(CREATOR_SECRETS_KEY);
-    if (!stored) {
-      return [];
-    }
-
-    const secrets = JSON.parse(stored);
-    return Array.isArray(secrets) ? secrets : [];
-  } catch (error) {
-    console.error('Error reading creator secrets:', error);
-    return [];
-  }
-}
-
-// Get creator secret for a specific question
-export function getCreatorSecret(questionId: string): string | null {
-  const secrets = getCreatorSecrets();
-  const found = secrets.find(s => s.questionId === questionId);
-  return found ? found.secret : null;
-}
-
-// Check if this browser created a specific question
-export function isCreatedByThisBrowser(questionId: string): boolean {
-  return getCreatorSecret(questionId) !== null;
-}
-
-// Is the current viewer the creator of this poll? Mirrors the server's
-// `_authorize_poll` (migration 122): authorized via EITHER the per-browser
-// creator_secret for `anchorQuestionId` (the browser that created it), OR a
-// signed-in session matching the poll's recorded `creator_user_id` (which
-// works on any device the creator is signed in on — the secret never followed
-// them across browsers). Callers that need to re-render on sign-in/out must
-// also subscribe to SESSION_CHANGED_EVENT; this reads the cached user
-// synchronously.
+// Is the current viewer the creator of this poll? Server-authoritative
+// (migration 123): the server computes this per response by matching the
+// caller's resolved user_id — bearer session OR the account linked to their
+// browser_id — against the poll's `creator_user_id`. The FE just reads the
+// flag, so it works identically for signed-in and anonymous-with-account
+// viewers without the FE knowing its own user_id.
 export function isPollCreatedByViewer(
-  poll: { creator_user_id?: string | null } | null | undefined,
-  anchorQuestionId: string | null | undefined,
+  poll: { viewer_is_creator?: boolean | null } | null | undefined,
 ): boolean {
-  if (anchorQuestionId && isCreatedByThisBrowser(anchorQuestionId)) return true;
-  const creatorUserId = poll?.creator_user_id;
-  if (!creatorUserId) return false;
-  const user = getCachedSessionUser();
-  return !!user && user.user_id === creatorUserId;
-}
-
-// Record question creation. Persists the creator secret (poll-ownership
-// authorization) — visibility no longer needs any local bookkeeping
-// since `group_members` is the single source of truth.
-export function recordQuestionCreation(questionId: string, creatorSecret?: string): void {
-  if (creatorSecret) {
-    storeCreatorSecret(questionId, creatorSecret);
-  }
+  return poll?.viewer_is_creator === true;
 }
 
 const SEEN_OPTIONS_KEY_PREFIX = 'question_seen_options_';

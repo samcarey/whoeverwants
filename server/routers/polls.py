@@ -13,6 +13,7 @@ from middleware import (
     browser_id_from_request as _browser_id,
     user_id_from_request as _user_id,
 )
+from services.auth import create_anonymous_user, resolve_actor_user_id
 from models import (
     CloseQuestionRequest,
     CreatePollRequest,
@@ -223,6 +224,7 @@ def _insert_poll(
     now: datetime,
     *,
     creator_user_id: str | None,
+    group_creator_user_id: str | None,
 ) -> dict:
     """Insert a new poll under the requested (or freshly-minted) group.
 
@@ -231,9 +233,14 @@ def _insert_poll(
     group name override lives on `groups.title` rather than being
     duplicated across every poll.
 
-    Phase E: when minting a fresh group, the caller's `creator_user_id`
-    (resolved from the session token) drives privacy — see
-    `_resolve_or_create_group`.
+    `creator_user_id` is the POLL's creator — always set now (migration 123):
+    the signed-in user, or the lightweight account auto-minted for an
+    anonymous creator. `group_creator_user_id` is the SIGNED-IN user only
+    (None for anonymous, even though they have an auto-account): Phase E
+    keys a freshly-minted group's privacy on it (signed-in → private +
+    recorded creator; anonymous → public + no group creator), so the
+    anonymous-first link-sharing flow keeps working — the auto-account
+    must NOT flip new groups private.
     """
     # `req.group_title` only seeds the title when minting a fresh group.
     # For existing groups, it overwrites the title — kept for API symmetry
@@ -243,7 +250,7 @@ def _insert_poll(
         conn,
         req.group_id,
         req.group_title,
-        creator_user_id=creator_user_id,
+        creator_user_id=group_creator_user_id,
     )
     # The prephase (suggestion / availability) countdown starts at creation —
     # there is no deferral to the first submission. A preset duration
@@ -263,7 +270,7 @@ def _insert_poll(
     row = conn.execute(
         """
         INSERT INTO polls (
-            creator_secret, creator_name, creator_user_id, response_deadline,
+            creator_name, creator_user_id, response_deadline,
             prephase_deadline, prephase_deadline_minutes,
             context, details,
             min_responses, show_preliminary_results, allow_pre_ranking,
@@ -271,7 +278,7 @@ def _insert_poll(
             created_at, updated_at
         )
         VALUES (
-            %(creator_secret)s, %(creator_name)s, %(creator_user_id)s, %(response_deadline)s,
+            %(creator_name)s, %(creator_user_id)s, %(response_deadline)s,
             %(prephase_deadline)s, %(prephase_deadline_minutes)s,
             %(context)s, %(details)s,
             %(min_responses)s, %(show_preliminary_results)s, %(allow_pre_ranking)s,
@@ -281,7 +288,6 @@ def _insert_poll(
         RETURNING *
         """,
         {
-            "creator_secret": req.creator_secret,
             "creator_name": req.creator_name,
             "creator_user_id": creator_user_id,
             "response_deadline": req.response_deadline,
@@ -308,8 +314,8 @@ def _insert_question(
     title: str,
     now: datetime,
 ) -> dict:
-    # Phase 5: wrapper-level columns (creator_secret, creator_name,
-    # response_deadline, follow_up_to, group_title, is_closed, close_reason,
+    # Phase 5: wrapper-level columns (creator_name, creator_user_id,
+    # response_deadline, group_title, is_closed, close_reason,
     # short_id, suggestion_deadline) live exclusively on the poll wrapper.
     # Sub-question rows carry only per-question fields.
     return conn.execute(
@@ -454,16 +460,22 @@ def _row_to_poll(
     voter_names: list[str] | None = None,
     anonymous_count: int = 0,
     viewed_ignored_count: int = 0,
+    viewer_user_id: str | None = None,
 ) -> PollResponse:
+    creator_user_id = (
+        str(row["creator_user_id"]) if row.get("creator_user_id") else None
+    )
     return PollResponse(
         id=str(row["id"]),
         short_id=row.get("short_id"),
         group_id=str(row["group_id"]) if row.get("group_id") else None,
         group_short_id=row.get("group_short_id"),
-        creator_secret=row.get("creator_secret"),
         creator_name=row.get("creator_name"),
-        creator_user_id=(
-            str(row["creator_user_id"]) if row.get("creator_user_id") else None
+        creator_user_id=creator_user_id,
+        viewer_is_creator=(
+            creator_user_id is not None
+            and viewer_user_id is not None
+            and creator_user_id == str(viewer_user_id)
         ),
         response_deadline=_iso_or_none(row.get("response_deadline")),
         prephase_deadline=_iso_or_none(row.get("prephase_deadline")),
@@ -714,6 +726,30 @@ def _schedule_transition_notification(conn, poll_id, *, already_notified, backgr
         )
 
 
+def _caller_user_id(conn, request: Request) -> str | None:
+    """The caller's effective user_id — bearer session, else the account
+    linked to their browser_id (auto-created at poll-create time). The
+    single primitive poll authorship + `viewer_is_creator` are built on."""
+    return resolve_actor_user_id(
+        conn, user_id=_user_id(request), browser_id=_browser_id(request)
+    )
+
+
+def _resolve_or_create_creator(
+    conn, request: Request, display_name: str | None
+) -> str:
+    """Resolve the caller's user_id, minting a lightweight anonymous
+    account (bound to their browser_id) when they have none yet. Called at
+    poll-create time: providing a name (already required) is what
+    establishes the account that authorizes later close/reopen/cutoff."""
+    user_id = _caller_user_id(conn, request)
+    if user_id:
+        return user_id
+    return create_anonymous_user(
+        conn, browser_id=_browser_id(request), display_name=display_name
+    )
+
+
 @router.post("", response_model=PollResponse, status_code=201)
 def create_poll(
     req: CreatePollRequest, request: Request, background_tasks: BackgroundTasks
@@ -734,10 +770,22 @@ def create_poll(
     )
 
     now = datetime.now(timezone.utc)
-    creator_user_id = _user_id(request)
 
     with get_db() as conn:
-        poll_row = _insert_poll(conn, req, now, creator_user_id=creator_user_id)
+        # Every poll gets a creator_user_id now (migration 123 retired the
+        # per-browser secret). Signed-in → the session user; anonymous →
+        # a lightweight account auto-minted from the (required) creator
+        # name and bound to this browser, so close/reopen/cutoff can
+        # authorize against it later without a secret.
+        creator_user_id = _resolve_or_create_creator(conn, request, req.creator_name)
+        # Group privacy (Phase E) keys on GENUINE sign-in, not the auto-account
+        # — anonymous-created groups must stay public so URL-sharing works.
+        signed_in_user_id = _user_id(request)
+        poll_row = _insert_poll(
+            conn, req, now,
+            creator_user_id=creator_user_id,
+            group_creator_user_id=signed_in_user_id,
+        )
         question_rows = [
             _insert_question(conn, poll_row, req, sub, index, question_title, now)
             for index, sub in enumerate(req.questions)
@@ -800,11 +848,12 @@ def create_poll(
         )
 
     # Newly-created poll has no votes yet — skip the voter aggregation.
-    return _row_to_poll(poll_row, question_rows)
+    # The caller is the creator, so viewer_is_creator is true.
+    return _row_to_poll(poll_row, question_rows, viewer_user_id=creator_user_id)
 
 
 @router.get("/by-id/{poll_id}", response_model=PollResponse)
-def get_poll_by_id(poll_id: str):
+def get_poll_by_id(poll_id: str, request: Request):
     require_uuid(poll_id, "poll_id")
     with get_db() as conn:
         row = conn.execute(
@@ -815,11 +864,12 @@ def get_poll_by_id(poll_id: str):
             raise HTTPException(status_code=404, detail="Poll not found")
         question_rows = _fetch_questions(conn, str(row["id"]))
         voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, str(row["id"]))
-    return _row_to_poll(row, question_rows, voter_names, anonymous_count, viewed_ignored)
+        viewer_user_id = _caller_user_id(conn, request)
+    return _row_to_poll(row, question_rows, voter_names, anonymous_count, viewed_ignored, viewer_user_id=viewer_user_id)
 
 
 @router.get("/{short_id}", response_model=PollResponse)
-def get_poll(short_id: str):
+def get_poll(short_id: str, request: Request):
     with get_db() as conn:
         row = conn.execute(
             f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.short_id = %(short_id)s",
@@ -829,7 +879,8 @@ def get_poll(short_id: str):
             raise HTTPException(status_code=404, detail="Poll not found")
         question_rows = _fetch_questions(conn, str(row["id"]))
         voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, str(row["id"]))
-    return _row_to_poll(row, question_rows, voter_names, anonymous_count, viewed_ignored)
+        viewer_user_id = _caller_user_id(conn, request)
+    return _row_to_poll(row, question_rows, voter_names, anonymous_count, viewed_ignored, viewer_user_id=viewer_user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -838,19 +889,18 @@ def get_poll(short_id: str):
 # These mirror the per-question close/reopen/cutoff endpoints but operate on the
 # poll wrapper + every question atomically.
 #
-# Authorization is account-aware (migration 122). A poll created by a signed-in
-# user records `creator_user_id`; that account may mutate the poll from any
-# device it's signed in on, authorized by the session bearer token alone. The
-# per-browser `creator_secret` remains valid too — it's the ONLY authority for
-# anonymous-created polls (creator_user_id NULL), and a backwards-compatible
-# fallback for the signed-in creator's original browser. The check is additive:
-# session-match OR secret-match passes.
+# Authorization is purely identity-based (migration 123 retired the per-browser
+# `creator_secret`). Every poll records a `creator_user_id`: a signed-in
+# creator's account, or the lightweight account auto-minted for an anonymous
+# creator at create time (bound to their browser_id via `user_browsers`). A
+# mutation is authorized iff the caller's resolved user_id — bearer session,
+# else the account linked to their browser_id — matches the poll's
+# `creator_user_id`. Cross-device works for free: signing in links the browser
+# to the real account, so every linked browser resolves to the same user_id.
 # ---------------------------------------------------------------------------
 
 
-def _authorize_poll(
-    conn, poll_id: str, creator_secret: str | None, request: Request
-) -> dict:
+def _authorize_poll(conn, poll_id: str, request: Request) -> dict:
     require_uuid(poll_id, "poll_id")
     row = conn.execute(
         "SELECT * FROM polls WHERE id = %(id)s",
@@ -859,17 +909,15 @@ def _authorize_poll(
     if not row:
         raise HTTPException(status_code=404, detail="Poll not found")
     poll = dict(row)
-    # Account-owned poll: a signed-in session matching the recorded creator
-    # is sufficient — works cross-device, no per-browser secret needed.
     creator_user_id = poll.get("creator_user_id")
-    user_id = _user_id(request)
-    if creator_user_id is not None and user_id is not None and str(creator_user_id) == str(user_id):
+    caller_user_id = _caller_user_id(conn, request)
+    if (
+        creator_user_id is not None
+        and caller_user_id is not None
+        and str(creator_user_id) == str(caller_user_id)
+    ):
         return poll
-    # Fall back to the per-browser secret (sole authority for anonymous polls;
-    # backwards-compat for the signed-in creator's original browser).
-    if creator_secret and poll.get("creator_secret") == creator_secret:
-        return poll
-    raise HTTPException(status_code=403, detail="Invalid creator secret")
+    raise HTTPException(status_code=403, detail="Not authorized")
 
 
 @router.post("/{poll_id}/close", response_model=PollResponse)
@@ -893,7 +941,7 @@ def close_poll(
     """
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        wrapper = _authorize_poll(conn, poll_id, req.creator_secret, request)
+        wrapper = _authorize_poll(conn, poll_id, request)
         conn.execute(
             """
             UPDATE polls
@@ -937,7 +985,7 @@ def close_poll(
         question_rows = _fetch_questions(conn, poll_id)
         voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, poll_id)
 
-    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored)
+    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored, viewer_user_id=wrapper.get("creator_user_id"))
 
 
 @router.post("/{poll_id}/reopen", response_model=PollResponse)
@@ -946,7 +994,7 @@ def reopen_poll(poll_id: str, req: ReopenQuestionRequest, request: Request):
     matters; questions inherit it via JOIN."""
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        _authorize_poll(conn, poll_id, req.creator_secret, request)
+        wrapper = _authorize_poll(conn, poll_id, request)
         conn.execute(
             """
             UPDATE polls
@@ -965,7 +1013,7 @@ def reopen_poll(poll_id: str, req: ReopenQuestionRequest, request: Request):
         question_rows = _fetch_questions(conn, poll_id)
         voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, poll_id)
 
-    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored)
+    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored, viewer_user_id=wrapper.get("creator_user_id"))
 
 
 @router.post("/{poll_id}/cutoff-suggestions", response_model=PollResponse)
@@ -989,7 +1037,7 @@ def cutoff_poll_suggestions(
     """
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        wrapper = _authorize_poll(conn, poll_id, req.creator_secret, request)
+        wrapper = _authorize_poll(conn, poll_id, request)
 
         # Phase 5: prephase_deadline is wrapper-level. Validate that there's an
         # open suggestion phase (deadline in the future), and that at least one
@@ -1035,7 +1083,7 @@ def cutoff_poll_suggestions(
         question_rows = _fetch_questions(conn, poll_id)
         voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, poll_id)
 
-    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored)
+    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored, viewer_user_id=wrapper.get("creator_user_id"))
 
 
 def _vote_item_to_submit_req(item: PollVoteItem, voter_name: str | None) -> SubmitVoteRequest:
@@ -1178,7 +1226,7 @@ def cutoff_poll_availability(
     contract as cutoff-suggestions)."""
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        wrapper = _authorize_poll(conn, poll_id, req.creator_secret, request)
+        wrapper = _authorize_poll(conn, poll_id, request)
         deadline = wrapper.get("prephase_deadline")
         in_phase = deadline is not None and deadline > now
         time_questions = conn.execute(
@@ -1219,7 +1267,7 @@ def cutoff_poll_availability(
         question_rows = _fetch_questions(conn, poll_id)
         voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(conn, poll_id)
 
-    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored)
+    return _row_to_poll(poll_row, question_rows, voter_names, anonymous_count, viewed_ignored, viewer_user_id=wrapper.get("creator_user_id"))
 
 
 @router.post("/{poll_id}/viewed", status_code=204)

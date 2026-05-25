@@ -102,18 +102,17 @@ class SubmitPollVotesRequest(BaseModel):
     items: list[PollVoteItem] = Field(..., min_length=1)
 
 
-# `creator_secret` is optional on the poll-mutation requests: a signed-in
-# creator managing their poll from another device has no per-browser secret,
-# so they authorize via their session bearer token instead (the poll's
-# `creator_user_id` matches their user_id). Anonymous-created polls still
-# require the matching secret — see `_authorize_poll` in routers/polls.py.
+# Poll-mutation requests carry no authorization field. Authorship is purely
+# identity-based now (creator_secret retired): `_authorize_poll` in
+# routers/polls.py resolves the caller's user_id (bearer session, else the
+# account linked to their browser_id) and matches it against the poll's
+# `creator_user_id`.
 class CloseQuestionRequest(BaseModel):
-    creator_secret: str | None = None
     close_reason: CloseReason = CloseReason.manual
 
 
 class ReopenQuestionRequest(BaseModel):
-    creator_secret: str | None = None
+    pass
 
 
 class UpdateGroupTitleRequest(BaseModel):
@@ -122,7 +121,7 @@ class UpdateGroupTitleRequest(BaseModel):
 
 
 class CutoffSuggestionsRequest(BaseModel):
-    creator_secret: str | None = None
+    pass
 
 
 class AccessibleQuestionsRequest(BaseModel):
@@ -146,7 +145,7 @@ class RelatedQuestionsResponse(BaseModel):
 class QuestionResponse(BaseModel):
     """Sub-question API response shape.
 
-    Phase 5b: wrapper-level fields (creator_secret, response_deadline,
+    Phase 5b: wrapper-level fields (response_deadline,
     is_closed, close_reason, short_id, group_title, suggestion_deadline,
     creator_name) are no longer surfaced here — they live exclusively on the
     parent `PollResponse`. The FE consumes them from the wrapper per the
@@ -248,7 +247,7 @@ class RankedChoiceRoundResponse(BaseModel):
 
 class CreateQuestionRequest(BaseModel):
     """A question inside a poll create request. Wrapper-level fields
-    (response_deadline, creator_secret, group_id, etc.) live on the
+    (response_deadline, creator_name, group_id, etc.) live on the
     poll, not here. `context` disambiguates same-kind questions and is
     stored on questions.details."""
 
@@ -270,7 +269,6 @@ class CreateQuestionRequest(BaseModel):
 
 
 class CreatePollRequest(BaseModel):
-    creator_secret: str
     creator_name: str | None = None
     response_deadline: str | None = None
     prephase_deadline: str | None = None
@@ -307,14 +305,20 @@ class CreatePollRequest(BaseModel):
 class PollResponse(BaseModel):
     id: str
     short_id: str | None = None
-    creator_secret: str | None = None
     creator_name: str | None = None
-    # Migration 122: the signed-in creator's user_id, recorded at create
-    # time (NULL for anonymous-created polls). When set, the FE shows the
-    # creator's close/reopen/cutoff controls to that account on any device,
-    # and the server authorizes those mutations against the session — not
-    # just the per-browser `creator_secret`.
+    # Migration 122: the creator's user_id, recorded at create time. Every
+    # poll has one now (migration 123 retired the per-browser secret): a
+    # signed-in creator's user_id, or the lightweight account auto-minted
+    # for an anonymous creator at create time. NULL only on legacy polls
+    # created before this model.
     creator_user_id: str | None = None
+    # Per-viewer flag: true when the caller's resolved user_id (bearer
+    # session, else the account linked to their browser_id) equals
+    # `creator_user_id`. The FE gates the close/reopen/cutoff controls on
+    # this — it can't compare locally because an anonymous-with-account
+    # viewer doesn't know its own user_id. Defaults False; set by
+    # `_row_to_poll` when a `viewer_user_id` is threaded in.
+    viewer_is_creator: bool = False
     response_deadline: str | None = None
     prephase_deadline: str | None = None
     prephase_deadline_minutes: int | None = None

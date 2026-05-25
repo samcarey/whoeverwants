@@ -42,7 +42,6 @@ import {
   cachePoll,
   getCachedPollForShortId,
 } from "@/lib/questionCache";
-import { isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { hasAppHistory } from "@/lib/viewTransitions";
 import {
@@ -536,10 +535,10 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   })();
 
   // Creator avatar: prefer the current user's uploaded image when this poll
-  // is theirs (creator_secret in localStorage, name fallback).
+  // is theirs (server-computed viewer_is_creator, name fallback).
   const myUserImageUrl = useMyUserImageUrl();
   const creatorIsMe =
-    (anchor ? isCreatedByThisBrowser(anchor.id) : false) ||
+    poll.viewer_is_creator === true ||
     isCurrentUserName(poll.creator_name);
   const creatorImageUrl = creatorIsMe ? myUserImageUrl : null;
 

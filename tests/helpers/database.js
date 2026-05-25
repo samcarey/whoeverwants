@@ -11,6 +11,19 @@
 const TEST_API_BASE = process.env.TEST_API_URL || 'http://localhost:8000/api/questions'
 const TEST_POLL_BASE = TEST_API_BASE.replace('/api/questions', '/api/polls')
 
+// A single browser_id shared across every helper request. Migration 123 made
+// poll authorship identity-based: the creator's auto-minted account is bound
+// to the creating browser_id, and close/reopen/cutoff authorize against it.
+// Pinning one id here means create + close land on the same auto-account so
+// the close authorizes (without it, each request would mint a fresh browser
+// and the close would 403). These are single-user algorithm tests, so one
+// shared identity is fine.
+const TEST_BROWSER_ID = '00000000-0000-4000-8000-00000000beef'
+
+function _jsonHeaders() {
+  return { 'Content-Type': 'application/json', 'X-Browser-Id': TEST_BROWSER_ID }
+}
+
 let _apiAvailable = null
 
 /**
@@ -109,7 +122,7 @@ export async function apiCreateTestQuestion(params) {
   }
   const res = await fetch(TEST_POLL_BASE, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _jsonHeaders(),
     body: JSON.stringify(body),
   })
   if (!res.ok) {
@@ -140,7 +153,7 @@ export async function apiSubmitTestVote(questionId, params) {
   }
   const res = await fetch(`${TEST_POLL_BASE}/${pollId}/votes`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _jsonHeaders(),
     body: JSON.stringify({
       voter_name,
       items: [{ question_id: questionId, ...item }],
@@ -166,10 +179,12 @@ export async function apiCloseQuestion(questionId, creatorSecret, pollId) {
     if (!questionRes.ok) throw new Error(`Failed to fetch question: ${questionRes.status}`)
     mpId = (await questionRes.json()).poll_id
   }
+  // creatorSecret is ignored (migration 123) — authorization is via the
+  // shared TEST_BROWSER_ID matching the poll's auto-minted creator account.
   const res = await fetch(`${TEST_POLL_BASE}/${mpId}/close`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ creator_secret: creatorSecret, close_reason: 'manual' }),
+    headers: _jsonHeaders(),
+    body: JSON.stringify({ close_reason: 'manual' }),
   })
   if (!res.ok) {
     const detail = await res.text()

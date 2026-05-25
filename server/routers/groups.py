@@ -56,6 +56,7 @@ from services.join_requests import (
     is_member_or_creator,
     list_pending_requests,
 )
+from services.auth import resolve_actor_user_id
 from services.memberships import leave_group as _leave_group_row
 from services.groups import (
     filter_visible_polls,
@@ -210,8 +211,12 @@ def get_my_groups(req: MyGroupsRequest, request: Request):
             return []
 
         visible_pids = filter_visible_polls(conn, candidate_pids, visibility)
+        viewer_user_id = resolve_actor_user_id(
+            conn, user_id=user_id, browser_id=browser_id
+        )
         return polls_for_poll_ids(
-            conn, visible_pids, include_results=req.include_results
+            conn, visible_pids, include_results=req.include_results,
+            viewer_user_id=viewer_user_id,
         )
 
 
@@ -405,8 +410,12 @@ def get_group_by_route_id(
         visibility = load_user_visibility(conn, browser_id, user_id=user_id)
         group_pids = poll_ids_for_group_ids(conn, [group_id])
         visible_pids = filter_visible_polls(conn, group_pids, visibility)
+        viewer_user_id = resolve_actor_user_id(
+            conn, user_id=user_id, browser_id=browser_id
+        )
         return polls_for_poll_ids(
-            conn, visible_pids, include_results=include_results
+            conn, visible_pids, include_results=include_results,
+            viewer_user_id=viewer_user_id,
         )
 
 

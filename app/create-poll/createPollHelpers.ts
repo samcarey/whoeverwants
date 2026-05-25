@@ -295,8 +295,11 @@ export function synthesizePlaceholderPoll(
     // filled in on POLL_HYDRATED_EVENT.
     group_id: args.groupId,
     group_short_id: null,
-    creator_secret: null,
     creator_name: args.creatorName,
+    // The viewer is creating this poll, so they're the creator — show the
+    // creator controls on the optimistic card immediately (the real poll
+    // from POLL_HYDRATED carries the server-computed flag too).
+    viewer_is_creator: true,
     response_deadline: args.responseDeadline,
     // The prephase countdown starts at creation, so reflect it on the
     // placeholder immediately rather than waiting for POLL_HYDRATED.
@@ -507,7 +510,7 @@ export function pollLookup() {
 
 /**
  * Translate the existing flat questionData object into a CreatePollRequest
- * with one question. Wrapper-level fields (creator_secret, response_deadline,
+ * with one question. Wrapper-level fields (creator_name, response_deadline,
  * group_id, title, voting cutoff, prephase deadlines) live on the
  * poll; everything ballot-shaped stays on the question. Migration 105:
  * `group_id` directly identifies the group to add this poll to (null
@@ -526,7 +529,6 @@ export function questionDataToPollRequest(
   additionalQuestions: CreateQuestionParams[] = [],
 ): CreatePollParams {
   return {
-    creator_secret: questionData.creator_secret,
     creator_name: questionData.creator_name,
     response_deadline: questionData.response_deadline,
     prephase_deadline: questionData.suggestion_deadline,

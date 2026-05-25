@@ -1,14 +1,22 @@
-"""Account-owned poll authorship (migration 122).
+"""Identity-based poll authorship (migrations 122 + 123).
 
-A poll created by a signed-in user records `creator_user_id`. That account
-may close / reopen / cutoff the poll from ANY device it's signed in on,
-authorized by its session bearer token alone — the per-browser
-`creator_secret` never followed the user across browsers. The secret remains:
-  * the SOLE authority for anonymous-created polls (creator_user_id NULL), and
-  * a backwards-compatible fallback for the signed-in creator's own browser.
+Every poll records a `creator_user_id`:
+  * signed-in creator → their session user_id,
+  * anonymous creator → a lightweight account auto-minted at create time
+    (from the required creator name) and bound to the creating browser_id
+    via `user_browsers`.
+
+Migration 123 retired the per-browser `creator_secret` entirely. A poll
+mutation (close / reopen / cutoff) is authorized iff the caller's resolved
+user_id — bearer session, else the account linked to their browser_id —
+matches the poll's `creator_user_id`. Cross-device works for signed-in
+creators (every linked browser resolves to the same account); the anonymous
+creator's creating browser keeps authority via the auto-minted account.
+
+The per-response `viewer_is_creator` flag mirrors that gate.
 
 Authorization is the shared `_authorize_poll` helper, so close + reopen
-exercise the same gate every poll mutation uses (cutoff endpoints included).
+exercise the same gate every poll mutation uses.
 
 Mirrors test_group_privacy.py's signed-in helpers (real magic-link verify).
 """
@@ -62,10 +70,8 @@ def _sign_in(client, browser_id, email=None):
     return body["session_token"], body["user"]["user_id"]
 
 
-def _create_poll(client, browser_id, token=None, *, secret=None, **kwargs):
-    secret = secret or f"secret-{uuid.uuid4().hex[:8]}"
+def _create_poll(client, browser_id, token=None, **kwargs):
     payload = {
-        "creator_secret": secret,
         "creator_name": "Authorship Tester",
         "questions": [{"question_type": "yes_no", "category": "yes_no"}],
     }
@@ -89,10 +95,20 @@ class TestCreatorUserIdRecording:
         poll = _create_poll(client, bid, token)
         assert poll["creator_user_id"] == user_id
 
-    def test_anonymous_create_has_null_creator_user_id(self, client):
+    def test_anonymous_create_records_a_creator_user_id(self, client):
+        """Migration 123: anonymous creators get a lightweight auto-minted
+        account, so creator_user_id is NON-null even with no sign-in."""
         bid = str(uuid.uuid4())
         poll = _create_poll(client, bid)
-        assert poll["creator_user_id"] is None
+        assert poll["creator_user_id"] is not None
+
+    def test_anonymous_creates_reuse_one_account_per_browser(self, client):
+        """A second create from the same browser reuses the auto-account
+        rather than minting a fresh one each time."""
+        bid = str(uuid.uuid4())
+        poll1 = _create_poll(client, bid)
+        poll2 = _create_poll(client, bid)
+        assert poll1["creator_user_id"] == poll2["creator_user_id"]
 
     def test_creator_user_id_survives_readback(self, client):
         bid = str(uuid.uuid4())
@@ -107,47 +123,115 @@ class TestCreatorUserIdRecording:
 
 
 # ---------------------------------------------------------------------------
-# Account creator authorizes mutations cross-device (no per-browser secret)
+# viewer_is_creator reflects the per-caller gate
+# ---------------------------------------------------------------------------
+
+
+class TestViewerIsCreator:
+    def test_create_response_marks_viewer_creator(self, client):
+        bid = str(uuid.uuid4())
+        poll = _create_poll(client, bid)
+        assert poll["viewer_is_creator"] is True
+
+    def test_anon_creator_browser_reads_true(self, client):
+        bid = str(uuid.uuid4())
+        poll = _create_poll(client, bid)
+        resp = client.get(
+            f"/api/polls/by-id/{poll['id']}", headers=_bid_headers(bid)
+        )
+        assert resp.json()["viewer_is_creator"] is True
+
+    def test_stranger_browser_reads_false(self, client):
+        bid = str(uuid.uuid4())
+        poll = _create_poll(client, bid)
+        resp = client.get(
+            f"/api/polls/by-id/{poll['id']}",
+            headers=_bid_headers(str(uuid.uuid4())),
+        )
+        assert resp.json()["viewer_is_creator"] is False
+
+    def test_signed_in_creator_reads_true_cross_device(self, client):
+        bid_a = str(uuid.uuid4())
+        token, _ = _sign_in(client, bid_a)
+        poll = _create_poll(client, bid_a, token)
+        # Same account, a different browser → still the creator.
+        resp = client.get(
+            f"/api/polls/by-id/{poll['id']}",
+            headers=_bearer_headers(str(uuid.uuid4()), token),
+        )
+        assert resp.json()["viewer_is_creator"] is True
+
+
+# ---------------------------------------------------------------------------
+# Signed-in creator authorizes mutations cross-device
 # ---------------------------------------------------------------------------
 
 
 class TestAccountCreatorCrossDevice:
-    def test_close_from_other_device_no_secret(self, client):
+    def test_close_from_other_device(self, client):
         """Creator signs in on browser A, creates the poll. On browser B
-        (different browser_id, same account token, NO stored secret) the
-        session authorizes the close."""
+        (different browser_id, same account token) the session authorizes
+        the close."""
         bid_a = str(uuid.uuid4())
         token, _ = _sign_in(client, bid_a)
         poll = _create_poll(client, bid_a, token)
 
-        bid_b = str(uuid.uuid4())  # a device that never saw the secret
+        bid_b = str(uuid.uuid4())
         resp = client.post(
             f"/api/polls/{poll['id']}/close",
-            json={},  # creator_secret omitted entirely
+            json={},
             headers=_bearer_headers(bid_b, token),
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["is_closed"] is True
 
-    def test_reopen_from_other_device_empty_secret(self, client):
+    def test_reopen_from_other_device(self, client):
         bid_a = str(uuid.uuid4())
         token, _ = _sign_in(client, bid_a)
         poll = _create_poll(client, bid_a, token)
-        # Close it (via secret on the creating browser).
         client.post(
             f"/api/polls/{poll['id']}/close",
-            json={"creator_secret": poll["creator_secret"]},
+            json={},
             headers=_bearer_headers(bid_a, token),
         )
-        # Reopen from another browser using only the session.
         bid_b = str(uuid.uuid4())
         resp = client.post(
             f"/api/polls/{poll['id']}/reopen",
-            json={"creator_secret": ""},
+            json={},
             headers=_bearer_headers(bid_b, token),
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["is_closed"] is False
+
+
+# ---------------------------------------------------------------------------
+# Anonymous creator authorizes from their creating browser
+# ---------------------------------------------------------------------------
+
+
+class TestAnonymousCreatorBrowser:
+    def test_creating_browser_closes(self, client):
+        """No sign-in: the anonymous creator's own browser authorizes via the
+        account auto-linked to its browser_id."""
+        bid = str(uuid.uuid4())
+        poll = _create_poll(client, bid)
+        resp = client.post(
+            f"/api/polls/{poll['id']}/close",
+            json={},
+            headers=_bid_headers(bid),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["is_closed"] is True
+
+    def test_different_anonymous_browser_cannot_close(self, client):
+        bid = str(uuid.uuid4())
+        poll = _create_poll(client, bid)
+        resp = client.post(
+            f"/api/polls/{poll['id']}/close",
+            json={},
+            headers=_bid_headers(str(uuid.uuid4())),
+        )
+        assert resp.status_code == 403, resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -170,82 +254,13 @@ class TestNonCreatorRejected:
         )
         assert resp.status_code == 403, resp.text
 
-    def test_anonymous_cannot_close_account_poll_without_secret(self, client):
+    def test_fully_anonymous_stranger_cannot_close(self, client):
         creator_bid = str(uuid.uuid4())
         token, _ = _sign_in(client, creator_bid)
         poll = _create_poll(client, creator_bid, token)
-        # No token, no secret.
         resp = client.post(
             f"/api/polls/{poll['id']}/close",
             json={},
             headers=_bid_headers(str(uuid.uuid4())),
         )
         assert resp.status_code == 403, resp.text
-
-    def test_wrong_secret_no_session_rejected(self, client):
-        creator_bid = str(uuid.uuid4())
-        token, _ = _sign_in(client, creator_bid)
-        poll = _create_poll(client, creator_bid, token)
-        resp = client.post(
-            f"/api/polls/{poll['id']}/close",
-            json={"creator_secret": "not-the-secret"},
-            headers=_bid_headers(str(uuid.uuid4())),
-        )
-        assert resp.status_code == 403, resp.text
-
-
-# ---------------------------------------------------------------------------
-# creator_secret remains valid (backwards-compat + anonymous polls)
-# ---------------------------------------------------------------------------
-
-
-class TestSecretStillWorks:
-    def test_creating_browser_secret_still_closes(self, client):
-        """The signed-in creator's original browser keeps working via the
-        secret even with no session attached (e.g. signed out)."""
-        bid = str(uuid.uuid4())
-        token, _ = _sign_in(client, bid)
-        poll = _create_poll(client, bid, token)
-        resp = client.post(
-            f"/api/polls/{poll['id']}/close",
-            json={"creator_secret": poll["creator_secret"]},
-            headers=_bid_headers(bid),  # no Authorization header
-        )
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["is_closed"] is True
-
-    def test_anonymous_poll_requires_matching_secret(self, client):
-        bid = str(uuid.uuid4())
-        poll = _create_poll(client, bid)  # anonymous → creator_user_id NULL
-        # Wrong secret → 403.
-        bad = client.post(
-            f"/api/polls/{poll['id']}/close",
-            json={"creator_secret": "wrong"},
-            headers=_bid_headers(bid),
-        )
-        assert bad.status_code == 403, bad.text
-        # Correct secret → 200.
-        good = client.post(
-            f"/api/polls/{poll['id']}/close",
-            json={"creator_secret": poll["creator_secret"]},
-            headers=_bid_headers(bid),
-        )
-        assert good.status_code == 200, good.text
-        assert good.json()["is_closed"] is True
-
-    def test_signed_in_non_creator_with_correct_secret_still_closes(self, client):
-        """The secret is authority regardless of session: someone who
-        somehow has the secret (e.g. shared) can close even when their
-        session doesn't match the creator. Documents the additive OR."""
-        creator_bid = str(uuid.uuid4())
-        creator_token, _ = _sign_in(client, creator_bid)
-        poll = _create_poll(client, creator_bid, creator_token)
-
-        other_bid = str(uuid.uuid4())
-        other_token, _ = _sign_in(client, other_bid)
-        resp = client.post(
-            f"/api/polls/{poll['id']}/close",
-            json={"creator_secret": poll["creator_secret"]},
-            headers=_bearer_headers(other_bid, other_token),
-        )
-        assert resp.status_code == 200, resp.text

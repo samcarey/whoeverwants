@@ -17,7 +17,7 @@ import { apiGetQuestionResults, apiGetVotes, apiSubmitPollVotes, apiCutoffPollSu
 import { invalidateQuestion, getCachedQuestionById, getCachedQuestionResults, getCachedVotes } from "@/lib/questionCache";
 import RankableOptions from "@/components/RankableOptions";
 
-import { isPollCreatedByViewer, getCreatorSecret, recordQuestionCreation, storeSeenQuestionOptions, getSeenQuestionOptions } from "@/lib/browserQuestionAccess";
+import { isPollCreatedByViewer, storeSeenQuestionOptions, getSeenQuestionOptions } from "@/lib/browserQuestionAccess";
 import { hasQuestionData } from "@/lib/forgetQuestion";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { isValidUserName } from "@/lib/nameValidation";
@@ -493,15 +493,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
       setQuestionUrl(window.location.href.split('?')[0]);
     }
     
-    // Phase 5: auto-created follow-up questions inherited the parent's
-    // creator_secret via questions.follow_up_to; that column is gone. Sub-questions
-    // of a poll all share the wrapper's creator_secret, which is
-    // recorded per question id on the create-question page when the poll
-    // is created. No fallback inheritance is needed.
-    // Creator via per-browser secret OR signed-in account (migration 122):
-    // a signed-in creator on another device has no local secret but their
-    // session matches the poll's creator_user_id.
-    setIsCreator(isPollCreatedByViewer(poll, question.id));
+    // Whether the viewer is this poll's creator is computed server-side
+    // (migration 123 retired the per-browser secret) and surfaced as
+    // poll.viewer_is_creator — works for signed-in and anonymous-with-account
+    // creators alike, on any device the creator's identity resolves on.
+    setIsCreator(isPollCreatedByViewer(poll));
 
     // Check if browser has any data for this question
     setHasQuestionDataState(hasQuestionData(question.id));
@@ -784,9 +780,8 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const handleCutoffSuggestions = async () => {
     setShowCutoffConfirmModal(false);
     if (isCuttingOffSuggestions || !isCreator) return;
-    // Empty when the viewer is the signed-in creator on another device — the
-    // bearer token authorizes the cutoff against the poll's creator_user_id.
-    const creatorSecret = getCreatorSecret(question.id) ?? '';
+    // Authorization is identity-based server-side (migration 123): the
+    // caller's session / browser-linked account must match creator_user_id.
     const pollId = question.poll_id;
     if (!pollId) {
       console.error('Cannot cutoff suggestions without poll_id');
@@ -795,7 +790,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
 
     setIsCuttingOffSuggestions(true);
     try {
-      const wrapper = await apiCutoffPollSuggestions(pollId, creatorSecret);
+      const wrapper = await apiCutoffPollSuggestions(pollId);
       const updatedQuestion = wrapper.questions.find((sp) => sp.id === question.id) ?? null;
       invalidateQuestion(question.id);
       // Phase 5b: prephase_deadline lives on the poll wrapper. Use the
