@@ -117,15 +117,17 @@ export default function RankingSection({
   const showSummary = canSubmitSuggestions && hasVoted && !isEditingRanking && (hasSubmittedRankings || abstainedNoRanking);
   const showBallot = !showSummary;
 
+  const enterRankingEdit = () => {
+    // Restore abstain state if user previously abstained from ranking
+    if (abstainedNoRanking && !hasSubmittedRankings) {
+      setIsAbstaining(true);
+    }
+    setIsEditingRanking(true);
+  };
+
   const editButton = !isQuestionClosed && !isLoadingVoteData ? (
     <button
-      onClick={() => {
-        // Restore abstain state if user previously abstained from ranking
-        if (abstainedNoRanking && !hasSubmittedRankings) {
-          setIsAbstaining(true);
-        }
-        setIsEditingRanking(true);
-      }}
+      onClick={enterRankingEdit}
       className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors flex-shrink-0"
     >
       Edit
@@ -160,6 +162,18 @@ export default function RankingSection({
   if (canSubmitSuggestions && !hasVoted) return null;
 
   const hasNewOptions = !!(newOptions && newOptions.length > 0);
+  const newOptionsLabel = `New option${newOptions && newOptions.length > 1 ? 's' : ''} available since you last ranked`;
+  const newOptionsIcon = (
+    <svg className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+    </svg>
+  );
+  // When the user has voted but isn't yet editing, the banner is a button:
+  // tapping it enters ranking-edit mode. RankableOptions then restores the prior
+  // rankings (initialRanking/initialTiers) and drops the new options into the
+  // unranked "no preference" pool. While already editing, the banner is just an
+  // informational note (no action left to take).
+  const newOptionsBannerClickable = hasNewOptions && !isEditingRanking && !isQuestionClosed && !isLoadingVoteData;
 
   return (
     <>
@@ -178,14 +192,28 @@ export default function RankingSection({
       {card(
       <>
       {hasNewOptions && (
-        <div className="mb-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg flex items-center gap-2">
-          <svg className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-          </svg>
-          <span className="text-sm text-amber-800 dark:text-amber-200 font-medium">
-            New option{newOptions && newOptions.length > 1 ? 's' : ''} available since you last ranked
-          </span>
-        </div>
+        newOptionsBannerClickable ? (
+          <button
+            type="button"
+            onClick={enterRankingEdit}
+            className="w-full mb-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg flex items-center gap-2 text-left hover:bg-amber-100 dark:hover:bg-amber-900/50 active:opacity-80 transition-colors"
+          >
+            {newOptionsIcon}
+            <span className="flex-1 text-sm text-amber-800 dark:text-amber-200 font-medium">
+              {newOptionsLabel} — tap to rank
+            </span>
+            <svg className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        ) : (
+          <div className="mb-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg flex items-center gap-2">
+            {newOptionsIcon}
+            <span className="text-sm text-amber-800 dark:text-amber-200 font-medium">
+              {newOptionsLabel}
+            </span>
+          </div>
+        )
       )}
 
       <div className="mb-2">
