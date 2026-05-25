@@ -130,30 +130,20 @@ export default function AccountGateModal({
             </svg>
           </button>
 
-          <h2 className="text-lg font-semibold mb-1 pr-6">
-            Set up your account{message ? ` ${message}` : ""}
+          <h2 className="text-lg font-semibold mb-4 pr-6">
+            Sign in{message ? ` ${message}` : ""}
           </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Sign in to keep your polls and groups across devices, or just pick a
-            name to continue.
-          </p>
 
           <SignInOptions mode="signin" onComplete={handleSignInComplete} />
 
           <div className="flex items-center gap-3 my-4">
             <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
             <span className="text-xs text-gray-500 dark:text-gray-400">
-              or continue with a name
+              or just provide a name/alias
             </span>
             <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
           </div>
 
-          <label
-            htmlFor="account-gate-name"
-            className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
-          >
-            Enter a name or alias
-          </label>
           <input
             id="account-gate-name"
             ref={inputRef}
