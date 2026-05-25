@@ -601,7 +601,9 @@ def _notification_base(conn, poll_id: str):
         "body": _poll_body(row, question_rows),
         "url": f"/g/{group_route}?p={row.get('short_id') or ''}",
         "group_id": group_route,
-        "badge": 1,
+        # No hardcoded badge — _dispatch_pushes injects each recipient's real
+        # count; omitting it here means a count-computation failure leaves the
+        # icon badge untouched instead of asserting a phantom "1".
     }
     return str(row["group_id"]), base, row, group_phrase
 
@@ -771,7 +773,6 @@ def create_poll(
                 "body": new_poll_body or question_title or "New poll",
                 "url": f"/g/{group_route_id}?p={poll_row.get('short_id') or ''}",
                 "group_id": group_route_id,
-                "badge": 1,
                 "tag": f"new-poll-{poll_row.get('id')}",
             },
         )

@@ -210,17 +210,22 @@ def _send_apns(
     """Send a single APNS push. Returns (ok, error, should_delete)."""
     device_token = subscription["endpoint"]
     bundle_id = subscription.get("bundle_id") or "com.whoeverwants.app"
-    apns_payload = {
-        "aps": {
-            "alert": {
-                "title": payload.get("title", "WhoeverWants"),
-                "body": payload.get("body", ""),
-            },
-            "sound": "default",
-            # Per-recipient count injected by _dispatch_pushes; falls back to 1
-            # ("you have something") if a count wasn't computed.
-            "badge": payload.get("badge", 1),
+    aps: dict = {
+        "alert": {
+            "title": payload.get("title", "WhoeverWants"),
+            "body": payload.get("body", ""),
         },
+        "sound": "default",
+    }
+    # Per-recipient badge count is injected by _dispatch_pushes (_payload_for).
+    # Only set aps.badge when a real count is present — NEVER assert a phantom
+    # value. If absent (e.g. the count computation failed), omit it so iOS leaves
+    # the icon badge untouched rather than stamping a misleading number.
+    badge = payload.get("badge")
+    if isinstance(badge, int):
+        aps["badge"] = badge
+    apns_payload = {
+        "aps": aps,
         # Custom data — read by the iOS app's notification tap handler
         # to route into the right group.
         "url": payload.get("url"),

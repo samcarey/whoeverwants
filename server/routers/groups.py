@@ -990,7 +990,6 @@ def create_group_join_request(
                 "body": body_text,
                 "url": f"/g/{route_for_url}/info",
                 "group_id": route_for_url,
-                "badge": 1,
                 "tag": f"join-request-{summary.id}",
             },
         )
