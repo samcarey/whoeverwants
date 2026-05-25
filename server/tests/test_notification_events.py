@@ -242,10 +242,26 @@ def test_close_sets_flag_and_fires(client, creator_secret, monkeypatch):
     # yes_no question contributes the 👍 category icon.
     assert calls[0][1]["title"] == 'Poll closed in "Test User"'
     assert calls[0][1]["body"] == f"👍 {poll['title']}"
+    # Path form (`/g/<group>/p/<poll>`), not the legacy `?p=` query form, so the
+    # tap opens the poll detail page directly without flashing the group list.
+    assert calls[0][1]["url"] == f"/g/{poll['group_short_id']}/p/{poll['short_id']}"
     # Base payload carries NO hardcoded badge — the real per-recipient count is
     # injected downstream in _dispatch_pushes (_payload_for), so a failed count
     # computation never stamps a phantom "1".
     assert "badge" not in calls[0][1]
+
+
+def test_new_poll_notification_uses_path_url(client, creator_secret, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        routers.polls, "fan_out_new_poll",
+        lambda group_id, creator_browser_id, payload: calls.append(payload),
+    )
+    poll = create_poll(client, creator_secret, browser_id=str(uuid.uuid4()))
+    assert len(calls) == 1
+    # Path form, not `?p=` — tapping the new-poll notification lands straight on
+    # the poll detail page (no group-list flash + redirect).
+    assert calls[0]["url"] == f"/g/{poll['group_short_id']}/p/{poll['short_id']}"
 
 
 def test_close_twice_fires_once(client, creator_secret, monkeypatch):

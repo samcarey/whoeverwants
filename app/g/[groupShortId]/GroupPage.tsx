@@ -2165,6 +2165,11 @@ function GroupPageInner() {
       router.replace("/");
       return;
     }
+    // A legacy `?p=` URL redirects to the path form below — don't bother
+    // resolving the group root we're about to navigate away from.
+    if (pollParam) {
+      return;
+    }
     if (rootInitial) {
       return;
     }
@@ -2216,18 +2221,26 @@ function GroupPageInner() {
       }
     })();
     return () => { cancelled = true; };
-  }, [groupShortId, router, rootInitial]);
+  }, [groupShortId, router, rootInitial, pollParam]);
 
-  // Legacy `?p=<id>` URLs (back when poll cards expanded in place) redirect
-  // to the new poll detail page at `/g/<group>/p/<pollShort>`. Wait until
-  // the group root has resolved so we know the canonical group route id.
+  // Legacy `?p=<pollShort>` query URLs (old shares, already-delivered
+  // notifications, bookmarks) redirect to the canonical path form. Fire
+  // immediately using the URL's own group route id — the poll detail route
+  // resolves it the same way, so there's no need to wait for the group root
+  // to load. The early return below renders a bare loading frame instead of
+  // GroupContent, which is what kills the group-list flash users saw before.
   useEffect(() => {
-    if (!pollParam) return;
-    if (typeof window === "undefined") return;
-    if (!rootPoll) return;
-    const targetGroupId = rootPoll.group_short_id || rootPoll.short_id || groupShortId;
-    router.replace(`/g/${targetGroupId}/p/${pollParam}`);
-  }, [pollParam, rootPoll, groupShortId, router]);
+    if (!pollParam || typeof window === "undefined") return;
+    router.replace(`/g/${groupShortId}/p/${pollParam}`);
+  }, [pollParam, groupShortId, router]);
+
+  if (pollParam) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-gray-600 dark:text-gray-400">Loading poll…</p>
+      </div>
+    );
+  }
 
   if (error) {
     // Phase F: same join-request affordance as the GroupContent error

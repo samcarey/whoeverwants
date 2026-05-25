@@ -614,9 +614,14 @@ def _notification_base(conn, poll_id: str):
     group_phrase = group_name_phrase(
         conn, str(row["group_id"]), override=row.get("group_title")
     )
+    # Path form (`/g/<group>/p/<poll>`), not the legacy `?p=` query form, so
+    # tapping the notification lands straight on the poll detail page instead
+    # of painting the group list first and redirecting (the visible flash).
+    poll_short = row.get("short_id")
+    poll_url = f"/g/{group_route}/p/{poll_short}" if poll_short else f"/g/{group_route}"
     base = {
         "body": _poll_body(row, question_rows),
-        "url": f"/g/{group_route}?p={row.get('short_id') or ''}",
+        "url": poll_url,
         "group_id": group_route,
         # No hardcoded badge — _dispatch_pushes injects each recipient's real
         # count; omitting it here means a count-computation failure leaves the
@@ -834,6 +839,14 @@ def create_poll(
             if new_poll_group_phrase
             else "New poll"
         )
+        # Path form so the tap opens the poll detail page directly (no group
+        # list flash + redirect). See _notification_base for the same rule.
+        new_poll_short = poll_row.get("short_id")
+        new_poll_url = (
+            f"/g/{group_route_id}/p/{new_poll_short}"
+            if new_poll_short
+            else f"/g/{group_route_id}"
+        )
         background_tasks.add_task(
             fan_out_new_poll,
             group_id,
@@ -841,7 +854,7 @@ def create_poll(
             {
                 "title": notif_title,
                 "body": new_poll_body or question_title or "New poll",
-                "url": f"/g/{group_route_id}?p={poll_row.get('short_id') or ''}",
+                "url": new_poll_url,
                 "group_id": group_route_id,
                 "tag": f"new-poll-{poll_row.get('id')}",
             },
