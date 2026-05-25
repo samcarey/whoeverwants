@@ -75,6 +75,25 @@ function readSessionToken(page: Page): Promise<string | null> {
   return page.evaluate((key) => window.localStorage.getItem(key), SESSION_TOKEN_KEY);
 }
 
+/**
+ * Open the SignInModal from the settings "Account" row, tolerating the
+ * pre-hydration window. The settings page is a client component; a
+ * `.click()` that lands before React attaches the onClick handler is
+ * silently dropped (React doesn't replay it), so the modal never opens.
+ * Retry the click until a modal-only element (the email input) appears.
+ * The `isVisible` guard means we never re-click once the modal is up
+ * (which would hit the now-backdrop-covered Account button).
+ */
+async function openSignInModal(page: Page): Promise<void> {
+  const email = page.getByPlaceholder('you@example.com');
+  await expect(async () => {
+    if (!(await email.isVisible())) {
+      await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    }
+    await expect(email).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+}
+
 test.describe('Passkey (WebAuthn) ceremony', () => {
   test('register a passkey account then sign in with it', async ({
     page,
@@ -94,7 +113,7 @@ test.describe('Passkey (WebAuthn) ceremony', () => {
     await page.goto('/settings/');
 
     // --- Phase 1: anonymous create-account-with-a-passkey ---------------
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await openSignInModal(page);
 
     const createBtn = page.getByRole('button', {
       name: /create an account with a passkey/i,
@@ -121,7 +140,7 @@ test.describe('Passkey (WebAuthn) ceremony', () => {
 
     // Settings reflects the signed-in account (SESSION_CHANGED_EVENT →
     // currentUser populated → "Sign-in methods" row appears).
-    await expect(page.getByText('Sign-in methods')).toBeVisible({
+    await expect(page.getByText('Sign-in methods', { exact: true })).toBeVisible({
       timeout: 15_000,
     });
 
@@ -131,7 +150,7 @@ test.describe('Passkey (WebAuthn) ceremony', () => {
       .poll(() => readSessionToken(page), { timeout: 15_000 })
       .toBeNull();
 
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await openSignInModal(page);
     const signInBtn = page.getByRole('button', {
       name: /sign in with a passkey/i,
     });
@@ -147,7 +166,7 @@ test.describe('Passkey (WebAuthn) ceremony', () => {
     expect(tokenAfterSignIn).not.toBeNull();
     expect(tokenAfterSignIn).not.toBe(tokenAfterRegister);
 
-    await expect(page.getByText('Sign-in methods')).toBeVisible({
+    await expect(page.getByText('Sign-in methods', { exact: true })).toBeVisible({
       timeout: 15_000,
     });
   });
