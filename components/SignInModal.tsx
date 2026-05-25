@@ -75,11 +75,7 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
             </svg>
           </button>
 
-          <h2 className="text-lg font-semibold mb-1">Sign in</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Pick a sign-in method. Your existing polls and groups stay tied to
-            this browser regardless.
-          </p>
+          <h2 className="text-lg font-semibold mb-4 pr-6">Sign in</h2>
 
           <SignInOptions mode="signin" onComplete={onClose} />
         </div>

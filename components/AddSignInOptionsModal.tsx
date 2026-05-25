@@ -80,11 +80,7 @@ export default function AddSignInOptionsModal({
             </svg>
           </button>
 
-          <h2 className="text-lg font-semibold mb-1 pr-6">Add a way to sign in</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Your account only lives on this device right now. Connect a sign-in
-            method so you can get back in if you lose it.
-          </p>
+          <h2 className="text-lg font-semibold mb-4 pr-6">Add a way to sign in</h2>
 
           <SignInOptions mode="link" onComplete={onClose} />
 
