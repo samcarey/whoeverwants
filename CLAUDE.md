@@ -1114,6 +1114,19 @@ the page sees "signed out" even with a valid token in storage.
   shows up in `GET /api/auth/me`'s `providers` array if anything ever
   joined to it).
 
+**Passkey FE/integration test — `tests/e2e/specs/passkey-ceremony.spec.ts`.**
+`server/tests/test_passkeys.py` stops short of a real attestation/assertion
+(needs a fake authenticator); the E2E spec closes that gap by driving a
+genuine register + usernameless sign-in through the live FE + API with
+Chromium's CDP virtual authenticator, so the actual `py_webauthn` verifier
+runs against real bytes. Hard-won setup details:
+  - **Virtual authenticator via CDP**: `client = await context.newCDPSession(page); await client.send('WebAuthn.enable'); await client.send('WebAuthn.addVirtualAuthenticator', { options: { protocol:'ctap2', transport:'internal', hasResidentKey:true, hasUserVerification:true, isUserVerified:true, automaticPresenceSimulation:true }})`. `transport:'internal'` is load-bearing — it's what makes `isUserVerifyingPlatformAuthenticatorAvailable()` return true, which the FE requires before surfacing the "Create an account with a passkey" affordance (`platformPasskeySupported()` in `lib/passkeys.ts`). `hasResidentKey:true` makes the credential discoverable, required for the usernameless sign-in (no `allowCredentials`). Install it BEFORE `page.goto` so the capability probe on mount sees it. Chromium-only (`test.skip(browserName !== 'chromium', ...)` — also covers the "Mobile Chrome"/Pixel project, which is still the chromium engine).
+  - **Pre-hydration click drop**: the settings page is a client component; a `.click()` on "Sign in" that lands before React attaches the onClick is silently swallowed (React doesn't replay it), so the modal never opens and a single click can no-op forever. Fix is a retry-open helper that re-clicks until a modal-only element (the `you@example.com` placeholder) is visible, guarded by an `isVisible()` check so it never re-clicks the now-backdrop-covered button. This bites ANY E2E flow whose first interaction is a click on a freshly-loaded client-component page — not just passkeys.
+  - **rp_id comes from the request `Origin`** via `services/fe_origin.py`'s allowlist (`localhost:<port>`, `127.0.0.1:<port>`, `*.dev.whoeverwants.com`, prod/canary). The browser requires rp_id to be a registrable suffix of the page origin, so the test only works against an allowlisted host; an unlisted host falls back to `whoeverwants.com` and the ceremony fails the rp_id check. Both localhost and any branch dev URL work.
+  - **Assert sign-in via `localStorage.getItem('session_token')`** (written synchronously by `saveSession` when the verify response lands) rather than UI state — it's race-free vs React re-render. `WebAuthn.getCredentials` confirms a credential was actually minted. `getByText('Sign-in methods', { exact: true })` (non-exact also matches the delete-account copy → strict-mode error).
+  - **NOT in CI** (CI runs only vitest + lint). Run manually against a live stack: `BASE_URL=https://<slug>.dev.whoeverwants.com npx playwright test --config=tests/e2e/config/playwright.config.ts passkey-ceremony --project=chromium`.
+  - **Validating an E2E spec from the sandbox** (no local browser): mirror the spec into a core-`playwright` (not `@playwright/test`) script and run it on the prod droplet, which has `playwright` + Chromium installed (same as `scripts/screenshot.sh`), pointed at the branch dev URL. Place the script INSIDE `/root/whoeverwants` (not `/tmp`) so `require('playwright')` resolves the repo's `node_modules`; ship it via base64 (`echo '<b64>' | base64 -d > …`) to dodge quote-escaping. Core playwright has no bundled `expect`, so replace `expect.poll`/`toPass` with manual poll loops — the selectors, CDP calls, and ceremony are otherwise identical.
+
 **Identity tables (migration 112):**
 - `users(id)` — one row per real person.
 - `user_identities(provider, provider_user_id, user_id, email)` — one row
