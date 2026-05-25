@@ -47,6 +47,48 @@ def _suggestion_poll(client, creator_secret, creator_bid, **overrides) -> dict:
     return resp.json()
 
 
+def _time_poll(client, creator_secret, creator_bid, **overrides) -> dict:
+    body = {
+        "creator_secret": creator_secret,
+        "creator_name": "Creator",
+        "prephase_deadline_minutes": 120,
+        "questions": [
+            {
+                "question_type": "time",
+                "category": "time",
+                "suggestion_deadline_minutes": 120,
+            }
+        ],
+    }
+    body.update(overrides)
+    resp = client.post("/api/polls", json=body, headers=bid_headers(creator_bid))
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def _submit_availability(client, poll, voter_bid, name):
+    resp = client.post(
+        f"/api/polls/{poll['id']}/votes",
+        headers=bid_headers(voter_bid),
+        json={
+            "voter_name": name,
+            "items": [
+                {
+                    "question_id": poll["questions"][0]["id"],
+                    "vote_type": "time",
+                    "voter_day_time_windows": [
+                        {
+                            "day": "2030-01-01",
+                            "windows": [{"min": "09:00", "max": "17:00"}],
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+
 def _submit_suggestion(client, poll, voter_bid, name, suggestion):
     resp = client.post(
         f"/api/polls/{poll['id']}/votes",
@@ -256,10 +298,49 @@ def test_cutoff_suggestions_sets_flag_and_fires(client, creator_secret, monkeypa
     assert flag is True
     assert len(calls) == 1
     # Group name (quoted) = deduplicated participants, creator first then
-    # voters. The single restaurant question contributes the 🍽️ icon.
-    assert calls[0][1]["title"] == 'Voting is open in "Creator, Ann"'
+    # voters. A ranked_choice suggestion poll transitioning out of its
+    # prephase means new options to rank → "New options available".
+    # The single restaurant question contributes the 🍽️ icon on line 2.
+    assert calls[0][1]["title"] == 'New options available in "Creator, Ann"'
     assert calls[0][1]["body"] == f"🍽️ {poll['title']}"
     assert "prevoting_on" in calls[0][2]
+
+
+def test_cutoff_availability_uses_time_to_vote_copy(client, creator_secret, monkeypatch):
+    """A time poll's availability phase ending opens the like/dislike vote, so
+    its transition push reads 'Time to vote' rather than the suggestion copy."""
+    calls = []
+    monkeypatch.setattr(
+        routers.polls, "fan_out_phase_transition",
+        lambda group_id, poll_id, payload, **kw: calls.append((poll_id, payload, kw)),
+    )
+    poll = _time_poll(client, creator_secret, str(uuid.uuid4()))
+    _submit_availability(client, poll, str(uuid.uuid4()), "Ann")
+    resp = client.post(
+        f"/api/polls/{poll['id']}/cutoff-availability",
+        json={"creator_secret": creator_secret},
+    )
+    assert resp.status_code == 200, resp.text
+    assert len(calls) == 1
+    assert calls[0][1]["title"] == 'Time to vote in "Creator, Ann"'
+    # Line 2 still carries the poll's own title prefixed with the 📅 icon.
+    assert calls[0][1]["body"] == f"📅 {poll['title']}"
+
+
+def test_transition_event_phrase_per_prephase_kind():
+    """Direct coverage of the prephase → event-phrase mapping, including the
+    mixed-kind and no-prephase fallbacks to the generic copy."""
+    phrase = routers.polls._transition_event_phrase
+    assert phrase([{"question_type": "ranked_choice"}]) == "New options available"
+    assert phrase([{"question_type": "time"}]) == "Time to vote"
+    # A poll mixing both prephase kinds can't pick one → generic fallback.
+    assert (
+        phrase([{"question_type": "ranked_choice"}, {"question_type": "time"}])
+        == "Voting is open"
+    )
+    # Defensive: anything without a recognized prephase kind also falls back.
+    assert phrase([{"question_type": "yes_no"}]) == "Voting is open"
+    assert phrase([]) == "Voting is open"
 
 
 # --------------------------------------------------------------------------

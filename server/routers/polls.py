@@ -580,12 +580,13 @@ def _record_poll_view(conn, browser_id: str | None, poll_id: str, now: datetime)
 
 
 def _notification_base(conn, poll_id: str):
-    """(group_db_id, base_payload, poll_row, group_phrase) shared by the close
-    + transition payload builders, or None when the poll can't be routed (no
-    group). The base carries body/url/group_id/badge; the `body` (line 2) is
-    the poll's own title prefixed with its category icon. Callers build the
-    title (line 1) as "<event> in <group_phrase>" + add a tag, where
-    `group_phrase` is the quoted group name."""
+    """(group_db_id, base_payload, poll_row, group_phrase, question_rows)
+    shared by the close + transition payload builders, or None when the poll
+    can't be routed (no group). The base carries body/url/group_id/badge; the
+    `body` (line 2) is the poll's own title prefixed with its category icon.
+    Callers build the title (line 1) as "<event> in <group_phrase>" + add a
+    tag, where `group_phrase` is the quoted group name. `question_rows` lets
+    the transition builder pick a prephase-specific event phrase."""
     row = conn.execute(
         f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
         {"id": poll_id},
@@ -605,7 +606,7 @@ def _notification_base(conn, poll_id: str):
         # count; omitting it here means a count-computation failure leaves the
         # icon badge untouched instead of asserting a phantom "1".
     }
-    return str(row["group_id"]), base, row, group_phrase
+    return str(row["group_id"]), base, row, group_phrase, question_rows
 
 
 def _build_close_notification(conn, poll_id: str) -> tuple[str, dict] | None:
@@ -614,7 +615,7 @@ def _build_close_notification(conn, poll_id: str) -> tuple[str, dict] | None:
     built = _notification_base(conn, poll_id)
     if not built:
         return None
-    group_id, base, _row, group_phrase = built
+    group_id, base, _row, group_phrase, _question_rows = built
     return group_id, {
         **base,
         "title": f"Poll closed in {group_phrase}",
@@ -642,6 +643,23 @@ def _latest_prephase_contribution(conn, poll_id: str):
     return row["latest"] if row else None
 
 
+def _transition_event_phrase(question_rows: list[dict]) -> str:
+    """The line-1 event phrase for a phase-transition push, chosen by the
+    poll's prephase kind. ranked_choice questions collect suggestions, so
+    their prephase ending means new options to rank → "New options
+    available". time questions collect availability, so their prephase
+    ending opens the like/dislike vote → "Time to vote". A poll mixing both
+    (or any other shape) falls back to the generic "Voting is open"."""
+    types = {sp.get("question_type") for sp in question_rows}
+    has_ranked = "ranked_choice" in types
+    has_time = "time" in types
+    if has_ranked and not has_time:
+        return "New options available"
+    if has_time and not has_ranked:
+        return "Time to vote"
+    return "Voting is open"
+
+
 def _build_transition_notification(conn, poll_id: str):
     """(group_id, payload, prevoting_on, latest_contribution) for a
     phase-transition push, or None when unroutable. Shared by the inline
@@ -649,10 +667,10 @@ def _build_transition_notification(conn, poll_id: str):
     built = _notification_base(conn, poll_id)
     if not built:
         return None
-    group_id, base, row, group_phrase = built
+    group_id, base, row, group_phrase, question_rows = built
     payload = {
         **base,
-        "title": f"Voting is open in {group_phrase}",
+        "title": f"{_transition_event_phrase(question_rows)} in {group_phrase}",
         "tag": f"poll-voting-{poll_id}",
     }
     return (
