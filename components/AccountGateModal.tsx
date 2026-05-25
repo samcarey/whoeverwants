@@ -130,10 +130,12 @@ export default function AccountGateModal({
             </svg>
           </button>
 
-          <h2 className="text-lg font-semibold mb-1 pr-6">Set up your account</h2>
+          <h2 className="text-lg font-semibold mb-1 pr-6">
+            Set up your account{message ? ` ${message}` : ""}
+          </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Sign in to keep your polls across devices{message ? ` ${message}` : ""}, or
-            just pick a name to continue.
+            Sign in to keep your polls and groups across devices, or just pick a
+            name to continue.
           </p>
 
           <SignInOptions mode="signin" onComplete={handleSignInComplete} />
