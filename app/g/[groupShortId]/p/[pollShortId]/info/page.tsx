@@ -175,7 +175,11 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
   const anchor: Question | undefined = poll.questions[0];
   const isClosed = !!poll.is_closed;
   const prephaseDeadline = poll.prephase_deadline ?? null;
-  const title = poll.title || anchor?.title || "Poll";
+  // Prefer the sub-question's own title over poll.title: server-side
+  // _compute_display_title returns the group_title override as poll.title
+  // when one is set, which would surface the group name here instead of the
+  // poll's name. Each sub-question carries the actual poll title.
+  const title = anchor?.title || poll.title || "Poll";
 
   // Whether the viewer is this poll's creator is computed server-side
   // (migration 123 retired the per-browser secret): the response's
