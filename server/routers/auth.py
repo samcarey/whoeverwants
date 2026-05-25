@@ -44,17 +44,21 @@ from middleware import (
 from services.auth import (
     CompletedSignIn,
     attach_email_identity,
+    attach_oauth_identity,
     complete_sign_in,
     consume_magic_link,
     consume_recovery_email_token,
+    create_name_only_account,
     delete_user_account,
     email_throttled,
     is_valid_email,
     issue_magic_link,
+    issue_session,
     load_user_profile,
     normalize_email,
     peek_recovery_email_token,
     revoke_session,
+    set_recovery_reminder_dismissed,
     unlink_browser,
     update_user_badge_settings,
     update_user_display_name,
@@ -123,6 +127,10 @@ class UserSummary(BaseModel):
     badge_todo_mode: bool = False
     badge_on_voting_open: bool = True
     badge_on_results: bool = True
+    # Migration 123: drives the home-page "add a recovery method" banner.
+    # True = the user dismissed the nudge. The FE additionally gates the
+    # banner on the account lacking an email/OAuth recovery identity.
+    recovery_reminder_dismissed: bool = False
 
 
 def _summary_from_profile(profile) -> "UserSummary":
@@ -137,6 +145,7 @@ def _summary_from_profile(profile) -> "UserSummary":
         badge_todo_mode=profile.badge_todo_mode,
         badge_on_voting_open=profile.badge_on_voting_open,
         badge_on_results=profile.badge_on_results,
+        recovery_reminder_dismissed=profile.recovery_reminder_dismissed,
     )
 
 
@@ -313,6 +322,57 @@ def verify_magic_link(req: MagicLinkVerifyBody, request: Request):
     return _signin_response(completed)
 
 
+class CreateNameAccountBody(BaseModel):
+    name: str = Field(min_length=1, max_length=50)
+
+
+@router.post("/account/name", response_model=SessionResponse)
+def create_account_with_name(req: CreateNameAccountBody, request: Request):
+    """Create a recovery-less account from just a name (or, when already
+    signed in, set the name on the existing account). Issues a session
+    either way so the FE persists the bearer token via `persistSignIn`.
+
+    This is the "provide a name to continue" path of the unified gating
+    modal — the alternative to a full sign-in. The resulting account has
+    no `user_identities` row (no way to recover it if the device is
+    lost), so the FE surfaces a home-page banner nudging the user to add
+    a sign-in method afterwards (gated on `recovery_reminder_dismissed`).
+
+    The name runs through the shared `validate_user_name` (same rules as
+    poll creator/voter names) so a bypassed FE can't store garbage.
+    """
+    display_name = validate_user_name(req.name, field="name")
+    browser_id = _browser_id(request)
+    user_agent = request.headers.get("user-agent")
+    current_user_id = _user_id(request)
+    with get_db() as conn:
+        if current_user_id:
+            # Already signed in (e.g. a passkey-only account that never
+            # set a name): name the existing account rather than minting
+            # a new one. A fresh session is issued for response uniformity;
+            # the prior token stays valid until it expires.
+            update_user_display_name(
+                conn, user_id=current_user_id, display_name=display_name
+            )
+            session = issue_session(
+                conn,
+                user_id=current_user_id,
+                browser_id=browser_id,
+                user_agent=user_agent,
+            )
+            profile = load_user_profile(conn, current_user_id)
+            assert profile is not None
+            completed = CompletedSignIn(session=session, profile=profile)
+        else:
+            completed = create_name_only_account(
+                conn,
+                display_name=display_name,
+                browser_id=browser_id,
+                user_agent=user_agent,
+            )
+    return _signin_response(completed)
+
+
 # ---------------------------------------------------------------------------
 # OAuth (Apple + Google) — Phase C
 # ---------------------------------------------------------------------------
@@ -355,15 +415,50 @@ def _handle_oauth_signin(
         identity = verify(id_token)
     except OAuthVerificationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    current_user_id = _user_id(request)
+    browser_id = _browser_id(request)
+    user_agent = request.headers.get("user-agent")
     with get_db() as conn:
-        completed = complete_sign_in(
-            conn,
-            provider=identity.provider,
-            provider_user_id=identity.provider_user_id,
-            email=identity.email,
-            browser_id=_browser_id(request),
-            user_agent=request.headers.get("user-agent"),
-        )
+        if current_user_id:
+            # Signed-in caller → LINK this provider identity to the
+            # current account (e.g. a recovery-less name-only account
+            # adding Google/Apple for recovery) rather than switching to
+            # a separate account. Conflict when the identity (or its
+            # verified email) already belongs to a different user.
+            result = attach_oauth_identity(
+                conn,
+                user_id=current_user_id,
+                provider=identity.provider,
+                provider_user_id=identity.provider_user_id,
+                email=identity.email,
+            )
+            if result == "conflict":
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"That {provider_label} account is already linked to "
+                        "a different WhoeverWants account."
+                    ),
+                )
+            session = issue_session(
+                conn,
+                user_id=current_user_id,
+                browser_id=browser_id,
+                user_agent=user_agent,
+            )
+            profile = load_user_profile(conn, current_user_id)
+            assert profile is not None
+            completed = CompletedSignIn(session=session, profile=profile)
+        else:
+            completed = complete_sign_in(
+                conn,
+                provider=identity.provider,
+                provider_user_id=identity.provider_user_id,
+                email=identity.email,
+                browser_id=browser_id,
+                user_agent=user_agent,
+            )
     return _signin_response(completed)
 
 
@@ -517,6 +612,29 @@ def update_my_badge_settings(req: UpdateBadgeSettingsBody, request: Request):
     return _summary_from_profile(profile)
 
 
+class UpdateRecoveryReminderBody(BaseModel):
+    dismissed: bool = True
+
+
+@router.post("/me/recovery-reminder", response_model=UserSummary)
+def update_my_recovery_reminder(req: UpdateRecoveryReminderBody, request: Request):
+    """Set the signed-in user's "stop reminding me to add a recovery
+    method" flag (migration 123). Drives the home-page recovery banner's
+    "don't remind me again" toggle. Signed-in only."""
+    user_id = _require_signed_in(request)
+    with get_db() as conn:
+        set_recovery_reminder_dismissed(
+            conn, user_id=user_id, dismissed=req.dismissed
+        )
+        profile = load_user_profile(conn, user_id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account no longer exists",
+        )
+    return _summary_from_profile(profile)
+
+
 @router.post("/sign-out", status_code=status.HTTP_204_NO_CONTENT)
 def sign_out(request: Request):
     """Revoke the current session and drop the browser → user link on
@@ -654,12 +772,7 @@ def verify_recovery_email(req: RecoveryEmailVerifyBody, request: Request):
         profile = load_user_profile(conn, user_id)
     if not profile:
         raise HTTPException(status_code=401, detail="Account no longer exists")
-    return UserSummary(
-        user_id=profile.user_id,
-        email=profile.email,
-        providers=profile.providers,
-        created_at=profile.created_at,
-    )
+    return _summary_from_profile(profile)
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
