@@ -56,6 +56,10 @@ class EditVoteRequest(BaseModel):
     voter_name: str | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
+    # Metadata for suggested options (merged into question's options_metadata).
+    # Required on edits too: adding a search-picked suggestion via an edit must
+    # propagate its rich metadata cross-browser, same as the insert path.
+    options_metadata: dict | None = None
     # Time question preference reactions
     liked_slots: list[str] | None = None
     disliked_slots: list[str] | None = None
