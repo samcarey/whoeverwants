@@ -56,7 +56,7 @@ import {
 import { GroupContent } from "@/app/g/[groupShortId]/GroupPage";
 import { GroupInfoView } from "@/app/g/[groupShortId]/info/page";
 import { GroupEditTitleView } from "@/app/g/[groupShortId]/edit-title/page";
-import { PollDetailView } from "@/app/g/[groupShortId]/p/[pollShortId]/page";
+import { PollDetailView } from "@/app/g/[groupShortId]/p/[pollShortId]/PollDetailPage";
 import { PollInfoView } from "@/app/g/[groupShortId]/p/[pollShortId]/info/page";
 import { EmptyPlaceholder } from "@/app/g/page";
 
