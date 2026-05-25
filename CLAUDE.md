@@ -527,7 +527,7 @@ whoeverwants/
   - **Pitfall: `text-center` on the wrapper around `DRAFT_POLL_PORTAL_ID` cascades into the portaled bubble bar.** The placeholder copy ("Create a question and then share the link!") is centered, but the portal target div lives in the same wrapper, and CSS `text-align` inherits — bubble buttons get centered text alignment too. Scope `text-center` to the placeholder `<p>` itself, not the enclosing div. Same caution applies any time a portal target sits next to deliberately-centered placeholder content.
 - **`GroupPageInner` is the resolution wrapper** at the bottom of `app/g/[groupShortId]/page.tsx`. The path id is unambiguously a poll short_id / poll uuid (the group root) — no question-uuid cascade. Synchronously resolves to a Poll from `questionCache` via `useMemo([groupShortId])`; falls back to async `apiGetPoll{ById,ByShortId}` (404 → `setError`) on cache miss. Reads `?p=<pollShortId>` via `useSearchParams` and resolves it to `initialExpandedQuestionId` (the poll's first question id) via the same cache lookup. Legacy `/p/<id>` URLs with arbitrary ids (poll short_id, poll uuid, OR question uuid) resolve via `app/p/[shortId]/_legacyRedirect.tsx` → 302 to canonical `/g/<root>?p=<pollShort>` before this component mounts. Don't reintroduce question-uuid resolution into `GroupPageInner` — handle it in the redirect stub if a new legacy form needs supporting.
 - **Helpers for cache-walk + URL-build patterns:** `lib/groupUtils.ts: resolveGroupRootRouteId(poll)` walks `poll.follow_up_to` via `getCachedAccessiblePolls()` to find the group root and returns its route id (short-circuits when `poll.follow_up_to` is null). `lib/groupUtils.ts: getGroupHrefForPoll(poll)` returns `/g/<root>?p=<pollShort>` — the canonical "navigate to this poll's group with this poll expanded" URL. `lib/questionCache.ts: getCachedPollForShortId(id)` resolves an ambiguous id (poll uuid / poll short_id / question uuid) to a cached Poll. Use these whenever you need either pattern — don't re-inline the `getCachedAccessiblePolls + buildPollMap + findGroupRootRouteId` triplet or hand-roll the `?p=` URL.
-- **Pitfall: `addAccessibleQuestionId` only accepts question ids.** It persists to localStorage's accessible-question list. Passing a poll uuid corrupts the list silently (the entry never resolves on subsequent loads, since lookups go through `apiGetQuestionById` → 404). When extracting the "first question id" from a Poll for access registration, guard with `if (firstQ)` rather than falling back to `poll.id`.
+- **(Historical) `addAccessibleQuestionId` is REMOVED.** It used to persist question ids to a localStorage accessible-question list; that list (and the function) are gone now that `group_members` is the single source of truth. There is no longer any "register access by question id" step on visit/create — membership is written server-side. (The old pitfall was that passing a poll uuid instead of a question id silently corrupted the list; moot now.)
 - **Shared `GroupHeader` component** lives at `components/GroupHeader.tsx`. Props: `headerRef`, optional `title`, optional `participantNames` + `anonymousCount` (renders `RespondentCircles` when provided), optional `subtitle`, optional `onTitleClick` (makes the participant-graphic + title block ONE button covering the full middle hitbox when provided AND `title` is set — earlier this wrapped only the title text; the button is gated on `onTitleClick && titleBlock` so a caller can supply `onTitleClick` without a title and the click just no-ops via the div branch; ALSO renders a small right-chevron inline after the title text as a visual affordance, gated on the same prop — `text-gray-400 dark:text-gray-500`, `w-4 h-4`, `shrink-0` so it stays visible when the title truncates; the existing `min-w-0 flex-1` middle div takes on `flex items-center gap-1` and the h1 carries an explicit `min-w-0` so `truncate` still works inside the flex parent — don't reintroduce a separate flex wrapper div around the h1+svg pair, the existing parent does the job; chevron path is `M9 5l7 7-7 7`, inlined per codebase convention — same path appears in DaysSelector, CompactRankedChoiceResults, create-poll/page.tsx, and GroupCardItem (the per-poll-row nav glyph in the group view)), optional `onBack` (defaults to navigating to `/`), optional `backIconVariant: 'arrow' | 'menu'` (default `'arrow'` — chevron-left glyph; `'menu'` swaps in a hamburger-style three-line glyph with the third line shorter; used on the group root, poll detail page + its loading frame, and the empty `/g/` placeholder. Behavior is identical regardless of variant — the button still calls `handleBack`; only the icon glyph differs. Both variants share the bare `w-10 h-10 flex items-center justify-center` slot wrapper — no background, no border, no bubble chrome. An earlier iteration wrapped the menu variant in a `rounded-full bg-white ... border` bubble that mirrored the floating-bubble buttons used on /info and /edit-title; that was retired so GroupHeader stays visually distinct from the floating-bubble pattern), optional `rightSlot` (renders an action node on the right; when provided, the middle's right padding tightens from `pr-4` to `pr-2`). The bar is split into three adjacent full-height hitboxes (back / middle / rightSlot) with no untappable padding strip — each child folds its surrounding gap into its own padding, and back + middle all use `self-stretch` so their tap targets span the full bar height. Vertical centering is preserved by `items-center` on the row (NOT `items-stretch`) so any caller whose `rightSlot` has an explicit `h-10` keeps its centering for free. The title is always left-justified within its `flex-1` container. **Omitting `title` renders the header bar with just back + rightSlot** — the `flex-1` spacer div is still present (empty) so rightSlot stays pinned to the right. Used by `GroupContent` (real-group props) and `EmptyPlaceholder` in `app/g/page.tsx` (just `title`). The `/info` and `/edit-title` sub-routes do NOT use `GroupHeader` — they ship a transparent-top-bar layout with two floating opaque-bubble buttons each (back arrow on the left, action on the right: Edit on /info, Save on /edit-title) portaled via `<HeaderPortal>` so `position: fixed` is viewport-relative on desktop (the `.responsive-scaling-container` transform would otherwise trap the buttons in the scaled container — see the "Viewport-relative position: fixed" pitfall in the Document Scroll Architecture section). On /info the avatar is reduced to `w-[8.4rem]` and the share button is anchored absolutely to its right edge (`left-full top-1/2 -translate-y-1/2`) so the avatar stays visually centered. **Floating-bubble-button site count is now 2** (/info + /edit-title), 4 button instances total sharing the same `fixed left-3/right-3 z-30 ... rounded-full bg-white dark:bg-gray-800 border ...` class stack. **If you add a third site, extract `<FloatingBubbleButton side="left|right" />`** rather than copying the class stack a third time. Don't re-implement the fixed `top:0 + padding-top:env(safe-area-inset-top) + headerRef + back button` markup in another route — extend `GroupHeader` or import it. **Pitfall when sizing an icon-style child of a flex row that uses `flex items-center justify-center` on the button**: an inner explicit-size wrapper (`<span className="w-10 h-10 flex items-center justify-center">`) around the SVG is load-bearing for both the visual icon size AND the parent button's intended width. Without the `w-10` wrapper, the button content area collapses to the SVG's intrinsic width (~24px) + padding, shrinking the back / share hitbox AND shifting every flex sibling left/right by the lost width. The wrapper reserves the original 40px slot so absorbing surrounding gaps into the button's padding doesn't relocate any pixel. Only one call site uses this pattern today (the GroupHeader back button); when adding a future `rightSlot` text-only button, mirror the back button's `self-stretch py-2 px-2` + inner `<span className="w-10 h-10 ...">` structure so the text gets the same 8px breathing room from the viewport's right edge.
 - **Don't `autoFocus` text inputs on pages with `position: fixed` chrome.** On iOS the focus event re-expands the Safari URL bar (and on Capacitor iOS opens the soft keyboard); both shift the visual viewport in ways that cover or displace any `position: fixed; top: 0` header until the user manually scrolls and the URL bar collapses again. The symptom looks like "the top bar isn't floating" — but the bar is fine; the URL bar is sitting on top of it. Even with the `<HeaderPortal>` floating-bubble pattern (which is portaled outside `.responsive-scaling-container` and is otherwise URL-bar-resilient), autoFocus still pops the keyboard on first paint, which most users don't expect for a "navigate to edit a field" flow. Let the user tap the field deliberately.
 - **Deliberately-opened modal inputs are the EXCEPTION — and raising the iOS soft keyboard for them needs a keyboard primer.** When the user taps something specifically to type (e.g. the Yes/No bubble opens the create-poll sheet whose title IS the question prompt), auto-focusing the input is expected, not surprising. Two gotchas make naive autofocus fail there, both seen in `app/create-poll/page.tsx`: (1) **`<ModalPortal>` defers its children to a post-mount commit** — it returns `null` until its own `useEffect` flips a `mounted` flag, so the input mounts on a *later* commit than the modal-open. A `focus()` in a `useEffect`/rAF fired right after open finds `titleInputRef.current === null` and never re-runs (the open-state deps don't change again). Fix: focus from a **callback ref** (`ref={setTitleInputRef}`) gated by a flag set at open time — it fires exactly when the node attaches, whenever that commit lands. (2) **iOS WebKit only raises the soft keyboard when `focus()` runs synchronously inside the tap's user-activation window.** Because the input mounts asynchronously, the callback-ref focus lands the caret but the keyboard stays down. Fix: a **keyboard primer** — synchronously create + `focus()` a throwaway off-screen `<input>` (appended to `document.body`, `position:fixed;width:1px;height:1px;opacity:0;font-size:16px` to dodge focus-zoom) *during the tap handler*, claiming the keyboard; when the real input mounts the callback ref focuses it and removes the primer, and iOS keeps the keyboard up across the transfer. `font-size:16px` is load-bearing (avoids iOS zoom-on-focus); `opacity:0`+1px keeps it invisible and still focusable. Verified on a real iPhone — headless Chromium can confirm the caret/transfer/cleanup mechanics but NOT the keyboard, so on-device testing is mandatory for this class of change. Both helpers (`primeKeyboard`, `removeKeyboardPrimer`, `setTitleInputRef`) are scoped to yes/no (the only category whose title is user-typed) and consume their flag once so StrictMode's double-invoke can't double-fire. Don't reach for the `autoFocus` attribute here — it has the same async-mount + activation problems and gives no control over the primer.
@@ -985,7 +985,7 @@ to user_id has a row." Per-group `joined_at` uses `MIN` across
 linked rows so the closed-before-join filter is most permissive
 (the user "joined" when their earliest browser did). Canonical
 pattern in `services/groups.py: load_user_visibility` (signature
-`(conn, browser_id, *, user_id, legacy_question_ids)`); mirror it
+`(conn, browser_id, *, user_id)`); mirror it
 verbatim in any new endpoint that reads membership. **Three places
 in production today** — `/api/groups/mine`, `/api/groups/by-route-id/{id}`,
 `/api/groups/empty`. Phase E (private groups, visibility filter)
@@ -997,35 +997,32 @@ linked browser when user_id is set — otherwise tapping "leave" on
 one device just leaves on that device, and the group reappears on
 the next visit from another linked browser.
 
-**Don't apply the forget bridge to signed-in users.** The
-`accessible_question_ids` localStorage list is per-device anonymous
-state — `/api/groups/mine` intersects member-groups with the
-bridge list to give "forget = group disappears from home"
-semantics on devices that never signed in. For signed-in callers,
-membership is the authoritative cross-device source of truth;
-applying the intersection drops their groups when their FE happens
-to send a localStorage list that doesn't include the new group's
-questions (typical state: legacy entries from before sign-in).
-Gate the intersection on `not user_id` and let signed-in users
-leave groups via the explicit DELETE /membership action instead.
+**The `accessible_question_ids` "forget bridge" has been REMOVED.**
+`group_members` is the single source of truth for visibility on
+every tier (anonymous and signed-in alike). "Forget a group" is
+now "leave the group" — `forgetGroup` (in `lib/forgetQuestion.ts`)
+fires `apiLeaveGroup(routeId)` (DELETE /api/groups/{routeId}/membership),
+which drops the membership row so the group disappears from home.
+The per-browser localStorage lists (`accessible_question_ids`,
+`forgotten_question_ids`) and their helper functions are gone;
+`lib/browserQuestionAccess.ts` keeps only the creator-secret +
+seen-options helpers (and a one-time module-load cleanup that
+removes the two orphaned keys from existing installs). The
+`accessible_question_ids` field is still accepted on the
+`POST /api/groups/mine` body (older client bundles still send it)
+but the server ignores it entirely.
 
-**FE short-circuits keyed on local state can hide server-side
-membership.** Two patterns to audit when adding sign-in to a new
-flow: (1) `getMyGroups()` in `lib/simpleQuestionQueries.ts` used to
-return `[]` synchronously when `accessibleIds.length === 0`,
-skipping the API call entirely; (2) `apiGetMyGroups()` in
-`lib/api/groups.ts` did the same one layer down. Both got fixed
-together when the second-browser bug surfaced. The general rule:
-any FE optimization that short-circuits on "the local list is
-empty so there's nothing to fetch" needs an `isSignedIn` carve-out
-(or, simpler, just drop the optimization — the server's empty-list
-response is microseconds anyway). Same caution applies to cache
-freshness checks: `[].every(x => set.has(x)) === true`, so an
-empty `accessiblePollsCache` paired with an empty `accessibleIds`
-list looks like a cache hit and serves `[]` indefinitely. Bypass
-the cache check entirely when signed in (`canUseCachedPolls =
-cached && !isSignedIn && accessibleIds.every(...)`); in-flight
-coalescing (`myGroupsInFlight`) prevents per-render fetch piling.
+**`getMyGroups()` is membership-only — it fires `apiGetMyGroups()`
+(no args) + `apiGetMyEmptyGroups()` in parallel.** There's no
+localStorage list to read, no discovery-persist step, and no
+accessible-polls cache freshness gate keyed on the list. The
+server returns the caller's member groups from the request's
+browser_id + bearer token (the `user_browsers` union covers every
+linked browser for signed-in users), so the previous
+"short-circuit when the local list is empty" optimization — which
+had to carve out signed-in users to avoid hiding server-side
+membership — is simply gone. In-flight coalescing
+(`myGroupsInFlight`) still prevents per-render fetch piling.
 
 **Pitfall: `cachedToken` in `lib/session.ts` is module-cached.**
 The first call to `getSessionToken()` reads localStorage and stores
@@ -1288,10 +1285,11 @@ anonymous creators always get `privacy='public'` + null
 non-members of private groups. The `/preview` endpoint stays
 public (link-preview crawlers need it). `services/groups.py:
 filter_visible_polls` is unchanged in shape; the privacy
-enforcement happens upstream: (a) `load_user_visibility` filters
-the legacy `accessible_question_ids` bridge to public groups only,
-and (b) the routers `is_caller_member_of_group` + return 404
-directly for private + non-member. `grant_group_membership_inline`
+enforcement happens upstream: the routers call
+`is_caller_member_of_group` + return 404 directly for private +
+non-member. (The legacy `accessible_question_ids` bridge that this
+used to filter to public-only is gone — `group_members` is the
+sole visibility authority now.) `grant_group_membership_inline`
 gained an optional `privacy=` kwarg — passing `'private'` makes it
 a no-op so the read endpoint doesn't auto-join non-members onto a
 private group.
@@ -1368,6 +1366,19 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
   below. Still deferred within I: retire `creator_secret`; "claim an
   anonymous-created group" so legacy creator_user_id can be set
   after-the-fact, enabling privacy-flip on grandfathered groups.
+  - **TODO (retire `creator_secret`): now that the
+    `accessible_question_ids` / `forgotten_question_ids` localStorage
+    lists are gone (group visibility is server-side `group_members`),
+    the localStorage `creator_secret` (`lib/browserQuestionAccess.ts`,
+    key `question_creator_secrets`) is the LAST per-browser local
+    signal that gates a privileged action — it's the poll-ownership
+    authorization for close / reopen / cutoff / edit. It doesn't follow
+    the user across devices and is lost on a localStorage clear. The
+    eventual goal is account-owned poll authorship: record the signed-in
+    creator's `user_id` on the poll (mirroring `groups.creator_user_id`)
+    and authorize mutations against the session instead of a
+    per-browser secret. Until then, `creator_secret` stays as-is — it's
+    intentionally OUT OF SCOPE for the membership/visibility work.**
 - C-follow-up: ~~native Google Sign In on iOS~~ **shipped** (per-bundle iOS client IDs hardcoded in `lib/oauth.ts: GOOGLE_IOS_CLIENT_IDS`; reversed URL scheme stamped into `Info.plist: CFBundleURLTypes` by `ios-build.yml`; uses the same `@capgo/capacitor-social-login` plugin as Apple native).
 
 **Phase I (account management) shipped in migration 118.** Adds a
@@ -1693,15 +1704,14 @@ different FE origin, extend the allowlist.
 > `apiGrantPollAccess` helper are all gone. Visiting any form of
 > `GET /api/groups/by-route-id/{route_id}` (with or without `?p=`)
 > writes a `group_members` row inline — sharing a group URL is the
-> canonical "invite someone" mechanism. Visibility filter collapses to
-> "group membership only" + the legacy bridge during the rollout
-> window:
+> canonical "invite someone" mechanism. Visibility is group membership
+> only (the legacy `accessible_question_ids` bridge mentioned in the
+> original Migration 106 note has since been fully removed —
+> `group_members` is the single source of truth):
 >
->   1. B has a `group_members` row for T AND
->      (`P.is_closed = false` OR `P.closed_at >= members.joined_at`), OR
->   2. (transitional bridge) The legacy `accessible_question_ids` list
->      contains a question_id whose poll lives in T — group-level, no
->      closed_at filter, /api/groups/mine only.
+>   * B (or, signed in, any browser linked to B's user_id) has a
+>     `group_members` row for T AND
+>     (`P.is_closed = false` OR `P.closed_at >= members.joined_at`).
 >
 > The closed-before-join filter still applies, so a brand-new member
 > sees open polls plus polls closed after their `joined_at` watermark
@@ -1728,10 +1738,13 @@ different FE origin, extend the allowlist.
 > the visit-path uses the inline flavor.
 >
 > **`UserVisibility` (in `services/groups.py`)** carries
-> `joined_by_group` + `bridged_group_ids` only — `access_poll_ids` is
-> gone with migration 106. The previously-shared
-> `group_ids_for_poll_ids` helper is also deleted (it only existed to
-> fan out access-group sets).
+> `joined_by_group` only — `access_poll_ids` was dropped with migration
+> 106, and `bridged_group_ids` (the legacy `accessible_question_ids`
+> bridge) was removed when `group_members` became the single source of
+> truth. `load_user_visibility` no longer takes a `legacy_question_ids`
+> param, and `group_ids_for_question_ids` (which resolved that list)
+> was deleted. The previously-shared `group_ids_for_poll_ids` helper is
+> also gone (it only existed to fan out access-group sets).
 >
 > **Share button on the group info page hero**
 > (`components/GroupShareButton.tsx`). Sits on its own line, centered,
@@ -1764,9 +1777,10 @@ different FE origin, extend the allowlist.
 >     `browser_id` (400 if missing) so the new group has a member.
 >   * `POST /api/groups/empty` — every group the caller is a member of
 >     that has zero polls. The membership lookup is `group_members` ∩
->     anti-join `polls`. Sorted newest-first. The forget bridge does
->     NOT apply here — empty groups always show for their members,
->     regardless of `accessible_question_ids`.
+>     anti-join `polls`. Sorted newest-first. Pure membership — empty
+>     groups always show for their members. (Same as everywhere now:
+>     the legacy `accessible_question_ids` forget bridge has been
+>     removed; `group_members` is the single source of truth.)
 >   * `GET /api/groups/by-route-id/{id}/summary` — identity-free read
 >     returning just `GroupSummary`. No membership write. Used by
 >     `useGroup` (and `GroupPageInner`'s fallback chain) when
@@ -1859,24 +1873,22 @@ different FE origin, extend the allowlist.
 > watermark — "leave" is durable only against the user not navigating
 > back.
 >
-> **Wired into the group-page forget flow on this branch.** When the
-> user forgets their last remaining question in the group (the
-> existing `remaining.length === 0` branch in
-> `app/g/[groupShortId]/page.tsx`'s `pendingAction.kind === 'forget'`
-> handler — i.e. the same condition that already triggers
-> `router.push('/')`), we additionally call `apiLeaveGroup(groupId)`
-> before navigating home. This is the unambiguous "no FE-visible
-> questions left in this group for this browser" case. Forgetting one
-> question of a multi-question/multi-poll group does NOT fire leave —
-> the user is still consuming the group via the remaining questions.
-> Once enough rollout time has passed for active browsers to exercise
-> this path, the legacy `accessible_question_ids` bridge in
-> `/api/groups/mine` becomes retirable — `group_members` will be the
-> sole source of truth. (Migration 106 already collapsed the
-> per-poll-access leg of the rule, so the bridge is the only remaining
-> non-membership signal.)
+> **The forget bridge is now fully RETIRED — `group_members` is the
+> sole visibility authority.** "Forget a group" is "leave the group":
+> `forgetGroup` (in `lib/forgetQuestion.ts`) fires
+> `apiLeaveGroup(routeId)` for the whole group. The old per-question
+> "forget the last question → call apiLeaveGroup" wiring on the group
+> page, the `accessible_question_ids` / `forgotten_question_ids`
+> localStorage lists, and the server-side bridge in `/api/groups/mine`
+> are all gone. The `accessible_question_ids` request field is kept on
+> the Pydantic model (older bundles still send it) but the server
+> ignores it. (Migration 106 had already collapsed the per-poll-access
+> leg; the bridge was the only remaining non-membership signal, and
+> it's removed too.)
 >
-> **Phase C.3 of the group-routing redesign shipped (#267).**
+> **Phase C.3 of the group-routing redesign shipped (#267).** (Historical
+> — the legacy bridge described below has since been REMOVED; the
+> visibility rule is now group-membership only.)
 > The visibility rule is now enforced on `POST /api/groups/mine` and
 > `GET /api/groups/by-route-id/{route_id}`. A poll P in group T is
 > visible to browser B iff ANY of:
@@ -2237,9 +2249,8 @@ Frontend conventions for the poll plumbing:
 - **Audit-write rule for vote/create paths: decoupled transactions for membership writes.** Anything triggered by a vote/create/abstain that needs to write to `group_members` MUST run in its own `get_db()` transaction, NOT share the action's transaction. Pattern: helper functions in `services/memberships.py` that open their own connection, run `INSERT … ON CONFLICT DO NOTHING`, and `try/except Exception: log+continue` so audit failures don't block the action and action failures don't strand audit rows. The composite-PK `ON CONFLICT` is load-bearing: re-voting must NOT advance `joined_at`, since visibility compares poll closure timestamps against that watermark. Order in the handler: vote/abstain endpoint writes membership BEFORE the vote (so a rejected vote still records "attempted to participate"); poll-create endpoint writes membership AFTER the create (the root-poll's `group_id` only exists post-`_insert_poll`). The visit-path auto-join (migration 106) is the EXCEPTION — `services/groups.py: grant_group_membership_inline` runs on the CALLER'S connection because the read endpoint already holds one and the visibility filter immediately downstream needs to see the new row. Counterpart `services/memberships.py: leave_group(conn, group_id, browser_id)` also runs inline on the caller's connection. The DELETE silently affects 0 rows when no row exists, which is the intended idempotent semantics.
 - **Use `_browser_id(request)` in `routers/polls.py` rather than `getattr(request.state, "browser_id", None)`.** `BrowserIdMiddleware` always sets the field, but the `getattr` fallback is the safe form for the rare path that doesn't go through middleware (direct `TestClient` instantiation, internal call sites). The helper exists because Phase C handlers will all reach for it; don't re-inline the `getattr`.
 - **Fuse poll → group_id lookups with the audit-write SQL.** `join_group_for_poll(poll_id, browser_id)` does `INSERT INTO group_members SELECT group_id, %(browser_id)s FROM polls WHERE id=%(poll_id)s ON CONFLICT DO NOTHING` — one statement, one round-trip. Don't re-introduce a separate `SELECT group_id FROM polls` followed by an INSERT; that doubles the hot-path RTT.
-- **Visibility helpers live in `services/groups.py`** (`UserVisibility`, `load_user_visibility`, `filter_visible_polls`, `grant_group_membership_inline`). Both groups endpoints share them — adding visibility enforcement to a third endpoint would call `load_user_visibility(conn, browser_id, legacy_question_ids=...)` once and pass the result to `filter_visible_polls(conn, candidate_pids, visibility)`. Don't reinvent the rule inline; the helper is the single source of truth so changes (e.g. a dedicated `closed_at` column, retiring the legacy bridge) ripple through every read path. Migration 106 dropped `access_poll_ids` from `UserVisibility` along with the per-poll signal — the visibility rule is now group-membership + the legacy bridge.
-- **The legacy `accessible_question_ids` bridge is GROUP-level, not poll-level.** The Phase B.3 contract is "any question_id grants access to its whole group" (the FE always passed one question_id and got every poll in the group back). The bridge preserves this for backwards-compat: `bridged_group_ids` resolves question_ids → group_ids, and the visibility filter shows every poll in those groups with no closed_at filter. A per-poll bridge would silently shrink groups on first refresh post-rollout. Slated for retirement once enough rollout time has passed for active browsers to acquire `group_members` rows via the auto-join paths (vote / create / visit).
-- **Forget bridge in `/api/groups/mine`.** When `accessible_question_ids` is non-empty, member-groups are narrowed to those still represented in the bridge list. Without this, a `group_members` row would keep a group alive on the home list even after the user forgot every question in it. Membership-only callers (empty list) skip the narrowing — the bridge is opt-in. Eventually retired once `apiLeaveGroup` (forget-of-last-poll) becomes the standard exit path.
+- **Visibility helpers live in `services/groups.py`** (`UserVisibility`, `load_user_visibility`, `filter_visible_polls`, `grant_group_membership_inline`, `is_caller_member_of_group`). Both groups endpoints share them — adding visibility enforcement to a third endpoint would call `load_user_visibility(conn, browser_id, user_id=...)` once and pass the result to `filter_visible_polls(conn, candidate_pids, visibility)`. Don't reinvent the rule inline; the helper is the single source of truth so changes (e.g. a dedicated `closed_at` column) ripple through every read path. `UserVisibility` carries only `joined_by_group` now — `access_poll_ids` was dropped with migration 106, and `bridged_group_ids` (the `accessible_question_ids` bridge) was removed when `group_members` became the sole visibility authority. `load_user_visibility` no longer takes a `legacy_question_ids` param.
+- **The `accessible_question_ids` forget bridge is REMOVED — `group_members` is the single source of truth.** There is no `bridged_group_ids`, no `group_ids_for_question_ids`, no `legacy_question_ids` param on `load_user_visibility`, and no forget-bridge narrowing in `/api/groups/mine`. A poll is visible iff the caller (or any browser linked to their signed-in user_id) has a `group_members` row for its group AND the poll is open OR was closed at/after the member's `joined_at`. The `accessible_question_ids` request field is still accepted on `POST /api/groups/mine` (older client bundles send it) but the server ignores it. "Forget a group" is "leave the group" (`apiLeaveGroup` → DELETE /membership), which drops the row. Don't reintroduce a question-id-list bridge; if a new "the user can see this without membership" case appears, write a `group_members` row (or a dedicated grant) instead.
 - **Visibility uses `polls.updated_at` as the `closed_at` proxy.** The close trigger refreshes `updated_at` on every `is_closed` flip, so it tracks closure timing accurately for the initial close. Subsequent edits to a closed poll bump `updated_at` forward — that makes the visibility filter slightly more permissive (a closed poll touched after the user joins becomes visible) but never less. A dedicated `closed_at` column would be marginally tighter; not worth the migration cost in C.3.
 - **Updating tests when the visibility contract changes.** `test_groups_api.py` was originally written for Phase B.3's "no enforcement" behavior and called the read endpoints with no X-Browser-Id header (TestClient mints fresh browser_ids per request, so the read had no membership). Phase C.3 added a `browser_id` fixture and a `_bid_headers` helper so tests pin the same browser through create + read calls — making the creator a group member that the read endpoints can see. When adding new tests for endpoints under visibility enforcement, follow this pattern: don't trust auto-minted ids to maintain identity across requests.
 
@@ -2496,7 +2507,7 @@ The X-badge / camera-badge pattern needs both to be **siblings of the avatar but
 
 **Template `py-6` was retired for sub-routes** (`app/template.tsx`). The page-wrapper used to apply `py-6` (24px top + bottom padding) to every route that wasn't home, settings, or `isGroupLikePage` — so `/g/<id>/info` and `/g/<id>/edit-title` got 24px of extra top space ON TOP of their inline `paddingTop: calc(env(safe-area-inset-top, 0px) + 1.05rem)` for floating-button clearance. Changed to `pb-6` (drop top). Other routes in the bucket are redirect stubs where padding is irrelevant.
 
-**Pitfall: `accessibleQuestionIds` in localStorage can carry non-UUIDs and 500 `/api/groups/mine`.** Postgres casts the parameter array to `uuid[]`, and one bad element rejects the whole call. `server/services/groups.py: group_ids_for_question_ids` now filters its input through a UUID regex before the SELECT — same defensive pattern any future endpoint reading question_ids from FE-supplied lists should adopt. The corruption can come from any past code path that ever called `addAccessibleQuestionId(poll.id_or_short_id)` instead of a question_id; CLAUDE.md already flagged this pitfall but server-side resilience guards against it persisting in long-lived sessions.
+**(Historical) `accessibleQuestionIds` non-UUID 500 pitfall.** This is moot now: `/api/groups/mine` no longer resolves the `accessible_question_ids` list against the DB (the forget bridge is removed and the field is ignored), and `group_ids_for_question_ids` was deleted. The general lesson still stands — when an endpoint casts an FE-supplied array to `uuid[]`, filter through a UUID regex first so one corrupt element can't 500 the whole call (`services/groups.py: require_uuid` / `_is_uuid_like` are the canonical guards for path-param uuids).
 
 **Dev-infra trap (FIXED on `claude/remove-group-dividers-ion0C`)**: `scripts/mac-mini/dev-server-manager.sh`'s `INSERT INTO _migrations (filename) VALUES (:'fname')` line was broken since the script's inception — the `:'fname'` psql variable substitution fails with `syntax error at or near ":"` when used inside `psql -c` (`-c` sends SQL to the server with no psql-level variable expansion). So `_migrations` never persisted, every upsert re-ran every migration from scratch, and any non-idempotent rename eventually corrupted the schema. The canonical fingerprint was the three-way `polls` + `multipolls` + `questions` state, caused by migration 092 (`CREATE TABLE IF NOT EXISTS multipolls`) re-running after 097's first-pass rename had already renamed `multipolls → polls`, then 097's second pass failing because `questions` and `polls` both exist and rolling back, leaving subsequent ALTER COLUMNs to land on the wrong tables. Fix: interpolate `$basename` directly into the SQL string (`'$basename'`) — the upstream regex check already rejects single quotes, so no injection vector. With `_migrations` actually persisting now, second-and-later upserts skip already-applied migrations and the drift cannot recur. If you encounter the three-way state on a long-lived dev DB created BEFORE this fix, destroy → upsert resolves it cleanly because migrations only run once on the fresh DB.
 
@@ -3350,7 +3361,7 @@ Submitting a draft used to navigate to `/p/<newPollShortId>`. The user described
 ### API Development Pitfalls
 
 - **`server/services/questions.py` is the home for non-route helpers.** Anything that's a free function operating on a DB connection (`_fetch_question_full`, `_finalize_*`, `_submit_vote_to_question`, `_edit_vote_on_question`, `_row_to_question`, `_compute_results`, etc.) lives in `services/questions.py` and is imported by both `routers/questions.py` and `routers/polls.py`. Don't reach across routers (`from routers.questions import _foo` from a sibling router) — that pattern was retired when `services/` was introduced. Underscore-prefixed names are kept as a "low-stability internal API during poll Phase X churn" signal; OK to drop the underscore once the surface stabilizes.
-- **`server/services/groups.py` is the equivalent home for group-aggregation helpers (Phase B.3).** `polls_for_poll_ids(conn, poll_ids, *, include_results)` builds the `PollResponse[]` payload (with inline results, voter aggregates, response counts) from a list of poll_ids. Both `/api/questions/accessible` and `/api/groups/*` use it. `group_ids_for_question_ids` and `poll_ids_for_group_ids` are thin SQL wrappers; `resolve_group_id_from_route_id(conn, route_id)` does the four-form lookup (groups.short_id → groups.id → polls.short_id → polls.id). Phase B.4 introduced `~`-prefixed group short_ids that resolve via the first lookup; the legacy `/g/<root-poll-short-id>` form still resolves via the same first lookup because B.1 backfilled `groups.short_id` from the root poll's short_id. The polls.short_id / polls.id fallbacks remain only for redirects from legacy URL paths.
+- **`server/services/groups.py` is the equivalent home for group-aggregation helpers (Phase B.3).** `polls_for_poll_ids(conn, poll_ids, *, include_results)` builds the `PollResponse[]` payload (with inline results, voter aggregates, response counts) from a list of poll_ids. Both `/api/questions/accessible` and `/api/groups/*` use it. `poll_ids_for_group_ids` is a thin SQL wrapper (fan a group-id set out to its poll_ids); `resolve_group_id_from_route_id(conn, route_id)` does the four-form lookup (groups.short_id → groups.id → polls.short_id → polls.id). (`group_ids_for_question_ids` was removed with the forget bridge.) Phase B.4 introduced `~`-prefixed group short_ids that resolve via the first lookup; the legacy `/g/<root-poll-short-id>` form still resolves via the same first lookup because B.1 backfilled `groups.short_id` from the root poll's short_id. The polls.short_id / polls.id fallbacks remain only for redirects from legacy URL paths.
 - **`BrowserIdMiddleware` reads/mints a `X-Browser-Id` header per request (Phase B.3).** A header (not cookie) because the FE talks same-origin to the API in prod (Next.js rewrite) and direct in dev/CI; cookies would require credentialed CORS which doesn't compose with `allow_origins=["*"]`. The id is always echoed on the response (even on 4xx/5xx) so the FE can adopt server-issued ids on the very first request. `request.state.browser_id` is populated for every request; **Phase B.3 only captures, doesn't enforce** — Phase C will add `group_members` and start gating visibility on this id. Reading/setting from a router: `getattr(request.state, "browser_id", None)`.
 - **FE `lib/browserIdentity.ts` is the canonical browser-id storage.** `getBrowserId()` returns the localStorage value or null. `adoptServerBrowserId(value)` is called by `_internal.ts: fetchWithBase` after every fetch — it's a first-write-wins merger so a compromised middlebox can't rewrite the id mid-session (mismatch logs a warning and keeps the existing id). Don't roll your own UUID — let the server mint and adopt the response.
 - **`apiGetMyGroups(accessibleQuestionIds)` and `apiGetGroupByRouteId(routeId)` (in `lib/api/groups.ts`) replace the legacy `discoverRelatedQuestions + apiGetAccessibleQuestions` pair.** Both warm `cachePoll` and the per-question results cache so subsequent `apiGetQuestionById`/`apiGetQuestionResults` calls hit warm cache. Use these for any new "give me this group" flow; don't reach for `apiGetAccessibleQuestions` in new code (it's preserved for the legacy compatibility layer). The drop-in `getMyGroups()` wrapper in `lib/simpleQuestionQueries.ts` is what `app/page.tsx`, `app/g/[groupShortId]/page.tsx`, and `lib/useGroup.ts` consume — it adds in-flight coalescing (StrictMode-safe), accessible-id persistence (the server-discovered question_ids get added to localStorage subject to the forgotten-list filter), and accessible-cache invalidation when the set grew.
@@ -3374,7 +3385,7 @@ Submitting a draft used to navigate to `/p/<newPollShortId>`. The user described
 ### Auto-Created Follow-Up Questions & Creator Secrets
 
 - **Auto-created questions share the parent's `creator_secret`**, but the browser only stores secrets for questions it created directly. When navigating to an auto-created follow-up question (e.g., preferences question from a suggestion question), the browser must propagate the parent's secret to the child. Do this both on navigation (in the close handler) and on page load (check `question.follow_up_to` and propagate if the parent's secret is known).
-- **Use `recordQuestionCreation()` from `lib/browserQuestionAccess.ts`** instead of calling `storeCreatorSecret()` + `addAccessibleQuestionId()` separately. The higher-level function already does both.
+- **Use `recordQuestionCreation(questionId, creatorSecret)` from `lib/browserQuestionAccess.ts`** to persist a poll's creator secret on create. It now only stores the secret (poll-ownership authorization) — there's no accessible-question list to register into anymore, since `group_members` (written server-side) is the single source of visibility truth.
 - **Question data snapshots (duplicate/follow-up)** are passed between pages via localStorage. When adding new question fields, update `buildQuestionSnapshot()` in `lib/questionCreator.ts` — it's used by `FollowUpModal.tsx` and `DuplicateButton.tsx`.
 - **PWA clients cache old JS bundles** — snapshot structure changes (new fields in `buildQuestionSnapshot`) won't take effect until users get new JS. Always add backward-compatible detection in the consumer (create-question page) rather than relying solely on snapshot fields. The `is_auto_title` detection uses a ref-based comparison against `generateTitle()` output to handle old snapshots that lack the field.
 - **Don't snapshot fields the destination form auto-derives.** `buildQuestionSnapshot` deliberately omits `title` and `is_auto_title`: the create-poll page's auto-title `useEffect` (`app/create-poll/page.tsx` ~line 272) regenerates the title from current form fields whenever `isAutoTitle` is true, and a user-typed yes_no prompt is meant to be retyped on a fresh copy rather than carried verbatim. Copying the title verbatim produced anachronistic "A or B?"-style auto-generated titles that reflected the source poll's old options/suggestions, not the new copy's input. The `?duplicate=` handler in `app/create-poll/page.tsx` therefore does NOT call `setTitle(duplicateData.title)`. Same principle applies when adding new auto-derived form state: if the destination already has an effect that recomputes the value from inputs, don't snapshot it. The `voteFromSuggestion` flow (a separate feature that builds a preference question from suggestions, not a duplicate) intentionally keeps writing the title — it's a different code path with different semantics.
@@ -3517,7 +3528,7 @@ Transitions covered by overlay-slide:
 - **Double-rAF is load-bearing for the enter→shown transition.** Single rAF can land in the same paint pass as the React commit that mounted the overlay (with `transform: translate3d(100%, 0, 0)` + `transition: none`), so the browser never sees an "enter" frame — the transition gets skipped and the overlay snaps directly to translate3d(0). Two rAFs guarantee a paint commit at translate3d(100%) before the transform changes. Same idea as the FLIP pattern.
 - **`GroupContent` inside the overlay must avoid global side effects that mutate browser history.** The "sync `?p=` to expanded card" effect in `GroupPage.tsx` (`replaceState` to update the URL query) was firing while the overlay was still on the source page (`pathname='/'`), writing `?p=<short>` into the home history entry. Back-nav then landed on `/?p=<short>` instead of `/`. Gate via `if (!window.location.pathname.startsWith('/g/')) return;` so the effect is a no-op in the overlay's transient mount window. Any future `replaceState`/`pushState` call inside `GroupContent` needs the same guard.
 - **Mirror template.tsx's wrappers inside the overlay.** Both kinds share the outer safe-area horizontal padding (`paddingLeft/Right: max(0.35rem, env(safe-area-inset-*))`). The inner wrapper differs per kind — see the "per-kind inner wrapper class" point above. The destination's wrappers live in `app/template.tsx:244-310`. Pixel-perfect alignment is required for a seamless handoff. **If template.tsx's wrappers ever change, audit `lib/slideOverlay.tsx` too.**
-- **Destination view mounts twice per slide** (once in overlay, once in the real route after router.push commits). API calls are deduped by the `coalesced()` helper in `lib/api/_internal.ts` for the helpers that wrap with it; `apiGetGroupByRouteId` is NOT currently coalesced, so a cache miss does fire two network round-trips (cache hit is the common case and short-circuits via `useGroup`'s synchronous-init). Side-effects like `addAccessibleQuestionId` are idempotent. The two instances coexist for ~SLIDE_DURATION_MS+30 = 380ms after pathname flips, then the overlay unmounts via a single ref-tracked timer (one per slide; cleared on new slide events so a pending unmount can't null out the next slide's state mid-flight).
+- **Destination view mounts twice per slide** (once in overlay, once in the real route after router.push commits). API calls are deduped by the `coalesced()` helper in `lib/api/_internal.ts` for the helpers that wrap with it; `apiGetGroupByRouteId` is NOT currently coalesced, so a cache miss does fire two network round-trips (cache hit is the common case and short-circuits via `useGroup`'s synchronous-init). The two instances coexist for ~SLIDE_DURATION_MS+30 = 380ms after pathname flips, then the overlay unmounts via a single ref-tracked timer (one per slide; cleared on new slide events so a pending unmount can't null out the next slide's state mid-flight).
 - **`key={kind.groupId}` on the rendered view** is required so that switching to a different group's destination while a slide is in flight remounts the component with fresh `useState`/`useGroup` initial values. Without the key, switching group ids on the same instance would keep the previous group's cached state (since `useGroup`'s initializer only runs once).
 - **Inherit the Geist font via `font-[family-name:var(--font-geist-sans)]` on the overlay's outer div.** The portal target is `document.body`, which only declares the `--font-geist-sans` CSS variable (via `GeistSans.variable` on the body className); the actual `font-family` rule lives on an inner wrapper inside `<ResponsiveScaling>` that the overlay doesn't share. Without this, overlay text renders in body's default Arial/Helvetica fallback and the user sees character spacing change the instant the overlay unmounts.
 - **DO NOT use `overlay.scrollTop` to align cards with the header.** The overlay's `contain: strict` (+ its `transform: translate3d`) makes `position: fixed` descendants behave as absolute-positioned inside the overlay — they scroll WITH the overlay's scrollTop. Setting `scrollTop=8` to align the first card flush with the GroupHeader yanks the header itself 8px above the viewport top; the user sees "the top bar shifts down" when the overlay unmounts and the header drops back to its real `top: 0`. The group page's overlay slide-in lets the real route's initial-scroll effect handle landing position post-handoff.
@@ -3556,10 +3567,8 @@ Transitions covered by overlay-slide:
 - **`lib/questionCache.ts` caches question/results/votes/participants data** so destination pages render instantly from cache on navigation. 60s TTL for questions, 15s for results/votes (which change more often). All maps capped at 100 entries with LRU eviction to bound memory for long-lived PWA sessions.
 - **Mutations must invalidate the cache.** `invalidateQuestion(id)` and `invalidatePoll(id)` clear all per-entity caches. Call after every successful vote, close, reopen, cutoff, edit, etc.
 - **Field-level vs shape-level invalidation is a load-bearing distinction.** `invalidateQuestion` / `invalidatePoll` are FIELD-LEVEL — they drop per-entity caches but DO NOT touch `accessiblePollsCache`. The accessible-polls list is the "which polls exist in which group" shape, which a vote / close / reopen / cutoff / edit / title-update / image-update cannot change. Embedded fields go briefly stale; the 5s group-page refresh + `QUESTION_VOTES_CHANGED_EVENT` listener correct them within seconds, and the 60s TTL bounds worst-case staleness. **SHAPE-LEVEL** changes — forget, leave-group, discovery, failed-create placeholder cleanup — MUST also call `invalidateAccessibleQuestions()` (or surgically rewrite the list via `updateAccessiblePollsIfFresh`). Without that explicit call, `buildGroupSyncFromCache` keeps rebuilding the group with the dead entry until the TTL expires. Symptom of forgetting: stale list serves the next render but is "narrower than reality" or "wider than reality" depending on which way you missed. Earlier `invalidateQuestion` nulled `accessiblePollsCache` as a side effect — that masked missing explicit calls but also broke back-nav scroll restoration (every vote on a poll detail page wiped the accessible cache, so the return to the group mounted with `initialGroup = null` and only the anchor card was pre-mounted, leaving `scrollHeight` short and the restored `window.scrollTo(0, savedY)` clamped to a wrong value). Regression test: `tests/__tests__/question-cache-invariant.test.ts` pins the invariant. When adding a new mutation, ask: "does this change WHICH polls/questions are in the group?" — if yes, pair `invalidatePoll` with `invalidateAccessibleQuestions`.
-- **`getMyGroups` must invalidate the accessible questions cache when it adds new IDs.** Otherwise subsequent `getAccessiblePolls()` calls return a stale list missing the newly-discovered questions. The current implementation in `lib/simpleQuestionQueries.ts` already does this (`invalidateAccessibleQuestions()` when `discovered > 0`).
-- **Forgotten questions must stay forgotten across discovery.** `forgetQuestion` removes a question from `accessible_question_ids` AND adds it to `forgotten_question_ids` in localStorage. `getMyGroups` filters server-discovered ids against `getForgottenQuestionIds()` before calling `addAccessibleQuestionId` — otherwise the server's `polls.group_id` aggregation would re-add forgotten questions on the next navigation, unforgetting them. `addAccessibleQuestionId` clears the forgotten marker, so visiting the URL directly still re-grants access (consistent with the "URLs grant access" model). Reserve `addAccessibleQuestionId` for *explicit* access grants (question/group page visit, creator flow) — automatic discovery callers must gate on `getForgottenQuestionIds()` before calling it.
-- **`getAccessiblePolls`'s cache-freshness check is asymmetric.** It re-fetches when any accessible ID is *missing* from the cache (a new question was discovered) but does NOT detect *stale extras* (a question the user removed). So every removal mutation — forget, revoke, etc. — MUST call `invalidateQuestion()` / `invalidateAccessibleQuestions()` itself; the next `getAccessiblePolls()` call will happily return a stale cache containing the removed question.
-- **Coalesce concurrent API calls** with `coalesced()` in `lib/api.ts`. React StrictMode double-mounts effects in dev, causing two simultaneous calls to the same endpoint. Same idiom for `getMyGroups` and `getAccessiblePolls` — both use an in-flight promise to dedupe.
+- **`getMyGroups()` is membership-only and stateless on localStorage.** It fires `apiGetMyGroups()` (no args) + `apiGetMyEmptyGroups()` in parallel and returns the server's member-group response directly. There's no localStorage accessible/forgotten list, no discovery-persist step, and no cache-freshness gate keyed on a question-id list — `group_members` (server-side) is the single source of truth. The accessible-polls cache (`accessiblePollsCache`) is still populated as a synchronous-render warm cache by `hydrateAndCache` in `lib/api/groups.ts`, but it's derived from the server response, not from a localStorage list. "Forget a group" = leave the group (`apiLeaveGroup`), which also invalidates the accessible cache (via `forgetQuestion`'s `invalidateAccessibleQuestions()`).
+- **Coalesce concurrent API calls** with `coalesced()` in `lib/api.ts`. React StrictMode double-mounts effects in dev, causing two simultaneous calls to the same endpoint. `getMyGroups` uses an in-flight promise (`myGroupsInFlight`) to dedupe.
 
 ### Production build testing on the Mac dev server
 

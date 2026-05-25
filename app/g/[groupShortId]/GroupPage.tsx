@@ -13,7 +13,7 @@ import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGet
 import type { Poll } from "@/lib/types";
 import { useGroupVoting } from "@/lib/useGroupVoting";
 import type { QuestionResults } from "@/lib/types";
-import { addAccessibleQuestionId, getCreatorSecret } from "@/lib/browserQuestionAccess";
+import { getCreatorSecret } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls, getCachedGroupSummary, getCachedPollById, getCachedPollByShortId } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
@@ -405,11 +405,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         }
         const anchorPoll = findChainRoot(polls);
         if (!anchorPoll) { setError(true); return; }
-        // Persist any newly-discovered question_ids to localStorage so a
-        // forget-and-re-discover cycle still works on direct navigation.
-        for (const mp of polls) {
-          for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
-        }
         for (const mp of polls) {
           for (const sp of mp.questions) void apiGetVotes(sp.id).catch(() => null);
         }
@@ -2174,8 +2169,6 @@ function GroupPageInner() {
       return;
     }
     if (rootInitial) {
-      const firstQ = rootInitial.questions[0]?.id;
-      if (firstQ) addAccessibleQuestionId(firstQ);
       return;
     }
 
@@ -2193,9 +2186,6 @@ function GroupPageInner() {
         });
         const root = polls ? findChainRoot(polls) : null;
         if (root && polls) {
-          for (const mp of polls) {
-            for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
-          }
           if (!cancelled) setRootPoll(root);
           return;
         }
@@ -2223,8 +2213,6 @@ function GroupPageInner() {
           if (!cancelled) setError(true);
           return;
         }
-        const firstQ = poll.questions[0]?.id;
-        if (firstQ) addAccessibleQuestionId(firstQ);
         if (!cancelled) setRootPoll(poll);
       } catch {
         if (!cancelled) setError(true);

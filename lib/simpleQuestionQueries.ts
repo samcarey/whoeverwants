@@ -1,25 +1,14 @@
-// Simple question queries using browser storage for access control
-// No fingerprinting, no complex RLS - just localStorage question lists
+// Group/poll queries. Group visibility is driven entirely by server-side
+// `group_members` (the single source of truth) — keyed on the browser_id
+// the API middleware mints, expanded across every browser linked to the
+// signed-in user. There is no per-browser localStorage "accessible
+// question ids" list anymore.
 
-import { getSessionToken } from '@/lib/session';
-import type { GroupSummary, Poll, Question } from '@/lib/types';
+import type { GroupSummary, Poll } from '@/lib/types';
 import {
-  apiGetAccessibleQuestions,
   apiGetMyEmptyGroups,
   apiGetMyGroups,
-  apiGetQuestionById,
 } from '@/lib/api';
-import {
-  addAccessibleQuestionId,
-  getAccessibleQuestionIds,
-  getForgottenQuestionIds,
-} from '@/lib/browserQuestionAccess';
-import {
-  cacheAccessiblePolls,
-  getCachedAccessiblePolls,
-  cacheQuestion,
-  invalidateAccessibleQuestions,
-} from '@/lib/questionCache';
 
 /** Combined response shape from `getMyGroups()` — polls + the
  *  membership-only empty groups (groups the user joined that don't
@@ -29,143 +18,31 @@ export interface MyGroupsResult {
   emptyGroups: GroupSummary[];
 }
 
-// Coalesce concurrent getAccessiblePolls / getMyGroups calls
-// (e.g., StrictMode double-mount).
-let inFlight: Promise<Poll[]> | null = null;
+// Coalesce concurrent getMyGroups calls (e.g., StrictMode double-mount).
 let myGroupsInFlight: Promise<MyGroupsResult> | null = null;
 let emptyGroupsCache: GroupSummary[] | null = null;
 
-/** Get the poll wrappers this browser has access to. Phase 5b: returns
- *  Poll[] (the wrappers covering the user's accessible questions).
- *  Wrapper-level fields live on each Poll; questions inside contain the
- *  per-question fields. */
-export async function getAccessiblePolls(): Promise<Poll[]> {
-  try {
-    const accessibleIds = getAccessibleQuestionIds();
-
-    if (accessibleIds.length === 0) {
-      return [];
-    }
-
-    // Return cached result if fresh and every accessible question id is
-    // covered by some cached poll's questions. A new id (e.g. just
-    // discovered) means we need to re-fetch.
-    const cached = getCachedAccessiblePolls();
-    if (cached) {
-      const cachedQuestionIds = new Set<string>();
-      for (const mp of cached) for (const sp of mp.questions) cachedQuestionIds.add(sp.id);
-      const allPresent = accessibleIds.every(id => cachedQuestionIds.has(id));
-      if (allPresent) return cached;
-    }
-
-    // Coalesce concurrent calls — React StrictMode double-mounts in dev
-    if (inFlight) return inFlight;
-
-    inFlight = (async () => {
-      try {
-        const polls = await apiGetAccessibleQuestions(accessibleIds);
-        cacheAccessiblePolls(polls);
-        return polls;
-      } finally {
-        inFlight = null;
-      }
-    })();
-
-    return inFlight;
-  } catch (error) {
-    console.error('Error in getAccessiblePolls:', error);
-    return [];
-  }
-}
-
-/** Backwards-compatible flat question list. Most callsites should switch to
- *  `getAccessiblePolls` so they can read wrapper-level fields directly,
- *  but this helper is kept for the prefetcher / other places that just need
- *  every accessible Question for a per-id loop. */
-export async function getAccessibleQuestions(): Promise<Question[]> {
-  const polls = await getAccessiblePolls();
-  const questions: Question[] = [];
-  for (const mp of polls) for (const sp of mp.questions) questions.push(sp);
-  return questions;
-}
-
-/** Phase B.3: drop-in replacement for `getAccessiblePolls() +
- *  discoverRelatedQuestions()`. Returns every poll in any group that
- *  contains one of this browser's accessible questions — the server walks
- *  `polls.group_id` once instead of the FE doing follow_up_to chain
- *  expansion across two round-trips.
+/** Fetch every group the caller is a member of (populated + empty) in one
+ *  server round-trip pair. Membership is the single authority — the server
+ *  returns the caller's member groups based on the browser_id (and any
+ *  browser linked to their signed-in user_id), so no localStorage list is
+ *  consulted or sent.
  *
- *  Also fetches membership-only "empty groups" (groups the user joined
- *  via the home new group button with no polls yet) in parallel via
- *  `apiGetMyEmptyGroups` so the home list reflects both populated and
- *  empty groups in one render.
- *
- *  Side-effect: any newly-discovered question_ids are added to the browser's
- *  accessible list (subject to the forgotten-list filter) so they survive a
- *  cache flush. The cache is then cleared so the next call sees the
- *  expanded set in subsequent freshness checks.
- */
+ *  `/mine` returns the populated groups' visible polls; `/empty` returns
+ *  membership-only groups with no polls yet. Both fire in parallel;
+ *  empty-groups failures degrade gracefully (returns []) so the populated
+ *  list is never blocked by an empty-groups blip. */
 export async function getMyGroups(): Promise<MyGroupsResult> {
   if (typeof window === 'undefined') return { polls: [], emptyGroups: [] };
   try {
-    const accessibleIds = getAccessibleQuestionIds();
-    // Signed-in users have authoritative membership server-side via
-    // group_members + user_browsers — their groups exist regardless of
-    // whether the per-device localStorage list has any question_ids.
-    // Without this, a signed-in user on a fresh browser (empty
-    // accessibleIds list) would have the fetch short-circuited to []
-    // and never see their existing groups.
-    const isSignedIn = !!getSessionToken();
-    const cached = getCachedAccessiblePolls();
-    let canUseCachedPolls = false;
-    if (cached && !isSignedIn) {
-      // Cache check is sound for anonymous users (membership is purely
-      // localStorage-driven; the cache is authoritative if it covers
-      // every accessibleId). For signed-in users it isn't: the server
-      // can carry memberships the local cache has never seen, AND
-      // `[].every(...) === true` would let a stale empty cache satisfy
-      // an empty accessibleIds list, masking server-side memberships.
-      // Refetch on every call when signed in; the API call is itself
-      // in-flight coalesced via `myGroupsInFlight`.
-      const cachedQuestionIds = new Set<string>();
-      for (const mp of cached) for (const sp of mp.questions) cachedQuestionIds.add(sp.id);
-      canUseCachedPolls = accessibleIds.every(id => cachedQuestionIds.has(id));
-    }
-
     if (myGroupsInFlight) return myGroupsInFlight;
 
     myGroupsInFlight = (async () => {
       try {
-        // Fire both in parallel. Empty-groups failures degrade gracefully
-        // (returns []), so the populated list is never blocked by an
-        // empty-groups blip.
         const [polls, emptyGroups] = await Promise.all([
-          canUseCachedPolls
-            ? Promise.resolve(cached!)
-            : (accessibleIds.length === 0 && !isSignedIn
-                ? Promise.resolve<Poll[]>([])
-                : apiGetMyGroups(accessibleIds)),
+          apiGetMyGroups(),
           apiGetMyEmptyGroups(),
         ]);
-        if (!canUseCachedPolls) {
-          const forgotten = new Set(getForgottenQuestionIds());
-          const knownIds = new Set(accessibleIds);
-          let discovered = 0;
-          for (const mp of polls) {
-            for (const sp of mp.questions) {
-              if (!knownIds.has(sp.id) && !forgotten.has(sp.id)) {
-                addAccessibleQuestionId(sp.id);
-                discovered++;
-              }
-            }
-          }
-          if (discovered > 0) {
-            // The accessible list grew — invalidate so subsequent freshness
-            // checks see the expanded set.
-            invalidateAccessibleQuestions();
-          }
-          cacheAccessiblePolls(polls);
-        }
         emptyGroupsCache = emptyGroups;
         return { polls, emptyGroups };
       } finally {
@@ -186,41 +63,4 @@ export async function getMyGroups(): Promise<MyGroupsResult> {
  *  `getMyGroups()` for the freshest data. */
 export function getCachedEmptyGroups(): GroupSummary[] {
   return emptyGroupsCache ?? [];
-}
-
-// Get a specific question by ID and grant access if found
-export async function getQuestionWithAccess(questionId: string): Promise<Question | null> {
-  try {
-    const data = await apiGetQuestionById(questionId);
-
-    // Grant access to this question by adding to browser storage
-    addAccessibleQuestionId(data.id);
-    cacheQuestion(data);
-
-    return data;
-  } catch (error) {
-    console.log('Question not found:', questionId);
-    return null;
-  }
-}
-
-// Record that this browser created a question (grants full access)
-export async function recordQuestionCreation(questionId: string): Promise<void> {
-  try {
-    // Add to accessible questions list
-    addAccessibleQuestionId(questionId);
-    console.log('Recorded question creation for browser:', questionId.substring(0, 8) + '...');
-  } catch (error) {
-    console.error('Error recording question creation:', error);
-  }
-}
-
-// Check if a question exists (without granting access)
-export async function questionExists(questionId: string): Promise<boolean> {
-  try {
-    await apiGetQuestionById(questionId);
-    return true;
-  } catch (error) {
-    return false;
-  }
 }

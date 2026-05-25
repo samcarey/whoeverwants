@@ -309,37 +309,39 @@ class TestSummaryAndImagePrivacy:
 
 
 # ---------------------------------------------------------------------------
-# /api/groups/mine — legacy bridge filtered to public-only
+# /api/groups/mine — `accessible_question_ids` bridge removed entirely
 # ---------------------------------------------------------------------------
 
 
-class TestMineLegacyBridge:
-    def test_bridge_does_not_grant_private_group_access(
+class TestMineNoBridge:
+    """The legacy `accessible_question_ids` "forget bridge" has been
+    removed — `group_members` is the single source of truth. A
+    non-member who passes a question_id in the (ignored) list sees
+    nothing, regardless of the group's privacy."""
+
+    def test_accessible_ids_do_not_grant_private_group_access(
         self, client, creator_browser, stranger_browser
     ):
-        """A stranger passing the legacy `accessible_question_ids` list
-        gets the public groups it represents, but NOT any private group
-        it represents. Pre-Phase-E behavior: the bridge granted access
-        to every group regardless of privacy — that's the bug Phase E
-        fixes."""
+        """A stranger passing a private group's question_id in the
+        ignored `accessible_question_ids` list still sees nothing —
+        they're not a `group_members` row."""
         token, _ = _sign_in(client, creator_browser)
         poll = _create_poll(client, creator_browser, token)
-        # Question id from the freshly-created private poll.
         question_id = poll["questions"][0]["id"]
-        # Stranger hits /mine with that question_id in the bridge list.
         resp = client.post(
             "/api/groups/mine",
             json={"accessible_question_ids": [question_id]},
             headers=_bid_headers(stranger_browser),
         )
         assert resp.status_code == 200
-        # Empty: the private group must NOT surface via the bridge.
         assert resp.json() == []
 
-    def test_bridge_grants_public_group_access(
+    def test_accessible_ids_do_not_grant_public_group_access(
         self, client, creator_browser, stranger_browser
     ):
-        """Sanity check: same scenario but public group, bridge works."""
+        """Bridge removal applies to public groups too: a non-member
+        passing a public group's question_id sees nothing. Pre-removal
+        the bridge would have surfaced the whole public group."""
         poll = _create_poll(client, creator_browser)
         question_id = poll["questions"][0]["id"]
         resp = client.post(
@@ -348,8 +350,7 @@ class TestMineLegacyBridge:
             headers=_bid_headers(stranger_browser),
         )
         assert resp.status_code == 200
-        ids = {p["id"] for p in resp.json()}
-        assert poll["id"] in ids
+        assert resp.json() == []
 
 
 # ---------------------------------------------------------------------------

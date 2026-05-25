@@ -25,7 +25,6 @@ import {
   type Group,
 } from "./groupUtils";
 import { apiGetGroupByRouteId, apiGetGroupSummary, ApiError } from "./api";
-import { addAccessibleQuestionId } from "./browserQuestionAccess";
 import { loadVotedQuestions } from "./votedQuestionsStorage";
 import { usePageReady } from "./usePageReady";
 
@@ -83,9 +82,6 @@ export function useGroup(groupId: string): UseGroupResult {
 
         const root = findChainRoot(polls);
         if (!root) { setError(true); return; }
-        for (const mp of polls) {
-          for (const sp of mp.questions) addAccessibleQuestionId(sp.id);
-        }
 
         const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
         const found = buildGroupFromPollDown(root.id, polls, votedQuestionIds, abstainedQuestionIds);

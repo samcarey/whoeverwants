@@ -1,13 +1,12 @@
 import { invalidateAccessibleQuestions, invalidateQuestion } from '@/lib/questionCache';
-import { addForgottenQuestionId, removeAccessibleQuestionId } from '@/lib/browserQuestionAccess';
 import { apiLeaveGroup } from '@/lib/api';
 import type { Group } from '@/lib/groupUtils';
 
-// Forget every question in a group + drop server-side membership.
-// Mirrors the per-question forget flow in the group page's pendingAction
-// handler: after `forgetQuestion` for each question, fire `apiLeaveGroup`
-// fire-and-forget so the group doesn't reappear via Phase C.3 membership
-// visibility on the next /api/groups/mine call.
+// "Forget a group" is now "leave the group": drop the server-side
+// `group_members` row (the single source of truth for visibility) and
+// clear local voted-state + creator secrets + in-memory caches for the
+// group's questions. The group disappears from home on the next
+// /api/groups/mine call because the membership row is gone.
 export function forgetGroup(group: Group): void {
   for (const question of group.questions) {
     forgetQuestion(question.id);
@@ -16,15 +15,16 @@ export function forgetGroup(group: Group): void {
   if (routeId) void apiLeaveGroup(routeId);
 }
 
-// Function to completely forget a question from browser storage
+// Clear a single question's local browser state: voted/abstained flags,
+// stored vote id, creator secret, and in-memory caches. Does NOT touch
+// any access list — group membership is server-authoritative now, so
+// removing the localStorage row would have no effect on visibility.
 export function forgetQuestion(questionId: string): void {
   if (typeof window === 'undefined' || !questionId) {
     return;
   }
 
   try {
-    removeAccessibleQuestionId(questionId);
-
     const votedQuestions = JSON.parse(localStorage.getItem('votedQuestions') || '{}');
     delete votedQuestions[questionId];
     localStorage.setItem('votedQuestions', JSON.stringify(votedQuestions));
@@ -39,16 +39,11 @@ export function forgetQuestion(questionId: string): void {
 
     // Drop in-memory caches so subsequent navigations (e.g. back to the
     // containing group) don't rebuild views from stale data that still
-    // includes this question. Forget is shape-changing — it removes the
-    // question from the accessible list — so wipe the accessible-polls
-    // cache too (the field-level invalidateQuestion alone leaves the
-    // accessible list rebuilding with the dead entry until TTL).
+    // includes this question. The accessible-polls cache is shape-derived
+    // from the server's membership response, so invalidate it too — the
+    // next fetch reflects the (now-left) group.
     invalidateQuestion(questionId);
     invalidateAccessibleQuestions();
-
-    // Mark as explicitly forgotten so relation discovery won't re-add it
-    // when the server returns this question as a follow-up of its parent.
-    addForgottenQuestionId(questionId);
 
     console.log(`Question ${questionId.substring(0, 8)}... forgotten from browser storage`);
   } catch (error) {
@@ -56,17 +51,15 @@ export function forgetQuestion(questionId: string): void {
   }
 }
 
-// Check if question has any data in browser storage
+// Check if question has any local browser state (voted flag, vote id, or
+// creator secret). Used to decide whether a "forget" affordance is worth
+// showing. No longer consults any access list.
 export function hasQuestionData(questionId: string): boolean {
   if (typeof window === 'undefined' || !questionId) {
     return false;
   }
 
   try {
-    // Check accessible questions
-    const accessibleQuestionIds = JSON.parse(localStorage.getItem('accessible_question_ids') || '[]');
-    if (accessibleQuestionIds.includes(questionId)) return true;
-
     // Check voted questions
     const votedQuestions = JSON.parse(localStorage.getItem('votedQuestions') || '{}');
     if (votedQuestions[questionId]) return true;

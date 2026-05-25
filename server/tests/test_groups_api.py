@@ -24,57 +24,92 @@ UUID_RE = re.compile(
 
 
 class TestMyGroups:
+    """`/api/groups/mine` is membership-only — `group_members` is the
+    single source of truth (the legacy `accessible_question_ids` forget
+    bridge has been removed). Tests pin the same `browser_id` through
+    `create_poll` (which auto-joins the creator as a member) and the
+    `/mine` POST so the creator sees their own groups. The
+    `accessible_question_ids` field is still sent (older bundles do) but
+    the server ignores it."""
+
     def test_empty_input_returns_empty(self, client):
         resp = client.post("/api/groups/mine", json={"accessible_question_ids": []})
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_single_question_returns_its_poll(self, client, creator_secret):
-        poll = create_poll(client, creator_secret)
-        question_id = poll["questions"][0]["id"]
+    def test_single_question_returns_its_poll(
+        self, client, creator_secret, browser_id,
+    ):
+        poll = create_poll(client, creator_secret, browser_id=browser_id)
 
         resp = client.post(
             "/api/groups/mine",
-            json={"accessible_question_ids": [question_id]},
+            json={"accessible_question_ids": []},
+            headers=bid_headers(browser_id),
         )
         assert resp.status_code == 200
         polls = resp.json()
         assert len(polls) == 1
         assert polls[0]["id"] == poll["id"]
 
-    def test_followup_chain_returns_every_poll_in_group(self, client, creator_secret):
-        """Asking for ONE question in a multi-poll group should return EVERY
-        poll in that group — that's the discovery + accessibility merge."""
-        root = create_poll(client, creator_secret)
-        child1 = create_followup(client, creator_secret, root["questions"][0]["id"])
-        child2 = create_followup(client, creator_secret, child1["questions"][0]["id"])
+    def test_followup_chain_returns_every_poll_in_group(
+        self, client, creator_secret, browser_id,
+    ):
+        """Membership in a multi-poll group returns EVERY visible poll in
+        that group — the creator auto-joins on each create, so all three
+        polls in the same group are visible from the one membership row."""
+        root = create_poll(client, creator_secret, browser_id=browser_id)
+        child1 = create_followup(
+            client, creator_secret, root["questions"][0]["id"],
+            browser_id=browser_id,
+        )
+        child2 = create_followup(
+            client, creator_secret, child1["questions"][0]["id"],
+            browser_id=browser_id,
+        )
 
-        # Pass only the deepest question; discovery walks via group_id back to
-        # the root and returns every poll.
         resp = client.post(
             "/api/groups/mine",
-            json={"accessible_question_ids": [child2["questions"][0]["id"]]},
+            json={"accessible_question_ids": []},
+            headers=bid_headers(browser_id),
         )
         assert resp.status_code == 200
         polls = resp.json()
         ids = {p["id"] for p in polls}
         assert ids == {root["id"], child1["id"], child2["id"]}
 
-    def test_two_unrelated_groups_both_returned(self, client, creator_secret):
-        a = create_poll(client, creator_secret)
-        b = create_poll(client, creator_secret)
+    def test_two_unrelated_groups_both_returned(
+        self, client, creator_secret, browser_id,
+    ):
+        a = create_poll(client, creator_secret, browser_id=browser_id)
+        b = create_poll(client, creator_secret, browser_id=browser_id)
         resp = client.post(
             "/api/groups/mine",
-            json={
-                "accessible_question_ids": [
-                    a["questions"][0]["id"],
-                    b["questions"][0]["id"],
-                ],
-            },
+            json={"accessible_question_ids": []},
+            headers=bid_headers(browser_id),
         )
         assert resp.status_code == 200
         ids = {p["id"] for p in resp.json()}
         assert ids == {a["id"], b["id"]}
+
+    def test_no_membership_returns_empty(self, client, creator_secret):
+        """A browser that created nothing (and is a member of nothing) sees
+        an empty list, even if it passes an arbitrary
+        `accessible_question_ids` — the field is ignored now that the
+        bridge is gone."""
+        # Create a poll under a DIFFERENT (auto-minted) browser_id, then
+        # query /mine under a fresh browser with the question id in the
+        # (ignored) accessible list.
+        other = create_poll(client, creator_secret)
+        resp = client.post(
+            "/api/groups/mine",
+            json={
+                "accessible_question_ids": [other["questions"][0]["id"]],
+            },
+            headers=bid_headers(str(uuid.uuid4())),
+        )
+        assert resp.status_code == 200
+        assert resp.json() == []
 
     def test_unknown_question_id_returns_empty(self, client):
         resp = client.post(
@@ -84,12 +119,14 @@ class TestMyGroups:
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_inline_results_default_on(self, client, creator_secret):
-        poll = create_poll(client, creator_secret)
-        question_id = poll["questions"][0]["id"]
+    def test_inline_results_default_on(
+        self, client, creator_secret, browser_id,
+    ):
+        poll = create_poll(client, creator_secret, browser_id=browser_id)
         resp = client.post(
             "/api/groups/mine",
-            json={"accessible_question_ids": [question_id]},
+            json={"accessible_question_ids": []},
+            headers=bid_headers(browser_id),
         )
         polls = resp.json()
         # Open question with no votes still has the `results` field on the
@@ -97,15 +134,17 @@ class TestMyGroups:
         # question has no min_responses gate).
         assert polls[0]["questions"][0].get("results") is not None
 
-    def test_inline_results_off_when_requested(self, client, creator_secret):
-        poll = create_poll(client, creator_secret)
-        question_id = poll["questions"][0]["id"]
+    def test_inline_results_off_when_requested(
+        self, client, creator_secret, browser_id,
+    ):
+        poll = create_poll(client, creator_secret, browser_id=browser_id)
         resp = client.post(
             "/api/groups/mine",
             json={
-                "accessible_question_ids": [question_id],
+                "accessible_question_ids": [],
                 "include_results": False,
             },
+            headers=bid_headers(browser_id),
         )
         polls = resp.json()
         assert polls[0]["questions"][0].get("results") is None
@@ -353,11 +392,14 @@ class TestGroupShortIdKeyspace:
         ids = {p["id"] for p in resp.json()}
         assert root["id"] in ids
 
-    def test_my_groups_carries_group_short_id(self, client, creator_secret):
-        poll = create_poll(client, creator_secret)
+    def test_my_groups_carries_group_short_id(
+        self, client, creator_secret, browser_id,
+    ):
+        poll = create_poll(client, creator_secret, browser_id=browser_id)
         resp = client.post(
             "/api/groups/mine",
-            json={"accessible_question_ids": [poll["questions"][0]["id"]]},
+            json={"accessible_question_ids": []},
+            headers=bid_headers(browser_id),
         )
         assert resp.status_code == 200
         polls = resp.json()

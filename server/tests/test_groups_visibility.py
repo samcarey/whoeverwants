@@ -1,12 +1,17 @@
 """Visibility enforcement on the groups read endpoints.
 
+`group_members` is the SINGLE source of truth for visibility — the
+legacy `accessible_question_ids` "forget bridge" has been removed. The
+`accessible_question_ids` field is still accepted on the request body
+(older client bundles send it) but the server ignores it entirely.
+
 Covers:
-  * /api/groups/mine returns only polls visible per the visibility rule
+  * /api/groups/mine returns only polls in groups the caller (or any
+    browser linked to their user_id) is a member of — regardless of any
+    accessible_question_ids value
   * /api/groups/by-route-id/{id} auto-joins the visitor (any visit grants
     group membership inline) and returns the visible polls
-  * Closed-poll filter: closed-before-joined_at hidden for members, but
-    bridged groups bypass the filter
-  * Forget bridge: member-group without legacy-list signal disappears
+  * Closed-poll filter: closed-before-joined_at hidden for members
   * 404 only when route resolution fails; an empty visible-polls list
     still returns 200 with [] so the FE can render group chrome
 
@@ -91,59 +96,56 @@ class TestMyGroupsVisibility:
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_legacy_bridge_grants_group_visibility(
+    def test_non_member_with_accessible_ids_sees_nothing(
         self, client, creator_secret, creator_browser, stranger_browser,
     ):
-        """A pre-B.3 user shows up with their localStorage list and no
-        group_members rows. The bridge treats those question_ids as
-        group-level access, preserving Phase B.3 behavior for legacy
-        callers."""
+        """Bridge removed: a caller who is NOT a `group_members` row sees
+        nothing, even if they pass a valid question_id in the (ignored)
+        `accessible_question_ids` list. Membership is the only signal."""
         root = create_poll(client, creator_secret, browser_id=creator_browser)
         child = create_poll(
             client, creator_secret, browser_id=creator_browser,
             group_id=root["group_id"],
         )
-        # Stranger passes ONE question id; bridge fans out to its whole
-        # group (every poll, no closed_at filter).
+        # Stranger passes a real question id, but has no membership row.
         resp = client.post(
             "/api/groups/mine",
             json={"accessible_question_ids": [child["questions"][0]["id"]]},
             headers={"X-Browser-Id": stranger_browser},
         )
         assert resp.status_code == 200
-        ids = {p["id"] for p in resp.json()}
-        assert ids == {root["id"], child["id"]}
+        assert resp.json() == []
 
-    def test_forget_bridge_drops_member_group_without_signal(
+    def test_member_sees_all_groups_regardless_of_accessible_ids(
         self, client, creator_secret, creator_browser,
     ):
-        """When the FE passes accessible_question_ids and a member-group
-        has no question_id in the list, the home view drops it. Without
-        this carve-out, forgetting every question in a group wouldn't
-        narrow the home list because the user is still a group_members
-        row in that group (until an explicit leave action lands)."""
-        # Two unrelated groups, both with the same creator browser.
-        kept = create_poll(client, creator_secret, browser_id=creator_browser)
-        forgotten = create_poll(client, creator_secret, browser_id=creator_browser)
+        """A member sees ALL their member groups' visible polls regardless
+        of the `accessible_question_ids` value. The forget bridge that used
+        to narrow the home list to "groups still in the localStorage list"
+        is gone — passing a list that omits a member-group's questions no
+        longer drops that group. (Forget is now "leave the group".)"""
+        a = create_poll(client, creator_secret, browser_id=creator_browser)
+        b = create_poll(client, creator_secret, browser_id=creator_browser)
 
-        # Pretend the user only has the `kept` question in localStorage.
+        # Caller passes only `a`'s question id (b omitted). Pre-fix the
+        # forget bridge would have dropped `b`; now both show.
         resp = client.post(
             "/api/groups/mine",
             json={
-                "accessible_question_ids": [kept["questions"][0]["id"]],
+                "accessible_question_ids": [a["questions"][0]["id"]],
             },
             headers={"X-Browser-Id": creator_browser},
         )
         assert resp.status_code == 200
         ids = {p["id"] for p in resp.json()}
-        assert ids == {kept["id"]}
-        assert forgotten["id"] not in ids
+        assert ids == {a["id"], b["id"]}
 
-    def test_no_legacy_list_returns_full_member_groups(
+    def test_empty_accessible_ids_returns_full_member_groups(
         self, client, creator_secret, creator_browser,
     ):
         """Membership-only callers (empty accessible_question_ids list)
-        skip the forget-bridge narrowing — the bridge is opt-in."""
+        see every group they're a member of — unchanged by the bridge
+        removal, but worth pinning."""
         a = create_poll(client, creator_secret, browser_id=creator_browser)
         b = create_poll(client, creator_secret, browser_id=creator_browser)
         resp = client.post(
@@ -185,27 +187,6 @@ class TestMyGroupsVisibility:
         # closed-pre-join poll is hidden.
         assert poll["id"] not in ids
         assert followup["id"] in ids
-
-    def test_closed_before_join_visible_via_legacy_bridge(
-        self, client, creator_secret, creator_browser, stranger_browser,
-    ):
-        """Legacy bridge bypasses closed_at — pre-B.3 users with a
-        localStorage list see the full group regardless of close timing."""
-        poll = create_poll(client, creator_secret, browser_id=creator_browser)
-        _close_poll(poll["id"], creator_secret, client)
-        _set_poll_updated_at(poll["id"], "2000-01-01T00:00:00Z")
-
-        # Stranger has only a legacy localStorage list; no membership.
-        resp = client.post(
-            "/api/groups/mine",
-            json={
-                "accessible_question_ids": [poll["questions"][0]["id"]],
-            },
-            headers={"X-Browser-Id": stranger_browser},
-        )
-        assert resp.status_code == 200
-        ids = {p["id"] for p in resp.json()}
-        assert poll["id"] in ids
 
 # ---------------------------------------------------------------------------
 # /api/groups/by-route-id/{route_id}
@@ -494,18 +475,16 @@ class TestMultiBrowserUserVisibility:
         ids = {p["id"] for p in resp.json()}
         assert poll["id"] not in ids
 
-    def test_forget_bridge_does_not_drop_signed_in_user_membership(
+    def test_accessible_ids_never_drop_signed_in_user_membership(
         self, client, creator_secret, creator_browser, stranger_browser
     ):
-        """Regression: signed-in users on Browser B were losing visibility
-        of groups created on Browser A whenever Browser B's localStorage
-        held any accessible_question_ids that didn't reference the new
-        group's questions. The forget bridge was intersecting member
-        groups with the bridge list and dropping the membership signal.
-
-        Fix: the forget bridge is per-device-anonymous semantics — it
-        doesn't apply when the caller is signed in. Their membership is
-        authoritative; they leave groups via DELETE /membership."""
+        """Regression (now invariant for all callers): the
+        `accessible_question_ids` body field must not affect which
+        member-groups surface on /mine. A signed-in user on Browser B
+        sees a group created on Browser A even when B sends a bogus
+        accessible_question_ids list. The forget bridge that used to
+        intersect member groups with the list has been removed
+        entirely."""
         user_id = _new_user_id()
         _link_browser_to_user(creator_browser, user_id)
         _link_browser_to_user(stranger_browser, user_id)
@@ -527,19 +506,21 @@ class TestMultiBrowserUserVisibility:
         assert resp.status_code == 200
         ids = {p["id"] for p in resp.json()}
         assert poll["id"] in ids, (
-            "Signed-in user lost their membership signal to the forget bridge"
+            "Signed-in user lost their membership signal to a stale "
+            "accessible_question_ids list"
         )
 
-    def test_forget_bridge_still_applies_for_anonymous(
+    def test_accessible_ids_ignored_for_anonymous_too(
         self, client, creator_secret, creator_browser
     ):
-        """Sanity check: anonymous callers (no Authorization header)
-        still get the forget-bridge intersection — that's the
-        load-bearing behavior for "forget this question and have its
-        group disappear from home" on devices that never signed in."""
+        """The bridge removal applies to anonymous callers as well: an
+        anonymous member sees their group regardless of the
+        `accessible_question_ids` value. "Forget" is now "leave the
+        group" (DELETE /membership), NOT "drop the question from the
+        localStorage list"."""
         poll = create_poll(client, creator_secret, browser_id=creator_browser)
-        # Same browser, no auth, sending a bogus accessible_question_ids
-        # that doesn't include the poll's question.
+        # Same browser (a member), no auth, sending a bogus
+        # accessible_question_ids that doesn't include the poll's question.
         bogus_qid = str(uuid.uuid4())
         resp = client.post(
             "/api/groups/mine",
@@ -548,7 +529,7 @@ class TestMultiBrowserUserVisibility:
         )
         assert resp.status_code == 200
         ids = {p["id"] for p in resp.json()}
-        assert poll["id"] not in ids, (
-            "Anonymous forget bridge should drop member-groups with no "
-            "bridge signal"
+        assert poll["id"] in ids, (
+            "Member should still see their group — the accessible_question_ids "
+            "forget bridge has been removed"
         )
