@@ -164,6 +164,12 @@ export interface Poll {
   group_short_id?: string | null;
   creator_secret?: string | null;
   creator_name?: string | null;
+  // Migration 122: the signed-in creator's user_id (null for anonymous-created
+  // polls + pre-122 cached polls). When it matches the current session's
+  // user_id, the viewer is the poll's creator on ANY device — the
+  // close/reopen/cutoff controls show and the server authorizes those
+  // mutations against the session, not just the per-browser creator_secret.
+  creator_user_id?: string | null;
   response_deadline?: string | null;
   prephase_deadline?: string | null;
   prephase_deadline_minutes?: number | null;

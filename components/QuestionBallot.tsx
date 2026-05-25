@@ -17,7 +17,7 @@ import { apiGetQuestionResults, apiGetVotes, apiSubmitPollVotes, apiCutoffPollSu
 import { invalidateQuestion, getCachedQuestionById, getCachedQuestionResults, getCachedVotes } from "@/lib/questionCache";
 import RankableOptions from "@/components/RankableOptions";
 
-import { isCreatedByThisBrowser, getCreatorSecret, recordQuestionCreation, storeSeenQuestionOptions, getSeenQuestionOptions } from "@/lib/browserQuestionAccess";
+import { isPollCreatedByViewer, getCreatorSecret, recordQuestionCreation, storeSeenQuestionOptions, getSeenQuestionOptions } from "@/lib/browserQuestionAccess";
 import { hasQuestionData } from "@/lib/forgetQuestion";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { isValidUserName } from "@/lib/nameValidation";
@@ -498,7 +498,10 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     // of a poll all share the wrapper's creator_secret, which is
     // recorded per question id on the create-question page when the poll
     // is created. No fallback inheritance is needed.
-    setIsCreator(isCreatedByThisBrowser(question.id));
+    // Creator via per-browser secret OR signed-in account (migration 122):
+    // a signed-in creator on another device has no local secret but their
+    // session matches the poll's creator_user_id.
+    setIsCreator(isPollCreatedByViewer(poll, question.id));
 
     // Check if browser has any data for this question
     setHasQuestionDataState(hasQuestionData(question.id));
@@ -775,19 +778,15 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
 
   const handleCutoffSuggestionsClick = () => {
     if (isCuttingOffSuggestions || !isCreator) return;
-    const creatorSecret = getCreatorSecret(question.id);
-    if (!creatorSecret) {
-      alert('You do not have permission to cutoff suggestions.');
-      return;
-    }
     setShowCutoffConfirmModal(true);
   };
 
   const handleCutoffSuggestions = async () => {
     setShowCutoffConfirmModal(false);
     if (isCuttingOffSuggestions || !isCreator) return;
-    const creatorSecret = getCreatorSecret(question.id);
-    if (!creatorSecret) return;
+    // Empty when the viewer is the signed-in creator on another device — the
+    // bearer token authorizes the cutoff against the poll's creator_user_id.
+    const creatorSecret = getCreatorSecret(question.id) ?? '';
     const pollId = question.poll_id;
     if (!pollId) {
       console.error('Cannot cutoff suggestions without poll_id');

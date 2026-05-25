@@ -266,6 +266,7 @@ export function toPoll(data: any): Poll {
     group_short_id: data.group_short_id ?? null,
     creator_secret: data.creator_secret ?? null,
     creator_name: data.creator_name ?? null,
+    creator_user_id: data.creator_user_id ?? null,
     response_deadline: data.response_deadline ?? null,
     prephase_deadline: data.prephase_deadline ?? null,
     prephase_deadline_minutes: data.prephase_deadline_minutes ?? null,
