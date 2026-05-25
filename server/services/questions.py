@@ -407,7 +407,24 @@ def _submit_vote_to_question(
         },
     ).fetchone()
 
-    if req.options_metadata and req.suggestions:
+    _merge_suggestion_metadata(conn, question_id, req.options_metadata, req.suggestions)
+
+    _check_auto_close(conn, question_id)
+    return row
+
+
+def _merge_suggestion_metadata(conn, question_id: str, options_metadata, suggestions) -> None:
+    """Merge a vote's per-option metadata into questions.options_metadata so
+    OTHER voters' ballots render the rich OptionLabel (favicon / underline /
+    place modal) for search-picked suggestions, not plain text.
+
+    Gated on both being present: metadata has no option to attach to without
+    suggestions. Shared by the insert AND edit paths so adding a search-picked
+    suggestion via either propagates cross-browser — an edit that adds a new
+    suggestion was previously dropping its metadata, leaving the option plain
+    text for everyone but the submitter (and once finalized into
+    questions.options, plain text forever)."""
+    if options_metadata and suggestions:
         conn.execute(
             """
             UPDATE questions
@@ -416,12 +433,9 @@ def _submit_vote_to_question(
             """,
             {
                 "question_id": question_id,
-                "new_metadata": json.dumps(req.options_metadata),
+                "new_metadata": json.dumps(options_metadata),
             },
         )
-
-    _check_auto_close(conn, question_id)
-    return row
 
 
 def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRequest, now: datetime) -> dict:
@@ -512,6 +526,9 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
             "question_id": question_id,
         },
     ).fetchone()
+
+    _merge_suggestion_metadata(conn, question_id, req.options_metadata, req.suggestions)
+
     _check_auto_close(conn, question_id)
     return row
 

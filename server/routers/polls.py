@@ -1042,6 +1042,7 @@ def _vote_item_to_edit_req(item: PollVoteItem, voter_name: str | None) -> EditVo
         voter_name=voter_name,
         voter_day_time_windows=item.voter_day_time_windows,
         voter_duration=item.voter_duration,
+        options_metadata=item.options_metadata,
         liked_slots=item.liked_slots,
         disliked_slots=item.disliked_slots,
     )

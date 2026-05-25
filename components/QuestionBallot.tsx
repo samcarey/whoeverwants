@@ -129,10 +129,35 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const [searchRadius, setSearchRadius] = useState(25);
   const [optionsMetadataLocal, setOptionsMetadataLocal] = useState<OptionsMetadata | null>(question.options_metadata ?? null);
 
-  // Sync local metadata when question prop changes (e.g., navigating between questions)
+  // Reset local metadata when navigating to a different question (full replace
+  // so one question's metadata can't leak into another's display).
   useEffect(() => {
     setOptionsMetadataLocal(question.options_metadata ?? null);
   }, [question.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Merge in server-side metadata as it arrives for the SAME question — a
+  // cache-first mount or the group page's 5s refresh updates
+  // `question.options_metadata` (e.g. another voter just added a search-picked
+  // suggestion) without changing `question.id`, so the reset effect above
+  // doesn't fire. Merge rather than replace so the submitter's own in-flight
+  // metadata (already folded in at submit time) isn't dropped before the
+  // server fetch catches up. Returns `prev` unchanged when nothing is new to
+  // avoid re-render churn on every refresh tick.
+  useEffect(() => {
+    const incoming = question.options_metadata;
+    if (!incoming || Object.keys(incoming).length === 0) return;
+    setOptionsMetadataLocal((prev) => {
+      const base = prev ?? {};
+      let changed = false;
+      for (const key of Object.keys(incoming)) {
+        if (JSON.stringify(base[key]) !== JSON.stringify(incoming[key])) {
+          changed = true;
+          break;
+        }
+      }
+      return changed ? { ...base, ...incoming } : prev;
+    });
+  }, [question.options_metadata]);
   const [existingSuggestions, setExistingSuggestions] = useState<string[]>([]);
   const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
