@@ -103,6 +103,8 @@ export {
   apiRequestRecoveryEmail,
   apiVerifyRecoveryEmail,
   apiDeleteAccount,
+  apiCreateNameAccount,
+  apiSetRecoveryReminderDismissed,
   getCurrentUser,
 } from "./auth";
 export type {

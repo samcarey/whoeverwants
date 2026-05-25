@@ -578,6 +578,80 @@ def attach_email_identity(conn, *, user_id: str, email: str) -> str:
     return "attached"
 
 
+def attach_oauth_identity(
+    conn,
+    *,
+    user_id: str,
+    provider: str,
+    provider_user_id: str,
+    email: str | None,
+) -> str:
+    """Bind an OAuth-provider identity (Google / Apple) to `user_id`.
+
+    The signed-in counterpart to `resolve_or_merge_user`: when a user is
+    ALREADY signed in (e.g. a recovery-less name-only account adding a
+    recovery method), tapping "Sign in with Google" should LINK that
+    Google identity to the current account, not mint / switch to a
+    separate one. Returns a status discriminator mirroring
+    `attach_email_identity`:
+
+      * 'attached'       — new identity row inserted.
+      * 'already_linked' — (provider, provider_user_id) already points at
+                           THIS user (idempotent re-link).
+      * 'conflict'       — (provider, provider_user_id) belongs to a
+                           DIFFERENT user, OR the verified email is already
+                           used by a different user via any provider.
+                           Refused: linking would let this account claim
+                           an identity another account proved control of.
+    """
+    existing = conn.execute(
+        """
+        SELECT user_id FROM user_identities
+        WHERE provider = %(p)s AND provider_user_id = %(pid)s
+        """,
+        {"p": provider, "pid": provider_user_id},
+    ).fetchone()
+    if existing:
+        return "already_linked" if str(existing["user_id"]) == user_id else "conflict"
+
+    normalized = normalize_email(email) if email else None
+    if normalized:
+        others = conn.execute(
+            """
+            SELECT 1 FROM user_identities
+             WHERE email = %(e)s AND user_id <> %(u)s::uuid
+             LIMIT 1
+            """,
+            {"e": normalized, "u": user_id},
+        ).fetchone()
+        if others:
+            return "conflict"
+
+    conn.execute(
+        """
+        INSERT INTO user_identities (provider, provider_user_id, user_id, email)
+        VALUES (%(p)s, %(pid)s, %(u)s::uuid, %(e)s)
+        ON CONFLICT (provider, provider_user_id) DO NOTHING
+        """,
+        {"p": provider, "pid": provider_user_id, "u": user_id, "e": normalized},
+    )
+    return "attached"
+
+
+def set_recovery_reminder_dismissed(conn, *, user_id: str, dismissed: bool) -> None:
+    """Set the per-account 'stop reminding me to add a recovery method'
+    flag (migration 123). The home-page recovery banner reads it via
+    `load_user_profile`."""
+    conn.execute(
+        """
+        UPDATE users
+           SET recovery_reminder_dismissed = %(d)s, updated_at = NOW()
+         WHERE id = %(u)s::uuid
+        """,
+        {"d": dismissed, "u": user_id},
+    )
+
+
 def delete_user_account(conn, user_id: str) -> bool:
     """Delete a user and everything that cascades from it.
 
@@ -624,12 +698,15 @@ class UserProfile:
     badge_todo_mode: bool = False
     badge_on_voting_open: bool = True
     badge_on_results: bool = True
+    # Migration 123: per-account "stop nagging me to add a recovery method"
+    # flag for the home-page banner shown to recovery-less accounts.
+    recovery_reminder_dismissed: bool = False
 
 
 def load_user_profile(conn, user_id: str) -> UserProfile | None:
     user_row = conn.execute(
         "SELECT id, display_name, created_at, badge_todo_mode, "
-        "badge_on_voting_open, badge_on_results "
+        "badge_on_voting_open, badge_on_results, recovery_reminder_dismissed "
         "FROM users WHERE id = %(u)s::uuid",
         {"u": user_id},
     ).fetchone()
@@ -654,6 +731,7 @@ def load_user_profile(conn, user_id: str) -> UserProfile | None:
         badge_todo_mode=bool(user_row["badge_todo_mode"]),
         badge_on_voting_open=bool(user_row["badge_on_voting_open"]),
         badge_on_results=bool(user_row["badge_on_results"]),
+        recovery_reminder_dismissed=bool(user_row["recovery_reminder_dismissed"]),
     )
 
 
@@ -744,4 +822,38 @@ def complete_sign_in(
     )
     profile = load_user_profile(conn, resolved.user_id)
     assert profile is not None, "profile must exist immediately after issue"
+    return CompletedSignIn(session=session, profile=profile)
+
+
+def create_name_only_account(
+    conn,
+    *,
+    display_name: str,
+    browser_id: str | None,
+    user_agent: str | None,
+) -> CompletedSignIn:
+    """Create a recovery-less account from just a display name.
+
+    Mints a `users` row with the given name but NO `user_identities` row
+    (so `providers` is empty — there's no way to sign back in if the
+    device is lost), links the browser, and issues a session. The FE
+    nudges the user to add a recovery method afterwards via the
+    home-page banner (gated on `recovery_reminder_dismissed`).
+
+    Existing group memberships (keyed on browser_id) carry over for free:
+    `load_user_visibility` unions the browser's own `group_members` rows
+    with those of every browser linked to the new user_id, and this
+    browser is now linked.
+    """
+    new_row = conn.execute(
+        "INSERT INTO users (display_name) VALUES (%(n)s) RETURNING id",
+        {"n": display_name},
+    ).fetchone()
+    user_id = str(new_row["id"])
+    link_browser_to_user(conn, user_id=user_id, browser_id=browser_id)
+    session = issue_session(
+        conn, user_id=user_id, browser_id=browser_id, user_agent=user_agent
+    )
+    profile = load_user_profile(conn, user_id)
+    assert profile is not None, "profile must exist immediately after insert"
     return CompletedSignIn(session=session, profile=profile)

@@ -39,7 +39,7 @@ import {
 import { haptic } from "@/lib/haptics";
 import { getUserName } from "@/lib/userProfile";
 import { isValidUserName } from "@/lib/nameValidation";
-import NameRequiredModal from "@/components/NameRequiredModal";
+import AccountGateModal from "@/components/AccountGateModal";
 
 const IS_CAPACITOR_NATIVE =
   typeof window !== "undefined" && Capacitor.isNativePlatform();
@@ -130,9 +130,9 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
       </span>
       <span className="text-lg leading-none">Group</span>
     </button>
-    <NameRequiredModal
+    <AccountGateModal
       isOpen={nameModalOpen}
-      message="Please enter your name to create a new group."
+      message="to create a new group"
       onSubmit={() => {
         setNameModalOpen(false);
         startCreate();

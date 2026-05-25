@@ -73,7 +73,7 @@ import QuestionDetails from "@/components/QuestionDetails";
 import QuestionResultsDisplay from "@/components/QuestionResults";
 import VoterList from "@/components/VoterList";
 import ConfirmationModal from "@/components/ConfirmationModal";
-import NameRequiredModal from "@/components/NameRequiredModal";
+import AccountGateModal from "@/components/AccountGateModal";
 import { isValidUserName } from "@/lib/nameValidation";
 import PollShareButton from "@/components/PollShareButton";
 import SimpleCountdown from "@/components/SimpleCountdown";
@@ -543,7 +543,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   const creatorImageUrl = creatorIsMe ? myUserImageUrl : null;
 
   // When a submit action fires without a saved name, the retry closure is
-  // stashed here and replayed after NameRequiredModal save.
+  // stashed here and replayed after AccountGateModal completes.
   const [pendingNameRetry, setPendingNameRetry] = useState<(() => void) | null>(null);
 
   const gateOnName = (retry: () => void): boolean => {
@@ -985,9 +985,9 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
         onCancel={() => setPendingPollSubmit(null)}
       />
 
-      <NameRequiredModal
+      <AccountGateModal
         isOpen={!!pendingNameRetry}
-        message="Please enter your name to submit your vote."
+        message="to vote"
         onSubmit={() => {
           const retry = pendingNameRetry;
           setPendingNameRetry(null);

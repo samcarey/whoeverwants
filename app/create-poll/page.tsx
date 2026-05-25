@@ -13,7 +13,7 @@ import type { Poll, OptionsMetadata, Question } from "@/lib/types";
 import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
 import ConfirmationModal from "@/components/ConfirmationModal";
-import NameRequiredModal from "@/components/NameRequiredModal";
+import AccountGateModal from "@/components/AccountGateModal";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
@@ -293,7 +293,7 @@ export function CreateQuestionContent() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   // When the user taps a category bubble but hasn't saved a name, stash
-  // the chosen category and open the NameRequiredModal. On save, retry
+  // the chosen category and open the AccountGateModal. On save, retry
   // `openModalFor` so the form lands with the right category.
   const [pendingBubbleCategory, setPendingBubbleCategory] = useState<string | null>(null);
 
@@ -2188,9 +2188,9 @@ export function CreateQuestionContent() {
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
 
-      <NameRequiredModal
+      <AccountGateModal
         isOpen={!!pendingBubbleCategory}
-        message="Please enter your name to start a new poll."
+        message="to start a new poll"
         onSubmit={() => {
           const cat = pendingBubbleCategory;
           setPendingBubbleCategory(null);

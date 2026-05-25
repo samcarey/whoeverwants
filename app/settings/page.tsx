@@ -18,10 +18,8 @@ import {
   apiSignOut,
   apiListPasskeys,
   apiDeletePasskey,
-  apiRequestRecoveryEmail,
   apiDeleteAccount,
   getCurrentUser,
-  ApiError,
   type PasskeySummary,
 } from "@/lib/api";
 import {
@@ -32,6 +30,7 @@ import {
 } from "@/lib/passkeys";
 import { SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
 import SignInModal from "@/components/SignInModal";
+import AddSignInOptionsModal from "@/components/AddSignInOptionsModal";
 import { usePageReady } from "@/lib/usePageReady";
 import { detectAndSaveUserLocation, GeolocationDeniedError } from "@/lib/geolocation";
 import CompactNameField from "@/components/CompactNameField";
@@ -127,16 +126,12 @@ export default function SettingsPage() {
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [signOutInFlight, setSignOutInFlight] = useState(false);
 
-  // Phase I — recovery email + delete account. The recovery affordance
-  // is shown only when signed in AND the account has no 'email' provider
-  // (passkey-only / OAuth-only). `recoveryOpen` reveals the inline input;
-  // `recoverySent` swaps it for a "check your inbox" acknowledgement.
-  const [recoveryOpen, setRecoveryOpen] = useState(false);
-  const [recoveryEmail, setRecoveryEmail] = useState("");
-  const [recoveryInFlight, setRecoveryInFlight] = useState(false);
-  const [recoverySent, setRecoverySent] = useState(false);
-  const [recoveryError, setRecoveryError] = useState<string | null>(null);
-  const [recoveryEmailConfigured, setRecoveryEmailConfigured] = useState(true);
+  // "Add a sign-in method" — opens the shared AddSignInOptionsModal (the
+  // same surface the home-page recovery banner opens), which links
+  // email / Google / Apple / passkey to the current account. Shown when
+  // signed in AND the account has no 'email' provider (passkey-only /
+  // OAuth-only / name-only).
+  const [addSignInOpen, setAddSignInOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInFlight, setDeleteInFlight] = useState(false);
 
@@ -229,14 +224,11 @@ export default function SettingsPage() {
       });
   }, []);
 
-  // Reset the recovery-email form whenever the signed-in identity
-  // changes (sign-out, or sign-in as a different user) so a previous
-  // session's "check your inbox" state doesn't leak into the next.
+  // Close the add-sign-in modal whenever the signed-in identity changes
+  // (sign-out, or sign-in as a different user) so it doesn't linger over
+  // a now-different account.
   useEffect(() => {
-    setRecoveryOpen(false);
-    setRecoverySent(false);
-    setRecoveryEmail("");
-    setRecoveryError(null);
+    setAddSignInOpen(false);
   }, [currentUser?.user_id]);
 
   // Pull effective badge settings on mount AND whenever the signed-in
@@ -258,27 +250,6 @@ export default function SettingsPage() {
       await apiSignOut();
     } finally {
       setSignOutInFlight(false);
-    }
-  };
-
-  const handleSendRecoveryEmail = async () => {
-    if (recoveryInFlight) return;
-    const email = recoveryEmail.trim();
-    if (!email) return;
-    setRecoveryError(null);
-    setRecoveryInFlight(true);
-    try {
-      const res = await apiRequestRecoveryEmail(email);
-      setRecoveryEmailConfigured(res.email_configured);
-      setRecoverySent(true);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setRecoveryError(err.message || "Couldn't send the confirmation email.");
-      } else {
-        setRecoveryError("Couldn't reach the server. Try again in a moment.");
-      }
-    } finally {
-      setRecoveryInFlight(false);
     }
   };
 
@@ -903,78 +874,28 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Recovery email — Phase I. Only for signed-in accounts that lack
-          an email identity (passkey-only / OAuth-only). Adds an email
-          they can sign in with if they lose their device. */}
+      {/* Add a sign-in method — for signed-in accounts that lack an email
+          identity (name-only / passkey-only / OAuth-only). Opens the same
+          shared AddSignInOptionsModal the home-page recovery banner uses, so
+          adding email / Google / Apple / a passkey looks identical wherever
+          it's offered. */}
       {currentUser && !hasEmailIdentity && (
         <div className="mb-6">
-          <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-base font-normal">Recovery email</span>
-              {!recoveryOpen && !recoverySent && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRecoveryOpen(true);
-                    setRecoveryError(null);
-                  }}
-                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  Add a recovery email
-                </button>
-              )}
+          <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
+            <div className="flex items-center justify-between gap-3 h-12">
+              <span className="text-base font-normal">Sign-in &amp; recovery</span>
+              <button
+                type="button"
+                onClick={() => setAddSignInOpen(true)}
+                className="text-base font-normal text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Add a sign-in method
+              </button>
             </div>
-            {recoverySent ? (
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                {recoveryEmailConfigured
-                  ? "Check your inbox for a confirmation link. It expires in 15 minutes."
-                  : "Email isn't configured on this server — the confirmation link was written to the API logs."}
-              </p>
-            ) : recoveryOpen ? (
-              <div className="mt-3 flex flex-col gap-2">
-                <input
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  value={recoveryEmail}
-                  onChange={(e) => setRecoveryEmail(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSendRecoveryEmail();
-                  }}
-                  placeholder="you@example.com"
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 h-11 text-base"
-                />
-                <div className="flex items-center gap-3 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRecoveryOpen(false);
-                      setRecoveryEmail("");
-                      setRecoveryError(null);
-                    }}
-                    className="text-sm text-gray-500 dark:text-gray-400 hover:underline"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSendRecoveryEmail}
-                    disabled={recoveryInFlight || !recoveryEmail.trim()}
-                    className="rounded-full bg-blue-600 hover:bg-blue-700 text-white px-5 h-9 text-sm font-medium disabled:opacity-50"
-                  >
-                    {recoveryInFlight ? "Sending…" : "Send link"}
-                  </button>
-                </div>
-                {recoveryError && (
-                  <p className="text-xs text-red-600 dark:text-red-400">
-                    {recoveryError}
-                  </p>
-                )}
-              </div>
-            ) : null}
           </section>
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            Add an email so you can still sign in if you lose this device.
+            Connect email, Google, Apple, or a passkey so you can sign back in
+            if you lose this device.
           </p>
         </div>
       )}
@@ -1165,6 +1086,11 @@ export default function SettingsPage() {
       <SignInModal
         isOpen={signInModalOpen}
         onClose={() => setSignInModalOpen(false)}
+      />
+
+      <AddSignInOptionsModal
+        isOpen={addSignInOpen}
+        onClose={() => setAddSignInOpen(false)}
       />
     </div>
   );
