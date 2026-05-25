@@ -225,11 +225,11 @@ jobs:
           # ASC URL (`appstoreconnect.apple.com/apps/<APPLE_ID>/...`).
           if [[ "$CAP_ENV" == "prod" ]]; then
             BUNDLE_ID="com.whoeverwants.app"
-            DISPLAY_NAME="WhoeverWants"
+            DISPLAY_NAME="Decide"
             APPLE_ID="6762459339"
           else
             BUNDLE_ID="com.whoeverwants.app.latest"
-            DISPLAY_NAME="WhoeverWants Latest"
+            DISPLAY_NAME="Decide α"
             APPLE_ID="6769589158"
           fi
           echo "bundle_id=$BUNDLE_ID"    >> "$GITHUB_OUTPUT"
