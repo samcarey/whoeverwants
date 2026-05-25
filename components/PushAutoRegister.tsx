@@ -33,8 +33,9 @@ export function PushAutoRegister() {
     // Recompute the true app-icon badge whenever the app is opened or
     // refocused, or when the badge model / sign-in state changes — so the
     // badge reflects the user's unread/to-do choice and self-corrects after
-    // they act on another device. (Web / PWA; native iOS badge stays
-    // push-driven — no setAppBadge plugin yet.)
+    // they act on another device. Works on web / PWA (Badging API) AND native
+    // iOS (AppBadgePlugin) — the latter is what clears a stale icon badge for a
+    // signed-out / no-group user whose true count is 0.
     const resync = () => void refreshAppBadge();
     resync();
     const onVisible = () => {

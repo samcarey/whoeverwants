@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import UserNotifications
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -131,6 +132,46 @@ public class ClipboardUrlPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         } else {
             call.resolve(["supported": false])
+        }
+    }
+}
+
+// Custom Capacitor plugin: set the iOS app-icon badge number from the WebView.
+// The Web Badging API (`navigator.setAppBadge` / `clearAppBadge`) is NOT exposed
+// inside WKWebView, so without this plugin the native badge can only be SET by
+// APNS `aps.badge` and can never be cleared or resynced from within the app — a
+// stale badge (e.g. a "1" left over from a prior push, or preserved across a
+// TestFlight app update, which iOS keeps on the icon) sticks forever, even for a
+// signed-out user with no groups whose true count is 0. `lib/pushNotifications.ts`
+// drives this on app open / focus via the existing `refreshAppBadge` resync, which
+// computes the true count server-side and applies it here.
+//
+// Colocated in AppDelegate.swift for the same reason MainViewController /
+// ClipboardUrlPlugin are: a new .swift file means hand-patching project.pbxproj
+// in the headless CI build. Capacitor auto-discovers CAPBridgedPlugin conformers
+// at runtime, so no project.pbxproj or cap-config change is needed beyond
+// compiling this class.
+@objc(AppBadgePlugin)
+public class AppBadgePlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "AppBadgePlugin"
+    public let jsName = "AppBadge"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "setBadge", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc func setBadge(_ call: CAPPluginCall) {
+        let count = max(0, call.getInt("count") ?? 0)
+        // UIApplication.shared must be touched on the main thread; plugin calls
+        // arrive on a background queue. Clearing (count 0) works regardless of
+        // notification authorization; setting > 0 needs the `.badge` permission,
+        // which the push bootstrap requests.
+        DispatchQueue.main.async {
+            if #available(iOS 16.0, *) {
+                UNUserNotificationCenter.current().setBadgeCount(count)
+            } else {
+                UIApplication.shared.applicationIconBadgeNumber = count
+            }
+            call.resolve()
         }
     }
 }

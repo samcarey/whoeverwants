@@ -23,7 +23,7 @@
  * cache headaches during rebuilds).
  */
 
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 
 import {
   apiGetNotificationConfig,
@@ -431,31 +431,53 @@ export async function tearDownPushSubscription(): Promise<void> {
 }
 
 /**
- * Clear the app-icon badge. Web / installed PWA only — uses the Badging API
- * where present, no-ops otherwise. iOS native (Capacitor) badge zeroing would
- * need a Capacitor plugin (+ iOS rebuild), out of scope; the iOS badge clears
- * when the user taps the notification (handled in sw-push.js notificationclick).
+ * Native badge plugin (ios/App/App/AppDelegate.swift: AppBadgePlugin). The Web
+ * Badging API isn't exposed inside WKWebView, so on Capacitor iOS this is the
+ * only way to set/clear the app-icon badge from the WebView. Web / PWA use the
+ * Badging API directly and never touch this.
+ */
+interface AppBadgePlugin {
+  setBadge(options: { count: number }): Promise<void>;
+}
+let appBadgePlugin: AppBadgePlugin | null = null;
+function getAppBadgePlugin(): AppBadgePlugin {
+  if (!appBadgePlugin) appBadgePlugin = registerPlugin<AppBadgePlugin>("AppBadge");
+  return appBadgePlugin;
+}
+
+/**
+ * Clear the app-icon badge. On native iOS (Capacitor) this routes through the
+ * AppBadgePlugin (setBadge 0); on web / installed PWA it uses the Badging API
+ * where present and no-ops otherwise.
  */
 export function clearAppBadge(): void {
-  if (typeof navigator === "undefined") return;
-  const nav = navigator as Navigator & { clearAppBadge?: () => Promise<void> };
-  if (typeof nav.clearAppBadge === "function") {
-    void nav.clearAppBadge().catch(() => {});
-  }
+  setAppBadge(0);
 }
 
 function setAppBadge(count: number): void {
+  const n = Math.max(0, count);
+  if (Capacitor.isNativePlatform()) {
+    // WKWebView doesn't expose navigator.setAppBadge — go through the native
+    // plugin. Clearing (0) works without notification auth; setting > 0 needs
+    // the `.badge` permission the push bootstrap requests.
+    void getAppBadgePlugin()
+      .setBadge({ count: n })
+      .catch(() => {});
+    return;
+  }
   if (typeof navigator === "undefined") return;
   const nav = navigator as Navigator & {
     setAppBadge?: (n?: number) => Promise<void>;
     clearAppBadge?: () => Promise<void>;
   };
-  if (count <= 0) {
-    clearAppBadge();
+  if (n <= 0) {
+    if (typeof nav.clearAppBadge === "function") {
+      void nav.clearAppBadge().catch(() => {});
+    }
     return;
   }
   if (typeof nav.setAppBadge === "function") {
-    void nav.setAppBadge(count).catch(() => {});
+    void nav.setAppBadge(n).catch(() => {});
   }
 }
 
@@ -465,9 +487,9 @@ function setAppBadge(count: number): void {
  * Called on app open / focus so the badge self-corrects on this device even if
  * the user acted on another device. See CLAUDE.md 'App-Icon Badge Model'.
  *
- * Web / installed PWA only (the Badging API). On native iOS this is still a
- * no-op for the *set* (no plugin) — the native badge stays push-driven — but
- * the call is harmless. Best-effort: a failed fetch leaves the current badge.
+ * Works on native iOS (via AppBadgePlugin) AND web / installed PWA (Badging
+ * API). This is what clears a stale icon badge for a signed-out / no-group user
+ * (server returns 0). Best-effort: a failed fetch leaves the current badge.
  */
 export async function refreshAppBadge(): Promise<void> {
   if (typeof navigator === "undefined") return;
