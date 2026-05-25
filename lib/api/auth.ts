@@ -156,6 +156,40 @@ export async function apiUpdateBadgeSettings(settings: {
   return user;
 }
 
+/**
+ * Create a recovery-less account from just a name (the "provide a name to
+ * continue" path of the gating modal), or set the name on the existing
+ * account when already signed in. Persists the issued session so subsequent
+ * fetches are authenticated — the caller is signed in on return.
+ */
+export async function apiCreateNameAccount(
+  name: string,
+): Promise<SessionResponse> {
+  const res = await authFetch<SessionResponse>("/account/name", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+  persistSignIn(res.session_token, res.user);
+  return res;
+}
+
+/**
+ * Set the signed-in user's "stop reminding me to add a recovery method" flag
+ * (drives the home-page recovery banner's "don't remind me again" toggle).
+ * Refreshes the cached session user so the banner hides immediately. Signed-in
+ * only.
+ */
+export async function apiSetRecoveryReminderDismissed(
+  dismissed: boolean,
+): Promise<SessionUser> {
+  const user = await authFetch<SessionUser>("/me/recovery-reminder", {
+    method: "POST",
+    body: JSON.stringify({ dismissed }),
+  });
+  updateCachedSessionUser(user);
+  return user;
+}
+
 export async function apiRequestMagicLink(
   email: string,
 ): Promise<MagicLinkRequestResponse> {

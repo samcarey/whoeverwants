@@ -42,6 +42,10 @@ export interface SessionUser {
   badge_todo_mode?: boolean;
   badge_on_voting_open?: boolean;
   badge_on_results?: boolean;
+  // Migration 123: drives the home-page "add a recovery method" banner. True
+  // = the user dismissed the nudge. Optional so pre-feature cached profiles
+  // deserialize (treated as not-dismissed until the next /me refresh).
+  recovery_reminder_dismissed?: boolean;
 }
 
 let cachedToken: string | null | undefined; // undefined = not yet read
