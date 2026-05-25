@@ -162,13 +162,6 @@ export default function RankingSection({
   // During suggestion phase, only show after user has submitted suggestions
   if (canSubmitSuggestions && !hasVoted) return null;
 
-  // When the user has voted but isn't yet editing, the banner is a button:
-  // tapping it enters ranking-edit mode. RankableOptions then restores the prior
-  // rankings (initialRanking/initialTiers) and drops the new options into the
-  // unranked "no preference" pool. While already editing, the banner is just an
-  // informational note (no action left to take).
-  const newOptionsBannerClickable = !isEditingRanking && !isQuestionClosed && !isLoadingVoteData;
-
   return (
     <>
       {/* "Early Voting" header/countdown/warning stays OUTSIDE the ballot
@@ -183,12 +176,14 @@ export default function RankingSection({
         </>
       )}
 
+      {/* Informational note ABOVE the ranking card (not inside it). Editing is
+          reached via the "Edit" button in the card's summary. mt-3 gives space
+          above it in edit mode (where the Early Voting header is hidden) and
+          collapses with the warning's mb-3 in the summary view. */}
+      <NewOptionsBanner count={newOptions?.length ?? 0} className="mt-3 mb-2" />
+
       {card(
       <>
-      <NewOptionsBanner
-        count={newOptions?.length ?? 0}
-        onClick={newOptionsBannerClickable ? enterRankingEdit : undefined}
-      />
 
       <div className="mb-2">
         {showSummary && hasSubmittedRankings && (

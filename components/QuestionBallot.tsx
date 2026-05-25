@@ -1445,15 +1445,13 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                 </div>
               ) : hasVoted && !isEditingVote && !canSubmitSuggestions && hasCompletedRanking && questionOptions.length !== 2 ? (
                 <>
-                  {/* Surface the "new options added" banner up-front on poll
-                      open, so the user sees it without first tapping into the
-                      ballot. Tapping it enters edit mode (same as "Your Ballot"),
-                      where RankingSection drops the new options into the unranked
-                      pool. RankingSection shows the same banner once editing. */}
-                  <NewOptionsBanner
-                    count={newOptions.length}
-                    onClick={isLoadingVoteData ? undefined : () => setIsEditingVote(true)}
-                  />
+                  {/* Surface the "new options added" note up-front on poll open,
+                      so the user sees it without first tapping into the ballot.
+                      Informational only — the "Your Ballot" link right below is
+                      the edit affordance. RankingSection shows the same note
+                      once editing, where the new options land in the unranked
+                      pool. */}
+                  <NewOptionsBanner count={newOptions.length} />
                   <div className="text-center">
                     <button
                       type="button"
