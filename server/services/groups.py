@@ -30,18 +30,16 @@ logger = logging.getLogger(__name__)
 # Visibility rule
 # ---------------------------------------------------------------------------
 #
-# A poll P in group T is visible to browser B iff EITHER:
-#   1. B has a group_members row for T AND
-#      (P.is_closed = false OR P.closed_at >= members.joined_at), OR
-#   2. (transitional bridge, public groups only) The legacy
-#      `accessible_question_ids` list passed by the FE contains a
-#      question_id whose poll lives in T AND T.privacy = 'public'.
-#      Treated as GROUP-level access (every poll in T visible, no
-#      closed_at filter) — pre-B.3 votes never wrote browser_id, so the
-#      localStorage list is the only access signal those users have
-#      until they re-establish membership by voting. Applies to
-#      /api/groups/mine only. Private groups bypass this bridge entirely;
-#      see Phase E in docs/auth-access-model.md.
+# `group_members` is the SINGLE source of truth for visibility. A poll P in
+# group T is visible to browser B iff:
+#   B (or, when signed in, ANY browser linked to B's user_id) has a
+#   `group_members` row for T AND
+#   (P.is_closed = false OR P.closed_at >= members.joined_at).
+#
+# The legacy `accessible_question_ids` localStorage "forget bridge" that
+# used to grant group-level visibility WITHOUT a membership row has been
+# REMOVED. "Forget a group" is now "leave the group" (DELETE
+# /api/groups/{routeId}/membership), which drops the membership row.
 #
 # `closed_at` proxy: we use `polls.updated_at`, which the existing close
 # trigger refreshes on every `is_closed` flip. Subsequent edits to a closed
@@ -50,8 +48,6 @@ logger = logging.getLogger(__name__)
 # user joins), which fails open.
 #
 # Phase E (group privacy) consequences:
-#   * The legacy bridge filters to public groups only — see
-#     `load_user_visibility` below.
 #   * `grant_group_membership_inline` skips writing for private groups —
 #     callers (the `/by-route-id` read endpoint) pass the resolved
 #     `privacy` so we don't need a separate DB lookup. Private groups
@@ -83,10 +79,6 @@ class UserVisibility:
     # member-group polls). For signed-in users this is the MIN
     # joined_at across all browsers linked to user_id.
     joined_by_group: dict[str, datetime] = field(default_factory=dict)
-    # group_ids the legacy accessible_question_ids list resolves to.
-    # Treated as group-level access with no closed_at filter for
-    # backwards compatibility during the rollout window.
-    bridged_group_ids: set[str] = field(default_factory=set)
 
 
 def load_user_visibility(
@@ -94,7 +86,6 @@ def load_user_visibility(
     browser_id: str | None,
     *,
     user_id: str | None = None,
-    legacy_question_ids: list[str] | None = None,
 ) -> UserVisibility:
     """Read every membership/access signal for one caller in a single
     place so route handlers can construct candidate sets and filter
@@ -139,29 +130,10 @@ def load_user_visibility(
         for r in rows:
             joined_by_group[str(r["group_id"])] = r["joined_at"]
 
-    bridged_group_ids: set[str] = set()
-    if legacy_question_ids:
-        candidate = set(group_ids_for_question_ids(conn, legacy_question_ids))
-        if candidate:
-            # Phase E: the legacy access bridge applies to PUBLIC groups
-            # only. Private groups require an explicit `group_members`
-            # row — pre-B.3 localStorage signals don't qualify, so a
-            # legacy voter on a group that later flipped private (or that
-            # was created private post-Phase-E) stops seeing it via the
-            # bridge. The membership leg above is unaffected — members
-            # see private groups regardless of privacy state.
-            public_rows = conn.execute(
-                "SELECT id FROM groups WHERE id = ANY(%(ids)s) "
-                "AND privacy = 'public'",
-                {"ids": list(candidate)},
-            ).fetchall()
-            bridged_group_ids = {str(r["id"]) for r in public_rows}
-
     return UserVisibility(
         browser_id=browser_id,
         user_id=user_id,
         joined_by_group=joined_by_group,
-        bridged_group_ids=bridged_group_ids,
     )
 
 
@@ -184,11 +156,6 @@ def filter_visible_polls(
     for r in rows:
         pid = str(r["id"])
         tid = str(r["group_id"]) if r.get("group_id") else None
-        # Group-level legacy bridge: every poll in the group visible
-        # without a closed_at filter (per Phase B.3 backwards-compat).
-        if tid and tid in visibility.bridged_group_ids:
-            visible.append(pid)
-            continue
         # Membership: visible if open OR closed-after-joined_at.
         if not tid or tid not in visibility.joined_by_group:
             continue
@@ -507,30 +474,6 @@ def polls_for_poll_ids(
                     sp_resp.voter_names = voter_names_by_question[pid]
         responses.append(mp_resp)
     return responses
-
-
-def group_ids_for_question_ids(conn, question_ids: list[str]) -> list[str]:
-    """Resolve a list of question_ids to the set of group_ids that own them.
-    Skips question_ids without a poll_id (post-Phase-4 there shouldn't be any)
-    and polls without a group_id (post-migration-100 there aren't any).
-    Silently drops any non-UUID values from the caller's list before the query
-    — the FE's localStorage accessible-question list can pick up corrupted
-    entries (legacy bugs, manual edits) and one bad id used to 500 the whole
-    `/api/groups/mine` request, wedging the home page. Filtering here is
-    pragmatic resilience; the FE should also validate before sending.
-    Order is unstable — the caller deduplicates."""
-    valid_ids = [qid for qid in question_ids if _is_uuid_like(qid)]
-    if not valid_ids:
-        return []
-    rows = conn.execute(
-        """SELECT DISTINCT mp.group_id
-             FROM questions p
-             JOIN polls mp ON p.poll_id = mp.id
-            WHERE p.id = ANY(%(ids)s)
-              AND mp.group_id IS NOT NULL""",
-        {"ids": valid_ids},
-    ).fetchall()
-    return [str(r["group_id"]) for r in rows]
 
 
 _UUID_RE = re.compile(

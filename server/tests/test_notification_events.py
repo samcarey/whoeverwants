@@ -199,7 +199,10 @@ def test_close_sets_flag_and_fires(client, creator_secret, monkeypatch):
     # yes_no question contributes the 👍 category icon.
     assert calls[0][1]["title"] == 'Poll closed in "Test User"'
     assert calls[0][1]["body"] == f"👍 {poll['title']}"
-    assert calls[0][1]["badge"] == 1
+    # Base payload carries NO hardcoded badge — the real per-recipient count is
+    # injected downstream in _dispatch_pushes (_payload_for), so a failed count
+    # computation never stamps a phantom "1".
+    assert "badge" not in calls[0][1]
 
 
 def test_close_twice_fires_once(client, creator_secret, monkeypatch):

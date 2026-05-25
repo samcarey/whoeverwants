@@ -42,7 +42,7 @@ import {
   cachePoll,
   getCachedPollForShortId,
 } from "@/lib/questionCache";
-import { addAccessibleQuestionId, isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
+import { isCreatedByThisBrowser } from "@/lib/browserQuestionAccess";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { hasAppHistory } from "@/lib/viewTransitions";
 import {
@@ -130,7 +130,6 @@ export function PollDetailView({ groupId, pollShortId, overlayCardsOffset }: Pol
           : await apiGetPollByShortId(pollShortId);
         if (cancelled) return;
         setPoll(fetched);
-        for (const sp of fetched.questions) addAccessibleQuestionId(sp.id);
       } catch (err) {
         if (cancelled) return;
         if (!(err instanceof ApiError && err.status === 404)) {

@@ -1,148 +1,33 @@
-// Simple browser storage for question access tracking
-// Stores list of question IDs that this browser has access to
+// Browser storage for poll-ownership creator secrets + per-question
+// "seen options" snapshots.
+//
+// The legacy per-browser "accessible question ids" + "forgotten question
+// ids" lists (and their localStorage keys) have been REMOVED. Group
+// visibility is now driven entirely by server-side `group_members`
+// (the single source of truth); "forget a group" is "leave the group"
+// (DELETE /api/groups/{routeId}/membership). Creator secrets are kept
+// here purely as poll-ownership authorization (out of scope for the
+// membership change).
 
-const STORAGE_KEY = 'accessible_question_ids';
 const CREATOR_SECRETS_KEY = 'question_creator_secrets';
-const FORGOTTEN_KEY = 'forgotten_question_ids';
+
+// One-time cleanup of the now-orphaned localStorage keys so they don't
+// linger on existing installs. Runs once at module load (browser only).
+const LEGACY_ACCESSIBLE_KEY = 'accessible_question_ids';
+const LEGACY_FORGOTTEN_KEY = 'forgotten_question_ids';
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem(LEGACY_ACCESSIBLE_KEY);
+    localStorage.removeItem(LEGACY_FORGOTTEN_KEY);
+  } catch {
+    // Best-effort; storage access can throw in locked-down contexts.
+  }
+}
 
 interface CreatorSecret {
   questionId: string;
   secret: string;
   createdAt: string;
-}
-
-// Get list of question IDs this browser can access
-export function getAccessibleQuestionIds(): string[] {
-  if (typeof window === 'undefined') {
-    return [];
-  }
-
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) {
-      return [];
-    }
-
-    const questionIds = JSON.parse(stored);
-    return Array.isArray(questionIds) ? questionIds : [];
-  } catch (error) {
-    console.error('Error reading accessible question IDs:', error);
-    return [];
-  }
-}
-
-// Add a question ID to the accessible list. Callers should only use this for
-// *explicit* access grants (visiting a question/group URL, creating a question) —
-// doing so clears any prior "forgotten" marker since the user is opting in.
-// Automatic discovery must go through the forgotten-list-aware path in
-// `getMyGroups` (lib/simpleQuestionQueries.ts) instead.
-export function addAccessibleQuestionId(questionId: string): void {
-  if (typeof window === 'undefined' || !questionId) {
-    return;
-  }
-
-  try {
-    // Explicit re-access undoes a prior forget.
-    removeForgottenQuestionId(questionId);
-
-    const currentIds = getAccessibleQuestionIds();
-
-    // Add if not already present
-    if (!currentIds.includes(questionId)) {
-      currentIds.push(questionId);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(currentIds));
-      console.log('Added question access:', questionId.substring(0, 8) + '...');
-    }
-  } catch (error) {
-    console.error('Error adding accessible question ID:', error);
-  }
-}
-
-// Remove a question ID from the accessible list
-export function removeAccessibleQuestionId(questionId: string): void {
-  if (typeof window === 'undefined' || !questionId) {
-    return;
-  }
-
-  try {
-    const currentIds = getAccessibleQuestionIds();
-    const filteredIds = currentIds.filter(id => id !== questionId);
-    
-    if (filteredIds.length !== currentIds.length) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(filteredIds));
-      console.log('Removed question access:', questionId.substring(0, 8) + '...');
-    }
-  } catch (error) {
-    console.error('Error removing accessible question ID:', error);
-  }
-}
-
-// Clear all accessible question IDs
-export function clearAccessibleQuestionIds(): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-    console.log('Cleared all question access');
-  } catch (error) {
-    console.error('Error clearing accessible question IDs:', error);
-  }
-}
-
-// Check if browser has access to a specific question
-export function hasAccessToQuestion(questionId: string): boolean {
-  const accessibleIds = getAccessibleQuestionIds();
-  return accessibleIds.includes(questionId);
-}
-
-// Get count of accessible questions
-export function getAccessibleQuestionCount(): number {
-  return getAccessibleQuestionIds().length;
-}
-
-// Questions the user has explicitly forgotten. Kept separate from the accessible
-// list so that automatic relation discovery (which walks follow_up chains on
-// the server) can avoid re-adding them. Visiting a question URL directly clears
-// the forgotten marker — direct URL visits always grant access.
-export function getForgottenQuestionIds(): string[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const stored = localStorage.getItem(FORGOTTEN_KEY);
-    if (!stored) return [];
-    const ids = JSON.parse(stored);
-    return Array.isArray(ids) ? ids : [];
-  } catch (error) {
-    console.error('Error reading forgotten question IDs:', error);
-    return [];
-  }
-}
-
-export function addForgottenQuestionId(questionId: string): void {
-  if (typeof window === 'undefined' || !questionId) return;
-  try {
-    const current = getForgottenQuestionIds();
-    if (!current.includes(questionId)) {
-      current.push(questionId);
-      localStorage.setItem(FORGOTTEN_KEY, JSON.stringify(current));
-    }
-  } catch (error) {
-    console.error('Error adding forgotten question ID:', error);
-  }
-}
-
-export function removeForgottenQuestionId(questionId: string): void {
-  if (typeof window === 'undefined' || !questionId) return;
-  try {
-    const current = getForgottenQuestionIds();
-    const filtered = current.filter(id => id !== questionId);
-    if (filtered.length !== current.length) {
-      localStorage.setItem(FORGOTTEN_KEY, JSON.stringify(filtered));
-    }
-  } catch (error) {
-    console.error('Error removing forgotten question ID:', error);
-  }
 }
 
 // Generate a random creator secret
@@ -205,12 +90,10 @@ export function isCreatedByThisBrowser(questionId: string): boolean {
   return getCreatorSecret(questionId) !== null;
 }
 
-// Record question creation with creator secret
+// Record question creation. Persists the creator secret (poll-ownership
+// authorization) — visibility no longer needs any local bookkeeping
+// since `group_members` is the single source of truth.
 export function recordQuestionCreation(questionId: string, creatorSecret?: string): void {
-  // Add to accessible questions
-  addAccessibleQuestionId(questionId);
-  
-  // Store creator secret if provided
   if (creatorSecret) {
     storeCreatorSecret(questionId, creatorSecret);
   }
@@ -241,20 +124,4 @@ export function getSeenQuestionOptions(questionId: string): string[] {
   } catch (e) {
     return [];
   }
-}
-
-// Debug function to log current accessible questions
-export function debugAccessibleQuestions(): void {
-  if (process.env.NODE_ENV !== 'development') {
-    return;
-  }
-
-  const questionIds = getAccessibleQuestionIds();
-  const secrets = getCreatorSecrets();
-  
-  console.log('Browser has access to', questionIds.length, 'questions:');
-  questionIds.forEach(id => {
-    const isCreator = secrets.some(s => s.questionId === id);
-    console.log(`  - ${id.substring(0, 8)}... ${isCreator ? '(creator)' : '(viewer)'}`);
-  });
 }

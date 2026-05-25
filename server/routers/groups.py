@@ -172,13 +172,12 @@ router = APIRouter(prefix="/api/groups", tags=["groups"])
 class MyGroupsRequest(BaseModel):
     """Request body for `POST /api/groups/mine`.
 
-    `accessible_question_ids` is the FE's localStorage list — used as a
-    transitional access bridge for users without group_members rows yet
-    (pre-B.3 voters, etc.). Treated as group-level access (every poll
-    in the resolved group visible, no closed_at filter) to preserve
-    Phase B.3 behavior. Also drives the forget bridge: when present, the
-    home list narrows member-groups to those still represented in the
-    list, so forgetting every question in a group removes it from home.
+    `accessible_question_ids` is DEPRECATED and IGNORED. It used to feed
+    the localStorage "forget bridge" / legacy access bridge, both of
+    which have been removed — `group_members` is now the single source
+    of truth for visibility. The field is kept on the model (optional,
+    default empty) so older client bundles that still POST it don't 422;
+    the server never reads it.
     """
 
     accessible_question_ids: list[str] = Field(default_factory=list)
@@ -190,10 +189,11 @@ def get_my_groups(req: MyGroupsRequest, request: Request):
     """Return every poll the user has visibility into. See the visibility
     rule in `services/groups.py`.
 
-    Forget bridge: when the FE passes `accessible_question_ids`, the home
-    list is narrowed to groups still represented in that list, so
-    forgetting every question in a group removes it from home even while
-    the `group_members` row persists.
+    `group_members` is the sole authority: every group the caller (or any
+    browser linked to their user_id) is a member of contributes its
+    visible polls (open OR closed-after-joined_at). The legacy
+    `accessible_question_ids` forget bridge has been removed — "forget a
+    group" is now "leave the group" (DELETE /api/groups/{id}/membership).
 
     Membership-only "empty groups" (member row but zero visible polls)
     are surfaced by the sibling `POST /api/groups/empty` endpoint.
@@ -202,28 +202,10 @@ def get_my_groups(req: MyGroupsRequest, request: Request):
     user_id = _user_id(request)
 
     with get_db() as conn:
-        visibility = load_user_visibility(
-            conn,
-            browser_id,
-            user_id=user_id,
-            legacy_question_ids=req.accessible_question_ids or None,
-        )
+        visibility = load_user_visibility(conn, browser_id, user_id=user_id)
 
-        member_group_ids = set(visibility.joined_by_group.keys())
-        if req.accessible_question_ids and not user_id:
-            # Forget bridge: drop member-groups with no bridge signal.
-            # Anonymous-only — signed-in users' membership is authoritative
-            # and not subject to per-device localStorage forget.
-            # Signed-in users drop groups via the explicit "leave group"
-            # action (DELETE /membership), which removes the membership
-            # row across all linked browsers.
-            member_group_ids &= visibility.bridged_group_ids
-
-        # Candidate groups = bridge groups + filtered member groups.
-        # Bridge groups always show; member groups contribute only if
-        # they survived the forget bridge.
-        candidate_group_ids = visibility.bridged_group_ids | member_group_ids
-        candidate_pids = poll_ids_for_group_ids(conn, list(candidate_group_ids))
+        member_group_ids = list(visibility.joined_by_group.keys())
+        candidate_pids = poll_ids_for_group_ids(conn, member_group_ids)
         if not candidate_pids:
             return []
 
@@ -990,7 +972,6 @@ def create_group_join_request(
                 "body": body_text,
                 "url": f"/g/{route_for_url}/info",
                 "group_id": route_for_url,
-                "badge": 1,
                 "tag": f"join-request-{summary.id}",
             },
         )

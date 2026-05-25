@@ -3,8 +3,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { GroupSummary, Poll } from "@/lib/types";
 import { getCachedEmptyGroups, getMyGroups } from "@/lib/simpleQuestionQueries";
-import { apiGetAllQuestionIds } from "@/lib/api";
-import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { HIDE_HOME_BACKDROP_EVENT, POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
 import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
@@ -190,29 +188,9 @@ export default function Home() {
         if (!hasCached) setLoading(true);
         setError(null);
 
-        // Dev mode: if ?dev=1 in URL, import all question IDs from the database
-        if (typeof window !== 'undefined') {
-          const params = new URLSearchParams(window.location.search);
-          if (params.get('dev') === '1') {
-            const allIds = await apiGetAllQuestionIds();
-            if (allIds.length > 0) {
-              for (const id of allIds) {
-                addAccessibleQuestionId(id);
-              }
-              // Remove ?dev=1 from URL without reload
-              params.delete('dev');
-              const newUrl = params.toString()
-                ? `${window.location.pathname}?${params}`
-                : window.location.pathname;
-              window.history.replaceState({}, '', newUrl);
-            }
-          }
-        }
-
-        // Phase B.3: one round-trip — server walks polls.group_id and
-        // returns every poll in any group containing one of our
-        // accessible questions, with results inline. Replaces the legacy
-        // discoverRelatedQuestions + getAccessiblePolls pair.
+        // One round-trip pair — the server returns every group the caller
+        // is a member of (populated + empty), with results inline.
+        // Membership (`group_members`) is the single source of truth.
         const { polls: nextPolls, emptyGroups: nextEmptyGroups } = await getMyGroups();
         // Preserve previous array identity when the data is unchanged so
         // GroupList's memo can skip re-rendering every card on every mount.

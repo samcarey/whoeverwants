@@ -1,15 +1,16 @@
 /**
- * Phase B.3: group-level API helpers.
+ * Group-level API helpers.
  *
- * `apiGetMyGroups(accessibleQuestionIds)` collapses the legacy
- * `discoverRelatedQuestions + apiGetAccessibleQuestions` pair into one
- * server round-trip. The server resolves the question_ids to their groups
- * (via `polls.group_id`) and returns every poll in those groups with the
- * full inline-results / voter aggregates that the home page expects.
+ * `apiGetMyGroups()` returns every group the caller is a member of
+ * (membership-only — `group_members` is the single source of truth). The
+ * server resolves membership from the request's browser_id + bearer token
+ * and returns every poll in those groups with the full inline-results /
+ * voter aggregates that the home page expects. No localStorage question-id
+ * list is sent.
  *
  * `apiGetGroupByRouteId(routeId)` returns the same shape for one group,
- * resolved by `routeId` (today: root poll's short_id; Phase B.4 will mint
- * dedicated `groups.short_id`s).
+ * resolved by `routeId` (group short_id / group uuid / poll short_id /
+ * poll uuid).
  *
  * Both helpers piggyback on the existing per-poll cache: `cachePoll` is
  * called for each returned poll so subsequent `apiGetPollById` calls hit
@@ -18,9 +19,8 @@
  * `apiLeaveGroup(routeId)` is the explicit "leave group" action —
  * fire-and-forget DELETE to `/api/groups/{routeId}/membership`. Errors
  * are swallowed because the post-condition is verifiable on the next
- * `/api/groups/mine` call. Used to retire the legacy
- * `accessible_question_ids` bridge in `/api/groups/mine` once
- * forget-of-last-poll calls land.
+ * `/api/groups/mine` call. This is the mechanism behind "forget a group":
+ * dropping the membership row removes the group from home.
  */
 
 import type { GroupSummary, Poll } from "@/lib/types";
@@ -89,20 +89,17 @@ function hydrateAndCache(data: any[]): Poll[] {
 }
 
 export async function apiGetMyGroups(
-  accessibleQuestionIds: string[],
   options: { include_results?: boolean } = {},
 ): Promise<Poll[]> {
-  // Always fire the request — the server returns membership-based
-  // groups for signed-in users (via the bearer token + browser_id)
-  // regardless of accessibleQuestionIds. Pre-Phase-D this was an
-  // anonymous-only path where empty in = empty out, and the
-  // short-circuit saved a round-trip; with signed-in identity that
-  // shortcut hid every group whose only access signal was server-side
-  // membership.
+  // Membership-only: the server returns every group the caller (or any
+  // browser linked to their signed-in user_id) is a `group_members` row
+  // for, based on the browser_id + bearer token. No localStorage
+  // question-id list is sent — the legacy `accessible_question_ids`
+  // forget bridge has been removed (`group_members` is the single
+  // source of truth).
   const data: any[] = await groupFetch('/mine', {
     method: 'POST',
     body: JSON.stringify({
-      accessible_question_ids: accessibleQuestionIds,
       include_results: options.include_results ?? true,
     }),
   });
