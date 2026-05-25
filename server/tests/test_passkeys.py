@@ -13,11 +13,15 @@ clone-detection). What we test here is the surface we own:
   - Configuration: `PASSKEYS_DISABLED=1` flips capability + 503s the
     verify endpoints.
 
-Verifying actual attestation / assertion bytes requires a fake
-authenticator (e.g. `soft_webauthn`); deferred until that's a real
-need. The integration test that exercises a real ceremony lives in the
-FE via Playwright + the browser's virtual authenticator API (TODO —
-separate PR).
+Verifying actual attestation / assertion bytes from python would need a
+fake authenticator (e.g. `soft_webauthn`); we don't do that here.
+Instead, the real-bytes ceremony is covered end-to-end on the FE by
+`tests/e2e/specs/passkey-ceremony.spec.ts`, which drives a genuine
+registration + usernameless sign-in through this server using
+Chromium's virtual authenticator (CDP `WebAuthn` domain). That test
+exercises the actual py_webauthn verifier in this module against real
+attestation/assertion bytes; it runs manually against a live stack
+(it's not in CI — see the spec header for how to run it).
 """
 
 import os
