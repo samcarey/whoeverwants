@@ -261,6 +261,60 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
 
   return (
     <div>
+      {emailSent ? (
+        <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-3">
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            {isLink
+              ? "Check your inbox for a confirmation link."
+              : "Check your email for a sign-in link."}{" "}
+            <span className="text-gray-500 dark:text-gray-400">
+              It expires in 15 minutes.
+            </span>
+          </p>
+          {emailConfigured === false && (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+              This server isn&apos;t configured to send real emails — check the
+              API logs for the link.
+            </p>
+          )}
+        </div>
+      ) : (
+        <form onSubmit={handleEmailSubmit}>
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {isLink ? "Add a recovery email" : "Email me a sign-in link"}
+          </label>
+          <input
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onBlur={(e) => setEmail(e.target.value.trim())}
+            disabled={emailSubmitting || busy}
+            maxLength={254}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white mb-3"
+          />
+          <button
+            type="submit"
+            disabled={emailSubmitting || !email.trim() || busy}
+            className="w-full rounded-full bg-blue-600 hover:bg-blue-700 text-white h-11 font-medium disabled:opacity-50"
+          >
+            {emailSubmitting
+              ? "Sending…"
+              : isLink
+                ? "Send recovery link"
+                : "Send sign-in link"}
+          </button>
+        </form>
+      )}
+
+      <div className="flex items-center gap-3 my-4">
+        <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+        <span className="text-xs text-gray-500 dark:text-gray-400">or</span>
+        <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+      </div>
+
       {showGoogle &&
         (isNativeIOS() ? (
           <button
@@ -335,60 +389,6 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
               ? "Add a passkey"
               : "New here? Create an account with a passkey"}
         </button>
-      )}
-
-      <div className="flex items-center gap-3 my-4">
-        <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-        <span className="text-xs text-gray-500 dark:text-gray-400">or</span>
-        <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-      </div>
-
-      {emailSent ? (
-        <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-3">
-          <p className="text-sm text-gray-700 dark:text-gray-300">
-            {isLink
-              ? "Check your inbox for a confirmation link."
-              : "Check your email for a sign-in link."}{" "}
-            <span className="text-gray-500 dark:text-gray-400">
-              It expires in 15 minutes.
-            </span>
-          </p>
-          {emailConfigured === false && (
-            <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-              This server isn&apos;t configured to send real emails — check the
-              API logs for the link.
-            </p>
-          )}
-        </div>
-      ) : (
-        <form onSubmit={handleEmailSubmit}>
-          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-            {isLink ? "Add a recovery email" : "Email me a sign-in link"}
-          </label>
-          <input
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onBlur={(e) => setEmail(e.target.value.trim())}
-            disabled={emailSubmitting || busy}
-            maxLength={254}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white mb-3"
-          />
-          <button
-            type="submit"
-            disabled={emailSubmitting || !email.trim() || busy}
-            className="w-full rounded-full bg-blue-600 hover:bg-blue-700 text-white h-11 font-medium disabled:opacity-50"
-          >
-            {emailSubmitting
-              ? "Sending…"
-              : isLink
-                ? "Send recovery link"
-                : "Send sign-in link"}
-          </button>
-        </form>
       )}
 
       {error && (
