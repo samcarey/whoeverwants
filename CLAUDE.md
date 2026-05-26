@@ -982,6 +982,58 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 > a recovery email, and any account can be deleted. Full plan +
 > rationale in `docs/auth-access-model.md`.
 
+### Dev Instant Sign-In Links (demo helper)
+
+Two **dev-tier-only** endpoints let a developer (or Claude assembling a
+demo) mint a throwaway account and hand back a single URL that signs the
+recipient straight into it with no prompts — so a specific pre-seeded app
+state can be shared as one click. Lives in `server/routers/auth.py`
+("Dev-only instant sign-in links" section) + `app/auth/instant/page.tsx`.
+
+- **`POST /api/auth/dev/instant-link`** (caller: developer, via curl). Body
+  `{name?="Demo User", next?}`. Mints a recovery-less account
+  (`create_name_only_account` → `providers: []`), returns
+  `{url, session_token, expires_at, user_id, name, browser_id}`. `url` =
+  `<fe_origin>/auth/instant?token=<sessionToken>[&next=<urlencoded path>]`.
+  The `session_token` is a **real 90-day bearer** — keep using it (with the
+  returned `browser_id` as `X-Browser-Id`) to seed the account's polls/votes
+  BEFORE sending the link. `next` is validated to a same-origin relative path
+  (`_safe_relative_next`); open-redirect targets (`//host`, `https://…`,
+  backslashes) are dropped to `/`.
+- **`POST /api/auth/instant/adopt`** (caller: recipient's browser, via
+  `apiAdoptInstantSession` on the `/auth/instant` page). Body `{token}`.
+  Validates the session token, **links the requesting browser to the
+  account**, returns the `UserSummary`; the FE then `persistSignIn`s. The
+  browser-link matches every other sign-in path (parity) — but note
+  visibility doesn't strictly depend on it: `load_user_visibility` already
+  unions across every browser linked to the account, and the recipient
+  carries the bearer, so the seeded data (membership keyed under the mint
+  browser, which `create_name_only_account` linked) is visible via the
+  account union regardless.
+- **Gating: non-prod only, via the request `Origin`.** Both endpoints
+  `503` when `services.fe_origin.is_prod_origin(request)` — i.e. a real prod
+  request (`Origin: https://whoeverwants.com`) OR **no/forged Origin** (which
+  `resolve_fe_origin` falls back to prod → gated off, the safe default). The
+  `/auth/instant` page additionally refuses on `hostname === 'whoeverwants.com'`.
+  This keeps the "sign a browser in from a URL token" capability (a
+  login-CSRF vector) off production entirely; on dev/canary the threat model
+  is throwaway demo data. The token is **reusable** (reload/re-click work);
+  no migration, no token table — the URL just carries the session token.
+- **Curl recipe** (always pass `Origin` — without it you get 503):
+  ```bash
+  ORIGIN=https://<slug>.dev.whoeverwants.com
+  BID=$(python3 -c 'import uuid;print(uuid.uuid4())')
+  # 1. mint
+  curl -s -X POST "$ORIGIN/api/auth/dev/instant-link" \
+    -H "Content-Type: application/json" -H "Origin: $ORIGIN" -H "X-Browser-Id: $BID" \
+    -d '{"name":"Sam"}'          # → session_token, user_id, group via later seeding
+  # 2. seed as the account (bearer + SAME X-Browser-Id) — POST /api/polls, votes, …
+  # 3. send: $ORIGIN/auth/instant?token=<session_token>&next=/g/<groupShortId>
+  ```
+  Build the final `&next=…` URL by hand after seeding (you know the group
+  short_id only post-seed); the mint's returned `url` has no `next` unless
+  you passed one up front. Tests: `server/tests/test_instant_link.py`.
+
 **Cross-browser visibility for signed-in users.** Every read that
 asks "is the caller a member of this group?" must walk
 `user_browsers` to expand membership across every browser the user

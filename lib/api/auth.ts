@@ -209,31 +209,10 @@ export async function apiSetRecoveryReminderDismissed(
 }
 
 // Dev-only instant sign-in links (demo helper). See the matching section
-// in server/routers/auth.py. The mint endpoint is normally called via curl
-// when assembling a demo, not from the app — the helper is exported for
-// completeness / discoverability. The adopt helper IS used by the
-// `/auth/instant` landing page.
-
-export interface DevInstantLinkResult {
-  url: string;
-  session_token: string;
-  expires_at: string;
-  user_id: string;
-  name: string | null;
-  browser_id: string | null;
-}
-
-/** DEV-ONLY: mint a fresh throwaway account + a URL that instantly signs
- *  the recipient into it. 503 on production. */
-export async function apiCreateDevInstantLink(
-  name?: string,
-  next?: string,
-): Promise<DevInstantLinkResult> {
-  return authFetch<DevInstantLinkResult>("/dev/instant-link", {
-    method: "POST",
-    body: JSON.stringify({ name, next }),
-  });
-}
+// in server/routers/auth.py. The mint endpoint (POST /api/auth/dev/instant-link)
+// is called via curl when assembling a demo — there's no in-app caller, so no
+// FE client for it. The adopt helper below IS used by the `/auth/instant`
+// landing page.
 
 /** DEV-ONLY: adopt the session token carried in an instant-sign-in URL.
  *  Links THIS browser to the account server-side (so its pre-seeded
