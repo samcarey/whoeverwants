@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, Suspense } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
@@ -10,6 +9,8 @@ import { navigateWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
+import { getUserName } from '@/lib/userProfile';
+import { SESSION_CHANGED_EVENT } from '@/lib/session';
 
 // `CreateQuestionContent` (the bubble-bar + create-poll-modal owner) is
 // mounted in `app/layout.tsx` via `<PersistentCreatePollHost />` so it
@@ -105,6 +106,19 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, []);
 
+  // Settings header title: the saved account/display name when set, else
+  // "Settings". Init null (SSR parity → "Settings" on the first paint), then
+  // read getUserName() on mount + on every session change (sign-in/out). Name
+  // edits happen on /settings/edit, which navigates back here and remounts the
+  // template, so the on-mount read picks those up too.
+  const [settingsName, setSettingsName] = useState<string | null>(null);
+  useEffect(() => {
+    const update = () => setSettingsName(getUserName()?.trim() || null);
+    update();
+    window.addEventListener(SESSION_CHANGED_EVENT, update);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
+  }, [pathname]);
+
   // Hide the settings gear on the home page when GroupList enters
   // bulk-forget selection mode — the cancel (X) button portals into the
   // same upper-left slot and the gear's tap target would compete with it.
@@ -133,6 +147,9 @@ function TemplateInner({ children }: AppTemplateProps) {
   // of the new group button + padding treatment via isGroupRootView.
   const isGroupLikePage = isGroupRootView(pathname);
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
+  // The profile editor (/settings/edit) renders its own fixed back + Save
+  // buttons via HeaderPortal, so it must opt out of the fallback header.
+  const isSettingsEditPage = pathname === '/settings/edit' || pathname === '/settings/edit/';
   // Phase G: /invite/<token> is a redemption landing page that renders
   // its own full-screen redirect-or-sign-in UI. The template's
   // fallback header would just sit above it as empty chrome.
@@ -148,7 +165,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   return (
     <>
       {/* Fallback header for pages without a page-specific header (not group, settings, home, invite redemption, or create-modal). */}
-      {!isGroupFamilyPage && !isSettingsPage && !isInvitePage && pathname !== '/' && (
+      {!isGroupFamilyPage && !isSettingsPage && !isSettingsEditPage && !isInvitePage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -185,7 +202,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             className="max-w-4xl mx-auto px-16 pb-1 page-title-safe-top"
           >
             <h1 className="text-2xl font-bold text-center break-words select-none" {...longPressProps}>
-              Settings
+              {settingsName || 'Settings'}
             </h1>
           </div>
         )}
@@ -241,24 +258,6 @@ function TemplateInner({ children }: AppTemplateProps) {
         </div>
       </div>
 
-      {/* Header elements rendered outside scaling container */}
-      <HeaderPortal>
-        {/* Back arrow in upper left — settings page always navigates to home. */}
-        {isSettingsPage && (
-          <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
-            <button
-              onClick={() => navigateWithTransition(router, '/', 'back')}
-              className="w-12 h-16 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
-              aria-label="Go back"
-            >
-              <svg className="w-7 h-7 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-          </div>
-        )}
-
-      </HeaderPortal>
     </>
   );
 }
