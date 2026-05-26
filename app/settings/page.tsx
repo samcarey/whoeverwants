@@ -361,8 +361,9 @@ export default function SettingsPage() {
         </button>
       </HeaderPortal>
 
-      {/* Profile — read-only display of avatar + name + reference location.
-          Editing lives on /settings/edit (via the header Edit button). */}
+      {/* Profile — read-only avatar (the name is the header title). The card
+          below holds reference location + theme. Editing the photo / name /
+          location lives on /settings/edit (via the header Edit button). */}
       <div className="mb-6 flex flex-col items-center">
         <InitialBubble
           imageUrl={serverImageUrl}
@@ -374,12 +375,6 @@ export default function SettingsPage() {
 
       <div className="mb-6">
         <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
-          <div className="flex items-center justify-between gap-3 h-12">
-            <span className="text-base font-normal shrink-0">Name</span>
-            <span className="text-base font-normal text-gray-500 dark:text-gray-500 truncate">
-              {name.trim() || "Not set"}
-            </span>
-          </div>
           <div className="flex items-center justify-between gap-3 h-12">
             <span className="text-base font-normal shrink-0">Reference Location</span>
             <span className="text-base font-normal text-gray-500 dark:text-gray-500 truncate">
