@@ -386,11 +386,6 @@ export default function SettingsPage() {
               {savedLocation ? savedLocation.label : "Not set"}
             </span>
           </div>
-        </section>
-      </div>
-
-      <div className="mb-6">
-        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
           <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
             <span className="text-base font-normal shrink-0">Theme</span>
             <span className="relative inline-flex items-center gap-1.5 text-base font-normal text-gray-500 dark:text-gray-500">
