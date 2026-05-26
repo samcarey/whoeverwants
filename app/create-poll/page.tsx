@@ -1852,7 +1852,7 @@ export function CreateQuestionContent() {
                 keyframe in globals.css. */}
             <div
               className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col animate-slide-up"
-              style={{ height: 'calc(100dvh - 3rem - env(safe-area-inset-top, 0px))' }}
+              style={{ height: 'calc(100dvh - 70px)' }}
               role="dialog"
               aria-modal="true"
               aria-label="New poll"
