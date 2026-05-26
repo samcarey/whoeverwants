@@ -2644,6 +2644,16 @@ The MIME-type / 5 MiB constants are intentionally duplicated from `routers/group
 
 ---
 
+## Settings Page Layout (read-only + dedicated editor)
+
+The settings page (`app/settings/page.tsx`) is a read-only profile + account surface; editing the photo / name / reference location happens on a dedicated `/settings/edit` route (`app/settings/edit/page.tsx`), mirroring the `/info → /edit-title` pattern.
+
+- **Header chrome lives in the page, not the template.** `app/settings/page.tsx` renders its own floating back (→ `/`) + **Edit** (→ `/settings/edit`) buttons via `<HeaderPortal>` using the same `fixed left-3/right-3 z-30 ... rounded-full bg-white ... border` bubble class stack as `/info`. The old template-level settings back button was removed. `app/template.tsx` still renders the centered settings *title*, and `isSettingsEditPage` (`/settings/edit[/]`) is added to the fallback-header exclusions so the editor renders only its own back + Save buttons.
+- **The settings header title is the saved account/display name, falling back to "Settings".** `template.tsx` holds a `settingsName` state (init null for SSR parity → "Settings" on first paint), reads `getUserName()` on mount + on `SESSION_CHANGED_EVENT`, keyed on `[pathname]` (name edits happen on `/settings/edit`, which navigates back and remounts the template, so the on-mount read catches them). Don't lazy-init from `getUserName()` in `useState` — that produces a hydration mismatch on the `<h1>` text.
+- **Read-only vs editable split.** Settings shows: read-only avatar (the name is the title now, so there's no Name row), a card with Reference Location + Theme rows, the Unread-polls toggles, and the account/sign-in cluster. The editor owns the staging logic (image crop/upload/remove + account gate, `CompactNameField`, typed-location geocode-on-Save, detect/clear) with a header Save + "Discard your changes?" confirmation; there is NO bottom Save button on the settings page anymore.
+- **The account / sign-in cluster sits directly below the avatar** (Account row, Add-a-sign-in-method, Passkeys, the shared status `message`, Sign out) — account identity reads as a unit under the account image. **Sign out is a separate full-width button behind a `ConfirmationModal`**, not an inline link. The Delete-account and Clear-Settings buttons were removed (and with them `apiDeleteAccount` + the `clearUser*` / `apiDeleteMyUserImage` / `clearCachedMyUserProfile` usage on this page).
+- **`/settings/edit` navigation uses `navigateWithTransition` (view transitions), not the group slide-overlay** — settings isn't a group-family route. Back from the editor is `navigateWithTransition(router, '/settings', 'back')` (a push to a fixed destination, matching `/edit-title`'s "back = go to the parent page" convention, not `history.back`).
+
 ## Theme Switcher (Light / Dark / System)
 
 The settings page (`app/settings/page.tsx`) exposes a 3-option sliding segmented control for color theme. The preference lives in `localStorage[whoeverwants_theme]` (`THEME_KEY` exported from `lib/theme.ts`); selecting "System" REMOVES the key so the page falls through to `prefers-color-scheme`.

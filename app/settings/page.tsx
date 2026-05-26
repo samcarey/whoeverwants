@@ -598,7 +598,7 @@ export default function SettingsPage() {
           About
         </h3>
         <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">
-          WhoeverWants is an open-source questioning application
+          WhoeverWants is free and open-source
         </p>
         <a
           href="https://github.com/samcarey/whoeverwants"
