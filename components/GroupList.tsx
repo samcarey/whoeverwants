@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { GroupSummary, Poll } from "@/lib/types";
 import { buildGroups, getGroupHref, getGroupRouteId, isPendingPollId, Group } from "@/lib/groupUtils";
 import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
+import { computePollUnread, useUnreadReactivity } from "@/lib/unread";
 import GroupListItem from "@/components/GroupListItem";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import HeaderPortal from "@/components/HeaderPortal";
@@ -48,6 +49,10 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
     }
     return loadVotedQuestions();
   });
+  // Read-state model: a group's title is emphasized when it has any unread
+  // poll (see lib/unread.ts), mirroring the gold "unread" bar on group cards.
+  const { badgeSettings, pollViewsTick } = useUnreadReactivity();
+
   const [pressedGroupId, setPressedGroupId] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
@@ -68,6 +73,26 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
   const groupKeyOf = useCallback((group: Group): string => {
     return group.rootPollId ?? group.groupId ?? '';
   }, []);
+
+  // Per-group unread flag (drives the home-row title emphasis). A group is
+  // unread when any of its polls is unread under the current badge settings.
+  // pollViewsTick is in the deps so opening a poll re-runs this and clears the
+  // emphasis. (nowMs intentionally omitted — recompute keys off the listed
+  // signals, not the clock, to avoid a recompute on every render.)
+  const unreadByGroupKey = useMemo(() => {
+    const nowMs = Date.now();
+    const map = new Map<string, boolean>();
+    for (const g of groups) {
+      map.set(
+        groupKeyOf(g),
+        g.polls.some((mp) =>
+          computePollUnread(mp, badgeSettings, votedQuestionIds, abstainedQuestionIds, nowMs),
+        ),
+      );
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups, badgeSettings, votedQuestionIds, abstainedQuestionIds, pollViewsTick, groupKeyOf]);
 
   // Groups can drop out from under us (deletions, re-fetch). Strip selection
   // ids that no longer correspond to a visible group. (Selection mode stays
@@ -257,8 +282,8 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
       {groups.map((group, index) => {
         const href = getGroupHref(group);
         const latestQuestion = group.latestQuestion;
-        const hasUnvoted = group.unvotedCount > 0;
         const groupKey = groupKeyOf(group);
+        const hasUnread = unreadByGroupKey.get(groupKey) ?? false;
 
         const handleActivate = () => {
           if (selectionMode) {
@@ -339,7 +364,7 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
             statusBadge={group.isEmpty ? 'New group — tap to add a poll' : undefined}
             soonestUnvotedDeadline={group.soonestUnvotedDeadline}
             unvotedDeadlineKind={group.unvotedDeadlineKind}
-            hasUnvoted={hasUnvoted}
+            hasUnread={hasUnread}
             pressed={pressedGroupId === groupKey}
             isFirst={index === 0}
             selectionMode={selectionMode}
