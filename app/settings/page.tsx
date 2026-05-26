@@ -9,9 +9,7 @@ import {
   apiGetMyUserProfile,
   apiUploadMyUserImage,
   apiDeleteMyUserImage,
-  buildUserImageUrl,
   cacheMyUserProfile,
-  getCachedMyUserProfile,
   clearCachedMyUserProfile,
   apiGetMe,
   apiGetAuthProviders,
@@ -37,6 +35,7 @@ import CompactNameField from "@/components/CompactNameField";
 import InitialBubble from "@/components/InitialBubble";
 import ImageCropModal from "@/components/ImageCropModal";
 import AccountGateModal from "@/components/AccountGateModal";
+import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { getStoredTheme, saveTheme, type ThemePreference } from "@/lib/theme";
 import {
@@ -102,19 +101,15 @@ export default function SettingsPage() {
 
   // Profile-image state mirrors the staging pattern from /edit-title:
   // pendingCroppedBlob (new upload pending Save) vs pendingImageRemoval
-  // (clear pending Save). The current server image is read into
-  // `serverImageUrl` once on mount via apiGetMyUserProfile.
+  // (clear pending Save). The current account image comes from the shared
+  // `useMyUserImageUrl()` hook, which reads the cache synchronously and
+  // refreshes on USER_PROFILE_CHANGED_EVENT — so it clears on sign-out and
+  // updates on sign-in (account photo) without bespoke state to keep in sync.
   const [pickedFile, setPickedFile] = useState<File | null>(null);
   const [pendingCroppedBlob, setPendingCroppedBlob] = useState<Blob | null>(null);
   const [pendingImageRemoval, setPendingImageRemoval] = useState(false);
   const [localImagePreviewUrl, setLocalImagePreviewUrl] = useState<string | null>(null);
-  const [serverImageUrl, setServerImageUrl] = useState<string | null>(() => {
-    // Synchronous seed from the localStorage cache so first paint
-    // already shows the image (no flash from initials → image).
-    if (typeof window === 'undefined') return null;
-    const cached = getCachedMyUserProfile();
-    return buildUserImageUrl(cached?.user_id ?? null, cached?.image_updated_at ?? null);
-  });
+  const serverImageUrl = useMyUserImageUrl();
   const [imageSaving, setImageSaving] = useState(false);
   const [showDiscardImageConfirm, setShowDiscardImageConfirm] = useState(false);
   // Account-setup gate shown when an account-less user tries to add a photo.
@@ -384,16 +379,11 @@ export default function SettingsPage() {
     }
     setTheme(getStoredTheme());
 
-    // Sync the cached profile with the server. Updates `serverImageUrl`
-    // if the server's timestamp is newer than the local cache (e.g.
-    // image was set from another device with the same browser_id —
-    // shouldn't happen since browser_id is per-browser, but the round
-    // trip also serves as the first-time-on-this-device sync.)
+    // Sync the cached profile with the server. cacheMyUserProfile fires
+    // USER_PROFILE_CHANGED_EVENT, so the useMyUserImageUrl hook (and every
+    // other avatar surface) refreshes if the account's image changed.
     apiGetMyUserProfile()
-      .then((profile) => {
-        cacheMyUserProfile(profile);
-        setServerImageUrl(buildUserImageUrl(profile.user_id, profile.image_updated_at));
-      })
+      .then(cacheMyUserProfile)
       .catch(() => {
         // Network blip — the cached value is still authoritative.
       });
@@ -472,13 +462,13 @@ export default function SettingsPage() {
     if (pendingCroppedBlob) {
       // Pass the current name so the server can mint an account to own the
       // photo when the caller has none yet (the openFilePicker gate ensures
-      // a name exists). Ignored when an account already resolves.
-      const profile = await apiUploadMyUserImage(pendingCroppedBlob, name);
-      setServerImageUrl(buildUserImageUrl(profile.user_id, profile.image_updated_at));
+      // a name exists). Ignored when an account already resolves. The upload
+      // helper caches the new profile + fires USER_PROFILE_CHANGED_EVENT, so
+      // the avatar (via useMyUserImageUrl) updates without setting state here.
+      await apiUploadMyUserImage(pendingCroppedBlob, name);
       setPendingCroppedBlob(null);
     } else if (pendingImageRemoval) {
       await apiDeleteMyUserImage();
-      setServerImageUrl(null);
       setPendingImageRemoval(false);
     }
   };
@@ -585,7 +575,6 @@ export default function SettingsPage() {
       // owns the FE state
     }
     clearCachedMyUserProfile();
-    setServerImageUrl(null);
     setPendingCroppedBlob(null);
     setPendingImageRemoval(false);
     setMessage({ type: 'success', text: 'Settings cleared!' });
