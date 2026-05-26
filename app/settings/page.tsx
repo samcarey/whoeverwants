@@ -530,11 +530,6 @@ export default function SettingsPage() {
             </div>
           )}
         </section>
-        {!currentUser && (
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            Sign in to keep your polls and groups across devices.
-          </p>
-        )}
       </div>
 
       {/* Add a sign-in method — for signed-in accounts that lack an email
