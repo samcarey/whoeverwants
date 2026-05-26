@@ -502,10 +502,6 @@ export default function SettingsPage() {
               </p>
             )}
           </section>
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            Passkeys let you sign in with Touch ID, Face ID, or a hardware
-            key — no email link needed.
-          </p>
         </div>
       )}
 
