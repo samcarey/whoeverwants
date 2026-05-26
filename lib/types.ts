@@ -39,6 +39,10 @@ export interface Question {
   day_time_windows?: DayTimeWindow[] | null;
   duration_window?: DurationWindow | null;
   category?: QuestionCategory | null;
+  /** Emoji chosen for a custom category; null/undefined for built-in
+   *  categories or when none was picked. Preferred over the category/type
+   *  fallback by getCategoryIcon(). */
+  category_icon?: string | null;
   options_metadata?: OptionsMetadata | null;
   reference_latitude?: number | null;
   reference_longitude?: number | null;

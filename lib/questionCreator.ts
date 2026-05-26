@@ -29,6 +29,7 @@ export function buildQuestionSnapshot(question: Question, poll?: Poll | null) {
     auto_close_after: question.auto_close_after,
     details: question.details,
     category: question.category,
+    category_icon: question.category_icon,
     options_metadata: question.options_metadata,
     // Migration 098: these fields live on the poll wrapper now.
     min_responses: poll?.min_responses ?? null,

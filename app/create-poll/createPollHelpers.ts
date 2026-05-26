@@ -25,6 +25,9 @@ export interface QuestionDraft {
   title: string;
   isAutoTitle: boolean;
   category: string;
+  /** Emoji for a custom category. Empty string when none chosen / not a
+   *  custom category. */
+  categoryIcon: string;
   forField: string;
   options: string[];
   optionsMetadata: OptionsMetadata;
@@ -60,6 +63,7 @@ export function emptyDraft(
     title: '',
     isAutoTitle: !isYesNo,
     category: opts.category ?? 'custom',
+    categoryIcon: '',
     forField: opts.forField ?? '',
     options: [''],
     optionsMetadata: {},
@@ -143,6 +147,12 @@ export function draftToQuestionParams(
   }
   if (dbType === 'ranked_choice' && d.category !== 'custom') {
     params.category = d.category;
+  }
+  // Custom-category emoji: only meaningful when the category isn't a
+  // built-in type (built-ins have a fixed icon). The form only surfaces the
+  // picker for custom categories, so this is null otherwise.
+  if (d.categoryIcon.trim() && !getBuiltInType(d.category)) {
+    params.category_icon = d.categoryIcon.trim();
   }
   if (dbType === 'ranked_choice' && filledOptions.length > 0) {
     params.options = filledOptions;
@@ -279,6 +289,7 @@ export function synthesizePlaceholderPoll(
       created_at: now,
       updated_at: now,
       category: dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : null,
+      category_icon: d.categoryIcon.trim() && !getBuiltInType(d.category) ? d.categoryIcon.trim() : null,
       is_auto_title: d.isAutoTitle,
       poll_id: pollId,
       question_index: i,

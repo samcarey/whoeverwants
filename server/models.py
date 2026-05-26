@@ -164,6 +164,7 @@ class QuestionResponse(BaseModel):
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None
     category: str | None = None
+    category_icon: str | None = None
     options_metadata: dict | None = None
     reference_latitude: float | None = None
     reference_longitude: float | None = None
@@ -253,6 +254,10 @@ class CreateQuestionRequest(BaseModel):
 
     question_type: QuestionType = QuestionType.yes_no
     category: str | None = None
+    # Emoji chosen by the creator for a custom category. None for built-in
+    # categories (they have a fixed icon) and for custom categories where
+    # the creator didn't pick one.
+    category_icon: str | None = None
     options: list[str] | None = None
     options_metadata: dict | None = None
     context: str | None = None

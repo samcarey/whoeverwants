@@ -18,6 +18,7 @@ import { useAppPrefetch } from "@/lib/prefetch";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
+import CategoryEmojiField from "@/components/CategoryEmojiField";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import SliderSwitch from "@/components/SliderSwitch";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
@@ -279,6 +280,8 @@ export function CreateQuestionContent() {
   const [details, setDetails] = useState("");
   const detailsRef = useRef<HTMLTextAreaElement>(null);
   const [category, setCategory] = useState<string>('custom');
+  // Emoji for a custom category (empty = use the default fallback glyph).
+  const [categoryEmoji, setCategoryEmoji] = useState<string>("");
   const [forField, setForField] = useState("");
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Reference location for proximity-based search
@@ -391,6 +394,11 @@ export function CreateQuestionContent() {
   // Handle category changes
   const handleCategoryChange = useCallback((val: string) => {
     setCategory(val);
+    // The emoji picker only applies to custom categories; built-in types
+    // have a fixed icon, so drop any chosen emoji when switching to one.
+    if (getBuiltInType(val)) {
+      setCategoryEmoji('');
+    }
     if (val === 'yes_no') {
       setIsAutoTitle(false);
       setTitle('');
@@ -480,6 +488,7 @@ export function CreateQuestionContent() {
         creatorName,
         isAutoTitle,
         category,
+        categoryEmoji,
         forField,
         durationMinValue,
         durationMaxValue,
@@ -493,7 +502,7 @@ export function CreateQuestionContent() {
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, allowPreRanking, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, allowPreRanking, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -530,6 +539,7 @@ export function CreateQuestionContent() {
           setCustomTime(formState.customTime || '');
           setCreatorName(formState.creatorName || '');
           if (formState.category) setCategory(formState.category);
+          if (formState.categoryEmoji !== undefined) setCategoryEmoji(formState.categoryEmoji);
           if (formState.forField) setForField(formState.forField);
 
           if (formState.durationMinValue !== undefined) setDurationMinValue(formState.durationMinValue);
@@ -740,6 +750,7 @@ export function CreateQuestionContent() {
     title,
     isAutoTitle,
     category,
+    categoryIcon: categoryEmoji,
     forField,
     options: [...options],
     optionsMetadata: { ...optionsMetadata },
@@ -753,7 +764,7 @@ export function CreateQuestionContent() {
     durationMaxEnabled,
     dayTimeWindows: [...dayTimeWindows],
     minimumParticipation,
-  }), [questionType, title, isAutoTitle, category, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minimumParticipation]);
+  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minimumParticipation]);
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
@@ -761,6 +772,7 @@ export function CreateQuestionContent() {
     setTitle(d.title);
     setIsAutoTitle(d.isAutoTitle);
     setCategory(d.category);
+    setCategoryEmoji(d.categoryIcon ?? '');
     setForField(d.forField);
     setOptions(d.options.length ? [...d.options] : ['']);
     setOptionsMetadata({ ...d.optionsMetadata });
@@ -1095,6 +1107,9 @@ export function CreateQuestionContent() {
           }
           if (duplicateData.category) {
             setCategory(duplicateData.category);
+          }
+          if (duplicateData.category_icon) {
+            setCategoryEmoji(duplicateData.category_icon);
           }
           if (duplicateData.options_metadata) {
             setOptionsMetadata(duplicateData.options_metadata);
@@ -1937,6 +1952,13 @@ export function CreateQuestionContent() {
                           />
                         </div>
                       </label>
+                      {!getBuiltInType(category) && (
+                        <CategoryEmojiField
+                          value={categoryEmoji}
+                          onChange={setCategoryEmoji}
+                          disabled={isLoading}
+                        />
+                      )}
                       {category !== 'yes_no' && (
                         <div className="flex items-center justify-between gap-3 h-12">
                           <label htmlFor="forField" className="text-base font-normal shrink-0">
