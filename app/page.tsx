@@ -276,13 +276,12 @@ export default function Home() {
 
       {!loading && !error && polls.length === 0 && emptyGroups.length === 0 && (
         <div className="text-center py-8">
-          {session ? (
-            <p className="text-gray-500 dark:text-gray-400">You are not in any groups</p>
-          ) : (
+          <p className="text-gray-500 dark:text-gray-400">You don&apos;t have access to any groups</p>
+          {!session && (
             <button
               type="button"
               onClick={() => setSignInOpen(true)}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+              className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
             >
               Sign In
             </button>
