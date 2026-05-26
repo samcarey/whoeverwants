@@ -72,6 +72,15 @@ const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
 // documented in PR #375 that retired the unbounded version.
 const BOTTOM_PIN_DURATION_MS = 800;
 
+// Scroll-restore (back-nav) re-application window. Unlike the bottom-pin's
+// deadline, this is measured from the FIRST rAF tick that actually runs, not
+// from when the layoutEffect arms it — the slide-back animation + mounting
+// every card can starve requestAnimationFrame for hundreds of ms, and an
+// arm-time deadline would expire before the loop ever re-applied the scroll
+// (leaving the page stuck at Next.js' scroll-to-0 → top of the list). 1000ms
+// of active re-application reliably outlasts Next's post-commit scroll reset.
+const RESTORE_PIN_DURATION_MS = 1000;
+
 // Debounce window for "scroll has stopped." Below this iOS momentum
 // scrolling can briefly pause and reads as idle; above it the arrows
 // feel laggy to appear after a true stop.
@@ -1054,7 +1063,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     return remembered + window.innerHeight;
   });
   useLayoutEffect(() => {
-    console.warn(`[scroll-debug] LE-gate group=${!!group} loading=${loading} headerH=${headerHeight} handled=${hasHandledInitialExpandRef.current} overlay=${overlayCardsOffset !== undefined} scrollY=${typeof window!=='undefined'?window.scrollY:'?'}`);
     if (!group || loading) return;
     if (headerHeight === 0) return;
     if (hasHandledInitialExpandRef.current) return;
@@ -1082,14 +1090,15 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     // already reflects the full document and the requested scrollY
     // lands without clamping.
     const remembered = getRememberedScroll(groupScrollKey(groupId));
-    console.warn(`[scroll-debug] LE-restore remembered=${remembered} scrollY=${window.scrollY} scrollH=${document.documentElement.scrollHeight} innerH=${window.innerHeight}`);
     if (remembered !== undefined) {
       restoreTargetRef.current = remembered;
-      // Pin against the target for a bounded window — iOS Safari +
-      // Next.js App Router's scroll-to-top fires ~30-40ms after our
-      // initial scrollTo, so we need re-application opportunities for
-      // longer than that. 800ms matches BOTTOM_PIN_DURATION_MS.
-      restorePinDeadlineRef.current = Date.now() + BOTTOM_PIN_DURATION_MS;
+      // Arm (don't start) the pin window. The rAF loop below starts the
+      // RESTORE_PIN_DURATION_MS countdown on its first tick that actually
+      // runs — measuring from here would let the slide-back animation +
+      // card-mount work consume the entire window before the loop ever
+      // re-applies after Next.js' scroll-to-0. 0 is the "armed, not
+      // started" sentinel.
+      restorePinDeadlineRef.current = 0;
       // Document scrollHeight is already large enough — restoreMinHeight
       // is seeded in the useState initializer so the initial render
       // committed with the grown wrapper. scrollTo lands at the target
@@ -1120,27 +1129,40 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     if (!group || loading) return;
     if (restoreTargetRef.current == null) return;
     let rafId: number | null = null;
-    let tickN = 0;
     const tick = () => {
       rafId = null;
-      if (userInteractedRef.current || Date.now() >= restorePinDeadlineRef.current) {
-        console.warn(`[scroll-debug] rAF-bail interacted=${userInteractedRef.current} deadlinePassed=${Date.now() >= restorePinDeadlineRef.current} scrollY=${window.scrollY}`);
+      const target = restoreTargetRef.current;
+      if (target == null) return;
+      // User took over — respect their scroll, stop re-applying.
+      if (userInteractedRef.current) {
         restoreTargetRef.current = null;
         setRestoreMinHeight(null);
         return;
       }
-      const target = restoreTargetRef.current;
-      if (target == null) return;
-      if (tickN++ % 8 === 0) console.warn(`[scroll-debug] rAF-tick n=${tickN} scrollY=${window.scrollY} target=${target} scrollH=${document.documentElement.scrollHeight}`);
-      // Re-apply on every frame until the deadline. Don't early-success on
-      // N stable frames: Next.js App Router's scroll-to-top useEffect can
-      // fire dozens of ms after pathname commit (well past any reasonable
-      // "stable for 3 frames" window), and if we stopped guarding before
-      // that we'd see scrollY snap to 0 with no one watching. The cost of
-      // running rAF for 800ms is one no-op compare per frame when scrollY
-      // is already at target — negligible.
+      // Start the bounded window on the FIRST tick that actually runs.
+      // (Armed as 0 in the layoutEffect.) The slide-back animation +
+      // mounting every card can starve rAF for hundreds of ms; measuring
+      // the window from arm-time let it expire before this loop got to
+      // re-apply even once, so it bailed leaving scrollY at Next.js'
+      // scroll-to-0 (→ top of the list). Starting here guarantees a full
+      // window of active re-application after the loop is unblocked.
+      if (restorePinDeadlineRef.current === 0) {
+        restorePinDeadlineRef.current = Date.now() + RESTORE_PIN_DURATION_MS;
+      }
+      // Re-apply BEFORE the deadline check so the final tick still lands
+      // the target. Don't early-success on N stable frames: Next.js App
+      // Router's scroll-to-top useEffect can fire dozens of ms after
+      // pathname commit (well past any "stable for 3 frames" window), and
+      // stopping before that would let scrollY snap to 0 with no one
+      // watching. The per-frame no-op compare when already at target is
+      // negligible.
       if (Math.abs(window.scrollY - target) > 0.5) {
         window.scrollTo(0, target);
+      }
+      if (Date.now() >= restorePinDeadlineRef.current) {
+        restoreTargetRef.current = null;
+        setRestoreMinHeight(null);
+        return;
       }
       rafId = requestAnimationFrame(tick);
     };
@@ -1528,7 +1550,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // and would falsely disable the pin during initial layout settling.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const disable = (e: Event) => { console.warn(`[scroll-debug] USER-INTERACT type=${e.type} restoreTarget=${restoreTargetRef.current} scrollY=${window.scrollY}`); userInteractedRef.current = true; };
+    const disable = () => { userInteractedRef.current = true; };
     // pointerdown covers mouse + touch + pen on every platform (including
     // iOS where touchstart sometimes doesn't bubble during scroll-engaged
     // gestures). Keep wheel + keydown for trackpads and keyboard scrolls.
