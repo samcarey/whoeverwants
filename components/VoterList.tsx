@@ -369,9 +369,17 @@ function SingleLineVoters({
   }, [totalItems]);
 
   return (
+    // `w-full` is load-bearing: the ResizeObserver below observes this same
+    // element AND `measure()` reads `el.clientWidth` from it for the fit
+    // computation. Without a fixed width the element is content-sized, so
+    // hiding/showing bubbles in measure() resizes it, re-firing the observer.
+    // In Chromium the reflow settles; on iOS (sub-pixel rounding + reflow
+    // timing) the two outcomes alternate every frame — the bubble row visibly
+    // oscillates. Full width pins clientWidth to the stable parent track so
+    // toggling child visibility never changes the observed element's size.
     <div
       ref={containerRef}
-      className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}
+      className={`flex w-full items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}
     >
       {namedVoters.map((voter, index) => (
         <span

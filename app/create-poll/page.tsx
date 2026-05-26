@@ -1540,12 +1540,17 @@ export function CreateQuestionContent() {
       // category on the next render.
       setCategoryRefreshTick((t) => t + 1);
 
+      // Land on the new poll's detail page. The cache is hot from the
+      // just-completed POLL_HYDRATED so the destination mounts instantly.
+      const redirectId = createdPoll.short_id ?? createdPoll.id;
+      questionBackTarget.set(redirectId, resolveGroupRootRouteId(createdPoll));
+      const pollHref = getGroupHrefForPoll(createdPoll);
       if (onEmptyGroup) {
-        // Land on the real group URL with the new poll expanded. The cache is
-        // hot from the just-completed POLL_HYDRATED so re-mount is instant.
-        const redirectId = createdPoll.short_id ?? createdPoll.id;
-        questionBackTarget.set(redirectId, resolveGroupRootRouteId(createdPoll));
-        router.replace(getGroupHrefForPoll(createdPoll));
+        // Replace so the empty `/g/` placeholder doesn't linger in history.
+        router.replace(pollHref);
+      } else {
+        // Push so the group page stays the back target.
+        router.push(pollHref);
       }
     } catch (error) {
       console.error("Unexpected error:", error);
