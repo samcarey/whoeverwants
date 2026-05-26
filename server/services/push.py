@@ -44,6 +44,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from pywebpush import WebPushException, webpush
 
 from database import get_db
+from services.groups import NIL_UUID
 
 log = logging.getLogger("push")
 
@@ -311,7 +312,7 @@ def compute_badge_count(
     - unread: a notification event the browser hasn't seen since — never-viewed
       (new), or (gated) a transition / close after the last view.
     """
-    if not browser_id:
+    if not browser_id or browser_id == NIL_UUID:
         return 0
     if todo_mode:
         row = conn.execute(

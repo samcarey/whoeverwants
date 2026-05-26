@@ -13,6 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from database import get_db
 from services.auth import lookup_session_user_id
+from services.groups import NIL_UUID
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -122,6 +123,11 @@ class BrowserIdMiddleware(BaseHTTPMiddleware):
         if not value:
             return None
         v = value.strip().lower()
+        if v == NIL_UUID:
+            # The nil UUID is never a real identity. Treat it like a missing
+            # header so the request gets a freshly-minted id instead of
+            # joining the shared nil-id bucket (the iOS all-zeros badge bug).
+            return None
         return v if _BROWSER_ID_RE.match(v) else None
 
     async def dispatch(self, request: Request, call_next) -> Response:
