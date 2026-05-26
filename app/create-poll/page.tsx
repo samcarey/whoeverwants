@@ -1956,6 +1956,7 @@ export function CreateQuestionContent() {
                         <CategoryEmojiField
                           value={categoryEmoji}
                           onChange={setCategoryEmoji}
+                          categoryWord={category}
                           disabled={isLoading}
                         />
                       )}
