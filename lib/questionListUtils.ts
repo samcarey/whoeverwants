@@ -7,27 +7,26 @@ export const QUESTION_TYPE_SYMBOLS: Record<string, string> = {
   time: '📅',
 };
 
-const CLOSED_YES_NO_SYMBOL = '🏆';
-
-export function getQuestionSymbol(questionType: string, isClosed: boolean): string {
-  if (questionType === 'yes_no' && isClosed) return CLOSED_YES_NO_SYMBOL;
-  return QUESTION_TYPE_SYMBOLS[questionType] || '☰';
+/** The symbol for a question type. It must NEVER depend on poll state
+ *  (open/closed) — the glyph in front of a title is a stable identifier,
+ *  not a result indicator. Question types without a dedicated symbol fall
+ *  back to the ballot box. */
+export function getQuestionSymbol(questionType: string): string {
+  return QUESTION_TYPE_SYMBOLS[questionType] || '🗳️';
 }
 
-/** Phase 5b: takes `isClosed` as a separate arg since `is_closed` is a
- *  wrapper-level field. Callers source it from the parent poll. */
-export function getCategoryIcon(question: Question, isClosed: boolean = false): string {
+export function getCategoryIcon(question: Question): string {
   const builtInIcon = getBuiltInCategoryIcon(question.category);
   if (builtInIcon) return builtInIcon;
   // Custom or no category — use question type symbol
-  return getQuestionSymbol(question.question_type, isClosed);
+  return getQuestionSymbol(question.question_type);
 }
 
 /** Returns the built-in category's emoji, or undefined for `custom` /
  *  unrecognized / missing categories. Use this when the call site WANTS
  *  to omit the icon entirely rather than fall back to a generic question-type
- *  symbol — e.g. compact result pills, where a generic 🏆 was previously
- *  shown for custom categories and felt redundant. */
+ *  symbol — e.g. compact result pills, where a generic symbol for custom
+ *  categories felt redundant. */
 export function getBuiltInCategoryIcon(category: string | null | undefined): string | undefined {
   if (!category || category === 'custom') return undefined;
   return getBuiltInType(category)?.icon;

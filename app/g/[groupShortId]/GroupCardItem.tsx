@@ -133,7 +133,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   const wrapperPrephaseDeadline = wrapper?.prephase_deadline ?? null;
   const wrapperCloseReason = wrapper?.close_reason ?? null;
   const wrapperUpdatedAt = wrapper?.updated_at ?? question.updated_at;
-  const categoryIcon = getCategoryIcon(question, isClosed);
+  const categoryIcon = getCategoryIcon(question);
   // Hoisted: every row reads this 1–3 times (status label, respondent
   // filter, respondent empty-text, includeSelf gate).
   const inSuggestionPhase = isInSuggestionPhase(question, wrapperPrephaseDeadline);
