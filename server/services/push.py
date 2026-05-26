@@ -573,6 +573,52 @@ def fan_out_join_request(
         log.exception("fan_out_join_request failed: %s", exc)
 
 
+def fan_out_member_added(
+    group_id: str,
+    added_user_id: str,
+    payload: dict,
+) -> None:
+    """Send an 'added to a group' push to every browser the just-added
+    account is signed in on, subject to the per-group notification
+    preference (default ON for a freshly-added member — they have no pref
+    row yet). Same safety contract as `fan_out_join_request`: every error
+    caught, logged, and swallowed.
+
+    Targets `user_browsers WHERE user_id = added_user_id` — the recipient is
+    the invitee, not the group at large (the rest of the group already knows
+    about each other). Reuses the join-request `notify_new_poll` pref as the
+    single "do I want to hear about this group?" signal.
+    """
+    try:
+        with get_db() as conn:
+            recipients = conn.execute(
+                """
+                SELECT DISTINCT ub.browser_id::text AS browser_id
+                  FROM user_browsers ub
+                  LEFT JOIN group_notification_preferences apref
+                    ON apref.user_id = %(uid)s::uuid
+                   AND apref.group_id = %(gid)s::uuid
+                  LEFT JOIN group_notification_preferences bpref
+                    ON bpref.browser_id = ub.browser_id
+                   AND bpref.group_id = %(gid)s::uuid
+                 WHERE ub.user_id = %(uid)s::uuid
+                   AND COALESCE(apref.notify_new_poll, bpref.notify_new_poll, TRUE) = TRUE
+                """,
+                {"gid": group_id, "uid": added_user_id},
+            ).fetchall()
+            browser_ids = [r["browser_id"] for r in recipients]
+            if not browser_ids:
+                return
+            subscriptions = _fetch_subscriptions(conn, browser_ids)
+            if not subscriptions:
+                return
+            vapid = _load_vapid_from_db(conn)
+
+        _dispatch_pushes(subscriptions, payload, vapid)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("fan_out_member_added failed: %s", exc)
+
+
 def fan_out_poll_closed(group_id: str, poll_id: str, payload: dict) -> None:
     """Send a 'poll closed' push to every group member whose notification
     preference is on. Same safety contract + default-ON pref semantics as

@@ -56,6 +56,7 @@ import {
 import { GroupContent } from "@/app/g/[groupShortId]/GroupPage";
 import { GroupInfoView } from "@/app/g/[groupShortId]/info/page";
 import { GroupEditTitleView } from "@/app/g/[groupShortId]/edit-title/page";
+import { GroupInviteMembersView } from "@/app/g/[groupShortId]/invite-members/page";
 import { PollDetailView } from "@/app/g/[groupShortId]/p/[pollShortId]/PollDetailPage";
 import { PollInfoView } from "@/app/g/[groupShortId]/p/[pollShortId]/info/page";
 import { EmptyPlaceholder } from "@/app/g/page";
@@ -212,6 +213,25 @@ export function slideToGroupEditTitle({
   });
 }
 
+/** Slide-in the group's /invite-members subroute. Used by the "Add people"
+ *  button atop the /info members list. */
+export function slideToGroupInviteMembers({
+  groupId,
+  direction = 'forward',
+  useHistoryBack = false,
+}: {
+  groupId: string;
+  direction?: 'forward' | 'back';
+  useHistoryBack?: boolean;
+}): void {
+  dispatchSlide({
+    href: `/g/${groupId}/invite-members`,
+    direction,
+    useHistoryBack,
+    kind: { type: 'groupInviteMembers', groupId },
+  });
+}
+
 /** Slide-in the "New Group" empty placeholder. Caller (the home new group button)
  *  fires `apiCreateGroup` in parallel, then `router.push('/g/<short_id>')`
  *  on success or `router.push('/g')` on failure. The host skips its
@@ -280,6 +300,8 @@ function renderForKind(
       return <GroupInfoView key={kind.groupId} groupId={kind.groupId} />;
     case 'groupEditTitle':
       return <GroupEditTitleView key={kind.groupId} groupId={kind.groupId} />;
+    case 'groupInviteMembers':
+      return <GroupInviteMembersView key={kind.groupId} groupId={kind.groupId} />;
     case 'pollDetail':
       return (
         <PollDetailView
