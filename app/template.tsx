@@ -9,6 +9,8 @@ import { navigateWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
+import { getUserName } from '@/lib/userProfile';
+import { SESSION_CHANGED_EVENT } from '@/lib/session';
 
 // `CreateQuestionContent` (the bubble-bar + create-poll-modal owner) is
 // mounted in `app/layout.tsx` via `<PersistentCreatePollHost />` so it
@@ -104,6 +106,19 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, []);
 
+  // Settings header title: the saved account/display name when set, else
+  // "Settings". Init null (SSR parity → "Settings" on the first paint), then
+  // read getUserName() on mount + on every session change (sign-in/out). Name
+  // edits happen on /settings/edit, which navigates back here and remounts the
+  // template, so the on-mount read picks those up too.
+  const [settingsName, setSettingsName] = useState<string | null>(null);
+  useEffect(() => {
+    const update = () => setSettingsName(getUserName()?.trim() || null);
+    update();
+    window.addEventListener(SESSION_CHANGED_EVENT, update);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
+  }, [pathname]);
+
   // Hide the settings gear on the home page when GroupList enters
   // bulk-forget selection mode — the cancel (X) button portals into the
   // same upper-left slot and the gear's tap target would compete with it.
@@ -187,7 +202,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             className="max-w-4xl mx-auto px-16 pb-1 page-title-safe-top"
           >
             <h1 className="text-2xl font-bold text-center break-words select-none" {...longPressProps}>
-              Settings
+              {settingsName || 'Settings'}
             </h1>
           </div>
         )}
