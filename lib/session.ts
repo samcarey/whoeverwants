@@ -17,6 +17,8 @@
  * `lib/api/_internal.ts`).
  */
 
+import { clearStoredUserData } from '@/lib/userProfile';
+
 const TOKEN_KEY = 'session_token';
 const PROFILE_KEY = 'session_user';
 
@@ -135,6 +137,23 @@ function invalidateAccessibleCacheLazy(): void {
   }
 }
 
+function clearCachedProfileLazy(): void {
+  // The profile photo is account data (keyed by user_id, migration 124).
+  // On sign-out the cached avatar must vanish immediately — drop the
+  // localStorage profile cache + fire its change event so every avatar
+  // surface falls back to initials without a navigation. Lazy require to
+  // avoid the session ↔ api/users ↔ _internal ↔ session import cycle at
+  // module-init time.
+  if (typeof window === 'undefined') return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { clearCachedMyUserProfile } = require('@/lib/api/users');
+    clearCachedMyUserProfile?.();
+  } catch {
+    // Module not loaded yet (SSR, test harness) — nothing cached to clear.
+  }
+}
+
 export function saveSession(token: string, user: SessionUser): void {
   cachedToken = token;
   cachedProfile = user;
@@ -156,7 +175,16 @@ export function saveSession(token: string, user: SessionUser): void {
  *  `[].every(...) === true` makes an empty `accessibleQuestionIds`
  *  list satisfy the cache freshness check — the anonymous post-sign-
  *  out path would happily serve them for up to the 60s TTL, leaking
- *  signed-in-fetched group data to the anonymous session. */
+ *  signed-in-fetched group data to the anonymous session.
+ *
+ *  When a session actually existed (`wasSignedIn`), also wipes the
+ *  locally-stored personal user data (display name, reference
+ *  location, min-responses default) so signing out leaves a clean
+ *  slate. Gated on `wasSignedIn` so an anonymous user — whose
+ *  `apiGetMe()` 401 also routes here — keeps the name/location they
+ *  set without ever signing in. The clear runs BEFORE `dispatchChange`
+ *  so SESSION_CHANGED listeners (e.g. the settings name field) read the
+ *  already-emptied values. */
 export function clearSession(): void {
   const wasSignedIn = !!cachedToken || !!cachedProfile;
   cachedToken = null;
@@ -164,7 +192,11 @@ export function clearSession(): void {
   writeToken(null);
   writeProfile(null);
   invalidateAccessibleCacheLazy();
-  if (wasSignedIn) dispatchChange();
+  if (wasSignedIn) {
+    clearStoredUserData();
+    clearCachedProfileLazy();
+    dispatchChange();
+  }
 }
 
 /** Update the cached profile without rotating the token (used after

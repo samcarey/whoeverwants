@@ -76,6 +76,26 @@ export function saveUserMinResponses(value: number) {
   localStorage.setItem(USER_MIN_RESPONSES_KEY, String(value));
 }
 
+export function clearUserMinResponses() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(USER_MIN_RESPONSES_KEY);
+}
+
+/**
+ * Wipe every piece of locally-stored personal user data — display name,
+ * reference location, and the min-responses default. Called on sign-out
+ * (via `clearSession`) so the next anonymous session starts with a clean
+ * slate. Does NOT touch the account's server-side display_name (signing
+ * back into the same account restores the name) nor browser-scoped
+ * identity (`browser_id`, group memberships, theme preference).
+ */
+export function clearStoredUserData() {
+  if (typeof window === 'undefined') return;
+  clearUserName();
+  clearUserLocation();
+  clearUserMinResponses();
+}
+
 export function getUserMinResponses(): number | null {
   if (typeof window === 'undefined') return null;
   const stored = localStorage.getItem(USER_MIN_RESPONSES_KEY);

@@ -25,6 +25,8 @@ from pydantic import BaseModel, Field
 
 from database import get_db
 from middleware import browser_id_from_request as _browser_id
+from middleware import user_id_from_request as _user_id
+from services.auth import resolve_actor_user_id
 from services.groups import resolve_group_id_from_route_id
 from services.push import apns_configured, compute_badge_count, get_vapid_keys
 
@@ -116,6 +118,7 @@ def get_badge_count(
         count = compute_badge_count(
             conn,
             browser_id,
+            user_id=_user_id(request),
             todo_mode=todo_mode,
             on_voting_open=on_voting_open,
             on_results=on_results,
@@ -203,18 +206,29 @@ def unregister_subscription(req: UnsubscribeRequest, request: Request):
     response_model=GroupNotificationPreference,
 )
 def get_group_preference(route_id: str, request: Request):
-    """Return the calling browser's notification preference for this
-    group. Defaults to ON when no row exists."""
+    """Return the caller's notification preference for this group. The pref
+    follows the account (keyed by user_id) when the caller has one, else
+    the browser. Defaults to ON when no row exists."""
     browser_id = _require_browser_id(request)
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        row = conn.execute(
-            "SELECT notify_new_poll FROM group_notification_preferences "
-            "WHERE browser_id = %(b)s AND group_id = %(g)s",
-            {"b": browser_id, "g": group_id},
-        ).fetchone()
+        user_id = resolve_actor_user_id(
+            conn, user_id=_user_id(request), browser_id=browser_id
+        )
+        if user_id:
+            row = conn.execute(
+                "SELECT notify_new_poll FROM group_notification_preferences "
+                "WHERE user_id = %(u)s AND group_id = %(g)s",
+                {"u": user_id, "g": group_id},
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT notify_new_poll FROM group_notification_preferences "
+                "WHERE browser_id = %(b)s AND group_id = %(g)s",
+                {"b": browser_id, "g": group_id},
+            ).fetchone()
     notify = True if row is None else bool(row["notify_new_poll"])
     return GroupNotificationPreference(notify_new_poll=notify)
 
@@ -226,21 +240,41 @@ def get_group_preference(route_id: str, request: Request):
 def set_group_preference(
     route_id: str, req: GroupNotificationPreference, request: Request
 ):
-    """Set the per-group notification preference for this browser."""
+    """Set the per-group notification preference. Keyed to the caller's
+    account (so it applies on every signed-in device) when they have one,
+    else to the browser."""
     browser_id = _require_browser_id(request)
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        conn.execute(
-            """
-            INSERT INTO group_notification_preferences
-              (browser_id, group_id, notify_new_poll)
-            VALUES (%(b)s, %(g)s, %(notify)s)
-            ON CONFLICT (browser_id, group_id) DO UPDATE SET
-              notify_new_poll = EXCLUDED.notify_new_poll,
-              updated_at = NOW()
-            """,
-            {"b": browser_id, "g": group_id, "notify": req.notify_new_poll},
+        user_id = resolve_actor_user_id(
+            conn, user_id=_user_id(request), browser_id=browser_id
         )
+        if user_id:
+            conn.execute(
+                """
+                INSERT INTO group_notification_preferences
+                  (user_id, group_id, notify_new_poll)
+                VALUES (%(u)s, %(g)s, %(notify)s)
+                ON CONFLICT (user_id, group_id) WHERE user_id IS NOT NULL
+                DO UPDATE SET
+                  notify_new_poll = EXCLUDED.notify_new_poll,
+                  updated_at = NOW()
+                """,
+                {"u": user_id, "g": group_id, "notify": req.notify_new_poll},
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO group_notification_preferences
+                  (browser_id, group_id, notify_new_poll)
+                VALUES (%(b)s, %(g)s, %(notify)s)
+                ON CONFLICT (browser_id, group_id) WHERE browser_id IS NOT NULL
+                DO UPDATE SET
+                  notify_new_poll = EXCLUDED.notify_new_poll,
+                  updated_at = NOW()
+                """,
+                {"b": browser_id, "g": group_id, "notify": req.notify_new_poll},
+            )
     return req
