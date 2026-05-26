@@ -34,9 +34,7 @@ import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
 import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
-import { computePollUnread, POLL_VIEWED_CHANGED_EVENT } from "@/lib/unread";
-import { getEffectiveBadgeSettings, BADGE_SETTINGS_CHANGED_EVENT, type BadgeSettings } from "@/lib/badgeSettings";
-import { SESSION_CHANGED_EVENT } from "@/lib/session";
+import { computePollUnread, useUnreadReactivity } from "@/lib/unread";
 import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
@@ -192,23 +190,10 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // Read-state model: the gold "unread" bar + scroll-helper arrows reflect
   // whether each poll is unread under the user's badge settings (see
   // lib/unread.ts). `pollViewsTick` is a bare re-render trigger — the unread
-  // helper reads the localStorage view store directly, so flipping the tick
-  // on POLL_VIEWED_CHANGED_EVENT is enough to recompute (e.g. clear the bar
-  // the instant the user opens a poll).
-  const [badgeSettings, setBadgeSettings] = useState<BadgeSettings>(() => getEffectiveBadgeSettings());
-  const [pollViewsTick, setPollViewsTick] = useState(0);
-  useEffect(() => {
-    const onSettings = () => setBadgeSettings(getEffectiveBadgeSettings());
-    const onViewed = () => setPollViewsTick((t) => t + 1);
-    window.addEventListener(BADGE_SETTINGS_CHANGED_EVENT, onSettings);
-    window.addEventListener(SESSION_CHANGED_EVENT, onSettings);
-    window.addEventListener(POLL_VIEWED_CHANGED_EVENT, onViewed);
-    return () => {
-      window.removeEventListener(BADGE_SETTINGS_CHANGED_EVENT, onSettings);
-      window.removeEventListener(SESSION_CHANGED_EVENT, onSettings);
-      window.removeEventListener(POLL_VIEWED_CHANGED_EVENT, onViewed);
-    };
-  }, []);
+  // helper reads the localStorage view store directly, so a bump on
+  // POLL_VIEWED_CHANGED_EVENT is enough to recompute (e.g. clear the bar the
+  // instant the user opens a poll).
+  const { badgeSettings, pollViewsTick } = useUnreadReactivity();
 
   // Phase 5b: poll-level mutations (close/reopen/cutoff) update the
   // polls array; question mutations (forget) update the questions array.

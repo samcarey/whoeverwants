@@ -28,6 +28,9 @@
 
 import type { Poll } from "@/lib/types";
 import type { BadgeSettings } from "@/lib/badgeSettings";
+import { useEffect, useState } from "react";
+import { getEffectiveBadgeSettings, BADGE_SETTINGS_CHANGED_EVENT } from "@/lib/badgeSettings";
+import { SESSION_CHANGED_EVENT } from "@/lib/session";
 
 const VIEWS_KEY = "whoeverwants_poll_views";
 const BASELINE_KEY = "whoeverwants_unread_baseline";
@@ -190,6 +193,32 @@ export function isPollUnread(
     if (lastViewedMs < closeMs) return true;
   }
   return false;
+}
+
+/**
+ * Reactivity for surfaces that render unread state (group cards, home list).
+ * Returns the current badge settings + a `pollViewsTick` that bumps whenever a
+ * poll is viewed — a bare re-render trigger, since `computePollUnread` reads
+ * the localStorage view store directly. Subscribes to settings changes
+ * (BADGE_SETTINGS_CHANGED_EVENT + SESSION_CHANGED_EVENT, since account values
+ * win when signed in) and view changes (POLL_VIEWED_CHANGED_EVENT).
+ */
+export function useUnreadReactivity(): { badgeSettings: BadgeSettings; pollViewsTick: number } {
+  const [badgeSettings, setBadgeSettings] = useState<BadgeSettings>(() => getEffectiveBadgeSettings());
+  const [pollViewsTick, setPollViewsTick] = useState(0);
+  useEffect(() => {
+    const onSettings = () => setBadgeSettings(getEffectiveBadgeSettings());
+    const onViewed = () => setPollViewsTick((t) => t + 1);
+    window.addEventListener(BADGE_SETTINGS_CHANGED_EVENT, onSettings);
+    window.addEventListener(SESSION_CHANGED_EVENT, onSettings);
+    window.addEventListener(POLL_VIEWED_CHANGED_EVENT, onViewed);
+    return () => {
+      window.removeEventListener(BADGE_SETTINGS_CHANGED_EVENT, onSettings);
+      window.removeEventListener(SESSION_CHANGED_EVENT, onSettings);
+      window.removeEventListener(POLL_VIEWED_CHANGED_EVENT, onViewed);
+    };
+  }, []);
+  return { badgeSettings, pollViewsTick };
 }
 
 /** Live wrapper: reads the local view store + baseline + response state. */

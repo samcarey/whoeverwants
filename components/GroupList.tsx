@@ -4,9 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { GroupSummary, Poll } from "@/lib/types";
 import { buildGroups, getGroupHref, getGroupRouteId, isPendingPollId, Group } from "@/lib/groupUtils";
 import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
-import { computePollUnread, POLL_VIEWED_CHANGED_EVENT } from "@/lib/unread";
-import { getEffectiveBadgeSettings, BADGE_SETTINGS_CHANGED_EVENT, type BadgeSettings } from "@/lib/badgeSettings";
-import { SESSION_CHANGED_EVENT } from "@/lib/session";
+import { computePollUnread, useUnreadReactivity } from "@/lib/unread";
 import GroupListItem from "@/components/GroupListItem";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import HeaderPortal from "@/components/HeaderPortal";
@@ -53,22 +51,7 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
   });
   // Read-state model: a group's title is emphasized when it has any unread
   // poll (see lib/unread.ts), mirroring the gold "unread" bar on group cards.
-  // `pollViewsTick` is a bare re-render trigger — computePollUnread reads the
-  // localStorage view store directly.
-  const [badgeSettings, setBadgeSettings] = useState<BadgeSettings>(() => getEffectiveBadgeSettings());
-  const [pollViewsTick, setPollViewsTick] = useState(0);
-  useEffect(() => {
-    const onSettings = () => setBadgeSettings(getEffectiveBadgeSettings());
-    const onViewed = () => setPollViewsTick((t) => t + 1);
-    window.addEventListener(BADGE_SETTINGS_CHANGED_EVENT, onSettings);
-    window.addEventListener(SESSION_CHANGED_EVENT, onSettings);
-    window.addEventListener(POLL_VIEWED_CHANGED_EVENT, onViewed);
-    return () => {
-      window.removeEventListener(BADGE_SETTINGS_CHANGED_EVENT, onSettings);
-      window.removeEventListener(SESSION_CHANGED_EVENT, onSettings);
-      window.removeEventListener(POLL_VIEWED_CHANGED_EVENT, onViewed);
-    };
-  }, []);
+  const { badgeSettings, pollViewsTick } = useUnreadReactivity();
 
   const [pressedGroupId, setPressedGroupId] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
