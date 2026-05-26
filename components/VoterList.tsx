@@ -49,8 +49,9 @@ function deriveVoterState(votes: ApiVote[], filter?: (v: ApiVote) => boolean) {
 }
 
 function EmptyPlaceholder({ text, className }: { text: string; className: string }) {
-  // Matches the bubble row's height (text-xs 16px + py-0.5 4px = 20px) so the
-  // skeleton → empty → populated transitions don't jitter.
+  // text-xs line-height (1rem) + py-0.5 (0.25rem) = 1.25rem, identical to a
+  // loaded bubble and to the skeleton's h-5, so the skeleton → empty →
+  // populated transitions don't jitter at any root font size.
   return (
     <div className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}>
       <span className="text-xs text-gray-500 dark:text-gray-400 py-0.5">{text}</span>
@@ -153,9 +154,14 @@ export default function VoterList({ questionId, className = "", label, filter, s
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="animate-pulse inline-block px-2.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700"
-            // 20px matches loaded bubble height (text-xs 16px + py-0.5 4px).
-            style={{ width: `${50 + (i * 12) % 30}px`, height: '20px' }}
+            className="animate-pulse inline-block h-5 rounded-full bg-gray-200 dark:bg-gray-700"
+            // h-5 (1.25rem) matches the loaded bubble / empty-text height:
+            // text-xs line-height (1rem) + py-0.5 (0.25rem). Must be rem-based,
+            // NOT a fixed `height: 20px` — the bubbles and empty text scale with
+            // the root font size (e.g. iOS Safari per-site text size), so a px
+            // skeleton renders taller/shorter than the loaded row and the list
+            // visibly contracts/expands as each card resolves.
+            style={{ width: `${50 + (i * 12) % 30}px` }}
           />
         ))}
       </div>
