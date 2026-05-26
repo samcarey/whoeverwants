@@ -87,20 +87,14 @@ import type { Poll, Question, QuestionResults } from "@/lib/types";
 // interaction-gated, so a generous value is safe.
 const RESTORE_PIN_DURATION_MS = 2500;
 
-function InlineCategoryIcon({
-  question,
-  isClosed,
-}: {
-  question: Question;
-  isClosed: boolean;
-}) {
+function InlineCategoryIcon({ question }: { question: Question }) {
   return (
     <span
       className="inline-flex items-center justify-center text-lg leading-none shrink-0"
       style={{ width: "1.75rem", height: "1.75rem" }}
       aria-hidden="true"
     >
-      {getCategoryIcon(question, isClosed)}
+      {getCategoryIcon(question)}
     </span>
   );
 }
@@ -785,7 +779,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               <div key={sp.id} className={idx > 0 ? "mt-3" : "mt-2"}>
                 {isMultiPoll && (
                   <div className="mb-2 flex items-center gap-2 px-1">
-                    <InlineCategoryIcon question={sp} isClosed={isClosed} />
+                    <InlineCategoryIcon question={sp} />
                     <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
                       {getQuestionSectionTitle(sp)}
                     </div>
@@ -803,7 +797,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
             >
               {isMultiPoll && (
                 <div className="mb-2 flex items-center gap-2">
-                  <InlineCategoryIcon question={sp} isClosed={isClosed} />
+                  <InlineCategoryIcon question={sp} />
                   <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
                     {getQuestionSectionTitle(sp)}
                   </div>
