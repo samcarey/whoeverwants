@@ -108,6 +108,8 @@ export {
   apiDeleteAccount,
   apiCreateNameAccount,
   apiSetRecoveryReminderDismissed,
+  apiCreateDevInstantLink,
+  apiAdoptInstantSession,
   getCurrentUser,
 } from "./auth";
 export type {
@@ -120,4 +122,5 @@ export type {
   PasskeyRegistrationResult,
   InviteRedeemResult,
   RecoveryEmailRequestResponse,
+  DevInstantLinkResult,
 } from "./auth";

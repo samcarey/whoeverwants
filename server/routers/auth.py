@@ -54,7 +54,9 @@ from services.auth import (
     is_valid_email,
     issue_magic_link,
     issue_session,
+    link_browser_to_user,
     load_user_profile,
+    lookup_session_user_id,
     normalize_email,
     peek_recovery_email_token,
     revoke_session,
@@ -208,6 +210,14 @@ class ProvidersResponse(BaseModel):
 def _resolve_fe_origin(request: Request) -> str:
     from services.fe_origin import resolve_fe_origin as _resolve
     return _resolve(request)
+
+
+def is_prod_origin(request: Request) -> bool:
+    """Thin alias so dev-only endpoints in this router can gate on the
+    shared `services.fe_origin.is_prod_origin` without re-importing it at
+    each call site."""
+    from services.fe_origin import is_prod_origin as _is_prod
+    return _is_prod(request)
 
 
 def _resolve_rp_id(request: Request) -> str:
@@ -371,6 +381,139 @@ def create_account_with_name(req: CreateNameAccountBody, request: Request):
                 user_agent=user_agent,
             )
     return _signin_response(completed)
+
+
+# ---------------------------------------------------------------------------
+# Dev-only instant sign-in links (demo helper)
+# ---------------------------------------------------------------------------
+#
+# Lets a developer (or Claude, when assembling a demo) mint a throwaway
+# account and hand back a URL that signs the recipient straight into it
+# with no prompts — so a specific app state / context can be shared as a
+# single click. Two endpoints:
+#
+#   POST /api/auth/dev/instant-link   (caller: the developer, via curl)
+#     mints a recovery-less account, returns a ready-to-send URL whose
+#     `?token` carries the account's session token + the live session
+#     token itself (so the caller can keep acting as the account to seed
+#     polls / votes before sending the link).
+#   POST /api/auth/instant/adopt      (caller: the recipient's browser)
+#     validates the session token from the URL, LINKS the recipient's
+#     browser to the account (so its browser-keyed group memberships +
+#     pre-seeded polls become visible — `load_user_visibility` unions
+#     across every browser linked to the user), and returns the profile.
+#
+# Both are gated to non-production tiers via `is_prod_origin`: a real
+# prod request (Origin https://whoeverwants.com, or no recognized
+# Origin) gets 503. This keeps the "sign a browser in from a URL token"
+# capability (a login-CSRF vector) off production entirely; on dev /
+# canary it's a convenience with a throwaway-data threat model.
+
+
+class DevInstantLinkBody(BaseModel):
+    # Defaults to a generic demo name so a bare call works; overridable so
+    # the demo account reads like a real participant.
+    name: str = Field(default="Demo User", min_length=1, max_length=50)
+    # Optional same-origin path to land on after sign-in (e.g. "/g/~abc").
+    # Validated server-side to a relative path; defaults to "/".
+    next: str | None = None
+
+
+class DevInstantLinkResponse(BaseModel):
+    url: str
+    session_token: str
+    expires_at: datetime
+    user_id: str
+    name: str | None
+    # Echoed so the caller knows which browser_id the account was linked
+    # to — seed the demo's polls/votes with this SAME X-Browser-Id so the
+    # membership rows land under a browser linked to the account.
+    browser_id: str | None
+
+
+class InstantAdoptBody(BaseModel):
+    token: str = Field(min_length=16, max_length=128)
+
+
+def _safe_relative_next(value: str | None) -> str:
+    """Coerce a caller-supplied `next` to a same-origin relative path, or
+    "/". Rejects absolute URLs, protocol-relative `//host` (open-redirect
+    vector), backslashes, and control chars. The FE page redirects to this
+    value, so it must never escape the app's own origin."""
+    if not value or not value.startswith("/") or value.startswith("//"):
+        return "/"
+    if "\\" in value or any(ord(c) < 0x20 for c in value):
+        return "/"
+    return value
+
+
+@router.post("/dev/instant-link", response_model=DevInstantLinkResponse)
+def create_dev_instant_link(req: DevInstantLinkBody, request: Request):
+    """DEV-ONLY: mint a fresh recovery-less account + return a URL that
+    instantly signs the recipient into it. 503 on production (see the
+    section comment above). The `session_token` is a real 90-day bearer —
+    keep using it (with the returned `browser_id` as X-Browser-Id) to seed
+    the account's polls/votes before sending `url`."""
+    if is_prod_origin(request):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Instant sign-in links aren't available on this tier",
+        )
+    display_name = validate_user_name(req.name, field="name")
+    next_path = _safe_relative_next(req.next)
+    browser_id = _browser_id(request)
+    fe_origin = _resolve_fe_origin(request)
+    with get_db() as conn:
+        completed = create_name_only_account(
+            conn,
+            display_name=display_name,
+            browser_id=browser_id,
+            user_agent=request.headers.get("user-agent"),
+        )
+    token = completed.session.token
+    url = f"{fe_origin}/auth/instant?token={token}"
+    if next_path != "/":
+        from urllib.parse import quote
+
+        url += f"&next={quote(next_path, safe='')}"
+    return DevInstantLinkResponse(
+        url=url,
+        session_token=token,
+        expires_at=completed.session.expires_at,
+        user_id=completed.profile.user_id,
+        name=completed.profile.display_name,
+        browser_id=browser_id,
+    )
+
+
+@router.post("/instant/adopt", response_model=UserSummary)
+def adopt_instant_session(req: InstantAdoptBody, request: Request):
+    """DEV-ONLY companion to /dev/instant-link. The recipient's browser
+    POSTs the session token carried in the instant-sign-in URL; we
+    validate it, link THIS browser to the account, and return the
+    profile. Linking is the load-bearing step — group memberships are
+    browser-keyed and visibility unions across every browser linked to
+    the user, so without it the recipient signs in but sees an empty
+    account. 503 on production."""
+    if is_prod_origin(request):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Instant sign-in links aren't available on this tier",
+        )
+    browser_id = _browser_id(request)
+    with get_db() as conn:
+        user_id = lookup_session_user_id(conn, req.token)
+        if not user_id:
+            raise HTTPException(
+                status_code=400, detail="Invalid or expired sign-in link"
+            )
+        link_browser_to_user(conn, user_id=user_id, browser_id=browser_id)
+        profile = load_user_profile(conn, user_id)
+    if not profile:
+        raise HTTPException(
+            status_code=400, detail="Invalid or expired sign-in link"
+        )
+    return _summary_from_profile(profile)
 
 
 # ---------------------------------------------------------------------------
