@@ -493,7 +493,7 @@ export default function SettingsPage() {
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           {badge.todoMode
             ? "An open poll stays unread until you vote or abstain — opening it isn't enough. The app-icon badge counts these."
-            : "Opening a poll marks it read. It becomes unread again when voting opens or results arrive (toggles above). The app-icon badge counts unread polls."}
+            : "Opening a poll marks it read. It becomes unread again when voting opens or results arrive (toggles above)."}
         </p>
       </div>
 
