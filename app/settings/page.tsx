@@ -2,12 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getUserName, clearUserName, getUserLocation, clearUserLocation, type UserLocation } from "@/lib/userProfile";
+import { getUserName, getUserLocation, type UserLocation } from "@/lib/userProfile";
 import {
   apiGetMyUserProfile,
-  apiDeleteMyUserImage,
   cacheMyUserProfile,
-  clearCachedMyUserProfile,
   apiGetMe,
   apiGetAuthProviders,
   apiSignOut,
@@ -285,29 +283,6 @@ export default function SettingsPage() {
   const handleThemeChange = (next: ThemePreference) => {
     setTheme(next);
     saveTheme(next);
-  };
-
-  const handleClearAll = async () => {
-    if (!confirm('Are you sure you want to clear your settings?')) return;
-    clearUserName();
-    clearUserLocation();
-    setName("");
-    setSavedLocation(null);
-    // Also clear any uploaded profile image — "clear my settings" is
-    // an everything-on-this-browser wipe, so the image goes too. Server
-    // delete is fire-and-forget; the local cache is cleared either way
-    // so the FE state is consistent immediately.
-    try {
-      await apiDeleteMyUserImage();
-    } catch {
-      // ignore — server may be unreachable, the cache clear below still
-      // owns the FE state
-    }
-    clearCachedMyUserProfile();
-    setMessage({ type: 'success', text: 'Settings cleared!' });
-    setTimeout(() => {
-      router.push('/');
-    }, 1000);
   };
 
   return (
@@ -614,19 +589,6 @@ export default function SettingsPage() {
           {badge.todoMode
             ? "An open poll stays unread until you vote or abstain — opening it isn't enough. The app-icon badge counts these."
             : "Opening a poll marks it read. It becomes unread again when voting opens or results arrive (toggles above)."}
-        </p>
-      </div>
-
-      {/* Divider */}
-      <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mb-6">
-        <button
-          onClick={handleClearAll}
-          className="w-full rounded-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center justify-center font-medium text-base h-12"
-        >
-          Clear Settings
-        </button>
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
-          Remove your saved name, location, and profile photo from this browser
         </p>
       </div>
 
