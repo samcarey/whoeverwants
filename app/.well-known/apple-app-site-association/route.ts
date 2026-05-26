@@ -27,19 +27,36 @@ import { NextResponse } from 'next/server';
 // serve this same file because both apps claim BOTH hosts via their
 // entitlements — iOS picks the right app based on which bundle is
 // installed, not which AASA was fetched.
+//
+// The `webcredentials` block is what makes PASSKEYS (WebAuthn) work
+// inside the Capacitor WKWebView. When JS calls
+// `navigator.credentials.get()/.create()` in a web view, WebKit routes
+// the ceremony through the system AuthenticationServices, which refuses
+// unless the host app is associated with the relying-party domain via
+// the `webcredentials` service (entitlement + this AASA entry must BOTH
+// list the app). Without it the ceremony fails immediately with
+// NotAllowedError and the FE silently treats that as a cancellation —
+// the "tap passkey, nothing happens" bug. The app's entitlements list
+// `webcredentials:whoeverwants.com` + `webcredentials:latest.whoeverwants.com`
+// to match. (Browser/PWA passkeys don't need this — only WKWebView does.)
 export const dynamic = 'force-static';
+
+const APP_IDS = [
+  '479DZ4AZT5.com.whoeverwants.app',
+  '479DZ4AZT5.com.whoeverwants.app.latest',
+];
 
 const AASA = {
   applinks: {
     details: [
       {
-        appIDs: [
-          '479DZ4AZT5.com.whoeverwants.app',
-          '479DZ4AZT5.com.whoeverwants.app.latest',
-        ],
+        appIDs: APP_IDS,
         components: [{ '/': '/*' }],
       },
     ],
+  },
+  webcredentials: {
+    apps: APP_IDS,
   },
 };
 

@@ -12,6 +12,8 @@
 	<array>
 		<string>applinks:whoeverwants.com</string>
 		<string>applinks:latest.whoeverwants.com</string>
+		<string>webcredentials:whoeverwants.com</string>
+		<string>webcredentials:latest.whoeverwants.com</string>
 	</array>
 </dict>
 </plist>
