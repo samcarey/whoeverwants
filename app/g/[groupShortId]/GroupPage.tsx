@@ -72,14 +72,15 @@ const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
 // documented in PR #375 that retired the unbounded version.
 const BOTTOM_PIN_DURATION_MS = 800;
 
-// Scroll-restore (back-nav) re-application window. Unlike the bottom-pin's
-// deadline, this is measured from the FIRST rAF tick that actually runs, not
-// from when the layoutEffect arms it — the slide-back animation + mounting
-// every card can starve requestAnimationFrame for hundreds of ms, and an
-// arm-time deadline would expire before the loop ever re-applied the scroll
-// (leaving the page stuck at Next.js' scroll-to-0 → top of the list). 1000ms
-// of active re-application reliably outlasts Next's post-commit scroll reset.
-const RESTORE_PIN_DURATION_MS = 1000;
+// Scroll-restore (back-nav) re-application window. Measured from the first
+// time the pin actually runs, not from when the layoutEffect arms it — the
+// slide-back animation + mounting every card can starve requestAnimationFrame
+// for hundreds of ms, and an arm-time deadline would expire before the loop
+// ever re-applied (leaving the page at Next.js' scroll-to-0 → top of the
+// list). The window is interaction-gated (any real pointer/wheel/key disables
+// it immediately), so a generous value is safe — it just holds the restored
+// position until the user takes over or Next's reset is long past.
+const RESTORE_PIN_DURATION_MS = 1500;
 
 // Debounce window for "scroll has stopped." Below this iOS momentum
 // scrolling can briefly pause and reads as idle; above it the arrows
@@ -1129,46 +1130,56 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     if (!group || loading) return;
     if (restoreTargetRef.current == null) return;
     let rafId: number | null = null;
-    const tick = () => {
-      rafId = null;
+    let reentryGuard = false;
+    // Single re-pin step shared by the rAF loop AND a synchronous `scroll`
+    // listener. The scroll listener is the load-bearing defense: Next.js'
+    // post-commit scroll-to-0 fires a `scroll` event synchronously, and
+    // re-applying the target from inside that handler snaps the position
+    // back BEFORE the next paint — regardless of how badly the slide +
+    // card-mount work has starved requestAnimationFrame. The rAF loop alone
+    // could (and did) lose this race when its first tick was delayed past
+    // the window, leaving the page at the top of the list.
+    const repin = () => {
       const target = restoreTargetRef.current;
       if (target == null) return;
-      // User took over — respect their scroll, stop re-applying.
+      // User took over — respect their scroll, stop re-applying. pointerdown
+      // / wheel / keydown set this flag (capture phase) before the scroll
+      // event they cause, so a real user scroll is never fought.
       if (userInteractedRef.current) {
         restoreTargetRef.current = null;
         setRestoreMinHeight(null);
         return;
       }
-      // Start the bounded window on the FIRST tick that actually runs.
-      // (Armed as 0 in the layoutEffect.) The slide-back animation +
-      // mounting every card can starve rAF for hundreds of ms; measuring
-      // the window from arm-time let it expire before this loop got to
-      // re-apply even once, so it bailed leaving scrollY at Next.js'
-      // scroll-to-0 (→ top of the list). Starting here guarantees a full
-      // window of active re-application after the loop is unblocked.
+      // Start the bounded window on the first time we actually run (armed as
+      // 0 in the layoutEffect) so the full window is real re-application time
+      // rather than wall-clock that elapsed while rAF was starved.
       if (restorePinDeadlineRef.current === 0) {
         restorePinDeadlineRef.current = Date.now() + RESTORE_PIN_DURATION_MS;
       }
-      // Re-apply BEFORE the deadline check so the final tick still lands
-      // the target. Don't early-success on N stable frames: Next.js App
-      // Router's scroll-to-top useEffect can fire dozens of ms after
-      // pathname commit (well past any "stable for 3 frames" window), and
-      // stopping before that would let scrollY snap to 0 with no one
-      // watching. The per-frame no-op compare when already at target is
-      // negligible.
-      if (Math.abs(window.scrollY - target) > 0.5) {
+      if (!reentryGuard && Math.abs(window.scrollY - target) > 0.5) {
+        // reentryGuard stops our own scrollTo's `scroll` event from
+        // recursing through the listener within this synchronous frame.
+        reentryGuard = true;
         window.scrollTo(0, target);
+        reentryGuard = false;
       }
       if (Date.now() >= restorePinDeadlineRef.current) {
         restoreTargetRef.current = null;
         setRestoreMinHeight(null);
-        return;
       }
+    };
+    const tick = () => {
+      rafId = null;
+      repin();
+      if (restoreTargetRef.current == null) return;
       rafId = requestAnimationFrame(tick);
     };
+    const onScroll = () => repin();
     rafId = requestAnimationFrame(tick);
+    window.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', onScroll);
     };
   }, [group, loading]);
 

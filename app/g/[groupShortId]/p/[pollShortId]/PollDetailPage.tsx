@@ -83,8 +83,9 @@ import type { Poll, Question, QuestionResults } from "@/lib/types";
 // Back-nav scroll-restore re-application window, measured from the first rAF
 // tick that actually runs (see GroupPage's restore loop for the rationale —
 // the slide + mount work starves rAF, so an arm-time deadline expires before
-// the loop re-applies, leaving the page at Next.js' scroll-to-0).
-const RESTORE_PIN_DURATION_MS = 1000;
+// the loop re-applies, leaving the page at Next.js' scroll-to-0). Bounded but
+// interaction-gated, so a generous value is safe.
+const RESTORE_PIN_DURATION_MS = 1500;
 
 function InlineCategoryIcon({
   question,
@@ -434,8 +435,12 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   useEffect(() => {
     if (restoreTargetRef.current == null) return;
     let rafId: number | null = null;
-    const tick = () => {
-      rafId = null;
+    let reentryGuard = false;
+    // Shared by the rAF loop and a synchronous `scroll` listener — the
+    // listener snaps back the instant Next.js' post-commit scroll-to-0 fires,
+    // before paint, regardless of rAF starvation. See GroupPage's restore
+    // loop for the full rationale.
+    const repin = () => {
       const target = restoreTargetRef.current;
       if (target == null) return;
       if (userInteractedRef.current) {
@@ -445,18 +450,27 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
       if (restoreDeadlineRef.current === 0) {
         restoreDeadlineRef.current = Date.now() + RESTORE_PIN_DURATION_MS;
       }
-      if (Math.abs(window.scrollY - target) > 0.5) {
+      if (!reentryGuard && Math.abs(window.scrollY - target) > 0.5) {
+        reentryGuard = true;
         window.scrollTo(0, target);
+        reentryGuard = false;
       }
       if (Date.now() >= restoreDeadlineRef.current) {
         restoreTargetRef.current = null;
-        return;
       }
+    };
+    const tick = () => {
+      rafId = null;
+      repin();
+      if (restoreTargetRef.current == null) return;
       rafId = requestAnimationFrame(tick);
     };
+    const onScroll = () => repin();
     rafId = requestAnimationFrame(tick);
+    window.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', onScroll);
     };
   }, []);
 
