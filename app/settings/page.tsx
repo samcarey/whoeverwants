@@ -1,13 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getUserName, saveUserName, clearUserName, getUserLocation, saveUserLocation, clearUserLocation, type UserLocation } from "@/lib/userProfile";
-import { isValidUserName } from "@/lib/nameValidation";
+import { getUserName, clearUserName, getUserLocation, clearUserLocation, type UserLocation } from "@/lib/userProfile";
 import {
-  apiGeocode,
   apiGetMyUserProfile,
-  apiUploadMyUserImage,
   apiDeleteMyUserImage,
   cacheMyUserProfile,
   clearCachedMyUserProfile,
@@ -30,11 +27,9 @@ import { SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
 import SignInModal from "@/components/SignInModal";
 import AddSignInOptionsModal from "@/components/AddSignInOptionsModal";
 import { usePageReady } from "@/lib/usePageReady";
-import { detectAndSaveUserLocation, GeolocationDeniedError } from "@/lib/geolocation";
-import CompactNameField from "@/components/CompactNameField";
+import { navigateWithTransition } from "@/lib/viewTransitions";
+import HeaderPortal from "@/components/HeaderPortal";
 import InitialBubble from "@/components/InitialBubble";
-import ImageCropModal from "@/components/ImageCropModal";
-import AccountGateModal from "@/components/AccountGateModal";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { getStoredTheme, saveTheme, type ThemePreference } from "@/lib/theme";
@@ -45,7 +40,6 @@ import {
   type BadgeSettings,
 } from "@/lib/badgeSettings";
 import SliderSwitch from "@/components/SliderSwitch";
-import { haptic } from "@/lib/haptics";
 
 const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; icon: React.ReactNode }> = [
   {
@@ -83,38 +77,19 @@ export default function SettingsPage() {
   const router = useRouter();
   usePageReady(true);
   const [name, setName] = useState("");
-  // Snapshot of the saved name at mount, so the Save button can detect
-  // "user cleared their saved name" (name="" but savedName was non-empty)
-  // as a real change to commit — without this, clearing the name leaves
-  // Save disabled with nothing else dirty.
-  const [initialName, setInitialName] = useState("");
-  const [locationInput, setLocationInput] = useState("");
   const [savedLocation, setSavedLocation] = useState<UserLocation | null>(null);
   const [theme, setTheme] = useState<ThemePreference>("system");
   // App-icon badge model. Init to defaults (SSR-safe); pulled from the
   // effective settings (account when signed in, else localStorage) on mount
   // and whenever the signed-in identity changes.
   const [badge, setBadge] = useState<BadgeSettings>(DEFAULT_BADGE_SETTINGS);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isGeolocating, setIsGeolocating] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  // Profile-image state mirrors the staging pattern from /edit-title:
-  // pendingCroppedBlob (new upload pending Save) vs pendingImageRemoval
-  // (clear pending Save). The current account image comes from the shared
-  // `useMyUserImageUrl()` hook, which reads the cache synchronously and
-  // refreshes on USER_PROFILE_CHANGED_EVENT — so it clears on sign-out and
-  // updates on sign-in (account photo) without bespoke state to keep in sync.
-  const [pickedFile, setPickedFile] = useState<File | null>(null);
-  const [pendingCroppedBlob, setPendingCroppedBlob] = useState<Blob | null>(null);
-  const [pendingImageRemoval, setPendingImageRemoval] = useState(false);
-  const [localImagePreviewUrl, setLocalImagePreviewUrl] = useState<string | null>(null);
+  // Read-only display of the current profile image. Editing (upload /
+  // remove) lives on /settings/edit; this just reflects the cached value
+  // and refreshes on USER_PROFILE_CHANGED_EVENT (clears on sign-out,
+  // updates on sign-in).
   const serverImageUrl = useMyUserImageUrl();
-  const [imageSaving, setImageSaving] = useState(false);
-  const [showDiscardImageConfirm, setShowDiscardImageConfirm] = useState(false);
-  // Account-setup gate shown when an account-less user tries to add a photo.
-  const [photoGateOpen, setPhotoGateOpen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Initialize null for SSR parity (no localStorage on the server); the
   // mount effect below seeds from the cached profile, then apiGetMe()
@@ -123,6 +98,7 @@ export default function SettingsPage() {
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [signOutInFlight, setSignOutInFlight] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   // "Add a sign-in method" — opens the shared AddSignInOptionsModal (the
   // same surface the home-page recovery banner opens), which links
@@ -149,67 +125,16 @@ export default function SettingsPage() {
   const [passkeyDeletePending, setPasskeyDeletePending] = useState<string | null>(null);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
-  // Refs mirror the latest field state so the SESSION_CHANGED handler can
-  // read them without re-subscribing (and re-running) on every keystroke.
-  const nameRef = useRef(name);
-  const initialNameRef = useRef(initialName);
-  useEffect(() => { nameRef.current = name; }, [name]);
-  useEffect(() => { initialNameRef.current = initialName; }, [initialName]);
-  // Tracks the last-seen signed-in user so we can detect an actual sign-in
-  // (or account switch) vs. an incidental session event for the same user.
-  const prevUserIdRef = useRef<string | null>(null);
-
-  // Subscribe to session changes so sign-in (from the modal) and
-  // sign-out (from this page or anywhere else) flip the displayed state
-  // without a route navigation. Also runs once on mount to seed from
-  // the localStorage-cached profile (the useState init above is null
-  // for SSR parity).
-  //
-  // On an actual sign-in (the user_id changed to a new account):
-  //   - account HAS a name → it's authoritative: overwrite the field with it
-  //     (even over an unsaved edit — that edit belonged to the prior context).
-  //   - account has NO name but a name is entered here → tie it to the account
-  //     (covers "enter a name, then create a passkey account", where the typed
-  //     value may never have hit localStorage, so the sign-in seed read null).
-  // Otherwise (same user / sign-out) just reflect localStorage, without
-  // clobbering an in-progress unsaved edit.
+  // Name + reference location are read-only here (edited on /settings/edit).
+  // Reflect localStorage on mount and on every session change: sign-in
+  // mirrors the account name to local (via persistSignIn) before
+  // SESSION_CHANGED fires, and sign-out clears it — so reading
+  // getUserName() / getUserLocation() here is always current.
   useEffect(() => {
     const sync = () => {
-      const user = getCurrentUser();
-      setCurrentUser(user);
-      // Reflect localStorage location (cleared on sign-out by clearSession,
-      // which runs before SESSION_CHANGED fires) so the displayed location
-      // clears instantly without a remount. Location isn't account-synced,
-      // so mirroring localStorage is always correct.
+      setCurrentUser(getCurrentUser());
+      setName(getUserName() ?? "");
       setSavedLocation(getUserLocation());
-      const userId = user?.user_id ?? null;
-      const justSignedIn = userId !== null && userId !== prevUserIdRef.current;
-      prevUserIdRef.current = userId;
-
-      const localName = getUserName() ?? "";
-      const fieldName = nameRef.current.trim();
-      const accountName = user?.name?.trim() || "";
-
-      if (justSignedIn && accountName) {
-        // saveUserName mirrors it to localStorage too (no-op if already there).
-        saveUserName(accountName);
-        setName(accountName);
-        setInitialName(accountName);
-        return;
-      }
-      if (justSignedIn && fieldName && isValidUserName(fieldName)) {
-        // saveUserName persists locally AND (signed in) pushes to the account.
-        saveUserName(fieldName);
-        setName(fieldName);
-        setInitialName(fieldName);
-        return;
-      }
-
-      const dirty = nameRef.current !== initialNameRef.current;
-      if (!dirty && nameRef.current !== localName) {
-        setName(localName);
-        setInitialName(localName);
-      }
     };
     sync();
     window.addEventListener(SESSION_CHANGED_EVENT, sync);
@@ -368,15 +293,6 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    const savedName = getUserName();
-    if (savedName) {
-      setName(savedName);
-      setInitialName(savedName);
-    }
-    const loc = getUserLocation();
-    if (loc) {
-      setSavedLocation(loc);
-    }
     setTheme(getStoredTheme());
 
     // Sync the cached profile with the server. cacheMyUserProfile fires
@@ -389,27 +305,6 @@ export default function SettingsPage() {
       });
   }, []);
 
-  // Object-URL lifecycle for the cropped preview blob.
-  useEffect(() => {
-    if (!pendingCroppedBlob) {
-      setLocalImagePreviewUrl(null);
-      return;
-    }
-    const u = URL.createObjectURL(pendingCroppedBlob);
-    setLocalImagePreviewUrl(u);
-    return () => {
-      URL.revokeObjectURL(u);
-    };
-  }, [pendingCroppedBlob]);
-
-  const effectiveImageUrl = pendingCroppedBlob
-    ? localImagePreviewUrl
-    : pendingImageRemoval
-      ? null
-      : serverImageUrl;
-
-  const hasPendingImageChange = pendingCroppedBlob !== null || pendingImageRemoval;
-
   const selectedTheme = THEME_OPTIONS.find((o) => o.value === theme);
 
   const handleThemeChange = (next: ThemePreference) => {
@@ -417,153 +312,12 @@ export default function SettingsPage() {
     saveTheme(next);
   };
 
-  const openFilePicker = () => {
-    if (imageSaving) return;
-    // The photo is account data — gate behind the same account-setup modal
-    // as creating a group / voting when the user has no name/account yet.
-    // After the modal mints + signs in, proceed to the picker.
-    if (!isValidUserName(getUserName())) {
-      setPhotoGateOpen(true);
-      return;
-    }
-    fileInputRef.current?.click();
-  };
-
-  const onFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setPickedFile(file);
-  };
-
-  const onCropConfirm = (croppedBlob: Blob) => {
-    setPendingCroppedBlob(croppedBlob);
-    setPendingImageRemoval(false);
-    setPickedFile(null);
-  };
-
-  const onRemoveImage = () => {
-    if (imageSaving) return;
-    // If a new crop is staged but not saved, just drop it. Otherwise
-    // stage a removal of the existing server image.
-    if (pendingCroppedBlob) {
-      setPendingCroppedBlob(null);
-      return;
-    }
-    if (serverImageUrl) {
-      setPendingImageRemoval(true);
-    }
-  };
-
-  // Apply whichever image change is pending. Caller owns the loading
-  // flag + user-visible status message; this just runs the network
-  // calls + state writes. Returns when there's nothing to do.
-  const commitPendingImageChange = async (): Promise<void> => {
-    if (pendingCroppedBlob) {
-      // Pass the current name so the server can mint an account to own the
-      // photo when the caller has none yet (the openFilePicker gate ensures
-      // a name exists). Ignored when an account already resolves. The upload
-      // helper caches the new profile + fires USER_PROFILE_CHANGED_EVENT, so
-      // the avatar (via useMyUserImageUrl) updates without setting state here.
-      await apiUploadMyUserImage(pendingCroppedBlob, name);
-      setPendingCroppedBlob(null);
-    } else if (pendingImageRemoval) {
-      await apiDeleteMyUserImage();
-      setPendingImageRemoval(false);
-    }
-  };
-
-  const saveImageChange = async () => {
-    if (imageSaving || !hasPendingImageChange) return;
-    haptic.success();
-    setImageSaving(true);
-    setMessage(null);
-    try {
-      await commitPendingImageChange();
-      setMessage({ type: 'success', text: 'Photo updated!' });
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to update photo' });
-    } finally {
-      setImageSaving(false);
-    }
-  };
-
-  const discardImageChange = () => {
-    setShowDiscardImageConfirm(false);
-    setPendingCroppedBlob(null);
-    setPendingImageRemoval(false);
-  };
-
-  const handleSave = async () => {
-    haptic.success();
-    setIsLoading(true);
-    setMessage(null);
-
-    try {
-      saveUserName(name);
-      setInitialName(name.trim());
-
-      // Geocode location input if provided and different from saved
-      if (locationInput.trim()) {
-        const result = await apiGeocode(locationInput.trim());
-        if (result && result.lat && result.lon) {
-          const loc: UserLocation = {
-            latitude: parseFloat(result.lat),
-            longitude: parseFloat(result.lon),
-            label: result.label,
-          };
-          saveUserLocation(loc);
-          setSavedLocation(loc);
-          setLocationInput("");
-        } else {
-          setMessage({ type: 'error', text: 'Could not find that location. Try a zip code or city name.' });
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      if (hasPendingImageChange) {
-        await commitPendingImageChange();
-      }
-
-      setMessage({ type: 'success', text: 'Settings saved!' });
-      setTimeout(() => {
-        router.back();
-      }, 1000);
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to save settings' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDetectLocation = async () => {
-    setIsGeolocating(true);
-    setMessage(null);
-    try {
-      const loc = await detectAndSaveUserLocation();
-      setSavedLocation(loc);
-      setLocationInput("");
-      setMessage({ type: 'success', text: `Location set to ${loc.label}` });
-    } catch (err) {
-      if (err instanceof GeolocationDeniedError) {
-        setMessage({ type: 'error', text: 'Location access denied' });
-      } else {
-        setMessage({ type: 'error', text: 'Failed to determine your location' });
-      }
-    } finally {
-      setIsGeolocating(false);
-    }
-  };
-
   const handleClearAll = async () => {
     if (!confirm('Are you sure you want to clear your settings?')) return;
     clearUserName();
     clearUserLocation();
     setName("");
-    setInitialName("");
     setSavedLocation(null);
-    setLocationInput("");
     // Also clear any uploaded profile image — "clear my settings" is
     // an everything-on-this-browser wipe, so the image goes too. Server
     // delete is fire-and-forget; the local cache is cleared either way
@@ -575,8 +329,6 @@ export default function SettingsPage() {
       // owns the FE state
     }
     clearCachedMyUserProfile();
-    setPendingCroppedBlob(null);
-    setPendingImageRemoval(false);
     setMessage({ type: 'success', text: 'Settings cleared!' });
     setTimeout(() => {
       router.push('/');
@@ -585,140 +337,56 @@ export default function SettingsPage() {
 
   return (
     <div className="question-content">
-      {/* Profile photo section — sits at the top of the page since the
-          avatar reads as the "you" identity for everything else below.
-          Tap the avatar (or the camera badge) to open the file picker;
-          the X badge stages a removal of an existing image. */}
+      {/* Floating opaque-bubble buttons portaled outside .responsive-scaling-container
+       *  so position:fixed is viewport-relative on desktop. Back navigates home;
+       *  Edit opens /settings/edit (image / name / location). Mirrors the /info page. */}
+      <HeaderPortal>
+        <button
+          onClick={() => navigateWithTransition(router, '/', 'back')}
+          className="fixed left-3 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+          aria-label="Go back"
+        >
+          <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <button
+          onClick={() => navigateWithTransition(router, '/settings/edit', 'forward')}
+          className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70 text-blue-600 dark:text-blue-400 text-sm font-medium"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+          aria-label="Edit profile"
+        >
+          Edit
+        </button>
+      </HeaderPortal>
+
+      {/* Profile — read-only display of avatar + name + reference location.
+          Editing lives on /settings/edit (via the header Edit button). */}
       <div className="mb-6 flex flex-col items-center">
-        <div className="relative">
-          <button
-            type="button"
-            onClick={openFilePicker}
-            disabled={imageSaving}
-            aria-label="Change profile photo"
-            className="block outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-full disabled:opacity-60"
-          >
-            <InitialBubble
-              imageUrl={effectiveImageUrl}
-              name={name}
-              sizeClassName="w-28 h-28"
-              textSizeClassName="text-2xl"
-            />
-            <span
-              className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-md ring-2 ring-white dark:ring-gray-900"
-              aria-hidden
-            >
-              <CameraPencilIcon />
-            </span>
-          </button>
-          {effectiveImageUrl && !imageSaving && (
-            <button
-              type="button"
-              onClick={onRemoveImage}
-              aria-label="Remove profile photo"
-              className="absolute top-0 right-0 w-7 h-7 rounded-full bg-gray-500 dark:bg-gray-600 text-white flex items-center justify-center shadow-md ring-2 ring-white dark:ring-gray-900 hover:bg-gray-600 dark:hover:bg-gray-500 active:scale-95 transition-transform"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          onChange={onFileChosen}
-          className="hidden"
+        <InitialBubble
+          imageUrl={serverImageUrl}
+          name={name}
+          sizeClassName="w-28 h-28"
+          textSizeClassName="text-2xl"
         />
-        {hasPendingImageChange && (
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={saveImageChange}
-              disabled={imageSaving}
-              className="px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
-            >
-              {imageSaving ? 'Saving…' : pendingImageRemoval ? 'Save (remove photo)' : 'Save photo'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowDiscardImageConfirm(true)}
-              disabled={imageSaving}
-              className="px-3 py-1.5 rounded-full border border-gray-300 dark:border-gray-600 text-sm font-medium disabled:opacity-50"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
-          Shown wherever your name appears
-        </p>
       </div>
 
-      {/* Name Input Section */}
       <div className="mb-6">
-        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
-          <CompactNameField name={name} setName={setName} disabled={isLoading} />
+        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
+          <div className="flex items-center justify-between gap-3 h-12">
+            <span className="text-base font-normal shrink-0">Name</span>
+            <span className="text-base font-normal text-gray-500 dark:text-gray-500 truncate">
+              {name.trim() || "Not set"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3 h-12">
+            <span className="text-base font-normal shrink-0">Reference Location</span>
+            <span className="text-base font-normal text-gray-500 dark:text-gray-500 truncate">
+              {savedLocation ? savedLocation.label : "Not set"}
+            </span>
+          </div>
         </section>
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          This name will be automatically filled in voting forms
-        </p>
-      </div>
-
-      {/* Location Section */}
-      <div className="mb-6">
-        <label htmlFor="location" className="block text-sm font-medium mb-1">
-          Reference Location
-        </label>
-        {savedLocation && (
-          <div className="mb-2 flex items-center gap-2">
-            <span className="text-sm text-gray-600 dark:text-gray-400">Current:</span>
-            <span className="text-sm font-medium">{savedLocation.label}</span>
-            <button
-              type="button"
-              onClick={() => { clearUserLocation(); setSavedLocation(null); }}
-              className="text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-            >
-              Clear
-            </button>
-          </div>
-        )}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            id="location"
-            value={locationInput}
-            onChange={(e) => setLocationInput(e.target.value)}
-            onBlur={(e) => setLocationInput(e.target.value.trim())}
-            placeholder={savedLocation ? "Update location..." : "Zip code or city name..."}
-            maxLength={200}
-            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
-            disabled={isLoading || isGeolocating}
-          />
-          <button
-            type="button"
-            onClick={handleDetectLocation}
-            disabled={isLoading || isGeolocating}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Detect my location"
-          >
-            {isGeolocating ? (
-              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            )}
-          </button>
-        </div>
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Used as the reference point for calculating distance in location-based questions
-        </p>
       </div>
 
       <div className="mb-6">
@@ -755,9 +423,6 @@ export default function SettingsPage() {
             </span>
           </label>
         </section>
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          System follows your device&apos;s appearance setting
-        </p>
       </div>
 
       {/* Unread polls: the app-icon badge counts unread polls, and the gold
@@ -841,19 +506,9 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between gap-3 h-12">
             <span className="text-base font-normal shrink-0">Account</span>
             {currentUser ? (
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="text-base font-normal text-gray-500 dark:text-gray-500 truncate">
-                  {currentUser.email || "Signed in"}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  disabled={signOutInFlight}
-                  className="text-sm text-red-600 dark:text-red-400 hover:underline disabled:opacity-50 shrink-0"
-                >
-                  {signOutInFlight ? "Signing out…" : "Sign out"}
-                </button>
-              </div>
+              <span className="text-base font-normal text-gray-500 dark:text-gray-500 truncate">
+                {currentUser.email || "Signed in"}
+              </span>
             ) : (
               <button
                 type="button"
@@ -875,11 +530,11 @@ export default function SettingsPage() {
             </div>
           )}
         </section>
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          {currentUser
-            ? "Your polls and groups are tied to your account."
-            : "Sign in to keep your polls and groups across devices."}
-        </p>
+        {!currentUser && (
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            Sign in to keep your polls and groups across devices.
+          </p>
+        )}
       </div>
 
       {/* Add a sign-in method — for signed-in accounts that lack an email
@@ -994,13 +649,18 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <button
-        onClick={handleSave}
-        disabled={isLoading || (name.trim() === initialName.trim() && !locationInput.trim() && !hasPendingImageChange)}
-        className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed mb-6"
-      >
-        {isLoading ? 'Saving...' : 'Save'}
-      </button>
+      {/* Sign out — separate full-width button, confirmed via modal. Only
+          shown when signed in. */}
+      {currentUser && (
+        <button
+          type="button"
+          onClick={() => setShowSignOutConfirm(true)}
+          disabled={signOutInFlight}
+          className="w-full rounded-full border border-gray-300 dark:border-gray-600 text-red-600 dark:text-red-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center justify-center font-medium text-base h-12 disabled:opacity-50 mb-6"
+        >
+          {signOutInFlight ? "Signing out…" : "Sign out"}
+        </button>
+      )}
 
       {/* Divider */}
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mb-6">
@@ -1064,31 +724,17 @@ export default function SettingsPage() {
         </a>
       </div>
 
-      {pickedFile && (
-        <ImageCropModal
-          file={pickedFile}
-          onCancel={() => setPickedFile(null)}
-          onConfirm={onCropConfirm}
-        />
-      )}
-
-      <AccountGateModal
-        isOpen={photoGateOpen}
-        message="to add a profile photo"
-        onSubmit={() => {
-          setPhotoGateOpen(false);
-          fileInputRef.current?.click();
-        }}
-        onCancel={() => setPhotoGateOpen(false)}
-      />
-
       <ConfirmationModal
-        isOpen={showDiscardImageConfirm}
-        message="Discard photo changes?"
-        confirmText="Discard"
+        isOpen={showSignOutConfirm}
+        title="Sign out?"
+        message="Sign out of your account on this device?"
+        confirmText={signOutInFlight ? "Signing out…" : "Sign out"}
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
-        onConfirm={discardImageChange}
-        onCancel={() => setShowDiscardImageConfirm(false)}
+        onConfirm={async () => {
+          setShowSignOutConfirm(false);
+          await handleSignOut();
+        }}
+        onCancel={() => setShowSignOutConfirm(false)}
       />
 
       <ConfirmationModal
@@ -1129,13 +775,4 @@ function formatProviders(providers: string[]): string {
   return providers
     .map((p) => PROVIDER_LABELS[p] || p.charAt(0).toUpperCase() + p.slice(1))
     .join(", ");
-}
-
-function CameraPencilIcon() {
-  return (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h3l2-3h6l2 3h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" />
-      <circle cx="12" cy="13" r="3.5" />
-    </svg>
-  );
 }
