@@ -1,22 +1,29 @@
 """User profile API endpoints.
 
-Mirrors the group avatar image upload (migration 108) for per-browser
-profile images. The image is the FE-cropped square JPEG/PNG that
-replaces the user's initials circle wherever their name renders.
+The profile image is the FE-cropped square JPEG/PNG that replaces the
+user's initials circle wherever their name renders.
 
-Storage: inline BYTEA on a `user_profiles` row keyed by `browser_id`
-(migration 109). The browser_id comes from `BrowserIdMiddleware`, so
-the caller's identity is implicit — there is no body-supplied
-identifier. `image_updated_at` doubles as the cache-buster: the FE
-constructs `/api/users/by-browser-id/<id>/image?v=<isoTimestamp>` so
-a freshly-updated image invalidates browser + CDN caches without
-changing the user's identity.
+Storage: inline BYTEA on a `user_profiles` row keyed by `user_id`
+(migration 124 — previously keyed by `browser_id`, migration 109). The
+photo is account data, like `users.display_name`: it follows the user
+across every device they're signed in on and disappears on sign-out.
+`image_updated_at` doubles as the cache-buster: the FE constructs
+`/api/users/by-user-id/<user_id>/image?v=<isoTimestamp>` so a
+freshly-updated image invalidates browser + CDN caches without changing
+the user's identity.
+
+Identity model: the caller's account is resolved via
+`resolve_actor_user_id` (bearer session, else the account linked to
+their browser). Uploading requires an account — when the caller has
+none, `POST /me/image` mints a lightweight one from the supplied name,
+exactly like `POST /api/polls` does for the creator (the FE gates the
+upload behind the same account-setup modal as creating a group, so a
+name is present). Reads/deletes never mint: an account-less caller
+simply has no photo.
 
 Trust model matches the groups endpoints: anyone with the URL of an
-existing image may fetch it; only the holder of a browser_id may
-write/clear the image for that id. The middleware echoes browser_id
-from the request header, so this effectively gates writes by physical
-possession of the browser (or its localStorage).
+existing image may fetch it (the user_id is the URL token). Writes are
+gated by the caller's resolved account.
 """
 
 from __future__ import annotations
@@ -31,8 +38,19 @@ from pydantic import BaseModel
 from database import get_db
 from middleware import browser_id_from_request as _browser_id
 from middleware import user_id_from_request as _user_id
+from services.auth import create_anonymous_user, resolve_actor_user_id
 from services.groups import require_uuid, resolve_group_id_from_route_id
 from services.poll_categories import load_category_recency
+from services.validation import validate_user_name
+
+
+def _caller_user_id(conn, request: Request) -> str | None:
+    """The caller's effective account: bearer session user_id, else the
+    account linked to their browser (auto-created at poll/photo-create
+    time). None for a brand-new browser that has never created anything."""
+    return resolve_actor_user_id(
+        conn, user_id=_user_id(request), browser_id=_browser_id(request)
+    )
 
 
 class UserImageRequest(BaseModel):
@@ -40,28 +58,34 @@ class UserImageRequest(BaseModel):
 
     `image_base64` is the FE-cropped square image (JPEG or PNG) encoded
     as base64 with no `data:` prefix. `mime_type` must be `image/jpeg`
-    or `image/png`. Max decoded size: `MAX_IMAGE_BYTES`. Same contract
-    as the matching groups endpoint.
+    or `image/png`. Max decoded size: `MAX_IMAGE_BYTES`. `creator_name`
+    is used ONLY when the caller has no account yet — it names the
+    lightweight account minted to own the photo (ignored when an account
+    already resolves). Same shape as `POST /api/polls`'s creator_name.
     """
 
     image_base64: str
     mime_type: str
+    creator_name: str | None = None
 
 
 class UserImageResponse(BaseModel):
-    """Returned by `POST` / `DELETE /api/users/me/image`."""
+    """Returned by `POST` / `DELETE /api/users/me/image`. `user_id` is the
+    account the photo is keyed to (null only on a delete by an
+    account-less caller)."""
 
-    browser_id: str
+    user_id: str | None = None
     image_updated_at: str | None = None
 
 
 class UserProfileResponse(BaseModel):
-    """Returned by `GET /api/users/me/profile`. Returns null timestamp
-    when the user has not uploaded an image. The FE uses this to decide
-    whether to render a `/by-browser-id/<id>/image` URL or fall through
-    to initials."""
+    """Returned by `GET /api/users/me/profile`. `user_id` is the caller's
+    resolved account (null when they have none → no photo possible).
+    `image_updated_at` is null when no image is set. The FE renders a
+    `/by-user-id/<user_id>/image` URL when both are present, else
+    falls through to initials."""
 
-    browser_id: str
+    user_id: str | None = None
     image_updated_at: str | None = None
 
 
@@ -90,26 +114,25 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 
 @router.get("/me/profile", response_model=UserProfileResponse)
 def get_my_profile(request: Request):
-    """Current browser's profile metadata.
+    """Current account's profile metadata.
 
-    Returns the caller's browser_id (so the FE can confirm middleware
-    handshake completed) and image_updated_at (null when no image is
-    set). Idempotent and side-effect free — does not create the
+    Returns the caller's resolved user_id (null when they have no account
+    → no photo possible) and image_updated_at (null when no image is
+    set). Idempotent and side-effect free — never mints an account or a
     user_profiles row.
     """
-    browser_id = _browser_id(request)
-    if not browser_id:
-        raise HTTPException(status_code=400, detail="browser_id required")
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT image_updated_at FROM user_profiles WHERE browser_id = %(id)s",
-            {"id": browser_id},
-        ).fetchone()
-    image_updated_at = (
-        row.get("image_updated_at") if row and row.get("image_updated_at") else None
-    )
+        user_id = _caller_user_id(conn, request)
+        image_updated_at = None
+        if user_id:
+            row = conn.execute(
+                "SELECT image_updated_at FROM user_profiles WHERE user_id = %(id)s",
+                {"id": user_id},
+            ).fetchone()
+            if row and row.get("image_updated_at"):
+                image_updated_at = row["image_updated_at"]
     return UserProfileResponse(
-        browser_id=browser_id,
+        user_id=user_id,
         image_updated_at=image_updated_at.isoformat() if image_updated_at else None,
     )
 
@@ -142,20 +165,21 @@ def get_my_poll_category_history(request: Request, group: str | None = None):
 
 @router.post("/me/image", response_model=UserImageResponse)
 def upload_my_image(request: Request, req: UserImageRequest):
-    """Set the caller's profile avatar image.
+    """Set the caller's profile avatar image (account-keyed).
 
     Body: base64-encoded JPEG or PNG bytes (already square-cropped by
     the FE — the server does NOT crop or resize). Replaces any previous
-    image for this browser_id. Stamps `image_updated_at` so the FE
-    knows to invalidate its `/api/users/by-browser-id/<id>/image?v=<ts>`
-    cache.
+    image for this account. Stamps `image_updated_at` so the FE knows to
+    invalidate its `/api/users/by-user-id/<id>/image?v=<ts>` cache.
 
-    `INSERT ... ON CONFLICT` so the same endpoint covers both first
-    upload and replacement.
+    Requires an account: when the caller has none, a lightweight one is
+    minted from `creator_name` (mirrors `POST /api/polls`). The FE gates
+    the upload behind the account-setup modal, so a name is present;
+    `validate_user_name` enforces it server-side as the backstop.
+
+    `INSERT ... ON CONFLICT (user_id)` so the same endpoint covers both
+    first upload and replacement.
     """
-    browser_id = _browser_id(request)
-    if not browser_id:
-        raise HTTPException(status_code=400, detail="browser_id required")
     if req.mime_type not in _ALLOWED_IMAGE_MIME_TYPES:
         raise HTTPException(
             status_code=400,
@@ -175,21 +199,28 @@ def upload_my_image(request: Request, req: UserImageRequest):
             detail=f"Image exceeds {MAX_IMAGE_BYTES} bytes",
         )
     with get_db() as conn:
+        user_id = _caller_user_id(conn, request)
+        if not user_id:
+            # No account yet — mint one named by the (FE-gated) creator name.
+            name = validate_user_name(req.creator_name, field="name")
+            user_id = create_anonymous_user(
+                conn, browser_id=_browser_id(request), display_name=name
+            )
         row = conn.execute(
             """
-            INSERT INTO user_profiles (browser_id, image_data, image_mime_type, image_updated_at)
+            INSERT INTO user_profiles (user_id, image_data, image_mime_type, image_updated_at)
             VALUES (%(id)s, %(data)s, %(mime)s, NOW())
-            ON CONFLICT (browser_id) DO UPDATE
+            ON CONFLICT (user_id) DO UPDATE
               SET image_data = EXCLUDED.image_data,
                   image_mime_type = EXCLUDED.image_mime_type,
                   image_updated_at = EXCLUDED.image_updated_at
             RETURNING image_updated_at
             """,
-            {"id": browser_id, "data": image_bytes, "mime": req.mime_type},
+            {"id": user_id, "data": image_bytes, "mime": req.mime_type},
         ).fetchone()
     image_updated_at = row.get("image_updated_at") if row else None
     return UserImageResponse(
-        browser_id=browser_id,
+        user_id=user_id,
         image_updated_at=image_updated_at.isoformat() if image_updated_at else None,
     )
 
@@ -197,45 +228,46 @@ def upload_my_image(request: Request, req: UserImageRequest):
 @router.delete("/me/image", response_model=UserImageResponse)
 def delete_my_image(request: Request):
     """Clear the caller's profile avatar image. Idempotent — a 200 is
-    returned even if no image was set, so the FE doesn't have to
-    distinguish "was set" from "wasn't set" to reset state.
-    `image_updated_at` is set to NULL so the FE falls back to initials.
+    returned even if no image was set (or the caller has no account), so
+    the FE doesn't have to distinguish "was set" from "wasn't set".
+    Never mints an account. `image_updated_at` is set to NULL so the FE
+    falls back to initials.
     """
-    browser_id = _browser_id(request)
-    if not browser_id:
-        raise HTTPException(status_code=400, detail="browser_id required")
     with get_db() as conn:
-        conn.execute(
-            """
-            UPDATE user_profiles
-               SET image_data = NULL,
-                   image_mime_type = NULL,
-                   image_updated_at = NULL
-             WHERE browser_id = %(id)s
-            """,
-            {"id": browser_id},
-        )
-    return UserImageResponse(browser_id=browser_id, image_updated_at=None)
+        user_id = _caller_user_id(conn, request)
+        if user_id:
+            conn.execute(
+                """
+                UPDATE user_profiles
+                   SET image_data = NULL,
+                       image_mime_type = NULL,
+                       image_updated_at = NULL
+                 WHERE user_id = %(id)s
+                """,
+                {"id": user_id},
+            )
+    return UserImageResponse(user_id=user_id, image_updated_at=None)
 
 
-@router.get("/by-browser-id/{browser_id}/image")
-def get_user_image(browser_id: str):
+@router.get("/by-user-id/{user_id}/image")
+def get_user_image(user_id: str):
     """Serve a user's avatar image bytes with the stored MIME type.
 
-    Public — no membership / browser-id check. The browser_id is the
-    URL token, so anyone holding a valid id can fetch the image (same
-    trust model as the groups image endpoint). Cached via the FE's
-    `?v=<image_updated_at>` query string with the immutable cache-
-    control header so a given URL never re-fetches once received
-    (the next change bumps the timestamp, producing a new URL).
+    Public — no auth check. The user_id is the URL token, so anyone
+    holding a valid id can fetch the image (same trust model as the
+    groups image endpoint; the image is the caller's own avatar, shown
+    only to themselves). Cached via the FE's `?v=<image_updated_at>`
+    query string with the immutable cache-control header so a given URL
+    never re-fetches once received (the next change bumps the timestamp,
+    producing a new URL).
 
     Returns 404 when no image is set (FE renders fallback initials).
     """
-    require_uuid(browser_id, "browser_id")
+    require_uuid(user_id, "user_id")
     with get_db() as conn:
         row = conn.execute(
-            "SELECT image_data, image_mime_type FROM user_profiles WHERE browser_id = %(id)s",
-            {"id": browser_id},
+            "SELECT image_data, image_mime_type FROM user_profiles WHERE user_id = %(id)s",
+            {"id": user_id},
         ).fetchone()
     if not row or not row.get("image_data"):
         raise HTTPException(status_code=404, detail="Image not set")

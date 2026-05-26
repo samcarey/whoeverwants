@@ -137,6 +137,23 @@ function invalidateAccessibleCacheLazy(): void {
   }
 }
 
+function clearCachedProfileLazy(): void {
+  // The profile photo is account data (keyed by user_id, migration 124).
+  // On sign-out the cached avatar must vanish immediately — drop the
+  // localStorage profile cache + fire its change event so every avatar
+  // surface falls back to initials without a navigation. Lazy require to
+  // avoid the session ↔ api/users ↔ _internal ↔ session import cycle at
+  // module-init time.
+  if (typeof window === 'undefined') return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { clearCachedMyUserProfile } = require('@/lib/api/users');
+    clearCachedMyUserProfile?.();
+  } catch {
+    // Module not loaded yet (SSR, test harness) — nothing cached to clear.
+  }
+}
+
 export function saveSession(token: string, user: SessionUser): void {
   cachedToken = token;
   cachedProfile = user;
@@ -177,6 +194,7 @@ export function clearSession(): void {
   invalidateAccessibleCacheLazy();
   if (wasSignedIn) {
     clearStoredUserData();
+    clearCachedProfileLazy();
     dispatchChange();
   }
 }

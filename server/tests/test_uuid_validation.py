@@ -59,7 +59,7 @@ class TestBadUuidPaths:
 
     @pytest.mark.parametrize("bad", BAD_INPUTS)
     def test_get_user_image_404s_on_bad_uuid(self, client, bad):
-        resp = client.get(f"/api/users/by-browser-id/{bad}/image")
+        resp = client.get(f"/api/users/by-user-id/{bad}/image")
         assert resp.status_code < 500, f"{bad!r}: {resp.status_code} {resp.text}"
 
     def test_close_poll_with_bad_uuid_404s(self, client):

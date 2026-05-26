@@ -6,14 +6,20 @@
  * `BrowserIdMiddleware`) so the caller's identity is implicit on the
  * `/me/*` endpoints — they read `request.state.browser_id`.
  *
- * `buildUserImageUrl` is the URL builder for the public `/by-browser-id`
- * endpoint, used wherever the FE renders someone else's avatar (or its
- * own across navigations) without going through a fresh fetch.
+ * `buildUserImageUrl` is the URL builder for the public `/by-user-id`
+ * endpoint, used wherever the FE renders the current user's avatar
+ * (across navigations) without going through a fresh fetch. The photo is
+ * account data (migration 124): keyed by `user_id`, it follows the user
+ * across devices and clears on sign-out.
  */
 
 import { API_ORIGIN, userFetch } from "./_internal";
 
-const PROFILE_STORAGE_KEY = 'whoeverwants_user_profile';
+// Bumped to v2 when the cache shape changed from browser_id to user_id
+// (migration 124). A stale v1 entry would parse to user_id=undefined → no
+// image until the next /me/profile refresh; the rename avoids even that
+// transient miss for existing installs.
+const PROFILE_STORAGE_KEY = 'whoeverwants_user_profile_v2';
 
 // Module-level cache: every group/home page mount calls
 // `getCachedMyUserProfile` once per `useMyUserImageUrl` instance (i.e.
@@ -25,14 +31,17 @@ const PROFILE_STORAGE_KEY = 'whoeverwants_user_profile';
 let _profileMemo: UserProfile | null | undefined = undefined;
 
 export interface UserProfile {
-  browser_id: string;
+  // The account the photo is keyed to. Null when the caller has no
+  // account yet (→ no photo possible until they upload one, which mints
+  // an account).
+  user_id: string | null;
   image_updated_at: string | null;
 }
 
 export async function apiGetMyUserProfile(): Promise<UserProfile> {
   const data = await userFetch<any>('/me/profile');
   return {
-    browser_id: data.browser_id as string,
+    user_id: (data.user_id ?? null) as string | null,
     image_updated_at: (data.image_updated_at ?? null) as string | null,
   };
 }
@@ -58,16 +67,29 @@ export async function apiGetPollCategoryHistory(
   };
 }
 
-export async function apiUploadMyUserImage(imageBlob: Blob): Promise<UserProfile> {
+/**
+ * Upload a profile image. `creatorName` is used ONLY when the caller has
+ * no account yet — it names the lightweight account the server mints to
+ * own the photo (ignored when an account already resolves). The FE gates
+ * this behind the account-setup modal so a name is present.
+ */
+export async function apiUploadMyUserImage(
+  imageBlob: Blob,
+  creatorName?: string | null,
+): Promise<UserProfile> {
   const mimeType = imageBlob.type || 'image/jpeg';
   const arrayBuffer = await imageBlob.arrayBuffer();
   const base64 = base64FromArrayBuffer(arrayBuffer);
   const data = await userFetch<any>('/me/image', {
     method: 'POST',
-    body: JSON.stringify({ image_base64: base64, mime_type: mimeType }),
+    body: JSON.stringify({
+      image_base64: base64,
+      mime_type: mimeType,
+      creator_name: creatorName?.trim() || null,
+    }),
   });
   const result: UserProfile = {
-    browser_id: data.browser_id as string,
+    user_id: (data.user_id ?? null) as string | null,
     image_updated_at: (data.image_updated_at ?? null) as string | null,
   };
   cacheMyUserProfile(result);
@@ -77,7 +99,7 @@ export async function apiUploadMyUserImage(imageBlob: Blob): Promise<UserProfile
 export async function apiDeleteMyUserImage(): Promise<UserProfile> {
   const data = await userFetch<any>('/me/image', { method: 'DELETE' });
   const result: UserProfile = {
-    browser_id: data.browser_id as string,
+    user_id: (data.user_id ?? null) as string | null,
     image_updated_at: null,
   };
   cacheMyUserProfile(result);
@@ -85,24 +107,24 @@ export async function apiDeleteMyUserImage(): Promise<UserProfile> {
 }
 
 /**
- * Returns `/api/users/by-browser-id/<id>/image?v=<isoTimestamp>` or null
+ * Returns `/api/users/by-user-id/<id>/image?v=<isoTimestamp>` or null
  * when either input is missing. The `?v=` query is the cache-buster: a
  * fresh upload bumps `image_updated_at` so the new URL doesn't collide
  * with the previous image's immutable cache entry.
  */
 export function buildUserImageUrl(
-  browserId: string | null | undefined,
+  userId: string | null | undefined,
   imageUpdatedAt: string | null | undefined,
 ): string | null {
-  if (!browserId || !imageUpdatedAt) return null;
+  if (!userId || !imageUpdatedAt) return null;
   const v = encodeURIComponent(imageUpdatedAt);
-  return `${API_ORIGIN}/api/users/by-browser-id/${encodeURIComponent(browserId)}/image?v=${v}`;
+  return `${API_ORIGIN}/api/users/by-user-id/${encodeURIComponent(userId)}/image?v=${v}`;
 }
 
 function profilesEqual(a: UserProfile | null, b: UserProfile | null): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
-  return a.browser_id === b.browser_id && a.image_updated_at === b.image_updated_at;
+  return a.user_id === b.user_id && a.image_updated_at === b.image_updated_at;
 }
 
 /**
@@ -134,12 +156,12 @@ export function getCachedMyUserProfile(): UserProfile | null {
       return null;
     }
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed.browser_id !== 'string') {
+    if (!parsed || typeof parsed.user_id !== 'string') {
       _profileMemo = null;
       return null;
     }
     _profileMemo = {
-      browser_id: parsed.browser_id,
+      user_id: parsed.user_id,
       image_updated_at:
         typeof parsed.image_updated_at === 'string' ? parsed.image_updated_at : null,
     };
@@ -170,7 +192,7 @@ export function clearCachedMyUserProfile(): void {
 export function getMyUserImageUrl(): string | null {
   const profile = getCachedMyUserProfile();
   if (!profile) return null;
-  return buildUserImageUrl(profile.browser_id, profile.image_updated_at);
+  return buildUserImageUrl(profile.user_id, profile.image_updated_at);
 }
 
 /** Custom event fired when the cached profile changes (upload, delete,

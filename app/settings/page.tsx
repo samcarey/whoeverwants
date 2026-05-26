@@ -36,6 +36,7 @@ import { detectAndSaveUserLocation, GeolocationDeniedError } from "@/lib/geoloca
 import CompactNameField from "@/components/CompactNameField";
 import InitialBubble from "@/components/InitialBubble";
 import ImageCropModal from "@/components/ImageCropModal";
+import AccountGateModal from "@/components/AccountGateModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { getStoredTheme, saveTheme, type ThemePreference } from "@/lib/theme";
 import {
@@ -112,10 +113,12 @@ export default function SettingsPage() {
     // already shows the image (no flash from initials → image).
     if (typeof window === 'undefined') return null;
     const cached = getCachedMyUserProfile();
-    return buildUserImageUrl(cached?.browser_id ?? null, cached?.image_updated_at ?? null);
+    return buildUserImageUrl(cached?.user_id ?? null, cached?.image_updated_at ?? null);
   });
   const [imageSaving, setImageSaving] = useState(false);
   const [showDiscardImageConfirm, setShowDiscardImageConfirm] = useState(false);
+  // Account-setup gate shown when an account-less user tries to add a photo.
+  const [photoGateOpen, setPhotoGateOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Initialize null for SSR parity (no localStorage on the server); the
@@ -389,7 +392,7 @@ export default function SettingsPage() {
     apiGetMyUserProfile()
       .then((profile) => {
         cacheMyUserProfile(profile);
-        setServerImageUrl(buildUserImageUrl(profile.browser_id, profile.image_updated_at));
+        setServerImageUrl(buildUserImageUrl(profile.user_id, profile.image_updated_at));
       })
       .catch(() => {
         // Network blip — the cached value is still authoritative.
@@ -426,6 +429,13 @@ export default function SettingsPage() {
 
   const openFilePicker = () => {
     if (imageSaving) return;
+    // The photo is account data — gate behind the same account-setup modal
+    // as creating a group / voting when the user has no name/account yet.
+    // After the modal mints + signs in, proceed to the picker.
+    if (!isValidUserName(getUserName())) {
+      setPhotoGateOpen(true);
+      return;
+    }
     fileInputRef.current?.click();
   };
 
@@ -460,8 +470,11 @@ export default function SettingsPage() {
   // calls + state writes. Returns when there's nothing to do.
   const commitPendingImageChange = async (): Promise<void> => {
     if (pendingCroppedBlob) {
-      const profile = await apiUploadMyUserImage(pendingCroppedBlob);
-      setServerImageUrl(buildUserImageUrl(profile.browser_id, profile.image_updated_at));
+      // Pass the current name so the server can mint an account to own the
+      // photo when the caller has none yet (the openFilePicker gate ensures
+      // a name exists). Ignored when an account already resolves.
+      const profile = await apiUploadMyUserImage(pendingCroppedBlob, name);
+      setServerImageUrl(buildUserImageUrl(profile.user_id, profile.image_updated_at));
       setPendingCroppedBlob(null);
     } else if (pendingImageRemoval) {
       await apiDeleteMyUserImage();
@@ -1068,6 +1081,16 @@ export default function SettingsPage() {
           onConfirm={onCropConfirm}
         />
       )}
+
+      <AccountGateModal
+        isOpen={photoGateOpen}
+        message="to add a profile photo"
+        onSubmit={() => {
+          setPhotoGateOpen(false);
+          fileInputRef.current?.click();
+        }}
+        onCancel={() => setPhotoGateOpen(false)}
+      />
 
       <ConfirmationModal
         isOpen={showDiscardImageConfirm}

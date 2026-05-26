@@ -20,6 +20,7 @@ import {
 } from "@/lib/session";
 import { getUserName, saveUserNameLocalOnly } from "@/lib/userProfile";
 import { isValidUserName } from "@/lib/nameValidation";
+import { apiGetMyUserProfile, cacheMyUserProfile } from "@/lib/api/users";
 
 export interface MagicLinkRequestResponse {
   accepted: boolean;
@@ -86,13 +87,30 @@ function persistSignIn(token: string, user: SessionUser): void {
       saveUserNameLocalOnly(accountName);
     }
     saveSession(token, user);
+    refreshProfilePhotoForSession();
     return;
   }
   saveSession(token, user);
+  refreshProfilePhotoForSession();
   const localName = getUserName()?.trim() || null;
   if (localName && isValidUserName(localName)) {
     void pushLocalNameToAccount(localName);
   }
+}
+
+/** The profile photo is account data (migration 124). On sign-in, pull
+ *  the account's photo into the local cache so it shows everywhere
+ *  (including a freshly-signed-in device that never visited Settings).
+ *  Best-effort + fire-and-forget — a network blip just leaves the avatar
+ *  on initials until the next /me/profile read. `saveSession` already
+ *  dispatched SESSION_CHANGED; cacheMyUserProfile fires its own
+ *  USER_PROFILE_CHANGED_EVENT so avatars refresh when the bytes land. */
+function refreshProfilePhotoForSession(): void {
+  void apiGetMyUserProfile()
+    .then(cacheMyUserProfile)
+    .catch(() => {
+      // ignore — initials fallback until a later refresh.
+    });
 }
 
 /**
