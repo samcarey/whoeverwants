@@ -7,9 +7,12 @@ interface CountdownProps {
   deadline: string | null;
   label?: string;
   onExpire?: () => void;
+  // Render just the bold text (no wrapper div, no centering, no margin) so the
+  // caller can place it inline next to a heading.
+  inline?: boolean;
 }
 
-export default function Countdown({ deadline, label, onExpire }: CountdownProps) {
+export default function Countdown({ deadline, label, onExpire, inline = false }: CountdownProps) {
   const [timeLeft, setTimeLeft] = useState<string>("");
   const [isExpired, setIsExpired] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -41,6 +44,22 @@ export default function Countdown({ deadline, label, onExpire }: CountdownProps)
 
     return () => clearInterval(interval);
   }, [deadline, isClient]);
+
+  if (inline) {
+    const text = !deadline || !isClient
+      ? ""
+      : isExpired
+        ? (label ? `${label} ended` : "Ended")
+        : `${label || "Closing"} in ${timeLeft}`;
+    return (
+      <span className={`text-sm font-bold whitespace-nowrap ${isExpired
+        ? "text-red-700 dark:text-red-300"
+        : "text-blue-700 dark:text-blue-300"
+      }`}>
+        {text}
+      </span>
+    );
+  }
 
   if (!deadline) {
     return (

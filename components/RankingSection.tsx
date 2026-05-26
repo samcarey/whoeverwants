@@ -168,8 +168,10 @@ export default function RankingSection({
           card (the "extra stuff") in split mode. */}
       {canSubmitSuggestions && !isEditingRanking && (
         <>
-          <h3 className="text-lg font-semibold text-center text-gray-900 dark:text-white mt-4 mb-1">Early Voting</h3>
-          <Countdown deadline={responseDeadline ?? null} label="Preferences closing" />
+          <div className="flex items-baseline justify-between gap-2 mt-[27.2px] mb-1">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Early Voting</h3>
+            <Countdown deadline={responseDeadline ?? null} label="Closes" inline />
+          </div>
           <p className="text-center text-xs text-amber-700 dark:text-amber-300 mb-3">
             Options may change until suggestions cutoff!
           </p>
@@ -234,7 +236,7 @@ export default function RankingSection({
               />
             ) : (
               <>
-                <h4 className="text-base font-medium text-gray-900 dark:text-white mb-3">
+                <h4 className="text-[12.8px] font-medium text-center text-gray-900 dark:text-white mb-3">
                   Reorder from most to least preferred
                 </h4>
                 {questionOptions.length > 0 && (
