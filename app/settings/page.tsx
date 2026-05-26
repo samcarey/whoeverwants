@@ -13,7 +13,6 @@ import {
   apiSignOut,
   apiListPasskeys,
   apiDeletePasskey,
-  apiDeleteAccount,
   getCurrentUser,
   type PasskeySummary,
 } from "@/lib/api";
@@ -106,8 +105,6 @@ export default function SettingsPage() {
   // signed in AND the account has no 'email' provider (passkey-only /
   // OAuth-only / name-only).
   const [addSignInOpen, setAddSignInOpen] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteInFlight, setDeleteInFlight] = useState(false);
 
   const hasEmailIdentity = !!currentUser?.providers?.includes("email");
 
@@ -178,28 +175,6 @@ export default function SettingsPage() {
       await apiSignOut();
     } finally {
       setSignOutInFlight(false);
-    }
-  };
-
-  const handleDeleteAccount = async () => {
-    if (deleteInFlight) return;
-    setDeleteInFlight(true);
-    try {
-      await apiDeleteAccount();
-      setShowDeleteConfirm(false);
-      // clearSession (inside apiDeleteAccount) fires SESSION_CHANGED_EVENT,
-      // so the subscribed effect flips currentUser → null and the UI
-      // reverts to the anonymous state without a navigation.
-      setMessage({ type: "success", text: "Your account was deleted." });
-    } catch (err) {
-      setShowDeleteConfirm(false);
-      setMessage({
-        type: "error",
-        text:
-          err instanceof Error ? err.message : "Couldn't delete your account.",
-      });
-    } finally {
-      setDeleteInFlight(false);
     }
   };
 
@@ -655,25 +630,6 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Delete account — Phase I. Only when signed in. Cascades through
-          every users(id) FK server-side; this browser reverts to
-          anonymous (groups + created polls stay reachable). */}
-      {currentUser && (
-        <div className="mb-6">
-          <button
-            type="button"
-            onClick={() => setShowDeleteConfirm(true)}
-            className="w-full rounded-full border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center font-medium text-base h-12"
-          >
-            Delete account
-          </button>
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
-            Permanently removes your account and sign-in methods. Polls and
-            groups you created stay on this device.
-          </p>
-        </div>
-      )}
-
       {/* About Section */}
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 text-center">
@@ -715,16 +671,6 @@ export default function SettingsPage() {
           await handleSignOut();
         }}
         onCancel={() => setShowSignOutConfirm(false)}
-      />
-
-      <ConfirmationModal
-        isOpen={showDeleteConfirm}
-        title="Delete account?"
-        message="This permanently deletes your account and all sign-in methods (email, passkeys, connected accounts). This can't be undone. Polls and groups you created stay on this device."
-        confirmText={deleteInFlight ? "Deleting…" : "Delete account"}
-        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
-        onConfirm={handleDeleteAccount}
-        onCancel={() => setShowDeleteConfirm(false)}
       />
 
       <SignInModal
