@@ -373,124 +373,9 @@ export default function SettingsPage() {
         />
       </div>
 
-      <div className="mb-6">
-        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
-          <div className="flex items-center justify-between gap-3 h-12">
-            <span className="text-base font-normal shrink-0">Reference Location</span>
-            <span className="text-base font-normal text-gray-500 dark:text-gray-500 truncate">
-              {savedLocation ? savedLocation.label : "Not set"}
-            </span>
-          </div>
-          <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
-            <span className="text-base font-normal shrink-0">Theme</span>
-            <span className="relative inline-flex items-center gap-1.5 text-base font-normal text-gray-500 dark:text-gray-500">
-              {selectedTheme?.icon}
-              {selectedTheme?.label}
-              <svg
-                aria-hidden="true"
-                className="w-4 h-4 shrink-0"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 3a.75.75 0 01.55.24l3.25 3.5a.75.75 0 11-1.1 1.02L10 4.852 7.3 7.76a.75.75 0 01-1.1-1.02l3.25-3.5A.75.75 0 0110 3zm-3.76 9.2a.75.75 0 011.06.04L10 15.148l2.7-2.908a.75.75 0 111.1 1.02l-3.25 3.5a.75.75 0 01-1.1 0l-3.25-3.5a.75.75 0 01.04-1.06z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <select
-                value={theme}
-                onChange={(e) => handleThemeChange(e.target.value as ThemePreference)}
-                className="absolute inset-0 opacity-0 cursor-pointer"
-                aria-label="Theme"
-              >
-                {THEME_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </span>
-          </label>
-        </section>
-      </div>
-
-      {/* Unread polls: the app-icon badge counts unread polls, and the gold
-          bar on group cards marks them. Three account-synced switches.
-          "Stay unread until I respond" gates the two re-light toggles (inert
-          in that mode, where unread = open + un-responded). */}
-      <div className="mb-6">
-        <h2 className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
-          Unread polls
-        </h2>
-        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
-          <div
-            className="flex items-center justify-between gap-3 h-12 cursor-pointer"
-            onClick={() => updateBadge({ ...badge, todoMode: !badge.todoMode })}
-          >
-            <span className="text-base font-normal shrink-0">Stay unread until I respond</span>
-            <SliderSwitch
-              checked={badge.todoMode}
-              onChange={(v) => updateBadge({ ...badge, todoMode: v })}
-              aria-label="Stay unread until I respond"
-            />
-          </div>
-          <div
-            className={`flex items-center justify-between gap-3 h-12 ${
-              badge.todoMode ? "cursor-not-allowed" : "cursor-pointer"
-            }`}
-            onClick={() => {
-              if (!badge.todoMode) updateBadge({ ...badge, onVotingOpen: !badge.onVotingOpen });
-            }}
-          >
-            <span
-              className={`text-base font-normal shrink-0 ${
-                badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
-              }`}
-            >
-              Mark unread when voting opens
-            </span>
-            <SliderSwitch
-              checked={badge.onVotingOpen}
-              onChange={(v) => updateBadge({ ...badge, onVotingOpen: v })}
-              disabled={badge.todoMode}
-              aria-label="Mark unread when voting opens"
-            />
-          </div>
-          <div
-            className={`flex items-center justify-between gap-3 h-12 ${
-              badge.todoMode ? "cursor-not-allowed" : "cursor-pointer"
-            }`}
-            onClick={() => {
-              if (!badge.todoMode) updateBadge({ ...badge, onResults: !badge.onResults });
-            }}
-          >
-            <span
-              className={`text-base font-normal shrink-0 ${
-                badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
-              }`}
-            >
-              Mark unread when results arrive
-            </span>
-            <SliderSwitch
-              checked={badge.onResults}
-              onChange={(v) => updateBadge({ ...badge, onResults: v })}
-              disabled={badge.todoMode}
-              aria-label="Mark unread when results arrive"
-            />
-          </div>
-        </section>
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          {badge.todoMode
-            ? "An open poll stays unread until you vote or abstain — opening it isn't enough. The app-icon badge counts these."
-            : "Opening a poll marks it read. It becomes unread again when voting opens or results arrive (toggles above)."}
-        </p>
-      </div>
-
-      {/* Account section — Phase A + B (sign in/out) + Phase I (linked
-          identities, recovery email, delete). Single-row "Account" +
-          Sign out / Sign in header; when signed in, a second row lists
-          the linked sign-in methods. */}
+      {/* Account / sign-in cluster — sits directly below the account image:
+          sign in (or signed-in email + linked methods), add a sign-in method,
+          passkeys, the shared status message, and sign out. */}
       <div className="mb-6">
         <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4">
           <div className="flex items-center justify-between gap-3 h-12">
@@ -646,6 +531,120 @@ export default function SettingsPage() {
           {signOutInFlight ? "Signing out…" : "Sign out"}
         </button>
       )}
+
+      <div className="mb-6">
+        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
+          <div className="flex items-center justify-between gap-3 h-12">
+            <span className="text-base font-normal shrink-0">Reference Location</span>
+            <span className="text-base font-normal text-gray-500 dark:text-gray-500 truncate">
+              {savedLocation ? savedLocation.label : "Not set"}
+            </span>
+          </div>
+          <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
+            <span className="text-base font-normal shrink-0">Theme</span>
+            <span className="relative inline-flex items-center gap-1.5 text-base font-normal text-gray-500 dark:text-gray-500">
+              {selectedTheme?.icon}
+              {selectedTheme?.label}
+              <svg
+                aria-hidden="true"
+                className="w-4 h-4 shrink-0"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 3a.75.75 0 01.55.24l3.25 3.5a.75.75 0 11-1.1 1.02L10 4.852 7.3 7.76a.75.75 0 01-1.1-1.02l3.25-3.5A.75.75 0 0110 3zm-3.76 9.2a.75.75 0 011.06.04L10 15.148l2.7-2.908a.75.75 0 111.1 1.02l-3.25 3.5a.75.75 0 01-1.1 0l-3.25-3.5a.75.75 0 01.04-1.06z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <select
+                value={theme}
+                onChange={(e) => handleThemeChange(e.target.value as ThemePreference)}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+                aria-label="Theme"
+              >
+                {THEME_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </label>
+        </section>
+      </div>
+
+      {/* Unread polls: the app-icon badge counts unread polls, and the gold
+          bar on group cards marks them. Three account-synced switches.
+          "Stay unread until I respond" gates the two re-light toggles (inert
+          in that mode, where unread = open + un-responded). */}
+      <div className="mb-6">
+        <h2 className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+          Unread polls
+        </h2>
+        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
+          <div
+            className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+            onClick={() => updateBadge({ ...badge, todoMode: !badge.todoMode })}
+          >
+            <span className="text-base font-normal shrink-0">Stay unread until I respond</span>
+            <SliderSwitch
+              checked={badge.todoMode}
+              onChange={(v) => updateBadge({ ...badge, todoMode: v })}
+              aria-label="Stay unread until I respond"
+            />
+          </div>
+          <div
+            className={`flex items-center justify-between gap-3 h-12 ${
+              badge.todoMode ? "cursor-not-allowed" : "cursor-pointer"
+            }`}
+            onClick={() => {
+              if (!badge.todoMode) updateBadge({ ...badge, onVotingOpen: !badge.onVotingOpen });
+            }}
+          >
+            <span
+              className={`text-base font-normal shrink-0 ${
+                badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
+              }`}
+            >
+              Mark unread when voting opens
+            </span>
+            <SliderSwitch
+              checked={badge.onVotingOpen}
+              onChange={(v) => updateBadge({ ...badge, onVotingOpen: v })}
+              disabled={badge.todoMode}
+              aria-label="Mark unread when voting opens"
+            />
+          </div>
+          <div
+            className={`flex items-center justify-between gap-3 h-12 ${
+              badge.todoMode ? "cursor-not-allowed" : "cursor-pointer"
+            }`}
+            onClick={() => {
+              if (!badge.todoMode) updateBadge({ ...badge, onResults: !badge.onResults });
+            }}
+          >
+            <span
+              className={`text-base font-normal shrink-0 ${
+                badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
+              }`}
+            >
+              Mark unread when results arrive
+            </span>
+            <SliderSwitch
+              checked={badge.onResults}
+              onChange={(v) => updateBadge({ ...badge, onResults: v })}
+              disabled={badge.todoMode}
+              aria-label="Mark unread when results arrive"
+            />
+          </div>
+        </section>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          {badge.todoMode
+            ? "An open poll stays unread until you vote or abstain — opening it isn't enough. The app-icon badge counts these."
+            : "Opening a poll marks it read. It becomes unread again when voting opens or results arrive (toggles above)."}
+        </p>
+      </div>
 
       {/* Divider */}
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mb-6">
