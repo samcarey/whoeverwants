@@ -1054,6 +1054,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     return remembered + window.innerHeight;
   });
   useLayoutEffect(() => {
+    console.warn(`[scroll-debug] LE-gate group=${!!group} loading=${loading} headerH=${headerHeight} handled=${hasHandledInitialExpandRef.current} overlay=${overlayCardsOffset !== undefined} scrollY=${typeof window!=='undefined'?window.scrollY:'?'}`);
     if (!group || loading) return;
     if (headerHeight === 0) return;
     if (hasHandledInitialExpandRef.current) return;
@@ -1081,6 +1082,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     // already reflects the full document and the requested scrollY
     // lands without clamping.
     const remembered = getRememberedScroll(groupScrollKey(groupId));
+    console.warn(`[scroll-debug] LE-restore remembered=${remembered} scrollY=${window.scrollY} scrollH=${document.documentElement.scrollHeight} innerH=${window.innerHeight}`);
     if (remembered !== undefined) {
       restoreTargetRef.current = remembered;
       // Pin against the target for a bounded window — iOS Safari +
@@ -1118,15 +1120,18 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     if (!group || loading) return;
     if (restoreTargetRef.current == null) return;
     let rafId: number | null = null;
+    let tickN = 0;
     const tick = () => {
       rafId = null;
       if (userInteractedRef.current || Date.now() >= restorePinDeadlineRef.current) {
+        console.warn(`[scroll-debug] rAF-bail interacted=${userInteractedRef.current} deadlinePassed=${Date.now() >= restorePinDeadlineRef.current} scrollY=${window.scrollY}`);
         restoreTargetRef.current = null;
         setRestoreMinHeight(null);
         return;
       }
       const target = restoreTargetRef.current;
       if (target == null) return;
+      if (tickN++ % 8 === 0) console.warn(`[scroll-debug] rAF-tick n=${tickN} scrollY=${window.scrollY} target=${target} scrollH=${document.documentElement.scrollHeight}`);
       // Re-apply on every frame until the deadline. Don't early-success on
       // N stable frames: Next.js App Router's scroll-to-top useEffect can
       // fire dozens of ms after pathname commit (well past any reasonable
@@ -1523,7 +1528,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // and would falsely disable the pin during initial layout settling.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const disable = () => { userInteractedRef.current = true; };
+    const disable = (e: Event) => { console.warn(`[scroll-debug] USER-INTERACT type=${e.type} restoreTarget=${restoreTargetRef.current} scrollY=${window.scrollY}`); userInteractedRef.current = true; };
     // pointerdown covers mouse + touch + pen on every platform (including
     // iOS where touchstart sometimes doesn't bubble during scroll-engaged
     // gestures). Keep wheel + keydown for trackpads and keyboard scrolls.
