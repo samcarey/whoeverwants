@@ -80,7 +80,7 @@ const BOTTOM_PIN_DURATION_MS = 800;
 // list). The window is interaction-gated (any real pointer/wheel/key disables
 // it immediately), so a generous value is safe — it just holds the restored
 // position until the user takes over or Next's reset is long past.
-const RESTORE_PIN_DURATION_MS = 1500;
+const RESTORE_PIN_DURATION_MS = 2500;
 
 // Debounce window for "scroll has stopped." Below this iOS momentum
 // scrolling can briefly pause and reads as idle; above it the arrows

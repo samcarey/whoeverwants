@@ -85,7 +85,7 @@ import type { Poll, Question, QuestionResults } from "@/lib/types";
 // the slide + mount work starves rAF, so an arm-time deadline expires before
 // the loop re-applies, leaving the page at Next.js' scroll-to-0). Bounded but
 // interaction-gated, so a generous value is safe.
-const RESTORE_PIN_DURATION_MS = 1500;
+const RESTORE_PIN_DURATION_MS = 2500;
 
 function InlineCategoryIcon({
   question,
