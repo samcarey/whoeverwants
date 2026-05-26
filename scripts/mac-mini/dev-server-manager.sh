@@ -285,14 +285,19 @@ evict_excess_servers() {
 
   local to_evict=$((effective_total - MAX_DEV_SERVERS))
   # Sort by container label "updated_at" ascending (oldest first); skip current slug.
-  local victims
+  # NOTE: the loop var MUST NOT be named `container` — bash is dynamically
+  # scoped, and this function runs inside cmd_upsert's scope where `container`
+  # holds the upserted slug's name. Aliasing it here makes cmd_upsert's later
+  # `docker run --name "$container"` use the last evicted victim's name. Use
+  # `victim` (declared local) so it can't clobber the caller.
+  local victims victim victim_slug
   victims=$(docker ps -a --filter "name=${DEV_CONTAINER_PREFIX}-" \
     --format '{{.Label "updated_at"}} {{.Names}}' \
     | sort \
     | awk -v cur="$(slug_to_container "$current_slug")" '$2 != cur {print $2}')
-  while IFS= read -r container && [ "$to_evict" -gt 0 ]; do
-    [ -z "$container" ] && continue
-    local victim_slug="${container#${DEV_CONTAINER_PREFIX}-}"
+  while IFS= read -r victim && [ "$to_evict" -gt 0 ]; do
+    [ -z "$victim" ] && continue
+    victim_slug="${victim#${DEV_CONTAINER_PREFIX}-}"
     log "Evicting dev server '$victim_slug' (limit: $MAX_DEV_SERVERS)"
     cmd_destroy_slug "$victim_slug"
     to_evict=$((to_evict - 1))
@@ -401,6 +406,17 @@ cmd_upsert() {
     --label "db_name=$db_name" \
     --label "updated_at=$updated_at" \
     "$DEV_IMAGE" >/dev/null
+
+  # Belt-and-suspenders: confirm the launched container wears THIS slug's name.
+  # If a dynamic-scoping bug ever reintroduces the eviction clobber, fail loudly
+  # here instead of silently serving under a sibling slug's name.
+  local expected_container
+  expected_container=$(slug_to_container "$slug")
+  if [ "$container" != "$expected_container" ]; then
+    log "ERROR: launched container name '$container' != expected '$expected_container' (eviction clobber?). Removing."
+    docker rm -f "$container" >/dev/null 2>&1 || true
+    return 1
+  fi
 
   # Wait for the entrypoint to finish git clone / npm ci / uv sync.
   # The entrypoint writes /repo/.dev-server-ready when both processes are up.
