@@ -57,8 +57,16 @@ from services.join_requests import (
     list_pending_requests,
 )
 from services.auth import resolve_actor_user_id
+from services.contacts import (
+    add_member_for_user,
+    is_contact,
+    list_invitable_accounts,
+    reconcile_contacts,
+    reconcile_contacts_safe,
+)
 from services.memberships import leave_group as _leave_group_row
 from services.groups import (
+    _is_uuid_like,
     filter_visible_polls,
     get_group_metadata,
     grant_group_membership_inline,
@@ -69,7 +77,7 @@ from services.groups import (
     polls_for_poll_ids,
     resolve_group_id_from_route_id,
 )
-from services.push import fan_out_join_request
+from services.push import fan_out_join_request, fan_out_member_added
 
 
 class GroupSummary(BaseModel):
@@ -186,7 +194,9 @@ class MyGroupsRequest(BaseModel):
 
 
 @router.post("/mine", response_model=list[PollResponse])
-def get_my_groups(req: MyGroupsRequest, request: Request):
+def get_my_groups(
+    req: MyGroupsRequest, request: Request, background_tasks: BackgroundTasks
+):
     """Return every poll the user has visibility into. See the visibility
     rule in `services/groups.py`.
 
@@ -214,6 +224,14 @@ def get_my_groups(req: MyGroupsRequest, request: Request):
         viewer_user_id = resolve_actor_user_id(
             conn, user_id=user_id, browser_id=browser_id
         )
+        # Keep the caller's contact list ("people you've encountered") fresh
+        # off the home-load path: a decoupled upsert of everyone they
+        # currently share a group with, bumping each contact's last_seen_at.
+        # This is the always-running hook that lets the invite screen later
+        # surface someone the caller no longer shares a group with — it
+        # captures the encounter (+ recency) while they still do. No-op for
+        # account-less callers (reconcile_contacts_safe handles None).
+        background_tasks.add_task(reconcile_contacts_safe, viewer_user_id)
         return polls_for_poll_ids(
             conn, visible_pids, include_results=req.include_results,
             viewer_user_id=viewer_user_id,
@@ -1119,6 +1137,180 @@ def decide_group_join_request(
         request_id=decided.request_id,
         status=decided.status,
     )
+
+
+# ---------------------------------------------------------------------------
+# Invite members directly (in-app "address book")
+# ---------------------------------------------------------------------------
+#
+# A member of a group can add accounts they've encountered (shared a group
+# with) straight into the group — no link to share, no approval round-trip.
+# The added account gets a push notification. Complements Phase F (joiner
+# pulls) and Phase G (creator mints a link): this is "member pushes a known
+# account in directly".
+#
+# Authorization is MEMBERSHIP, not creator-only — consistent with the
+# existing trust model where any member can already invite anyone by sharing
+# the group URL (visiting it grants membership). The candidate set is the
+# caller's own contacts (`services/contacts.py`), and the add endpoint only
+# accepts user_ids already in that address book, so a member can't add an
+# arbitrary stranger by guessing user_ids.
+
+
+class InvitableAccountResponse(BaseModel):
+    """One row of the invite-members candidate list. `shared_group_count`
+    is the number of OTHER groups the caller currently shares with this
+    account (primary sort key, desc); `last_seen_at` is the persisted
+    recency watermark (secondary sort key for accounts with 0 current
+    shared groups). `name` is the account's display_name (may be null)."""
+
+    user_id: str
+    name: str | None
+    shared_group_count: int
+    last_seen_at: str
+
+
+class AddMembersRequest(BaseModel):
+    user_ids: list[str] = Field(default_factory=list)
+
+
+class AddMembersResponse(BaseModel):
+    added: int
+
+
+@router.get(
+    "/{route_id}/invitable-accounts",
+    response_model=list[InvitableAccountResponse],
+)
+def list_group_invitable_accounts(route_id: str, request: Request):
+    """Accounts the caller can add to this group: people they've encountered
+    (the `user_contacts` address book) who aren't already members here.
+
+    Authorization: caller must be a member of the group (any member can
+    invite). 404 on unresolvable route; 403 when the caller isn't a member.
+    An account-less caller (no resolvable user_id — e.g. a pure lurker who
+    never created or voted) has no contacts, so this returns an empty list
+    rather than erroring.
+
+    Reconciles the caller's contacts inline first so the list reflects
+    everyone they currently share a group with, even on the first open after
+    this feature shipped. Sorted: most shared groups first, then most
+    recently seen together.
+    """
+    browser_id = _browser_id(request)
+    user_id = _user_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        if not is_caller_member_of_group(
+            conn, group_id, browser_id=browser_id, user_id=user_id
+        ):
+            raise HTTPException(
+                status_code=403, detail="Join the group to invite people"
+            )
+        me = resolve_actor_user_id(conn, user_id=user_id, browser_id=browser_id)
+        if not me:
+            return []
+        reconcile_contacts(conn, me)
+        accounts = list_invitable_accounts(conn, me, group_id)
+    return [
+        InvitableAccountResponse(
+            user_id=a.user_id,
+            name=a.name,
+            shared_group_count=a.shared_group_count,
+            last_seen_at=a.last_seen_at.isoformat() if a.last_seen_at else "",
+        )
+        for a in accounts
+    ]
+
+
+@router.post("/{route_id}/members", response_model=AddMembersResponse)
+def add_group_members(
+    route_id: str,
+    body: AddMembersRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    """Add one or more accounts to a group. Any member can invite.
+
+    Each requested user_id must be one of the caller's contacts (in the
+    `user_contacts` address book) — non-contacts are silently skipped so a
+    member can't add an arbitrary stranger by guessing ids. Accounts already
+    in the group (via any of their browsers) are skipped too (no duplicate
+    membership, no notification). Each newly-added account gets an 'added to
+    a group' push.
+
+    401/403/404 mirror the candidates endpoint. Returns the count of accounts
+    actually added.
+    """
+    browser_id = _browser_id(request)
+    user_id = _user_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        if not is_caller_member_of_group(
+            conn, group_id, browser_id=browser_id, user_id=user_id
+        ):
+            raise HTTPException(
+                status_code=403, detail="Join the group to invite people"
+            )
+        me = resolve_actor_user_id(conn, user_id=user_id, browser_id=browser_id)
+        if not me:
+            raise HTTPException(
+                status_code=403,
+                detail="Create or join a poll first so we can invite from your account",
+            )
+
+        added_user_ids: list[str] = []
+        # dict.fromkeys dedupes while preserving order. Skip the caller, any
+        # malformed (non-uuid) id, and any id that isn't in the caller's
+        # contacts — only people they've actually encountered are addable.
+        for uid in dict.fromkeys(body.user_ids):
+            if uid == me or not _is_uuid_like(uid):
+                continue
+            if not is_contact(conn, me, uid):
+                continue
+            if add_member_for_user(conn, group_id, uid):
+                added_user_ids.append(uid)
+
+        # Notification payload bits — read once for the whole batch.
+        group_row = conn.execute(
+            "SELECT short_id, title FROM groups WHERE id = %(g)s::uuid",
+            {"g": group_id},
+        ).fetchone()
+        group_short_id = group_row.get("short_id") if group_row else None
+        group_phrase = group_name_phrase(
+            conn, group_id, override=group_row.get("title") if group_row else None
+        )
+        inviter_row = conn.execute(
+            "SELECT display_name FROM users WHERE id = %(u)s::uuid",
+            {"u": me},
+        ).fetchone()
+        inviter_name = inviter_row.get("display_name") if inviter_row else None
+
+    route_for_url = group_short_id or group_id
+    body_text = (
+        f"{inviter_name} added you to the group"
+        if inviter_name
+        else "You were added to a group"
+    )
+    for uid in added_user_ids:
+        background_tasks.add_task(
+            fan_out_member_added,
+            group_id,
+            uid,
+            {
+                "title": f"Added to {group_phrase}",
+                "body": body_text,
+                "url": f"/g/{route_for_url}",
+                "group_id": route_for_url,
+                "tag": f"member-added-{group_id}",
+            },
+        )
+
+    return AddMembersResponse(added=len(added_user_ids))
 
 
 # ---------------------------------------------------------------------------

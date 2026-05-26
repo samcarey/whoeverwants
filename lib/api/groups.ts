@@ -487,6 +487,50 @@ export async function apiRevokeGroupInvite(
   );
 }
 
+/**
+ * Invite members directly ("address book"):
+ *   * `apiGetGroupInvitableAccounts(routeId)` — accounts the caller has
+ *     encountered (shared a group with) who aren't already members of this
+ *     group. Server-sorted: most current shared groups first, then most
+ *     recently seen together. Any member can call this.
+ *   * `apiAddGroupMembers(routeId, userIds)` — add the selected accounts to
+ *     the group (each gets a push). Only the caller's own contacts are
+ *     accepted server-side; returns how many were actually added.
+ */
+
+export interface InvitableAccount {
+  user_id: string;
+  /** Account display name. May be null for accounts that never set one. */
+  name: string | null;
+  /** Number of OTHER groups the caller currently shares with this account. */
+  shared_group_count: number;
+  /** ISO timestamp the pair was last observed sharing a group. */
+  last_seen_at: string;
+}
+
+export async function apiGetGroupInvitableAccounts(
+  routeId: string,
+): Promise<InvitableAccount[]> {
+  const data = await groupFetch<any[]>(
+    `/${encodeURIComponent(routeId)}/invitable-accounts`,
+  );
+  return Array.isArray(data) ? (data as InvitableAccount[]) : [];
+}
+
+export async function apiAddGroupMembers(
+  routeId: string,
+  userIds: string[],
+): Promise<{ added: number }> {
+  const data = await groupFetch<any>(
+    `/${encodeURIComponent(routeId)}/members`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ user_ids: userIds }),
+    },
+  );
+  return { added: typeof data?.added === 'number' ? data.added : 0 };
+}
+
 /** Encode an ArrayBuffer as base64. Chunked to avoid the `apply()`
  *  call-stack limit on big buffers — handles the 5 MiB max-image-size
  *  cap comfortably. */

@@ -54,12 +54,15 @@ export {
   apiCreateGroupInvite,
   apiListGroupInvites,
   apiRevokeGroupInvite,
+  apiGetGroupInvitableAccounts,
+  apiAddGroupMembers,
 } from "./groups";
 export type {
   GroupJoinRequest,
   CreateGroupJoinRequestResult,
   GroupInvite,
   CreateGroupInviteOptions,
+  InvitableAccount,
 } from "./groups";
 
 export {

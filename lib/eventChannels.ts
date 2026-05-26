@@ -62,6 +62,10 @@ export type SlideOverlayKind =
   | { type: 'group'; groupId: string }
   | { type: 'groupInfo'; groupId: string }
   | { type: 'groupEditTitle'; groupId: string }
+  // Invite-members screen at /g/<group>/invite-members. Search the caller's
+  // contacts, select accounts with round checkboxes, Update to add them.
+  // Reached from the "Add people" button atop the /info members list.
+  | { type: 'groupInviteMembers'; groupId: string }
   // Per-poll detail page. Tapping a card on /g/<group> slides to
   // /g/<group>/p/<pollShortId>, which renders the poll's full content
   // (results, ballots, voter list) without card chrome.
