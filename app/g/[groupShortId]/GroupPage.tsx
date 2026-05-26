@@ -1104,6 +1104,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // is seeded in the useState initializer so the initial render
       // committed with the grown wrapper. scrollTo lands at the target
       // without clamping.
+      (window as any).__st = (window as any).__st || []; (window as any).__st.push(`${Date.now()%100000} LE-restore remembered=${remembered} scrollY=${window.scrollY} scrollH=${document.documentElement.scrollHeight}`);
       window.scrollTo(0, remembered);
       setInitialScrollApplied(true);
       return;
@@ -1139,6 +1140,8 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     // card-mount work has starved requestAnimationFrame. The rAF loop alone
     // could (and did) lose this race when its first tick was delayed past
     // the window, leaving the page at the top of the list.
+    const trace = (m: string) => { (window as any).__st = (window as any).__st || []; (window as any).__st.push(`${Date.now()%100000} ${m}`); };
+    trace(`effect-start target=${restoreTargetRef.current} scrollY=${window.scrollY}`);
     const repin = () => {
       const target = restoreTargetRef.current;
       if (target == null) return;
@@ -1146,6 +1149,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // / wheel / keydown set this flag (capture phase) before the scroll
       // event they cause, so a real user scroll is never fought.
       if (userInteractedRef.current) {
+        trace(`repin-bail USER-INTERACT scrollY=${window.scrollY}`);
         restoreTargetRef.current = null;
         setRestoreMinHeight(null);
         return;
@@ -1159,11 +1163,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       if (!reentryGuard && Math.abs(window.scrollY - target) > 0.5) {
         // reentryGuard stops our own scrollTo's `scroll` event from
         // recursing through the listener within this synchronous frame.
+        trace(`repin-apply from=${window.scrollY} to=${target}`);
         reentryGuard = true;
         window.scrollTo(0, target);
         reentryGuard = false;
       }
       if (Date.now() >= restorePinDeadlineRef.current) {
+        trace(`repin-deadline scrollY=${window.scrollY}`);
         restoreTargetRef.current = null;
         setRestoreMinHeight(null);
       }
@@ -1174,7 +1180,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       if (restoreTargetRef.current == null) return;
       rafId = requestAnimationFrame(tick);
     };
-    const onScroll = () => repin();
+    const onScroll = () => { trace(`scroll-evt scrollY=${window.scrollY} target=${restoreTargetRef.current}`); repin(); };
     rafId = requestAnimationFrame(tick);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => {
@@ -1561,7 +1567,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // and would falsely disable the pin during initial layout settling.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const disable = () => { userInteractedRef.current = true; };
+    const disable = (e: Event) => { (window as any).__st = (window as any).__st || []; (window as any).__st.push(`${Date.now()%100000} INTERACT ${e.type} restoreTarget=${restoreTargetRef.current} scrollY=${window.scrollY}`); userInteractedRef.current = true; };
     // pointerdown covers mouse + touch + pen on every platform (including
     // iOS where touchstart sometimes doesn't bubble during scroll-engaged
     // gestures). Keep wheel + keydown for trackpads and keyboard scrolls.
