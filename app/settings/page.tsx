@@ -179,6 +179,11 @@ export default function SettingsPage() {
     const sync = () => {
       const user = getCurrentUser();
       setCurrentUser(user);
+      // Reflect localStorage location (cleared on sign-out by clearSession,
+      // which runs before SESSION_CHANGED fires) so the displayed location
+      // clears instantly without a remount. Location isn't account-synced,
+      // so mirroring localStorage is always correct.
+      setSavedLocation(getUserLocation());
       const userId = user?.user_id ?? null;
       const justSignedIn = userId !== null && userId !== prevUserIdRef.current;
       prevUserIdRef.current = userId;
