@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
 import { DRAFT_POLL_PORTAL_ID } from "@/lib/groupDomMarkers";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
@@ -89,17 +89,14 @@ export const PANEL_OFFSET_VAR = "--bubble-bar-panel-offset";
  * it as an extra swipe target.
  */
 const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) => {
-  // Panel vertical offset as a percentage of its own height: 0 = fully
-  // visible, 100 = fully hidden (translated entirely below the viewport).
-  // Continuous (not boolean) so the panel can slide up *in sync* with the
-  // scroll as the user nears the bottom of the list — progressively filling
-  // the reserved padding under the last poll instead of popping into view
-  // once the bottom is reached.
-  const [translatePercent, setTranslatePercent] = useState(0);
-  // Whether transform changes animate. ON for the auto-hide show/hide (the
-  // 200ms ease "bring the chrome back" gesture); OFF while sliding in sync
-  // near the bottom, where a transition would lag behind the finger.
-  const [animate, setAnimate] = useState(true);
+  // The panel's vertical offset is driven IMPERATIVELY (writing
+  // panelRef.current.style.transform inside the scroll rAF), NOT via React
+  // state. A per-frame scroll-linked transform routed through setState makes
+  // React's render land a frame or two late and unevenly during a slow coast
+  // — the user sees that as jitter while the bar slides up. Writing the DOM
+  // directly inside the rAF moves the panel on the same frame as the scroll
+  // measurement, so the slide stays smooth.
+  //
   // Bumped on every `visualViewport.resize` so `useMeasuredHeight`'s
   // ResizeObserver re-attaches and re-reads `offsetHeight`. iOS browsers
   // resolve `env(safe-area-inset-bottom)` differently depending on URL
@@ -118,9 +115,38 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
   // Mirror the measured height into a ref so the scroll closure (empty-deps
   // effect, below) reads the live value without re-subscribing on resize.
   const panelHeightRef = useRef(0);
+  // Whether the panel is at least partially on-screen — drives the offset
+  // CSS var (binary, not the live partial offset, so the down arrow's own
+  // `bottom` transition doesn't lag the scroll). Tracked in a ref because
+  // the transform is imperative now and never lands in React state.
+  const engagedRef = useRef(true);
+
+  // Writes the two CSS vars (height + offset). Guarded against no-op writes
+  // so the same value doesn't repeatedly invalidate style on the cards-
+  // wrapper (reads `--bubble-bar-panel-height`) and the down scroll-helper
+  // arrow (reads `--bubble-bar-panel-offset`). On unmount we deliberately
+  // DON'T clear the vars — a sibling instance (overlay vs real route during
+  // a slide) may still be rendering and the host's padding would jump to 0.
+  const lastWrittenRef = useRef({ height: -1, engaged: true });
+  const writeVars = useCallback((engaged: boolean) => {
+    const heightPx = Math.round(panelHeightRef.current);
+    // Skip the empty-mount write — the panel is still waiting for its bubble
+    // bar JSX to portal in. See MIN_MEANINGFUL_PANEL_HEIGHT above.
+    if (engaged && heightPx < MIN_MEANINGFUL_PANEL_HEIGHT) return;
+    const last = lastWrittenRef.current;
+    if (last.height === heightPx && last.engaged === engaged) return;
+    lastWrittenRef.current = { height: heightPx, engaged };
+    const root = document.documentElement.style;
+    root.setProperty(PANEL_HEIGHT_VAR, `${heightPx}px`);
+    root.setProperty(PANEL_OFFSET_VAR, engaged ? `${heightPx}px` : "0px");
+  }, []);
+
   useEffect(() => {
     panelHeightRef.current = panelHeight;
-  }, [panelHeight]);
+    // Re-write the vars when the height lands (e.g. the bubble bar portals
+    // in and the panel grows from ~0 to its real height).
+    writeVars(engagedRef.current);
+  }, [panelHeight, writeVars]);
 
   // Cached document scrollHeight — reading it on every scroll tick forces
   // a synchronous layout flush, which is expensive on long group pages.
@@ -171,27 +197,40 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
 
       const h = panelHeightRef.current;
       let nextPercent: number;
-      let nextAnimate: boolean;
+      let animate: boolean;
       if (atTop || lastDirection === "up") {
         // Fully visible: just landed at the top, or the user scrolled up to
         // "bring the chrome back".
         nextPercent = 0;
-        nextAnimate = true;
+        animate = true;
       } else if (h > 0 && distanceFromBottom < h) {
         // Within one panel-height of the bottom while scrolling down: slide
         // up in sync with the scroll so the panel exactly fills the reserved
         // padding under the last poll — no void, no pop. distanceFromBottom
         // === h → fully hidden (100%); at the very bottom → fully shown (0%).
         nextPercent = Math.min(100, (distanceFromBottom / h) * 100);
-        nextAnimate = false;
+        // No transition: track the scroll directly so the slide stays in
+        // lockstep with the finger (a transition would lag + rubber-band).
+        animate = false;
       } else {
         // Scrolling down, more than a panel-height from the bottom: hidden.
         nextPercent = 100;
-        nextAnimate = true;
+        animate = true;
       }
 
-      setTranslatePercent((prev) => (prev === nextPercent ? prev : nextPercent));
-      setAnimate((prev) => (prev === nextAnimate ? prev : nextAnimate));
+      // Imperative DOM write — see the note on the panel state above. Inline
+      // `transition: none` overrides the className's 200ms during the sync
+      // slide; clearing it (`""`) falls back to that class for the auto-hide
+      // show/hide animations.
+      const el = panelRef.current;
+      if (el) {
+        el.style.transition = animate ? "" : "none";
+        el.style.transform = `translateY(${nextPercent}%)`;
+        el.setAttribute("aria-hidden", nextPercent >= 100 ? "true" : "false");
+      }
+      const engaged = nextPercent < 100;
+      engagedRef.current = engaged;
+      writeVars(engaged);
     };
 
     const schedule = () => {
@@ -207,7 +246,7 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
       window.removeEventListener("scroll", schedule);
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
-  }, []);
+  }, [writeVars]);
 
   // Track visualViewport resizes so the panel measurement stays current
   // when iOS toggles UA chrome (and `env(safe-area-inset-bottom)` shifts).
@@ -219,34 +258,6 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
     return () => vv.removeEventListener("resize", onResize);
   }, []);
 
-  // Write the two CSS vars whenever measurement OR visibility flips.
-  // Guarded against no-op writes so the same value doesn't repeatedly
-  // invalidate style on the cards-wrapper (which reads `--bubble-bar-
-  // panel-height`) and the down scroll-helper arrow (which reads
-  // `--bubble-bar-panel-offset`). On unmount we deliberately DON'T
-  // clear the vars — a sibling instance (overlay vs real route during
-  // a slide) may still be rendering and the host's padding would jump
-  // to 0 otherwise.
-  const lastWrittenRef = useRef({ height: -1, engaged: true });
-  useEffect(() => {
-    const heightPx = Math.round(panelHeight);
-    // `engaged` = the panel is at least partially on-screen (mid-slide near
-    // the bottom, or fully shown). The down scroll-helper arrow floats above
-    // the panel's full height whenever it's engaged and drops to the bottom
-    // only when fully hidden — a binary value (not the live partial offset)
-    // so the arrow's own `bottom` transition doesn't lag the scroll.
-    const engaged = translatePercent < 100;
-    // Skip the empty-mount write — the panel is still waiting for its
-    // bubble bar JSX to portal in. See MIN_MEANINGFUL_PANEL_HEIGHT above.
-    if (engaged && heightPx < MIN_MEANINGFUL_PANEL_HEIGHT) return;
-    const last = lastWrittenRef.current;
-    if (last.height === heightPx && last.engaged === engaged) return;
-    lastWrittenRef.current = { height: heightPx, engaged };
-    const root = document.documentElement.style;
-    root.setProperty(PANEL_HEIGHT_VAR, `${heightPx}px`);
-    root.setProperty(PANEL_OFFSET_VAR, engaged ? `${heightPx}px` : "0px");
-  }, [panelHeight, translatePercent]);
-
   return (
     <div
       ref={forwardedShellRef}
@@ -256,12 +267,20 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
       onTouchEnd={stopTouchPropagation}
       onTouchCancel={stopTouchPropagation}
     >
+      {/*
+        transform / transition / aria-hidden are driven imperatively in the
+        scroll effect (panelRef.current.style.*), NOT here — see the note on
+        the panel state above. The transition class is the default 200ms
+        used for the auto-hide show/hide; the sync slide overrides it with an
+        inline `transition: none`. React never sets `transform` in this
+        style object, so its per-frame imperative value survives re-renders
+        (resize) untouched. Starts at translateY(0) (visible) before the
+        first scroll tick.
+      */}
       <div
         ref={panelRef}
-        aria-hidden={translatePercent >= 100}
-        className={`bg-background${animate ? " transition-transform duration-200 ease-out" : ""}`}
+        className="bg-background transition-transform duration-200 ease-out"
         style={{
-          transform: `translateY(${translatePercent}%)`,
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
         }}
       >
