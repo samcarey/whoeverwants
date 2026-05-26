@@ -108,6 +108,7 @@ export {
   apiDeleteAccount,
   apiCreateNameAccount,
   apiSetRecoveryReminderDismissed,
+  apiAdoptInstantSession,
   getCurrentUser,
 } from "./auth";
 export type {
