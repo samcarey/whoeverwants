@@ -338,6 +338,12 @@ def compute_badge_count(
     - unread: a notification event the caller hasn't seen on ANY device since —
       never-viewed (new), or (gated) a transition / close after the last view.
     """
+    # No usable identity → 0 without touching the DB. The RFC 4122 nil UUID is
+    # never a real browser (a device that ever sends it must not inherit a
+    # stranger's unread count). When a session user_id IS present we still
+    # resolve the account's browsers even if the current browser is nil.
+    if user_id is None and (not browser_id or browser_id == NIL_UUID):
+        return 0
     bids = _caller_browser_ids(conn, browser_id, user_id)
     if not bids:
         return 0
