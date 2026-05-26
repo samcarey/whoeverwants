@@ -760,23 +760,24 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* App-icon badge model. Three account-synced switches. To-do mode
-          gates the two re-light toggles (inert in to-do mode, where the
-          badge is purely the awaiting-action count). */}
+      {/* Unread polls: the app-icon badge counts unread polls, and the gold
+          bar on group cards marks them. Three account-synced switches.
+          "Stay unread until I respond" gates the two re-light toggles (inert
+          in that mode, where unread = open + un-responded). */}
       <div className="mb-6">
         <h2 className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
-          App badge
+          Unread polls
         </h2>
         <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
           <div
             className="flex items-center justify-between gap-3 h-12 cursor-pointer"
             onClick={() => updateBadge({ ...badge, todoMode: !badge.todoMode })}
           >
-            <span className="text-base font-normal shrink-0">To-do badge</span>
+            <span className="text-base font-normal shrink-0">Stay unread until I respond</span>
             <SliderSwitch
               checked={badge.todoMode}
               onChange={(v) => updateBadge({ ...badge, todoMode: v })}
-              aria-label="To-do badge"
+              aria-label="Stay unread until I respond"
             />
           </div>
           <div
@@ -792,13 +793,13 @@ export default function SettingsPage() {
                 badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
               }`}
             >
-              Badge when voting opens
+              Mark unread when voting opens
             </span>
             <SliderSwitch
               checked={badge.onVotingOpen}
               onChange={(v) => updateBadge({ ...badge, onVotingOpen: v })}
               disabled={badge.todoMode}
-              aria-label="Badge when voting opens"
+              aria-label="Mark unread when voting opens"
             />
           </div>
           <div
@@ -814,20 +815,20 @@ export default function SettingsPage() {
                 badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
               }`}
             >
-              Badge when results arrive
+              Mark unread when results arrive
             </span>
             <SliderSwitch
               checked={badge.onResults}
               onChange={(v) => updateBadge({ ...badge, onResults: v })}
               disabled={badge.todoMode}
-              aria-label="Badge when results arrive"
+              aria-label="Mark unread when results arrive"
             />
           </div>
         </section>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           {badge.todoMode
-            ? "To-do: the badge counts open polls awaiting your vote. Only voting or abstaining clears one — seeing a poll doesn't."
-            : "Unread: the badge counts polls with new activity. Opening a poll clears it."}
+            ? "An open poll stays unread until you vote or abstain — opening it isn't enough. The app-icon badge counts these."
+            : "Opening a poll marks it read. It becomes unread again when voting opens or results arrive (toggles above). The app-icon badge counts unread polls."}
         </p>
       </div>
 

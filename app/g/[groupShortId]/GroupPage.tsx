@@ -34,6 +34,9 @@ import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
 import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
+import { computePollUnread, POLL_VIEWED_CHANGED_EVENT } from "@/lib/unread";
+import { getEffectiveBadgeSettings, BADGE_SETTINGS_CHANGED_EVENT, type BadgeSettings } from "@/lib/badgeSettings";
+import { SESSION_CHANGED_EVENT } from "@/lib/session";
 import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
@@ -185,6 +188,27 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   const [group, setGroup] = useState<Group | null>(initialGroup);
   const [loading, setLoading] = useState(!initialGroup);
   const [error, setError] = useState(false);
+
+  // Read-state model: the gold "unread" bar + scroll-helper arrows reflect
+  // whether each poll is unread under the user's badge settings (see
+  // lib/unread.ts). `pollViewsTick` is a bare re-render trigger — the unread
+  // helper reads the localStorage view store directly, so flipping the tick
+  // on POLL_VIEWED_CHANGED_EVENT is enough to recompute (e.g. clear the bar
+  // the instant the user opens a poll).
+  const [badgeSettings, setBadgeSettings] = useState<BadgeSettings>(() => getEffectiveBadgeSettings());
+  const [pollViewsTick, setPollViewsTick] = useState(0);
+  useEffect(() => {
+    const onSettings = () => setBadgeSettings(getEffectiveBadgeSettings());
+    const onViewed = () => setPollViewsTick((t) => t + 1);
+    window.addEventListener(BADGE_SETTINGS_CHANGED_EVENT, onSettings);
+    window.addEventListener(SESSION_CHANGED_EVENT, onSettings);
+    window.addEventListener(POLL_VIEWED_CHANGED_EVENT, onViewed);
+    return () => {
+      window.removeEventListener(BADGE_SETTINGS_CHANGED_EVENT, onSettings);
+      window.removeEventListener(SESSION_CHANGED_EVENT, onSettings);
+      window.removeEventListener(POLL_VIEWED_CHANGED_EVENT, onViewed);
+    };
+  }, []);
 
   // Phase 5b: poll-level mutations (close/reopen/cutoff) update the
   // polls array; question mutations (forget) update the questions array.
@@ -1261,8 +1285,20 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     if (!mp) return true;
     return mp.response_deadline ? new Date(mp.response_deadline) > now && !mp.is_closed : !mp.is_closed;
   };
-  const isAwaitingResponse = (question: Question) =>
-    isQuestionOpen(question) && !votedQuestionIds.has(question.id) && !abstainedQuestionIds.has(question.id);
+  // Gold "unread" bar (and the scroll-helper arrows) reflect read state per
+  // the user's badge settings, computed at the poll level. Default rule:
+  // opening the poll clears it; "stay unread until I respond" mode clears
+  // only on a vote/abstain. Falls back to the legacy "open + un-actioned"
+  // predicate when no wrapper poll is resolvable (placeholder / no poll_id).
+  const isCardUnread = (question: Question): boolean => {
+    const mp = wrapperFor(question);
+    if (!mp) {
+      return isQuestionOpen(question)
+        && !votedQuestionIds.has(question.id)
+        && !abstainedQuestionIds.has(question.id);
+    }
+    return computePollUnread(mp, badgeSettings, votedQuestionIds, abstainedQuestionIds, now.getTime());
+  };
 
   // Strict chronological order (oldest → newest, newest at bottom). No
   // awaiting/closed grouping — voting on a card never reshuffles the list,
@@ -1579,7 +1615,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // is the closest one beneath the viewport.
       for (const group of groupedGroupQuestions) {
         const question = group.anchor;
-        if (!isAwaitingResponse(question)) continue;
+        if (!isCardUnread(question)) continue;
         const card = cardRefs.current.get(question.id);
         if (!card) continue;
         const r = card.getBoundingClientRect();
@@ -1649,7 +1685,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       observer.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group, groupedGroupQuestions, headerHeight, votedQuestionIds, abstainedQuestionIds]);
+  }, [group, groupedGroupQuestions, headerHeight, votedQuestionIds, abstainedQuestionIds, badgeSettings, pollViewsTick]);
 
   // When an awaiting card is targeted: align its top flush with the
   // bottom of the fixed header. For wholly-above / wholly-below cards
@@ -1830,7 +1866,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
             }
             const question = group.anchor;
             const isClosed = !isQuestionOpen(question);
-            const isAwaiting = isAwaitingResponse(question);
+            const isAwaiting = isCardUnread(question);
             const isPressed = pressedQuestionId === question.id;
             // A freshly-submitted placeholder card while it fade-in-animates
             // into its slot. Once POLL_HYDRATED_EVENT swaps the placeholder

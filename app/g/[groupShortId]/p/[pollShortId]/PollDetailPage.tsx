@@ -43,6 +43,7 @@ import {
   getCachedPollForShortId,
 } from "@/lib/questionCache";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
+import { markPollViewed } from "@/lib/unread";
 import { hasAppHistory } from "@/lib/viewTransitions";
 import {
   getRememberedScroll,
@@ -357,6 +358,10 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   // — opening the poll page IS the "seen" signal per the badge model.
   useEffect(() => {
     void apiRecordPollView(poll.id);
+    // Local mirror of the same "seen" signal — drives the gold "unread" bar
+    // on group cards + the home-list emphasis instantly (no round trip), so
+    // opening + backing out of a poll clears it. See lib/unread.ts.
+    markPollViewed(poll.id);
   }, [poll.id]);
 
   // Wrapper refetch keeps voter_names + prephase_deadline + closed-state

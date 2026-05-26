@@ -40,7 +40,10 @@ export interface GroupListItemProps {
    *  is ticking), 'response-pending' → solid green circle (unvoted work but
    *  no deadline set anywhere). undefined → empty slot. */
   unvotedDeadlineKind?: DeadlineKind;
-  hasUnvoted?: boolean;
+  /** Drives the title emphasis (bold vs muted): true when the group has any
+   *  unread poll. See lib/unread.ts — "unread" follows the user's badge
+   *  read-rule (opening marks read, or respond-to-mark-read). */
+  hasUnread?: boolean;
   pressed?: boolean;
   draftMode?: boolean;
   /** Transient: while true, the card visually morphs from draft → live. */
@@ -79,7 +82,7 @@ export default function GroupListItem(props: GroupListItemProps) {
     createdAt,
     soonestUnvotedDeadline,
     unvotedDeadlineKind,
-    hasUnvoted = false,
+    hasUnread = false,
     pressed = false,
     draftMode = false,
     finalizing = false,
@@ -100,7 +103,7 @@ export default function GroupListItem(props: GroupListItemProps) {
   // The finalizing flag releases the chrome over a CSS transition so the
   // morph reads as a single fluid change instead of an instant swap.
   const showDraftChrome = draftMode && !finalizing;
-  const titleEmphasized = hasUnvoted || (draftMode && !finalizing);
+  const titleEmphasized = hasUnread || (draftMode && !finalizing);
 
   return (
     <div
