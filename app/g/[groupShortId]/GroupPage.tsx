@@ -38,6 +38,7 @@ import { computePollUnread, useUnreadReactivity } from "@/lib/unread";
 import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
+import { isScrollRestoring, setScrollRestoring } from "@/lib/scrollRestoreState";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -1096,6 +1097,11 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     const remembered = getRememberedScroll(groupScrollKey(groupId));
     if (remembered !== undefined) {
       restoreTargetRef.current = remembered;
+      // Tell scroll-driven chrome (bubble bar, scroll arrows) that the
+      // upcoming scroll jumps are a programmatic restore, not the user
+      // scrolling — otherwise the restore's downward jump hides the bubble
+      // bar and flickers the arrows.
+      setScrollRestoring(true);
       // Arm (don't start) the pin window. The rAF loop below starts the
       // RESTORE_PIN_DURATION_MS countdown on its first tick that actually
       // runs — measuring from here would let the slide-back animation +
@@ -1148,6 +1154,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     if (typeof window === 'undefined') return;
     let rafId: number | null = null;
     let reentryGuard = false;
+    const endRestore = () => {
+      restoreTargetRef.current = null;
+      setRestoreMinHeight(null);
+      // Hand scroll-driven chrome (bubble bar, arrows) back to normal: the
+      // programmatic restore jumps are done.
+      setScrollRestoring(false);
+    };
     const repin = () => {
       const target = restoreTargetRef.current;
       if (target == null) return;
@@ -1155,8 +1168,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // / wheel / keydown set this flag (capture phase) before the scroll
       // event they cause, so a real user scroll is never fought.
       if (userInteractedRef.current) {
-        restoreTargetRef.current = null;
-        setRestoreMinHeight(null);
+        endRestore();
         return;
       }
       // Start the bounded window on the first time we actually run (armed as
@@ -1173,8 +1185,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
         reentryGuard = false;
       }
       if (Date.now() >= restorePinDeadlineRef.current) {
-        restoreTargetRef.current = null;
-        setRestoreMinHeight(null);
+        endRestore();
       }
     };
     const tick = () => {
@@ -1197,6 +1208,9 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       if (rafId !== null) cancelAnimationFrame(rafId);
       window.removeEventListener('scroll', onScroll);
       kickRestorePinRef.current = () => {};
+      // Unmounting mid-restore (e.g. navigating away again) must not leave the
+      // flag stuck true for the next group page's chrome.
+      setScrollRestoring(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1701,6 +1715,14 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       rafId = requestAnimationFrame(evaluate);
     };
     const onScroll = () => {
+      // A back-nav scroll restore fires programmatic scroll events; don't let
+      // them trip the mid-scroll suppression (which would flicker the arrows
+      // off then on once the restore settles). Still re-evaluate so the arrows
+      // reflect the restored position.
+      if (isScrollRestoring()) {
+        schedule();
+        return;
+      }
       isScrolling = true;
       if (scrollStoppedTimer !== null) window.clearTimeout(scrollStoppedTimer);
       scrollStoppedTimer = window.setTimeout(() => {

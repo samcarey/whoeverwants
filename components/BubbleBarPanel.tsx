@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useRef, useState } from "react";
 import type React from "react";
 import { DRAFT_POLL_PORTAL_ID } from "@/lib/groupDomMarkers";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
+import { isScrollRestoring } from "@/lib/scrollRestoreState";
 
 // Pixels of scroll delta required before we update the cached direction —
 // filters iOS momentum / rubber-band jitter that would otherwise toggle
@@ -127,6 +128,16 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
     const evaluate = () => {
       rafId = null;
       const currentY = window.scrollY;
+      // A back-nav scroll restore is replaying programmatic scroll jumps
+      // (often 0 → a mid-list offset). Don't read those as the user scrolling
+      // down — that would hide the bar at the restored position. Sync
+      // lastScrollY so the first real post-restore scroll computes a correct
+      // delta, and leave visibility untouched (the fresh-mounted panel starts
+      // visible, which is what we want after a back-nav).
+      if (isScrollRestoring()) {
+        lastScrollY = currentY;
+        return;
+      }
       const maxScroll = Math.max(
         0,
         cachedScrollHeightRef.current - window.innerHeight,
