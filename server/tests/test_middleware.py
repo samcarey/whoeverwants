@@ -119,6 +119,24 @@ class TestBrowserIdMiddleware:
         for bad in (None, "", "not-a-uuid", "0123abcd-89ef-4567-89ab-cdef0123456"):
             assert BrowserIdMiddleware._normalize(bad) is None
 
+    def test_normalize_rejects_nil_uuid(self):
+        # The nil UUID is shape-valid but never a real identity — reject it so
+        # the request gets a freshly-minted id (iOS all-zeros badge bug).
+        assert BrowserIdMiddleware._normalize(
+            "00000000-0000-0000-0000-000000000000"
+        ) is None
+        # Mixed-case nil is normalized to lowercase first, then rejected.
+        assert BrowserIdMiddleware._normalize(
+            "00000000-0000-0000-0000-000000000000".upper()
+        ) is None
+
+    def test_dispatch_replaces_nil_uuid(self):
+        echoed, _ = _run_browser_id(
+            headers={"X-Browser-Id": "00000000-0000-0000-0000-000000000000"}
+        )
+        assert echoed and UUID_RE.match(echoed)
+        assert echoed != "00000000-0000-0000-0000-000000000000"
+
     def test_normalize_lowercases(self):
         v = "0123ABCD-89EF-4567-89AB-CDEF01234567"
         assert BrowserIdMiddleware._normalize(v) == v.lower()

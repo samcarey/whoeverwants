@@ -538,3 +538,21 @@ def test_closed_fan_out_includes_whole_group(client, creator_secret, monkeypatch
     services.push.fan_out_poll_closed(group_id, poll["id"], {"title": "Poll closed"})
     # No actor exclusion — both members selected.
     assert {m1, m2} <= captured["ids"]
+
+
+def test_compute_badge_count_nil_uuid_returns_zero():
+    """The RFC 4122 nil UUID is never a real browser. compute_badge_count must
+    short-circuit to 0 (before touching the DB, hence conn=None here) so a
+    device that ever sends the nil id can't inherit a stranger group's unread
+    count as its app-icon badge. Regression for the iOS all-zeros badge bug."""
+    from services.groups import NIL_UUID
+
+    assert services.push.compute_badge_count(
+        None, NIL_UUID, todo_mode=False, on_voting_open=True, on_results=True
+    ) == 0
+    assert services.push.compute_badge_count(
+        None, NIL_UUID, todo_mode=True, on_voting_open=False, on_results=False
+    ) == 0
+    assert services.push.compute_badge_count(
+        None, None, todo_mode=False, on_voting_open=True, on_results=True
+    ) == 0

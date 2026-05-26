@@ -490,6 +490,15 @@ _UUID_RE = re.compile(
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
 
+# The RFC 4122 "nil" UUID. Never a legitimate identity — it's what a
+# null/uninitialized client coerces an id to. Treated as "no identity"
+# everywhere browser_id is read so it can't accumulate a shared
+# membership/badge bucket that bleeds across unrelated devices (this was the
+# root cause of the iOS all-zeros app-icon badge bug: one stray client joined
+# a 27-poll group under the nil id, and every device that then sent the nil id
+# saw that group's unread count as its badge).
+NIL_UUID = "00000000-0000-0000-0000-000000000000"
+
 
 def _is_uuid_like(value: str) -> bool:
     return isinstance(value, str) and bool(_UUID_RE.match(value))
