@@ -1462,8 +1462,10 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                 <>
                   {/* Suggestion phase UI for questions with suggestion deadline.
                       In the early-voting split, this gets its own card and the
-                      ranking ballot lands in a separate card below. */}
-                  {canSubmitSuggestions && (() => {
+                      ranking ballot lands in a separate card below. While the
+                      ranking ballot is being edited, this card is hidden so only
+                      one form is visible at a time. */}
+                  {canSubmitSuggestions && !(splitEarlyVotingCards && isEditingRanking) && (() => {
                     const suggestionUi = (
                       <SuggestionVotingInterface
                         question={question}
@@ -1499,7 +1501,10 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                       : suggestionUi;
                   })()}
 
-                  {/* Ranking section — independent component with its own edit state */}
+                  {/* Ranking section — independent component with its own edit
+                      state. While the suggestion form is being edited, it's
+                      hidden so only one form is visible at a time. */}
+                  {!(splitEarlyVotingCards && isEditingVote) && (
                   <RankingSection
                     cardClass={splitEarlyVotingCards ? `${POLL_SUBCARD_CLASS} mt-3` : undefined}
                     question={question}
@@ -1536,6 +1541,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                     questionResults={questionResults}
                     onBinaryRankedChoiceTap={handleBinaryChoiceTap}
                   />
+                  )}
 
                 </>
               )}
