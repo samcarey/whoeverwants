@@ -1031,10 +1031,13 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // Next.js App Router reset scrollY ~30-40ms after our layoutEffect's
   // scrollTo, so we need a re-application window to outlast that.
   const restorePinDeadlineRef = useRef(0);
-  // Target scrollY for the restore-scroll rAF loop. Cleared when the
-  // loop converges (3 stable frames), the deadline passes, or the
-  // user interacts.
+  // Target scrollY for the restore-scroll pin. Cleared when the deadline
+  // passes or the user interacts.
   const restoreTargetRef = useRef<number | null>(null);
+  // Kicks the persistent restore-pin's rAF loop. Set by the persistent
+  // effect; called by the layoutEffect when it arms a restore on a commit
+  // after the persistent effect already mounted.
+  const kickRestorePinRef = useRef<() => void>(() => {});
   // Minimum document height to apply during the restore window. The
   // initial render has `scrollHeight ≈ innerHeight` (cards mounted as
   // shell components with empty data), but `window.scrollTo(remembered)`
@@ -1104,8 +1107,12 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // is seeded in the useState initializer so the initial render
       // committed with the grown wrapper. scrollTo lands at the target
       // without clamping.
-      (window as any).__st = (window as any).__st || []; (window as any).__st.push(`${Date.now()%100000} LE-restore remembered=${remembered} scrollY=${window.scrollY} scrollH=${document.documentElement.scrollHeight}`);
       window.scrollTo(0, remembered);
+      // Start the persistent pin's rAF loop. On the mount commit the
+      // persistent effect runs after this layoutEffect and kicks itself; this
+      // call covers the case where the restore is armed on a later commit
+      // (group/headerHeight settled after first paint).
+      kickRestorePinRef.current();
       setInitialScrollApplied(true);
       return;
     }
@@ -1120,28 +1127,27 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group, loading, headerHeight]);
 
-  // Re-apply the restored scroll until it sticks. iOS Safari + Next.js
-  // App Router reset scrollY ~30-40ms after our initial scrollTo, so a
-  // single useLayoutEffect scrollTo isn't enough. Re-apply each frame
-  // until scrollY matches target for 3 consecutive frames (~50ms past
-  // the iOS reset), or until the deadline passes, or until the user
-  // interacts. Layout-change re-application is left to the existing
-  // ResizeObserver path that already calls `applyScrollAdjustmentRef`.
+  // Persistent restore-pin. Re-applies the saved scroll target until it
+  // sticks, defeating Next.js App Router's post-commit scroll-to-0 (it fires
+  // ~30-40ms after the back commit, sometimes repeatedly while the route
+  // settles). Two defenses:
+  //   1. A synchronous `scroll` listener — Next's scrollTo(0) fires a `scroll`
+  //      event, and re-applying the target from inside the handler snaps the
+  //      position back BEFORE the next paint, regardless of rAF starvation.
+  //   2. An rAF loop — catches resets that don't emit a `scroll` event and
+  //      enforces the bounded window.
+  // CRITICAL: this effect has EMPTY deps so the listener is installed once and
+  // never torn down. An earlier version keyed it on [group, loading]; the
+  // frequent setGroup churn (5s refresh, vote events) tore the listener down
+  // and re-ran the effect, leaving gaps with no listener attached — and Next's
+  // scroll-to-0 firing inside such a gap stranded the page at the top of the
+  // list. repin() is a no-op whenever restoreTargetRef is null (normal
+  // browsing), so a permanently-attached listener costs one null check per
+  // scroll event.
   useEffect(() => {
-    if (!group || loading) return;
-    if (restoreTargetRef.current == null) return;
+    if (typeof window === 'undefined') return;
     let rafId: number | null = null;
     let reentryGuard = false;
-    // Single re-pin step shared by the rAF loop AND a synchronous `scroll`
-    // listener. The scroll listener is the load-bearing defense: Next.js'
-    // post-commit scroll-to-0 fires a `scroll` event synchronously, and
-    // re-applying the target from inside that handler snaps the position
-    // back BEFORE the next paint — regardless of how badly the slide +
-    // card-mount work has starved requestAnimationFrame. The rAF loop alone
-    // could (and did) lose this race when its first tick was delayed past
-    // the window, leaving the page at the top of the list.
-    const trace = (m: string) => { (window as any).__st = (window as any).__st || []; (window as any).__st.push(`${Date.now()%100000} ${m}`); };
-    trace(`effect-start target=${restoreTargetRef.current} scrollY=${window.scrollY}`);
     const repin = () => {
       const target = restoreTargetRef.current;
       if (target == null) return;
@@ -1149,7 +1155,6 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       // / wheel / keydown set this flag (capture phase) before the scroll
       // event they cause, so a real user scroll is never fought.
       if (userInteractedRef.current) {
-        trace(`repin-bail USER-INTERACT scrollY=${window.scrollY}`);
         restoreTargetRef.current = null;
         setRestoreMinHeight(null);
         return;
@@ -1163,13 +1168,11 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
       if (!reentryGuard && Math.abs(window.scrollY - target) > 0.5) {
         // reentryGuard stops our own scrollTo's `scroll` event from
         // recursing through the listener within this synchronous frame.
-        trace(`repin-apply from=${window.scrollY} to=${target}`);
         reentryGuard = true;
         window.scrollTo(0, target);
         reentryGuard = false;
       }
       if (Date.now() >= restorePinDeadlineRef.current) {
-        trace(`repin-deadline scrollY=${window.scrollY}`);
         restoreTargetRef.current = null;
         setRestoreMinHeight(null);
       }
@@ -1177,17 +1180,26 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     const tick = () => {
       rafId = null;
       repin();
-      if (restoreTargetRef.current == null) return;
-      rafId = requestAnimationFrame(tick);
+      if (restoreTargetRef.current != null) rafId = requestAnimationFrame(tick);
     };
-    const onScroll = () => { trace(`scroll-evt scrollY=${window.scrollY} target=${restoreTargetRef.current}`); repin(); };
-    rafId = requestAnimationFrame(tick);
+    const kick = () => {
+      if (rafId == null && restoreTargetRef.current != null) {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+    kickRestorePinRef.current = kick;
+    const onScroll = () => repin();
     window.addEventListener('scroll', onScroll, { passive: true });
+    // The layoutEffect that arms a restore runs BEFORE this effect on the
+    // mount commit, so kick here to start the loop for that case.
+    kick();
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       window.removeEventListener('scroll', onScroll);
+      kickRestorePinRef.current = () => {};
     };
-  }, [group, loading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Bottom-pin rAF loop (fresh-nav path). Mirrors the restore rAF loop:
   // useLayoutEffect + ResizeObserver alone can leave gaps where Next.js
@@ -1567,7 +1579,7 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // and would falsely disable the pin during initial layout settling.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const disable = (e: Event) => { (window as any).__st = (window as any).__st || []; (window as any).__st.push(`${Date.now()%100000} INTERACT ${e.type} restoreTarget=${restoreTargetRef.current} scrollY=${window.scrollY}`); userInteractedRef.current = true; };
+    const disable = () => { userInteractedRef.current = true; };
     // pointerdown covers mouse + touch + pen on every platform (including
     // iOS where touchstart sometimes doesn't bubble during scroll-engaged
     // gestures). Keep wheel + keydown for trackpads and keyboard scrolls.
