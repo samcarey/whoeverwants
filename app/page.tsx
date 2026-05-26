@@ -261,7 +261,7 @@ export default function Home() {
 
       {!loading && !error && polls.length === 0 && emptyGroups.length === 0 && (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-          Once you create a question or open a link from someone, it will be shown here.
+          You are not in any groups
         </div>
       )}
 
