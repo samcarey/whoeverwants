@@ -44,6 +44,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from pywebpush import WebPushException, webpush
 
 from database import get_db
+from services.auth import resolve_actor_user_id
 from services.groups import NIL_UUID
 
 log = logging.getLogger("push")
@@ -292,27 +293,53 @@ def _badge_settings_for_browser(conn, browser_id: str) -> tuple[bool, bool, bool
     )
 
 
+def _caller_browser_ids(conn, browser_id: str | None, user_id: str | None) -> list[str]:
+    """The set of browser_ids that count as "this caller" for badge purposes:
+    the current browser plus every browser linked to their resolved account.
+    Mirrors `load_user_visibility`'s union so the badge is account-aware —
+    membership, votes, and views on ANY of the user's devices all count, so
+    viewing/voting on one device clears the badge on the others.
+
+    The poll_views / votes / group_members rows stay browser-keyed (written
+    per-device); only the READ unions, exactly like group visibility."""
+    bids: set[str] = set()
+    if browser_id and browser_id != NIL_UUID:
+        bids.add(browser_id)
+    uid = resolve_actor_user_id(conn, user_id=user_id, browser_id=browser_id)
+    if uid:
+        rows = conn.execute(
+            "SELECT browser_id::text AS b FROM user_browsers WHERE user_id = %(u)s::uuid",
+            {"u": uid},
+        ).fetchall()
+        bids.update(r["b"] for r in rows)
+    return list(bids)
+
+
 def compute_badge_count(
     conn,
     browser_id: str | None,
     *,
+    user_id: str | None = None,
     todo_mode: bool,
     on_voting_open: bool,
     on_results: bool,
 ) -> int:
-    """The app-icon badge number for a browser under the given settings.
+    """The app-icon badge number for a caller under the given settings.
 
     Single source of truth shared by the push fan-out (per recipient) and the
     GET /api/notifications/badge endpoint (client-side resync). See the
-    'App-Icon Badge Model' section in CLAUDE.md. Per-browser only — no
-    cross-linked-browser dedup (matches the rest of the push layer).
+    'App-Icon Badge Model' section in CLAUDE.md. Account-aware: membership,
+    votes, and views are unioned across every browser linked to the caller's
+    account (`_caller_browser_ids`), so viewing a poll on one device clears its
+    unread badge on the others.
 
     - to-do: open, votable (prephase passed / none), deadline not passed, and
-      no vote/abstain by this browser on any of the poll's questions.
-    - unread: a notification event the browser hasn't seen since — never-viewed
-      (new), or (gated) a transition / close after the last view.
+      no vote/abstain by ANY of the caller's devices on the poll's questions.
+    - unread: a notification event the caller hasn't seen on ANY device since —
+      never-viewed (new), or (gated) a transition / close after the last view.
     """
-    if not browser_id or browser_id == NIL_UUID:
+    bids = _caller_browser_ids(conn, browser_id, user_id)
+    if not bids:
         return 0
     if todo_mode:
         row = conn.execute(
@@ -321,18 +348,18 @@ def compute_badge_count(
               SELECT DISTINCT p.id
                 FROM group_members gm
                 JOIN polls p ON p.group_id = gm.group_id
-               WHERE gm.browser_id = %(b)s::uuid
+               WHERE gm.browser_id = ANY(%(bids)s::uuid[])
                  AND p.is_closed = false
                  AND (p.response_deadline IS NULL OR p.response_deadline > NOW())
                  AND (p.prephase_deadline IS NULL OR p.prephase_deadline <= NOW())
                  AND NOT EXISTS (
                    SELECT 1 FROM votes v
                      JOIN questions q ON v.question_id = q.id
-                    WHERE q.poll_id = p.id AND v.browser_id = %(b)s::uuid
+                    WHERE q.poll_id = p.id AND v.browser_id = ANY(%(bids)s::uuid[])
                  )
             ) t
             """,
-            {"b": browser_id},
+            {"bids": bids},
         ).fetchone()
         return int(row["c"] or 0)
     row = conn.execute(
@@ -341,20 +368,23 @@ def compute_badge_count(
           SELECT DISTINCT p.id
             FROM group_members gm
             JOIN polls p ON p.group_id = gm.group_id
-            LEFT JOIN poll_views pv
-              ON pv.poll_id = p.id AND pv.browser_id = %(b)s::uuid
-           WHERE gm.browser_id = %(b)s::uuid
+            LEFT JOIN LATERAL (
+              SELECT MAX(pv.last_viewed_at) AS last_viewed_at
+                FROM poll_views pv
+               WHERE pv.poll_id = p.id AND pv.browser_id = ANY(%(bids)s::uuid[])
+            ) seen ON TRUE
+           WHERE gm.browser_id = ANY(%(bids)s::uuid[])
              AND (
-               (pv.last_viewed_at IS NULL OR pv.last_viewed_at < p.created_at)
+               (seen.last_viewed_at IS NULL OR seen.last_viewed_at < p.created_at)
                OR (%(voting)s AND p.prephase_deadline IS NOT NULL
                    AND p.prephase_deadline <= NOW()
-                   AND (pv.last_viewed_at IS NULL OR pv.last_viewed_at < p.prephase_deadline))
+                   AND (seen.last_viewed_at IS NULL OR seen.last_viewed_at < p.prephase_deadline))
                OR (%(results)s AND p.is_closed = true
-                   AND (pv.last_viewed_at IS NULL OR pv.last_viewed_at < p.updated_at))
+                   AND (seen.last_viewed_at IS NULL OR seen.last_viewed_at < p.updated_at))
              )
         ) t
         """,
-        {"b": browser_id, "voting": on_voting_open, "results": on_results},
+        {"bids": bids, "voting": on_voting_open, "results": on_results},
     ).fetchone()
     return int(row["c"] or 0)
 
@@ -438,6 +468,20 @@ def _dispatch_pushes(
                 log.warning("Push send failed for subscription %s: %s", sub_id, err)
 
 
+# Account-aware mute pref (migration 125) for a member row aliased `gm`
+# (exposing gm.browser_id + gm.group_id). The pref follows the account
+# (user_id) when the browser has one, else the browser; a missing row is the
+# default ON. Account pref wins over a stale browser pref via COALESCE order.
+_PREF_JOIN = """
+                LEFT JOIN user_browsers gm_ub ON gm_ub.browser_id = gm.browser_id
+                LEFT JOIN group_notification_preferences apref
+                  ON apref.user_id = gm_ub.user_id AND apref.group_id = gm.group_id
+                LEFT JOIN group_notification_preferences bpref
+                  ON bpref.browser_id = gm.browser_id AND bpref.group_id = gm.group_id
+"""
+_PREF_ON_TRUE = "COALESCE(apref.notify_new_poll, bpref.notify_new_poll, TRUE) = TRUE"
+
+
 def fan_out_new_poll(group_id: str, creator_browser_id: str | None, payload: dict) -> None:
     """Send a 'new poll' push to every group member (except the creator)
     whose notification preference is on. Safe to call inline OR from a
@@ -445,19 +489,19 @@ def fan_out_new_poll(group_id: str, creator_browser_id: str | None, payload: dic
     swallowed so this never blocks the response.
 
     Default-ON semantics for the pref: a missing row in
-    `group_notification_preferences` counts as ON.
+    `group_notification_preferences` counts as ON. The pref follows the
+    account (migration 125), so muting on one device mutes everywhere.
     """
     try:
         with get_db() as conn:
             recipients = conn.execute(
-                """
+                f"""
                 SELECT gm.browser_id::text AS browser_id
                 FROM group_members gm
-                LEFT JOIN group_notification_preferences pref
-                  ON pref.browser_id = gm.browser_id AND pref.group_id = gm.group_id
+                {_PREF_JOIN}
                 WHERE gm.group_id = %(gid)s
                   AND (%(creator)s::uuid IS NULL OR gm.browser_id != %(creator)s::uuid)
-                  AND COALESCE(pref.notify_new_poll, TRUE) = TRUE
+                  AND {_PREF_ON_TRUE}
                 """,
                 {"gid": group_id, "creator": creator_browser_id},
             ).fetchall()
@@ -499,11 +543,14 @@ def fan_out_join_request(
                 """
                 SELECT DISTINCT ub.browser_id::text AS browser_id
                   FROM user_browsers ub
-                  LEFT JOIN group_notification_preferences pref
-                    ON pref.browser_id = ub.browser_id
-                   AND pref.group_id = %(gid)s::uuid
+                  LEFT JOIN group_notification_preferences apref
+                    ON apref.user_id = %(uid)s::uuid
+                   AND apref.group_id = %(gid)s::uuid
+                  LEFT JOIN group_notification_preferences bpref
+                    ON bpref.browser_id = ub.browser_id
+                   AND bpref.group_id = %(gid)s::uuid
                  WHERE ub.user_id = %(uid)s::uuid
-                   AND COALESCE(pref.notify_new_poll, TRUE) = TRUE
+                   AND COALESCE(apref.notify_new_poll, bpref.notify_new_poll, TRUE) = TRUE
                 """,
                 {"gid": group_id, "uid": creator_user_id},
             ).fetchall()
@@ -536,13 +583,12 @@ def fan_out_poll_closed(group_id: str, poll_id: str, payload: dict) -> None:
     try:
         with get_db() as conn:
             recipients = conn.execute(
-                """
+                f"""
                 SELECT gm.browser_id::text AS browser_id
                 FROM group_members gm
-                LEFT JOIN group_notification_preferences pref
-                  ON pref.browser_id = gm.browser_id AND pref.group_id = gm.group_id
+                {_PREF_JOIN}
                 WHERE gm.group_id = %(gid)s
-                  AND COALESCE(pref.notify_new_poll, TRUE) = TRUE
+                  AND {_PREF_ON_TRUE}
                 """,
                 {"gid": group_id},
             ).fetchall()
@@ -595,13 +641,12 @@ def fan_out_phase_transition(
     try:
         with get_db() as conn:
             recipients = conn.execute(
-                """
+                f"""
                 SELECT gm.browser_id::text AS browser_id
                 FROM group_members gm
-                LEFT JOIN group_notification_preferences pref
-                  ON pref.browser_id = gm.browser_id AND pref.group_id = gm.group_id
+                {_PREF_JOIN}
                 WHERE gm.group_id = %(gid)s
-                  AND COALESCE(pref.notify_new_poll, TRUE) = TRUE
+                  AND {_PREF_ON_TRUE}
                   AND NOT (
                     %(prevoting_on)s
                     AND EXISTS (
