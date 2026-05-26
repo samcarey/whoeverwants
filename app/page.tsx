@@ -8,7 +8,9 @@ import { HIDE_HOME_BACKDROP_EVENT, POLL_HYDRATED_EVENT } from "@/lib/eventChanne
 import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import { usePageReady } from "@/lib/usePageReady";
 import { HOME_SCROLL_KEY, getRememberedScroll } from "@/lib/scrollMemory";
+import { getCachedSessionUser, SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
 import GroupList from "@/components/GroupList";
+import SignInModal from "@/components/SignInModal";
 
 // Fun activity phrases (max 25 chars)
 const activityPhrases = [
@@ -52,8 +54,21 @@ export default function Home() {
   const [currentPhrase, setCurrentPhrase] = useState<string>("");
   const [displayedPhrase, setDisplayedPhrase] = useState<string>("");
   const [fontSize, setFontSize] = useState<string>("text-xl");
+  const [session, setSession] = useState<SessionUser | null>(null);
+  const [signInOpen, setSignInOpen] = useState(false);
 
   usePageReady(true);
+
+  // Seed from the localStorage session cache after mount (null on first
+  // render keeps SSR/hydration in lockstep), then track live sign-in /
+  // sign-out so the empty-state swaps between the "Sign In" button and the
+  // "not in any groups" message without a navigation.
+  useEffect(() => {
+    setSession(getCachedSessionUser());
+    const update = () => setSession(getCachedSessionUser());
+    window.addEventListener(SESSION_CHANGED_EVENT, update);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
+  }, []);
 
   // Dismiss the swipe-back home backdrop on mount. The backdrop persists
   // across the router.push that commits the swipe (mounted at layout
@@ -260,8 +275,18 @@ export default function Home() {
       )}
 
       {!loading && !error && polls.length === 0 && emptyGroups.length === 0 && (
-        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-          You are not in any groups
+        <div className="text-center py-8">
+          {session ? (
+            <p className="text-gray-500 dark:text-gray-400">You are not in any groups</p>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSignInOpen(true)}
+              className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Sign In
+            </button>
+          )}
         </div>
       )}
 
@@ -283,6 +308,7 @@ export default function Home() {
         />
       )}
 
+      <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
     </>
   );
 }
