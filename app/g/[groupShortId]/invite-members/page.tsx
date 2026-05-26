@@ -136,7 +136,7 @@ function InviteMembers({ groupId }: { groupId: string }) {
 
       <div
         className="max-w-4xl mx-auto px-4"
-        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1.05rem)" }}
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)" }}
       >
         <h1 className="px-1 mb-3 text-2xl font-bold text-gray-900 dark:text-white">
           Add people
