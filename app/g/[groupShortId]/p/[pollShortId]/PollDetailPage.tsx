@@ -80,6 +80,13 @@ import PollShareButton from "@/components/PollShareButton";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import type { Poll, Question, QuestionResults } from "@/lib/types";
 
+// Back-nav scroll-restore re-application window, measured from the first rAF
+// tick that actually runs (see GroupPage's restore loop for the rationale —
+// the slide + mount work starves rAF, so an arm-time deadline expires before
+// the loop re-applies, leaving the page at Next.js' scroll-to-0). Bounded but
+// interaction-gated, so a generous value is safe.
+const RESTORE_PIN_DURATION_MS = 2500;
+
 function InlineCategoryIcon({
   question,
   isClosed,
@@ -414,7 +421,10 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     const remembered = getRememberedScroll(scrollKey);
     if (remembered !== undefined) {
       restoreTargetRef.current = remembered;
-      restoreDeadlineRef.current = Date.now() + 800;
+      // Arm (don't start) the window — the rAF loop starts the countdown
+      // on its first tick that actually runs. See GroupPage's restore loop
+      // for why an arm-time deadline gets starved by the slide + mount work.
+      restoreDeadlineRef.current = 0;
       window.scrollTo(0, remembered);
       return;
     }
@@ -425,27 +435,42 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   useEffect(() => {
     if (restoreTargetRef.current == null) return;
     let rafId: number | null = null;
-    let stableFrames = 0;
-    const tick = () => {
-      rafId = null;
-      if (userInteractedRef.current || Date.now() >= restoreDeadlineRef.current) {
-        restoreTargetRef.current = null;
-        return;
-      }
+    let reentryGuard = false;
+    // Shared by the rAF loop and a synchronous `scroll` listener — the
+    // listener snaps back the instant Next.js' post-commit scroll-to-0 fires,
+    // before paint, regardless of rAF starvation. See GroupPage's restore
+    // loop for the full rationale.
+    const repin = () => {
       const target = restoreTargetRef.current;
       if (target == null) return;
-      if (Math.abs(window.scrollY - target) > 0.5) {
-        window.scrollTo(0, target);
-        stableFrames = 0;
-      } else if (++stableFrames >= 3) {
+      if (userInteractedRef.current) {
         restoreTargetRef.current = null;
         return;
       }
+      if (restoreDeadlineRef.current === 0) {
+        restoreDeadlineRef.current = Date.now() + RESTORE_PIN_DURATION_MS;
+      }
+      if (!reentryGuard && Math.abs(window.scrollY - target) > 0.5) {
+        reentryGuard = true;
+        window.scrollTo(0, target);
+        reentryGuard = false;
+      }
+      if (Date.now() >= restoreDeadlineRef.current) {
+        restoreTargetRef.current = null;
+      }
+    };
+    const tick = () => {
+      rafId = null;
+      repin();
+      if (restoreTargetRef.current == null) return;
       rafId = requestAnimationFrame(tick);
     };
+    const onScroll = () => repin();
     rafId = requestAnimationFrame(tick);
+    window.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', onScroll);
     };
   }, []);
 
