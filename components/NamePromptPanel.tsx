@@ -36,9 +36,17 @@ export default function NamePromptPanel({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Skip the focus effect's initial mount run — callers that want focus on
+  // mount pass `autoFocus` (native). `focusNonce` is for focusing LATER (e.g.
+  // AccountGateModal bumps it after a nameless sign-in) without stealing focus
+  // when the panel first renders as a passive alternative to signing in.
+  const focusMountRef = useRef(true);
 
   useEffect(() => {
-    if (focusNonce === undefined) return;
+    if (focusMountRef.current) {
+      focusMountRef.current = false;
+      return;
+    }
     inputRef.current?.focus();
   }, [focusNonce]);
 

@@ -105,7 +105,7 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                 Add a name or alias so others can see who you are.
               </p>
-              <NamePromptPanel onComplete={onClose} focusNonce={1} />
+              <NamePromptPanel onComplete={onClose} autoFocus />
             </>
           ) : (
             <SignInOptions mode="signin" onComplete={handleSignInComplete} />

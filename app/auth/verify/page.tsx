@@ -110,7 +110,7 @@ function VerifyPageContent() {
           </p>
           <NamePromptPanel
             onComplete={() => router.replace("/settings")}
-            focusNonce={1}
+            autoFocus
           />
         </div>
       )}
