@@ -429,14 +429,14 @@ export function pickVoterSplitWindow(
     .filter(w => w.end > w.start)
     .sort((a, b) => a.start - b.start);
 
-  let best: { start: number; end: number } | null = null;
+  // Collect candidate gaps, then pick the widest. (Avoid a closure that mutates
+  // a `| null` accumulator — TS can't narrow it after the loop and infers `never`.)
+  const candidates: { start: number; end: number }[] = [];
   const consider = (start: number, end: number, startAbuts: boolean, endAbuts: boolean) => {
     let s = startAbuts ? start + MARGIN : start;
     let e = endAbuts ? end - MARGIN : end;
     if (e - s < MARGIN) { s = start; e = end; } // gap too small to inset — keep raw
-    if (e > s && (!best || e - s > best.end - best.start)) {
-      best = { start: s, end: e };
-    }
+    if (e > s) candidates.push({ start: s, end: e });
   };
   for (const q of qWins) {
     let cursor = q.start;
@@ -450,7 +450,10 @@ export function pickVoterSplitWindow(
     }
     if (cursor < q.end) consider(cursor, q.end, cursorAbuts, false);
   }
-  if (best) return { min: minutesToTime(best.start), max: minutesToTime(best.end) };
+  if (candidates.length > 0) {
+    const best = candidates.reduce((a, b) => (b.end - b.start > a.end - a.start ? b : a));
+    return { min: minutesToTime(best.start), max: minutesToTime(best.end) };
+  }
   return { min: qWins[0].raw.min, max: qWins[0].raw.max };
 }
 
