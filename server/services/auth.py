@@ -191,6 +191,66 @@ def resolve_or_merge_user(
     return ResolvedUser(user_id=user_id, is_new_user=True)
 
 
+def resolve_existing_user_for_identity(
+    conn,
+    *,
+    provider: str,
+    provider_user_id: str,
+    email: str | None,
+) -> str | None:
+    """Read-only sibling of `resolve_or_merge_user`: which EXISTING user does
+    this identity resolve to, WITHOUT inserting anything? Returns the user_id
+    via the (provider, provider_user_id) match, else the verified-email match,
+    else None. Used by the explicit-merge flow to find the "other account" to
+    fold into the signed-in one."""
+    existing = conn.execute(
+        """
+        SELECT user_id FROM user_identities
+        WHERE provider = %(p)s AND provider_user_id = %(pid)s
+        """,
+        {"p": provider, "pid": provider_user_id},
+    ).fetchone()
+    if existing:
+        return str(existing["user_id"])
+    if email:
+        merged = conn.execute(
+            """
+            SELECT user_id FROM user_identities
+            WHERE email = %(e)s
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
+            {"e": normalize_email(email)},
+        ).fetchone()
+        if merged:
+            return str(merged["user_id"])
+    return None
+
+
+def merge_in_other_account(
+    conn,
+    *,
+    current_user_id: str,
+    provider: str,
+    provider_user_id: str,
+    email: str | None,
+) -> bool:
+    """Explicit two-account merge: when a signed-in user (A) proves control of
+    an identity owned by a DIFFERENT existing account (B) — by completing B's
+    sign-in ceremony with merge intent — fold B into A. Returns True if a merge
+    happened (B existed and != A), False otherwise (identity unowned or already
+    A's). After this, A owns everything B had; the caller attaches the identity
+    to A (a no-op for credentials the merge already moved). The dual proof
+    (A's bearer + B's just-verified ceremony) is what authorizes the merge."""
+    other = resolve_existing_user_for_identity(
+        conn, provider=provider, provider_user_id=provider_user_id, email=email
+    )
+    if other and other != current_user_id:
+        merge_accounts(conn, source_user_id=other, dest_user_id=current_user_id)
+        return True
+    return False
+
+
 def link_browser_to_user(conn, *, user_id: str, browser_id: str | None) -> None:
     """Establish or update the browser → user link. ON CONFLICT
     (browser_id) DO UPDATE: a browser can only be linked to one user at

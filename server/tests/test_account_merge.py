@@ -18,17 +18,28 @@ These tests drive the real magic-link verify path end-to-end and assert
 against the DB that authorship moved and the source user was deleted.
 """
 
+import os
+import time
 import uuid
 
+import jwt
 import psycopg
+import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 
-from services.auth import (
+os.environ.setdefault(
+    "GOOGLE_OAUTH_CLIENT_IDS", "test-google-client-id.apps.googleusercontent.com"
+)
+
+import services.oauth as oauth_module  # noqa: E402
+
+from services.auth import (  # noqa: E402
     generate_token,
     hash_token,
     merge_accounts,
     normalize_email,
 )
-from tests.conftest import TEST_DB_URL
+from tests.conftest import TEST_DB_URL  # noqa: E402
 
 
 def _bid(bid):
@@ -220,3 +231,127 @@ def test_merge_accounts_keeps_dest_profile_and_moves_polls(client):
             assert cur.fetchone() is None  # src profile dropped
             cur.execute("SELECT 1 FROM users WHERE id = %s::uuid", (src_uid,))
             assert cur.fetchone() is None  # src user deleted
+
+
+# --------------------------------------------------------------------------
+# Explicit two-account merge — OAuth (Settings "Combine another account")
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def google_keypair():
+    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return private, private.public_key()
+
+
+@pytest.fixture(autouse=True)
+def patch_google_jwks(monkeypatch, google_keypair):
+    _, pub = google_keypair
+
+    class _FakeKey:
+        def __init__(self, k):
+            self.key = k
+
+    class _FakeClient:
+        def get_signing_key_from_jwt(self, _t):
+            return _FakeKey(pub)
+
+    monkeypatch.setattr(oauth_module, "_google_jwks_client", lambda: _FakeClient())
+    monkeypatch.setattr(
+        oauth_module,
+        "_GOOGLE_AUDIENCES",
+        ("test-google-client-id.apps.googleusercontent.com",),
+    )
+
+
+def _sign_google(private_key, *, sub, email=None):
+    if email is None:
+        email = f"g-{uuid.uuid4().hex[:10]}@example.com"
+    now = int(time.time())
+    return jwt.encode(
+        {
+            "iss": "https://accounts.google.com",
+            "aud": "test-google-client-id.apps.googleusercontent.com",
+            "sub": sub,
+            "email": email,
+            "email_verified": True,
+            "iat": now,
+            "exp": now + 600,
+        },
+        private_key,
+        algorithm="RS256",
+    )
+
+
+def test_oauth_merge_folds_other_account_in(client, google_keypair):
+    """A is signed in (email). B is a separate Google account that owns a
+    poll. A signs in with B's Google identity + merge=true → B folds into A:
+    A's id is unchanged, B's poll + identity move to A, B is deleted."""
+    private, _ = google_keypair
+    sub = f"sub-{uuid.uuid4().hex}"
+    g_email = f"merge-g-{uuid.uuid4().hex[:8]}@example.com"
+
+    # Account B: sign in with Google on its own browser, then create a poll
+    # (so the poll's creator_user_id is B).
+    bid_b = str(uuid.uuid4())
+    b_resp = client.post(
+        "/api/auth/oauth/google",
+        json={"id_token": _sign_google(private, sub=sub, email=g_email)},
+        headers=_bid(bid_b),
+    )
+    assert b_resp.status_code == 200, b_resp.text
+    b_uid = b_resp.json()["user"]["user_id"]
+    b_token = b_resp.json()["session_token"]
+    poll = client.post(
+        "/api/polls",
+        json={"creator_name": "B Maker", "questions": [{"question_type": "yes_no", "category": "yes_no"}]},
+        headers=_bearer(bid_b, b_token),
+    )
+    assert poll.status_code == 201, poll.text
+    poll_id = poll.json()["id"]
+    assert _poll_creator(poll_id) == b_uid
+
+    # Account A: a separate signed-in (email) account on its own browser.
+    bid_a = str(uuid.uuid4())
+    a_token, a_uid, _ = _sign_in(client, bid_a)
+    assert a_uid != b_uid
+
+    # A explicitly merges B in by verifying B's Google identity with merge=true.
+    merged = client.post(
+        "/api/auth/oauth/google",
+        json={"id_token": _sign_google(private, sub=sub, email=g_email), "merge": True},
+        headers=_bearer(bid_a, a_token),
+    )
+    assert merged.status_code == 200, merged.text
+    body = merged.json()
+    assert body["user"]["user_id"] == a_uid  # A stays the keeper
+    assert "google" in body["user"]["providers"]  # gained B's identity
+    assert "email" in body["user"]["providers"]  # kept its own
+    assert _poll_creator(poll_id) == a_uid  # B's poll moved to A
+    assert not _user_exists(b_uid)  # B deleted
+
+
+def test_oauth_link_conflict_without_merge_flag(client, google_keypair):
+    """Same setup, but WITHOUT merge=true → the link is refused with 409 and
+    nothing is merged (the safety default)."""
+    private, _ = google_keypair
+    sub = f"sub-{uuid.uuid4().hex}"
+
+    bid_b = str(uuid.uuid4())
+    b_resp = client.post(
+        "/api/auth/oauth/google",
+        json={"id_token": _sign_google(private, sub=sub, email="owner@example.com")},
+        headers=_bid(bid_b),
+    )
+    assert b_resp.status_code == 200, b_resp.text
+    b_uid = b_resp.json()["user"]["user_id"]
+
+    bid_a = str(uuid.uuid4())
+    a_token, a_uid, _ = _sign_in(client, bid_a)
+    conflict = client.post(
+        "/api/auth/oauth/google",
+        json={"id_token": _sign_google(private, sub=sub, email="owner@example.com")},
+        headers=_bearer(bid_a, a_token),
+    )
+    assert conflict.status_code == 409, conflict.text
+    assert _user_exists(a_uid) and _user_exists(b_uid)  # neither merged

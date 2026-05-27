@@ -317,7 +317,9 @@ export async function registerPasskey(
  *  passkey from their OS prompt; the server resolves the user_id from
  *  the credential. On success the SessionResponse is persisted into
  *  lib/session so subsequent fetches attach the bearer token. */
-export async function signInWithPasskey(): Promise<SessionResponse> {
+export async function signInWithPasskey(
+  opts?: { merge?: boolean },
+): Promise<SessionResponse> {
   if (!passkeySupported()) throw new PasskeyUnsupportedError();
   const options = (await apiPasskeyAuthenticationOptions()) as ServerAuthenticationOptions;
   const decoded = decodeAuthenticationOptions(options);
@@ -337,5 +339,5 @@ export async function signInWithPasskey(): Promise<SessionResponse> {
   }
   if (!credential) throw new PasskeyCancelledError();
   const serialized = serializeAuthenticationCredential(credential);
-  return apiPasskeyAuthenticationVerify(serialized);
+  return apiPasskeyAuthenticationVerify(serialized, opts);
 }

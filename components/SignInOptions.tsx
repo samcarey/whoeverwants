@@ -42,7 +42,7 @@ import { resolveActiveTheme } from "@/lib/theme";
  * behave consistently.
  */
 
-export type SignInOptionsMode = "signin" | "link";
+export type SignInOptionsMode = "signin" | "link" | "merge";
 
 interface SignInOptionsProps {
   mode: SignInOptionsMode;
@@ -57,6 +57,12 @@ interface SignInOptionsProps {
 
 export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) {
   const isLink = mode === "link";
+  // Explicit two-account merge: each provider button AUTHENTICATES the OTHER
+  // account and folds it into the current one (server `merge` flag). Only the
+  // synchronous ceremonies fit (OAuth / passkey sign-in) — email is async and
+  // passkey-registration would mint a new credential, not prove another
+  // account, so both are hidden in merge mode.
+  const isMerge = mode === "merge";
 
   const [serverProviders, setServerProviders] =
     useState<AuthProvidersResponse | null>(null);
@@ -121,7 +127,7 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
         setOAuthSubmitting("google");
         setError(null);
         try {
-          await apiSignInWithOAuth("google", idToken);
+          await apiSignInWithOAuth("google", idToken, { merge: isMerge });
           onCompleteRef.current?.();
         } catch (err) {
           setError(oauthErrorMessage(err, "Google", isLink));
@@ -139,14 +145,14 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
     return () => {
       cancelled = true;
     };
-  }, [emailSent, serverProviders?.google, isLink]);
+  }, [emailSent, serverProviders?.google, isLink, isMerge]);
 
   const handleGoogleSignIn = async () => {
     setError(null);
     setOAuthSubmitting("google");
     try {
       const idToken = await googleSignIn();
-      await apiSignInWithOAuth("google", idToken);
+      await apiSignInWithOAuth("google", idToken, { merge: isMerge });
       onComplete?.();
     } catch (err) {
       if (isOAuthCancel(err)) {
@@ -164,7 +170,7 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
     setOAuthSubmitting("apple");
     try {
       const idToken = await appleSignIn();
-      await apiSignInWithOAuth("apple", idToken);
+      await apiSignInWithOAuth("apple", idToken, { merge: isMerge });
       onComplete?.();
     } catch (err) {
       if (isOAuthCancel(err)) {
@@ -181,7 +187,7 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
     setError(null);
     setOAuthSubmitting("passkey");
     try {
-      await signInWithPasskey();
+      await signInWithPasskey({ merge: isMerge });
       onComplete?.();
     } catch (err) {
       if (err instanceof PasskeyCancelledError) {
@@ -256,12 +262,12 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
   // (Touch ID / Face ID / Windows Hello). In link mode it's the ONLY
   // passkey button (you're already signed in, so there's nothing to sign
   // into); in signin mode it accompanies the "sign in with a passkey" one.
-  const showPasskeyRegister = showPasskey && platformPasskey === true;
+  const showPasskeyRegister = showPasskey && platformPasskey === true && !isMerge;
   const busy = oauthSubmitting !== null;
 
   return (
     <div>
-      {emailSent ? (
+      {!isMerge && (emailSent ? (
         <div className="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-3">
           <p className="text-sm text-gray-700 dark:text-gray-300">
             {isLink
@@ -307,13 +313,15 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
                 : "Send sign-in link"}
           </button>
         </form>
-      )}
+      ))}
 
-      <div className="flex items-center gap-3 my-4">
-        <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-        <span className="text-xs text-gray-500 dark:text-gray-400">or</span>
-        <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-      </div>
+      {!isMerge && (
+        <div className="flex items-center gap-3 my-4">
+          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+          <span className="text-xs text-gray-500 dark:text-gray-400">or</span>
+          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+        </div>
+      )}
 
       {showGoogle &&
         (isNativeIOS() ? (
@@ -326,9 +334,11 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
             <GoogleGlyph />
             {oauthSubmitting === "google"
               ? "Connecting…"
-              : isLink
-                ? "Connect Google"
-                : "Sign in with Google"}
+              : isMerge
+                ? "Combine via Google"
+                : isLink
+                  ? "Connect Google"
+                  : "Sign in with Google"}
           </button>
         ) : (
           <div className="mb-3">
@@ -349,9 +359,11 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
           <AppleGlyph />
           {oauthSubmitting === "apple"
             ? "Connecting…"
-            : isLink
-              ? "Connect Apple"
-              : "Sign in with Apple"}
+            : isMerge
+              ? "Combine via Apple"
+              : isLink
+                ? "Connect Apple"
+                : "Sign in with Apple"}
         </button>
       )}
       {/* Passkey: link mode → "Add a passkey" only; signin mode → sign in +
@@ -366,7 +378,9 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
           <PasskeyGlyph />
           {oauthSubmitting === "passkey"
             ? "Signing in…"
-            : "Sign in with a passkey"}
+            : isMerge
+              ? "Combine via passkey"
+              : "Sign in with a passkey"}
         </button>
       )}
       {showPasskeyRegister && (
