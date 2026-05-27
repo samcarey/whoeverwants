@@ -213,7 +213,11 @@ export function CreateQuestionContent() {
   useEffect(() => {
     if (!calendarExpanded) {
       const now = new Date();
-      setCalendarMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+      setCalendarMonth(prev =>
+        prev.getFullYear() === now.getFullYear() && prev.getMonth() === now.getMonth()
+          ? prev
+          : new Date(now.getFullYear(), now.getMonth(), 1)
+      );
     }
   }, [calendarExpanded]);
   const {
