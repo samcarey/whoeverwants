@@ -263,7 +263,7 @@ export default function TimeSlotBubbles({
             ? "bg-red-100/70 dark:bg-red-900/70 border-red-300 dark:border-red-600 text-red-800 dark:text-red-100 focus:ring-red-400"
             : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-400 focus:ring-blue-400",
           isSelected
-            ? "ring-2 ring-blue-500 ring-offset-1 ring-offset-white dark:ring-offset-gray-900"
+            ? "ring-2 ring-blue-500"
             : "",
         ].join(" ")}
       >
@@ -338,9 +338,6 @@ export default function TimeSlotBubbles({
             style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
           >
             <div className="flex items-center gap-2 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 shadow-xl">
-              <span className="px-1 text-sm font-medium text-gray-600 dark:text-gray-300 whitespace-nowrap tabular-nums">
-                {effectiveSelection.length} selected
-              </span>
               <button
                 type="button"
                 onClick={() => applyToSelection("liked")}
