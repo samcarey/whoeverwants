@@ -809,20 +809,19 @@ def create_poll(
         # dedup applies — identical to the cutoff-time finalization, just with
         # no availability data. The question lands with `options` set, which the
         # FE reads as "not in the availability phase" so the poll opens straight
-        # into the like/dislike (preference) ballot. Re-fetch each finalized row
-        # so the computed slots ride back on the create response.
-        for idx, (sub, qrow) in enumerate(zip(req.questions, question_rows)):
+        # into the like/dislike (preference) ballot.
+        finalized_time_slots = False
+        for sub, qrow in zip(req.questions, question_rows):
             if (
                 sub.question_type == QuestionType.time
                 and sub.suggestion_deadline_minutes is None
             ):
                 _finalize_time_slots(conn, str(qrow["id"]), now)
-                refreshed = conn.execute(
-                    "SELECT * FROM questions WHERE id = %(id)s",
-                    {"id": str(qrow["id"])},
-                ).fetchone()
-                if refreshed is not None:
-                    question_rows[idx] = refreshed
+                finalized_time_slots = True
+        # Re-read the question rows once so the computed slots ride back on the
+        # create response (mirrors the cutoff-availability endpoint's refresh).
+        if finalized_time_slots:
+            question_rows = _fetch_questions(conn, str(poll_row["id"]))
         # "Collect Suggestions before Vote" with the creator's own initial
         # picks: submit them as the creator's suggestion-phase vote so the poll
         # opens collecting suggestions but already seeded with those options
