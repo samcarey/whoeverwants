@@ -2,15 +2,15 @@
 
 // Emoji selector for a custom poll category. Rendered as a row inside the
 // create-poll form's Category card (only when the category is custom). The
-// user can type/paste any emoji into the field or pick a preset. Focusing
-// the field expands it from a single-line teaser strip into a multi-line
-// grid; the grid is sorted so emojis whose keywords match the typed custom
-// category word surface first (see lib/emojiData.ts). An empty value means
-// "no custom emoji" — the app falls back to the generic question-type glyph
-// (the value passed as `placeholder`).
+// row shows just the label + value input until focused; focusing it reveals
+// the multi-line preset grid, sorted so emojis whose keywords match the typed
+// custom category word surface first (see lib/emojiData.ts). Free-text entry
+// is validated to be a single emoji (isEmoji); anything else is rejected with
+// a hint. An empty value means "no custom emoji" — the app falls back to the
+// generic question-type glyph (the value passed as `placeholder`).
 
 import { useMemo, useState } from 'react';
-import { rankEmojiOptions } from '@/lib/emojiData';
+import { rankEmojiOptions, isEmoji } from '@/lib/emojiData';
 
 interface CategoryEmojiFieldProps {
   value: string;
@@ -22,9 +22,6 @@ interface CategoryEmojiFieldProps {
   placeholder?: string;
 }
 
-// How many emojis the collapsed teaser strip shows before the user expands.
-const COLLAPSED_COUNT = 16;
-
 export default function CategoryEmojiField({
   value,
   onChange,
@@ -33,11 +30,34 @@ export default function CategoryEmojiField({
   placeholder = '🗳️',
 }: CategoryEmojiFieldProps) {
   const [expanded, setExpanded] = useState(false);
+  const [error, setError] = useState(false);
   const emojis = useMemo(
     () => rankEmojiOptions(categoryWord).map((o) => o.emoji),
     [categoryWord],
   );
   const trimmed = value.trim();
+
+  // Free-text entry must be a single emoji. Empty clears; a valid emoji
+  // commits; anything else (letters, words, multiple emoji) is rejected —
+  // the controlled input snaps back and a hint shows.
+  const handleInput = (raw: string) => {
+    if (raw.trim() === '') {
+      setError(false);
+      onChange('');
+      return;
+    }
+    if (isEmoji(raw)) {
+      setError(false);
+      onChange(raw.trim());
+    } else {
+      setError(true);
+    }
+  };
+
+  const select = (emoji: string) => {
+    setError(false);
+    onChange(emoji);
+  };
 
   const renderButton = (emoji: string) => {
     const selected = trimmed === emoji;
@@ -48,7 +68,7 @@ export default function CategoryEmojiField({
         // preventDefault keeps the input focused (and the grid expanded) so
         // the user can keep browsing/selecting without it collapsing.
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => onChange(emoji)}
+        onClick={() => select(emoji)}
         disabled={disabled}
         aria-label={`Use ${emoji}`}
         aria-pressed={selected}
@@ -71,12 +91,13 @@ export default function CategoryEmojiField({
           <input
             type="text"
             value={value}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => handleInput(e.target.value)}
             onFocus={() => setExpanded(true)}
-            onBlur={() => setExpanded(false)}
+            onBlur={() => { setExpanded(false); setError(false); }}
             disabled={disabled}
-            maxLength={12}
+            maxLength={20}
             aria-label="Category emoji"
+            aria-invalid={error}
             placeholder={placeholder}
             className="w-12 text-xl text-center bg-transparent focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:opacity-40"
           />
@@ -84,7 +105,7 @@ export default function CategoryEmojiField({
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => onChange('')}
+              onClick={() => select('')}
               className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-sm shrink-0"
               aria-label="Clear emoji"
             >
@@ -93,7 +114,12 @@ export default function CategoryEmojiField({
           )}
         </div>
       </div>
-      {expanded ? (
+      {error && (
+        <p className="text-xs text-red-500 dark:text-red-400 text-right pt-1">
+          Enter a single emoji
+        </p>
+      )}
+      {expanded && (
         <div
           // preventDefault on the container so tapping the gaps between
           // buttons doesn't blur the input and collapse the grid mid-pick.
@@ -101,10 +127,6 @@ export default function CategoryEmojiField({
           className="flex flex-wrap gap-1 pt-1 max-h-44 overflow-y-auto"
         >
           {emojis.map(renderButton)}
-        </div>
-      ) : (
-        <div className="flex gap-1 overflow-x-auto pt-1 -mx-1 px-1">
-          {emojis.slice(0, COLLAPSED_COUNT).map(renderButton)}
         </div>
       )}
     </div>

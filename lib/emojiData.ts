@@ -207,3 +207,36 @@ export function rankEmojiOptions(query: string): EmojiOption[] {
   scored.sort((a, b) => b.score - a.score || a.idx - b.idx);
   return scored.map((s) => s.opt);
 }
+
+// Whole string must consist only of emoji-related code points: pictographs,
+// skin-tone modifiers, ZWJ (200D), variation selectors (FE0F/FE0E), keycap
+// combining mark (20E3), regional-indicator flag letters, and keycap bases
+// (# * 0-9).
+const EMOJI_ONLY =
+  /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\u200D\uFE0F\uFE0E\u20E3\u{1F1E6}-\u{1F1FF}#*0-9]+$/u;
+// ...AND carry at least one real pictographic / flag / keycap mark, so bare
+// digits ("5") or symbols ("#") — allowed above only as keycap bases — don't
+// pass on their own.
+const HAS_PICTOGRAPHIC = /[\p{Extended_Pictographic}\u20E3\u{1F1E6}-\u{1F1FF}]/u;
+
+/** True when `s` is a single emoji (incl. ZWJ sequences, skin-tone modifiers,
+ *  flags, keycaps). Rejects letters, words, and multi-emoji strings. */
+export function isEmoji(s: string): boolean {
+  const t = s.trim();
+  if (!t) return false;
+  if (!EMOJI_ONLY.test(t) || !HAS_PICTOGRAPHIC.test(t)) return false;
+  try {
+    if (typeof Intl !== 'undefined' && (Intl as any).Segmenter) {
+      const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+      let count = 0;
+      for (const _ of seg.segment(t)) {
+        count++;
+        if (count > 1) return false;
+      }
+      return count === 1;
+    }
+  } catch {
+    // Segmenter unsupported — fall through to the code-point check above.
+  }
+  return true;
+}
