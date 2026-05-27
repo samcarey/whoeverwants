@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import Countdown from "@/components/Countdown";
-import SimpleCountdown from "@/components/SimpleCountdown";
 import RankableOptions from "@/components/RankableOptions";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import BinaryRankedChoiceBallot from "@/components/QuestionBallot/BinaryRankedChoiceBallot";
@@ -11,11 +10,9 @@ import type { OptionsMetadata, QuestionResults } from "@/lib/types";
 
 interface RankingSectionProps {
   question: any;
-  // Phase 5b: wrapper-level fields (response_deadline, prephase_deadline /
-  // legacy suggestion_deadline) come in as separate props since they live on
-  // the parent poll, not the question. QuestionBallot sources them from its
-  // `poll` prop and forwards them here.
-  suggestionDeadline?: string | null;
+  // Phase 5b: wrapper-level fields (response_deadline) come in as separate
+  // props since they live on the parent poll, not the question. QuestionBallot
+  // sources them from its `poll` prop and forwards them here.
   responseDeadline?: string | null;
   questionId: string;
   questionOptions: string[];
@@ -67,7 +64,6 @@ interface RankingSectionProps {
 
 export default function RankingSection({
   question,
-  suggestionDeadline,
   responseDeadline,
   questionId,
   questionOptions,
@@ -139,11 +135,7 @@ export default function RankingSection({
     if (canSubmitSuggestions && hasVoted && !isEditingSuggestions) {
       return card(
         <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-          {suggestionDeadline ? (
-            <>Ranking will open after suggestions cutoff in{' '}<SimpleCountdown deadline={suggestionDeadline} colorClass="text-gray-600 dark:text-gray-400" /></>
-          ) : (
-            <>Ranking will open after suggestions cutoff</>
-          )}
+          Voting will open when suggestions close
         </div>
       );
     }

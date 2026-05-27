@@ -727,13 +727,15 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           const r = questionResultsMap.get(sp.id);
           const userVote = userVoteMap.get(sp.id);
           const wrapperOwnsSubmit = useWrapperSubmit || (usePollSubmit && !isYesNo);
-          // Early-voting ranked choice: the suggestion entry and the ranking
-          // ballot each get their own card (rendered inside QuestionBallot via
-          // splitEarlyVotingCards) with the "Early Voting" header outside, so
-          // we drop the single outer card here to avoid nesting.
-          const isEarlyVoting =
+          // A ranked_choice question in its suggestion phase renders as two
+          // stacked cards: the suggestion entry on top, and below it either the
+          // ranking ballot (early voting, allow_pre_ranking !== false) or the
+          // "voting will open when suggestions close" notice (pre-ranking
+          // disabled). QuestionBallot renders both per-section cards itself via
+          // splitEarlyVotingCards, so we drop the single outer card here to
+          // avoid nesting either case.
+          const splitSuggestionPhaseCards =
             sp.question_type === "ranked_choice" &&
-            poll.allow_pre_ranking !== false &&
             isInSuggestionPhase(sp, poll.prephase_deadline ?? null);
 
           const ballot = (
@@ -749,7 +751,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               externalYesNoResults={isYesNo}
               isExpanded={true}
               partOfPollGroup={isMultiPoll}
-              splitEarlyVotingCards={isEarlyVoting}
+              splitEarlyVotingCards={splitSuggestionPhaseCards}
               wrapperHandlesSubmit={!!poll.id && wrapperOwnsSubmit}
               externalVoterName={wrapperOwnsSubmit ? savedUserName : undefined}
               onWrapperSubmitStateChange={
@@ -761,8 +763,8 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
 
           // "Near X" footnote rendered BELOW the ballot card once results are
           // on display (QuestionBallot reports the placement via the callback
-          // above). The early-voting branch is always pre-results, so it never
-          // shows it.
+          // above). The suggestion-phase split branch is always pre-results, so
+          // it never shows it.
           const referenceBelow =
             referenceBelowMap.get(sp.id) && sp.reference_location_label ? (
               <div className="mt-1.5 flex items-center justify-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
@@ -774,7 +776,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               </div>
             ) : null;
 
-          if (isEarlyVoting) {
+          if (splitSuggestionPhaseCards) {
             return (
               <div key={sp.id} className={idx > 0 ? "mt-3" : "mt-2"}>
                 {isMultiPoll && (
