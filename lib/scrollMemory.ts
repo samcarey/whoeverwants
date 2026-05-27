@@ -36,10 +36,22 @@ export function getRememberedScroll(key: string): number | undefined {
   return positions.get(key);
 }
 
+/** Drop every saved group-page scroll position. Called when the home page
+ *  mounts so that returning to home resets all group pages to their default
+ *  (bottom) scroll position on re-entry, rather than restoring wherever the
+ *  user last left each one. Home and poll-detail keys are untouched. */
+export function clearGroupScroll(): void {
+  for (const key of positions.keys()) {
+    if (key.startsWith(GROUP_SCROLL_PREFIX)) positions.delete(key);
+  }
+}
+
 export const HOME_SCROLL_KEY = "home";
 
+const GROUP_SCROLL_PREFIX = "group:";
+
 export function groupScrollKey(groupRouteId: string): string {
-  return `group:${groupRouteId}`;
+  return `${GROUP_SCROLL_PREFIX}${groupRouteId}`;
 }
 
 export function pollScrollKey(pollShortId: string): string {

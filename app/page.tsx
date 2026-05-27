@@ -7,7 +7,7 @@ import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { HIDE_HOME_BACKDROP_EVENT, POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
 import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import { usePageReady } from "@/lib/usePageReady";
-import { HOME_SCROLL_KEY, getRememberedScroll } from "@/lib/scrollMemory";
+import { HOME_SCROLL_KEY, getRememberedScroll, clearGroupScroll } from "@/lib/scrollMemory";
 import { getCachedSessionUser, SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
 import GroupList from "@/components/GroupList";
 import SignInModal from "@/components/SignInModal";
@@ -112,6 +112,11 @@ export default function Home() {
     if (remembered !== undefined) {
       window.scrollTo(0, remembered);
     }
+    // Returning to home resets every group page's saved scroll, so
+    // re-entering any group lands at the bottom (the default) rather than
+    // wherever the user last left it. Home's own scroll (restored above)
+    // and poll-detail scroll are untouched.
+    clearGroupScroll();
   }, []);
 
   // Initialize and rotate phrases

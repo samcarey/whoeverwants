@@ -798,7 +798,9 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     extraTargets: [upArrowRef, downArrowRef, bubbleBarShellRef],
     showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
     hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
-    onBeforeCommit: () => rememberCurrentScroll(groupScrollKey(groupId)),
+    // No scroll save here: returning home intentionally resets every group's
+    // scroll (home's mount clears it via clearGroupScroll), so this group
+    // re-opens at the bottom rather than restoring this position.
     onCommit: () => router.push('/'),
   });
 
@@ -1818,8 +1820,8 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           slideToGroupInfo({ groupId });
         }}
         onBack={() => {
-          // Save scroll BEFORE the navigation so re-entry restores it.
-          rememberCurrentScroll(groupScrollKey(groupId));
+          // No scroll save: returning home resets this group's scroll (home's
+          // mount clears it), so re-entry lands at the bottom (the default).
           navigateWithTransition(router, '/', 'back');
         }}
         backIconVariant="menu"
