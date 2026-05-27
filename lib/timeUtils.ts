@@ -388,6 +388,22 @@ export function isWindowWithinQuestionWindows(
   return false;
 }
 
+/** True iff two intra-day windows share any minute. Normalizes a cross-midnight
+ *  window (max <= min) by extending its end past midnight. Used to decide
+ *  whether a voter ballot slot still "covers" an original question window. */
+export function windowsOverlap(
+  a: { min: string; max: string },
+  b: { min: string; max: string },
+): boolean {
+  const aStart = timeToMinutes(a.min);
+  const aEnd0 = timeToMinutes(a.max);
+  const aEnd = aEnd0 <= aStart ? aEnd0 + 1440 : aEnd0;
+  const bStart = timeToMinutes(b.min);
+  const bEnd0 = timeToMinutes(b.max);
+  const bEnd = bEnd0 <= bStart ? bEnd0 + 1440 : bEnd0;
+  return aStart < bEnd && bStart < aEnd;
+}
+
 /** Pick a sensible "split" window for a voter to add: the largest free gap
  *  inside the question's allowed windows not already covered by an existing
  *  voter window. A 15-minute margin is left on any gap edge that abuts an

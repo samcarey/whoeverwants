@@ -6,7 +6,6 @@ export interface TimeWindow {
   min: string;
   max: string;
   enabled?: boolean; // For voter form: whether this window is active (default true)
-  added?: boolean; // Voter form: split slot created via the + button (delete control instead of a checkbox)
 }
 
 export interface DayTimeWindow {
