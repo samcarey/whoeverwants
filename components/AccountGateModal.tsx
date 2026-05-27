@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import ModalPortal from "./ModalPortal";
 import SignInOptions from "./SignInOptions";
-import { MAX_NAME_LENGTH, validateUserName, isValidUserName } from "@/lib/nameValidation";
+import NamePromptPanel from "./NamePromptPanel";
+import { isValidUserName } from "@/lib/nameValidation";
 import { getUserName } from "@/lib/userProfile";
-import { apiCreateNameAccount, getCurrentUser } from "@/lib/api";
+import { getCurrentUser } from "@/lib/api";
 
 interface AccountGateModalProps {
   isOpen: boolean;
@@ -35,10 +36,7 @@ export default function AccountGateModal({
   onCancel,
   message,
 }: AccountGateModalProps) {
-  const [name, setName] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [nameFocusNonce, setNameFocusNonce] = useState(0);
   const openedAtRef = useRef(0);
 
   const onCancelRef = useRef(onCancel);
@@ -49,9 +47,6 @@ export default function AccountGateModal({
   useEffect(() => {
     if (!isOpen) return;
     openedAtRef.current = Date.now();
-    setName(getUserName() ?? "");
-    setError(null);
-    setSubmitting(false);
   }, [isOpen]);
 
   useEffect(() => {
@@ -69,41 +64,18 @@ export default function AccountGateModal({
 
   if (!isOpen) return null;
 
-  const validation = validateUserName(name);
-  const errorText =
-    error ?? (name.length > 0 && !validation.ok ? validation.error : null);
-
   // A sign-in (OAuth / passkey) completed inside SignInOptions. If the
   // resulting account already carries a name (returning user), we're done —
   // proceed. Otherwise the user is now signed in but nameless: keep the modal
-  // open so they fill in the "name or alias" field, which `apiCreateNameAccount`
-  // then writes to the existing account.
+  // open and focus the "name or alias" field, which `NamePromptPanel` writes
+  // to the existing account.
   const handleSignInComplete = () => {
     const accountName = getCurrentUser()?.name?.trim() || getUserName()?.trim() || "";
     if (isValidUserName(accountName)) {
       onSubmit();
       return;
     }
-    setName("");
-    setError(null);
-    // Nudge focus toward the name field now that sign-in alone didn't finish.
-    setTimeout(() => inputRef.current?.focus(), 50);
-  };
-
-  const handleContinue = async () => {
-    const trimmed = name.trim();
-    if (!validateUserName(trimmed).ok) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      // Creates a recovery-less account (anonymous) OR sets the name on the
-      // already-signed-in account; persists the session either way.
-      await apiCreateNameAccount(trimmed);
-      onSubmit();
-    } catch {
-      setError("Couldn't save your name. Try again in a moment.");
-      setSubmitting(false);
-    }
+    setNameFocusNonce((n) => n + 1);
   };
 
   const handleBackdropClick = () => {
@@ -144,36 +116,7 @@ export default function AccountGateModal({
             <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
           </div>
 
-          <input
-            id="account-gate-name"
-            ref={inputRef}
-            type="text"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              setError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && validation.ok && !submitting) {
-                e.preventDefault();
-                void handleContinue();
-              }
-            }}
-            maxLength={MAX_NAME_LENGTH}
-            placeholder="e.g. Alex"
-            className="w-full mb-3 px-3 py-2 text-base bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          {errorText && (
-            <p className="mb-3 text-sm text-red-600 dark:text-red-400">{errorText}</p>
-          )}
-          <button
-            type="button"
-            onClick={handleContinue}
-            disabled={!validation.ok || submitting}
-            className="w-full rounded-full bg-foreground text-background h-11 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {submitting ? "Setting up…" : "Continue"}
-          </button>
+          <NamePromptPanel onComplete={onSubmit} focusNonce={nameFocusNonce} />
         </div>
       </div>
     </ModalPortal>
