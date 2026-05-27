@@ -1512,7 +1512,6 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                   <RankingSection
                     cardClass={splitEarlyVotingCards ? `${POLL_SUBCARD_CLASS} mt-3` : undefined}
                     question={question}
-                    suggestionDeadline={effectiveSuggestionDeadline ?? null}
                     responseDeadline={poll.response_deadline ?? null}
                     questionId={questionId || ''}
                     questionOptions={questionOptions}

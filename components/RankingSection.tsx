@@ -10,11 +10,9 @@ import type { OptionsMetadata, QuestionResults } from "@/lib/types";
 
 interface RankingSectionProps {
   question: any;
-  // Phase 5b: wrapper-level fields (response_deadline, prephase_deadline /
-  // legacy suggestion_deadline) come in as separate props since they live on
-  // the parent poll, not the question. QuestionBallot sources them from its
-  // `poll` prop and forwards them here.
-  suggestionDeadline?: string | null;
+  // Phase 5b: wrapper-level fields (response_deadline) come in as separate
+  // props since they live on the parent poll, not the question. QuestionBallot
+  // sources them from its `poll` prop and forwards them here.
   responseDeadline?: string | null;
   questionId: string;
   questionOptions: string[];
