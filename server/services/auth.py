@@ -251,12 +251,10 @@ def create_anonymous_user(
     happen with BrowserIdMiddleware), the account is created unlinked and
     is effectively unmanageable — a defensive edge, not a real path.
 
-    TODO (account merge): if this browser later signs in with a real
-    identity (email / OAuth / passkey), `link_browser_to_user` repoints
-    the browser to the real user_id, orphaning this anonymous account and
-    its polls/groups. A future PR should merge the anonymous account into
-    the signed-in one (move creator_user_id on polls + groups, memberships,
-    etc., then delete the orphan). See docs/auth-access-model.md."""
+    Such an account has no durable identity, so when this browser later
+    signs in with a real identity (email / OAuth / passkey),
+    `complete_sign_in` ABSORBS it into the signed-in account rather than
+    orphaning its polls/groups — see `complete_sign_in` + `merge_accounts`."""
     row = conn.execute(
         "INSERT INTO users (display_name) VALUES (%(n)s) RETURNING id",
         {"n": display_name},
@@ -264,6 +262,203 @@ def create_anonymous_user(
     user_id = str(row["id"])
     link_browser_to_user(conn, user_id=user_id, browser_id=browser_id)
     return user_id
+
+
+def account_has_durable_identity(conn, user_id: str) -> bool:
+    """True if the account has at least one identity that isn't bound to a
+    single device — i.e. a way to sign back in from anywhere (email / apple
+    / google / passkey). The `provider <> 'browser'` filter is the
+    canonical "is this a real account vs. a throwaway?" predicate.
+
+    A browser-only (or, today, identity-less) account is the weak,
+    upgradeable kind created by the vote-first / name-only flow; signing in
+    with a durable identity absorbs it (see `complete_sign_in`). The
+    `'browser'` provider doesn't exist yet — it's introduced as a
+    first-class identity in a later migration — but excluding it here now
+    keeps this predicate correct across that change (today every existing
+    identity is durable, so an account with ANY identity row reads as
+    durable, which matches the current behavior)."""
+    row = conn.execute(
+        """
+        SELECT 1 FROM user_identities
+         WHERE user_id = %(u)s::uuid AND provider <> 'browser'
+         LIMIT 1
+        """,
+        {"u": user_id},
+    ).fetchone()
+    return row is not None
+
+
+def merge_accounts(conn, *, source_user_id: str, dest_user_id: str) -> None:
+    """Move everything owned by `source_user_id` onto `dest_user_id`, then
+    delete the source `users` row. Used by (a) sign-in absorb — folding a
+    weak browser-only account into the account the user signed into — and
+    (b) the explicit "combine my two accounts" flow.
+
+    Every column that references `users(id)` (enumerated from the
+    migrations) is repointed here; a missed table would either strand data
+    or fail the final source-user DELETE on a FK that's CASCADE/SET NULL.
+    Constrained tables (unique / partial-unique / composite PK) keep the
+    DEST row on collision and drop the source's, so the keeper's state
+    wins. Caller controls the transaction; this opens no connection.
+
+    Caveat (shared device): because a browser-only account IS effectively
+    "whoever is on this browser", absorbing it into the signed-in account
+    moves polls created on this browser into that account. On a shared
+    device that can mis-attribute the previous occupant's polls — accepted
+    as the lesser evil vs. orphaning them, and the only realistic source of
+    a browser-only account is the device owner's own vote-first flow."""
+    if source_user_id == dest_user_id:
+        return
+    p = {"src": source_user_id, "dst": dest_user_id}
+
+    # --- Identities + auth artifacts (no app-visible conflicts) ---
+    # PKs are (provider, provider_user_id) / browser_id / token_hash /
+    # credential_id — all globally unique, so a plain repoint can't collide.
+    conn.execute(
+        "UPDATE user_identities SET user_id = %(dst)s::uuid WHERE user_id = %(src)s::uuid",
+        p,
+    )
+    conn.execute(
+        "UPDATE user_browsers SET user_id = %(dst)s::uuid WHERE user_id = %(src)s::uuid",
+        p,
+    )
+    conn.execute(
+        "UPDATE sessions SET user_id = %(dst)s::uuid WHERE user_id = %(src)s::uuid",
+        p,
+    )
+    conn.execute(
+        "UPDATE passkey_credentials SET user_id = %(dst)s::uuid WHERE user_id = %(src)s::uuid",
+        p,
+    )
+    conn.execute(
+        "UPDATE passkey_challenges SET user_id = %(dst)s::uuid WHERE user_id = %(src)s::uuid",
+        p,
+    )
+    conn.execute(
+        "UPDATE magic_link_tokens SET user_id = %(dst)s::uuid WHERE user_id = %(src)s::uuid",
+        p,
+    )
+
+    # --- Authorship: the whole point of the merge ---
+    conn.execute(
+        "UPDATE polls SET creator_user_id = %(dst)s::uuid WHERE creator_user_id = %(src)s::uuid",
+        p,
+    )
+    conn.execute(
+        "UPDATE groups SET creator_user_id = %(dst)s::uuid WHERE creator_user_id = %(src)s::uuid",
+        p,
+    )
+    conn.execute(
+        "UPDATE group_invites SET created_by_user_id = %(dst)s::uuid WHERE created_by_user_id = %(src)s::uuid",
+        p,
+    )
+
+    # --- group_join_requests: decided_by is unconstrained; requester has a
+    # partial-unique (group_id, requester_user_id) WHERE status='pending'.
+    # Drop source pending rows that would collide with a dest pending row in
+    # the same group, then repoint the rest.
+    conn.execute(
+        "UPDATE group_join_requests SET decided_by_user_id = %(dst)s::uuid "
+        "WHERE decided_by_user_id = %(src)s::uuid",
+        p,
+    )
+    conn.execute(
+        """
+        DELETE FROM group_join_requests s
+         WHERE s.requester_user_id = %(src)s::uuid
+           AND s.status = 'pending'
+           AND EXISTS (
+             SELECT 1 FROM group_join_requests d
+              WHERE d.requester_user_id = %(dst)s::uuid
+                AND d.group_id = s.group_id
+                AND d.status = 'pending'
+           )
+        """,
+        p,
+    )
+    conn.execute(
+        "UPDATE group_join_requests SET requester_user_id = %(dst)s::uuid "
+        "WHERE requester_user_id = %(src)s::uuid",
+        p,
+    )
+
+    # --- user_profiles (PK user_id): keep dest's photo if it has one. ---
+    conn.execute(
+        """
+        UPDATE user_profiles SET user_id = %(dst)s::uuid
+         WHERE user_id = %(src)s::uuid
+           AND NOT EXISTS (SELECT 1 FROM user_profiles WHERE user_id = %(dst)s::uuid)
+        """,
+        p,
+    )
+    conn.execute("DELETE FROM user_profiles WHERE user_id = %(src)s::uuid", p)
+
+    # --- group_notification_preferences (partial-unique (user_id, group_id)):
+    # dest's pref wins per group.
+    conn.execute(
+        """
+        DELETE FROM group_notification_preferences s
+         WHERE s.user_id = %(src)s::uuid
+           AND EXISTS (
+             SELECT 1 FROM group_notification_preferences d
+              WHERE d.user_id = %(dst)s::uuid AND d.group_id = s.group_id
+           )
+        """,
+        p,
+    )
+    conn.execute(
+        "UPDATE group_notification_preferences SET user_id = %(dst)s::uuid "
+        "WHERE user_id = %(src)s::uuid",
+        p,
+    )
+
+    # --- user_contacts (PK (owner_user_id, contact_user_id)): move both
+    # directions, dedupe via ON CONFLICT (newest watermark wins), and never
+    # create a self-contact (owner == contact).
+    conn.execute(
+        """
+        INSERT INTO user_contacts (owner_user_id, contact_user_id, first_seen_at, last_seen_at)
+        SELECT %(dst)s::uuid, contact_user_id, first_seen_at, last_seen_at
+          FROM user_contacts
+         WHERE owner_user_id = %(src)s::uuid AND contact_user_id <> %(dst)s::uuid
+        ON CONFLICT (owner_user_id, contact_user_id) DO UPDATE
+          SET last_seen_at = GREATEST(user_contacts.last_seen_at, EXCLUDED.last_seen_at),
+              first_seen_at = LEAST(user_contacts.first_seen_at, EXCLUDED.first_seen_at)
+        """,
+        p,
+    )
+    conn.execute(
+        """
+        INSERT INTO user_contacts (owner_user_id, contact_user_id, first_seen_at, last_seen_at)
+        SELECT owner_user_id, %(dst)s::uuid, first_seen_at, last_seen_at
+          FROM user_contacts
+         WHERE contact_user_id = %(src)s::uuid AND owner_user_id <> %(dst)s::uuid
+        ON CONFLICT (owner_user_id, contact_user_id) DO UPDATE
+          SET last_seen_at = GREATEST(user_contacts.last_seen_at, EXCLUDED.last_seen_at),
+              first_seen_at = LEAST(user_contacts.first_seen_at, EXCLUDED.first_seen_at)
+        """,
+        p,
+    )
+    conn.execute(
+        "DELETE FROM user_contacts WHERE owner_user_id = %(src)s::uuid OR contact_user_id = %(src)s::uuid",
+        p,
+    )
+
+    # --- users: give the keeper the source's display name only if it has
+    # none (don't clobber the keeper's own name). Badge / recovery prefs stay
+    # the keeper's. Then drop the now-empty source user.
+    conn.execute(
+        """
+        UPDATE users SET display_name = src.display_name, updated_at = NOW()
+          FROM (SELECT display_name FROM users WHERE id = %(src)s::uuid) src
+         WHERE users.id = %(dst)s::uuid
+           AND users.display_name IS NULL
+           AND src.display_name IS NOT NULL
+        """,
+        p,
+    )
+    conn.execute("DELETE FROM users WHERE id = %(src)s::uuid", p)
 
 
 # ---------------------------------------------------------------------------
@@ -806,21 +1001,54 @@ def complete_sign_in(
     `profile` is guaranteed non-None by construction — `resolve_or_merge_user`
     inserted/found a row whose id we then pass to `load_user_profile` in
     the same transaction.
+
+    Absorb rule: if this browser is currently on a weak account (no durable
+    identity — the vote-first / name-only / auto-created throwaway) and the
+    incoming identity resolves elsewhere, fold the two together instead of
+    repointing the browser and orphaning the weak account's polls/groups:
+      * incoming identity is BRAND NEW  → it minted an empty account; fold
+        that into the existing weak account so the weak account keeps its
+        polls + name and merely GAINS the durable identity (upgrade in
+        place — the keeper stays the account the user already had).
+      * incoming identity already EXISTS → fold the weak account's data into
+        that pre-existing real account (the keeper).
+    A browser already on a durable account is NOT absorbed — that's a real
+    account switch, and the prior account stays recoverable.
     """
+    # Captured BEFORE link_browser_to_user repoints the browser below.
+    prior_user_id = get_user_id_for_browser(conn, browser_id)
+
     resolved = resolve_or_merge_user(
         conn,
         provider=provider,
         provider_user_id=provider_user_id,
         email=email,
     )
-    link_browser_to_user(conn, user_id=resolved.user_id, browser_id=browser_id)
+    keeper_user_id = resolved.user_id
+
+    if (
+        prior_user_id
+        and prior_user_id != keeper_user_id
+        and not account_has_durable_identity(conn, prior_user_id)
+    ):
+        if resolved.is_new_user:
+            merge_accounts(
+                conn, source_user_id=keeper_user_id, dest_user_id=prior_user_id
+            )
+            keeper_user_id = prior_user_id
+        else:
+            merge_accounts(
+                conn, source_user_id=prior_user_id, dest_user_id=keeper_user_id
+            )
+
+    link_browser_to_user(conn, user_id=keeper_user_id, browser_id=browser_id)
     session = issue_session(
         conn,
-        user_id=resolved.user_id,
+        user_id=keeper_user_id,
         browser_id=browser_id,
         user_agent=user_agent,
     )
-    profile = load_user_profile(conn, resolved.user_id)
+    profile = load_user_profile(conn, keeper_user_id)
     assert profile is not None, "profile must exist immediately after issue"
     return CompletedSignIn(session=session, profile=profile)
 
