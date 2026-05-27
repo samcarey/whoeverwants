@@ -62,12 +62,15 @@ function getRelativeDay(dateStr: string): string {
 // Pill className per state. Layout-stable across states because every
 // variant has `border` set — non-outlined states use border-transparent
 // so 1 px of border space is reserved on every pill regardless of state.
+// Filled bg is one step darker than the surfaces this renders on (the voter
+// availability card is bg-gray-100/900, the create-poll card is white/gray-800),
+// so pills stay legible on both without per-day card backing.
 const PILL_BASE = 'w-[154px] py-1.5 rounded-full text-sm font-medium border transition-colors text-center disabled:cursor-not-allowed';
 const PILL_STATE_CLASSES = {
-  disabled: 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border-transparent cursor-default opacity-50',
+  disabled: 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border-transparent cursor-default opacity-50',
   tooShort: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-400 dark:border-red-500 hover:bg-red-100 dark:hover:bg-red-900/50',
-  intersecting: 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-orange-400 dark:border-orange-500 hover:bg-gray-200 dark:hover:bg-gray-600',
-  normal: 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-transparent hover:bg-gray-200 dark:hover:bg-gray-600',
+  intersecting: 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-orange-400 dark:border-orange-500 hover:bg-gray-300 dark:hover:bg-gray-600',
+  normal: 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-transparent hover:bg-gray-300 dark:hover:bg-gray-600',
 } as const;
 
 function pillVariant(
@@ -202,7 +205,7 @@ export default function DayTimeWindowsInput({
         type="button"
         onClick={handleAddWindow}
         disabled={disabled}
-        className="shrink-0 self-start w-[34px] h-[34px] flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="shrink-0 self-start w-[34px] h-[34px] flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         aria-label="Add time window"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

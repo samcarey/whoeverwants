@@ -198,9 +198,6 @@ export default function TimeBallotSection({
               />
             </div>
 
-            <p className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center">
-              Use + to split a window into separate segments
-            </p>
             <div className="mb-6">
               <AbstainButton isAbstaining={isAbstaining} onClick={handleAbstain} />
             </div>
