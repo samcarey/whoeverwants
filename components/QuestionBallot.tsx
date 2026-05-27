@@ -828,6 +828,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     canSubmitSuggestions,
     isAvailabilitySubmission,
     voterDayTimeWindows,
+    questionDayTimeWindows: question.day_time_windows ?? null,
     durationMinValue,
     durationMaxValue,
     durationMinEnabled,

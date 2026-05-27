@@ -62,6 +62,7 @@ export interface TimeWindow {
   min: string; // HH:MM format
   max: string; // HH:MM format
   enabled?: boolean; // For voter form: whether this window is active (default true)
+  added?: boolean; // Voter form: true for a split slot the voter created via the + button (gets a delete control instead of a checkbox)
 }
 
 export interface DayTimeWindow {

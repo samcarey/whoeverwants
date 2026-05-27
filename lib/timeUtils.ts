@@ -359,3 +359,93 @@ export function pickNextTimeWindow(
   }
   return { ...DEFAULT_TIME_WINDOW };
 }
+
+/** Convert total minutes since midnight to "HH:MM" (zero-padded). */
+export function minutesToTime(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** True iff voter window `w` is fully contained in at least one question
+ *  window. No question windows = no constraint (always true). Mirrors the
+ *  containment math in `isVoterAvailableForSlot` / the backend
+ *  `_voter_available_at`, normalizing cross-midnight windows via +1440. */
+export function isWindowWithinQuestionWindows(
+  w: { min: string; max: string },
+  questionWindows: { min: string; max: string }[],
+): boolean {
+  if (!questionWindows || questionWindows.length === 0) return true;
+  const start = timeToMinutes(w.min);
+  const end0 = timeToMinutes(w.max);
+  const end = end0 <= start ? end0 + 1440 : end0;
+  for (const q of questionWindows) {
+    const qStart = timeToMinutes(q.min);
+    const qEnd0 = timeToMinutes(q.max);
+    const qEnd = qEnd0 <= qStart ? qEnd0 + 1440 : qEnd0;
+    if (start >= qStart && end <= qEnd) return true;
+  }
+  return false;
+}
+
+/** Pick a sensible "split" window for a voter to add: the largest free gap
+ *  inside the question's allowed windows not already covered by an existing
+ *  voter window. Falls back to the first question window (or the app default)
+ *  when nothing is free, so the + button always yields a draggable pill.
+ *  Cross-midnight question windows are skipped for the gap math. */
+export function pickVoterSplitWindow(
+  questionWindows: { min: string; max: string }[],
+  existing: { min: string; max: string }[],
+): { min: string; max: string } {
+  const qWins = questionWindows
+    .map(w => ({ start: timeToMinutes(w.min), end: timeToMinutes(w.max), raw: w }))
+    .filter(w => w.end > w.start);
+  if (qWins.length === 0) {
+    const first = questionWindows[0];
+    return first ? { min: first.min, max: first.max } : { ...DEFAULT_TIME_WINDOW };
+  }
+  const taken = existing
+    .map(w => ({ start: timeToMinutes(w.min), end: timeToMinutes(w.max) }))
+    .filter(w => w.end > w.start)
+    .sort((a, b) => a.start - b.start);
+
+  let best: { start: number; end: number } | null = null;
+  const consider = (start: number, end: number) => {
+    if (end > start && (!best || end - start > best.end - best.start)) {
+      best = { start, end };
+    }
+  };
+  for (const q of qWins) {
+    let cursor = q.start;
+    for (const t of taken) {
+      if (t.end <= q.start || t.start >= q.end) continue;
+      if (t.start > cursor) consider(cursor, t.start);
+      cursor = Math.max(cursor, t.end);
+      if (cursor >= q.end) break;
+    }
+    if (cursor < q.end) consider(cursor, q.end);
+  }
+  if (best) return { min: minutesToTime(best.start), max: minutesToTime(best.end) };
+  return { min: qWins[0].raw.min, max: qWins[0].raw.max };
+}
+
+/** True iff any enabled voter window is invalid: outside every question
+ *  window for its day, or touching/intersecting its sorted predecessor.
+ *  The submit gate (block) shares this with the per-pill orange flags so
+ *  the highlighted slots and the disabled-submit reason can't drift. */
+export function hasInvalidVoterWindows(
+  voterDays: { day: string; windows?: { min: string; max: string; enabled?: boolean }[] }[],
+  questionDays: { day: string; windows: { min: string; max: string }[] }[] | null | undefined,
+): boolean {
+  for (const day of voterDays) {
+    const qWins = questionDays?.find(q => q.day === day.day)?.windows ?? [];
+    const enabled = (day.windows ?? []).filter(w => w.enabled !== false);
+    const sorted = [...enabled].sort((a, b) => a.min.localeCompare(b.min));
+    for (let i = 0; i < sorted.length; i++) {
+      const w = sorted[i];
+      if (qWins.length > 0 && !isWindowWithinQuestionWindows(w, qWins)) return true;
+      if (i > 0 && w.min <= sorted[i - 1].max) return true;
+    }
+  }
+  return false;
+}

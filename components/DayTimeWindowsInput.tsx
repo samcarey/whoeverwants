@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import TimeGridModal from './TimeGridModal';
-import { windowDurationMinutes, formatDayLabel, pickNextTimeWindow, periodColorClass } from '@/lib/timeUtils';
+import { windowDurationMinutes, formatDayLabel, pickNextTimeWindow, pickVoterSplitWindow, isWindowWithinQuestionWindows, periodColorClass } from '@/lib/timeUtils';
 
 interface TimeWindow {
   min: string; // HH:MM format
   max: string; // HH:MM format
   enabled?: boolean; // For voter form: whether this window is active (default true)
+  added?: boolean; // Voter form: split slot the voter created via the + button (delete control instead of a checkbox)
 }
 
 interface DayTimeWindowsInputProps {
@@ -95,7 +96,18 @@ export default function DayTimeWindowsInput({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
+  const isVoterForm = !!questionWindows;
+
   const handleAddWindow = () => {
+    if (isVoterForm) {
+      // Voters split a window into disconnected segments. Drop the new slot in
+      // the largest free gap inside the creator's allowed windows; it gets a
+      // delete control (not a checkbox) and is soft-validated against the
+      // question windows + its neighbours.
+      const picked = pickVoterSplitWindow(questionWindows ?? [], windows);
+      onChange([...windows, { ...picked, added: true }]);
+      return;
+    }
     const next = pickNextTimeWindow(day, allDays ?? [{ day, windows }]);
     onChange([...windows, next]);
   };
@@ -107,7 +119,8 @@ export default function DayTimeWindowsInput({
 
   const handleEditApply = (min: string | null, max: string | null) => {
     if (!min || !max || editingIndex === null) return;
-    onChange(windows.map((w, i) => i === editingIndex ? { min, max } : w));
+    // Preserve the edited window's flags (enabled / added) — only the times change.
+    onChange(windows.map((w, i) => i === editingIndex ? { ...w, min, max } : w));
   };
 
   const handleDeleteWindow = (index: number) => {
@@ -128,7 +141,19 @@ export default function DayTimeWindowsInput({
     onChange(updated);
   };
 
-  const isVoterForm = !!questionWindows;
+  const renderDeleteButton = (index: number) => (
+    <button
+      type="button"
+      onClick={() => handleDeleteWindow(index)}
+      disabled={disabled}
+      className="p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+      aria-label="Delete time window"
+    >
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  );
 
   return (
     <div
@@ -152,20 +177,20 @@ export default function DayTimeWindowsInput({
 
       {/* Diameter matches the pill height (34 px); shrink-0 prevents
           flex pressure from squishing it; self-start centers it with the
-          topmost pill regardless of slot count. */}
-      {!isVoterForm && (
-        <button
-          type="button"
-          onClick={handleAddWindow}
-          disabled={disabled}
-          className="shrink-0 self-start w-[34px] h-[34px] flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          aria-label="Add time window"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
-      )}
+          topmost pill regardless of slot count. Voters use it to split a
+          window into disconnected segments (each added slot soft-validated
+          against the creator's allowed windows). */}
+      <button
+        type="button"
+        onClick={handleAddWindow}
+        disabled={disabled}
+        className="shrink-0 self-start w-[34px] h-[34px] flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        aria-label="Add time window"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        </svg>
+      </button>
 
       {/* The last remaining slot in a day omits its delete control so the
           day can never drop to zero windows (use the day picker to remove
@@ -179,6 +204,12 @@ export default function DayTimeWindowsInput({
           const isTooShort = isEnabled && minDurationMinutes != null && minDurationMinutes > 0 && duration < minDurationMinutes;
           const prev = index > 0 ? windows[index - 1] : null;
           const intersectsPrev = isEnabled && !!prev && window.min <= prev.max;
+          // Voter slots must stay inside one of the creator's allowed windows;
+          // a slot that escapes them (e.g. a split dragged out of range) gets
+          // the same orange treatment as an intersecting slot and blocks submit.
+          const outsideConstraint = isVoterForm && isEnabled
+            && !!questionWindows && questionWindows.length > 0
+            && !isWindowWithinQuestionWindows(window, questionWindows);
           const showTrash = !isVoterForm && windows.length > 1;
           return (
             <div
@@ -186,33 +217,29 @@ export default function DayTimeWindowsInput({
               className="flex items-center gap-[7px]"
             >
               {isVoterForm ? (
-                <label className="flex items-center p-1 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isEnabled}
-                    onChange={() => handleToggleWindow(index)}
-                    disabled={disabled}
-                    className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 cursor-pointer"
-                  />
-                </label>
+                // Original (seeded) windows toggle on/off via a checkbox; voter-added
+                // split slots are removed via a delete control instead.
+                window.added ? (
+                  renderDeleteButton(index)
+                ) : (
+                  <label className="flex items-center p-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isEnabled}
+                      onChange={() => handleToggleWindow(index)}
+                      disabled={disabled}
+                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 cursor-pointer"
+                    />
+                  </label>
+                )
               ) : showTrash ? (
-                <button
-                  type="button"
-                  onClick={() => handleDeleteWindow(index)}
-                  disabled={disabled}
-                  className="p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                  aria-label="Delete time window"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                renderDeleteButton(index)
               ) : null}
               <button
                 type="button"
                 onClick={() => isEnabled && handleEditWindow(index)}
                 disabled={disabled || !isEnabled}
-                className={`${PILL_BASE} ${PILL_STATE_CLASSES[pillVariant(isEnabled, isTooShort, intersectsPrev)]}`}
+                className={`${PILL_BASE} ${PILL_STATE_CLASSES[pillVariant(isEnabled, isTooShort, intersectsPrev || outsideConstraint)]}`}
               >
                 {(() => {
                   const minFormatted = formatTime12Hour(window.min);
@@ -243,7 +270,11 @@ export default function DayTimeWindowsInput({
         })}
       </div>
 
-      {/* Time Grid Modal */}
+      {/* Time Grid Modal. No hard clamp on the voter form: a window can range
+          anywhere and is soft-validated against the creator's allowed windows
+          (orange + blocked submit if it escapes). The old per-index clamp broke
+          once a voter added a split and the list re-sorted, mapping windows to
+          the wrong question window. */}
       <TimeGridModal
         isOpen={isModalOpen}
         onClose={() => {
@@ -253,8 +284,6 @@ export default function DayTimeWindowsInput({
         minValue={editingIndex !== null && windows[editingIndex] ? windows[editingIndex].min : "09:00"}
         maxValue={editingIndex !== null && windows[editingIndex] ? windows[editingIndex].max : "17:00"}
         onApply={handleEditApply}
-        constraintMin={questionWindows && editingIndex !== null && questionWindows[editingIndex] ? questionWindows[editingIndex].min : undefined}
-        constraintMax={questionWindows && editingIndex !== null && questionWindows[editingIndex] ? questionWindows[editingIndex].max : undefined}
         minDurationMinutes={minDurationMinutes}
       />
     </div>
