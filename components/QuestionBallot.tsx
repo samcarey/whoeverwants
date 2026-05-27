@@ -325,8 +325,14 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   // after a genuine preference touch, so the server-restored committed vote isn't
   // echoed back into a mirror draft.
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftSaveMountRef = useRef(true);
   useEffect(() => {
     if (question.question_type !== 'time') return;
+    // Skip the first run (initial mount / restore) so we don't write a
+    // default-valued draft for a voter who never touches the ballot; genuine
+    // edits re-run the effect afterwards. Set before the gate below so a voted
+    // voter's FIRST preference tap still saves.
+    if (draftSaveMountRef.current) { draftSaveMountRef.current = false; return; }
     if (hasVoted && !userTouchedPreferencesRef.current) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = setTimeout(() => {
