@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, Dispatch, SetStateAction } from "react";
+import { useState, useEffect, useRef, Dispatch, SetStateAction } from "react";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
+import { loadQuestionDraft, saveQuestionDraft } from "@/lib/ballotDraft";
 import SuggestionsList from "@/components/SuggestionsList";
 import OptionLabel from "@/components/OptionLabel";
 
@@ -147,6 +148,51 @@ export default function SuggestionVotingInterface({
       handleAbstain(); // This will toggle isAbstaining to false
     }
   }, [suggestionChoices, isEditingVote, isAbstaining, handleAbstain]);
+
+  // Persist typed-but-unsubmitted suggestions per poll so a half-typed list
+  // survives a refresh or navigating away. Only for a fresh voter (the entry
+  // form is shown and nothing on the server/edit path clobbers it): once
+  // submitted, committed suggestions live on the server and entering edit mode
+  // resets newSuggestions from there (the isEditingVote effect above). The
+  // draft slot is cleared on submit by the parent's clearQuestionDraft.
+  const pollId: string | null = question?.poll_id ?? null;
+  const questionId: string | null = question?.id ?? null;
+  const suggestionDraftRestoredRef = useRef(false);
+  useEffect(() => {
+    if (suggestionDraftRestoredRef.current) return;
+    suggestionDraftRestoredRef.current = true;
+    if (hasVoted || !questionId) return;
+    const draft = loadQuestionDraft(pollId, questionId);
+    if (!draft) return;
+    if (draft.suggestionTexts && draft.suggestionTexts.length > 0) {
+      setNewSuggestions(draft.suggestionTexts);
+    }
+    if (draft.suggestionMetadata && onSuggestionMetadataChange) {
+      onSuggestionMetadataChange(draft.suggestionMetadata);
+    }
+  }, [hasVoted, pollId, questionId, onSuggestionMetadataChange]);
+
+  // Save edits after the initial mount/restore so we don't immediately rewrite
+  // the draft; debounced so each keystroke during typing doesn't thrash storage.
+  const suggestionSaveMountRef = useRef(true);
+  const suggestionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (hasVoted || !questionId) return;
+    if (suggestionSaveMountRef.current) {
+      suggestionSaveMountRef.current = false;
+      return;
+    }
+    if (suggestionSaveTimerRef.current) clearTimeout(suggestionSaveTimerRef.current);
+    suggestionSaveTimerRef.current = setTimeout(() => {
+      saveQuestionDraft(pollId, questionId, {
+        suggestionTexts: newSuggestions,
+        suggestionMetadata,
+      });
+    }, 300);
+    return () => {
+      if (suggestionSaveTimerRef.current) clearTimeout(suggestionSaveTimerRef.current);
+    };
+  }, [newSuggestions, suggestionMetadata, hasVoted, pollId, questionId]);
 
   // Question is closed
   if (isQuestionClosed) {

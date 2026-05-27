@@ -6,7 +6,7 @@
 // The legacy per-question key path (pollId === null) is retained for
 // pre-Phase-4 questions that haven't been wrapped.
 
-import type { DayTimeWindow } from "./types";
+import type { DayTimeWindow, OptionsMetadata } from "./types";
 
 const POLL_PREFIX = 'ballotDraft:m:';
 const LEGACY_PREFIX = 'ballotDraft:';
@@ -24,6 +24,12 @@ export interface QuestionDraft {
   // or navigation away, even after availability has already been submitted.
   likedSlots?: string[] | null;
   dislikedSlots?: string[] | null;
+  // Ranked-choice suggestion phase: text typed into the "add a suggestion"
+  // fields (the OptionsInput rows) plus the rich metadata for search-picked
+  // options (restaurant/location favicons, coords) — before the vote is
+  // submitted. Persisted so a half-typed suggestion list survives a refresh.
+  suggestionTexts?: string[];
+  suggestionMetadata?: OptionsMetadata;
 }
 
 export interface PollBallotDraft {

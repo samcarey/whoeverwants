@@ -49,6 +49,17 @@ describe('ballotDraft per-poll storage', () => {
     expect(loadQuestionDraft('m1', 's1')).toEqual({ likedSlots: [], dislikedSlots: [] });
   });
 
+  it('round-trips typed suggestions and their rich metadata', () => {
+    const draft: QuestionDraft = {
+      suggestionTexts: ["Luigi's Trattoria", ''],
+      suggestionMetadata: {
+        "Luigi's Trattoria": { name: "Luigi's Trattoria", imageUrl: 'https://x/f.ico', rating: 4.5 },
+      },
+    };
+    saveQuestionDraft('m1', 's1', draft);
+    expect(loadQuestionDraft('m1', 's1')).toEqual(draft);
+  });
+
   it('keeps multiple questions separate within the same poll', () => {
     saveQuestionDraft('m1', 'a', { yesNoChoice: 'yes' });
     saveQuestionDraft('m1', 'b', { yesNoChoice: 'no' });
