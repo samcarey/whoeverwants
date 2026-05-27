@@ -33,6 +33,22 @@ describe('ballotDraft per-poll storage', () => {
     expect(loadQuestionDraft('m1', 's1')).toEqual(draft);
   });
 
+  it('round-trips time-preference marks (liked/disliked slots)', () => {
+    const draft: QuestionDraft = {
+      isAbstaining: false,
+      voterDayTimeWindows: [],
+      likedSlots: ['2026-06-01 10:00-10:30', '2026-06-01 11:00-11:30'],
+      dislikedSlots: ['2026-06-02 09:00-09:30'],
+    };
+    saveQuestionDraft('m1', 's1', draft);
+    expect(loadQuestionDraft('m1', 's1')).toEqual(draft);
+  });
+
+  it('preserves empty preference arrays distinctly from absent ones', () => {
+    saveQuestionDraft('m1', 's1', { likedSlots: [], dislikedSlots: [] });
+    expect(loadQuestionDraft('m1', 's1')).toEqual({ likedSlots: [], dislikedSlots: [] });
+  });
+
   it('keeps multiple questions separate within the same poll', () => {
     saveQuestionDraft('m1', 'a', { yesNoChoice: 'yes' });
     saveQuestionDraft('m1', 'b', { yesNoChoice: 'no' });

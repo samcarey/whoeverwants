@@ -19,6 +19,11 @@ export interface QuestionDraft {
   durationMaxValue?: number | null;
   durationMinEnabled?: boolean;
   durationMaxEnabled?: boolean;
+  // Time-question preferences phase: slots the voter has marked liked/disliked
+  // but not yet submitted. Persisted so in-progress reactions survive a refresh
+  // or navigation away, even after availability has already been submitted.
+  likedSlots?: string[] | null;
+  dislikedSlots?: string[] | null;
 }
 
 export interface PollBallotDraft {

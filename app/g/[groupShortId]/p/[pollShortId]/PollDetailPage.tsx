@@ -36,7 +36,8 @@ import {
   getGroupHrefForPoll,
   isPendingPollId,
 } from "@/lib/groupUtils";
-import { useGroupVoting, type PreparedNonYesNoEntry } from "@/lib/useGroupVoting";
+import { useGroupVoting, type PreparedNonYesNoEntry, type YesNoChoice } from "@/lib/useGroupVoting";
+import { loadQuestionDraft, saveQuestionDraft } from "@/lib/ballotDraft";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import {
   cachePoll,
@@ -65,6 +66,7 @@ import {
   loadVotedQuestions,
   parseYesNoChoice,
   getStoredVoteId,
+  hasVotedOnQuestion,
 } from "@/lib/votedQuestionsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import GroupHeader from "@/components/GroupHeader";
@@ -511,6 +513,33 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   const useWrapperSubmit =
     !isMultiPoll && subQuestions[0]?.question_type !== "yes_no";
 
+  // Restore any per-poll staged yes/no choices (multi-question polls) so taps
+  // made before submitting survive a refresh or navigating away. Single-question
+  // yes/no auto-submits, so there's no staging to restore there. Only restore
+  // for questions the browser hasn't already voted on (the committed vote wins).
+  const stagedYesNoRestoredRef = useRef(false);
+  useEffect(() => {
+    if (stagedYesNoRestoredRef.current) return;
+    if (!usePollSubmit || !poll.id) return;
+    stagedYesNoRestoredRef.current = true;
+    const restored = new Map<string, YesNoChoice>();
+    for (const sp of subQuestions) {
+      if (sp.question_type !== "yes_no" || hasVotedOnQuestion(sp.id)) continue;
+      const draft = loadQuestionDraft(poll.id, sp.id);
+      if (!draft) continue;
+      if (draft.isAbstaining) restored.set(sp.id, "abstain");
+      else if (draft.yesNoChoice === "yes" || draft.yesNoChoice === "no") {
+        restored.set(sp.id, draft.yesNoChoice);
+      }
+    }
+    if (restored.size === 0) return;
+    setPendingPollChoices((prev) => {
+      const next = new Map(prev);
+      for (const [k, v] of restored) next.set(k, v);
+      return next;
+    });
+  }, [usePollSubmit, poll.id, subQuestions, setPendingPollChoices]);
+
   // Mirror the GroupCardItem's anchor-based status computation. Poll-level
   // deadlines (voting + prephase) are shared across sibling questions, so
   // one status line describes the whole poll.
@@ -831,6 +860,18 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                                   next.set(sp.id, newChoice);
                                   return next;
                                 });
+                                // Persist the staged choice so it survives a
+                                // refresh before the wrapper Submit. Only for
+                                // not-yet-voted questions (the committed vote is
+                                // the source of truth otherwise); cleared on
+                                // submit by useGroupVoting.
+                                if (poll.id && !hasVotedOnQuestion(sp.id)) {
+                                  saveQuestionDraft(poll.id, sp.id, {
+                                    yesNoChoice:
+                                      newChoice === "abstain" ? null : newChoice,
+                                    isAbstaining: newChoice === "abstain",
+                                  });
+                                }
                               } else {
                                 dispatchYesNoTap(sp.id, newChoice);
                               }
