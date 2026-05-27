@@ -103,9 +103,9 @@ export default function TimeSlotBubbles({
           "border focus:outline-none focus:ring-2 focus:ring-offset-1",
           disabled ? "cursor-default opacity-60" : "cursor-pointer active:scale-95",
           state === "liked"
-            ? "bg-green-500 border-green-500 text-white focus:ring-green-400"
+            ? "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100 focus:ring-green-400"
             : state === "disliked"
-            ? "bg-red-500 border-red-500 text-white focus:ring-red-400"
+            ? "bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100 focus:ring-red-400"
             : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-400 focus:ring-blue-400",
         ].join(" ")}
       >
