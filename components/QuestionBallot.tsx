@@ -843,7 +843,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   // suggestions, react to time slots after availability, etc.). Both
   // handleVoteClick (auto-enter edit mode) and wrapperShouldShowSubmit
   // (keep Submit visible) read this — keep them in sync via one computation.
-  const hasNotRankedYet = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_ranking_abstain;
+  // Gated on canSubmitRankings: when pre-ranking is disabled the voter CAN'T
+  // rank during the suggestion phase, so a suggestion-only vote isn't "work
+  // left to finish" — without this gate the wrapper Submit button surfaces
+  // while ranking is still locked.
+  const hasNotRankedYet = hasVoted && hasSuggestionPhase && canSubmitRankings && !userVoteData?.ranked_choices?.length && !userVoteData?.is_ranking_abstain;
   // True while the voter has submitted availability but hasn't reacted to slots yet.
   // Pre-cutoff this only fires when tentative slots exist (pre-ranking mode).
   // Post-cutoff (slots finalized) it fires once `inAvailabilityPhase` is false.
