@@ -205,6 +205,21 @@ export function CreateQuestionContent() {
   const advanceCalendarMonth = useCallback((delta: number) => {
     setCalendarMonth(prev => shiftMonth(prev, delta));
   }, []);
+  const [calendarExpanded, setCalendarExpanded] = useState(false);
+  // The compact view is anchored to today (a rolling 3 weeks), so whenever
+  // the calendar is collapsed reset the navigable month back to today's
+  // month — keeps the centered header consistent with the compact grid and
+  // gives a fresh starting point the next time it's expanded.
+  useEffect(() => {
+    if (!calendarExpanded) {
+      const now = new Date();
+      setCalendarMonth(prev =>
+        prev.getFullYear() === now.getFullYear() && prev.getMonth() === now.getMonth()
+          ? prev
+          : new Date(now.getFullYear(), now.getMonth(), 1)
+      );
+    }
+  }, [calendarExpanded]);
   const {
     onDaysSelected: handleDaysSelected,
     onWindowsChange: handleDayWindowsChange,
@@ -826,6 +841,7 @@ export function CreateQuestionContent() {
   const discardAndClose = useCallback(() => {
     applyDraftToState(emptyDraft());
     resetDayTimeWindowsCache();
+    setCalendarExpanded(false);
     setError(null);
     setIsModalOpen(false);
     setDrafts([]);
@@ -2085,32 +2101,61 @@ export function CreateQuestionContent() {
                 {showTimeFields && (
                   <>
                     <div>
-                      <div className="flex items-center justify-between mb-1 px-1">
-                        <button
-                          type="button"
-                          onClick={() => advanceCalendarMonth(-1)}
-                          disabled={isLoading}
-                          aria-label="Previous month"
-                          className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                          </svg>
-                        </button>
-                        <span className="text-[17.5px] font-medium text-gray-500 dark:text-gray-400 tabular-nums">
-                          {formatMonthYearLabel(calendarMonth)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => advanceCalendarMonth(1)}
-                          disabled={isLoading}
-                          aria-label="Next month"
-                          className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        </button>
+                      <div className="relative flex items-center justify-center mb-1 px-1 h-8">
+                        {calendarExpanded && (
+                          <button
+                            type="button"
+                            onClick={() => advanceCalendarMonth(-1)}
+                            disabled={isLoading}
+                            aria-label="Previous month"
+                            className="absolute left-1 p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                          </button>
+                        )}
+                        {/* The month label stays centered; the toggle is anchored to
+                            its right edge (absolute, so it doesn't shift the label) and
+                            therefore stays put across the expand/collapse transition. */}
+                        <div className="relative">
+                          <span className="text-[17.5px] font-medium text-gray-500 dark:text-gray-400 tabular-nums">
+                            {formatMonthYearLabel(calendarMonth)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setCalendarExpanded(e => !e)}
+                            disabled={isLoading}
+                            aria-label={calendarExpanded ? "Show fewer weeks" : "Show full month"}
+                            aria-expanded={calendarExpanded}
+                            className="group absolute left-full top-1/2 -translate-y-1/2 ml-2 w-6 h-6 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {/* Touch target stays 24px (w-6 h-6); the visible
+                                circle is 20% smaller via this inner span. */}
+                            <span className="w-[19.2px] h-[19.2px] flex items-center justify-center rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 group-hover:bg-gray-200 dark:group-hover:bg-gray-700">
+                              <svg className="w-[12.8px] h-[12.8px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                {calendarExpanded ? (
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                ) : (
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                )}
+                              </svg>
+                            </span>
+                          </button>
+                        </div>
+                        {calendarExpanded && (
+                          <button
+                            type="button"
+                            onClick={() => advanceCalendarMonth(1)}
+                            disabled={isLoading}
+                            aria-label="Next month"
+                            className="absolute right-1 p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                       <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
                         <DaysSelector
@@ -2119,6 +2164,7 @@ export function CreateQuestionContent() {
                           disabled={isLoading}
                           inline
                           currentMonth={calendarMonth}
+                          compact={!calendarExpanded}
                         />
                       </section>
                     </div>
