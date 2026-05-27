@@ -1246,6 +1246,16 @@ var on each tier's `.env.api`; without it, `send_email` logs the
 message to stdout and returns success so dev tiers work zero-config
 (magic links surface in `/repo/api.log`). `RESEND_FROM_EMAIL` (default
 `noreply@whoeverwants.com`) must be on a Resend-verified domain.
+**Both prod + latest droplets are configured with `RESEND_API_KEY` +
+`RESEND_FROM_EMAIL=noreply@contact.whoeverwants.com`** (the verified
+sending domain is `contact.whoeverwants.com`, DKIM/SPF in Route 53 — NOT
+the bare `whoeverwants.com`, which is unverified and would 403). The
+keys live in `.env.api` only (never git). Symptom of a regression /
+fresh-rebuild that lost them: the FE shows "This server isn't configured
+to send real emails — check the API logs for the link" and
+`/api/auth/me` (or a magic-link request) reports `email_configured:
+false`. Re-add via `scripts/remote*.sh` then `docker compose up -d
+--force-recreate api` (env_file is re-read on recreate, not `restart`).
 
 **FE session storage: `lib/session.ts`.** localStorage-backed (works on
 iOS Capacitor WebView and survives app updates; Keychain via
