@@ -6,10 +6,17 @@
  * Layout: one row per day, day label on the left, tappable time bubbles on the right.
  * Each bubble cycles through: neutral → liked (green) → disliked (red) → neutral.
  *
+ * Dragging across multiple bubbles selects a contiguous (chronological) range of
+ * them; a floating toolbar then offers Like / Dislike / Neutral, which apply the
+ * chosen preference to every selected slot and dismiss the selection. The toolbar
+ * is portaled out and fixed to the viewport so it never shifts the page layout.
+ *
  * An orange badge (top-right) shows how many availability voters are excluded by that slot.
  */
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
+import ModalPortal from "@/components/ModalPortal";
 import {
   expandHourRowsToQuarters,
   formatStackedDayLabel,
@@ -23,6 +30,9 @@ export type SlotState = "neutral" | "liked" | "disliked";
 
 const SLOT_CELL_SIZE =
   "min-w-12 h-8 px-2 flex items-center justify-center text-[0.9rem] font-mono font-medium leading-none whitespace-nowrap";
+
+// Pointer travel (px) before a press is treated as a range-drag instead of a tap.
+const DRAG_THRESHOLD = 8;
 
 interface TimeSlotBubblesProps {
   /** Slot keys in display order, already filtered and sorted. */
@@ -48,7 +58,43 @@ export default function TimeSlotBubbles({
   const likedSet = useMemo(() => new Set(likedSlots), [likedSlots]);
   const dislikedSet = useMemo(() => new Set(dislikedSlots), [dislikedSlots]);
 
-  // Per-day groups with each day's hours pre-expanded to 4 quarter-hour cells.
+  // Chronological index of every selectable slot, for range computation.
+  const optionIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    options.forEach((slot, i) => m.set(slot, i));
+    return m;
+  }, [options]);
+
+  // Slots currently lassoed by a drag. Cleared after applying or cancelling.
+  const [selection, setSelection] = useState<Set<string>>(() => new Set());
+  // Intersect with the live options so a stale selection (slots that vanished
+  // when tentative availability shifted) silently drops out instead of lingering.
+  const effectiveSelection = useMemo(
+    () => options.filter((slot) => selection.has(slot)),
+    [options, selection],
+  );
+
+  const clearSelection = useCallback(() => setSelection(new Set()), []);
+
+  // Drag bookkeeping for the in-flight gesture + a teardown for window listeners.
+  const gestureRef = useRef<{
+    pointerId: number;
+    anchor: string;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    current: string;
+  } | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  // Defensive teardown if the component unmounts mid-drag (phase change, etc.).
+  useEffect(() => () => cleanupRef.current?.(), []);
+
+  // Drop any selection if the ballot becomes read-only.
+  useEffect(() => {
+    if (disabled) clearSelection();
+  }, [disabled, clearSelection]);
+
   const days = useMemo(
     () =>
       groupSlotsByDay(options).map(([dateStr, slots]) => ({
@@ -72,12 +118,107 @@ export default function TimeSlotBubbles({
     onToggle(slot, next);
   }
 
+  const rangeBetween = useCallback(
+    (a: string, b: string): string[] => {
+      const ia = optionIndex.get(a);
+      const ib = optionIndex.get(b);
+      if (ia == null || ib == null) return ia != null ? [a] : [];
+      const lo = Math.min(ia, ib);
+      const hi = Math.max(ia, ib);
+      return options.slice(lo, hi + 1);
+    },
+    [optionIndex, options],
+  );
+
+  // Pointer-down on a bubble: maybe a tap, maybe the start of a range-drag.
+  // The decision is deferred to window-level move/up handlers so we can track
+  // the finger across other bubbles (touch implicitly captures to the target,
+  // but the events still bubble to window).
+  const handleBubblePointerDown = (slot: string, e: React.PointerEvent) => {
+    if (disabled || e.button !== 0) return;
+
+    // Starting a fresh gesture dismisses any toolbar from a previous selection.
+    setSelection((prev) => (prev.size === 0 ? prev : new Set()));
+
+    gestureRef.current = {
+      pointerId: e.pointerId,
+      anchor: slot,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      current: slot,
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      const g = gestureRef.current;
+      if (!g || ev.pointerId !== g.pointerId) return;
+      if (!g.moved && Math.hypot(ev.clientX - g.startX, ev.clientY - g.startY) < DRAG_THRESHOLD) {
+        return;
+      }
+      g.moved = true;
+      const target = document
+        .elementFromPoint(ev.clientX, ev.clientY)
+        ?.closest<HTMLElement>('[data-slot-available="true"]');
+      if (target?.dataset.slot) g.current = target.dataset.slot;
+      setSelection(new Set(rangeBetween(g.anchor, g.current)));
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      const g = gestureRef.current;
+      if (g && ev.pointerId === g.pointerId) {
+        if (!g.moved) handleTap(g.anchor); // no drag → plain tap cycles the bubble
+        gestureRef.current = null;
+        cleanup();
+      }
+    };
+
+    const onCancel = (ev: PointerEvent) => {
+      const g = gestureRef.current;
+      if (g && ev.pointerId === g.pointerId) {
+        gestureRef.current = null;
+        cleanup();
+      }
+    };
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      cleanupRef.current = null;
+    };
+
+    cleanupRef.current?.();
+    cleanupRef.current = cleanup;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  };
+
+  const applyToSelection = (state: SlotState) => {
+    effectiveSelection.forEach((slot) => onToggle(slot, state));
+    clearSelection();
+  };
+
+  // A drag that STARTS on an available bubble must select, not scroll the page
+  // or trigger the page's swipe-back transition — but only on the bubbles
+  // themselves, never the day labels, gaps, or greyed-out (unavailable) cells,
+  // which stay normally scrollable/swipeable. Touch events target the element
+  // the touch started on for the whole gesture, so `touch-action: none` +
+  // stopping propagation on the bubble fully covers any drag begun there:
+  // touch-action blocks the browser pan/scroll, and stopPropagation keeps the
+  // ancestor swipe-back gesture (PollDetail's React onTouch* handlers) from
+  // seeing it. Pointer events (which drive the range selection) are a separate
+  // event type and still reach our window listeners.
+  const stopTouch = (e: React.TouchEvent) => e.stopPropagation();
+
   const renderCell = (cell: SlotCell, prevSlot: string | null) => {
     const { time } = getBubbleLabel(cell.slot, prevSlot);
     if (!cell.available) {
       return (
         <div
           key={cell.slot}
+          data-slot={cell.slot}
+          data-slot-available="false"
           className={`${SLOT_CELL_SIZE} text-gray-300 dark:text-gray-600 select-none`}
           aria-hidden="true"
         >
@@ -86,6 +227,7 @@ export default function TimeSlotBubbles({
       );
     }
     const state = getState(cell.slot);
+    const isSelected = selection.has(cell.slot);
     const excluded =
       maxAvailability != null && availabilityCounts != null
         ? maxAvailability - (availabilityCounts[cell.slot] ?? 0)
@@ -94,11 +236,24 @@ export default function TimeSlotBubbles({
       <button
         key={cell.slot}
         type="button"
-        onClick={() => handleTap(cell.slot)}
+        data-slot={cell.slot}
+        data-slot-available="true"
+        draggable={false}
+        onPointerDown={(e) => handleBubblePointerDown(cell.slot, e)}
+        onTouchStart={stopTouch}
+        onTouchMove={stopTouch}
+        onTouchEnd={stopTouch}
+        onTouchCancel={stopTouch}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleTap(cell.slot);
+          }
+        }}
         disabled={disabled}
         title={cell.slot}
         className={[
-          "relative select-none rounded-full transition-colors",
+          "relative select-none touch-none rounded-full transition-colors",
           SLOT_CELL_SIZE,
           "border focus:outline-none focus:ring-2 focus:ring-offset-1",
           disabled ? "cursor-default opacity-60" : "cursor-pointer active:scale-95",
@@ -107,6 +262,9 @@ export default function TimeSlotBubbles({
             : state === "disliked"
             ? "bg-red-100/70 dark:bg-red-900/70 border-red-300 dark:border-red-600 text-red-800 dark:text-red-100 focus:ring-red-400"
             : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-400 focus:ring-blue-400",
+          isSelected
+            ? "ring-2 ring-blue-500"
+            : "",
         ].join(" ")}
       >
         <span className="block cap-height-text">{time}</span>
@@ -170,6 +328,51 @@ export default function TimeSlotBubbles({
           </span>
         )}
       </div>
+
+      {/* Range-selection toolbar — fixed to the viewport (via portal) so it never
+          reflows the page. Appears while a drag-selection is active. */}
+      {!disabled && effectiveSelection.length > 0 && (
+        <ModalPortal>
+          <div
+            className="fixed left-1/2 -translate-x-1/2 z-50 animate-slide-up"
+            style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
+          >
+            <div className="flex items-center gap-2 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 shadow-xl">
+              <button
+                type="button"
+                onClick={() => applyToSelection("liked")}
+                className="h-10 px-4 rounded-full text-sm font-semibold bg-green-500 hover:bg-green-600 text-white transition-transform active:scale-95"
+              >
+                Like
+              </button>
+              <button
+                type="button"
+                onClick={() => applyToSelection("disliked")}
+                className="h-10 px-4 rounded-full text-sm font-semibold bg-red-500 hover:bg-red-600 text-white transition-transform active:scale-95"
+              >
+                Dislike
+              </button>
+              <button
+                type="button"
+                onClick={() => applyToSelection("neutral")}
+                className="h-10 px-4 rounded-full text-sm font-semibold bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-transform active:scale-95"
+              >
+                Neutral
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                aria-label="Cancel selection"
+                className="h-10 w-10 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
     </div>
   );
 }
