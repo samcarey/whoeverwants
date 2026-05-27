@@ -13,26 +13,37 @@ const FOCUSABLE_SELECTOR = [
 ].join(', ');
 
 /**
- * Focus a form control. For text inputs/textareas, works around an iOS quirk:
- * when focus moves programmatically (not via a tap), the soft keyboard keeps
- * the previous field's auto-capitalization shift state instead of recomputing
- * it for the newly-focused (empty) field. Changing the `autocapitalize`
- * attribute while the field is focused forces WebKit to recompute, so the
- * first character of the next option/suggestion capitalizes like a tap does.
+ * Focus a form control. For empty text inputs/textareas, leaves a one-shot
+ * marker so the consumer can apply first-character auto-capitalization.
+ *
+ * iOS only re-evaluates the soft keyboard's auto-capitalization shift state
+ * when a field is focused by a tap — not when focus moves programmatically
+ * (Enter-to-advance). So the keyboard carries the prior field's lowercase
+ * state and the first character of the next option/suggestion arrives
+ * lowercase. We can't force iOS to recompute it, so consumers capitalize the
+ * first character themselves when this marker is present.
  */
 function focusFormControl(el: HTMLElement): void {
-  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
-    el.focus();
-    return;
+  if (
+    (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) &&
+    el.value === ''
+  ) {
+    el.dataset.autocapOnAdvance = '1';
   }
-  const desired = el.getAttribute('autocapitalize') ?? 'sentences';
-  if (desired === 'off' || desired === 'none') {
-    el.focus();
-    return;
-  }
-  el.setAttribute('autocapitalize', 'none');
   el.focus();
-  el.setAttribute('autocapitalize', desired);
+}
+
+/**
+ * One-shot check: returns true (and clears the marker) when `el` was just
+ * programmatically advanced into via {@link advanceFormFocus} and should
+ * auto-capitalize its first character. Returns false otherwise.
+ */
+export function consumeAdvanceAutocap(
+  el: HTMLInputElement | HTMLTextAreaElement | null | undefined,
+): boolean {
+  if (!el || el.dataset.autocapOnAdvance !== '1') return false;
+  delete el.dataset.autocapOnAdvance;
+  return true;
 }
 
 /**
