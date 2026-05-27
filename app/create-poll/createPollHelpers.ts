@@ -92,6 +92,15 @@ export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice
   return 'ranked_choice';
 }
 
+/** The emoji to persist for a draft's category: the trimmed custom emoji
+ *  when the category is custom (built-in categories have a fixed icon), else
+ *  null. Single source of truth for the create + optimistic-placeholder paths
+ *  so the render gate, the API payload, and the placeholder can't diverge. */
+export function effectiveCategoryIcon(d: QuestionDraft): string | null {
+  const icon = d.categoryIcon.trim();
+  return icon && !getBuiltInType(d.category) ? icon : null;
+}
+
 /** True when a draft is in "suggestion mode" (ranked_choice with no options yet). */
 export function draftIsSuggestionMode(d: QuestionDraft): boolean {
   if (draftDbQuestionType(d) !== 'ranked_choice') return false;
@@ -148,11 +157,9 @@ export function draftToQuestionParams(
   if (dbType === 'ranked_choice' && d.category !== 'custom') {
     params.category = d.category;
   }
-  // Custom-category emoji: only meaningful when the category isn't a
-  // built-in type (built-ins have a fixed icon). The form only surfaces the
-  // picker for custom categories, so this is null otherwise.
-  if (d.categoryIcon.trim() && !getBuiltInType(d.category)) {
-    params.category_icon = d.categoryIcon.trim();
+  const icon = effectiveCategoryIcon(d);
+  if (icon) {
+    params.category_icon = icon;
   }
   if (dbType === 'ranked_choice' && filledOptions.length > 0) {
     params.options = filledOptions;
@@ -289,7 +296,7 @@ export function synthesizePlaceholderPoll(
       created_at: now,
       updated_at: now,
       category: dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : null,
-      category_icon: d.categoryIcon.trim() && !getBuiltInType(d.category) ? d.categoryIcon.trim() : null,
+      category_icon: effectiveCategoryIcon(d),
       is_auto_title: d.isAutoTitle,
       poll_id: pollId,
       question_index: i,

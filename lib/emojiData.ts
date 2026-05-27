@@ -197,8 +197,10 @@ export function rankEmojiOptions(query: string): EmojiOption[] {
       for (const kw of opt.keywords) {
         if (kw === token) best = Math.max(best, 3);
         else if (kw.startsWith(token) || token.startsWith(kw)) best = Math.max(best, 2);
-        else if (token.length >= 3 && kw.includes(token)) best = Math.max(best, 1);
-        else if (kw.length >= 3 && token.includes(kw)) best = Math.max(best, 1);
+        // Substring matches use a length-4 floor so a short keyword like "pet"
+        // doesn't surface pet emojis for "competition" (and vice versa).
+        else if (token.length >= 4 && kw.includes(token)) best = Math.max(best, 1);
+        else if (kw.length >= 4 && token.includes(kw)) best = Math.max(best, 1);
       }
       score += best;
     }
@@ -219,24 +221,41 @@ const EMOJI_ONLY =
 // pass on their own.
 const HAS_PICTOGRAPHIC = /[\p{Extended_Pictographic}\u20E3\u{1F1E6}-\u{1F1FF}]/u;
 
+// Lazily-built grapheme segmenter (the granularity option is constant, so
+// there's no reason to reconstruct it per keystroke). null = unsupported.
+let _segmenter: Intl.Segmenter | null | undefined;
+function graphemeSegmenter(): Intl.Segmenter | null {
+  if (_segmenter === undefined) {
+    try {
+      _segmenter =
+        typeof Intl !== 'undefined' && (Intl as any).Segmenter
+          ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+          : null;
+    } catch {
+      _segmenter = null;
+    }
+  }
+  return _segmenter;
+}
+
 /** True when `s` is a single emoji (incl. ZWJ sequences, skin-tone modifiers,
  *  flags, keycaps). Rejects letters, words, and multi-emoji strings. */
 export function isEmoji(s: string): boolean {
   const t = s.trim();
   if (!t) return false;
   if (!EMOJI_ONLY.test(t) || !HAS_PICTOGRAPHIC.test(t)) return false;
-  try {
-    if (typeof Intl !== 'undefined' && (Intl as any).Segmenter) {
-      const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-      let count = 0;
-      for (const _ of seg.segment(t)) {
-        count++;
-        if (count > 1) return false;
-      }
-      return count === 1;
+  const seg = graphemeSegmenter();
+  if (seg) {
+    let count = 0;
+    for (const _ of seg.segment(t)) {
+      count++;
+      if (count > 1) return false;
     }
-  } catch {
-    // Segmenter unsupported — fall through to the code-point check above.
+    return count === 1;
   }
+  // Segmenter unsupported (very old engine) — best-effort: the regex checks
+  // above already guarantee emoji-only content; we can't cheaply count
+  // grapheme clusters, so a multi-emoji string would pass here. The server
+  // length cap (validate_category_icon) bounds the abuse.
   return true;
 }

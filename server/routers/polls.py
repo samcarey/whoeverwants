@@ -36,7 +36,7 @@ from services.push import (
     fan_out_phase_transition,
     fan_out_poll_closed,
 )
-from services.validation import validate_user_name
+from services.validation import validate_category_icon, validate_user_name
 from services.questions import (
     _edit_vote_on_question,
     _finalize_suggestion_options,
@@ -100,6 +100,7 @@ def _validate_request(req: CreatePollRequest) -> None:
 
     seen: dict[tuple[str, str | None], list[str | None]] = {}
     for sp in req.questions:
+        validate_category_icon(sp.category_icon)
         key = (sp.question_type.value, (sp.category or "").strip().lower() or None)
         seen.setdefault(key, []).append((sp.context or "").strip() or None)
     for contexts in seen.values():
@@ -357,7 +358,7 @@ def _insert_question(
             "day_time_windows": _json_or_none(sub.day_time_windows),
             "duration_window": _json_or_none(sub.duration_window),
             "category": sub.category or "custom",
-            "category_icon": (sub.category_icon or None),
+            "category_icon": validate_category_icon(sub.category_icon),
             "options_metadata": _json_or_none(sub.options_metadata),
             "reference_latitude": sub.reference_latitude,
             "reference_longitude": sub.reference_longitude,
