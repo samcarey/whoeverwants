@@ -4,7 +4,6 @@ import { useState, useEffect, Dispatch, SetStateAction } from "react";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
 import SuggestionsList from "@/components/SuggestionsList";
 import OptionLabel from "@/components/OptionLabel";
-import SliderSwitch from "@/components/SliderSwitch";
 
 interface SuggestionVotingInterfaceProps {
   question: any;
@@ -249,19 +248,37 @@ export default function SuggestionVotingInterface({
                     <div className="min-w-0 flex-1">
                       <OptionLabel text={suggestion} metadata={optionsMetadata?.[suggestion]} />
                     </div>
-                    <SliderSwitch
-                      checked={isSelected}
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={isSelected}
                       disabled={isSubmitting}
-                      onChange={(next) => {
-                        if (next) {
-                          addExistingSuggestion(suggestion);
-                        } else {
+                      onClick={() => {
+                        if (isSelected) {
                           removeSuggestion(suggestion);
+                        } else {
+                          addExistingSuggestion(suggestion);
                         }
                       }}
                       aria-label={isSelected ? `Remove ${suggestion}` : `Add ${suggestion}`}
-                      className="flex-shrink-0"
-                    />
+                      className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors disabled:opacity-50 ${
+                        isSelected
+                          ? 'bg-green-600 border-green-600 dark:bg-green-500 dark:border-green-500'
+                          : 'border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-900'
+                      }`}
+                    >
+                      {isSelected && (
+                        <svg
+                          className="w-4 h-4 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={3}
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
                   </div>
                 );
               })}
