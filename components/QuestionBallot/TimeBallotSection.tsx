@@ -5,7 +5,7 @@ import type { Question, QuestionResults, DayTimeWindow } from "@/lib/types";
 import AbstainButton from "@/components/AbstainButton";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
 import TimeSlotBubbles from "@/components/TimeSlotBubbles";
-import { formatTimeSlot } from "@/lib/timeUtils";
+import { formatTimeSlot, hasInvalidVoterWindows } from "@/lib/timeUtils";
 
 export interface TimeBallotSectionProps {
   question: Question;
@@ -169,6 +169,11 @@ export default function TimeBallotSection({
     );
   }
 
+  // Block submitting availability when any split slot escapes the creator's
+  // allowed windows or touches/overlaps a sibling (the orange-outlined pills).
+  const availabilityWindowsInvalid = isAvailabilitySubmission && !isAbstaining
+    && hasInvalidVoterWindows(voterDayTimeWindows, question.day_time_windows ?? null);
+
   return (
     <div>
       {isAvailabilitySubmission ? (
@@ -193,12 +198,17 @@ export default function TimeBallotSection({
               />
             </div>
 
-            <p className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center">
-              Select time slots to fine-tune
-            </p>
             <div className="mb-6">
               <AbstainButton isAbstaining={isAbstaining} onClick={handleAbstain} />
             </div>
+
+            {availabilityWindowsInvalid && (
+              <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-400 dark:border-amber-500 rounded-md">
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Some slots fall outside the allowed times or overlap another slot. Adjust the highlighted slots to continue.
+                </p>
+              </div>
+            )}
 
             {voteError && (
               <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 rounded-md">
@@ -211,7 +221,7 @@ export default function TimeBallotSection({
                 <button
                   type="button"
                   onClick={handleVoteClick}
-                  disabled={isSubmitting || (!isAbstaining && voterDayTimeWindows.filter(d => (d.windows ?? []).some(w => w.enabled !== false)).length === 0)}
+                  disabled={isSubmitting || availabilityWindowsInvalid || (!isAbstaining && voterDayTimeWindows.filter(d => (d.windows ?? []).some(w => w.enabled !== false)).length === 0)}
                   className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                 >
                   {isSubmitting ? 'Submitting...' : 'Submit Availability'}

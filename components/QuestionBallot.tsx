@@ -25,7 +25,7 @@ import { usePageTitle } from "@/lib/usePageTitle";
 import QuestionDetails from "@/components/QuestionDetails";
 import SearchRadiusBubble from "@/components/SearchRadiusBubble";
 import { loadQuestionDraft, saveQuestionDraft, clearQuestionDraft, QuestionDraft } from "@/lib/ballotDraft";
-import { isVoterAvailableForSlot } from "@/lib/timeUtils";
+import { isVoterAvailableForSlot, hasInvalidVoterWindows } from "@/lib/timeUtils";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { hasVotedOnQuestion, getStoredVoteId, setStoredVoteId, setVotedQuestionFlag } from "@/lib/votedQuestionsStorage";
 import { buildVoteData, buildPollVoteItem, type BallotInputs } from "./QuestionBallot/voteDataBuilders";
@@ -828,6 +828,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     canSubmitSuggestions,
     isAvailabilitySubmission,
     voterDayTimeWindows,
+    questionDayTimeWindows: question.day_time_windows ?? null,
     durationMinValue,
     durationMaxValue,
     durationMinEnabled,
@@ -887,6 +888,17 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
           return;
         }
       }
+    }
+
+    // Block before the confirmation modal when a split availability slot
+    // escapes the creator's allowed windows or touches/overlaps a sibling
+    // (the orange-outlined pills). buildVoteData re-checks this on submit, but
+    // catching it here keeps the wrapper-submit path from opening a confirm
+    // modal the user would then be bounced out of.
+    if (question.question_type === 'time' && isAvailabilitySubmission && !isAbstaining
+        && hasInvalidVoterWindows(voterDayTimeWindows, question.day_time_windows ?? null)) {
+      setVoteError("Some availability slots fall outside the allowed times or overlap another slot. Fix the highlighted slots to continue.");
+      return;
     }
 
     setVoteError(null);

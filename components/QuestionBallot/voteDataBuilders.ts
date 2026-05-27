@@ -9,6 +9,7 @@
  */
 import type { DayTimeWindow, DurationWindow, OptionsMetadata } from "@/lib/types";
 import type { PollVoteItem, QuestionType } from "@/lib/api";
+import { hasInvalidVoterWindows } from "@/lib/timeUtils";
 
 export interface BallotInputs {
   questionId: string;
@@ -28,6 +29,9 @@ export interface BallotInputs {
   // availability data via COALESCE on the server.
   isAvailabilitySubmission: boolean;
   voterDayTimeWindows: DayTimeWindow[];
+  // The creator's allowed windows per day — voter split slots must stay inside
+  // one of them (and not touch/overlap a sibling), else the submit is blocked.
+  questionDayTimeWindows: DayTimeWindow[] | null;
   durationMinValue: number | null;
   durationMaxValue: number | null;
   durationMinEnabled: boolean;
@@ -139,6 +143,16 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
 
   if (state.questionType === 'time') {
     if (state.isAvailabilitySubmission) {
+      // Block submission when any enabled slot escapes the creator's allowed
+      // windows or touches/overlaps a sibling (the orange-outlined pills). Same
+      // predicate the per-pill flags use, so the highlight and the block agree.
+      if (!effectiveIsAbstaining
+          && hasInvalidVoterWindows(state.voterDayTimeWindows, state.questionDayTimeWindows)) {
+        return {
+          ok: false,
+          error: "Some availability slots fall outside the allowed times or overlap another slot. Fix the highlighted slots to continue.",
+        };
+      }
       // Strip windows the voter unchecked in the form (`enabled === false` —
       // the toggle's UI state, not server-side data) and drop days that wind
       // up with zero enabled windows. The availability algorithms (FE

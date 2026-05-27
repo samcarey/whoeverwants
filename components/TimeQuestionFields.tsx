@@ -111,19 +111,24 @@ export default function TimeQuestionFields({
             Time Windows
           </label>
 
-          {dayTimeWindows.map((dayTimeWindow) => (
-            <DayTimeWindowsInput
-              key={dayTimeWindow.day}
-              day={dayTimeWindow.day}
-              windows={dayTimeWindow.windows}
-              onChange={(windows) => handleDayWindowsChange(dayTimeWindow.day, windows)}
-              onDelete={() => handleDeleteDay(dayTimeWindow.day)}
-              disabled={disabled}
-              questionWindows={questionDayTimeWindows?.find(p => p.day === dayTimeWindow.day)?.windows}
-              minDurationMinutes={minDurationMinutes}
-              allDays={dayTimeWindows}
-            />
-          ))}
+          {dayTimeWindows.length > 0 && (
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {dayTimeWindows.map((dayTimeWindow) => (
+                <DayTimeWindowsInput
+                  key={dayTimeWindow.day}
+                  day={dayTimeWindow.day}
+                  windows={dayTimeWindow.windows}
+                  onChange={(windows) => handleDayWindowsChange(dayTimeWindow.day, windows)}
+                  onDelete={() => handleDeleteDay(dayTimeWindow.day)}
+                  disabled={disabled}
+                  questionWindows={questionDayTimeWindows?.find(p => p.day === dayTimeWindow.day)?.windows}
+                  minDurationMinutes={minDurationMinutes}
+                  allDays={dayTimeWindows}
+                  borderless
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
