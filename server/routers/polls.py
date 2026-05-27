@@ -780,6 +780,7 @@ def create_poll(
     )
 
     now = datetime.now(timezone.utc)
+    creator_browser_id = _browser_id(request)
 
     with get_db() as conn:
         # Every poll gets a creator_user_id now (migration 123 retired the
@@ -800,6 +801,48 @@ def create_poll(
             _insert_question(conn, poll_row, req, sub, index, question_title, now)
             for index, sub in enumerate(req.questions)
         ]
+        # "Collect Suggestions before Vote" with the creator's own initial
+        # picks: submit them as the creator's suggestion-phase vote so the poll
+        # opens collecting suggestions but already seeded with those options
+        # (identical to the creator submitting suggestions right after create).
+        # Gated on an ACTIVE (future) prephase deadline: with no prephase, or
+        # one capped into the past by a very short voting window, the question
+        # has no live suggestion phase and `_submit_vote_to_question` would
+        # raise 400 ("Suggestions cutoff has passed") — which would roll back
+        # the whole create. Skipping keeps the create atomic AND resilient.
+        # The returned vote ids ride back on the response so the creating
+        # browser can recognize (and later edit) its own vote.
+        initial_suggestion_vote_ids: dict[str, str] = {}
+        prephase_deadline = poll_row.get("prephase_deadline")
+        if prephase_deadline and prephase_deadline > now:
+            for sub, qrow in zip(req.questions, question_rows):
+                if sub.question_type == QuestionType.ranked_choice and sub.initial_suggestions:
+                    vote_row = _submit_vote_to_question(
+                        conn,
+                        str(qrow["id"]),
+                        SubmitVoteRequest(
+                            vote_type="ranked_choice",
+                            suggestions=sub.initial_suggestions,
+                            is_ranking_abstain=True,
+                            voter_name=req.creator_name,
+                            options_metadata=sub.options_metadata,
+                        ),
+                        now,
+                        browser_id=creator_browser_id,
+                    )
+                    initial_suggestion_vote_ids[str(qrow["id"])] = str(vote_row["id"])
+        # A brand-new poll normally has no votes (so `_row_to_poll`'s empty
+        # roster defaults apply). The seeded-suggestion path DOES create the
+        # creator's vote, so compute the real roster here — otherwise the
+        # create response reports "Viewed (0) / No voters yet" until the first
+        # refresh.
+        voter_names: list[str] = []
+        anonymous_count = 0
+        viewed_ignored = 0
+        if initial_suggestion_vote_ids:
+            voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(
+                conn, str(poll_row["id"])
+            )
         # Notification strings for the "New poll in <Group>" push, computed
         # while the conn is open. The group phrase's participant-names fallback
         # only queries when the group has no title override; the body is the
@@ -813,7 +856,6 @@ def create_poll(
             new_poll_group_phrase = None
             new_poll_body = None
 
-    creator_browser_id = _browser_id(request)
     group_id = str(poll_row["group_id"]) if poll_row.get("group_id") else None
 
     # Phase C.2: creator auto-joins the group. Runs after the create
@@ -865,9 +907,21 @@ def create_poll(
             },
         )
 
-    # Newly-created poll has no votes yet — skip the voter aggregation.
-    # The caller is the creator, so viewer_is_creator is true.
-    return _row_to_poll(poll_row, question_rows, viewer_user_id=creator_user_id)
+    # The caller is the creator, so viewer_is_creator is true. Voter data is
+    # empty for a plain create, or the creator's seeded-suggestion roster when
+    # that path ran (computed inside the transaction above). The seeded vote
+    # ids ride back so the creating browser owns the vote.
+    poll = _row_to_poll(
+        poll_row,
+        question_rows,
+        voter_names,
+        anonymous_count,
+        viewed_ignored,
+        viewer_user_id=creator_user_id,
+    )
+    if initial_suggestion_vote_ids:
+        poll.initial_suggestion_vote_ids = initial_suggestion_vote_ids
+    return poll
 
 
 @router.get("/by-id/{poll_id}", response_model=PollResponse)

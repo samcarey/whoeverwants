@@ -15,7 +15,7 @@ import ModalPortal from "@/components/ModalPortal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import AccountGateModal from "@/components/AccountGateModal";
 import { useAppPrefetch } from "@/lib/prefetch";
-import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } from "@/lib/userProfile";
+import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses, getUserCollectSuggestions, saveUserCollectSuggestions } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import CategoryEmojiField from "@/components/CategoryEmojiField";
@@ -291,6 +291,11 @@ export function CreateQuestionContent() {
   const [searchRadius, setSearchRadius] = useState(25);
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
+  // "Collect Suggestions before Vote" — per-question (only shown for
+  // ranked_choice). ON makes the poll collect suggestions first (typed
+  // options become the creator's initial suggestions); OFF is a fixed-options
+  // ranked_choice. Default ON; the last submitted value is remembered per user.
+  const [collectSuggestions, setCollectSuggestions] = useState(true);
 
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -300,8 +305,10 @@ export function CreateQuestionContent() {
   // `openModalFor` so the form lands with the right category.
   const [pendingBubbleCategory, setPendingBubbleCategory] = useState<string | null>(null);
 
-  const hasNoOptions = options.filter(o => o.trim()).length === 0;
-  const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
+  // A ranked_choice question is a "suggestion poll" when the creator left the
+  // "Collect Suggestions before Vote" toggle on — regardless of whether they
+  // typed any initial options. Drives the poll-level prephase fields.
+  const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && collectSuggestions;
 
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
@@ -354,7 +361,9 @@ export function CreateQuestionContent() {
         return appendFor("Time?");
       }
       const shorten = isLocationLikeCategory(category) ? shortenLocation : shortenOption;
-      const filled = options.filter(o => o.trim()).map(shorten);
+      // Suggestion polls are titled by category, not by the typed options
+      // (those are just the creator's initial suggestions), so ignore them.
+      const filled = collectSuggestions ? [] : options.filter(o => o.trim()).map(shorten);
       if (filled.length === 0) {
         // Suggestion mode (no options) — use category name as title
         const prefix = category === 'location' ? 'Place'
@@ -369,7 +378,7 @@ export function CreateQuestionContent() {
 
     // time
     return appendFor("Time?");
-  }, [questionType, category, options, forField]);
+  }, [questionType, category, options, forField, collectSuggestions]);
 
   // Auto-update title when form fields change (if user hasn't manually edited)
   useEffect(() => {
@@ -498,11 +507,12 @@ export function CreateQuestionContent() {
         minResponses,
         showPreliminaryResults,
         allowPreRanking,
+        collectSuggestions,
         drafts,
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, allowPreRanking, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, allowPreRanking, collectSuggestions, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -550,6 +560,7 @@ export function CreateQuestionContent() {
           if (formState.minResponses !== undefined) setMinResponses(formState.minResponses);
           if (formState.showPreliminaryResults !== undefined) setShowPreliminaryResults(formState.showPreliminaryResults);
           if (formState.allowPreRanking !== undefined) setAllowPreRanking(formState.allowPreRanking);
+          if (formState.collectSuggestions !== undefined) setCollectSuggestions(formState.collectSuggestions);
           if (Array.isArray(formState.drafts)) setDrafts(formState.drafts);
 
           return formState;
@@ -719,7 +730,7 @@ export function CreateQuestionContent() {
       return null;
     }
     if (dbQuestionType === 'ranked_choice') {
-      return validateRankedChoiceOptions(options, category);
+      return validateRankedChoiceOptions(options, category, collectSuggestions);
     }
     if (dbQuestionType === 'time') {
       if (dayTimeWindows.length === 0) return "Please select at least one day.";
@@ -764,7 +775,8 @@ export function CreateQuestionContent() {
     durationMaxEnabled,
     dayTimeWindows: [...dayTimeWindows],
     minimumParticipation,
-  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minimumParticipation]);
+    collectSuggestions,
+  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minimumParticipation, collectSuggestions]);
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
@@ -786,6 +798,8 @@ export function CreateQuestionContent() {
     setDurationMaxEnabled(d.durationMaxEnabled);
     setDayTimeWindows([...d.dayTimeWindows]);
     setMinimumParticipation(d.minimumParticipation);
+    // Default ON for drafts persisted before this field existed.
+    setCollectSuggestions(d.collectSuggestions ?? true);
   }, []);
 
   // Backdrop + Escape preserve form state; only the explicit X-confirm
@@ -819,7 +833,11 @@ export function CreateQuestionContent() {
     // collapse to "Cat1, Cat2 for SharedContext" without the user retyping.
     // Still editable — they can clear or change it freely.
     const inheritedForField = sharedDraftContext(drafts) ?? '';
-    applyDraftToState(emptyDraft({ category: cat, forField: inheritedForField }));
+    applyDraftToState(emptyDraft({
+      category: cat,
+      forField: inheritedForField,
+      collectSuggestions: getUserCollectSuggestions() ?? true,
+    }));
     setCreatorName(getUserName() ?? "");
     setError(null);
     // For yes/no the title IS the question prompt, so focus it once the input
@@ -1033,6 +1051,10 @@ export function CreateQuestionContent() {
     if (savedMinResponses !== null) {
       setMinResponses(savedMinResponses);
     }
+    const savedCollectSuggestions = getUserCollectSuggestions();
+    if (savedCollectSuggestions !== null) {
+      setCollectSuggestions(savedCollectSuggestions);
+    }
 
     if (!followUpToParam && !duplicateOfParam && !voteFromSuggestionParam) {
       const savedFormState = loadFormState();
@@ -1078,6 +1100,12 @@ export function CreateQuestionContent() {
           if (duplicateData.question_type === 'ranked_choice') {
             setQuestionType('question');
             setOptions(duplicateData.options || ['']);
+            // Preserve the original's nature: a poll with concrete options
+            // duplicates as a fixed-options ballot, not a suggestion round.
+            // (Pre-toggle, "suggestion mode" was simply "zero options".)
+            const dupHasOptions = Array.isArray(duplicateData.options)
+              && duplicateData.options.some((o: string) => o && o.trim() !== '');
+            setCollectSuggestions(!dupHasOptions);
           } else if (duplicateData.question_type === 'time') {
             setQuestionType('time');
             setOptions(['']);
@@ -1158,6 +1186,10 @@ export function CreateQuestionContent() {
           }
           setQuestionType('question'); // Set to preference question
           setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
+          // This flow turns a finalized suggestion round into a fixed ranking
+          // ballot of the nominated options — never re-open suggestion mode,
+          // regardless of the user's remembered toggle preference.
+          setCollectSuggestions(false);
 
           // Auto-open: prefill is invisible until the user opens the modal.
           setIsModalOpen(true);
@@ -1529,6 +1561,10 @@ export function CreateQuestionContent() {
       // so there's no per-question secret to persist locally.
 
       saveUserName(creatorName);
+      // Remember the suggestion toggle for the creator's next poll. The toggle
+      // only renders for ranked_choice, so this no-ops the value for yes_no /
+      // time polls (collectSuggestions keeps whatever it last was).
+      saveUserCollectSuggestions(collectSuggestions);
       clearFormState();
       setIsSubmitted(false);
       isSubmittingRef.current = false;
@@ -1759,7 +1795,7 @@ export function CreateQuestionContent() {
   const optionsCard = showOptionsCard ? (
     <div>
       <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
-        Options <span className="font-normal text-xs">(leave blank to ask for suggestions)</span>
+        {collectSuggestions ? 'Initial Suggestions' : 'Options'}
       </label>
       <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
         <OptionsInput
@@ -1979,6 +2015,22 @@ export function CreateQuestionContent() {
                             maxLength={100}
                             placeholder={FOR_FIELD_PLACEHOLDERS[category] || ""}
                             className="flex-1 min-w-0 text-base bg-transparent text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
+                          />
+                        </div>
+                      )}
+                      {category !== 'yes_no' && category !== 'time' && (
+                        <div
+                          className={`flex items-center justify-between gap-3 h-12 ${isLoading ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                          onClick={() => { if (!isLoading) setCollectSuggestions(!collectSuggestions); }}
+                        >
+                          <span className="text-base font-normal">
+                            Collect Suggestions before Vote
+                          </span>
+                          <SliderSwitch
+                            checked={collectSuggestions}
+                            onChange={setCollectSuggestions}
+                            disabled={isLoading}
+                            aria-label="Collect suggestions before vote"
                           />
                         </div>
                       )}

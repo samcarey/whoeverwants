@@ -41,6 +41,11 @@ export interface QuestionDraft {
   durationMaxEnabled: boolean;
   dayTimeWindows: DayTimeWindow[];
   minimumParticipation: number;
+  /** "Collect Suggestions before Vote" — only meaningful for ranked_choice
+   *  questions. ON → suggestion poll (any typed options become the creator's
+   *  initial suggestions). OFF → fixed-options ranked_choice (options
+   *  required). Seeded from the user's remembered preference on open. */
+  collectSuggestions: boolean;
 }
 
 /** Default empty draft, optionally preselected by the bubble that opened
@@ -52,7 +57,7 @@ export interface QuestionDraft {
  *  Yes/No drafts force `isAutoTitle: false` since the title IS the prompt.
  */
 export function emptyDraft(
-  opts: { mode?: 'question' | 'time'; category?: string; forField?: string } = {},
+  opts: { mode?: 'question' | 'time'; category?: string; forField?: string; collectSuggestions?: boolean } = {},
 ): QuestionDraft {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -79,6 +84,7 @@ export function emptyDraft(
       ? [{ day: todayStr, windows: [{ ...DEFAULT_TIME_WINDOW }] }]
       : [],
     minimumParticipation: 95,
+    collectSuggestions: opts.collectSuggestions ?? true,
   };
 }
 
@@ -101,10 +107,12 @@ export function effectiveCategoryIcon(d: QuestionDraft): string | null {
   return icon && !getBuiltInType(d.category) ? icon : null;
 }
 
-/** True when a draft is in "suggestion mode" (ranked_choice with no options yet). */
+/** True when a draft is a "suggestion poll" — a ranked_choice question with
+ *  "Collect Suggestions before Vote" on. Any typed options become the
+ *  creator's initial suggestions rather than fixed options. */
 export function draftIsSuggestionMode(d: QuestionDraft): boolean {
   if (draftDbQuestionType(d) !== 'ranked_choice') return false;
-  return d.options.filter(o => o.trim()).length === 0;
+  return d.collectSuggestions;
 }
 
 /** True when at least one draft needs the poll-level suggestion/availability cutoff. */
@@ -144,6 +152,7 @@ export function draftToQuestionParams(
 ): CreateQuestionParams {
   const dbType = draftDbQuestionType(d);
   const filledOptions = d.options.filter(o => o.trim() !== '');
+  const isSuggestion = draftIsSuggestionMode(d);
   const params: CreateQuestionParams = {
     question_type: dbType,
     is_auto_title: d.isAutoTitle,
@@ -161,7 +170,11 @@ export function draftToQuestionParams(
   if (icon) {
     params.category_icon = icon;
   }
-  if (dbType === 'ranked_choice' && filledOptions.length > 0) {
+  // Fixed-options ranked_choice (toggle off): the typed options ARE the
+  // ballot. Suggestion poll (toggle on): leave options unset so the poll
+  // collects from scratch; typed options ride along as `initial_suggestions`
+  // and the server submits them as the creator's own suggestion-phase vote.
+  if (dbType === 'ranked_choice' && !isSuggestion && filledOptions.length > 0) {
     params.options = filledOptions;
   }
   if (Object.keys(d.optionsMetadata).length > 0) {
@@ -172,8 +185,11 @@ export function draftToQuestionParams(
     params.reference_longitude = d.refLongitude;
     params.reference_location_label = d.refLocationLabel;
   }
-  if (dbType === 'ranked_choice' && filledOptions.length === 0) {
+  if (isSuggestion) {
     params.suggestion_deadline_minutes = prephaseMinutes != null ? Math.round(prephaseMinutes) : 120;
+    if (filledOptions.length > 0) {
+      params.initial_suggestions = filledOptions;
+    }
   }
   if (dbType === 'time') {
     if (d.dayTimeWindows.length > 0) {
@@ -210,10 +226,12 @@ export function deriveDraftTitle(d: QuestionDraft): string {
   }
 
   // ranked_choice: build from options if any, else fall back to the
-  // category label as a placeholder.
+  // category label as a placeholder. Suggestion polls (collectSuggestions)
+  // are titled by category regardless of typed options — those are just the
+  // creator's initial suggestions, not the final ballot.
   const builtIn = getBuiltInType(d.category);
   const shorten = isLocationLikeCategory(d.category) ? shortenLocation : shortenOption;
-  const filled = d.options.filter(o => o.trim()).map(shorten);
+  const filled = d.collectSuggestions ? [] : d.options.filter(o => o.trim()).map(shorten);
 
   if (filled.length === 0) {
     const prefix = d.category === 'location' ? 'Place'
@@ -288,11 +306,15 @@ export function synthesizePlaceholderPoll(
   const questions: Question[] = drafts.map((d, i) => {
     const dbType = draftDbQuestionType(d);
     const filledOptions = d.options.filter(o => o.trim() !== '');
+    // Suggestion polls open with no fixed options (the typed ones become the
+    // creator's initial suggestions), so the placeholder must not surface them
+    // as a finalized ballot — that would morph on POLL_HYDRATED.
+    const showOptions = !draftIsSuggestionMode(d) && filledOptions.length > 0;
     return {
       id: `${pollId}-q${i}`,
       title: titleForAllQuestions,
       question_type: dbType,
-      options: filledOptions.length > 0 ? filledOptions : undefined,
+      options: showOptions ? filledOptions : undefined,
       created_at: now,
       updated_at: now,
       category: dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : null,
@@ -583,11 +605,17 @@ export function shortenLocation(text: string) { return shortenOption(text.split(
 
 /**
  * Shared between full-form validation and the per-question staging validator.
- * Returns null when ranked_choice options are valid (or empty — suggestion mode).
+ * Returns null when ranked_choice options are valid.
+ *
+ * `collectSuggestions` (the "Collect Suggestions before Vote" toggle):
+ *   - true (suggestion poll): any count of options is fine — 0 collects from
+ *     scratch, 1+ seed the creator's initial suggestions.
+ *   - false (fixed-options poll): at least two distinct options are required.
  */
 export function validateRankedChoiceOptions(
   options: string[],
   category: string,
+  collectSuggestions: boolean = true,
 ): string | null {
   const filledOptions = options.filter(opt => opt.trim() !== '');
   const maxOptionLength = category === 'custom' ? 35 : 200;
@@ -605,12 +633,12 @@ export function validateRankedChoiceOptions(
       }
     }
   }
-  if (filledOptions.length === 1) {
-    return "Add at least one more option, or leave all options blank to ask for suggestions.";
-  }
   const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
   if (uniqueOptions.size !== filledOptions.length) {
     return "All question options must be unique (no duplicates).";
+  }
+  if (!collectSuggestions && filledOptions.length < 2) {
+    return "Add at least two options, or turn on “Collect Suggestions before Vote” to ask for suggestions.";
   }
   return null;
 }
