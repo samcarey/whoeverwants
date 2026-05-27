@@ -178,9 +178,12 @@ export default function TimeBallotSection({
     <div>
       {isAvailabilitySubmission ? (
           <>
-            {/* Availability phase: show time window picker */}
+            {/* Availability phase: show time window picker. No prominent
+                heading — the page title ("Time for X") + the poll-level
+                "Availability" status label already identify the question and
+                phase, so a card heading would read as a redundant second
+                title (other question types show no in-card title either). */}
             <div className="mb-4">
-              <h3 className="text-lg font-semibold mb-3 text-center">Your Availability</h3>
               <TimeQuestionFields
                 disabled={isSubmitting}
                 durationMinValue={durationMinValue}
@@ -232,10 +235,10 @@ export default function TimeBallotSection({
         ) : (
           <>
             {/* Preferences phase (or pre-ranking tentative-slots sub-phase): tap
-                bubbles to like/dislike time slots. Header copy differs so voters
-                know the candidate list may still shift before the cutoff. */}
+                bubbles to like/dislike time slots. No prominent heading (the
+                page title + "Voting" status label cover it); the tentative-slot
+                hint below stays since it explains the shifting candidate list. */}
             <div className="mb-4">
-              <h3 className="text-lg font-semibold mb-3 text-center">Mark Your Preferences</h3>
               {inAvailabilityPhase && (
                 <p className="mb-3 text-xs text-amber-600 dark:text-amber-400 text-center">
                   Tentative slots — list may shift as more voters submit availability.
