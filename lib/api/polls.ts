@@ -22,6 +22,10 @@ export interface CreateQuestionParams {
   options_metadata?: OptionsMetadata | null;
   context?: string | null;
   suggestion_deadline_minutes?: number | null;
+  /** Creator's own initial suggestions, submitted as a suggestion-phase vote
+   *  at create time when "Collect Suggestions before Vote" is on and options
+   *  were typed. See server CreateQuestionRequest.initial_suggestions. */
+  initial_suggestions?: string[] | null;
   min_availability_percent?: number;
   day_time_windows?: any[] | null;
   duration_window?: any | null;

@@ -262,6 +262,13 @@ class CreateQuestionRequest(BaseModel):
     options_metadata: dict | None = None
     context: str | None = None
     suggestion_deadline_minutes: int | None = None
+    # When the creator chose "Collect Suggestions before Vote" AND typed some
+    # initial options, those options are submitted as the creator's own
+    # suggestion-phase vote right after the poll is created — so the poll opens
+    # in suggestion-collection mode (options=None, suggestion_deadline set) but
+    # already seeded with the creator's picks. Only meaningful for a
+    # ranked_choice question whose poll has a prephase deadline.
+    initial_suggestions: list[str] | None = None
     min_availability_percent: int = 95
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None

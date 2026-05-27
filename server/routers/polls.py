@@ -780,6 +780,7 @@ def create_poll(
     )
 
     now = datetime.now(timezone.utc)
+    creator_browser_id = _browser_id(request)
 
     with get_db() as conn:
         # Every poll gets a creator_user_id now (migration 123 retired the
@@ -800,6 +801,30 @@ def create_poll(
             _insert_question(conn, poll_row, req, sub, index, question_title, now)
             for index, sub in enumerate(req.questions)
         ]
+        # "Collect Suggestions before Vote" with the creator's own initial
+        # picks: submit them as the creator's suggestion-phase vote so the poll
+        # opens collecting suggestions but already seeded with those options
+        # (identical to the creator submitting suggestions right after create).
+        # Gated on the poll actually having a prephase deadline — otherwise the
+        # question has no suggestion phase and the vote would 400. Best-effort
+        # per question; submitted inside the same transaction so it's atomic
+        # with the create.
+        if poll_row.get("prephase_deadline"):
+            for sub, qrow in zip(req.questions, question_rows):
+                if sub.question_type == QuestionType.ranked_choice and sub.initial_suggestions:
+                    _submit_vote_to_question(
+                        conn,
+                        str(qrow["id"]),
+                        SubmitVoteRequest(
+                            vote_type="ranked_choice",
+                            suggestions=sub.initial_suggestions,
+                            is_ranking_abstain=True,
+                            voter_name=req.creator_name,
+                            options_metadata=sub.options_metadata,
+                        ),
+                        now,
+                        browser_id=creator_browser_id,
+                    )
         # Notification strings for the "New poll in <Group>" push, computed
         # while the conn is open. The group phrase's participant-names fallback
         # only queries when the group has no title override; the body is the
@@ -813,7 +838,6 @@ def create_poll(
             new_poll_group_phrase = None
             new_poll_body = None
 
-    creator_browser_id = _browser_id(request)
     group_id = str(poll_row["group_id"]) if poll_row.get("group_id") else None
 
     # Phase C.2: creator auto-joins the group. Runs after the create

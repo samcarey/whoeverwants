@@ -1,6 +1,7 @@
 const USER_NAME_KEY = 'whoeverwants_user_name';
 const USER_LOCATION_KEY = 'whoeverwants_user_location';
 const USER_MIN_RESPONSES_KEY = 'whoeverwants_min_responses';
+const USER_COLLECT_SUGGESTIONS_KEY = 'whoeverwants_collect_suggestions';
 
 export interface Coords {
   latitude: number;
@@ -81,6 +82,11 @@ export function clearUserMinResponses() {
   localStorage.removeItem(USER_MIN_RESPONSES_KEY);
 }
 
+export function clearUserCollectSuggestions() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(USER_COLLECT_SUGGESTIONS_KEY);
+}
+
 /**
  * Wipe every piece of locally-stored personal user data — display name,
  * reference location, and the min-responses default. Called on sign-out
@@ -94,6 +100,7 @@ export function clearStoredUserData() {
   clearUserName();
   clearUserLocation();
   clearUserMinResponses();
+  clearUserCollectSuggestions();
 }
 
 export function getUserMinResponses(): number | null {
@@ -102,6 +109,24 @@ export function getUserMinResponses(): number | null {
   if (!stored) return null;
   const num = parseInt(stored, 10);
   return isNaN(num) ? null : num;
+}
+
+/**
+ * Remembered "Collect Suggestions before Vote" toggle for the new-poll form.
+ * Defaults ON for a fresh user; the last value the creator submitted is
+ * persisted so it carries to their next poll. Returns null when never set so
+ * callers can apply their own default.
+ */
+export function saveUserCollectSuggestions(value: boolean) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(USER_COLLECT_SUGGESTIONS_KEY, value ? '1' : '0');
+}
+
+export function getUserCollectSuggestions(): boolean | null {
+  if (typeof window === 'undefined') return null;
+  const stored = localStorage.getItem(USER_COLLECT_SUGGESTIONS_KEY);
+  if (stored === null) return null;
+  return stored === '1';
 }
 
 /**
