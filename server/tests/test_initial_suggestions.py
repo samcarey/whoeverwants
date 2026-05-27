@@ -9,6 +9,7 @@ empty. See server/routers/polls.py: create_poll.
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from tests.conftest import create_poll, cutoff_poll
 
@@ -134,4 +135,21 @@ class TestInitialSuggestions:
         # the initial suggestions are simply not submitted.
         poll = _create_suggestion_poll(client, initial=["Tacos"], prephase=False)
         assert poll["prephase_deadline"] is None
+        assert _question_votes(client, poll["questions"][0]["id"]) == []
+
+    def test_initial_suggestions_skipped_when_prephase_capped_to_past(self, client):
+        # A very short voting window caps the prephase deadline below "now"
+        # (response_deadline - 1min). The seed vote would 400 ("Suggestions
+        # cutoff has passed") and roll back the create; the future-deadline gate
+        # skips it so the poll is still created, just without the seed.
+        response_deadline = (datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat()
+        poll = create_poll(
+            client,
+            browser_id=_bid(),
+            creator_name="Alice",
+            response_deadline=response_deadline,
+            prephase_deadline_minutes=120,
+            questions=[_suggestion_question(["Tacos"])],
+        )
+        assert poll.get("initial_suggestion_vote_ids") in (None, {})
         assert _question_votes(client, poll["questions"][0]["id"]) == []

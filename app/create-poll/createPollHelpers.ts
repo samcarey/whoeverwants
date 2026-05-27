@@ -152,7 +152,7 @@ export function draftToQuestionParams(
 ): CreateQuestionParams {
   const dbType = draftDbQuestionType(d);
   const filledOptions = d.options.filter(o => o.trim() !== '');
-  const isSuggestion = dbType === 'ranked_choice' && d.collectSuggestions;
+  const isSuggestion = draftIsSuggestionMode(d);
   const params: CreateQuestionParams = {
     question_type: dbType,
     is_auto_title: d.isAutoTitle,

@@ -805,13 +805,16 @@ def create_poll(
         # picks: submit them as the creator's suggestion-phase vote so the poll
         # opens collecting suggestions but already seeded with those options
         # (identical to the creator submitting suggestions right after create).
-        # Gated on the poll actually having a prephase deadline — otherwise the
-        # question has no suggestion phase and the vote would 400. Best-effort
-        # per question; submitted inside the same transaction so it's atomic
-        # with the create. The returned vote ids ride back on the response so
-        # the creating browser can recognize (and later edit) its own vote.
+        # Gated on an ACTIVE (future) prephase deadline: with no prephase, or
+        # one capped into the past by a very short voting window, the question
+        # has no live suggestion phase and `_submit_vote_to_question` would
+        # raise 400 ("Suggestions cutoff has passed") — which would roll back
+        # the whole create. Skipping keeps the create atomic AND resilient.
+        # The returned vote ids ride back on the response so the creating
+        # browser can recognize (and later edit) its own vote.
         initial_suggestion_vote_ids: dict[str, str] = {}
-        if poll_row.get("prephase_deadline"):
+        prephase_deadline = poll_row.get("prephase_deadline")
+        if prephase_deadline and prephase_deadline > now:
             for sub, qrow in zip(req.questions, question_rows):
                 if sub.question_type == QuestionType.ranked_choice and sub.initial_suggestions:
                     vote_row = _submit_vote_to_question(
@@ -828,16 +831,18 @@ def create_poll(
                         browser_id=creator_browser_id,
                     )
                     initial_suggestion_vote_ids[str(qrow["id"])] = str(vote_row["id"])
-        # A brand-new poll normally has no votes, so voter aggregation is
-        # skipped. But the seeded-suggestion path DOES create the creator's
-        # vote, so compute the roster here — otherwise the create response
-        # reports "Viewed (0) / No voters yet" until the first refresh.
+        # A brand-new poll normally has no votes (so `_row_to_poll`'s empty
+        # roster defaults apply). The seeded-suggestion path DOES create the
+        # creator's vote, so compute the real roster here — otherwise the
+        # create response reports "Viewed (0) / No voters yet" until the first
+        # refresh.
+        voter_names: list[str] = []
+        anonymous_count = 0
+        viewed_ignored = 0
         if initial_suggestion_vote_ids:
             voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(
                 conn, str(poll_row["id"])
             )
-        else:
-            voter_names, anonymous_count, viewed_ignored = [], 0, 0
         # Notification strings for the "New poll in <Group>" push, computed
         # while the conn is open. The group phrase's participant-names fallback
         # only queries when the group has no title override; the body is the

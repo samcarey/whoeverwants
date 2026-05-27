@@ -1100,6 +1100,12 @@ export function CreateQuestionContent() {
           if (duplicateData.question_type === 'ranked_choice') {
             setQuestionType('question');
             setOptions(duplicateData.options || ['']);
+            // Preserve the original's nature: a poll with concrete options
+            // duplicates as a fixed-options ballot, not a suggestion round.
+            // (Pre-toggle, "suggestion mode" was simply "zero options".)
+            const dupHasOptions = Array.isArray(duplicateData.options)
+              && duplicateData.options.some((o: string) => o && o.trim() !== '');
+            setCollectSuggestions(!dupHasOptions);
           } else if (duplicateData.question_type === 'time') {
             setQuestionType('time');
             setOptions(['']);
@@ -1180,6 +1186,10 @@ export function CreateQuestionContent() {
           }
           setQuestionType('question'); // Set to preference question
           setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
+          // This flow turns a finalized suggestion round into a fixed ranking
+          // ballot of the nominated options — never re-open suggestion mode,
+          // regardless of the user's remembered toggle preference.
+          setCollectSuggestions(false);
 
           // Auto-open: prefill is invisible until the user opens the modal.
           setIsModalOpen(true);
