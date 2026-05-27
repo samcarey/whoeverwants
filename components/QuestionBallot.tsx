@@ -268,42 +268,86 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const [durationMinEnabled, setDurationMinEnabled] = useState(question.duration_window?.minEnabled ?? false);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(question.duration_window?.maxEnabled ?? false);
 
-  // Restore ballot draft from localStorage on mount (time questions only)
+  // Draft-persistence bookkeeping for time questions:
+  // - userTouchedPreferencesRef: flipped only by genuine user edits to the
+  //   preferences (liked/disliked) or the abstain toggle. Once the voter has
+  //   submitted availability (hasVoted=true), we only persist a draft after a
+  //   real touch — otherwise the committed vote restored from the server would
+  //   be echoed back into a mirror draft.
+  // - restoredFromTimeDraftRef: set when a draft was restored on mount, so the
+  //   async server-vote restore below doesn't clobber the (newer) draft fields.
+  const userTouchedPreferencesRef = useRef(false);
+  const restoredFromTimeDraftRef = useRef(false);
+  const setLikedSlotsTouched = useCallback<typeof setLikedSlots>((value) => {
+    userTouchedPreferencesRef.current = true;
+    setLikedSlots(value);
+  }, []);
+  const setDislikedSlotsTouched = useCallback<typeof setDislikedSlots>((value) => {
+    userTouchedPreferencesRef.current = true;
+    setDislikedSlots(value);
+  }, []);
+
+  // Restore ballot draft from localStorage on mount (time questions only).
+  // Drafts are cleared on submit (see clearQuestionDraft calls below), so a
+  // present draft always represents UNSAVED in-progress edits that are newer
+  // than the committed vote — including preference marks made after
+  // availability was already submitted. We therefore restore regardless of
+  // whether the browser has voted, and flag the restore so the async
+  // server-vote restore further down doesn't clobber the (newer) draft fields.
   const draftRestoredRef = useRef(false);
   useEffect(() => {
     if (draftRestoredRef.current) return;
     draftRestoredRef.current = true;
     if (question.question_type !== 'time') return;
-    try {
-      const votedQuestions = JSON.parse(localStorage.getItem('votedQuestions') || '{}');
-      if (votedQuestions[question.id]) return;
-    } catch { /* ignore */ }
     const draft = loadQuestionDraft(question.poll_id ?? null, question.id);
     if (!draft) return;
+    restoredFromTimeDraftRef.current = true;
     if (draft.isAbstaining !== undefined) setIsAbstaining(draft.isAbstaining);
     if (draft.voterDayTimeWindows !== undefined) setVoterDayTimeWindows(draft.voterDayTimeWindows);
     if (draft.durationMinValue !== undefined) setDurationMinValue(draft.durationMinValue);
     if (draft.durationMaxValue !== undefined) setDurationMaxValue(draft.durationMaxValue);
     if (draft.durationMinEnabled !== undefined) setDurationMinEnabled(draft.durationMinEnabled);
     if (draft.durationMaxEnabled !== undefined) setDurationMaxEnabled(draft.durationMaxEnabled);
+    if (draft.likedSlots !== undefined) setLikedSlots(draft.likedSlots);
+    if (draft.dislikedSlots !== undefined) setDislikedSlots(draft.dislikedSlots);
+    // A draft on an already-voted time question can only come from editing
+    // preferences after availability was submitted. Drop into edit mode so the
+    // restored marks are shown immediately instead of the committed-vote
+    // summary (which would otherwise hide them behind the "Edit" button).
+    if (hasVotedOnQuestion(question.id)) setIsEditingVote(true);
   }, [question.id, question.poll_id, question.question_type]);
 
-  // Persist ballot draft to localStorage (debounced to avoid rapid writes during wheel/counter interactions)
+  // Persist ballot draft to localStorage (debounced to avoid rapid writes during
+  // wheel/counter interactions). Saves the full time snapshot — including the
+  // preferences (liked/disliked slots) — so in-progress marks survive a refresh
+  // or navigation. Before the voter submits anything we persist the availability
+  // draft as before; once they've voted (availability submitted) we only persist
+  // after a genuine preference touch, so the server-restored committed vote isn't
+  // echoed back into a mirror draft.
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftSaveMountRef = useRef(true);
   useEffect(() => {
-    if (question.question_type !== 'time' || hasVoted) return;
+    if (question.question_type !== 'time') return;
+    // Skip the first run (initial mount / restore) so we don't write a
+    // default-valued draft for a voter who never touches the ballot; genuine
+    // edits re-run the effect afterwards. Set before the gate below so a voted
+    // voter's FIRST preference tap still saves.
+    if (draftSaveMountRef.current) { draftSaveMountRef.current = false; return; }
+    if (hasVoted && !userTouchedPreferencesRef.current) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = setTimeout(() => {
       saveQuestionDraft(question.poll_id ?? null, question.id, {
         isAbstaining,
         voterDayTimeWindows,
         durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled,
+        likedSlots,
+        dislikedSlots,
       });
     }, 300);
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
   }, [question.id, question.poll_id, question.question_type, hasVoted, isAbstaining,
       voterDayTimeWindows, durationMinValue, durationMaxValue,
-      durationMinEnabled, durationMaxEnabled]);
+      durationMinEnabled, durationMaxEnabled, likedSlots, dislikedSlots]);
 
   const isQuestionExpired = useMemo(() => {
     // Use server-safe check
@@ -546,7 +590,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
             // is_abstain only restores for non-suggestion questions — in suggestion questions
             // it means "abstained from suggestions", not "abstained from ranking".
             const shouldRestoreAbstain = voteData.is_ranking_abstain || (voteData.is_abstain && !hasSuggestionPhase);
-            setIsAbstaining(shouldRestoreAbstain);
+            // For time questions, an in-progress draft (preference marks made
+            // after availability was submitted) is newer than the committed
+            // vote, so don't let the server restore overwrite it.
+            const timeDraftWins = question.question_type === 'time' && restoredFromTimeDraftRef.current;
+            if (!timeDraftWins) setIsAbstaining(shouldRestoreAbstain);
             if (voteData.is_abstain) {
               // Don't set choices for abstain votes
             } else if (question.question_type === 'yes_no' && voteData.yes_no_choice) {
@@ -561,7 +609,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                 setRankedChoiceTiers(voteData.ranked_choices.map((c: string) => [c]));
               }
               if (voteData.suggestions) setSuggestionChoices(voteData.suggestions);
-            } else if (question.question_type === 'time') {
+            } else if (question.question_type === 'time' && !timeDraftWins) {
               // Restore time question availability windows
               if (voteData.voter_day_time_windows && Array.isArray(voteData.voter_day_time_windows)) {
                 setVoterDayTimeWindows(voteData.voter_day_time_windows);
@@ -751,6 +799,10 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   };
 
   const handleAbstain = () => {
+    // Abstaining is a genuine preference decision — mark it so a time-question
+    // draft persists it even after availability was already submitted. (No-op
+    // for non-time types: the time-only save effect is the sole reader.)
+    userTouchedPreferencesRef.current = true;
     const wasAbstaining = isAbstaining;
     setIsAbstaining(!isAbstaining);
     
@@ -1023,7 +1075,12 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
       }
       // Clear ballot draft now that vote is saved to the database
       clearQuestionDraft(question.poll_id ?? null, question.id);
-      
+      // Reset draft-persistence flags: the committed vote is now the source of
+      // truth, so the server restore should win and we shouldn't re-save until
+      // the voter touches a preference again.
+      userTouchedPreferencesRef.current = false;
+      restoredFromTimeDraftRef.current = false;
+
       // Save the user's name if they provided one
       if (voterName.trim()) {
         saveUserName(voterName.trim());
@@ -1159,6 +1216,8 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
         setSeenQuestionOptions(capturedQuestionOptions);
       }
       clearQuestionDraft(question.poll_id ?? null, question.id);
+      userTouchedPreferencesRef.current = false;
+      restoredFromTimeDraftRef.current = false;
       setIsEditingVote(false);
       setIsEditingRanking(false);
       // Mirror submitVote's refetch gate.
@@ -1415,9 +1474,9 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
               setVoterDayTimeWindows={setVoterDayTimeWindows}
               preferenceSlotsForVoter={preferenceSlotsForVoter}
               likedSlots={likedSlots}
-              setLikedSlots={setLikedSlots}
+              setLikedSlots={setLikedSlotsTouched}
               dislikedSlots={dislikedSlots}
-              setDislikedSlots={setDislikedSlots}
+              setDislikedSlots={setDislikedSlotsTouched}
               voterName={voterName}
               setVoterName={setVoterName}
               wrapperHandlesSubmit={!!wrapperHandlesSubmit}

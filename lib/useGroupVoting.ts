@@ -12,6 +12,7 @@ import {
 import { buildPollVoteItem } from "@/components/QuestionBallot/voteDataBuilders";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { invalidateQuestion } from "@/lib/questionCache";
+import { clearQuestionDraft } from "@/lib/ballotDraft";
 import { haptic } from "@/lib/haptics";
 import {
   loadVotedQuestions,
@@ -215,6 +216,14 @@ export function useGroupVoting({
         for (const sp of subQuestions) next.delete(sp.id);
         return next;
       });
+
+      // Staged yes/no choices are persisted per-poll (PollDetailPage) so they
+      // survive a refresh before submitting; clear them now that they're saved.
+      for (const sp of subQuestions) {
+        if (sp.question_type === "yes_no" && sp.poll_id) {
+          clearQuestionDraft(sp.poll_id, sp.id);
+        }
+      }
 
       syncStateAfterPollVotes(returnedVotes, voter_name);
       setPendingPollSubmit(null);
