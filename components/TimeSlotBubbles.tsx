@@ -199,12 +199,16 @@ export default function TimeSlotBubbles({
     clearSelection();
   };
 
-  // The bubble grid is a drag-to-select canvas: a drag here must NOT scroll the
-  // page or trigger the page's swipe-back transition. `touch-action: none` on
-  // the grid blocks the browser's pan/scroll; stopping touch-event propagation
-  // keeps the ancestor swipe-back gesture (PollDetail's React onTouch* handlers)
-  // from seeing the drag. Pointer events (which drive the range selection) are a
-  // separate event type and still reach our window listeners.
+  // A drag that STARTS on an available bubble must select, not scroll the page
+  // or trigger the page's swipe-back transition — but only on the bubbles
+  // themselves, never the day labels, gaps, or greyed-out (unavailable) cells,
+  // which stay normally scrollable/swipeable. Touch events target the element
+  // the touch started on for the whole gesture, so `touch-action: none` +
+  // stopping propagation on the bubble fully covers any drag begun there:
+  // touch-action blocks the browser pan/scroll, and stopPropagation keeps the
+  // ancestor swipe-back gesture (PollDetail's React onTouch* handlers) from
+  // seeing it. Pointer events (which drive the range selection) are a separate
+  // event type and still reach our window listeners.
   const stopTouch = (e: React.TouchEvent) => e.stopPropagation();
 
   const renderCell = (cell: SlotCell, prevSlot: string | null) => {
@@ -236,6 +240,10 @@ export default function TimeSlotBubbles({
         data-slot-available="true"
         draggable={false}
         onPointerDown={(e) => handleBubblePointerDown(cell.slot, e)}
+        onTouchStart={stopTouch}
+        onTouchMove={stopTouch}
+        onTouchEnd={stopTouch}
+        onTouchCancel={stopTouch}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
@@ -270,13 +278,7 @@ export default function TimeSlotBubbles({
   };
 
   return (
-    <div
-      className="divide-y divide-gray-200 dark:divide-gray-700 touch-none"
-      onTouchStart={stopTouch}
-      onTouchMove={stopTouch}
-      onTouchEnd={stopTouch}
-      onTouchCancel={stopTouch}
-    >
+    <div className="divide-y divide-gray-200 dark:divide-gray-700">
       {days.map(({ dateStr, dayLabel: { weekday, monthDay }, hourRows }) => (
         <div key={dateStr} className="flex gap-2 items-start py-3 first:pt-0 last:pb-0">
           <div className="w-12 shrink-0 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 text-left leading-tight">
