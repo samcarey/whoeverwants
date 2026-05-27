@@ -89,8 +89,9 @@ def test_mint_returns_link_and_resolvable_token(client, browser_id):
     )
     assert me.status_code == 200, me.text
     assert me.json()["user_id"] == body["user_id"]
-    # Recovery-less: no identities.
-    assert me.json()["providers"] == []
+    # Recovery-less: only the device-bound 'browser' identity (migration 128),
+    # no durable sign-in method.
+    assert me.json()["providers"] == ["browser"]
 
 
 def test_mint_default_name(client, browser_id):

@@ -656,6 +656,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
   apple: "Apple",
   passkey: "Passkey",
+  browser: "This browser",
 };
 
 function formatProviders(providers: string[]): string {

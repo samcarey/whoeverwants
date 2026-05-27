@@ -107,16 +107,19 @@ def test_create_name_account_anonymous(client, browser_id):
     assert len(body["session_token"]) >= 16
     user = body["user"]
     assert user["name"] == "Alice Tester"
-    assert user["providers"] == []
+    # Migration 128: the account carries a device-bound 'browser' identity
+    # (satisfies the "every account has an identity" invariant), but no
+    # DURABLE method — recovery_reminder still nudges them to add one.
+    assert user["providers"] == ["browser"]
     assert user["recovery_reminder_dismissed"] is False
 
-    # The issued token resolves via /me to the same recovery-less account.
+    # The issued token resolves via /me to the same browser-tied account.
     me = client.get(
         "/api/auth/me", headers=_bearer(browser_id, body["session_token"])
     )
     assert me.status_code == 200, me.text
     assert me.json()["user_id"] == user["user_id"]
-    assert me.json()["providers"] == []
+    assert me.json()["providers"] == ["browser"]
 
 
 def test_create_name_account_trims_and_validates(client, browser_id):

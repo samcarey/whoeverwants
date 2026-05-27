@@ -88,6 +88,33 @@ def hash_token(token: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+# The device-bound "this browser" identity (migration 128). A first-class
+# but weak sign-in method: it makes a vote-first / name-only account satisfy
+# the "every account has an identity" invariant and surfaces as "This browser"
+# in the account's sign-in methods. It is NOT a re-resolvable credential —
+# `provider_user_id` is a random marker, and browser → account resolution
+# stays via `user_browsers`. `account_has_durable_identity` excludes it.
+BROWSER_PROVIDER = "browser"
+
+
+def _insert_browser_identity(conn, *, user_id: str) -> None:
+    """Attach a 'browser' identity marker to `user_id`. Idempotent-ish: a
+    random `provider_user_id` means re-calling adds a second harmless marker
+    rather than colliding, but callers only invoke this once at account
+    mint time."""
+    conn.execute(
+        """
+        INSERT INTO user_identities (provider, provider_user_id, user_id, email)
+        VALUES (%(p)s, %(pid)s, %(u)s::uuid, NULL)
+        """,
+        {
+            "p": BROWSER_PROVIDER,
+            "pid": f"browser-{secrets.token_urlsafe(16)}",
+            "u": user_id,
+        },
+    )
+
+
 @dataclass
 class ResolvedUser:
     user_id: str
@@ -260,6 +287,7 @@ def create_anonymous_user(
         {"n": display_name},
     ).fetchone()
     user_id = str(row["id"])
+    _insert_browser_identity(conn, user_id=user_id)
     link_browser_to_user(conn, user_id=user_id, browser_id=browser_id)
     return user_id
 
@@ -313,8 +341,16 @@ def merge_accounts(conn, *, source_user_id: str, dest_user_id: str) -> None:
     p = {"src": source_user_id, "dst": dest_user_id}
 
     # --- Identities + auth artifacts (no app-visible conflicts) ---
-    # PKs are (provider, provider_user_id) / browser_id / token_hash /
-    # credential_id — all globally unique, so a plain repoint can't collide.
+    # The source's device-bound 'browser' marker is meaningless once folded
+    # into another account (which keeps its own identities), so drop it rather
+    # than moving it — otherwise the dest accumulates redundant browser markers
+    # across repeated merges. Durable identities (email/apple/google/passkey)
+    # DO move. PKs are (provider, provider_user_id) / browser_id / token_hash /
+    # credential_id — all globally unique, so the repoint can't collide.
+    conn.execute(
+        "DELETE FROM user_identities WHERE user_id = %(src)s::uuid AND provider = 'browser'",
+        p,
+    )
     conn.execute(
         "UPDATE user_identities SET user_id = %(dst)s::uuid WHERE user_id = %(src)s::uuid",
         p,
@@ -1062,11 +1098,13 @@ def create_name_only_account(
 ) -> CompletedSignIn:
     """Create a recovery-less account from just a display name.
 
-    Mints a `users` row with the given name but NO `user_identities` row
-    (so `providers` is empty — there's no way to sign back in if the
-    device is lost), links the browser, and issues a session. The FE
-    nudges the user to add a recovery method afterwards via the
-    home-page banner (gated on `recovery_reminder_dismissed`).
+    Mints a `users` row with the given name + a device-bound `browser`
+    identity (so `providers` is `['browser']` — it satisfies the
+    "every account has an identity" invariant and shows as "This browser",
+    but there's no DURABLE way to sign back in if the device is lost),
+    links the browser, and issues a session. The FE nudges the user to
+    add a recovery method afterwards via the home-page banner (gated on
+    `recovery_reminder_dismissed`; `hasRecoveryMethod` ignores `browser`).
 
     Existing group memberships (keyed on browser_id) carry over for free:
     `load_user_visibility` unions the browser's own `group_members` rows
@@ -1078,6 +1116,7 @@ def create_name_only_account(
         {"n": display_name},
     ).fetchone()
     user_id = str(new_row["id"])
+    _insert_browser_identity(conn, user_id=user_id)
     link_browser_to_user(conn, user_id=user_id, browser_id=browser_id)
     session = issue_session(
         conn, user_id=user_id, browser_id=browser_id, user_agent=user_agent
