@@ -75,7 +75,7 @@ export default function CategoryEmojiField({
         className={`shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-xl select-none disabled:opacity-50 disabled:cursor-not-allowed ${
           selected
             ? 'bg-blue-100 dark:bg-blue-900/40 ring-1 ring-blue-400 dark:ring-blue-500'
-            : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+            : 'hover:bg-gray-100 dark:hover:bg-gray-700'
         }`}
       >
         {emoji}
