@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import ModalPortal from "./ModalPortal";
 import SignInOptions from "./SignInOptions";
+import NamePromptPanel from "./NamePromptPanel";
+import { isValidUserName } from "@/lib/nameValidation";
+import { getUserName } from "@/lib/userProfile";
+import { getCurrentUser } from "@/lib/api";
 
 interface SignInModalProps {
   isOpen: boolean;
@@ -21,13 +25,30 @@ interface SignInModalProps {
  */
 export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
   const openedAtRef = useRef<number>(0);
+  // The app requires a name for any account. A durable sign-in (OAuth /
+  // passkey) can land on a brand-new nameless account, so switch to the
+  // name step instead of closing until a name is set.
+  const [needName, setNeedName] = useState(false);
 
   // Suppress backdrop dismissal in the first 400ms after open so the
   // synthesized click after a long-press / tap that opened the modal doesn't
   // immediately close it. Mirrors FollowUpModal's pattern.
   useEffect(() => {
-    if (isOpen) openedAtRef.current = Date.now();
+    if (isOpen) {
+      openedAtRef.current = Date.now();
+      setNeedName(false);
+    }
   }, [isOpen]);
+
+  const handleSignInComplete = () => {
+    const accountName =
+      getCurrentUser()?.name?.trim() || getUserName()?.trim() || "";
+    if (isValidUserName(accountName)) {
+      onClose();
+      return;
+    }
+    setNeedName(true);
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -75,9 +96,20 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
             </svg>
           </button>
 
-          <h2 className="text-lg font-semibold mb-4 pr-6">Sign in</h2>
+          <h2 className="text-lg font-semibold mb-4 pr-6">
+            {needName ? "Choose a name" : "Sign in"}
+          </h2>
 
-          <SignInOptions mode="signin" onComplete={onClose} />
+          {needName ? (
+            <>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                Add a name or alias so others can see who you are.
+              </p>
+              <NamePromptPanel onComplete={onClose} autoFocus />
+            </>
+          ) : (
+            <SignInOptions mode="signin" onComplete={handleSignInComplete} />
+          )}
         </div>
       </div>
     </ModalPortal>

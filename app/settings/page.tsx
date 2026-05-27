@@ -23,6 +23,7 @@ import {
 import { SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
 import SignInModal from "@/components/SignInModal";
 import AddSignInOptionsModal from "@/components/AddSignInOptionsModal";
+import MergeAccountModal from "@/components/MergeAccountModal";
 import { usePageReady } from "@/lib/usePageReady";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import HeaderPortal from "@/components/HeaderPortal";
@@ -103,6 +104,9 @@ export default function SettingsPage() {
   // signed in AND the account has no 'email' provider (passkey-only /
   // OAuth-only / name-only).
   const [addSignInOpen, setAddSignInOpen] = useState(false);
+  // "Combine another account" — folds a second real account into this one
+  // (for users who accidentally created two). Opens MergeAccountModal.
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   const hasEmailIdentity = !!currentUser?.providers?.includes("email");
 
@@ -352,6 +356,20 @@ export default function SettingsPage() {
               <span className="text-base font-normal text-gray-500 dark:text-gray-500 truncate">
                 {formatProviders(currentUser.providers)}
               </span>
+            </div>
+          )}
+          {currentUser && (
+            <div className="flex items-center justify-between gap-3 h-12 border-t border-gray-200 dark:border-gray-700">
+              <span className="text-base font-normal shrink-0">
+                Have two accounts?
+              </span>
+              <button
+                type="button"
+                onClick={() => setMergeOpen(true)}
+                className="text-base font-normal text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Combine another account
+              </button>
             </div>
           )}
         </section>
@@ -640,6 +658,10 @@ export default function SettingsPage() {
         onClose={() => setSignInModalOpen(false)}
       />
 
+      <MergeAccountModal
+        isOpen={mergeOpen}
+        onClose={() => setMergeOpen(false)}
+      />
       <AddSignInOptionsModal
         isOpen={addSignInOpen}
         onClose={() => setAddSignInOpen(false)}
@@ -656,6 +678,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
   apple: "Apple",
   passkey: "Passkey",
+  browser: "This browser",
 };
 
 function formatProviders(providers: string[]): string {

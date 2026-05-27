@@ -57,6 +57,7 @@ from services.auth import (
     link_browser_to_user,
     load_user_profile,
     lookup_session_user_id,
+    merge_in_other_account,
     normalize_email,
     peek_recovery_email_token,
     revoke_session,
@@ -170,6 +171,12 @@ class OAuthSignInBody(BaseModel):
     """
 
     id_token: str = Field(min_length=32, max_length=4096)
+    # Explicit two-account merge intent (set by Settings → "Combine another
+    # account"). When the signed-in caller verifies an identity owned by a
+    # DIFFERENT account, fold that account into the current one instead of
+    # 409-ing. Ignored when not signed in. Default false so ordinary sign-in /
+    # link behavior is unchanged.
+    merge: bool = False
 
 
 class ProvidersResponse(BaseModel):
@@ -544,6 +551,7 @@ def _handle_oauth_signin(
     provider_label: str,
     configured: bool,
     verify: callable,
+    merge: bool = False,
 ) -> SessionResponse:
     """Provider-agnostic OAuth handler. The verify endpoint passes its
     provider-specific `configured()` flag + `verify(id_token)` function;
@@ -568,7 +576,18 @@ def _handle_oauth_signin(
             # current account (e.g. a recovery-less name-only account
             # adding Google/Apple for recovery) rather than switching to
             # a separate account. Conflict when the identity (or its
-            # verified email) already belongs to a different user.
+            # verified email) already belongs to a different user — UNLESS
+            # the caller asked to merge, in which case fold that other
+            # account into the current one first (the bearer proves the
+            # current account; this just-verified identity proves the other).
+            if merge:
+                merge_in_other_account(
+                    conn,
+                    current_user_id=current_user_id,
+                    provider=identity.provider,
+                    provider_user_id=identity.provider_user_id,
+                    email=identity.email,
+                )
             result = attach_oauth_identity(
                 conn,
                 user_id=current_user_id,
@@ -622,6 +641,7 @@ def sign_in_with_google(req: OAuthSignInBody, request: Request):
         provider_label="Google",
         configured=google_configured(),
         verify=verify_google_id_token,
+        merge=req.merge,
     )
 
 
@@ -645,6 +665,7 @@ def sign_in_with_apple(req: OAuthSignInBody, request: Request):
         provider_label="Apple",
         configured=apple_configured(),
         verify=verify_apple_id_token,
+        merge=req.merge,
     )
 
 
@@ -976,6 +997,11 @@ class PasskeyAuthenticationVerifyBody(BaseModel):
     `navigator.credentials.get()`."""
 
     credential: dict
+    # Explicit two-account merge intent — same semantics as the OAuth body.
+    # When the signed-in caller authenticates a passkey owned by a DIFFERENT
+    # account, fold that account into the current one. Ignored when not
+    # signed in.
+    merge: bool = False
 
 
 class PasskeySummary(BaseModel):
@@ -1188,6 +1214,7 @@ def passkey_authentication_verify(
     browser_id = _require_browser_id(request)
     rp_id = _resolve_rp_id(request)
     origin = _resolve_fe_origin(request)
+    current_user_id = _user_id(request)
     try:
         with get_db() as conn:
             authed = complete_authentication(
@@ -1197,14 +1224,36 @@ def passkey_authentication_verify(
                 origin=origin,
                 credential_json=req.credential,
             )
-            completed = complete_sign_in(
-                conn,
-                provider="passkey",
-                provider_user_id=authed.credential_id,
-                email=None,
-                browser_id=browser_id,
-                user_agent=request.headers.get("user-agent"),
-            )
+            if current_user_id and req.merge:
+                # Explicit merge: the just-verified passkey proves the OTHER
+                # account; the bearer proves the current one. Fold the other
+                # into the current (the merge moves the credential onto it),
+                # then keep the caller on their current account.
+                merge_in_other_account(
+                    conn,
+                    current_user_id=current_user_id,
+                    provider="passkey",
+                    provider_user_id=authed.credential_id,
+                    email=None,
+                )
+                session = issue_session(
+                    conn,
+                    user_id=current_user_id,
+                    browser_id=browser_id,
+                    user_agent=request.headers.get("user-agent"),
+                )
+                profile = load_user_profile(conn, current_user_id)
+                assert profile is not None
+                completed = CompletedSignIn(session=session, profile=profile)
+            else:
+                completed = complete_sign_in(
+                    conn,
+                    provider="passkey",
+                    provider_user_id=authed.credential_id,
+                    email=None,
+                    browser_id=browser_id,
+                    user_agent=request.headers.get("user-agent"),
+                )
     except PasskeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return _signin_response(completed)

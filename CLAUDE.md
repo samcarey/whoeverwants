@@ -691,7 +691,8 @@ The user's saved display name (`lib/userProfile.ts: getUserName/saveUserName`, l
 - **`<AccountGateModal>` (`components/AccountGateModal.tsx`) is the canonical "we need an account" surface** (it replaced the old name-only `NameRequiredModal`, now deleted). Layout per the owner's spec: **sign-in methods FIRST** (`<SignInOptions mode="signin">` — a returning user's account name auto-fills + the gate auto-proceeds), THEN a "name or alias" field + Continue that mints a recovery-less account via `apiCreateNameAccount`. Three callsites, unchanged in shape (`onSubmit`/`onCancel`, `message` is a contextual phrase folded into the title — "Sign in to vote"): `CreateGroupButtonHost`, `CreateQuestionContent` (category bubble tap), `PollDetail` (every vote Submit path). z-`[75]`.
   - **Sign-in that yields no name keeps the modal open.** `handleSignInComplete` reads `getCurrentUser()?.name`; if the (now-signed-in) account is nameless it clears + focuses the name field, and `apiCreateNameAccount`'s signed-in branch then SETS the name on the existing account rather than minting a second one. So the name field is the universal finisher regardless of which path the user took.
 - **`<SignInOptions mode="signin"|"link">` (`components/SignInOptions.tsx`) is the single shared provider-button block** (Google / Apple / passkey / email) behind `SignInModal`, `AccountGateModal`, `AddSignInOptionsModal`, and (via SignInModal) Settings — so every "auth surface" looks identical. `mode` only changes labels, the passkey button set, and the email endpoint; the OAuth handlers are byte-identical because the SERVER decides link-vs-switch from the bearer token (signed-in `/oauth/{provider}` ATTACHES the identity to the current account via `attach_oauth_identity`; anonymous creates/switches via `complete_sign_in`). `onComplete` fires only on SYNCHRONOUS success (OAuth/passkey) — email is async ("check your inbox" is its terminal inline state). Don't re-inline the buttons anywhere; extend this component.
-- **Providing a name creates a recovery-less account (migration 123).** `POST /api/auth/account/name` mints a `users` row (`display_name` set, no `user_identities` → `providers: []`), links the browser, issues a session — OR, when already signed in, just sets the name on the existing account. Existing `group_members` rows (browser-keyed) carry over for free. Because such an account can't be recovered if the device is lost, `users.recovery_reminder_dismissed` + the home-page banner nudge the user to add a sign-in method.
+- **Providing a name creates a browser-tied account (migration 123 + 128).** `POST /api/auth/account/name` mints a `users` row (`display_name` set) + a device-bound `browser` identity (migration 128 — so `providers: ['browser']`, NOT empty; the invariant is "every account has ≥1 identity, no session without one"), links the browser, issues a session — OR, when already signed in, just sets the name on the existing account. The `browser` identity is a first-class-but-weak sign-in method (shows as "This browser" in Settings, `provider_user_id` is a random marker NOT the browser_id, resolution stays via `user_browsers`); `account_has_durable_identity` (`provider <> 'browser'`) is the "real account?" predicate. Existing `group_members` rows (browser-keyed) carry over for free. Because such an account can't be recovered if the device is lost, `users.recovery_reminder_dismissed` + the home-page banner nudge the user to add a DURABLE method (`hasRecoveryMethod` in `RecoveryReminderHost` counts only email/google/apple, never `browser`/passkey).
+- **A name is required for every account; sign-in completion enforces it (no nameless accounts).** A name is needed for any action beyond viewing public groups / generating link previews. A durable sign-in (OAuth / passkey / magic link) can land on a brand-new nameless account, so every interactive sign-in completion collects one: the shared `<NamePromptPanel>` (`components/NamePromptPanel.tsx`, name input + `apiCreateNameAccount`) is shown by `SignInModal` + `/auth/verify` when the resulting account is nameless, and is `AccountGateModal`'s always-visible "or just provide a name" path. `NamePromptPanel` focuses on mount only when passed `autoFocus` (SignInModal / verify, where it mounts only-when-needed); `AccountGateModal` passes `focusNonce` (bumped after a nameless sign-in) so the name field does NOT steal focus / pop the mobile keyboard when the gate first opens as a passive alternative to signing in.
 - **`<RecoveryReminderHost>` (`components/RecoveryReminderHost.tsx`, mounted in `app/layout.tsx` outside ResponsiveScaling like CreateGroupButtonHost)** shows a bottom-left "Secure your account" banner on `/` when signed in AND the account has no email/Google/Apple identity (`hasRecoveryMethod`) AND `!recovery_reminder_dismissed`. Tapping opens `<AddSignInOptionsModal>` = `<SignInOptions mode="link">` (links a method to the current account; OAuth/passkey appear only when the tier+device support them — on dev with no OAuth config + no platform authenticator, only the email path shows) + a "Don't remind me again" toggle (`apiSetRecoveryReminderDismissed`). Adding a recovery identity hides the banner automatically (providers change); the toggle hides it without one. Settings opens the SAME `AddSignInOptionsModal` via the "Add a sign-in method" row (shown when signed in + no email identity) — it replaced the old bespoke inline recovery-email section.
   - **Pitfall: `addInitScript(() => localStorage.clear())` in a Playwright demo re-runs on EVERY navigation**, so it wipes a session created mid-flow on the next `goto`. A fresh `browser.newContext()` already starts anonymous — don't clear at all.
 - **No inline `<CompactNameField>` in ballots or the create-poll form.** Earlier iterations rendered "Your Name" inputs in the wrapper Submit sections of `app/g/[groupShortId]/p/[pollShortId]/page.tsx`, the create-poll modal bottom card, and each ballot's internal Submit (`QuestionBallot.tsx`, `RankingSection.tsx`, `QuestionBallot/TimeBallotSection.tsx`, `SuggestionVotingInterface.tsx`). They're all gone. Per-poll name overrides are not supported — your name is your name.
@@ -996,8 +997,8 @@ state can be shared as one click. Lives in `server/routers/auth.py`
 ("Dev-only instant sign-in links" section) + `app/auth/instant/page.tsx`.
 
 - **`POST /api/auth/dev/instant-link`** (caller: developer, via curl). Body
-  `{name?="Demo User", next?}`. Mints a recovery-less account
-  (`create_name_only_account` → `providers: []`), returns
+  `{name?="Demo User", next?}`. Mints a browser-tied account
+  (`create_name_only_account` → `providers: ['browser']`, migration 128), returns
   `{url, session_token, expires_at, user_id, name, browser_id}`. `url` =
   `<fe_origin>/auth/instant?token=<sessionToken>[&next=<urlencoded path>]`.
   The `session_token` is a **real 90-day bearer** — keep using it (with the
@@ -1523,22 +1524,50 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
       `create_poll` pins a creating browser_id and `creator_headers(poll)` /
       `close_poll` / `reopen_poll` / `cutoff_poll` replay it so mutations
       authorize.
-  - **TODO — merge an auto-created anonymous account into a real one on
-    sign-in.** When an anonymous-account browser later signs in with a
-    real identity (email / OAuth / passkey), `link_browser_to_user`
-    repoints the browser to the real user_id — orphaning the anonymous
-    account AND its polls/groups (whose `creator_user_id` still points at
-    the orphan). Effect: the just-signed-in user loses creator authority
-    over polls they made while anonymous (until they're back on... nothing
-    — the browser is repointed). A future PR should, at sign-in, move the
-    anonymous account's `creator_user_id` rows (polls + groups), its
-    `group_members`/poll authorship, etc. onto the signed-in account, then
-    delete the orphan. Parallel to the already-deferred "claim an
-    anonymous-created group". The anonymous group stays PUBLIC so
-    URL-sharing keeps working regardless; this is purely about restoring
-    the creator's management controls cross-identity. **Still no
-    poll-edit-mutation endpoint** (title/options), so "edit" remains the
-    four close/reopen/cutoff endpoints.
+  - **Account merge on sign-in — SHIPPED.** A browser-tied / name-only /
+    auto-created account has no DURABLE identity (only a `browser`
+    provider row, or none — `account_has_durable_identity` in
+    `services/auth.py` is the `provider <> 'browser'` predicate). When
+    that browser later signs in with a real identity, `complete_sign_in`
+    ABSORBS the weak account instead of orphaning it (no more stranded
+    `creator_user_id`): if the incoming identity is BRAND NEW it folds
+    the freshly-minted account INTO the prior weak account (keeper =
+    prior, which gains the durable identity — upgrade in place); if the
+    incoming identity already belongs to a real account it folds the weak
+    account's data INTO that account (keeper = the real one). A browser
+    already on a durable account is left alone (real account switch). The
+    reusable primitive is `merge_accounts(conn, *, source_user_id,
+    dest_user_id)` — it repoints every `users(id)`-referencing column
+    (identities except the source's redundant `browser` marker, browsers,
+    sessions, passkeys, polls/groups `creator_user_id`, invites, join
+    requests with partial-unique-pending dedup, magic-link tokens,
+    user_profiles keeping dest's photo on PK collision,
+    group_notification_preferences with dedup, user_contacts both
+    directions avoiding self-contacts) then deletes the source user, and
+    copies the source's `display_name` onto the dest only when the dest
+    has none. Tests: `server/tests/test_account_merge.py`. **Caveat
+    (shared device):** a browser-only account IS "whoever is on this
+    browser," so absorbing it moves polls made on this browser into the
+    signed-in account — accepted as the lesser evil vs. orphaning them.
+    **Still no poll-edit-mutation endpoint** (title/options), so "edit"
+    remains the four close/reopen/cutoff endpoints.
+  - **Explicit two-account merge — SHIPPED.** For users who ended up with
+    TWO real accounts that never auto-merge (passkey-only + email,
+    Apple-relay + Google — no shared verified-email signal). Settings →
+    "Combine another account" (`components/MergeAccountModal.tsx` →
+    `<SignInOptions mode="merge">`) lets a signed-in user (A) authenticate
+    the OTHER account (B); the server folds B into A via `merge_accounts`.
+    Dual proof authorizes it: A's bearer + B's just-verified ceremony. The
+    `merge` flag on `POST /api/auth/oauth/{google,apple}` +
+    `/passkey/authentication/verify` triggers `merge_in_other_account`
+    (which resolves B via the read-only `resolve_existing_user_for_identity`
+    and folds it in) when a signed-in caller verifies an identity owned by
+    a different account — otherwise the existing `409 conflict` stands.
+    Only the SYNCHRONOUS ceremonies (OAuth / passkey) support merge — email
+    is async (the link lands on `/auth/verify` with no merge context) and
+    passkey-registration would mint a new credential, so both are hidden in
+    `mode="merge"`. The keeper is always A (the bearer's account), so the
+    FE stays signed in as A throughout.
 - C-follow-up: ~~native Google Sign In on iOS~~ **shipped** (per-bundle iOS client IDs hardcoded in `lib/oauth.ts: GOOGLE_IOS_CLIENT_IDS`; reversed URL scheme stamped into `Info.plist: CFBundleURLTypes` by `ios-build.yml`; uses the same `@capgo/capacitor-social-login` plugin as Apple native).
 
 **Phase I (account management) shipped in migration 118.** Adds a

@@ -346,10 +346,11 @@ export type OAuthProvider = "google" | "apple";
 export async function apiSignInWithOAuth(
   provider: OAuthProvider,
   idToken: string,
+  opts?: { merge?: boolean },
 ): Promise<SessionResponse> {
   const res = await authFetch<SessionResponse>(`/oauth/${provider}`, {
     method: "POST",
-    body: JSON.stringify({ id_token: idToken }),
+    body: JSON.stringify({ id_token: idToken, merge: opts?.merge ?? false }),
   });
   persistSignIn(res.session_token, res.user);
   return res;
@@ -430,10 +431,11 @@ export async function apiPasskeyAuthenticationOptions(): Promise<unknown> {
  *  fetches attach the bearer token. */
 export async function apiPasskeyAuthenticationVerify(
   credential: unknown,
+  opts?: { merge?: boolean },
 ): Promise<SessionResponse> {
   const res = await authFetch<SessionResponse>("/passkey/authentication/verify", {
     method: "POST",
-    body: JSON.stringify({ credential }),
+    body: JSON.stringify({ credential, merge: opts?.merge ?? false }),
   });
   persistSignIn(res.session_token, res.user);
   return res;

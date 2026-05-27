@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiVerifyMagicLink, ApiError } from "@/lib/api";
+import { isValidUserName } from "@/lib/nameValidation";
+import NamePromptPanel from "@/components/NamePromptPanel";
 import { usePageReady } from "@/lib/usePageReady";
 
 /**
@@ -16,7 +18,7 @@ import { usePageReady } from "@/lib/usePageReady";
  * eat the token before the user actually taps it.
  */
 
-type Status = "verifying" | "success" | "error";
+type Status = "verifying" | "success" | "needName" | "error";
 
 function VerifyPageContent() {
   const router = useRouter();
@@ -42,6 +44,13 @@ function VerifyPageContent() {
       try {
         const res = await apiVerifyMagicLink(token);
         setEmail(res.user.email);
+        // The app requires a name for every account. A first-time email
+        // sign-in lands on a nameless account — collect a name before
+        // redirecting instead of leaving the account nameless.
+        if (!isValidUserName(res.user.name?.trim() ?? "")) {
+          setStatus("needName");
+          return;
+        }
         setStatus("success");
         // Brief pause so the user reads the confirmation, then settings.
         setTimeout(() => router.replace("/settings"), 1500);
@@ -89,6 +98,20 @@ function VerifyPageContent() {
           <p className="text-gray-600 dark:text-gray-400">
             {email ? `as ${email}` : null}
           </p>
+        </div>
+      )}
+      {status === "needName" && (
+        <div className="max-w-sm mx-auto text-left">
+          <h1 className="text-xl font-semibold mb-2 text-center">
+            You&apos;re signed in
+          </h1>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 text-center">
+            Add a name or alias so others can see who you are.
+          </p>
+          <NamePromptPanel
+            onComplete={() => router.replace("/settings")}
+            autoFocus
+          />
         </div>
       )}
       {status === "error" && (
