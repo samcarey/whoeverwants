@@ -5,7 +5,7 @@ import type { QuestionCategory, OptionsMetadata } from "@/lib/types";
 import type { SearchResult } from "@/lib/api";
 import AutocompleteInput from "@/components/AutocompleteInput";
 import { isAutocompleteCategory, isLocationLikeCategory } from "@/components/TypeFieldInput";
-import { enterAdvancesFocus } from "@/lib/formNavigation";
+import { enterAdvancesFocus, consumeAdvanceAutocap } from "@/lib/formNavigation";
 
 export type { OptionsMetadata };
 
@@ -56,6 +56,17 @@ export default function OptionsInput({
   };
 
   const updateOption = (index: number, value: string) => {
+    // When this field received focus via Enter-to-advance, iOS didn't apply
+    // its on-tap first-letter auto-capitalization, so do it ourselves for the
+    // first character typed into the (previously empty) field.
+    if (
+      (options[index] ?? '') === '' &&
+      value !== '' &&
+      consumeAdvanceAutocap(optionRefs.current[index])
+    ) {
+      value = value.charAt(0).toUpperCase() + value.slice(1);
+    }
+
     const newOptions = [...options];
     newOptions[index] = value;
 
@@ -211,6 +222,7 @@ export default function OptionsInput({
                     if (trimmed !== option) updateOption(index, trimmed);
                   }}
                   onKeyDown={enterAdvancesFocus}
+                  autoCapitalize="sentences"
                   disabled={isLoading}
                   maxLength={35}
                   className={inputClassName(isDuplicate)}
