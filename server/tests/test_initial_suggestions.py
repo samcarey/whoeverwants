@@ -66,6 +66,14 @@ class TestInitialSuggestions:
         # The create response maps the question to the creator's vote id so the
         # creating browser can recognize (and edit) its own seeded vote.
         assert poll["initial_suggestion_vote_ids"] == {question["id"]: vote["id"]}
+        # The creator's vote makes them a respondent immediately — the create
+        # response must reflect that rather than reporting an empty roster.
+        assert poll["voter_names"] == ["Alice"]
+
+    def test_plain_create_has_empty_roster(self, client):
+        poll = _create_suggestion_poll(client, initial=None)
+        assert poll["voter_names"] == []
+        assert poll["anonymous_count"] == 0
 
     def test_no_initial_suggestions_creates_no_vote(self, client):
         poll = _create_suggestion_poll(client, initial=None)

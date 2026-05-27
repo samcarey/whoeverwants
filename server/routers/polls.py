@@ -828,6 +828,16 @@ def create_poll(
                         browser_id=creator_browser_id,
                     )
                     initial_suggestion_vote_ids[str(qrow["id"])] = str(vote_row["id"])
+        # A brand-new poll normally has no votes, so voter aggregation is
+        # skipped. But the seeded-suggestion path DOES create the creator's
+        # vote, so compute the roster here — otherwise the create response
+        # reports "Viewed (0) / No voters yet" until the first refresh.
+        if initial_suggestion_vote_ids:
+            voter_names, anonymous_count, viewed_ignored = _compute_poll_voter_data(
+                conn, str(poll_row["id"])
+            )
+        else:
+            voter_names, anonymous_count, viewed_ignored = [], 0, 0
         # Notification strings for the "New poll in <Group>" push, computed
         # while the conn is open. The group phrase's participant-names fallback
         # only queries when the group has no title override; the body is the
@@ -892,11 +902,18 @@ def create_poll(
             },
         )
 
-    # The caller is the creator, so viewer_is_creator is true. Voter
-    # aggregation is skipped (the creator is filtered out of their own
-    # respondent display anyway; the 5s refresh fills it in). The creator's
-    # seeded-suggestion vote ids ride back so their browser owns the vote.
-    poll = _row_to_poll(poll_row, question_rows, viewer_user_id=creator_user_id)
+    # The caller is the creator, so viewer_is_creator is true. Voter data is
+    # empty for a plain create, or the creator's seeded-suggestion roster when
+    # that path ran (computed inside the transaction above). The seeded vote
+    # ids ride back so the creating browser owns the vote.
+    poll = _row_to_poll(
+        poll_row,
+        question_rows,
+        voter_names,
+        anonymous_count,
+        viewed_ignored,
+        viewer_user_id=creator_user_id,
+    )
     if initial_suggestion_vote_ids:
         poll.initial_suggestion_vote_ids = initial_suggestion_vote_ids
     return poll
