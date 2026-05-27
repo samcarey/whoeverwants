@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { formatLocalDateISO, formatMonthYearLabel, shiftMonth } from '@/lib/timeUtils';
+import { useMeasuredHeight } from '@/lib/useMeasuredHeight';
 
 const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
@@ -32,6 +33,19 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
   const effectiveSelectedDays = inline ? selectedDays : tempSelectedDays;
   const effectiveCurrentMonth = currentMonth ?? internalCurrentMonth;
   const isMonthControlled = currentMonth !== undefined;
+
+  // Measure the inline days grid so the outer wrapper can animate its
+  // height when toggling between compact (3-week) and full-month layouts.
+  const [daysGridRef, daysGridHeight] = useMeasuredHeight<HTMLDivElement>([compact]);
+  const [heightAnimReady, setHeightAnimReady] = useState(false);
+  useEffect(() => {
+    // Enable the height transition only after the first measurement lands,
+    // so opening the form doesn't animate the grid in from 0.
+    if (daysGridHeight > 0 && !heightAnimReady) {
+      const id = requestAnimationFrame(() => setHeightAnimReady(true));
+      return () => cancelAnimationFrame(id);
+    }
+  }, [daysGridHeight, heightAnimReady]);
 
   const handleToggleDay = (date: string) => {
     if (inline) {
@@ -229,22 +243,21 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     </div>
   );
 
-  const calendarGrid = (
-    <div>
-      {/* Week day headers */}
-      <div className="grid grid-cols-7 mb-2">
-        {WEEK_DAYS.map(day => (
-          <div key={day} className="text-center text-xs font-medium text-gray-500 dark:text-gray-400 py-1">
-            {day}
-          </div>
-        ))}
-      </div>
+  const weekdayHeader = (
+    <div className="grid grid-cols-7 mb-2">
+      {WEEK_DAYS.map(day => (
+        <div key={day} className="text-center text-xs font-medium text-gray-500 dark:text-gray-400 py-1">
+          {day}
+        </div>
+      ))}
+    </div>
+  );
 
-      {/* Calendar days */}
-      <div className="grid grid-cols-7">
-        {(() => {
-          const todayStr = formatLocalDateISO(new Date());
-          return calendarDays.map(({ dateStr, isCurrentMonth, day }, index) => {
+  const daysGrid = (
+    <div className="grid grid-cols-7">
+      {(() => {
+        const todayStr = formatLocalDateISO(new Date());
+        return calendarDays.map(({ dateStr, isCurrentMonth, day }, index) => {
             const isPast = dateStr < todayStr;
             const isAllowed = !allowedDays || allowedDays.includes(dateStr);
             const isDisabled = isPast || !isAllowed;
@@ -282,7 +295,14 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
             );
           });
         })()}
-      </div>
+    </div>
+  );
+
+  // Non-animated combined grid for the modal (non-inline) path.
+  const calendarGrid = (
+    <div>
+      {weekdayHeader}
+      {daysGrid}
     </div>
   );
 
@@ -290,7 +310,19 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     return (
       <div>
         {!isMonthControlled && monthNavRow}
-        {calendarGrid}
+        {weekdayHeader}
+        {/* Animate the days grid height between the compact (3-week) and
+            full-month layouts. The inner div is measured at its natural
+            height; the outer overflow-hidden div transitions to it. */}
+        <div
+          className="overflow-hidden"
+          style={{
+            height: daysGridHeight ? `${daysGridHeight}px` : undefined,
+            transition: heightAnimReady ? 'height 300ms ease-in-out' : undefined,
+          }}
+        >
+          <div ref={daysGridRef}>{daysGrid}</div>
+        </div>
       </div>
     );
   }
