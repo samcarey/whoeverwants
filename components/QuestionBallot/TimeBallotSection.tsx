@@ -198,10 +198,7 @@ export default function TimeBallotSection({
               />
             </div>
 
-            <p className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center">
-              Select time slots to fine-tune
-            </p>
-            <div className="mb-6 text-center">
+            <div className="mb-2 text-center">
               <button
                 type="button"
                 onClick={handleAbstain}
