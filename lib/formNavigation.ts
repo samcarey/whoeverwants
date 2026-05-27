@@ -13,6 +13,29 @@ const FOCUSABLE_SELECTOR = [
 ].join(', ');
 
 /**
+ * Focus a form control. For text inputs/textareas, works around an iOS quirk:
+ * when focus moves programmatically (not via a tap), the soft keyboard keeps
+ * the previous field's auto-capitalization shift state instead of recomputing
+ * it for the newly-focused (empty) field. Changing the `autocapitalize`
+ * attribute while the field is focused forces WebKit to recompute, so the
+ * first character of the next option/suggestion capitalizes like a tap does.
+ */
+function focusFormControl(el: HTMLElement): void {
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+    el.focus();
+    return;
+  }
+  const desired = el.getAttribute('autocapitalize') ?? 'sentences';
+  if (desired === 'off' || desired === 'none') {
+    el.focus();
+    return;
+  }
+  el.setAttribute('autocapitalize', 'none');
+  el.focus();
+  el.setAttribute('autocapitalize', desired);
+}
+
+/**
  * Move focus to the next focusable form control after `current` in document
  * order. Returns true when focus moved. Skips elements not currently visible
  * (display:none / hidden), so collapsed sections don't trap focus.
@@ -22,7 +45,7 @@ export function advanceFormFocus(current: HTMLElement): boolean {
   const visible = all.filter((el) => el === current || el.offsetParent !== null);
   const idx = visible.indexOf(current);
   if (idx === -1 || idx >= visible.length - 1) return false;
-  visible[idx + 1].focus();
+  focusFormControl(visible[idx + 1]);
   return true;
 }
 

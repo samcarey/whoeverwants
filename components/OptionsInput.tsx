@@ -211,6 +211,7 @@ export default function OptionsInput({
                     if (trimmed !== option) updateOption(index, trimmed);
                   }}
                   onKeyDown={enterAdvancesFocus}
+                  autoCapitalize="sentences"
                   disabled={isLoading}
                   maxLength={35}
                   className={inputClassName(isDuplicate)}

@@ -231,6 +231,7 @@ export default function AutocompleteInput({
             if (isRichSelection) localInputRef.current?.select();
           }}
           onKeyDown={handleKeyDown}
+          autoCapitalize="sentences"
           disabled={disabled}
           maxLength={maxLength}
           className={`${className}${showIcon ? ' pl-8' : ''}${isRichSelection ? ' underline decoration-blue-500/50 underline-offset-2' : ''}`}
