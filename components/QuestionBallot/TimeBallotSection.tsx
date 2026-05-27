@@ -198,8 +198,18 @@ export default function TimeBallotSection({
               />
             </div>
 
-            <div className="mb-6">
-              <AbstainButton isAbstaining={isAbstaining} onClick={handleAbstain} />
+            <p className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+              Select time slots to fine-tune
+            </p>
+            <div className="mb-6 text-center">
+              <button
+                type="button"
+                onClick={handleAbstain}
+                disabled={isSubmitting}
+                className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
+              >
+                {isAbstaining ? 'Abstaining' : 'Abstain'}
+              </button>
             </div>
 
             {availabilityWindowsInvalid && (
