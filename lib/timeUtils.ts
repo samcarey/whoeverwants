@@ -390,13 +390,17 @@ export function isWindowWithinQuestionWindows(
 
 /** Pick a sensible "split" window for a voter to add: the largest free gap
  *  inside the question's allowed windows not already covered by an existing
- *  voter window. Falls back to the first question window (or the app default)
- *  when nothing is free, so the + button always yields a draggable pill.
- *  Cross-midnight question windows are skipped for the gap math. */
+ *  voter window. A 15-minute margin is left on any gap edge that abuts an
+ *  existing slot, so the added pill isn't born "up against" a neighbour (which
+ *  would immediately flag orange); edges that sit on the question window's own
+ *  boundary keep no margin. Falls back to the first question window (or the app
+ *  default) when nothing is free, so the + button always yields a draggable
+ *  pill. Cross-midnight question windows are skipped for the gap math. */
 export function pickVoterSplitWindow(
   questionWindows: { min: string; max: string }[],
   existing: { min: string; max: string }[],
 ): { min: string; max: string } {
+  const MARGIN = 15;
   const qWins = questionWindows
     .map(w => ({ start: timeToMinutes(w.min), end: timeToMinutes(w.max), raw: w }))
     .filter(w => w.end > w.start);
@@ -410,20 +414,25 @@ export function pickVoterSplitWindow(
     .sort((a, b) => a.start - b.start);
 
   let best: { start: number; end: number } | null = null;
-  const consider = (start: number, end: number) => {
-    if (end > start && (!best || end - start > best.end - best.start)) {
-      best = { start, end };
+  const consider = (start: number, end: number, startAbuts: boolean, endAbuts: boolean) => {
+    let s = startAbuts ? start + MARGIN : start;
+    let e = endAbuts ? end - MARGIN : end;
+    if (e - s < MARGIN) { s = start; e = end; } // gap too small to inset — keep raw
+    if (e > s && (!best || e - s > best.end - best.start)) {
+      best = { start: s, end: e };
     }
   };
   for (const q of qWins) {
     let cursor = q.start;
+    let cursorAbuts = false; // q.start is the window's own edge, not a neighbour
     for (const t of taken) {
       if (t.end <= q.start || t.start >= q.end) continue;
-      if (t.start > cursor) consider(cursor, t.start);
-      cursor = Math.max(cursor, t.end);
+      if (t.start > cursor) consider(cursor, t.start, cursorAbuts, true);
+      cursor = Math.max(cursor, Math.min(t.end, q.end));
+      cursorAbuts = true;
       if (cursor >= q.end) break;
     }
-    if (cursor < q.end) consider(cursor, q.end);
+    if (cursor < q.end) consider(cursor, q.end, cursorAbuts, false);
   }
   if (best) return { min: minutesToTime(best.start), max: minutesToTime(best.end) };
   return { min: qWins[0].raw.min, max: qWins[0].raw.max };
