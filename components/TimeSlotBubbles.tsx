@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
 import ModalPortal from "@/components/ModalPortal";
 import {
   expandHourRowsToQuarters,
@@ -198,6 +199,14 @@ export default function TimeSlotBubbles({
     clearSelection();
   };
 
+  // The bubble grid is a drag-to-select canvas: a drag here must NOT scroll the
+  // page or trigger the page's swipe-back transition. `touch-action: none` on
+  // the grid blocks the browser's pan/scroll; stopping touch-event propagation
+  // keeps the ancestor swipe-back gesture (PollDetail's React onTouch* handlers)
+  // from seeing the drag. Pointer events (which drive the range selection) are a
+  // separate event type and still reach our window listeners.
+  const stopTouch = (e: React.TouchEvent) => e.stopPropagation();
+
   const renderCell = (cell: SlotCell, prevSlot: string | null) => {
     const { time } = getBubbleLabel(cell.slot, prevSlot);
     if (!cell.available) {
@@ -236,7 +245,7 @@ export default function TimeSlotBubbles({
         disabled={disabled}
         title={cell.slot}
         className={[
-          "relative select-none touch-pan-y rounded-full transition-colors",
+          "relative select-none touch-none rounded-full transition-colors",
           SLOT_CELL_SIZE,
           "border focus:outline-none focus:ring-2 focus:ring-offset-1",
           disabled ? "cursor-default opacity-60" : "cursor-pointer active:scale-95",
@@ -261,7 +270,13 @@ export default function TimeSlotBubbles({
   };
 
   return (
-    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+    <div
+      className="divide-y divide-gray-200 dark:divide-gray-700 touch-none"
+      onTouchStart={stopTouch}
+      onTouchMove={stopTouch}
+      onTouchEnd={stopTouch}
+      onTouchCancel={stopTouch}
+    >
       {days.map(({ dateStr, dayLabel: { weekday, monthDay }, hourRows }) => (
         <div key={dateStr} className="flex gap-2 items-start py-3 first:pt-0 last:pb-0">
           <div className="w-12 shrink-0 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 text-left leading-tight">
