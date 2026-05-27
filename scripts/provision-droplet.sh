@@ -291,6 +291,14 @@ if [ ! -f .env.api ]; then
   cat > .env.api <<'ENVEOF'
 # Place external-API secrets here, one KEY=value per line. See CLAUDE.md.
 # This file is gitignored; populate via scripts/remote*.sh after provisioning.
+#
+# REQUIRED for transactional email (sign-in magic links + recovery-email
+# confirmation links). Without RESEND_API_KEY, send_email() silently falls
+# back to logging the link to stdout and the FE shows "This server isn't
+# configured to send real emails" — i.e. no email is ever delivered.
+#   RESEND_API_KEY=re_...                          # Resend send-only key
+#   RESEND_FROM_EMAIL=noreply@contact.whoeverwants.com   # on a Resend-verified domain
+# After editing this file, reload env with: docker compose up -d --force-recreate api
 ENVEOF
   chmod 600 .env.api
   echo "Created placeholder .env.api (no API keys)."
