@@ -36,7 +36,7 @@ from services.push import (
     fan_out_phase_transition,
     fan_out_poll_closed,
 )
-from services.validation import validate_user_name
+from services.validation import validate_category_icon, validate_user_name
 from services.questions import (
     _edit_vote_on_question,
     _finalize_suggestion_options,
@@ -100,6 +100,7 @@ def _validate_request(req: CreatePollRequest) -> None:
 
     seen: dict[tuple[str, str | None], list[str | None]] = {}
     for sp in req.questions:
+        validate_category_icon(sp.category_icon)
         key = (sp.question_type.value, (sp.category or "").strip().lower() or None)
         seen.setdefault(key, []).append((sp.context or "").strip() or None)
     for contexts in seen.values():
@@ -325,7 +326,7 @@ def _insert_question(
             suggestion_deadline_minutes,
             details,
             day_time_windows, duration_window,
-            category, options_metadata,
+            category, category_icon, options_metadata,
             reference_latitude, reference_longitude,
             reference_location_label,
             min_availability_percent,
@@ -338,7 +339,7 @@ def _insert_question(
             %(suggestion_deadline_minutes)s,
             %(details)s,
             %(day_time_windows)s::jsonb, %(duration_window)s::jsonb,
-            %(category)s, %(options_metadata)s::jsonb,
+            %(category)s, %(category_icon)s, %(options_metadata)s::jsonb,
             %(reference_latitude)s, %(reference_longitude)s,
             %(reference_location_label)s,
             %(min_availability_percent)s,
@@ -357,6 +358,7 @@ def _insert_question(
             "day_time_windows": _json_or_none(sub.day_time_windows),
             "duration_window": _json_or_none(sub.duration_window),
             "category": sub.category or "custom",
+            "category_icon": validate_category_icon(sub.category_icon),
             "options_metadata": _json_or_none(sub.options_metadata),
             "reference_latitude": sub.reference_latitude,
             "reference_longitude": sub.reference_longitude,
@@ -436,6 +438,9 @@ def _question_icon(question_row: dict) -> str:
     """The category icon for a question, falling back to its question-type
     symbol (matches FE `getCategoryIcon`). A time question stores
     category="custom" but resolves to 📅 via the type-symbol fallback."""
+    custom_icon = question_row.get("category_icon")
+    if custom_icon:
+        return custom_icon
     category = question_row.get("category")
     if category and category != "custom":
         icon = _CATEGORY_ICONS.get(category)

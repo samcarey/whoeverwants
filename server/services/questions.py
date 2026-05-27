@@ -264,6 +264,7 @@ def _row_to_question(row: dict) -> QuestionResponse:
         day_time_windows=row.get("day_time_windows"),
         duration_window=row.get("duration_window"),
         category=row.get("category"),
+        category_icon=row.get("category_icon"),
         options_metadata=row.get("options_metadata"),
         reference_latitude=row.get("reference_latitude"),
         reference_longitude=row.get("reference_longitude"),

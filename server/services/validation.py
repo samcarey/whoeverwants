@@ -39,3 +39,31 @@ def validate_user_name(value: str | None, *, field: str = "name") -> str:
             status_code=400, detail=f"{field} contains invalid characters"
         )
     return trimmed
+
+
+# Generous cap — the longest single emoji (ZWJ family + variation selectors)
+# is well under this. The FE (lib/emojiData.ts: isEmoji) is the primary
+# emoji-shape gate; this is the backstop that bounds length and rejects
+# obvious non-emoji text. ASCII letters never appear in emoji (regional-
+# indicator flag glyphs are non-ASCII), so rejecting them filters out words
+# like "dog" without rejecting keycap digits ("5️⃣").
+MAX_CATEGORY_ICON_LENGTH = 64
+_ASCII_LETTER_RE = re.compile(r"[A-Za-z]")
+
+
+def validate_category_icon(value: str | None) -> str | None:
+    """Validate a custom-category emoji. Returns the trimmed value (or None
+    when empty); raises HTTPException(400) on over-length / control-char /
+    plain-text input. Lenient on emoji shape — the FE owns that."""
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    if len(trimmed) > MAX_CATEGORY_ICON_LENGTH:
+        raise HTTPException(status_code=400, detail="Category emoji is too long")
+    if _CONTROL_CHAR_RE.search(trimmed) or _ASCII_LETTER_RE.search(trimmed):
+        raise HTTPException(
+            status_code=400, detail="Category emoji must be an emoji"
+        )
+    return trimmed

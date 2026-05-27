@@ -16,6 +16,8 @@ export function getQuestionSymbol(questionType: string): string {
 }
 
 export function getCategoryIcon(question: Question): string {
+  // A creator-chosen emoji for a custom category wins over everything.
+  if (question.category_icon) return question.category_icon;
   const builtInIcon = getBuiltInCategoryIcon(question.category);
   if (builtInIcon) return builtInIcon;
   // Custom or no category — use question type symbol

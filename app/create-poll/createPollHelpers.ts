@@ -25,6 +25,9 @@ export interface QuestionDraft {
   title: string;
   isAutoTitle: boolean;
   category: string;
+  /** Emoji for a custom category. Empty string when none chosen / not a
+   *  custom category. */
+  categoryIcon: string;
   forField: string;
   options: string[];
   optionsMetadata: OptionsMetadata;
@@ -60,6 +63,7 @@ export function emptyDraft(
     title: '',
     isAutoTitle: !isYesNo,
     category: opts.category ?? 'custom',
+    categoryIcon: '',
     forField: opts.forField ?? '',
     options: [''],
     optionsMetadata: {},
@@ -86,6 +90,15 @@ export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice
   if (d.questionType === 'time' || d.category === 'time') return 'time';
   if (d.category === 'yes_no') return 'yes_no';
   return 'ranked_choice';
+}
+
+/** The emoji to persist for a draft's category: the trimmed custom emoji
+ *  when the category is custom (built-in categories have a fixed icon), else
+ *  null. Single source of truth for the create + optimistic-placeholder paths
+ *  so the render gate, the API payload, and the placeholder can't diverge. */
+export function effectiveCategoryIcon(d: QuestionDraft): string | null {
+  const icon = d.categoryIcon.trim();
+  return icon && !getBuiltInType(d.category) ? icon : null;
 }
 
 /** True when a draft is in "suggestion mode" (ranked_choice with no options yet). */
@@ -143,6 +156,10 @@ export function draftToQuestionParams(
   }
   if (dbType === 'ranked_choice' && d.category !== 'custom') {
     params.category = d.category;
+  }
+  const icon = effectiveCategoryIcon(d);
+  if (icon) {
+    params.category_icon = icon;
   }
   if (dbType === 'ranked_choice' && filledOptions.length > 0) {
     params.options = filledOptions;
@@ -279,6 +296,7 @@ export function synthesizePlaceholderPoll(
       created_at: now,
       updated_at: now,
       category: dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : null,
+      category_icon: effectiveCategoryIcon(d),
       is_auto_title: d.isAutoTitle,
       poll_id: pollId,
       question_index: i,

@@ -17,6 +17,7 @@ export type QuestionType = 'yes_no' | 'ranked_choice' | 'time';
 export interface CreateQuestionParams {
   question_type?: QuestionType;
   category?: string | null;
+  category_icon?: string | null;
   options?: string[] | null;
   options_metadata?: OptionsMetadata | null;
   context?: string | null;

@@ -213,6 +213,7 @@ export function toQuestion(data: any): Question {
     day_time_windows: data.day_time_windows ?? undefined,
     duration_window: data.duration_window ?? undefined,
     category: data.category ?? undefined,
+    category_icon: data.category_icon ?? undefined,
     options_metadata: data.options_metadata ?? undefined,
     reference_latitude: data.reference_latitude ?? undefined,
     reference_longitude: data.reference_longitude ?? undefined,
