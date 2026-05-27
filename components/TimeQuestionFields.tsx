@@ -1,6 +1,4 @@
-import { useState } from 'react';
 import MinMaxCounter from './MinMaxCounter';
-import DaysSelector from './DaysSelector';
 import DayTimeWindowsInput from './DayTimeWindowsInput';
 import { useDayTimeWindowsState } from '@/lib/useDayTimeWindowsState';
 
@@ -37,10 +35,9 @@ interface TimeQuestionFieldsProps {
     minEnabled: boolean;
     maxEnabled: boolean;
   };
-  highlightDaysButton?: boolean;
-  // When false, the embedded Day Time Windows block (label + button + day
-  // list + DaysSelector) is omitted so the caller can render its own copy
-  // (e.g. the create-poll form lifts it into a dedicated card).
+  // When false, the embedded Day Time Windows block (label + day list) is
+  // omitted so the caller can render its own copy (e.g. the create-poll form
+  // lifts it into a dedicated card).
   renderDaysSection?: boolean;
 }
 
@@ -61,12 +58,9 @@ export default function TimeQuestionFields({
   onDayTimeWindowsChange,
   questionDayTimeWindows,
   questionDurationWindow,
-  highlightDaysButton = false,
   renderDaysSection = true,
 }: TimeQuestionFieldsProps) {
-  const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
   const {
-    onDaysSelected: handleDaysSelected,
     onWindowsChange: handleDayWindowsChange,
     onDeleteDay: handleDeleteDay,
   } = useDayTimeWindowsState(dayTimeWindows, onDayTimeWindowsChange);
@@ -74,9 +68,6 @@ export default function TimeQuestionFields({
   const formatDurationValue = (value: number) => {
     return parseFloat(value.toFixed(2)).toString();
   };
-
-  const selectedDays = dayTimeWindows.map(dtw => dtw.day);
-  const allowedDays = questionDayTimeWindows?.map(dtw => dtw.day);
 
   // Convert minimum duration from hours to minutes for time window validation
   const minDurationMinutes = durationMinEnabled && durationMinValue != null
@@ -111,26 +102,14 @@ export default function TimeQuestionFields({
         </div>
       )}
 
-      {/* Day Time Windows */}
+      {/* Day Time Windows. Voters can toggle availability within the
+          creator-defined days/windows but cannot add or remove days, so
+          there is no day-picker button here. */}
       {renderDaysSection && onDayTimeWindowsChange && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">
-              Time Windows
-            </label>
-            <button
-              type="button"
-              onClick={() => setIsDaysPickerOpen(true)}
-              disabled={disabled}
-              className={`px-3 py-1 text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
-                highlightDaysButton
-                  ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60'
-                  : 'text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
-              }`}
-            >
-              {dayTimeWindows.length === 0 ? 'Select Days' : 'Add/Remove Days'}
-            </button>
-          </div>
+          <label className="block text-sm font-medium">
+            Time Windows
+          </label>
 
           {dayTimeWindows.map((dayTimeWindow) => (
             <DayTimeWindowsInput
@@ -145,16 +124,6 @@ export default function TimeQuestionFields({
               allDays={dayTimeWindows}
             />
           ))}
-
-          <DaysSelector
-            selectedDays={selectedDays}
-            onChange={handleDaysSelected}
-            disabled={disabled}
-            isOpen={isDaysPickerOpen}
-            onOpenChange={setIsDaysPickerOpen}
-            allowedDays={allowedDays}
-            hideButton={true}
-          />
         </div>
       )}
     </div>
