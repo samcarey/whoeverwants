@@ -7,7 +7,7 @@
  * Each bubble cycles through: neutral → liked (green) → disliked (red) → neutral.
  *
  * Dragging across multiple bubbles selects a contiguous (chronological) range of
- * them; a floating toolbar then offers Like / Dislike / Clear, which apply the
+ * them; a floating toolbar then offers Like / Dislike / Neutral, which apply the
  * chosen preference to every selected slot and dismiss the selection. The toolbar
  * is portaled out and fixed to the viewport so it never shifts the page layout.
  *
