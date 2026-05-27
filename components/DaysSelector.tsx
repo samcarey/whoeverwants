@@ -17,9 +17,12 @@ interface DaysSelectorProps {
   // When provided, the internal month-nav row is omitted so the caller
   // can render its own controls.
   currentMonth?: Date;
+  // Compact mode (inline only): render just three weeks starting with the
+  // week that contains today, instead of the full month grid.
+  compact?: boolean;
 }
 
-export default function DaysSelector({ selectedDays, onChange, disabled = false, isOpen = false, onOpenChange, allowedDays, hideButton = false, inline = false, currentMonth }: DaysSelectorProps) {
+export default function DaysSelector({ selectedDays, onChange, disabled = false, isOpen = false, onOpenChange, allowedDays, hideButton = false, inline = false, currentMonth, compact = false }: DaysSelectorProps) {
   const [tempSelectedDays, setTempSelectedDays] = useState<string[]>(selectedDays);
   const [internalCurrentMonth, setInternalCurrentMonth] = useState(() => {
     const now = new Date();
@@ -155,6 +158,22 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
   };
 
   const calendarDays = useMemo(() => {
+    if (compact) {
+      // Three weeks (21 days) starting with the Sunday of the week that
+      // contains today. Days that spill into an adjacent month stay
+      // selectable (no month-relative graying) so the compact view reads
+      // as a rolling "next few weeks" picker.
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
+      const days: { dateStr: string; isCurrentMonth: boolean; day: number }[] = [];
+      for (let i = 0; i < 21; i++) {
+        const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+        days.push({ dateStr: formatLocalDateISO(date), isCurrentMonth: true, day: date.getDate() });
+      }
+      return days;
+    }
+
     const year = effectiveCurrentMonth.getFullYear();
     const month = effectiveCurrentMonth.getMonth();
     const firstDayOfWeek = new Date(year, month, 1).getDay();
@@ -180,7 +199,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     }
 
     return days;
-  }, [effectiveCurrentMonth]);
+  }, [effectiveCurrentMonth, compact]);
 
   const monthName = formatMonthYearLabel(effectiveCurrentMonth);
 
