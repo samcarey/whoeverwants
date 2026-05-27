@@ -386,9 +386,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       >
         {/* Top row: icon + title (left) / status + chevron (right). */}
         <div className="flex items-start justify-between gap-2 min-w-0">
-          <h3 className="flex-1 min-w-0 font-medium text-lg leading-tight text-gray-900 dark:text-white">
-            <span className="mr-1.5" aria-hidden="true">{categoryIcon}</span>
-            {question.title}
+          <h3 className="flex-1 min-w-0 flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white">
+            <span className="mr-1.5 shrink-0" aria-hidden="true">{categoryIcon}</span>
+            <span className="min-w-0">{question.title}</span>
           </h3>
           {!isPlaceholder && (
             <div className="shrink-0 pt-0.5 flex items-center gap-1 text-sm leading-tight text-gray-500 dark:text-gray-400">
