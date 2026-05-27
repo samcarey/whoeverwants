@@ -46,6 +46,12 @@ export interface QuestionDraft {
    *  initial suggestions). OFF → fixed-options ranked_choice (options
    *  required). Seeded from the user's remembered preference on open. */
   collectSuggestions: boolean;
+  /** "Ask for Availability before Voting" — only meaningful for time
+   *  questions. ON → two-phase availability → preferences flow (current
+   *  default). OFF → the poll starts directly as a preference poll over the
+   *  slots derived from the creator's time windows (no availability phase).
+   *  Seeded from the user's remembered preference on open. */
+  collectAvailability: boolean;
 }
 
 /** Default empty draft, optionally preselected by the bubble that opened
@@ -57,7 +63,7 @@ export interface QuestionDraft {
  *  Yes/No drafts force `isAutoTitle: false` since the title IS the prompt.
  */
 export function emptyDraft(
-  opts: { mode?: 'question' | 'time'; category?: string; forField?: string; collectSuggestions?: boolean } = {},
+  opts: { mode?: 'question' | 'time'; category?: string; forField?: string; collectSuggestions?: boolean; collectAvailability?: boolean } = {},
 ): QuestionDraft {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -85,6 +91,7 @@ export function emptyDraft(
       : [],
     minimumParticipation: 95,
     collectSuggestions: opts.collectSuggestions ?? true,
+    collectAvailability: opts.collectAvailability ?? true,
   };
 }
 
@@ -115,19 +122,33 @@ export function draftIsSuggestionMode(d: QuestionDraft): boolean {
   return d.collectSuggestions;
 }
 
+/** True when a draft is a time question with an availability phase — i.e.
+ *  "Ask for Availability before Voting" is on. OFF skips the availability
+ *  phase (no poll-level prephase cutoff); the server derives the candidate
+ *  slots from the creator's windows at create time and the poll opens
+ *  straight into the preference (like/dislike) ballot. */
+export function draftUsesAvailabilityPhase(d: QuestionDraft): boolean {
+  if (draftDbQuestionType(d) !== 'time') return false;
+  return d.collectAvailability;
+}
+
 /** True when at least one draft needs the poll-level suggestion/availability cutoff. */
 export function anyDraftUsesPrephase(drafts: QuestionDraft[]): boolean {
-  return drafts.some(d => draftDbQuestionType(d) === 'time' || draftIsSuggestionMode(d));
+  return drafts.some(d => draftUsesAvailabilityPhase(d) || draftIsSuggestionMode(d));
 }
 
-/** True when at least one draft is a time question. */
-export function anyDraftIsTime(drafts: QuestionDraft[]): boolean {
-  return drafts.some(d => draftDbQuestionType(d) === 'time');
+/** True when at least one draft is a time question using the availability
+ *  phase. A time question whose "Ask for Availability before Voting" toggle is
+ *  off has no prephase, so it doesn't count here. Drives the poll-level
+ *  prephase cutoff + cutoff label. */
+export function anyDraftUsesAvailabilityPhase(drafts: QuestionDraft[]): boolean {
+  return drafts.some(d => draftUsesAvailabilityPhase(d));
 }
 
-/** True when at least one draft is in suggestion mode (ranked_choice with no
- *  options yet). Distinct from `anyDraftIsTime` so the cutoff label can pick
- *  the correct phrasing per poll composition. */
+/** True when at least one draft is in suggestion mode (ranked_choice with
+ *  "Collect Suggestions before Vote" on). Distinct from
+ *  `anyDraftUsesAvailabilityPhase` so the cutoff label can pick the correct
+ *  phrasing per poll composition. */
 export function anyDraftHasSuggestion(drafts: QuestionDraft[]): boolean {
   return drafts.some(d => draftIsSuggestionMode(d));
 }
@@ -204,7 +225,14 @@ export function draftToQuestionParams(
       };
     }
     params.min_availability_percent = d.minimumParticipation;
-    params.suggestion_deadline_minutes = prephaseMinutes != null ? Math.round(prephaseMinutes) : 120;
+    // Availability phase ON → set the prephase cutoff so the poll collects
+    // availability before opening preferences. OFF → leave it unset; the
+    // server reads the absent `suggestion_deadline_minutes` as "no availability
+    // phase" and finalizes the candidate slots from the creator's windows at
+    // create time, so the poll opens straight into the preference ballot.
+    if (d.collectAvailability) {
+      params.suggestion_deadline_minutes = prephaseMinutes != null ? Math.round(prephaseMinutes) : 120;
+    }
   }
   return params;
 }

@@ -801,6 +801,28 @@ def create_poll(
             _insert_question(conn, poll_row, req, sub, index, question_title, now)
             for index, sub in enumerate(req.questions)
         ]
+        # "Ask for Availability before Voting" toggled OFF: a time question
+        # created without a prephase cutoff (`suggestion_deadline_minutes`
+        # unset) has no availability phase, so finalize its candidate slots
+        # from the creator's day_time_windows + duration right now. With zero
+        # votes the min-availability filter is a no-op and the longest-per-start
+        # dedup applies — identical to the cutoff-time finalization, just with
+        # no availability data. The question lands with `options` set, which the
+        # FE reads as "not in the availability phase" so the poll opens straight
+        # into the like/dislike (preference) ballot. Re-fetch each finalized row
+        # so the computed slots ride back on the create response.
+        for idx, (sub, qrow) in enumerate(zip(req.questions, question_rows)):
+            if (
+                sub.question_type == QuestionType.time
+                and sub.suggestion_deadline_minutes is None
+            ):
+                _finalize_time_slots(conn, str(qrow["id"]), now)
+                refreshed = conn.execute(
+                    "SELECT * FROM questions WHERE id = %(id)s",
+                    {"id": str(qrow["id"])},
+                ).fetchone()
+                if refreshed is not None:
+                    question_rows[idx] = refreshed
         # "Collect Suggestions before Vote" with the creator's own initial
         # picks: submit them as the creator's suggestion-phase vote so the poll
         # opens collecting suggestions but already seeded with those options
