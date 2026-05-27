@@ -15,7 +15,7 @@ import ModalPortal from "@/components/ModalPortal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import AccountGateModal from "@/components/AccountGateModal";
 import { useAppPrefetch } from "@/lib/prefetch";
-import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses, getUserCollectSuggestions, saveUserCollectSuggestions } from "@/lib/userProfile";
+import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses, getUserCollectSuggestions, saveUserCollectSuggestions, getUserCollectAvailability, saveUserCollectAvailability } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import CategoryEmojiField from "@/components/CategoryEmojiField";
@@ -60,7 +60,7 @@ import {
   draftDbQuestionType,
   draftToQuestionParams,
   anyDraftUsesPrephase,
-  anyDraftIsTime,
+  anyDraftUsesAvailabilityPhase,
   anyDraftHasSuggestion,
   anyDraftIsRankedChoice,
   sharedDraftContext,
@@ -296,6 +296,11 @@ export function CreateQuestionContent() {
   // options become the creator's initial suggestions); OFF is a fixed-options
   // ranked_choice. Default ON; the last submitted value is remembered per user.
   const [collectSuggestions, setCollectSuggestions] = useState(true);
+  // "Ask for Availability before Voting" — per-question (only shown for
+  // time). ON keeps the two-phase availability → preferences flow; OFF starts
+  // the poll directly as a preference poll over the slots derived from the
+  // creator's time windows. Default ON; the last submitted value is remembered.
+  const [collectAvailability, setCollectAvailability] = useState(true);
 
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -508,11 +513,12 @@ export function CreateQuestionContent() {
         showPreliminaryResults,
         allowPreRanking,
         collectSuggestions,
+        collectAvailability,
         drafts,
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, allowPreRanking, collectSuggestions, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, allowPreRanking, collectSuggestions, collectAvailability, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -561,6 +567,7 @@ export function CreateQuestionContent() {
           if (formState.showPreliminaryResults !== undefined) setShowPreliminaryResults(formState.showPreliminaryResults);
           if (formState.allowPreRanking !== undefined) setAllowPreRanking(formState.allowPreRanking);
           if (formState.collectSuggestions !== undefined) setCollectSuggestions(formState.collectSuggestions);
+          if (formState.collectAvailability !== undefined) setCollectAvailability(formState.collectAvailability);
           if (Array.isArray(formState.drafts)) setDrafts(formState.drafts);
 
           return formState;
@@ -606,14 +613,18 @@ export function CreateQuestionContent() {
   // category='custom', no options) which would otherwise look like
   // "suggestion mode" and wrongly surface the prephase fields after
   // every staged draft.
-  const inlineFormHasTime = isModalOpen && (questionType === 'time' || category === 'time');
+  // A time question only contributes a prephase (availability) cutoff when its
+  // "Ask for Availability before Voting" toggle is on. With it off the poll has
+  // no availability phase, so it must NOT surface the cutoff field or the
+  // allow-pre-vote toggle for that time question.
+  const inlineFormUsesAvailability = isModalOpen && (questionType === 'time' || category === 'time') && collectAvailability;
   const inlineFormHasSuggestion = isModalOpen && isSuggestionMode;
-  const pollHasTime = anyDraftIsTime(drafts) || inlineFormHasTime;
+  const pollHasAvailability = anyDraftUsesAvailabilityPhase(drafts) || inlineFormUsesAvailability;
   const pollHasSuggestion = anyDraftHasSuggestion(drafts) || inlineFormHasSuggestion;
-  const pollHasPrephase = pollHasTime || pollHasSuggestion;
-  const cutoffLabel = pollHasTime && pollHasSuggestion
+  const pollHasPrephase = pollHasAvailability || pollHasSuggestion;
+  const cutoffLabel = pollHasAvailability && pollHasSuggestion
     ? "Suggestion/Availability Cutoff"
-    : pollHasTime
+    : pollHasAvailability
       ? "Availability Cutoff"
       : "Suggestion Cutoff";
 
@@ -776,7 +787,8 @@ export function CreateQuestionContent() {
     dayTimeWindows: [...dayTimeWindows],
     minimumParticipation,
     collectSuggestions,
-  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minimumParticipation, collectSuggestions]);
+    collectAvailability,
+  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minimumParticipation, collectSuggestions, collectAvailability]);
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
@@ -798,8 +810,9 @@ export function CreateQuestionContent() {
     setDurationMaxEnabled(d.durationMaxEnabled);
     setDayTimeWindows([...d.dayTimeWindows]);
     setMinimumParticipation(d.minimumParticipation);
-    // Default ON for drafts persisted before this field existed.
+    // Default ON for drafts persisted before these fields existed.
     setCollectSuggestions(d.collectSuggestions ?? true);
+    setCollectAvailability(d.collectAvailability ?? true);
   }, []);
 
   // Backdrop + Escape preserve form state; only the explicit X-confirm
@@ -837,6 +850,7 @@ export function CreateQuestionContent() {
       category: cat,
       forField: inheritedForField,
       collectSuggestions: getUserCollectSuggestions() ?? true,
+      collectAvailability: getUserCollectAvailability() ?? true,
     }));
     setCreatorName(getUserName() ?? "");
     setError(null);
@@ -1055,6 +1069,10 @@ export function CreateQuestionContent() {
     if (savedCollectSuggestions !== null) {
       setCollectSuggestions(savedCollectSuggestions);
     }
+    const savedCollectAvailability = getUserCollectAvailability();
+    if (savedCollectAvailability !== null) {
+      setCollectAvailability(savedCollectAvailability);
+    }
 
     if (!followUpToParam && !duplicateOfParam && !voteFromSuggestionParam) {
       const savedFormState = loadFormState();
@@ -1110,6 +1128,11 @@ export function CreateQuestionContent() {
             setQuestionType('time');
             setOptions(['']);
             if (duplicateData.min_availability_percent != null) setMinimumParticipation(duplicateData.min_availability_percent);
+            // A duplicated time poll re-opens as a fresh availability-phase
+            // poll (the default). The duplicate snapshot doesn't carry the
+            // creator's windows, so a no-availability copy couldn't derive
+            // slots anyway — start it back at the two-phase flow.
+            setCollectAvailability(true);
           } else {
             // yes_no question
             setQuestionType('question');
@@ -1565,6 +1588,9 @@ export function CreateQuestionContent() {
       // only renders for ranked_choice, so this no-ops the value for yes_no /
       // time polls (collectSuggestions keeps whatever it last was).
       saveUserCollectSuggestions(collectSuggestions);
+      // Same for the time-question availability toggle (only renders for time
+      // polls; keeps its last value otherwise).
+      saveUserCollectAvailability(collectAvailability);
       clearFormState();
       setIsSubmitted(false);
       isSubmittingRef.current = false;
@@ -2034,6 +2060,22 @@ export function CreateQuestionContent() {
                           />
                         </div>
                       )}
+                      {category === 'time' && (
+                        <div
+                          className={`flex items-center justify-between gap-3 h-12 ${isLoading ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                          onClick={() => { if (!isLoading) setCollectAvailability(!collectAvailability); }}
+                        >
+                          <span className="text-base font-normal">
+                            Ask for Availability before Voting
+                          </span>
+                          <SliderSwitch
+                            checked={collectAvailability}
+                            onChange={setCollectAvailability}
+                            disabled={isLoading}
+                            aria-label="Ask for availability before voting"
+                          />
+                        </div>
+                      )}
                       {category === 'yes_no' && titleField}
                     </div>
                   )}
@@ -2185,7 +2227,11 @@ export function CreateQuestionContent() {
                   </form>
                 </section>
 
-                {showTimeFields && (
+                {/* Minimum Availability filters slots by how many voters were
+                    free — only meaningful when an availability phase actually
+                    collects that data. Hidden when "Ask for Availability before
+                    Voting" is off. */}
+                {showTimeFields && collectAvailability && (
                   <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
                     <div className="flex items-center justify-between gap-3 h-12">
                       <span className="text-base font-normal shrink-0">

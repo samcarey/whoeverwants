@@ -278,7 +278,7 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
               {formatTimeSlot(winner)}
             </span>
           </div>
-          {maxAvail != null && availCounts?.[winner] != null && (
+          {maxAvail != null && maxAvail > 0 && availCounts?.[winner] != null && (
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
               {availCounts[winner]} of {maxAvail} available
             </p>

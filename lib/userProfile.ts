@@ -2,6 +2,7 @@ const USER_NAME_KEY = 'whoeverwants_user_name';
 const USER_LOCATION_KEY = 'whoeverwants_user_location';
 const USER_MIN_RESPONSES_KEY = 'whoeverwants_min_responses';
 const USER_COLLECT_SUGGESTIONS_KEY = 'whoeverwants_collect_suggestions';
+const USER_COLLECT_AVAILABILITY_KEY = 'whoeverwants_collect_availability';
 
 export interface Coords {
   latitude: number;
@@ -87,6 +88,11 @@ export function clearUserCollectSuggestions() {
   localStorage.removeItem(USER_COLLECT_SUGGESTIONS_KEY);
 }
 
+export function clearUserCollectAvailability() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(USER_COLLECT_AVAILABILITY_KEY);
+}
+
 /**
  * Wipe every piece of locally-stored personal user data — display name,
  * reference location, and the min-responses default. Called on sign-out
@@ -101,6 +107,7 @@ export function clearStoredUserData() {
   clearUserLocation();
   clearUserMinResponses();
   clearUserCollectSuggestions();
+  clearUserCollectAvailability();
 }
 
 export function getUserMinResponses(): number | null {
@@ -125,6 +132,25 @@ export function saveUserCollectSuggestions(value: boolean) {
 export function getUserCollectSuggestions(): boolean | null {
   if (typeof window === 'undefined') return null;
   const stored = localStorage.getItem(USER_COLLECT_SUGGESTIONS_KEY);
+  if (stored === null) return null;
+  return stored === '1';
+}
+
+/**
+ * Remembered "Ask for Availability before Voting" toggle for time questions in
+ * the new-poll form. Defaults ON (the two-phase availability → preferences
+ * flow); OFF starts the poll directly as a preference poll over the slots
+ * derived from the creator's time windows. Returns null when never set so
+ * callers can apply their own default. Mirrors the collect-suggestions pref.
+ */
+export function saveUserCollectAvailability(value: boolean) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(USER_COLLECT_AVAILABILITY_KEY, value ? '1' : '0');
+}
+
+export function getUserCollectAvailability(): boolean | null {
+  if (typeof window === 'undefined') return null;
+  const stored = localStorage.getItem(USER_COLLECT_AVAILABILITY_KEY);
   if (stored === null) return null;
   return stored === '1';
 }
