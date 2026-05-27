@@ -2124,15 +2124,19 @@ export function CreateQuestionContent() {
                             disabled={isLoading}
                             aria-label={calendarExpanded ? "Show fewer weeks" : "Show full month"}
                             aria-expanded={calendarExpanded}
-                            className="absolute left-full top-1/2 -translate-y-1/2 ml-2 w-6 h-6 flex items-center justify-center rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="group absolute left-full top-1/2 -translate-y-1/2 ml-2 w-6 h-6 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              {calendarExpanded ? (
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                              ) : (
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                              )}
-                            </svg>
+                            {/* Touch target stays 24px (w-6 h-6); the visible
+                                circle is 20% smaller via this inner span. */}
+                            <span className="w-[19.2px] h-[19.2px] flex items-center justify-center rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 group-hover:bg-gray-200 dark:group-hover:bg-gray-700">
+                              <svg className="w-[12.8px] h-[12.8px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                {calendarExpanded ? (
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                ) : (
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                )}
+                              </svg>
+                            </span>
                           </button>
                         </div>
                         {calendarExpanded && (
