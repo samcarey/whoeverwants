@@ -63,10 +63,15 @@ class TestInitialSuggestions:
         assert vote["is_abstain"] is False
         assert vote["voter_name"] == "Alice"
 
+        # The create response maps the question to the creator's vote id so the
+        # creating browser can recognize (and edit) its own seeded vote.
+        assert poll["initial_suggestion_vote_ids"] == {question["id"]: vote["id"]}
+
     def test_no_initial_suggestions_creates_no_vote(self, client):
         poll = _create_suggestion_poll(client, initial=None)
         question = poll["questions"][0]
         assert _question_votes(client, question["id"]) == []
+        assert poll.get("initial_suggestion_vote_ids") in (None, {})
 
     def test_empty_initial_suggestions_creates_no_vote(self, client):
         poll = _create_suggestion_poll(client, initial=[])

@@ -7,6 +7,7 @@ import {
   invalidatePoll,
 } from "@/lib/questionCache";
 import { pollFetch, coalesced, toPoll } from "./_internal";
+import { setStoredVoteId, setVotedQuestionFlag } from "@/lib/votedQuestionsStorage";
 
 // Mirrors server/routers/polls.py. Polls wrap one or more questions;
 // a 1-question poll renders identically to today's single question. See
@@ -64,6 +65,19 @@ export async function apiCreatePoll(params: CreatePollParams): Promise<Poll> {
     method: 'POST',
     body: JSON.stringify(params),
   });
+  // When the server auto-submitted the creator's initial suggestions (the
+  // "Collect Suggestions before Vote" path), it returns the resulting vote ids
+  // per question. Record them locally so the creating browser recognizes its
+  // own vote — otherwise the creator would see their seeds as unowned and a
+  // later edit would spawn a duplicate vote.
+  const seededVoteIds = (data as { initial_suggestion_vote_ids?: Record<string, string> | null })
+    .initial_suggestion_vote_ids;
+  if (seededVoteIds) {
+    for (const [questionId, voteId] of Object.entries(seededVoteIds)) {
+      setStoredVoteId(questionId, voteId);
+      setVotedQuestionFlag(questionId, true);
+    }
+  }
   const poll = toPoll(data);
   cachePoll(poll);
   return poll;

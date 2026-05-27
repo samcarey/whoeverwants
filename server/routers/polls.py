@@ -808,11 +808,13 @@ def create_poll(
         # Gated on the poll actually having a prephase deadline — otherwise the
         # question has no suggestion phase and the vote would 400. Best-effort
         # per question; submitted inside the same transaction so it's atomic
-        # with the create.
+        # with the create. The returned vote ids ride back on the response so
+        # the creating browser can recognize (and later edit) its own vote.
+        initial_suggestion_vote_ids: dict[str, str] = {}
         if poll_row.get("prephase_deadline"):
             for sub, qrow in zip(req.questions, question_rows):
                 if sub.question_type == QuestionType.ranked_choice and sub.initial_suggestions:
-                    _submit_vote_to_question(
+                    vote_row = _submit_vote_to_question(
                         conn,
                         str(qrow["id"]),
                         SubmitVoteRequest(
@@ -825,6 +827,7 @@ def create_poll(
                         now,
                         browser_id=creator_browser_id,
                     )
+                    initial_suggestion_vote_ids[str(qrow["id"])] = str(vote_row["id"])
         # Notification strings for the "New poll in <Group>" push, computed
         # while the conn is open. The group phrase's participant-names fallback
         # only queries when the group has no title override; the body is the
@@ -889,9 +892,14 @@ def create_poll(
             },
         )
 
-    # Newly-created poll has no votes yet — skip the voter aggregation.
-    # The caller is the creator, so viewer_is_creator is true.
-    return _row_to_poll(poll_row, question_rows, viewer_user_id=creator_user_id)
+    # The caller is the creator, so viewer_is_creator is true. Voter
+    # aggregation is skipped (the creator is filtered out of their own
+    # respondent display anyway; the 5s refresh fills it in). The creator's
+    # seeded-suggestion vote ids ride back so their browser owns the vote.
+    poll = _row_to_poll(poll_row, question_rows, viewer_user_id=creator_user_id)
+    if initial_suggestion_vote_ids:
+        poll.initial_suggestion_vote_ids = initial_suggestion_vote_ids
+    return poll
 
 
 @router.get("/by-id/{poll_id}", response_model=PollResponse)

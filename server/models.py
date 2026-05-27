@@ -385,6 +385,12 @@ class PollResponse(BaseModel):
     # voted/abstained = "ignored" viewers. Mostly nameless; surfaced as a muted
     # count. See CLAUDE.md 'App-Icon Badge Model + Viewed Tracking'.
     viewed_ignored_count: int = 0
+    # Only set on the create response: maps question_id → the vote_id of the
+    # creator's auto-submitted initial-suggestions vote (see
+    # CreateQuestionRequest.initial_suggestions). The FE stores these so the
+    # creating browser recognizes its own server-submitted vote and can edit it
+    # rather than spawning a duplicate. Absent on reads.
+    initial_suggestion_vote_ids: dict[str, str] | None = None
 
 
 # Resolve forward references (QuestionResponse.results -> QuestionResultsResponse)
