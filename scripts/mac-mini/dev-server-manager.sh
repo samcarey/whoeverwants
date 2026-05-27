@@ -119,6 +119,7 @@ slug_to_volume() {
 
 is_skipped_branch() {
   local branch="$1"
+  local skip
   for skip in "${SKIP_BRANCHES[@]}"; do
     [ "$branch" = "$skip" ] && return 0
   done
@@ -209,9 +210,11 @@ apply_dev_migrations() {
   local files
   files=$(docker exec "$container" sh -c "ls /repo/database/migrations/*_up.sql 2>/dev/null | sort")
   local pending=0
+  # Loop vars declared local so this function (called from cmd_upsert's dynamic
+  # scope) can't leak `f`/`basename` into a caller. `container` is already local.
+  local f basename
   while IFS= read -r f; do
     [ -z "$f" ] && continue
-    local basename
     basename=$(basename "$f")
     case "$basename" in
       000_*) continue ;;                      # production-only marker
@@ -461,6 +464,10 @@ cmd_list() {
   printf "%-40s %-40s %-5s %-25s %s\n" "---------" "------" "----" "-------" "------"
 
   local found=0
+  # Loop vars declared local (defensive: matches the eviction-clobber rule — a
+  # future refactor that calls this from cmd_upsert's scope can't alias its
+  # `container`/`port` locals).
+  local container branch port updated status
   while IFS=$'\t' read -r container branch port updated status; do
     [ -z "$container" ] && continue
     found=1
@@ -514,9 +521,10 @@ cmd_destroy_branch() {
 cmd_destroy_all() {
   log "=== Destroying all dev servers ==="
   local any=0
+  local container slug
   for container in $(docker ps -a --filter "name=${DEV_CONTAINER_PREFIX}-" --format '{{.Names}}'); do
     any=1
-    local slug="${container#${DEV_CONTAINER_PREFIX}-}"
+    slug="${container#${DEV_CONTAINER_PREFIX}-}"
     cmd_destroy_slug "$slug"
   done
   if [ "$any" -eq 0 ]; then
@@ -529,14 +537,14 @@ cmd_cleanup_old() {
   local max_age_days="${1:-7}"
   local now
   now=$(date +%s)
+  local container updated created_epoch age_days slug
   while IFS=$'\t' read -r container updated; do
     [ -z "$container" ] && continue
-    local created_epoch age_days
     created_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
     [ "$created_epoch" -eq 0 ] && continue
     age_days=$(( (now - created_epoch) / 86400 ))
     if [ "$age_days" -ge "$max_age_days" ]; then
-      local slug="${container#${DEV_CONTAINER_PREFIX}-}"
+      slug="${container#${DEV_CONTAINER_PREFIX}-}"
       log "Dev server '$slug' last updated ${age_days} days ago (max: ${max_age_days}). Destroying..."
       cmd_destroy_slug "$slug"
     fi
@@ -546,6 +554,7 @@ cmd_cleanup_old() {
 
 cmd_revive() {
   log "=== Reviving stopped dev servers ==="
+  local container
   for container in $(docker ps -a --filter "name=${DEV_CONTAINER_PREFIX}-" --filter "status=exited" --format '{{.Names}}'); do
     log "Starting $container"
     docker start "$container" >/dev/null
