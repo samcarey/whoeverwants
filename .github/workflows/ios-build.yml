@@ -307,6 +307,41 @@ jobs:
           fi
           echo "Patched $AFTER bundle ID occurrence(s) to $BUNDLE_ID"
 
+      - name: Scope associated-domains entitlement to the tier host
+        run: |
+          set -euo pipefail
+          # Each tier's app claims ONLY its own host for universal links
+          # (applinks) + passkeys (webcredentials). Committed App.entitlements
+          # lists BOTH hosts (the local-build superset); this rewrites it
+          # per-tier for the shipped artifact.
+          #
+          # Why: if both bundles claim both hosts and a device has BOTH apps
+          # installed (the dev/tester case), iOS routes a
+          # latest.whoeverwants.com link to either app non-deterministically.
+          # When it picks the prod app, that WebView loads whoeverwants.com
+          # and a latest-tier token (recovery email / magic link / invite)
+          # fails to verify against the prod API. Scoping the entitlement per
+          # tier makes the routing unambiguous: a host's link can only open
+          # the bundle whose entitlement claims it. The AASA at each host can
+          # keep listing both bundles — the entitlement is the discriminator
+          # iOS uses, so a bundle that doesn't claim a host never opens its
+          # links regardless of what the AASA says.
+          if [[ "$CAP_ENV" == "prod" ]]; then
+            LINK_HOST="whoeverwants.com"
+          else
+            LINK_HOST="latest.whoeverwants.com"
+          fi
+          ENT="ios/App/App/App.entitlements"
+          # PlistBuddy, not `plutil -insert -xml` (which corrupts the root —
+          # see the Google URL-scheme step). Rebuild the array from scratch.
+          /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.associated-domains" "$ENT" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.associated-domains array" "$ENT"
+          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.associated-domains:0 string applinks:$LINK_HOST" "$ENT"
+          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.associated-domains:1 string webcredentials:$LINK_HOST" "$ENT"
+          /usr/libexec/PlistBuddy -c "Print :com.apple.developer.associated-domains" "$ENT"
+          plutil -lint "$ENT"
+          echo "Scoped associated-domains to $LINK_HOST for CAP_ENV=$CAP_ENV"
+
       - name: Compute build number
         id: build_number
         run: |
