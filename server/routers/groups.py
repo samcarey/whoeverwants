@@ -502,8 +502,28 @@ def get_group_preview(route_id: str, p: str | None = None):
                 {"t": group_id},
             ).fetchone()
 
+        # Empty group (no polls yet): return a minimal preview using the
+        # group's `title` override (or a default) instead of 404'ing. The
+        # GroupNotFound page uses this endpoint to distinguish "group is
+        # private + you don't have access" from "group genuinely doesn't
+        # exist" — 404'ing here would mis-classify any private empty group
+        # as missing, leaving the user with the "may not exist" copy on a
+        # group that actually does. Unlike the populated case, the
+        # `groups.title` override IS used here (no poll subject to defer
+        # to), falling back to "WhoeverWants" so crawlers always have
+        # something renderable.
         if target is None:
-            raise HTTPException(status_code=404, detail="Group not found")
+            group_row = conn.execute(
+                "SELECT title FROM groups WHERE id = %(gid)s::uuid",
+                {"gid": group_id},
+            ).fetchone()
+            override = (
+                (group_row.get("title") or "").strip() if group_row else ""
+            )
+            return GroupPreviewResponse(
+                title=override or "WhoeverWants",
+                description=None,
+            )
 
         question_rows = conn.execute(
             """SELECT title, category, question_type, details, options

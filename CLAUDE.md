@@ -1710,6 +1710,36 @@ viewers on the same page get a "Sign in to request access" CTA
 that opens `SignInModal`; signing in fires
 `SESSION_CHANGED_EVENT` and the button surfaces without remount.
 
+**`<GroupNotFound>` probes `/preview` to switch from ambiguous to
+honest copy when the group actually exists.** A private-group 404
+from `/by-route-id` looks identical to a truly-missing route at the
+FE layer, so saying "this group may not exist" was misleading for
+the common case where the friend just doesn't have access yet. On
+mount with a `routeId`, `apiGetGroupPreview(routeId)` (in
+`lib/api/groups.ts`) hits the public `/preview` endpoint — same one
+Open Graph crawlers already get on URL share, so no new info is
+disclosed. On 200 (group exists), the heading swaps to "Private
+Group" + body "Request access to view this group." On 404 the
+original "Group Not Found / may not exist or you don't have access"
+copy stays — we truly don't know. Tri-state `groupExists: null |
+true | false` (null = probe in flight) is load-bearing: during the
+<100ms probe window we keep the ambiguous copy rather than flashing
+a wrong claim. Don't add caching for this probe — GroupNotFound is
+rare enough that the extra request is a non-issue, and a stale
+cache would be worse than re-probing.
+
+**`/preview` returns 200 for empty groups (no polls), not 404.**
+The endpoint was originally 404'ing whenever `target is None` (no
+polls picked), but that mis-classified any private empty group as
+missing — breaking the `GroupNotFound` probe described above.
+Empty-group branch in `get_group_preview` returns
+`GroupPreviewResponse(title=<groups.title override> or
+"WhoeverWants", description=None)` instead. Unlike the populated
+case, the `groups.title` override IS honored here (there's no poll
+subject to defer to). When adding a new "does this group exist"
+client probe, route through `/preview` — it's the canonical
+identity-free existence check.
+
 **Pitfall: requester-email surfaces are NULL for passkey-only
 accounts.** Phase D permits accounts with no email at all
 (`user_identities` carries only a passkey row). The
