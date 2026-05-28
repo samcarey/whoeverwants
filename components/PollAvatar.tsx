@@ -42,10 +42,12 @@ export default function PollAvatar({ questions, sizeClassName = 'w-16' }: PollAv
       <svg viewBox="0 0 100 100" className="w-full h-full" aria-hidden="true">
         {icons.map((icon, i) => {
           const [cx, cy] = layoutCenters[i];
-          // Emoji glyphs render slightly smaller than their em-box; scale the
-          // font size to roughly fill the per-icon slot the tessellation
-          // reserves (radius × 2 ≈ font-em-box).
-          const fontSize = layoutRadius * 2;
+          // Per-icon font size. Single-icon polls fill the bounding disc
+          // (factor 2 ≈ slot diameter); multi-icon polls shrink the glyphs
+          // so adjacent emojis don't touch — the tessellation's slots are
+          // tangent, so a smaller-than-slot glyph leaves a visible gap.
+          const fillFactor = icons.length > 1 ? 1.6 : 2;
+          const fontSize = layoutRadius * fillFactor;
           return (
             <text
               key={i}
