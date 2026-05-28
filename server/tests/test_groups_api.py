@@ -289,6 +289,56 @@ class TestGroupPreview:
         # we care about: not empty.
         assert title
 
+    def test_empty_group_returns_200_with_default_title(
+        self, client, browser_id,
+    ):
+        """An empty group (no polls) must NOT 404 on /preview — the
+        GroupNotFound page uses /preview to distinguish "private + no
+        access" from "doesn't exist". Returning 404 here would
+        mis-classify a private empty group as missing."""
+        resp = client.post("/api/groups", headers=bid_headers(browser_id))
+        assert resp.status_code == 201, resp.text
+        group = resp.json()
+
+        resp = client.get(
+            f"/api/groups/by-route-id/{group['short_id']}/preview"
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["title"]  # default fallback when no override is set
+        assert body["description"] is None
+
+    def test_empty_group_uses_title_override(
+        self, client, browser_id,
+    ):
+        """When the empty group has a `groups.title` override (set via
+        /edit-title), the preview surfaces it. Unlike the populated case,
+        the override is honored here because there's no poll subject to
+        defer to."""
+        resp = client.post("/api/groups", headers=bid_headers(browser_id))
+        assert resp.status_code == 201, resp.text
+        group = resp.json()
+
+        title_resp = client.post(
+            f"/api/groups/{group['short_id']}/title",
+            json={"group_title": "Movie Night 2026"},
+            headers=bid_headers(browser_id),
+        )
+        assert title_resp.status_code == 200, title_resp.text
+
+        resp = client.get(
+            f"/api/groups/by-route-id/{group['short_id']}/preview"
+        )
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "Movie Night 2026"
+
+    def test_unknown_route_still_returns_404(self, client):
+        """Sanity: a truly nonexistent group must still 404. The
+        empty-group fallback only activates AFTER `resolve_group_id_from_route_id`
+        succeeds."""
+        resp = client.get("/api/groups/by-route-id/zzznotreal/preview")
+        assert resp.status_code == 404
+
 
 class TestBrowserIdMiddleware:
     def test_response_carries_browser_id_header(self, client, creator_secret):

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   ApiError,
   apiCreateGroupJoinRequest,
+  apiGetGroupPreview,
 } from "@/lib/api";
 import SignInModal from "@/components/SignInModal";
 import { haptic } from "@/lib/haptics";
@@ -41,7 +42,13 @@ export function GroupLoading({ label = "Loading group..." }: { label?: string })
  * page: per Phase E, /by-route-id 404s strangers on private groups
  * with no leak of title/avatar. So the 404 page IS the only surface a
  * signed-in non-member ever reaches when given a private group's URL.
- * We don't try to look up the group here — that would be the leak.
+ *
+ * To avoid pretending the group "may not exist" when it actually does,
+ * we probe the public `/preview` endpoint (same one Open Graph
+ * crawlers hit on URL share — no new info disclosed). If preview
+ * returns 200 the group exists; we swap to the "Private Group" copy.
+ * Preview 404 keeps the ambiguous original copy ("may not exist or
+ * you don't have access") since the group really might be missing.
  *
  * UX states:
  *   * Anonymous viewer → only the "Go Home" button (signing in alone
@@ -61,6 +68,10 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
     | { kind: "error"; message: string }
   >({ kind: "idle" });
   const [signInOpen, setSignInOpen] = useState(false);
+  // null = not yet known (probe in flight or no routeId); true = preview
+  // returned 200 so the group exists (private + no access); false =
+  // preview 404'd, group truly may not exist.
+  const [groupExists, setGroupExists] = useState<boolean | null>(null);
 
   // Same session-tracking pattern as GroupPrivacySection — seed from
   // the localStorage cache then subscribe to live changes so the
@@ -72,6 +83,20 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
     window.addEventListener(SESSION_CHANGED_EVENT, update);
     return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
   }, []);
+
+  // Probe /preview to find out whether the group exists. Cancelled on
+  // unmount so a late response can't setState on a dead component.
+  useEffect(() => {
+    if (!routeId) return;
+    let cancelled = false;
+    apiGetGroupPreview(routeId).then((preview) => {
+      if (cancelled) return;
+      setGroupExists(preview !== null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [routeId]);
 
   const requestAccess = () => {
     if (!routeId || submitting) return;
@@ -124,9 +149,13 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
     <>
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center max-w-sm px-6">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Group Not Found</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+            {groupExists ? "Private Group" : "Group Not Found"}
+          </h2>
           <p className="text-gray-600 dark:text-gray-400 mb-4">
-            This group may not exist or you don&apos;t have access.
+            {groupExists
+              ? "Request access to view this group."
+              : "This group may not exist or you don’t have access."}
           </p>
           <button
             onClick={() => router.push("/")}

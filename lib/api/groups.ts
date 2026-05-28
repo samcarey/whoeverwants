@@ -168,6 +168,32 @@ export async function apiGetGroupSummary(routeId: string): Promise<GroupSummary 
   }
 }
 
+/** Public link-preview metadata for a group (title + description).
+ *  Identity-free, visibility-free — the same endpoint Open Graph
+ *  crawlers hit on URL share. Returns null on 404 (route_id doesn't
+ *  resolve to a group at all), so consumers can distinguish "group
+ *  exists but you don't have access" from "group truly doesn't exist".
+ *
+ *  Used by `GroupNotFound` to swap the "may not exist or you don't have
+ *  access" copy for an honest "this group is private — request access"
+ *  message when the group does exist. */
+export async function apiGetGroupPreview(
+  routeId: string,
+): Promise<{ title: string; description: string | null } | null> {
+  try {
+    const data = await groupFetch<any>(
+      `/by-route-id/${encodeURIComponent(routeId)}/preview`,
+    );
+    return {
+      title: typeof data?.title === "string" ? data.title : "",
+      description:
+        typeof data?.description === "string" ? data.description : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Explicit "leave group" action — DELETE the caller's `group_members`
  * row for the resolved group. Idempotent server-side and fire-and-forget

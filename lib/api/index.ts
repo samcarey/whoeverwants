@@ -43,6 +43,7 @@ export {
   apiCreateGroup,
   apiGetMyEmptyGroups,
   apiGetGroupSummary,
+  apiGetGroupPreview,
   apiLeaveGroup,
   apiUpdateGroupTitle,
   apiUpdateGroupPrivacy,
