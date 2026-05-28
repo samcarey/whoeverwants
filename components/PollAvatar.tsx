@@ -3,14 +3,17 @@
 import React from 'react';
 import { Question } from '@/lib/types';
 import { getCategoryIcon } from '@/lib/questionListUtils';
-import { LAYOUTS, BOUNDING_SCALE } from '@/components/RespondentCircles';
+import { LAYOUTS, BOUNDING_SCALE, BOUNDING_RADIUS } from '@/components/RespondentCircles';
 
 // Mirrors RespondentCircles's tessellation geometry but renders each
-// question's category icon (emoji) as a bare glyph — no background discs.
-// A single-question poll lands on LAYOUTS[1] (one big glyph); multi-question
-// polls pick the matching LAYOUTS[N] so the icons sit in the same packing
-// positions as the group page's name circles. Re-uses RespondentCircles's
-// exported LAYOUTS / BOUNDING_SCALE so layout edits there stay in sync.
+// question's category icon (emoji) as a bare glyph atop a faint
+// bounding-disc backdrop. No per-icon discs — only the outer bounding
+// circle, in a fill (gray-50 / gray-900) that sits just off the page
+// background so the avatar reads as a quiet container. A single-question
+// poll lands on LAYOUTS[1] (one glyph); multi-question polls pick the
+// matching LAYOUTS[N] so the icons sit in the same packing positions as
+// the group page's name circles. Re-uses RespondentCircles's exported
+// LAYOUTS / BOUNDING_SCALE / BOUNDING_RADIUS so layout edits stay in sync.
 
 interface PollAvatarProps {
   questions: Question[];
@@ -23,9 +26,21 @@ export default function PollAvatar({ questions, sizeClassName = 'w-16' }: PollAv
     .map((q) => getCategoryIcon(q));
 
   // No questions → empty slot of the right dimensions so flex siblings
-  // (the title) don't reflow vs the populated case.
+  // (the title) don't reflow vs the populated case. Still renders the
+  // bounding disc so the slot looks identical to the populated case.
   if (icons.length === 0) {
-    return <div className={`${sizeClassName} aspect-square flex-shrink-0 self-center`} />;
+    return (
+      <div className={`${sizeClassName} aspect-square flex-shrink-0 self-center`}>
+        <svg viewBox="0 0 100 100" className="w-full h-full" aria-hidden="true">
+          <circle
+            cx={50}
+            cy={50}
+            r={BOUNDING_RADIUS}
+            className="fill-gray-50 dark:fill-gray-900"
+          />
+        </svg>
+      </div>
+    );
   }
 
   const n = Math.min(icons.length, LAYOUTS.length - 1);
@@ -40,6 +55,12 @@ export default function PollAvatar({ questions, sizeClassName = 'w-16' }: PollAv
   return (
     <div className={`${sizeClassName} aspect-square flex-shrink-0 self-center`}>
       <svg viewBox="0 0 100 100" className="w-full h-full" aria-hidden="true">
+        <circle
+          cx={50}
+          cy={50}
+          r={BOUNDING_RADIUS}
+          className="fill-gray-50 dark:fill-gray-900"
+        />
         {icons.map((icon, i) => {
           const [cx, cy] = layoutCenters[i];
           // Per-icon font size. Factor 1.6 (vs the tessellation slot's
