@@ -2,8 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import GroupAvatar from "@/components/GroupAvatar";
-import PollAvatar from "@/components/PollAvatar";
-import { Question } from "@/lib/types";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 
 export interface GroupHeaderProps {
@@ -14,13 +12,12 @@ export interface GroupHeaderProps {
   /** Migration 108: when set, the header shows the uploaded image circle
    *  instead of the initials graphic. Null/undefined → initials fallback. */
   imageUrl?: string | null;
-  /** When provided, the left-of-title graphic renders a `PollAvatar`
-   *  (tessellated question category icons) instead of `GroupAvatar`.
-   *  Used by the poll detail page so the top bar carries an at-a-glance
-   *  representation of the poll's question(s) — same tessellation
-   *  geometry as the group page's name graphic. Wins over
-   *  `participantNames` / `imageUrl` when set. */
-  pollQuestions?: Question[];
+  /** Custom left-of-title graphic. When provided, replaces the default
+   *  GroupAvatar (built from `participantNames`/`anonymousCount`/`imageUrl`).
+   *  The poll detail page passes `<PollAvatar questions={...}/>` here so
+   *  the header carries an at-a-glance graphic of the poll's questions
+   *  — keeps GroupHeader agnostic of poll-vs-group concerns. */
+  avatar?: React.ReactNode;
   /** Small faded line under the title (e.g. the group name on a poll
    *  detail page). Single-line truncated. Omitted when null/undefined. */
   subtitle?: string | null;
@@ -68,7 +65,7 @@ export default function GroupHeader({
   participantNames,
   anonymousCount,
   imageUrl,
-  pollQuestions,
+  avatar: avatarOverride,
   subtitle,
   onTitleClick,
   titleAriaLabel = "Group details",
@@ -123,15 +120,15 @@ export default function GroupHeader({
   ) : null;
 
   const middleRightPad = hasRightSlot ? 'pr-2' : 'pr-4';
-  const avatar = pollQuestions ? (
-    <PollAvatar questions={pollQuestions} />
-  ) : participantNames ? (
-    <GroupAvatar
-      imageUrl={imageUrl ?? null}
-      names={participantNames}
-      anonymousCount={anonymousCount ?? 0}
-    />
-  ) : null;
+  const avatar =
+    avatarOverride ??
+    (participantNames ? (
+      <GroupAvatar
+        imageUrl={imageUrl ?? null}
+        names={participantNames}
+        anonymousCount={anonymousCount ?? 0}
+      />
+    ) : null);
   const middleContent = (
     <>
       {avatar}

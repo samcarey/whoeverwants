@@ -73,6 +73,7 @@ import {
 } from "@/lib/votedQuestionsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import GroupHeader from "@/components/GroupHeader";
+import PollAvatar from "@/components/PollAvatar";
 import InitialBubble from "@/components/InitialBubble";
 import QuestionBallot, { type QuestionBallotHandle, POLL_SUBCARD_CLASS } from "@/components/QuestionBallot";
 import QuestionDetails from "@/components/QuestionDetails";
@@ -101,6 +102,31 @@ function InlineCategoryIcon({ question }: { question: Question }) {
     >
       {getCategoryIcon(question)}
     </span>
+  );
+}
+
+/** Per-question section header used inside a multi-question poll card.
+ *  Icon + title row, with the title omitted (icon-only) when
+ *  `getQuestionSectionTitle` returns null. `extraClass` carries the px-1
+ *  inset used by the split-suggestion-phase layout (which has no outer
+ *  card chrome to absorb it). */
+function QuestionSectionHeader({
+  question,
+  extraClass = "",
+}: {
+  question: Question;
+  extraClass?: string;
+}) {
+  const sectionTitle = getQuestionSectionTitle(question);
+  return (
+    <div className={`mb-2 flex items-center gap-2 ${extraClass}`}>
+      <InlineCategoryIcon question={question} />
+      {sectionTitle && (
+        <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
+          {sectionTitle}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -695,7 +721,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
         headerRef={headerRef}
         title={pollTitle}
         subtitle={groupSubtitle}
-        pollQuestions={subQuestions}
+        avatar={<PollAvatar questions={subQuestions} />}
         onBack={onBack}
         onTitleClick={() => {
           rememberCurrentScroll(scrollKey);
@@ -836,40 +862,20 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
             ) : null;
 
           if (splitSuggestionPhaseCards) {
-            const sectionTitle = getQuestionSectionTitle(sp);
             return (
               <div key={sp.id} className={idx > 0 ? "mt-3" : "mt-2"}>
-                {isMultiPoll && (
-                  <div className="mb-2 flex items-center gap-2 px-1">
-                    <InlineCategoryIcon question={sp} />
-                    {sectionTitle && (
-                      <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
-                        {sectionTitle}
-                      </div>
-                    )}
-                  </div>
-                )}
+                {isMultiPoll && <QuestionSectionHeader question={sp} extraClass="px-1" />}
                 {ballot}
               </div>
             );
           }
-          const sectionTitle = getQuestionSectionTitle(sp);
 
           return (
             <Fragment key={sp.id}>
             <div
               className={`${idx > 0 ? "mt-3" : "mt-2"} ${POLL_SUBCARD_CLASS}`}
             >
-              {isMultiPoll && (
-                <div className="mb-2 flex items-center gap-2">
-                  <InlineCategoryIcon question={sp} />
-                  {sectionTitle && (
-                    <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
-                      {sectionTitle}
-                    </div>
-                  )}
-                </div>
-              )}
+              {isMultiPoll && <QuestionSectionHeader question={sp} />}
 
               {isYesNo && r && (() => {
                 const stagedChoice = usePollSubmit

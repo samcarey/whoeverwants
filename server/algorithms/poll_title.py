@@ -50,6 +50,10 @@ def _label_for(category: str) -> str:
     return " ".join(word.capitalize() for word in category.strip().replace("_", " ").split())
 
 
+def _is_yes_no(category: str) -> bool:
+    return (category or "").strip().lower() in ("yes_no", "yes/no")
+
+
 def _single_question_default_title(category: str) -> str:
     # Mirrors generateTitle() in app/create-question/page.tsx for 1-question cases.
     # yes_no is intentionally not handled here — the FE form requires a
@@ -59,7 +63,7 @@ def _single_question_default_title(category: str) -> str:
     key = (category or "").strip().lower()
     if key == "time":
         return "Time?"
-    if key in ("yes_no", "yes/no"):
+    if _is_yes_no(category):
         return "Question?"
     label = _label_for(category)
     return f"{label}?" if label else "Question?"
@@ -112,10 +116,6 @@ def _build_distinct_contexts_title(
     if not accumulated:
         return "Questions"
     return ", ".join(accumulated)
-
-
-def _is_yes_no(category: str) -> bool:
-    return (category or "").strip().lower() in ("yes_no", "yes/no")
 
 
 def generate_poll_title(
