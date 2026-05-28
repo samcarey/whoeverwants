@@ -276,6 +276,40 @@ def group_name_phrase(conn, group_id: str, *, override: str | None) -> str:
     return f'"{name}"' if name else "your group"
 
 
+def claim_group(conn, group_id: str, user_id: str) -> bool:
+    """Phase I: atomically claim a group that has no recorded creator.
+
+    Used to upgrade grandfathered (pre-Phase-E) groups and
+    anonymous-created groups so a signed-in user can take over as the
+    recorded creator — unlocking the privacy toggle, join-request
+    approval, and invite-link minting that would otherwise be stranded
+    on those groups forever.
+
+    Returns True iff the row was just claimed by this caller. False
+    when someone else already holds creator_user_id (race or
+    pre-claimed). The atomic `WHERE creator_user_id IS NULL` clause
+    serializes concurrent claims at row-lock granularity: whoever wins
+    the lock writes their user_id, the loser sees 0 rows updated.
+
+    There's no "proof of original creation" check — `creator_secret`
+    was retired in migration 123 and pre-Phase-E groups never had one
+    anyway. Authority is delegated to caller-side gates (signed-in +
+    group member); the function itself only enforces the
+    no-recorded-creator invariant.
+    """
+    row = conn.execute(
+        """
+        UPDATE groups
+           SET creator_user_id = %(uid)s::uuid
+         WHERE id = %(gid)s::uuid
+           AND creator_user_id IS NULL
+        RETURNING id
+        """,
+        {"gid": group_id, "uid": user_id},
+    ).fetchone()
+    return row is not None
+
+
 def is_caller_member_of_group(
     conn,
     group_id: str,

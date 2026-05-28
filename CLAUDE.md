@@ -1405,9 +1405,10 @@ in (`401`), `creator_user_id` must match the session's `user_id`
 or grandfathered) can't be flipped (`403`). The toggle is the
 escape hatch for signed-in users during the Phase F/G gap — a
 brand-new signed-in user creates a private group, realizes they
-can't share it yet, and flips public via /info. Phase I will add
-"claim an anonymous-created group" so legacy groups can also be
-flipped.
+can't share it yet, and flips public via /info. Grandfathered /
+anonymous-created groups can be UPGRADED via the Phase I claim
+endpoint (next section) — once claimed, the new creator can flip
+privacy normally.
 
 FE wiring:
 - `Group.privacy` + `Group.creatorUserId` on the canonical `Group`
@@ -1467,9 +1468,40 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
   toggle is on the roadmap.
 - I (account settings — **shipped**): linked-identities display +
   add-recovery-email + delete-account (migration 118). See "Phase I"
-  below. Still deferred within I: "claim an anonymous-created group" so
-  legacy `creator_user_id` can be set after-the-fact, enabling
-  privacy-flip on grandfathered groups.
+  below.
+  - **Claim an anonymous-created group — SHIPPED.** `POST /api/groups/{route_id}/claim`
+    lets any signed-in MEMBER of a group whose `creator_user_id IS NULL`
+    take over as the recorded creator. Atomic via
+    `UPDATE groups SET creator_user_id = %(uid)s WHERE id = %(gid)s AND creator_user_id IS NULL RETURNING id`
+    — first-mover wins; subsequent attempts (incl. from the same caller) 409.
+    Authorization: 401 anonymous, 403 non-member, 409 already-claimed.
+    There's no "proof of original creation" check — `creator_secret` was
+    retired in migration 123 and pre-Phase-E groups never had one;
+    membership is the only available signal, but it's load-bearing
+    (visitors of a private group can't reach this endpoint at all because
+    the by-route-id read 404s them; public-group visitors auto-join via
+    the by-route-id read before this is callable). Claim does NOT touch
+    privacy — the new creator can flip via the existing privacy endpoint
+    once claimed. `services/groups.py: claim_group(conn, group_id, user_id) → bool`
+    is the shared primitive; the router enforces the auth + does a
+    pre-check + handles the race-loss case. **FE wiring:** `apiClaimGroup(routeId)`
+    in `lib/api/groups.ts` (same `invalidateGroupPolls` pattern as
+    `apiUpdateGroupPrivacy`); `<GroupPrivacySection>` renders a "Claim
+    this group" button when `signedIn && !effectiveCreatorUserId`, and
+    on success fires `onCreatorClaimed(newUserId)` so the parent /info
+    page lifts the value into a `claimedCreatorOverride` state — every
+    downstream creator-only gate (JoinRequestsSection, InviteLinksSection)
+    flips on the same render via `effectiveCreatorUserId = override ?? group.creatorUserId`.
+    The cache-backed `group.creatorUserId` stays stale until the next
+    group fetch (bounded by questionCache TTL); the override is the
+    source of truth post-claim. **Pattern to reuse**: any future
+    "self-contained component mutation that affects parent-level gates"
+    should expose an `onChange`-style callback + an `effective*` prop
+    override so the parent can lift the optimistic state without an
+    event bus. Tests: `server/tests/test_claim_group.py` (7 tests:
+    401 anon, 404 unknown route, 403 non-member, 200 success, 409
+    re-claim same user, 409 second user, smoke that privacy-flip unlocks
+    post-claim).
   - **Account-owned poll authorship — SHIPPED (migrations 122 + 123).**
     `creator_secret` is **fully retired** (migration 123 dropped
     `polls.creator_secret` + all FE secret plumbing). Authorship is now

@@ -329,6 +329,44 @@ export async function apiUpdateGroupPrivacy(
   return result;
 }
 
+/** Phase I: claim a group that has no recorded creator (grandfathered or
+ *  anonymous-created). Atomic server-side: first signed-in member to
+ *  claim wins via `UPDATE WHERE creator_user_id IS NULL`. After the
+ *  claim, the caller becomes the recorded creator and unlocks every
+ *  creator-only surface — privacy toggle, join-request approval,
+ *  invite-link minting.
+ *
+ *  Throws `ApiError` with status 401 (signed out), 403 (signed in but
+ *  not a member of the group), 404 (unknown group), or 409 (group
+ *  already has a creator — either claimed before or a concurrent claim
+ *  beat ours).
+ *
+ *  Invalidates every cached poll in the group (each carries
+ *  `group_creator_user_id`) plus the accessible-polls cache so
+ *  subsequent reads pick up the new creator id.
+ */
+export async function apiClaimGroup(
+  routeId: string,
+): Promise<{
+  group_id: string;
+  group_short_id: string | null;
+  privacy: string;
+  creator_user_id: string;
+}> {
+  const data = await groupFetch<any>(
+    `/${encodeURIComponent(routeId)}/claim`,
+    { method: 'POST' },
+  );
+  const result = {
+    group_id: data.group_id as string,
+    group_short_id: (data.group_short_id ?? null) as string | null,
+    privacy: data.privacy as string,
+    creator_user_id: data.creator_user_id as string,
+  };
+  invalidateGroupPolls(result.group_id);
+  return result;
+}
+
 /**
  * Phase F: join-request helpers.
  *

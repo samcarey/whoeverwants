@@ -46,6 +46,7 @@ export {
   apiLeaveGroup,
   apiUpdateGroupTitle,
   apiUpdateGroupPrivacy,
+  apiClaimGroup,
   apiUploadGroupImage,
   apiDeleteGroupImage,
   apiCreateGroupJoinRequest,

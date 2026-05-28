@@ -37,6 +37,7 @@ import SliderSwitch from "@/components/SliderSwitch";
 import SignInModal from "@/components/SignInModal";
 import { haptic } from "@/lib/haptics";
 import {
+  apiClaimGroup,
   apiUpdateGroupPrivacy,
   ApiError,
 } from "@/lib/api";
@@ -51,12 +52,24 @@ interface Props {
   group: Group;
   groupId: string;
   className?: string;
+  /** Optional override for the group's creator_user_id. When the parent
+   *  has lifted an optimistic post-claim state, pass it here so the
+   *  isCreator computation matches what the rest of /info sees (Join-
+   *  Requests / Invite-Links sections gate on the same value). */
+  effectiveCreatorUserId?: string | null;
+  /** Fires after a successful Phase I "claim" — the parent should
+   *  store the new creator_user_id so its own `viewerIsCreator`
+   *  computation flips true on the next render and the other
+   *  creator-only sections appear without a page refresh. */
+  onCreatorClaimed?: (newCreatorUserId: string) => void;
 }
 
 export default function GroupPrivacySection({
   group,
   groupId,
   className = "mt-[0.96rem]",
+  effectiveCreatorUserId,
+  onCreatorClaimed,
 }: Props) {
   // Initialize as null to match SSR (no localStorage on the server);
   // the mount effect below seeds from the localStorage-cached profile
@@ -69,6 +82,7 @@ export default function GroupPrivacySection({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
+  const [claiming, setClaiming] = useState(false);
 
   // Mount + subscribe: seed `session` from the localStorage cache and
   // listen for live changes (sign-in via SignInModal, sign-out
@@ -88,9 +102,23 @@ export default function GroupPrivacySection({
     setPrivacy(group.privacy);
   }, [group.privacy]);
 
+  // Prefer the parent's lifted override (post-claim optimistic state)
+  // over the stale `group.creatorUserId` from the cache — keeps every
+  // creator-only surface on /info in lockstep.
+  const creatorUserId =
+    effectiveCreatorUserId !== undefined
+      ? effectiveCreatorUserId
+      : group.creatorUserId;
   const isCreator =
-    !!session && !!group.creatorUserId && session.user_id === group.creatorUserId;
+    !!session && !!creatorUserId && session.user_id === creatorUserId;
   const isPrivate = privacy === "private";
+  // Phase I claim affordance: signed-in user, group has NO recorded
+  // creator. Anonymous viewers fall through to the existing sign-in
+  // nudge (different copy, same target action). The membership gate
+  // is enforced server-side — visiting /info implies membership for
+  // private groups already, and public-group visitors auto-join via
+  // the /by-route-id read endpoint before this section renders.
+  const canClaim = !!session && !creatorUserId;
 
   const onToggle = (next: boolean) => {
     if (saving || !isCreator) return;
@@ -111,6 +139,23 @@ export default function GroupPrivacySection({
         setError(msg);
       })
       .finally(() => setSaving(false));
+  };
+
+  const onClaim = () => {
+    if (claiming || !canClaim) return;
+    haptic.medium();
+    setError(null);
+    setClaiming(true);
+    apiClaimGroup(groupId)
+      .then((result) => {
+        onCreatorClaimed?.(result.creator_user_id);
+      })
+      .catch((e) => {
+        const msg =
+          e instanceof ApiError ? e.message : "Failed to claim group";
+        setError(msg);
+      })
+      .finally(() => setClaiming(false));
   };
 
   const stateLabel = isPrivate ? "Private" : "Public";
@@ -180,6 +225,23 @@ export default function GroupPrivacySection({
             </button>
             {" to create private groups."}
           </p>
+        )}
+        {canClaim && (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={onClaim}
+              disabled={claiming}
+              className="w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.99] disabled:opacity-60 text-white text-sm font-medium flex items-center justify-center transition-transform"
+              aria-label="Claim this group as creator"
+            >
+              {claiming ? "Claiming…" : "Claim this group"}
+            </button>
+            <p className="px-1 mt-2 text-xs text-gray-500 dark:text-gray-400">
+              This group has no recorded creator. Claim it to unlock
+              privacy, invite links, and join-request approvals.
+            </p>
+          </div>
         )}
       </section>
       <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />

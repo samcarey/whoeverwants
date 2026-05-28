@@ -67,6 +67,7 @@ from services.contacts import (
 from services.memberships import leave_group as _leave_group_row
 from services.groups import (
     _is_uuid_like,
+    claim_group as _claim_group_row,
     filter_visible_polls,
     get_group_metadata,
     grant_group_membership_inline,
@@ -125,6 +126,20 @@ class UpdateGroupPrivacyResponse(BaseModel):
     group_short_id: str | None = None
     privacy: str
     creator_user_id: str | None = None
+
+
+class ClaimGroupResponse(BaseModel):
+    """Returned by `POST /api/groups/{route_id}/claim`. Surfaces the new
+    `creator_user_id` (always the caller) so the FE can patch its
+    in-memory group state and immediately enable creator-only controls
+    (privacy toggle, join-request approval, invite-link minting)
+    without a refetch. `privacy` is included for parity with the
+    privacy endpoint's shape, even though claiming doesn't flip it."""
+
+    group_id: str
+    group_short_id: str | None = None
+    privacy: str
+    creator_user_id: str
 
 
 class GroupPreviewResponse(BaseModel):
@@ -771,6 +786,79 @@ def update_group_privacy(
         group_short_id=row.get("short_id"),
         privacy=row["privacy"],
         creator_user_id=str(creator_user_id) if creator_user_id else None,
+    )
+
+
+@router.post("/{route_id}/claim", response_model=ClaimGroupResponse)
+def claim_group_endpoint(route_id: str, request: Request):
+    """Phase I: signed-in member takes over as the recorded creator of a
+    group whose `creator_user_id` is NULL — i.e. anonymous-created or
+    grandfathered (pre-Phase-E) groups.
+
+    Why this exists: privacy / join-request / invite-link endpoints all
+    authorize against `groups.creator_user_id`. Groups without one are
+    stranded — no one can flip privacy or manage invites. Claiming
+    unlocks all of those for the new creator.
+
+    Authorization (defense in depth):
+      * 401 if not signed in (only accounts can be creators).
+      * 404 if the route doesn't resolve.
+      * 403 if the caller isn't a member of the group (any browser
+        linked to their user_id counts). Restricts claiming to people
+        with a demonstrated connection to the group — visiting the
+        URL once is enough to qualify (auto-join writes a member row
+        on public groups), so this is intentionally a low bar.
+      * 409 if the group already has a creator_user_id. First-mover
+        wins via the atomic UPDATE WHERE creator_user_id IS NULL in
+        `claim_group`. A creator can't re-claim (the row is no longer
+        NULL); transferring creator_user_id is out of scope.
+
+    There is no "proof of original creation" check — `creator_secret`
+    was retired in migration 123 and pre-Phase-E groups never carried
+    one anyway. Membership is the only available signal.
+    """
+    user_id = _user_id(request)
+    if not user_id:
+        raise HTTPException(
+            status_code=401, detail="Sign in to claim this group"
+        )
+    browser_id = _browser_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        if not is_caller_member_of_group(
+            conn, group_id, browser_id=browser_id, user_id=user_id
+        ):
+            raise HTTPException(
+                status_code=403, detail="Join the group to claim it"
+            )
+        meta = get_group_metadata(conn, group_id)
+        if meta and meta["creator_user_id"]:
+            # Pre-claim check: distinguishes 'already claimed by
+            # someone else' (409) from 'race lost to a concurrent
+            # claim' (also 409 via the atomic UPDATE below). The
+            # caller sees one error code for both cases.
+            raise HTTPException(
+                status_code=409, detail="Group already has a creator"
+            )
+        if not _claim_group_row(conn, group_id, user_id):
+            # Lost the race — a concurrent claim landed between our
+            # metadata read and the UPDATE.
+            raise HTTPException(
+                status_code=409, detail="Group already has a creator"
+            )
+        row = conn.execute(
+            "SELECT id, short_id, privacy, creator_user_id FROM groups WHERE id = %(id)s",
+            {"id": group_id},
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return ClaimGroupResponse(
+        group_id=str(row["id"]),
+        group_short_id=row.get("short_id"),
+        privacy=row["privacy"],
+        creator_user_id=str(row["creator_user_id"]),
     )
 
 

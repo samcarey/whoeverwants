@@ -50,8 +50,19 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     window.addEventListener(SESSION_CHANGED_EVENT, update);
     return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
   }, []);
+  // Phase I: when the viewer claims the group, GroupPrivacySection
+  // fires `onCreatorClaimed(newUserId)` and we lift the value here so
+  // every downstream creator-only gate (Join Requests, Invite Links)
+  // flips on the same render. The cache-backed `group.creatorUserId`
+  // remains stale until the next group fetch — bounded by the
+  // questionCache TTL — which is harmless since the override always
+  // wins.
+  const [claimedCreatorOverride, setClaimedCreatorOverride] = useState<
+    string | null
+  >(null);
+  const effectiveCreatorUserId = claimedCreatorOverride ?? group.creatorUserId;
   const viewerIsCreator =
-    !!session && !!group.creatorUserId && session.user_id === group.creatorUserId;
+    !!session && !!effectiveCreatorUserId && session.user_id === effectiveCreatorUserId;
 
   const goBack = () => {
     // Slide overlay: mount the group root above the current page and slide
@@ -131,7 +142,12 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           </h1>
         </div>
 
-        <GroupPrivacySection group={group} groupId={groupId} />
+        <GroupPrivacySection
+          group={group}
+          groupId={groupId}
+          effectiveCreatorUserId={effectiveCreatorUserId}
+          onCreatorClaimed={setClaimedCreatorOverride}
+        />
 
         <JoinRequestsSection groupId={groupId} enabled={viewerIsCreator} />
 
