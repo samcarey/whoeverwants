@@ -62,7 +62,7 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
         onClick={() => { if (!disabled) setShowPreliminary(!showPreliminary); }}
       >
         <span id={checkboxId} className="text-base font-normal">
-          Share Results
+          Show Results
         </span>
         <SliderSwitch
           checked={showPreliminary}
