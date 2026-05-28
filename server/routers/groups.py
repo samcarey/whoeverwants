@@ -65,6 +65,7 @@ from services.contacts import (
     reconcile_contacts_safe,
 )
 from services.memberships import leave_group as _leave_group_row
+from services.validation import validate_user_name
 from services.groups import (
     _is_uuid_like,
     claim_group as _claim_group_row,
@@ -1051,6 +1052,23 @@ def create_group_join_request(
             return JoinRequestCreateResponse(
                 status="already_member", request=None
             )
+
+        # Name gate: the creator needs SOMETHING to recognize the requester
+        # by ("Approve / deny request from <who>?"). `requester_email` is
+        # null for passkey-only accounts and the UI's "Passkey user"
+        # placeholder reads as anonymous to creators — a display name closes
+        # that gap. Validated here as the backstop; the FE's
+        # AccountGateModal is the primary gate at the click. Runs AFTER
+        # the member check so a nameless existing-member tapping retry
+        # gets the friendly already_member response, not 400.
+        name_row = conn.execute(
+            "SELECT display_name FROM users WHERE id = %(u)s::uuid",
+            {"u": user_id},
+        ).fetchone()
+        validate_user_name(
+            name_row["display_name"] if name_row else None,
+            field="name",
+        )
 
         # Snapshot existence BEFORE the create so we know whether this
         # call inserted a new row or returned an existing pending one.
