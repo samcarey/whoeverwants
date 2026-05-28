@@ -21,6 +21,9 @@ export interface GroupHeaderProps {
    *  geometry as the group page's name graphic. Wins over
    *  `participantNames` / `imageUrl` when set. */
   pollQuestions?: Question[];
+  /** Small faded line under the title (e.g. the group name on a poll
+   *  detail page). Single-line truncated. Omitted when null/undefined. */
+  subtitle?: string | null;
   onTitleClick?: () => void;
   /** aria-label for the title button when `onTitleClick` is provided.
    *  Defaults to "Group details"; the poll detail page passes
@@ -66,6 +69,7 @@ export default function GroupHeader({
   anonymousCount,
   imageUrl,
   pollQuestions,
+  subtitle,
   onTitleClick,
   titleAriaLabel = "Group details",
   onBack,
@@ -88,11 +92,22 @@ export default function GroupHeader({
     </svg>
   );
 
+  // The title + optional subtitle stack as a flex-col inside the inner
+  // row so the chevron stays vertically centered next to the whole block.
+  // `line-clamp-2` on the h1 lets the title wrap once before truncating;
+  // the subtitle is single-line and faded.
   const titleBlock = title ? (
     <>
-      <h1 className="min-w-0 font-semibold text-lg text-gray-900 dark:text-white truncate">
-        {title}
-      </h1>
+      <div className="min-w-0 flex-1 flex flex-col">
+        <h1 className="font-semibold text-lg text-gray-900 dark:text-white line-clamp-2 leading-tight">
+          {title}
+        </h1>
+        {subtitle && (
+          <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+            {subtitle}
+          </span>
+        )}
+      </div>
       {onTitleClick && (
         <svg
           className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"

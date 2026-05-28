@@ -33,6 +33,7 @@ import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
 import { slideToGroupRoot, slideToPollInfo } from "@/lib/slideOverlay";
 import {
   buildGroupFromPollDown,
+  buildGroupSyncFromCache,
   getGroupHrefForPoll,
   isPendingPollId,
   isPollOpen,
@@ -672,6 +673,19 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   }, [poll]);
 
   const pollTitle = subQuestions[0]?.title || poll.title;
+  // Group name shown under the title. Read the full group from cache when
+  // available (other polls in the group contribute their participants to the
+  // default name); fall back to the single-poll synthetic group's title when
+  // the cache hasn't been warmed yet. `poll.group_title` is the override and
+  // is identical across every poll in the group — surfacing it on a cache
+  // miss keeps the subtitle stable. Returns null when nothing is resolvable.
+  const cachedFullGroup = useMemo(
+    () => buildGroupSyncFromCache(groupId, votedQuestionIds, abstainedQuestionIds),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groupId, poll],
+  );
+  const groupSubtitle =
+    cachedFullGroup?.title ?? poll.group_title ?? syntheticGroup?.title ?? null;
   // One localStorage read per render — passed into N sub-question QuestionBallots.
   const savedUserName = getUserName() ?? "";
 
@@ -680,6 +694,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
       <GroupHeader
         headerRef={headerRef}
         title={pollTitle}
+        subtitle={groupSubtitle}
         pollQuestions={subQuestions}
         onBack={onBack}
         onTitleClick={() => {
