@@ -145,13 +145,13 @@ export default function GroupHeader({
           <button
             type="button"
             onClick={onTitleClick}
-            className={`self-stretch min-w-0 flex-1 py-[4.8px] ${middleRightPad} flex items-center gap-2 text-left active:opacity-60 transition-opacity`}
+            className={`self-stretch min-w-0 flex-1 py-[4.8px] ${middleRightPad} flex items-center gap-[6.4px] text-left active:opacity-60 transition-opacity`}
             aria-label={titleAriaLabel}
           >
             {middleContent}
           </button>
         ) : (
-          <div className={`self-stretch min-w-0 flex-1 py-[4.8px] ${middleRightPad} flex items-center gap-2`}>
+          <div className={`self-stretch min-w-0 flex-1 py-[4.8px] ${middleRightPad} flex items-center gap-[6.4px]`}>
             {middleContent}
           </div>
         )}
