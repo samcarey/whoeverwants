@@ -67,5 +67,8 @@ export default function SimpleCountdown({
     return () => clearInterval(interval);
   }, [deadline, compact, wide, blankOnExpire]);
 
-  return <>{label ? `${label}: ` : null}<span ref={spanRef} className={`${numberClass} ${colorClass}`} /></>;
+  // Non-breaking space after the colon — a regular trailing space in a text
+  // node adjacent to an inline element gets visually collapsed in iOS Safari
+  // / PWA contexts, leaving "Voting:6d" with no gap.
+  return <>{label ? `${label}: ` : null}<span ref={spanRef} className={`${numberClass} ${colorClass}`} /></>;
 }
