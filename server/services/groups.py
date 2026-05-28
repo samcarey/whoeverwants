@@ -276,7 +276,7 @@ def group_name_phrase(conn, group_id: str, *, override: str | None) -> str:
     return f'"{name}"' if name else "your group"
 
 
-def claim_group(conn, group_id: str, user_id: str) -> bool:
+def claim_group(conn, group_id: str, user_id: str):
     """Phase I: atomically claim a group that has no recorded creator.
 
     Used to upgrade grandfathered (pre-Phase-E) groups and
@@ -285,11 +285,14 @@ def claim_group(conn, group_id: str, user_id: str) -> bool:
     approval, and invite-link minting that would otherwise be stranded
     on those groups forever.
 
-    Returns True iff the row was just claimed by this caller. False
-    when someone else already holds creator_user_id (race or
-    pre-claimed). The atomic `WHERE creator_user_id IS NULL` clause
-    serializes concurrent claims at row-lock granularity: whoever wins
-    the lock writes their user_id, the loser sees 0 rows updated.
+    Returns the row dict on success (with `id`, `short_id`, `privacy`,
+    `creator_user_id`) or None when someone else already holds
+    creator_user_id (race or pre-claimed) OR the group doesn't exist.
+    The atomic `WHERE creator_user_id IS NULL` clause serializes
+    concurrent claims at row-lock granularity: whoever wins the lock
+    writes their user_id, the loser sees 0 rows updated. RETURNING
+    pulls the full response payload in the same statement so callers
+    can skip a second SELECT.
 
     There's no "proof of original creation" check — `creator_secret`
     was retired in migration 123 and pre-Phase-E groups never had one
@@ -297,17 +300,16 @@ def claim_group(conn, group_id: str, user_id: str) -> bool:
     group member); the function itself only enforces the
     no-recorded-creator invariant.
     """
-    row = conn.execute(
+    return conn.execute(
         """
         UPDATE groups
            SET creator_user_id = %(uid)s::uuid
          WHERE id = %(gid)s::uuid
            AND creator_user_id IS NULL
-        RETURNING id
+        RETURNING id, short_id, privacy, creator_user_id
         """,
         {"gid": group_id, "uid": user_id},
     ).fetchone()
-    return row is not None
 
 
 def is_caller_member_of_group(

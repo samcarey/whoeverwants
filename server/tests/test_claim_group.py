@@ -120,7 +120,6 @@ def test_claim_requires_sign_in(client, creator_browser):
 
 
 def test_claim_404_on_unknown_route(client, creator_browser):
-    _, _ = _sign_in(client, creator_browser)
     # Look-alike uuid that doesn't exist
     fake = "00000000-0000-0000-0000-000000000001"
     token, _ = _sign_in(client, creator_browser, email="claim404@example.com")
@@ -191,6 +190,12 @@ def test_claim_409_when_already_claimed_by_someone_else(
     re-claim. Even if the second signed-in user has membership, the
     atomic UPDATE WHERE creator_user_id IS NULL bounces them with 409."""
     group = _create_anonymous_group(client, creator_browser)
+    # Precondition for the auto-join path used below: the by-route-id
+    # read only writes a group_members row when privacy='public'. If a
+    # future schema flip changes the anonymous-create default, this
+    # assertion catches the regression rather than letting the test
+    # silently morph into a 403-not-a-member check.
+    assert group["privacy"] == "public"
     first_token, first_user_id = _sign_in(client, creator_browser)
     resp = client.post(
         f"/api/groups/{group['id']}/claim",

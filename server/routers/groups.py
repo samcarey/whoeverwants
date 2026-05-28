@@ -833,27 +833,16 @@ def claim_group_endpoint(route_id: str, request: Request):
             raise HTTPException(
                 status_code=403, detail="Join the group to claim it"
             )
-        meta = get_group_metadata(conn, group_id)
-        if meta and meta["creator_user_id"]:
-            # Pre-claim check: distinguishes 'already claimed by
-            # someone else' (409) from 'race lost to a concurrent
-            # claim' (also 409 via the atomic UPDATE below). The
-            # caller sees one error code for both cases.
+        # Single atomic UPDATE ... RETURNING — the WHERE creator_user_id IS NULL
+        # clause serializes concurrent claims at row-lock granularity. None on
+        # return means either (a) already claimed (the common case) or (b) the
+        # group was deleted mid-flight (no group-delete endpoint exists today,
+        # so this is essentially unreachable). Both surface as 409.
+        row = _claim_group_row(conn, group_id, user_id)
+        if row is None:
             raise HTTPException(
                 status_code=409, detail="Group already has a creator"
             )
-        if not _claim_group_row(conn, group_id, user_id):
-            # Lost the race — a concurrent claim landed between our
-            # metadata read and the UPDATE.
-            raise HTTPException(
-                status_code=409, detail="Group already has a creator"
-            )
-        row = conn.execute(
-            "SELECT id, short_id, privacy, creator_user_id FROM groups WHERE id = %(id)s",
-            {"id": group_id},
-        ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Group not found")
     return ClaimGroupResponse(
         group_id=str(row["id"]),
         group_short_id=row.get("short_id"),
