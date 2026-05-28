@@ -30,6 +30,7 @@ import { isUuidLike } from "@/lib/questionId";
 import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
+import { useDeadlineTick } from "@/lib/useDeadlineTick";
 import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
 import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
@@ -1335,6 +1336,15 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     }
     return map;
   }, [group]);
+  // Re-render when the soonest unexpired poll deadline crosses, so the per-card
+  // status flips from "Voting: <countdown>" → "Closed Xm ago" without waiting
+  // for the 5s refresh tick. The SimpleCountdown's imperative per-second DOM
+  // updates otherwise display "Voting: Expired" in the gap.
+  useDeadlineTick(
+    group?.polls.flatMap((mp) =>
+      mp.is_closed ? [] : [mp.response_deadline, mp.prephase_deadline],
+    ) ?? [],
+  );
   const wrapperFor = (question: Question): Poll | null =>
     pollByQuestionId.get(question.id) ?? (question.poll_id ? pollWrapperMap.get(question.poll_id) ?? null : null);
   const isQuestionOpen = (question: Question) => {

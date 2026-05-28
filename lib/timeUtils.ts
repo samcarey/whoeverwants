@@ -69,10 +69,10 @@ export function formatCountdownTime(diffMs: number): string {
 /** Single-unit compact countdown — promotes to the next larger unit at the
  *  unit boundary itself (0s–59s show in seconds, 1m–59m in minutes, 1h–23h
  *  in hours, 1d–6d in days, 1w–3w in weeks, 1mo–11mo in months, then years).
- *  Differs from `compactDurationSince` which uses a ≥ 2 threshold (e.g. 1m
- *  there reads "1m ago", but here we'd already be in seconds — countdowns
- *  want the larger unit as soon as it crosses 1 so the displayed glyph
- *  matches user-typed deadline durations like "Suggestions cutoff in 1h"). */
+ *  Differs from `compactDurationSince` and `formatCompactCountdownWide` which
+ *  use a ≥ 2 threshold for promotion — countdowns want the larger unit as
+ *  soon as it crosses 1 so the displayed glyph matches user-typed deadline
+ *  durations like "Suggestions cutoff in 1h". */
 export function formatCompactCountdown(diffMs: number): string {
   if (diffMs <= 0) return 'Expired';
   const seconds = Math.floor(diffMs / 1000);

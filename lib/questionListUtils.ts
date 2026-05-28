@@ -82,12 +82,16 @@ export function relativeTime(dateStr: string): string {
 
 // Promotes to the next larger unit only when that unit's count would be >= 2,
 // avoiding "1w" / "1mo" / "1y" readings that carry less precision than the
-// smaller unit (e.g. 13d stays "13d"; 14d becomes "2w").
+// smaller unit (e.g. 13d stays "13d"; 14d becomes "2w"). All buckets round
+// DOWN — a duration of 30 seconds reads "30s", not "1m"; a duration of 89
+// minutes reads "89m", not "2h". A freshly-passed deadline shows "0s ago"
+// initially, not "1m ago".
 export function compactDurationSince(dateStr: string): string {
   const diffMs = Date.now() - new Date(dateStr).getTime();
   const seconds = Math.max(0, Math.floor(diffMs / 1000));
+  if (seconds < 120) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 120) return `${Math.max(1, minutes)}m`;
+  if (minutes < 120) return `${minutes}m`;
   const hours = Math.floor(seconds / 3600);
   if (hours < 48) return `${hours}h`;
   const days = Math.floor(seconds / 86400);

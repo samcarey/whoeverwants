@@ -35,10 +35,12 @@ import {
   buildGroupFromPollDown,
   getGroupHrefForPoll,
   isPendingPollId,
+  isPollOpen,
 } from "@/lib/groupUtils";
 import { useGroupVoting, type PreparedNonYesNoEntry, type YesNoChoice } from "@/lib/useGroupVoting";
 import { loadQuestionDraft, saveQuestionDraft } from "@/lib/ballotDraft";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
+import { useDeadlineTick } from "@/lib/useDeadlineTick";
 import {
   cachePoll,
   getCachedPollForShortId,
@@ -508,7 +510,14 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   const subQuestions = poll.questions;
   const isMultiPoll = subQuestions.length > 1;
   const allYesNo = subQuestions.every((sp) => sp.question_type === "yes_no");
-  const isClosed = !!poll.is_closed;
+  // Treat a poll whose response_deadline has passed as closed even if the
+  // server hasn't flipped `is_closed` yet (the per-minute tick may not have
+  // run). `useDeadlineTick` below forces a re-render at the crossing so the
+  // UI never lingers in a "Voting: Expired" state.
+  useDeadlineTick(
+    poll.is_closed ? [] : [poll.response_deadline, poll.prephase_deadline],
+  );
+  const isClosed = !isPollOpen(poll);
   const usePollSubmit = isMultiPoll;
   const useWrapperSubmit =
     !isMultiPoll && subQuestions[0]?.question_type !== "yes_no";
@@ -552,8 +561,13 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     const inSuggestions = isInSuggestionPhase(anchor, wrapperPrephaseDeadline);
     const inTimeAvailability = isInTimeAvailabilityPhase(anchor);
     if (isClosed) {
+      // See GroupCardItem.tsx — prefer response_deadline whenever it has
+      // passed so the FE's deadline-expired path (server hasn't run its
+      // close tick yet) shows a sensible "Closed Xm ago" value.
+      const deadlineHasPassed =
+        !!wrapperResponseDeadline && new Date(wrapperResponseDeadline) <= new Date();
       const closedAt =
-        poll.close_reason === "deadline" && wrapperResponseDeadline
+        (poll.close_reason === "deadline" || deadlineHasPassed) && wrapperResponseDeadline
           ? wrapperResponseDeadline
           : wrapperUpdatedAt;
       return closedAt ? (
