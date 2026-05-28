@@ -27,6 +27,7 @@ Home router (port-forwards 80 + 443 → Mac LAN IP)
 Mac mini host
   ├─ macOS Application Firewall (Caddy in allowlist)
   ├─ Caddy (Homebrew, system LaunchDaemon)
+  ├─ Caddy watchdog (system LaunchDaemon, 60-sec interval, kickstarts Caddy if down)
   │     • Listens on 0.0.0.0:80 + 0.0.0.0:443
   │     • Per-hostname Let's Encrypt certs (HTTP-01)
   │     • Reverse-proxies to Mac localhost ports (where Colima publishes container ports)
@@ -239,6 +240,21 @@ launchctl load ~/Library/LaunchAgents/com.devbox.caddy-watch.plist
 launchctl list | grep caddy-watch   # confirm loaded
 ```
 
+### 9b2. Caddy process watchdog (system LaunchDaemon)
+
+Homebrew's stock `homebrew.mxcl.caddy` plist sets `KeepAlive = { SuccessfulExit: false }` — it only respawns Caddy when it exits non-zero. A clean SIGTERM (App Nap, manual stop, an unrelated system trigger) leaves it dead, and so does launchd's crash-loop throttle. A separate root LaunchDaemon polls every 60s, checks both `pgrep -x caddy` AND `nc -z 127.0.0.1 443`, and `launchctl kickstart`s Caddy back up if either fails. Logs only on restart events (`/var/log/caddy-watchdog.log`).
+
+```bash
+sudo cp scripts/mac-mini/caddy-watchdog.sh /usr/local/bin/caddy-watchdog.sh
+sudo chmod 755 /usr/local/bin/caddy-watchdog.sh
+sudo cp scripts/mac-mini/com.whoeverwants.caddy-watchdog.plist /Library/LaunchDaemons/
+sudo chown root:wheel /Library/LaunchDaemons/com.whoeverwants.caddy-watchdog.plist
+sudo chmod 644       /Library/LaunchDaemons/com.whoeverwants.caddy-watchdog.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.whoeverwants.caddy-watchdog.plist
+sudo launchctl kickstart -k system/com.whoeverwants.caddy-watchdog
+sudo launchctl print system/com.whoeverwants.caddy-watchdog | grep -E '^\s*(state|last exit)'
+```
+
 ### 9c. Wildcard DNS record
 
 DDNS now manages a wildcard `*.dev.whoeverwants.com` A record so any
@@ -289,6 +305,9 @@ Output should be JSON with `exit_code: 0` and the cmd-api container's hostname/u
 | Caddy config | `/opt/homebrew/etc/Caddyfile` |
 | Caddy logs | `/opt/homebrew/var/log/caddy.log` |
 | Caddy data (certs etc.) | `/opt/homebrew/var/lib/caddy/` |
+| Caddy watchdog script | `/usr/local/bin/caddy-watchdog.sh` (source: `scripts/mac-mini/caddy-watchdog.sh`) |
+| Caddy watchdog LaunchDaemon | `/Library/LaunchDaemons/com.whoeverwants.caddy-watchdog.plist` |
+| Caddy watchdog log | `/var/log/caddy-watchdog.log` (lines only on restart events) |
 | DDNS script | `~/devbox/ddns.sh` |
 | DDNS LaunchAgent | `~/Library/LaunchAgents/com.devbox.ddns.plist` |
 | DDNS logs | `~/Library/Logs/ddns.log` |

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+/Library/LaunchDaemons/com.whoeverwants.caddy-watchdog.plist on the Mac mini.
+
+System LaunchDaemon (root, runs from boot regardless of user login).
+Wakes /usr/local/bin/caddy-watchdog.sh every 60 seconds; that script probes
+Caddy and `launchctl kickstart`s it if down. See caddy-watchdog.sh for the
+failure modes it catches.
+
+Install:
+  sudo cp scripts/mac-mini/caddy-watchdog.sh /usr/local/bin/caddy-watchdog.sh
+  sudo chmod 755 /usr/local/bin/caddy-watchdog.sh
+  sudo cp scripts/mac-mini/com.whoeverwants.caddy-watchdog.plist /Library/LaunchDaemons/
+  sudo chown root:wheel /Library/LaunchDaemons/com.whoeverwants.caddy-watchdog.plist
+  sudo chmod 644       /Library/LaunchDaemons/com.whoeverwants.caddy-watchdog.plist
+  sudo launchctl bootstrap system /Library/LaunchDaemons/com.whoeverwants.caddy-watchdog.plist
+  sudo launchctl kickstart -k system/com.whoeverwants.caddy-watchdog
+
+DOCTYPE line is intentionally omitted — modern macOS accepts a plist with
+just the XML preamble + <plist version="1.0">, and the DOCTYPE URL gets
+mangled by chat-client autolink wrapping when pasted through a heredoc.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.whoeverwants.caddy-watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/caddy-watchdog.sh</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/caddy-watchdog.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/var/log/caddy-watchdog.log</string>
+</dict>
+</plist>
