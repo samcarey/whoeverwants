@@ -87,11 +87,17 @@ def _issue_known_magic_link(email, browser_id):
     return token
 
 
-def _sign_in(client, browser_id, email=None):
+def _sign_in(client, browser_id, email=None, name="Test User"):
     """Run a full magic-link verify and return (session_token, user_id,
     email). The email is the server-normalized (lowercase, trimmed)
     form so tests can compare against `requester_email` from list /
-    create endpoint responses without surface mismatches."""
+    create endpoint responses without surface mismatches.
+
+    `name` defaults to a non-empty display name so the join-request
+    name gate (which requires `users.display_name`) is satisfied. Pass
+    `name=None` to leave the account nameless — useful for testing
+    that gate's 400 path.
+    """
     raw_email = email or f"phasef-{uuid.uuid4().hex[:8]}@example.com"
     token = _issue_known_magic_link(raw_email, browser_id)
     resp = client.post(
@@ -101,7 +107,15 @@ def _sign_in(client, browser_id, email=None):
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    return body["session_token"], body["user"]["user_id"], normalize_email(raw_email)
+    session_token = body["session_token"]
+    if name is not None:
+        named = client.post(
+            "/api/auth/me/name",
+            json={"name": name},
+            headers=_bearer_headers(browser_id, session_token),
+        )
+        assert named.status_code == 200, named.text
+    return session_token, body["user"]["user_id"], normalize_email(raw_email)
 
 
 def _create_private_group(client, browser_id, token):
@@ -155,6 +169,25 @@ def test_create_join_request_unknown_group_returns_404(
         headers=_bearer_headers(requester_browser, rtoken),
     )
     assert resp.status_code == 404
+
+
+def test_create_join_request_requires_account_name(
+    client, creator_browser, requester_browser
+):
+    """A signed-in caller whose account has no `display_name` is rejected
+    with 400 — the creator wouldn't be able to recognize who's asking."""
+    ctoken, _, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+
+    # Sign in without setting a name so users.display_name stays NULL.
+    rtoken, _, _ = _sign_in(client, requester_browser, name=None)
+    resp = client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": "Hi"},
+        headers=_bearer_headers(requester_browser, rtoken),
+    )
+    assert resp.status_code == 400, resp.text
+    assert "name" in resp.json()["detail"].lower()
 
 
 def test_create_join_request_new_returns_pending(

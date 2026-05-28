@@ -9,8 +9,11 @@ import {
   apiGetGroupPreview,
 } from "@/lib/api";
 import SignInModal from "@/components/SignInModal";
+import AccountGateModal from "@/components/AccountGateModal";
 import { haptic } from "@/lib/haptics";
+import { isValidUserName } from "@/lib/nameValidation";
 import { isPathPrefix } from "@/lib/questionId";
+import { getUserName } from "@/lib/userProfile";
 import {
   getCachedSessionUser,
   SESSION_CHANGED_EVENT,
@@ -74,6 +77,7 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
     | { kind: "error"; message: string }
   >({ kind: "idle" });
   const [signInOpen, setSignInOpen] = useState(false);
+  const [nameModalOpen, setNameModalOpen] = useState(false);
   // null = not yet known (probe in flight or no routeId); true = preview
   // returned 200 so the group exists (private + no access); false =
   // preview 404'd, group truly may not exist.
@@ -145,9 +149,8 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
     };
   }, [routeId]);
 
-  const requestAccess = () => {
+  const submitJoinRequest = () => {
     if (!routeId || submitting) return;
-    haptic.medium();
     setSubmitting(true);
     setStatus({ kind: "idle" });
     apiCreateGroupJoinRequest(routeId, null)
@@ -181,6 +184,20 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
         setStatus({ kind: "error", message: msg });
       })
       .finally(() => setSubmitting(false));
+  };
+
+  const requestAccess = () => {
+    if (!routeId || submitting) return;
+    haptic.medium();
+    // The server requires the account to have a `display_name` so the
+    // creator can recognize who's asking ("Approve request from <name>?").
+    // Surface the shared AccountGateModal when missing so the user can
+    // set a name without leaving the page; on submit, retry the request.
+    if (!isValidUserName(getUserName())) {
+      setNameModalOpen(true);
+      return;
+    }
+    submitJoinRequest();
   };
 
   // The "Request to join" CTA only renders when we have a routeId to
@@ -253,6 +270,15 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
         </div>
       </div>
       <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
+      <AccountGateModal
+        isOpen={nameModalOpen}
+        message="to request access"
+        onSubmit={() => {
+          setNameModalOpen(false);
+          submitJoinRequest();
+        }}
+        onCancel={() => setNameModalOpen(false)}
+      />
     </>
   );
 }
