@@ -28,7 +28,7 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
     <>
       <div className="flex items-center justify-between gap-3 h-12">
         <label htmlFor={id} className="text-base font-normal shrink-0">
-          Min Responses
+          Minimum Votes
         </label>
         {isEditing ? (
           <input
