@@ -15,6 +15,11 @@ import {
   SESSION_CHANGED_EVENT,
   type SessionUser,
 } from "@/lib/session";
+import {
+  SW_NOTIFICATION_CLICK_EVENT,
+  SW_PUSH_RECEIVED_EVENT,
+  type SwPushReceivedDetail,
+} from "@/lib/swMessages";
 
 export function GroupLoading({ label = "Loading group..." }: { label?: string }) {
   return (
@@ -95,6 +100,46 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
     });
     return () => {
       cancelled = true;
+    };
+  }, [routeId]);
+
+  // Auto-reload when the creator approves the requester's join request:
+  // the server fires a `member-added-<group_uuid>` push (whose
+  // `group_id` payload field carries this group's route_for_url, i.e.
+  // its short_id or uuid — the same string we receive as `routeId`).
+  // A full reload is the simplest path back into the group since
+  // `useGroup` in the parent route fetches via its own cache that
+  // would need separate invalidation. This handles both the
+  // "notification arrived in the background while sitting here" path
+  // (push-received event) and the "tap the notification" path
+  // (notification-click event).
+  useEffect(() => {
+    if (!routeId) return;
+    // Exact `/g/<routeId>` OR a `/g/<routeId>/...` subpath. A plain
+    // `.startsWith('/g/<routeId>')` would false-positive on a longer
+    // sibling routeId (e.g. listening for `/g/~abc` would also match
+    // `/g/~abcdef`).
+    const groupRootPath = `/g/${routeId}`;
+    const onSwEvent = (event: Event) => {
+      const detail = (event as CustomEvent<SwPushReceivedDetail>).detail;
+      if (!detail) return;
+      const tagMatch =
+        !!detail.tag &&
+        detail.tag.startsWith("member-added-") &&
+        detail.group_id === routeId;
+      const urlMatch =
+        typeof detail.url === "string" &&
+        (detail.url === groupRootPath ||
+          detail.url.startsWith(`${groupRootPath}/`) ||
+          detail.url.startsWith(`${groupRootPath}?`));
+      if (!tagMatch && !urlMatch) return;
+      window.location.reload();
+    };
+    window.addEventListener(SW_PUSH_RECEIVED_EVENT, onSwEvent);
+    window.addEventListener(SW_NOTIFICATION_CLICK_EVENT, onSwEvent);
+    return () => {
+      window.removeEventListener(SW_PUSH_RECEIVED_EVENT, onSwEvent);
+      window.removeEventListener(SW_NOTIFICATION_CLICK_EVENT, onSwEvent);
     };
   }, [routeId]);
 

@@ -483,6 +483,89 @@ def test_approve_writes_membership_and_grants_visibility(
     assert post.status_code == 200, post.text
 
 
+def test_approve_schedules_member_added_push(
+    client, creator_browser, requester_browser, monkeypatch
+):
+    """On approve, the endpoint must schedule a `fan_out_member_added`
+    push targeting the requester's user_id. The push is what wakes the
+    requester's open GroupNotFound screen so it can auto-reload into
+    the group (no manual refresh required). Deny does NOT schedule a
+    push (per `docs/auth-access-model.md`).
+
+    Monkeypatches the helper at its router-side import site so we can
+    verify (a) it was called, (b) with the right user_id + payload
+    shape, without standing up a fake push subscription.
+    """
+    import routers.groups as groups_router
+
+    captured: list[dict] = []
+
+    def fake_fan_out(group_id, added_user_id, payload):
+        captured.append(
+            {
+                "group_id": group_id,
+                "user_id": added_user_id,
+                "payload": payload,
+            }
+        )
+
+    monkeypatch.setattr(groups_router, "fan_out_member_added", fake_fan_out)
+
+    ctoken, _, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+    rtoken, requester_uid, _ = _sign_in(client, requester_browser)
+
+    create = client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": "let me in"},
+        headers=_bearer_headers(requester_browser, rtoken),
+    )
+    request_id = create.json()["request"]["id"]
+
+    approve = client.post(
+        f"/api/groups/{group['id']}/join-requests/{request_id}/decide",
+        json={"action": "approve"},
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert approve.status_code == 200, approve.text
+    assert approve.json()["status"] == "approved"
+
+    # Exactly one scheduled fan-out for the approved request.
+    approve_calls = [c for c in captured if c["user_id"] == requester_uid]
+    assert len(approve_calls) == 1, captured
+    call = approve_calls[0]
+    payload = call["payload"]
+    # Payload shape must match what the SW + Capacitor bridge listens
+    # for: `member-added-<group_uuid>` tag + url under `/g/<route>` +
+    # `group_id` field carrying the route_for_url. GroupNotFound's
+    # listener matches on EITHER tag OR url, so both must be correct.
+    assert payload["tag"] == f"member-added-{group['id']}"
+    assert payload["url"].startswith("/g/")
+    assert payload["group_id"]
+    assert payload["title"]
+    assert payload["body"]
+
+    # Deny should NOT fire member-added (separate request, separate
+    # requester). Reset and run a deny flow.
+    captured.clear()
+    deny_browser = str(uuid.uuid4())
+    dtoken, _, _ = _sign_in(client, deny_browser)
+    d_create = client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": "no"},
+        headers=_bearer_headers(deny_browser, dtoken),
+    )
+    deny_id = d_create.json()["request"]["id"]
+    deny = client.post(
+        f"/api/groups/{group['id']}/join-requests/{deny_id}/decide",
+        json={"action": "deny"},
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert deny.status_code == 200
+    assert deny.json()["status"] == "denied"
+    assert captured == []
+
+
 def test_deny_does_not_grant_membership_and_allows_re_request(
     client, creator_browser, requester_browser
 ):

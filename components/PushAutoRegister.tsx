@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { bootstrapCapacitorPushSubscription, refreshAppBadge } from "@/lib/pushNotifications";
 import { BADGE_SETTINGS_CHANGED_EVENT } from "@/lib/badgeSettings";
 import { SESSION_CHANGED_EVENT } from "@/lib/session";
+import { installSwMessageBridge } from "@/lib/swMessages";
 
 /**
  * Bootstraps push notifications on Capacitor iOS:
@@ -29,6 +30,11 @@ import { SESSION_CHANGED_EVENT } from "@/lib/session";
  */
 export function PushAutoRegister() {
   useEffect(() => {
+    // Re-dispatch service worker postMessages as window CustomEvents so
+    // JoinRequestsSection / GroupNotFound can refresh on push arrival
+    // without each component duplicating the navigator.serviceWorker
+    // listener boilerplate. Idempotent — safe to call on every mount.
+    installSwMessageBridge();
     void bootstrapCapacitorPushSubscription();
     // Recompute the true app-icon badge whenever the app is opened or
     // refocused, or when the badge model / sign-in state changes — so the

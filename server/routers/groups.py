@@ -1156,6 +1156,7 @@ def decide_group_join_request(
     request_id: str,
     body: JoinRequestDecideBody,
     request: Request,
+    background_tasks: BackgroundTasks,
 ):
     """Phase F: creator approves or denies a pending request.
 
@@ -1163,7 +1164,11 @@ def decide_group_join_request(
     earliest-linked browser_id (per `user_browsers`). The walk in
     `load_user_visibility` expands that to every device the requester
     is signed in on, so they see the group immediately on the next
-    refresh — no per-device approval needed.
+    refresh — no per-device approval needed. Also fires a
+    `fan_out_member_added` push so the requester's open client (e.g.
+    sitting on the GroupNotFound "Request to join" screen) can
+    auto-refresh into the group without a manual reload, AND so
+    devices that aren't open get a banner they can tap to navigate in.
 
     On deny: the row's status walks to 'denied'. The requester gets no
     notification (per `docs/auth-access-model.md`: "Requester gets no
@@ -1186,6 +1191,9 @@ def decide_group_join_request(
             status_code=401, detail="Sign in to decide join requests"
         )
     decision = "approved" if body.action == "approve" else "denied"
+    notify_payload: dict | None = None
+    notify_user_id: str | None = None
+    notify_group_id: str | None = None
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
@@ -1222,6 +1230,33 @@ def decide_group_join_request(
                 detail="Request not found or already decided",
             )
         decided = decide_request(conn, request_id, decision, user_id)
+        if decided and decision == "approved":
+            # Build the approval-push payload while we still hold the
+            # connection; same shape as the invite-members fan-out so
+            # client-side handling can be uniform on `member-added-*`
+            # tags. Read group_short_id + display name once.
+            group_row = conn.execute(
+                "SELECT short_id, title FROM groups WHERE id = %(g)s::uuid",
+                {"g": group_id},
+            ).fetchone()
+            group_short_id = (
+                group_row.get("short_id") if group_row else None
+            )
+            group_phrase = group_name_phrase(
+                conn,
+                group_id,
+                override=group_row.get("title") if group_row else None,
+            )
+            route_for_url = group_short_id or group_id
+            notify_payload = {
+                "title": f"Added to {group_phrase}",
+                "body": "Your request to join was approved",
+                "url": f"/g/{route_for_url}",
+                "group_id": route_for_url,
+                "tag": f"member-added-{group_id}",
+            }
+            notify_user_id = decided.requester_user_id
+            notify_group_id = group_id
     if not decided:
         # decide_request returns None only on race (a second click
         # flipped the row between our SELECT and UPDATE). Treat the
@@ -1229,6 +1264,13 @@ def decide_group_join_request(
         raise HTTPException(
             status_code=404,
             detail="Request not found or already decided",
+        )
+    if notify_payload and notify_user_id and notify_group_id:
+        background_tasks.add_task(
+            fan_out_member_added,
+            notify_group_id,
+            notify_user_id,
+            notify_payload,
         )
     return JoinRequestDecideResponse(
         request_id=decided.request_id,

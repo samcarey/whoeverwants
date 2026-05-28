@@ -60,7 +60,37 @@ self.addEventListener('push', function (event) {
     self.navigator.setAppBadge(payload.badge).catch(function () {});
   }
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  // Notify every open client that a push just landed so they can react
+  // without waiting for a tap. Used by JoinRequestsSection (refetch on
+  // join-request-* tag for this group) and GroupLoadState's
+  // "Request to join" view (reload on member-added-* tag) so users on
+  // the relevant page see state changes immediately. Other clients
+  // ignore unmatched group_ids/tags. Fire-and-forget; postMessage
+  // failures don't block the notification.
+  var pushReceivedMessage = {
+    type: 'whoeverwants-push-received',
+    url: payload.url || '/',
+    group_id: payload.group_id || null,
+    tag: payload.tag || null,
+  };
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(title, options),
+      self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then(function (clientList) {
+          clientList.forEach(function (client) {
+            try {
+              client.postMessage(pushReceivedMessage);
+            } catch (e) {
+              // postMessage to a detached/uncontrolled client can throw;
+              // we just want best-effort delivery.
+            }
+          });
+        })
+        .catch(function () {}),
+    ])
+  );
 });
 
 self.addEventListener('notificationclick', function (event) {
@@ -69,12 +99,22 @@ self.addEventListener('notificationclick', function (event) {
   if (self.navigator && self.navigator.clearAppBadge) {
     self.navigator.clearAppBadge().catch(function () {});
   }
-  var url = (event.notification.data && event.notification.data.url) || '/';
+  var data = event.notification.data || {};
+  var url = data.url || '/';
+  var clickMessage = {
+    type: 'whoeverwants-notification-click',
+    url: url,
+    group_id: data.group_id || null,
+    tag: event.notification.tag || null,
+  };
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
       // If a window is already open at any URL, focus it and navigate
       // it to the notification target. Avoids opening a duplicate tab.
+      // Also postMessage so the focused client can refresh its UI when
+      // `client.navigate(url)` is a no-op (URL unchanged, e.g. creator
+      // already on /info when tapping a join-request notification).
       for (var i = 0; i < clientList.length; i++) {
         var client = clientList[i];
         if ('focus' in client) {
@@ -84,6 +124,11 @@ self.addEventListener('notificationclick', function (event) {
             } catch (e) {
               // Cross-origin navigate is blocked; fall through.
             }
+          }
+          try {
+            client.postMessage(clickMessage);
+          } catch (e) {
+            // postMessage failure shouldn't block the focus.
           }
           return client.focus();
         }
