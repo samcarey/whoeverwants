@@ -680,6 +680,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
       <GroupHeader
         headerRef={headerRef}
         title={pollTitle}
+        pollQuestions={subQuestions}
         onBack={onBack}
         onTitleClick={() => {
           rememberCurrentScroll(scrollKey);

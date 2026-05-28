@@ -12,8 +12,10 @@ export const BOUNDING_RADIUS = 41.5;
 export const BOUNDING_DIAMETER = BOUNDING_RADIUS * 2;
 export const BOUNDING_OFFSET = 50 - BOUNDING_RADIUS;
 
-// Pre-computed circle packing layouts in SVG viewBox units (0-100)
-const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
+// Pre-computed circle packing layouts in SVG viewBox units (0-100).
+// Exported so PollAvatar can reuse the exact tessellation geometry for
+// question-category-icon discs without duplicating the constants.
+export const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
   /* 0 */ { centers: [], diameter: 0 },
   /* 1 */ { centers: [[50, 50]], diameter: 83 },
   /* 2 */ { centers: [[27, 50], [73, 50]], diameter: 44 },
@@ -29,8 +31,9 @@ const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
 
 // Per-N scale that snugs each tessellation inside the bounding disc.
 // Computed from each layout's outermost reach so layout edits stay in
-// sync without a hand-tuned parallel array.
-const BOUNDING_SCALE = LAYOUTS.map(({ centers, diameter }) => {
+// sync without a hand-tuned parallel array. Exported alongside LAYOUTS
+// so PollAvatar applies the same snug-into-disc scaling.
+export const BOUNDING_SCALE = LAYOUTS.map(({ centers, diameter }) => {
   if (centers.length === 0) return 1;
   const r = diameter / 2;
   const maxReach = Math.max(...centers.map(([cx, cy]) => Math.hypot(cx - 50, cy - 50) + r));
