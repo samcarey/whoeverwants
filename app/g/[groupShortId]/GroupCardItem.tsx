@@ -227,8 +227,15 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   const statusEl: React.ReactNode = (() => {
     const inTimeAvailability = isInTimeAvailabilityPhase(question);
     if (isClosed) {
+      // Prefer the response_deadline whenever it has passed — covers both the
+      // server-flipped `close_reason === "deadline"` case AND the brief window
+      // where the FE flips isClosed via expired deadline before the server
+      // tick records the close (without this, that window would show a wrong
+      // "Closed Xm ago" based on `updated_at`).
+      const deadlineHasPassed =
+        !!wrapperResponseDeadline && new Date(wrapperResponseDeadline) <= new Date();
       const closedAt =
-        wrapperCloseReason === "deadline" && wrapperResponseDeadline
+        (wrapperCloseReason === "deadline" || deadlineHasPassed) && wrapperResponseDeadline
           ? wrapperResponseDeadline
           : wrapperUpdatedAt;
       return (
