@@ -537,11 +537,14 @@ def test_approve_schedules_member_added_push(
     payload = call["payload"]
     # Payload shape must match what the SW + Capacitor bridge listens
     # for: `member-added-<group_uuid>` tag + url under `/g/<route>` +
-    # `group_id` field carrying the route_for_url. GroupNotFound's
-    # listener matches on EITHER tag OR url, so both must be correct.
+    # `group_id` field carrying the route_for_url + `group_uuid` field
+    # carrying the canonical UUID so listeners whose viewer is on the
+    # UUID-form URL can still match. GroupNotFound's listener matches on
+    # EITHER tag OR url; both must be correct.
     assert payload["tag"] == f"member-added-{group['id']}"
     assert payload["url"].startswith("/g/")
     assert payload["group_id"]
+    assert payload["group_uuid"] == group["id"]
     assert payload["title"]
     assert payload["body"]
 

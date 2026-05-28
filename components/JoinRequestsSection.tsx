@@ -39,6 +39,7 @@ import {
 } from "@/lib/api";
 import type { GroupJoinRequest } from "@/lib/api";
 import { haptic } from "@/lib/haptics";
+import { isPathPrefix } from "@/lib/questionId";
 import {
   SW_NOTIFICATION_CLICK_EVENT,
   SW_PUSH_RECEIVED_EVENT,
@@ -111,6 +112,12 @@ export default function JoinRequestsSection({
   // when the creator taps a notification whose URL targets this /info
   // page (in which case `client.navigate` was a no-op and React never
   // remounted). Both signals route through the same refetch.
+  //
+  // The `groupId` prop is whatever the URL contains — could be the
+  // canonical groups.short_id OR the legacy UUID form. The push payload
+  // always uses route_for_url (short_id when present) for `group_id`
+  // AND the canonical UUID in `group_uuid`, so we match against either
+  // — otherwise a creator on the UUID-form URL would never auto-refresh.
   useEffect(() => {
     if (!enabled) return;
     const groupInfoPath = `/g/${groupId}/info`;
@@ -118,9 +125,10 @@ export default function JoinRequestsSection({
       const tagMatch =
         !!detail.tag &&
         detail.tag.startsWith("join-request-") &&
-        detail.group_id === groupId;
+        (detail.group_id === groupId || detail.group_uuid === groupId);
       const urlMatch =
-        typeof detail.url === "string" && detail.url.startsWith(groupInfoPath);
+        typeof detail.url === "string" &&
+        isPathPrefix(detail.url, groupInfoPath);
       return tagMatch || urlMatch;
     };
     const onSwEvent = (event: Event) => {

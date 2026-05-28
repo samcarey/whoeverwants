@@ -229,10 +229,18 @@ def _send_apns(
     apns_payload = {
         "aps": aps,
         # Custom data — read by the iOS app's notification tap handler
-        # to route into the right group.
+        # to route into the right group. `tag` + `group_uuid` (when
+        # present) ride alongside so the FE swMessages bridge can do
+        # tag-prefix discrimination and UUID-form matching on native iOS,
+        # exactly like the web push branch. Missing fields are dropped so
+        # we don't send `null` literals in the payload.
         "url": payload.get("url"),
         "group_id": payload.get("group_id"),
     }
+    for k in ("tag", "group_uuid"):
+        v = payload.get(k)
+        if v is not None:
+            apns_payload[k] = v
     headers = {
         "authorization": f"bearer {apns_jwt}",
         "apns-topic": bundle_id,

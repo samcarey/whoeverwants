@@ -40,16 +40,24 @@ self.addEventListener('push', function (event) {
   }
 
   var title = payload.title || 'WhoeverWants';
+  // Preserve the ORIGINAL payload.tag in data so notificationclick can
+  // recover the exact value the server sent. Reading event.notification.tag
+  // would give the showNotification fallback ('whoeverwants' for tagless
+  // pushes), which doesn't match what push-received broadcast and breaks
+  // any prefix-discrimination check (e.g. startsWith('member-added-')).
+  var payloadTag = payload.tag || null;
   var options = {
     body: payload.body || '',
     icon: '/icon-192x192.png',
     badge: '/icon-192x192.png',
     // Tag dedupes — a second push for the same poll replaces the first
     // banner rather than stacking them.
-    tag: payload.tag || 'whoeverwants',
+    tag: payloadTag || 'whoeverwants',
     data: {
       url: payload.url || '/',
       group_id: payload.group_id || null,
+      group_uuid: payload.group_uuid || null,
+      tag: payloadTag,
     },
   };
 
@@ -71,11 +79,17 @@ self.addEventListener('push', function (event) {
     type: 'whoeverwants-push-received',
     url: payload.url || '/',
     group_id: payload.group_id || null,
-    tag: payload.tag || null,
+    group_uuid: payload.group_uuid || null,
+    tag: payloadTag,
   };
+  // Both branches `.catch` so neither failure cancels the other —
+  // Promise.all is short-circuit-rejection by default. A showNotification
+  // failure (revoked permission mid-session, OS notification quota) would
+  // otherwise mark the push event itself as failed and, after enough
+  // repeats, browsers may auto-revoke the push subscription.
   event.waitUntil(
     Promise.all([
-      self.registration.showNotification(title, options),
+      self.registration.showNotification(title, options).catch(function () {}),
       self.clients
         .matchAll({ type: 'window', includeUncontrolled: true })
         .then(function (clientList) {
@@ -105,7 +119,11 @@ self.addEventListener('notificationclick', function (event) {
     type: 'whoeverwants-notification-click',
     url: url,
     group_id: data.group_id || null,
-    tag: event.notification.tag || null,
+    group_uuid: data.group_uuid || null,
+    // Use the ORIGINAL payload tag stored in data (not
+    // event.notification.tag, which is the showNotification fallback
+    // 'whoeverwants' for tagless pushes — would break prefix matchers).
+    tag: data.tag || null,
   };
 
   event.waitUntil(

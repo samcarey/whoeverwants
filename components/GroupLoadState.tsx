@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import SignInModal from "@/components/SignInModal";
 import { haptic } from "@/lib/haptics";
+import { isPathPrefix } from "@/lib/questionId";
 import {
   getCachedSessionUser,
   SESSION_CHANGED_EVENT,
@@ -115,10 +116,13 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
   // (notification-click event).
   useEffect(() => {
     if (!routeId) return;
-    // Exact `/g/<routeId>` OR a `/g/<routeId>/...` subpath. A plain
-    // `.startsWith('/g/<routeId>')` would false-positive on a longer
-    // sibling routeId (e.g. listening for `/g/~abc` would also match
-    // `/g/~abcdef`).
+    // `routeId` is whatever's in the URL — could be the canonical
+    // groups.short_id OR a legacy UUID form. Push payload's `group_id`
+    // is route_for_url (short_id when present) and `group_uuid` is the
+    // canonical UUID; match against either so the UUID-form viewer
+    // isn't silently dropped. `isPathPrefix` keeps the URL match from
+    // false-positive on a sibling routeId like `~abcdef` when listening
+    // for `~abc`.
     const groupRootPath = `/g/${routeId}`;
     const onSwEvent = (event: Event) => {
       const detail = (event as CustomEvent<SwPushReceivedDetail>).detail;
@@ -126,12 +130,10 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
       const tagMatch =
         !!detail.tag &&
         detail.tag.startsWith("member-added-") &&
-        detail.group_id === routeId;
+        (detail.group_id === routeId || detail.group_uuid === routeId);
       const urlMatch =
         typeof detail.url === "string" &&
-        (detail.url === groupRootPath ||
-          detail.url.startsWith(`${groupRootPath}/`) ||
-          detail.url.startsWith(`${groupRootPath}?`));
+        isPathPrefix(detail.url, groupRootPath);
       if (!tagMatch && !urlMatch) return;
       window.location.reload();
     };
