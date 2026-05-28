@@ -99,7 +99,7 @@ export default function GroupHeader({
   const titleBlock = title ? (
     <>
       <div className="min-w-0 flex-1 flex flex-col">
-        <h1 className="font-semibold text-lg text-gray-900 dark:text-white line-clamp-2 leading-tight">
+        <h1 className="font-semibold text-lg text-gray-900 dark:text-white line-clamp-2 leading-[1.1]">
           {title}
         </h1>
         {subtitle && (
