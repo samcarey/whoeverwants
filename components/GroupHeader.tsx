@@ -134,7 +134,7 @@ export default function GroupHeader({
       <div className="max-w-4xl mx-auto flex items-center overflow-hidden">
         <button
           onClick={handleBack}
-          className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
+          className="self-stretch py-2 pl-2 pr-[5.6px] flex items-center justify-center shrink-0"
           aria-label="Go back"
         >
           <span className="w-10 h-10 flex items-center justify-center">
