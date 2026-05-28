@@ -40,29 +40,34 @@ export function getBuiltInCategoryIcon(category: string | null | undefined): str
  *  instead of just "Partie". The `time` special-case is load-bearing:
  *  the Time bubble stores question_type=time but leaves category=custom,
  *  so reading the category alone gives "Custom" — same convention as
- *  `_category_for_title` in `server/routers/polls.py`. */
+ *  `_category_for_title` in `server/routers/polls.py`.
+ *
+ *  yes_no returns `null` rather than the "Yes/No" auto-label — that
+ *  string is a category, not display text. yes_no's user-typed prompt
+ *  is stored on `details` (FE forwards draft.title to the server as
+ *  `context` for yes_no), and `getQuestionSectionTitle` surfaces that
+ *  prompt verbatim — no "Yes/No for" prefix. */
 function getQuestionLabel(question: Question): string | null {
   if (question.question_type === 'time') return 'Time';
-  // Match the server's auto-title format ("Yes/No" with no spaces, in
-  // contrast to BUILT_IN_TYPES.label "Yes / No"); keep them aligned so
-  // section headers don't visually diverge from the auto-generated
-  // wrapper title.
-  if (question.question_type === 'yes_no') return 'Yes/No';
+  if (question.question_type === 'yes_no') return null;
   const builtIn = getBuiltInType(question.category ?? '');
   if (builtIn) return builtIn.label;
   if (question.category && question.category !== 'custom') return question.category;
   return null;
 }
 
-/** Returns the per-question section header text. Falls back to the
- *  question type with `_` swapped for `/` so even an unrecognized type
- *  still surfaces SOME identifier (the section header is the question's
- *  own title in a multi-question poll). */
-export function getQuestionSectionTitle(question: Question): string {
+/** Returns the per-question section header text, or null when there's
+ *  nothing meaningful to show (the icon alone identifies the section).
+ *  Callers MUST gate rendering on the result — `{title && <h2>{title}</h2>}`.
+ *
+ *  For yes_no this returns the user-typed prompt (stored on `details`).
+ *  For non-yes_no, it composes the category label with the per-question
+ *  context, matching the server's auto-title format. */
+export function getQuestionSectionTitle(question: Question): string | null {
   const details = question.details?.trim();
   const label = getQuestionLabel(question);
   if (label && details) return `${label} for ${details}`;
-  return label ?? details ?? question.question_type.replace('_', '/');
+  return label ?? details ?? null;
 }
 
 export function relativeTime(dateStr: string): string {

@@ -180,9 +180,24 @@ export function draftToQuestionParams(
   };
   // `forField` → API `context` (stored on `questions.details`). Required
   // for the server's same-kind disambiguation check (otherwise 400).
+  //
+  // yes_no is the exception: the FE form's "title" field IS the question's
+  // own prompt (e.g. "Should we go bowling?"). For a SINGLE-question poll
+  // that prompt becomes the wrapper title automatically (via the `onlyDraft
+  // && !onlyDraft.isAutoTitle` branch in page.tsx); for a MULTI-question
+  // poll the wrapper title is auto-built from categories+contexts, so the
+  // per-question prompt has nowhere to land unless we forward it as
+  // `context`. `details` is the only per-question text column in the data
+  // model — re-using it for yes_no prompts lets the section header show
+  // the user's prompt verbatim (no "Yes/No for X" rewrap, since "Yes/No"
+  // is a category, not display text). Single-question yes_no polls still
+  // pass through here too, but `details` is unused on the single-card
+  // layout, so it's harmless.
   const trimmedForField = d.forField.trim();
-  if (trimmedForField) {
-    params.context = trimmedForField;
+  const yesNoPrompt = dbType === 'yes_no' ? d.title.trim() : '';
+  const contextValue = yesNoPrompt || trimmedForField;
+  if (contextValue) {
+    params.context = contextValue;
   }
   if (dbType === 'ranked_choice' && d.category !== 'custom') {
     params.category = d.category;
@@ -516,23 +531,35 @@ export function draftPollPreview(
     return { title: trimmedContext || 'New Poll', latestQuestionTitle: '', questionCount: 0 };
   }
 
+  // "Yes/No" is a category, not display text — drop yes_no drafts when
+  // composing auto-titles. Single yes_no polls still surface the user's
+  // typed prompt via the !isAutoTitle branch below; multi-question polls
+  // with yes_no-among-others build the title from the other categories
+  // (the yes_no's presence is conveyed by the question list itself).
+  const visibleDrafts = drafts.filter(d => _draftCategory(d) !== 'yes_no');
+
   let title: string;
   if (drafts.length === 1 && !drafts[0].isAutoTitle && drafts[0].title.trim()) {
     // Wrapper title: when exactly 1 draft AND the user typed an explicit
     // title (yes_no with !isAutoTitle), use it — that's what the server
     // will use too.
     title = drafts[0].title.trim();
-  } else if (drafts.length === 1) {
-    // 1-question poll: title = the question's own auto-title (category
-    // + its own context, falling back to poll-level context).
-    const ctx = trimmedContext || drafts[0].forField.trim();
+  } else if (visibleDrafts.length === 0) {
+    // Every draft is yes_no with no user-typed title. Fall back to the
+    // poll-level context or a generic placeholder.
+    title = trimmedContext || 'Question?';
+  } else if (visibleDrafts.length === 1) {
+    // 1-question poll (or yes_no + 1 visible): title = the question's own
+    // auto-title (category + its own context, falling back to poll-level
+    // context).
+    const ctx = trimmedContext || visibleDrafts[0].forField.trim();
     title = ctx
-      ? `${labelForCategory(_draftCategory(drafts[0]))} for ${ctx}`
-      : _singleQuestionDefaultTitle(_draftCategory(drafts[0]));
+      ? `${labelForCategory(_draftCategory(visibleDrafts[0]))} for ${ctx}`
+      : _singleQuestionDefaultTitle(_draftCategory(visibleDrafts[0]));
   } else {
-    const cats = drafts.map(d => _draftCategory(d));
-    const contexts = drafts.map(d => d.forField.trim());
-    const sharedFromDrafts = sharedDraftContext(drafts);
+    const cats = visibleDrafts.map(d => _draftCategory(d));
+    const contexts = visibleDrafts.map(d => d.forField.trim());
+    const sharedFromDrafts = sharedDraftContext(visibleDrafts);
     const shared = trimmedContext || sharedFromDrafts;
 
     if (shared) {
