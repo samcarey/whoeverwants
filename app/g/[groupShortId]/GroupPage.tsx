@@ -1341,9 +1341,9 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
   // for the 5s refresh tick. The SimpleCountdown's imperative per-second DOM
   // updates otherwise display "Voting: Expired" in the gap.
   useDeadlineTick(
-    group
-      ? group.polls.flatMap((mp) => (mp.is_closed ? [] : [mp.response_deadline, mp.prephase_deadline]))
-      : [],
+    group?.polls.flatMap((mp) =>
+      mp.is_closed ? [] : [mp.response_deadline, mp.prephase_deadline],
+    ) ?? [],
   );
   const wrapperFor = (question: Question): Poll | null =>
     pollByQuestionId.get(question.id) ?? (question.poll_id ? pollWrapperMap.get(question.poll_id) ?? null : null);
