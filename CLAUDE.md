@@ -1665,8 +1665,9 @@ without blocking re-requests after a denial. Three endpoints in
   * `POST /api/groups/<route_id>/join-requests` (body `{message?}`)
     — signed-in caller. Returns 200 + status discriminator
     (`pending` | `already_pending` | `already_member`). 401
-    anonymous, 404 unknown group. Idempotent via the partial
-    unique index — second call doesn't re-fire the creator push.
+    anonymous, 404 unknown group, 400 nameless account (see name-gate
+    bullet below). Idempotent via the partial unique index —
+    second call doesn't re-fire the creator push.
   * `GET /api/groups/<route_id>/join-requests` — creator-only.
     Returns pending oldest first, with `requester_email` joined
     in (NULL for passkey-only requesters). 401/403/404.
@@ -1710,6 +1711,27 @@ and shows a "Request sent" / "Group not found" result. Anonymous
 viewers on the same page get a "Sign in to request access" CTA
 that opens `SignInModal`; signing in fires
 `SESSION_CHANGED_EVENT` and the button surfaces without remount.
+
+**Account name is required to request access (server backstop + FE
+gate).** `POST /api/groups/<route_id>/join-requests` runs
+`validate_user_name(users.display_name)` AFTER the member-or-creator
+short-circuit but before `create_join_request`, returning 400 "name
+is required" when the caller's `display_name` is NULL/blank. The
+member-check goes first so a nameless existing-member tapping retry
+gets the friendly `already_member` response — the name only matters
+when a request would actually be created (the creator needs
+SOMETHING to recognize the requester by, and `requester_email` is
+NULL for passkey-only accounts → "Passkey user" UI fallback reads
+as anonymous). FE primary gate is in `GroupNotFound.requestAccess`
+(in `components/GroupLoadState.tsx`): when `!isValidUserName(getUserName())`
+it opens the shared `<AccountGateModal message="to request access">`
+instead of POSTing; the modal's `onSubmit` retries the request
+inline via the extracted `submitJoinRequest` helper. Pattern matches
+the other 4 AccountGateModal callsites (CreateGroupButtonHost / vote
+Submit / create-poll bubble / settings/edit). Mirror this rule any
+time a new endpoint produces a creator-visible artifact tagged with
+the caller's identity — name-required, ordered after any short-
+circuit that doesn't actually create the artifact.
 
 **`<GroupNotFound>` probes `/preview` to switch from ambiguous to
 honest copy when the group actually exists.** A private-group 404

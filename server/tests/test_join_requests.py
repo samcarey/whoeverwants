@@ -190,6 +190,52 @@ def test_create_join_request_requires_account_name(
     assert "name" in resp.json()["detail"].lower()
 
 
+def test_create_join_request_nameless_existing_member_short_circuits(
+    client, creator_browser, requester_browser
+):
+    """A nameless caller who's ALREADY a member gets the friendly
+    `already_member` response — the name gate only fires when a new
+    request would actually be created. Pins the name-check-after-member-
+    check ordering."""
+    ctoken, _, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+
+    # Sign in the requester with a name + approve them so they become a
+    # member, then clear the name to simulate a member whose display_name
+    # was wiped (legacy data / manual clear).
+    rtoken, ruid, _ = _sign_in(client, requester_browser)
+    pending = client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": "join me"},
+        headers=_bearer_headers(requester_browser, rtoken),
+    )
+    request_id = pending.json()["request"]["id"]
+    decided = client.post(
+        f"/api/groups/{group['id']}/join-requests/{request_id}/decide",
+        json={"action": "approve"},
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert decided.status_code == 200, decided.text
+
+    # Wipe the requester's display_name now that they're a member.
+    cleared = client.post(
+        "/api/auth/me/name",
+        json={"name": None},
+        headers=_bearer_headers(requester_browser, rtoken),
+    )
+    assert cleared.status_code == 200, cleared.text
+
+    # Re-tap "Request to join" — should short-circuit on membership
+    # BEFORE hitting the name gate.
+    resp = client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": "?"},
+        headers=_bearer_headers(requester_browser, rtoken),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "already_member"
+
+
 def test_create_join_request_new_returns_pending(
     client, creator_browser, requester_browser
 ):

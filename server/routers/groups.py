@@ -1043,21 +1043,6 @@ def create_group_join_request(
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
 
-        # Name gate: the creator needs SOMETHING to recognize the requester
-        # by ("Approve / deny request from <who>?"). `requester_email` is
-        # null for passkey-only accounts and the UI's "Passkey user"
-        # placeholder reads as anonymous to creators — a display name closes
-        # that gap. Validated here as the backstop; the FE's
-        # AccountGateModal is the primary gate at the click.
-        name_row = conn.execute(
-            "SELECT display_name FROM users WHERE id = %(u)s::uuid",
-            {"u": user_id},
-        ).fetchone()
-        validate_user_name(
-            name_row["display_name"] if name_row else None,
-            field="name",
-        )
-
         # Already-member / creator short-circuit. We return 200 (not 201)
         # so the FE can show "you're already in this group" instead of
         # "request sent". The row in group_members might be keyed on a
@@ -1067,6 +1052,23 @@ def create_group_join_request(
             return JoinRequestCreateResponse(
                 status="already_member", request=None
             )
+
+        # Name gate: the creator needs SOMETHING to recognize the requester
+        # by ("Approve / deny request from <who>?"). `requester_email` is
+        # null for passkey-only accounts and the UI's "Passkey user"
+        # placeholder reads as anonymous to creators — a display name closes
+        # that gap. Validated here as the backstop; the FE's
+        # AccountGateModal is the primary gate at the click. Runs AFTER
+        # the member check so a nameless existing-member tapping retry
+        # gets the friendly already_member response, not 400.
+        name_row = conn.execute(
+            "SELECT display_name FROM users WHERE id = %(u)s::uuid",
+            {"u": user_id},
+        ).fetchone()
+        validate_user_name(
+            name_row["display_name"] if name_row else None,
+            field="name",
+        )
 
         # Snapshot existence BEFORE the create so we know whether this
         # call inserted a new row or returned an existing pending one.
