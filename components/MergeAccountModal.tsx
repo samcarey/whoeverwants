@@ -73,8 +73,8 @@ export default function MergeAccountModal({
 
           <h2 className="text-lg font-semibold mb-2 pr-6">Combine another account</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Sign in to your <strong>other</strong> account below. Its polls,
-            groups, and sign-in methods move into this one, and the other
+            Sign in to your <strong>other</strong>{" "}account below. Its
+            polls, groups, and sign-in methods move into this one, and the other
             account is permanently removed. This can&apos;t be undone.
           </p>
 
