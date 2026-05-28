@@ -836,24 +836,20 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
             ) : null;
 
           if (splitSuggestionPhaseCards) {
-            const sectionTitle = getQuestionSectionTitle(sp);
             return (
               <div key={sp.id} className={idx > 0 ? "mt-3" : "mt-2"}>
                 {isMultiPoll && (
                   <div className="mb-2 flex items-center gap-2 px-1">
                     <InlineCategoryIcon question={sp} />
-                    {sectionTitle && (
-                      <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
-                        {sectionTitle}
-                      </div>
-                    )}
+                    <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
+                      {getQuestionSectionTitle(sp)}
+                    </div>
                   </div>
                 )}
                 {ballot}
               </div>
             );
           }
-          const sectionTitle = getQuestionSectionTitle(sp);
 
           return (
             <Fragment key={sp.id}>
@@ -863,11 +859,9 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               {isMultiPoll && (
                 <div className="mb-2 flex items-center gap-2">
                   <InlineCategoryIcon question={sp} />
-                  {sectionTitle && (
-                    <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
-                      {sectionTitle}
-                    </div>
-                  )}
+                  <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
+                    {getQuestionSectionTitle(sp)}
+                  </div>
                 </div>
               )}
 
