@@ -41,3 +41,16 @@ export function isGroupRootView(pathname: string): boolean {
 export function isPollDetailView(pathname: string): boolean {
   return /^\/g\/[^/]+\/p\/[^/]+\/?$/.test(pathname);
 }
+
+/** True when `url` is exactly `prefix` or starts a complete path segment
+ *  / query under it — i.e. `prefix`, `prefix/...`, or `prefix?...`.
+ *  Distinguishes from a bare `startsWith(prefix)` which false-positives
+ *  on sibling routes that share a string prefix (`/g/~abc` vs `/g/~abcdef`,
+ *  or `/g/<id>/info` vs `/g/<id>/info-stats`). */
+export function isPathPrefix(url: string, prefix: string): boolean {
+  return (
+    url === prefix ||
+    url.startsWith(`${prefix}/`) ||
+    url.startsWith(`${prefix}?`)
+  );
+}

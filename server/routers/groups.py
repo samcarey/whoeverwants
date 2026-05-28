@@ -977,6 +977,31 @@ def _summary_to_response(s, fallback_email: str | None = None) -> JoinRequestSum
     )
 
 
+def _build_group_push_context(conn, group_id: str) -> tuple[str, str, str | None]:
+    """Single source for the (route_for_url, group_phrase, group_short_id)
+    triple every group-scoped push fan-out needs. `route_for_url` is the
+    short_id when present else the UUID; `group_phrase` is the display
+    name resolved via `group_name_phrase` (honoring the title override).
+
+    Extracted from the three sites that previously inlined this lookup
+    (create_join_request, decide_group_join_request, add_group_members) —
+    extending it once (e.g. to add a new groups-table field to every push
+    payload) now reaches every caller.
+    """
+    group_row = conn.execute(
+        "SELECT short_id, title FROM groups WHERE id = %(g)s::uuid",
+        {"g": group_id},
+    ).fetchone()
+    group_short_id = group_row.get("short_id") if group_row else None
+    group_phrase = group_name_phrase(
+        conn,
+        group_id,
+        override=group_row.get("title") if group_row else None,
+    )
+    route_for_url = group_short_id or group_id
+    return route_for_url, group_phrase, group_short_id
+
+
 @router.post(
     "/{route_id}/join-requests",
     response_model=JoinRequestCreateResponse,
@@ -1064,20 +1089,12 @@ def create_group_join_request(
         # groups have NULL creator_user_id; skip the push in that case.
         meta = get_group_metadata(conn, group_id)
         creator_user_id = meta["creator_user_id"] if meta else None
-        group_row = conn.execute(
-            "SELECT short_id, title FROM groups WHERE id = %(g)s::uuid",
-            {"g": group_id},
-        ).fetchone()
-        group_short_id = group_row.get("short_id") if group_row else None
-        group_phrase = group_name_phrase(
-            conn, group_id, override=group_row.get("title") if group_row else None
-        )
+        route_for_url, group_phrase, _ = _build_group_push_context(conn, group_id)
 
     # Fire-and-forget push fan-out. Runs only on a brand-new request;
     # a repeat-ping for an already-pending request would just noise the
     # creator on every "polite re-request" tap.
     if is_new and creator_user_id:
-        route_for_url = group_short_id or group_id
         # Line 1 names the event + group ("Join request for <Group>"); line 2
         # is who's asking. Body stays generic for passkey-only requesters
         # (no email) so they don't surface as a literal "null wants to join".
@@ -1095,7 +1112,13 @@ def create_group_join_request(
                 "title": f"Join request for {group_phrase}",
                 "body": body_text,
                 "url": f"/g/{route_for_url}/info",
+                # `group_id` is the route_for_url (short_id form) — used by
+                # FE listeners that build URLs. `group_uuid` is the canonical
+                # UUID — used by listeners that resolve a viewer's routeId
+                # (which may be EITHER short_id or UUID depending on URL form)
+                # to match against the push.
                 "group_id": route_for_url,
+                "group_uuid": group_id,
                 "tag": f"join-request-{summary.id}",
             },
         )
@@ -1156,6 +1179,7 @@ def decide_group_join_request(
     request_id: str,
     body: JoinRequestDecideBody,
     request: Request,
+    background_tasks: BackgroundTasks,
 ):
     """Phase F: creator approves or denies a pending request.
 
@@ -1163,7 +1187,11 @@ def decide_group_join_request(
     earliest-linked browser_id (per `user_browsers`). The walk in
     `load_user_visibility` expands that to every device the requester
     is signed in on, so they see the group immediately on the next
-    refresh — no per-device approval needed.
+    refresh — no per-device approval needed. Also fires a
+    `fan_out_member_added` push so the requester's open client (e.g.
+    sitting on the GroupNotFound "Request to join" screen) can
+    auto-refresh into the group without a manual reload, AND so
+    devices that aren't open get a banner they can tap to navigate in.
 
     On deny: the row's status walks to 'denied'. The requester gets no
     notification (per `docs/auth-access-model.md`: "Requester gets no
@@ -1186,6 +1214,9 @@ def decide_group_join_request(
             status_code=401, detail="Sign in to decide join requests"
         )
     decision = "approved" if body.action == "approve" else "denied"
+    notify_payload: dict | None = None
+    notify_user_id: str | None = None
+    notify_group_id: str | None = None
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
@@ -1222,6 +1253,26 @@ def decide_group_join_request(
                 detail="Request not found or already decided",
             )
         decided = decide_request(conn, request_id, decision, user_id)
+        if decided and decision == "approved":
+            # Build the approval-push payload while we still hold the
+            # connection; same shape as the invite-members fan-out so
+            # client-side handling can be uniform on `member-added-*`
+            # tags. `group_uuid` rides alongside `group_id` so listeners
+            # whose viewer routeId is the UUID form (legacy URL share)
+            # can still match — see lib/swMessages.ts.
+            route_for_url, group_phrase, _ = _build_group_push_context(
+                conn, group_id
+            )
+            notify_payload = {
+                "title": f"Added to {group_phrase}",
+                "body": "Your request to join was approved",
+                "url": f"/g/{route_for_url}",
+                "group_id": route_for_url,
+                "group_uuid": group_id,
+                "tag": f"member-added-{group_id}",
+            }
+            notify_user_id = decided.requester_user_id
+            notify_group_id = group_id
     if not decided:
         # decide_request returns None only on race (a second click
         # flipped the row between our SELECT and UPDATE). Treat the
@@ -1229,6 +1280,13 @@ def decide_group_join_request(
         raise HTTPException(
             status_code=404,
             detail="Request not found or already decided",
+        )
+    if notify_payload and notify_user_id and notify_group_id:
+        background_tasks.add_task(
+            fan_out_member_added,
+            notify_group_id,
+            notify_user_id,
+            notify_payload,
         )
     return JoinRequestDecideResponse(
         request_id=decided.request_id,
@@ -1373,13 +1431,8 @@ def add_group_members(
                 added_user_ids.append(uid)
 
         # Notification payload bits — read once for the whole batch.
-        group_row = conn.execute(
-            "SELECT short_id, title FROM groups WHERE id = %(g)s::uuid",
-            {"g": group_id},
-        ).fetchone()
-        group_short_id = group_row.get("short_id") if group_row else None
-        group_phrase = group_name_phrase(
-            conn, group_id, override=group_row.get("title") if group_row else None
+        route_for_url, group_phrase, _ = _build_group_push_context(
+            conn, group_id
         )
         inviter_row = conn.execute(
             "SELECT display_name FROM users WHERE id = %(u)s::uuid",
@@ -1387,7 +1440,6 @@ def add_group_members(
         ).fetchone()
         inviter_name = inviter_row.get("display_name") if inviter_row else None
 
-    route_for_url = group_short_id or group_id
     body_text = (
         f"{inviter_name} added you to the group"
         if inviter_name
@@ -1403,6 +1455,7 @@ def add_group_members(
                 "body": body_text,
                 "url": f"/g/{route_for_url}",
                 "group_id": route_for_url,
+                "group_uuid": group_id,
                 "tag": f"member-added-{group_id}",
             },
         )

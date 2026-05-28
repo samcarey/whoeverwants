@@ -39,6 +39,12 @@ import {
 } from "@/lib/api";
 import type { GroupJoinRequest } from "@/lib/api";
 import { haptic } from "@/lib/haptics";
+import { isPathPrefix } from "@/lib/questionId";
+import {
+  SW_NOTIFICATION_CLICK_EVENT,
+  SW_PUSH_RECEIVED_EVENT,
+  type SwPushReceivedDetail,
+} from "@/lib/swMessages";
 
 interface Props {
   groupId: string;
@@ -60,6 +66,9 @@ export default function JoinRequestsSection({
   // Track per-request "deciding" state so a slow network doesn't let
   // the user double-tap and fire two decide POSTs.
   const [decidingIds, setDecidingIds] = useState<Set<string>>(new Set());
+  // Bump to force the fetch effect to re-run. Driven by service-worker
+  // push/notification-click events for this group (see effect below).
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!enabled) {
@@ -67,7 +76,10 @@ export default function JoinRequestsSection({
       return;
     }
     let cancelled = false;
-    setLoading(true);
+    // Only show the loading spinner on the initial fetch; SW-triggered
+    // refetches (refreshKey > 0) update in-place so an already-mounted
+    // section doesn't flicker to blank when a push arrives.
+    if (refreshKey === 0) setLoading(true);
     setError(null);
     apiListGroupJoinRequests(groupId)
       .then((data) => {
@@ -93,6 +105,43 @@ export default function JoinRequestsSection({
       });
     return () => {
       cancelled = true;
+    };
+  }, [groupId, enabled, refreshKey]);
+
+  // Auto-refresh when a join-request push arrives for THIS group, or
+  // when the creator taps a notification whose URL targets this /info
+  // page (in which case `client.navigate` was a no-op and React never
+  // remounted). Both signals route through the same refetch.
+  //
+  // The `groupId` prop is whatever the URL contains — could be the
+  // canonical groups.short_id OR the legacy UUID form. The push payload
+  // always uses route_for_url (short_id when present) for `group_id`
+  // AND the canonical UUID in `group_uuid`, so we match against either
+  // — otherwise a creator on the UUID-form URL would never auto-refresh.
+  useEffect(() => {
+    if (!enabled) return;
+    const groupInfoPath = `/g/${groupId}/info`;
+    const shouldRefresh = (detail: SwPushReceivedDetail): boolean => {
+      const tagMatch =
+        !!detail.tag &&
+        detail.tag.startsWith("join-request-") &&
+        (detail.group_id === groupId || detail.group_uuid === groupId);
+      const urlMatch =
+        typeof detail.url === "string" &&
+        isPathPrefix(detail.url, groupInfoPath);
+      return tagMatch || urlMatch;
+    };
+    const onSwEvent = (event: Event) => {
+      const detail = (event as CustomEvent<SwPushReceivedDetail>).detail;
+      if (!detail) return;
+      if (!shouldRefresh(detail)) return;
+      setRefreshKey((k) => k + 1);
+    };
+    window.addEventListener(SW_PUSH_RECEIVED_EVENT, onSwEvent);
+    window.addEventListener(SW_NOTIFICATION_CLICK_EVENT, onSwEvent);
+    return () => {
+      window.removeEventListener(SW_PUSH_RECEIVED_EVENT, onSwEvent);
+      window.removeEventListener(SW_NOTIFICATION_CLICK_EVENT, onSwEvent);
     };
   }, [groupId, enabled]);
 
