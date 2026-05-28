@@ -31,12 +31,13 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import SliderSwitch from "@/components/SliderSwitch";
 import SignInModal from "@/components/SignInModal";
 import { haptic } from "@/lib/haptics";
 import {
+  apiClaimGroup,
   apiUpdateGroupPrivacy,
   ApiError,
 } from "@/lib/api";
@@ -51,12 +52,27 @@ interface Props {
   group: Group;
   groupId: string;
   className?: string;
+  /** Optional override for the group's creator_user_id. When the parent
+   *  has lifted an optimistic post-claim state, pass it here so the
+   *  isCreator computation matches what the rest of /info sees (Join-
+   *  Requests / Invite-Links sections gate on the same value). A null or
+   *  undefined value falls back to `group.creatorUserId` — there's no
+   *  way to "explicitly override to no-creator" because the cached value
+   *  already conveys that. */
+  effectiveCreatorUserId?: string | null;
+  /** Fires after a successful Phase I "claim" — the parent should
+   *  store the new creator_user_id so its own `viewerIsCreator`
+   *  computation flips true on the next render and the other
+   *  creator-only sections appear without a page refresh. */
+  onCreatorClaimed?: (newCreatorUserId: string) => void;
 }
 
 export default function GroupPrivacySection({
   group,
   groupId,
   className = "mt-[0.96rem]",
+  effectiveCreatorUserId,
+  onCreatorClaimed,
 }: Props) {
   // Initialize as null to match SSR (no localStorage on the server);
   // the mount effect below seeds from the localStorage-cached profile
@@ -69,6 +85,18 @@ export default function GroupPrivacySection({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  // 409-on-claim means a concurrent device beat us to it. Surface the
+  // error and hide the button — keeping it tappable just produces an
+  // infinite retry loop with stale local state until the user navigates
+  // away. The next group fetch (cache TTL bounded) will resync
+  // `group.creatorUserId` from the server.
+  const [claimRaced, setClaimRaced] = useState(false);
+  // In-flight guard for the claim POST: state-based `claiming` is read
+  // from the closure and a double-tap within the same render batch
+  // sees the old `false`. A ref flips synchronously, so the second tap
+  // bails before firing a second request that would 409.
+  const claimInFlightRef = useRef(false);
 
   // Mount + subscribe: seed `session` from the localStorage cache and
   // listen for live changes (sign-in via SignInModal, sign-out
@@ -88,9 +116,23 @@ export default function GroupPrivacySection({
     setPrivacy(group.privacy);
   }, [group.privacy]);
 
+  // Prefer the parent's lifted override (post-claim optimistic state)
+  // over the stale `group.creatorUserId` from the cache — keeps every
+  // creator-only surface on /info in lockstep. `??` falls back on
+  // null/undefined identically; a string override always wins.
+  const creatorUserId = effectiveCreatorUserId ?? group.creatorUserId;
   const isCreator =
-    !!session && !!group.creatorUserId && session.user_id === group.creatorUserId;
+    !!session && !!creatorUserId && session.user_id === creatorUserId;
   const isPrivate = privacy === "private";
+  // Phase I claim affordance: signed-in user, group has NO recorded
+  // creator, AND we haven't already lost a claim race. Anonymous
+  // viewers fall through to the sign-in nudge (which surfaces a
+  // claim-specific message when the group is also claimable). The
+  // membership gate is enforced server-side — visiting /info implies
+  // membership for private groups already, and public-group visitors
+  // auto-join via the /by-route-id read endpoint before this section
+  // renders.
+  const canClaim = !!session && !creatorUserId && !claimRaced;
 
   const onToggle = (next: boolean) => {
     if (saving || !isCreator) return;
@@ -113,6 +155,35 @@ export default function GroupPrivacySection({
       .finally(() => setSaving(false));
   };
 
+  const onClaim = () => {
+    if (claimInFlightRef.current || !canClaim) return;
+    claimInFlightRef.current = true;
+    haptic.medium();
+    setError(null);
+    setClaiming(true);
+    apiClaimGroup(groupId)
+      .then((result) => {
+        onCreatorClaimed?.(result.creator_user_id);
+      })
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 409) {
+          // Someone else claimed first. Hide the button + show a clear
+          // explanation; the next group fetch will resync the creator
+          // server-side.
+          setClaimRaced(true);
+          setError("Another member just claimed this group.");
+        } else {
+          const msg =
+            e instanceof ApiError ? e.message : "Failed to claim group";
+          setError(msg);
+        }
+      })
+      .finally(() => {
+        claimInFlightRef.current = false;
+        setClaiming(false);
+      });
+  };
+
   const stateLabel = isPrivate ? "Private" : "Public";
   // Base description by state; creator gets the invite-link nudge as a
   // suffix when private (Phase F/G will deliver the actual invite UI).
@@ -120,11 +191,16 @@ export default function GroupPrivacySection({
     (isPrivate ? "Only members can see this group." : "Anyone with the URL can see this group.")
     + (isCreator && isPrivate ? " Share an invite link to add others." : "");
 
-  // Sign-in nudge: anonymous viewer on a public group gets a quiet CTA
-  // explaining how to create private groups in the future. Doesn't fire
-  // for anonymous viewers on private groups (they wouldn't be here —
-  // the /info read 404s for non-members of private groups).
+  // Sign-in nudge: anonymous viewer on a public group gets a quiet CTA.
+  // Copy is context-aware — on a CLAIMABLE group (no recorded creator)
+  // the actionable hint is "Sign in to claim THIS group"; otherwise it's
+  // the general "Sign in to create private groups" pitch for future
+  // group creation. Doesn't fire for anonymous viewers on private groups
+  // (they wouldn't be here — the /info read 404s non-members).
   const showSignInNudge = !session && privacy !== "private";
+  const signInNudgeText = !creatorUserId
+    ? " to claim this group."
+    : " to create private groups.";
 
   return (
     <>
@@ -178,8 +254,25 @@ export default function GroupPrivacySection({
             >
               Sign in
             </button>
-            {" to create private groups."}
+            {signInNudgeText}
           </p>
+        )}
+        {canClaim && (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={onClaim}
+              disabled={claiming}
+              className="w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.99] disabled:opacity-60 text-white text-sm font-medium flex items-center justify-center transition-transform"
+              aria-label="Claim this group as creator"
+            >
+              {claiming ? "Claiming…" : "Claim this group"}
+            </button>
+            <p className="px-1 mt-2 text-xs text-gray-500 dark:text-gray-400">
+              This group has no recorded creator. Claim it to unlock
+              privacy, invite links, and join-request approvals.
+            </p>
+          </div>
         )}
       </section>
       <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
