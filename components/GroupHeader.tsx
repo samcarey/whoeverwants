@@ -12,6 +12,15 @@ export interface GroupHeaderProps {
   /** Migration 108: when set, the header shows the uploaded image circle
    *  instead of the initials graphic. Null/undefined → initials fallback. */
   imageUrl?: string | null;
+  /** Custom left-of-title graphic. When provided, replaces the default
+   *  GroupAvatar (built from `participantNames`/`anonymousCount`/`imageUrl`).
+   *  The poll detail page passes `<PollAvatar questions={...}/>` here so
+   *  the header carries an at-a-glance graphic of the poll's questions
+   *  — keeps GroupHeader agnostic of poll-vs-group concerns. */
+  avatar?: React.ReactNode;
+  /** Small faded line under the title (e.g. the group name on a poll
+   *  detail page). Single-line truncated. Omitted when null/undefined. */
+  subtitle?: string | null;
   onTitleClick?: () => void;
   /** aria-label for the title button when `onTitleClick` is provided.
    *  Defaults to "Group details"; the poll detail page passes
@@ -56,6 +65,8 @@ export default function GroupHeader({
   participantNames,
   anonymousCount,
   imageUrl,
+  avatar: avatarOverride,
+  subtitle,
   onTitleClick,
   titleAriaLabel = "Group details",
   onBack,
@@ -78,11 +89,22 @@ export default function GroupHeader({
     </svg>
   );
 
+  // The title + optional subtitle stack as a flex-col inside the inner
+  // row so the chevron stays vertically centered next to the whole block.
+  // `line-clamp-2` on the h1 lets the title wrap once before truncating;
+  // the subtitle is single-line and faded.
   const titleBlock = title ? (
     <>
-      <h1 className="min-w-0 font-semibold text-lg text-gray-900 dark:text-white truncate">
-        {title}
-      </h1>
+      <div className="min-w-0 flex-1 flex flex-col">
+        <h1 className="font-semibold text-lg text-gray-900 dark:text-white line-clamp-2 leading-[1.1]">
+          {title}
+        </h1>
+        {subtitle && (
+          <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+            {subtitle}
+          </span>
+        )}
+      </div>
       {onTitleClick && (
         <svg
           className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"
@@ -98,15 +120,18 @@ export default function GroupHeader({
   ) : null;
 
   const middleRightPad = hasRightSlot ? 'pr-2' : 'pr-4';
+  const avatar =
+    avatarOverride ??
+    (participantNames ? (
+      <GroupAvatar
+        imageUrl={imageUrl ?? null}
+        names={participantNames}
+        anonymousCount={anonymousCount ?? 0}
+      />
+    ) : null);
   const middleContent = (
     <>
-      {participantNames && (
-        <GroupAvatar
-          imageUrl={imageUrl ?? null}
-          names={participantNames}
-          anonymousCount={anonymousCount ?? 0}
-        />
-      )}
+      {avatar}
       <div className="min-w-0 flex-1 flex items-center gap-1">{titleBlock}</div>
     </>
   );
@@ -121,7 +146,7 @@ export default function GroupHeader({
       <div className="max-w-4xl mx-auto flex items-center overflow-hidden">
         <button
           onClick={handleBack}
-          className="self-stretch py-2 px-2 flex items-center justify-center shrink-0"
+          className="self-stretch py-2 pl-2 pr-[5.6px] flex items-center justify-center shrink-0"
           aria-label="Go back"
         >
           <span className="w-10 h-10 flex items-center justify-center">
@@ -132,13 +157,13 @@ export default function GroupHeader({
           <button
             type="button"
             onClick={onTitleClick}
-            className={`self-stretch min-w-0 flex-1 py-[4.8px] ${middleRightPad} flex items-center gap-2 text-left active:opacity-60 transition-opacity`}
+            className={`self-stretch min-w-0 flex-1 py-[4.8px] ${middleRightPad} flex items-center gap-[6.4px] text-left active:opacity-60 transition-opacity`}
             aria-label={titleAriaLabel}
           >
             {middleContent}
           </button>
         ) : (
-          <div className={`self-stretch min-w-0 flex-1 py-[4.8px] ${middleRightPad} flex items-center gap-2`}>
+          <div className={`self-stretch min-w-0 flex-1 py-[4.8px] ${middleRightPad} flex items-center gap-[6.4px]`}>
             {middleContent}
           </div>
         )}

@@ -50,13 +50,21 @@ def _label_for(category: str) -> str:
     return " ".join(word.capitalize() for word in category.strip().replace("_", " ").split())
 
 
+def _is_yes_no(category: str) -> bool:
+    return (category or "").strip().lower() in ("yes_no", "yes/no")
+
+
 def _single_question_default_title(category: str) -> str:
     # Mirrors generateTitle() in app/create-question/page.tsx for 1-question cases.
+    # yes_no is intentionally not handled here — the FE form requires a
+    # user-typed title for yes_no, so the wrapper title comes from req.title
+    # and this fallback is unreachable. If a raw-API caller somehow hits
+    # this branch with yes_no, fall through to the generic "Question?".
     key = (category or "").strip().lower()
-    if key in ("yes_no", "yes/no"):
-        return "Yes/No?"
     if key == "time":
         return "Time?"
+    if _is_yes_no(category):
+        return "Question?"
     label = _label_for(category)
     return f"{label}?" if label else "Question?"
 
@@ -128,26 +136,45 @@ def generate_poll_title(
         raw_contexts.append(None)
     raw_contexts = raw_contexts[: len(cats)]
 
-    if len(cats) == 1:
+    # "Yes/No" is a category, not display text — drop yes_no from auto-
+    # generated titles. The yes_no's presence is conveyed by the question
+    # list itself (icons, buttons); duplicating "Yes/No" as a label in the
+    # wrapper title is redundant. Single-question yes_no polls are handled
+    # via `req.title` from the FE (the user's typed prompt), which
+    # bypasses this generator entirely.
+    visible_cats: list[str] = []
+    visible_contexts: list[str | None] = []
+    for cat, ctx in zip(cats, raw_contexts):
+        if _is_yes_no(cat):
+            continue
+        visible_cats.append(cat)
+        visible_contexts.append(ctx)
+
+    # Every question was yes_no with no user-typed title: fall back to the
+    # poll-level context or a neutral placeholder.
+    if not visible_cats:
+        return poll_ctx or "Question?"
+
+    if len(visible_cats) == 1:
         # Prefer the poll-level context when set; otherwise use the
         # question's own context. This makes the 1-question title equal to
         # the question's auto-title (e.g. "Restaurant for Tonight").
-        ctx = poll_ctx or ((raw_contexts[0] or "").strip() or None)
+        ctx = poll_ctx or ((visible_contexts[0] or "").strip() or None)
         if ctx:
-            return f"{_label_for(cats[0])} for {ctx}"
-        return _single_question_default_title(cats[0])
+            return f"{_label_for(visible_cats[0])} for {ctx}"
+        return _single_question_default_title(visible_cats[0])
 
-    shared = poll_ctx or _shared_context(raw_contexts)
+    shared = poll_ctx or _shared_context(visible_contexts)
 
     if shared:
-        joined = ", ".join(_label_for(c) for c in cats)
+        joined = ", ".join(_label_for(c) for c in visible_cats)
         candidate = f"{joined} for {shared}"
         if len(candidate) <= _TITLE_CHAR_LIMIT:
             return candidate
         return f"Questions for {shared}"
 
-    has_any_context = any((c or "").strip() for c in raw_contexts)
+    has_any_context = any((c or "").strip() for c in visible_contexts)
     if has_any_context:
-        return _build_distinct_contexts_title(cats, raw_contexts, _TITLE_CHAR_LIMIT)
+        return _build_distinct_contexts_title(visible_cats, visible_contexts, _TITLE_CHAR_LIMIT)
 
-    return ", ".join(_label_for(c) for c in cats)
+    return ", ".join(_label_for(c) for c in visible_cats)

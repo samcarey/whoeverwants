@@ -33,6 +33,7 @@ import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
 import { slideToGroupRoot, slideToPollInfo } from "@/lib/slideOverlay";
 import {
   buildGroupFromPollDown,
+  buildGroupSyncFromCache,
   getGroupHrefForPoll,
   isPendingPollId,
   isPollOpen,
@@ -72,6 +73,7 @@ import {
 } from "@/lib/votedQuestionsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import GroupHeader from "@/components/GroupHeader";
+import PollAvatar from "@/components/PollAvatar";
 import InitialBubble from "@/components/InitialBubble";
 import QuestionBallot, { type QuestionBallotHandle, POLL_SUBCARD_CLASS } from "@/components/QuestionBallot";
 import QuestionDetails from "@/components/QuestionDetails";
@@ -100,6 +102,31 @@ function InlineCategoryIcon({ question }: { question: Question }) {
     >
       {getCategoryIcon(question)}
     </span>
+  );
+}
+
+/** Per-question section header used inside a multi-question poll card.
+ *  Icon + title row, with the title omitted (icon-only) when
+ *  `getQuestionSectionTitle` returns null. `extraClass` carries the px-1
+ *  inset used by the split-suggestion-phase layout (which has no outer
+ *  card chrome to absorb it). */
+function QuestionSectionHeader({
+  question,
+  extraClass = "",
+}: {
+  question: Question;
+  extraClass?: string;
+}) {
+  const sectionTitle = getQuestionSectionTitle(question);
+  return (
+    <div className={`mb-2 flex items-center gap-2 ${extraClass}`}>
+      <InlineCategoryIcon question={question} />
+      {sectionTitle && (
+        <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
+          {sectionTitle}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -672,6 +699,19 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   }, [poll]);
 
   const pollTitle = subQuestions[0]?.title || poll.title;
+  // Group name shown under the title. Read the full group from cache when
+  // available (other polls in the group contribute their participants to the
+  // default name); fall back to the single-poll synthetic group's title when
+  // the cache hasn't been warmed yet. `poll.group_title` is the override and
+  // is identical across every poll in the group — surfacing it on a cache
+  // miss keeps the subtitle stable. Returns null when nothing is resolvable.
+  const cachedFullGroup = useMemo(
+    () => buildGroupSyncFromCache(groupId, votedQuestionIds, abstainedQuestionIds),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groupId, poll],
+  );
+  const groupSubtitle =
+    cachedFullGroup?.title ?? poll.group_title ?? syntheticGroup?.title ?? null;
   // One localStorage read per render — passed into N sub-question QuestionBallots.
   const savedUserName = getUserName() ?? "";
 
@@ -680,6 +720,8 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
       <GroupHeader
         headerRef={headerRef}
         title={pollTitle}
+        subtitle={groupSubtitle}
+        avatar={<PollAvatar questions={subQuestions} />}
         onBack={onBack}
         onTitleClick={() => {
           rememberCurrentScroll(scrollKey);
@@ -822,14 +864,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           if (splitSuggestionPhaseCards) {
             return (
               <div key={sp.id} className={idx > 0 ? "mt-3" : "mt-2"}>
-                {isMultiPoll && (
-                  <div className="mb-2 flex items-center gap-2 px-1">
-                    <InlineCategoryIcon question={sp} />
-                    <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
-                      {getQuestionSectionTitle(sp)}
-                    </div>
-                  </div>
-                )}
+                {isMultiPoll && <QuestionSectionHeader question={sp} extraClass="px-1" />}
                 {ballot}
               </div>
             );
@@ -840,14 +875,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
             <div
               className={`${idx > 0 ? "mt-3" : "mt-2"} ${POLL_SUBCARD_CLASS}`}
             >
-              {isMultiPoll && (
-                <div className="mb-2 flex items-center gap-2">
-                  <InlineCategoryIcon question={sp} />
-                  <div className="text-lg font-medium leading-tight text-gray-900 dark:text-white min-w-0">
-                    {getQuestionSectionTitle(sp)}
-                  </div>
-                </div>
-              )}
+              {isMultiPoll && <QuestionSectionHeader question={sp} />}
 
               {isYesNo && r && (() => {
                 const stagedChoice = usePollSubmit
