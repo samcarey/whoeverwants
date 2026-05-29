@@ -294,6 +294,7 @@ function renderForKind(
           key={kind.groupId}
           groupId={kind.groupId}
           overlayCardsOffset={overlayCardsOffset}
+          inOverlay
         />
       );
     case 'groupInfo':

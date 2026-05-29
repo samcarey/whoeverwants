@@ -4,9 +4,9 @@
  * Mirrors HomeBackdropHost for the poll→group swipe-back. Unlike home
  * (a static GroupList snapshot), the group page is rendered via
  * GroupContent itself — same pattern the slide overlay uses. The
- * `overlayCardsOffset` prop tells GroupContent to skip window.scrollTo
- * (which would otherwise scroll the still-mounted PollDetail underneath)
- * and translate the cards wrapper instead.
+ * `inOverlay` prop tells GroupContent to skip window.scrollTo (which would
+ * otherwise scroll the still-mounted PollDetail underneath) and translate the
+ * cards wrapper instead, using `overlayCardsOffset` as the target.
  */
 
 import { useEffect, useState } from "react";
@@ -39,8 +39,9 @@ export default function GroupBackdropHost(): React.ReactElement | null {
 
   if (!groupId || typeof document === "undefined") return null;
 
-  // Passing a defined value (including 0) is what makes GroupContent skip
-  // its own window.scrollTo — see the overlayCardsOffset gate there.
+  // `inOverlay` makes GroupContent skip its own window.scrollTo and position
+  // via the cards-wrapper transform instead; `overlayCardsOffset` (defaulting
+  // to 0) supplies the saved-scroll target for that transform.
   const savedScroll = getRememberedScroll(groupScrollKey(groupId)) ?? 0;
 
   return createPortal(
@@ -67,6 +68,7 @@ export default function GroupBackdropHost(): React.ReactElement | null {
             key={groupId}
             groupId={groupId}
             overlayCardsOffset={savedScroll}
+            inOverlay
           />
         </div>
       </div>

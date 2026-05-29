@@ -172,9 +172,17 @@ interface GroupContentProps {
    *  `SlideOverlayHost` to pre-position the destination during a group
    *  slide. Does NOT apply to the fixed GroupHeader. See `SlideToGroupDetail.overlayCardsOffset`. */
   overlayCardsOffset?: number;
+  /** True when this instance is rendered inside the slide overlay (vs the
+   *  real route). The overlay is position:fixed, so it can NOT use
+   *  `window.scrollTo` for positioning — all scroll positioning happens via
+   *  the cards-wrapper transform. When there's no saved scroll, the overlay
+   *  pre-positions to the bottom (the fresh-nav default) via that transform
+   *  so the slide doesn't show top-of-list followed by a snap to the bottom
+   *  once the real route's window.scrollTo bottom-pin fires post-unmount. */
+  inOverlay?: boolean;
 }
 
-export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps) {
+export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupContentProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
 
@@ -1086,9 +1094,11 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     // route's wrapper grows the doc. The clamp persists, the rAF
     // loop fights it, and the visible polls/bubble bar at the
     // bottom flicker right after the overlay unmounts. Overlay
-    // positioning is driven by `overlayCardsOffset` transform on
-    // the cards-wrapper; document scroll is irrelevant for it.
-    if (overlayCardsOffset !== undefined) return;
+    // positioning is driven entirely by the cards-wrapper transform
+    // (saved-scroll restore via `overlayCardsOffset`, or the
+    // bottom-pin computed in the `overlayBottomOffset` effect below);
+    // document scroll is irrelevant for it.
+    if (inOverlay) return;
 
     // Back-nav path: restore the scroll position saved when the user
     // navigated away (tap on a poll card). Skip bottom-pin entirely so
@@ -1135,6 +1145,37 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     // semantics. A cleanup that reset the ref would fire on every dep change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group, loading, headerHeight]);
+
+  // Overlay bottom-pin. When this instance renders inside the slide overlay
+  // with no saved scroll, the destination should pre-position to the bottom —
+  // the same spot the real route's fresh-nav bottom-pin lands. Without this
+  // the overlay shows the top of the group during the slide and the page
+  // visibly jumps to the bottom the instant the real route's
+  // `window.scrollTo(scrollHeight - innerHeight)` runs after the overlay
+  // unmounts (the reported bug). The overlay can't use window.scrollTo (it's
+  // position:fixed), so we mirror the real route's target via the
+  // cards-wrapper transform: measure the wrapper's full layout height (which
+  // includes the header padding + the panel padding-bottom, exactly like
+  // documentElement.scrollHeight) and translate it up so its bottom edge sits
+  // at the viewport bottom. The ResizeObserver re-pins as cards fill in
+  // (progressive mount) so the bottom stays stable through the slide.
+  const overlayShouldBottomPin = inOverlay === true && overlayCardsOffset === undefined;
+  const [overlayBottomOffset, setOverlayBottomOffset] = useState(0);
+  useLayoutEffect(() => {
+    if (!overlayShouldBottomPin) return;
+    if (typeof window === 'undefined') return;
+    const el = swipeWrapperRef.current;
+    if (!el) return;
+    const measure = () => {
+      const max = Math.max(0, el.offsetHeight - window.innerHeight);
+      setOverlayBottomOffset((prev) => (Math.abs(prev - max) > 0.5 ? max : prev));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlayShouldBottomPin, group, loading, headerHeight]);
 
   // Persistent restore-pin. Re-applies the saved scroll target until it
   // sticks, defeating Next.js App Router's post-commit scroll-to-0 (it fires
@@ -1817,6 +1858,12 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
     return <GroupNotFoundFallback routeId={groupId} />;
   }
 
+  // Cards-wrapper transform offset for the slide overlay. Saved-scroll
+  // restore wins; otherwise the fresh-nav overlay pins to the measured
+  // bottom. Undefined in the real route (it positions via window scroll).
+  const cardsTransformOffset =
+    overlayCardsOffset ?? (overlayShouldBottomPin ? overlayBottomOffset : undefined);
+
   return (
     <>
       <GroupHeader
@@ -1903,10 +1950,14 @@ export function GroupContent({ groupId, overlayCardsOffset }: GroupContentProps)
           // Fallback covers a 3-row bubble bar + heading + safe-area
           // inset for the first paint before the ResizeObserver fires.
           paddingBottom: `var(${PANEL_HEIGHT_VAR}, 12rem)`,
-          transform: overlayCardsOffset
-            ? `translate3d(0, ${-overlayCardsOffset}px, 0)`
+          // Saved-scroll restore uses `overlayCardsOffset`; the fresh-nav
+          // overlay (no saved scroll) pins to the bottom via the measured
+          // `overlayBottomOffset` so the slide lands where the real route
+          // will. A 0 offset (top, or a short group) means no transform.
+          transform: cardsTransformOffset
+            ? `translate3d(0, ${-cardsTransformOffset}px, 0)`
             : undefined,
-          willChange: overlayCardsOffset ? 'transform' : undefined,
+          willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
         {/* Top divider above the first poll — pairs with each card's
