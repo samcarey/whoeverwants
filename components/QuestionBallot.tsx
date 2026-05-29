@@ -954,6 +954,12 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     }
 
     setVoteError(null);
+    // Time questions (availability + preferences phases) submit immediately,
+    // skipping the confirmation modal.
+    if (question.question_type === 'time') {
+      void submitVote();
+      return;
+    }
     setShowVoteConfirmModal(true);
   };
 
@@ -982,7 +988,13 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
 
       const isEditing = (isEditingVote || isEditingRanking) && !!userVoteId;
       const pollId = question.poll_id ?? null;
-      const trimmedVoterName = voterName.trim() || null;
+      // Fall back to the freshly-saved localStorage name when `voterName` is
+      // empty. The wrapper passes the name in via `externalVoterName`, computed
+      // at render time; when the AccountGateModal saves a name and synchronously
+      // replays the submit (time ballots submit immediately with no confirm
+      // modal), React hasn't re-rendered yet so the prop is still the stale "".
+      const trimmedVoterName =
+        voterName.trim() || getUserName()?.trim() || null;
       const submitErrorMessage = isEditing
         ? "Failed to update vote. Please try again."
         : "Failed to submit vote. Please try again.";
