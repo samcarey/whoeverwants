@@ -6,10 +6,30 @@
 #   - reverse_proxy localhost:NNNN  hits the Mac-published port that Colima
 #     forwards from the corresponding container in the VM
 #
-# Per-author dev-server site blocks are written by dev-server-manager.sh (inside
-# the VM) into ~/devbox/caddy.d/<slug>.caddy and imported below. The launchd
-# watcher (~/Library/LaunchAgents/com.devbox.caddy-watch.plist) runs `caddy
-# reload` when files change.
+# TLS: every *.dev.whoeverwants.com host is served by a SINGLE wildcard cert
+# obtained via DNS-01 over Route 53. This replaced per-hostname on-demand TLS,
+# which issued one Let's Encrypt cert per branch dev server and blew past LE's
+# 50-certs/week/registered-domain limit (HTTP 429 -> aborted TLS handshakes ->
+# every dev site appeared down while containers were healthy). The wildcard
+# renews ~every 60 days with zero per-host issuance.
+#
+# REQUIRES a Caddy binary built with the caddy-dns/route53 plugin (the stock
+# Homebrew binary does NOT include it). See docs/mac-mini-setup.md for the
+# binary swap + AWS env (the homebrew.mxcl.caddy LaunchDaemon plist sets
+# AWS_SHARED_CREDENTIALS_FILE / AWS_CONFIG_FILE / AWS_REGION so root's Caddy
+# can reach Route 53).
+#
+# Per-branch dev-server fragments are written by dev-server-manager.sh (inside
+# the VM) into ~/devbox/caddy.d/<slug>.caddy as "@slug host <host>" +
+# "handle @slug { reverse_proxy ... }" matcher fragments (NOT standalone site
+# blocks — a standalone block would trigger per-host cert issuance again) and
+# imported into the wildcard block below. The launchd watcher
+# (~/Library/LaunchAgents/com.devbox.caddy-watch.plist) runs `caddy reload`
+# when files change.
+
+{
+	email sam@samcarey.com
+}
 
 mac-test.dev.whoeverwants.com {
     bind 0.0.0.0 ::
@@ -26,7 +46,23 @@ webhook.dev.whoeverwants.com {
     reverse_proxy localhost:9091
 }
 
-# Per-author dev servers (one file per slug). Glob import is OK if the
-# directory is empty — Caddy just no-ops. Caddy's import glob only supports
-# a single wildcard, so the user path is hardcoded.
-import /Users/sccarey/devbox/caddy.d/*.caddy
+# Single wildcard cert (DNS-01 via Route 53) covers every per-branch dev host.
+# Routing is by host-matcher so Caddy never issues a per-host cert.
+# propagation_delay/timeout give Route 53 time to propagate the _acme-challenge
+# TXT before Let's Encrypt validates (the default wait was too short and LE's
+# check raced ahead of propagation -> "No TXT record found" 403s).
+# Caddy's import glob only supports a single wildcard, so the user path is
+# hardcoded.
+*.dev.whoeverwants.com {
+    bind 0.0.0.0 ::
+    tls {
+        dns route53
+        propagation_delay 30s
+        propagation_timeout 5m
+        resolvers 1.1.1.1 8.8.8.8
+    }
+    import /Users/sccarey/devbox/caddy.d/*.caddy
+    handle {
+        respond "No dev server for this host" 404
+    }
+}
