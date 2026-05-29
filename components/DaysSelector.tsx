@@ -244,7 +244,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
   );
 
   const weekdayHeader = (
-    <div className="grid grid-cols-7 mb-2">
+    <div className="grid grid-cols-7 gap-1 mb-2">
       {WEEK_DAYS.map(day => (
         <div key={day} className="text-center text-xs font-medium text-gray-500 dark:text-gray-400 py-1">
           {day}
@@ -254,7 +254,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
   );
 
   const daysGrid = (
-    <div className="grid grid-cols-7">
+    <div className="grid grid-cols-7 gap-1">
       {(() => {
         const todayStr = formatLocalDateISO(new Date());
         return calendarDays.map(({ dateStr, isCurrentMonth, day }, index) => {
@@ -281,11 +281,11 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
                       : 'hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
                   }
                   ${isSelected
-                    ? 'bg-blue-400/70 dark:bg-blue-500/50 text-white hover:bg-blue-400/80 dark:hover:bg-blue-500/60'
+                    ? 'bg-blue-500 text-white hover:bg-blue-600'
                     : ''
                   }
                   ${isToday && !isSelected && !isDisabled
-                    ? 'border-2 border-blue-400/70 dark:border-blue-500/60'
+                    ? 'border-2 border-blue-500'
                     : ''
                   }
                 `}
