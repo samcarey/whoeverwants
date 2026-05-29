@@ -246,10 +246,8 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     // countdown labeled "Preferences" (NOT a stale "Availability: Expired",
     // which is what showed while `question.options` lagged behind the cutoff).
     if (inTimeAvailability) {
-      const prephaseActive =
-        !!wrapperPrephaseDeadline && new Date(wrapperPrephaseDeadline) > new Date();
-      if (prephaseActive) {
-        return <SimpleCountdown deadline={wrapperPrephaseDeadline!} label="Availability" wide />;
+      if (wrapperPrephaseDeadline && new Date(wrapperPrephaseDeadline) > new Date()) {
+        return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" wide />;
       }
       if (!wrapperPrephaseDeadline) {
         return (

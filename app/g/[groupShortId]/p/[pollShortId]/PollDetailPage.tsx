@@ -612,10 +612,8 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     // countdown labeled "Preferences" (NOT a stale "Availability: Expired",
     // which is what showed while `anchor.options` lagged behind the cutoff).
     if (inTimeAvailability) {
-      const prephaseActive =
-        !!wrapperPrephaseDeadline && new Date(wrapperPrephaseDeadline) > new Date();
-      if (prephaseActive) {
-        return <SimpleCountdown deadline={wrapperPrephaseDeadline!} label="Availability" />;
+      if (wrapperPrephaseDeadline && new Date(wrapperPrephaseDeadline) > new Date()) {
+        return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" />;
       }
       if (!wrapperPrephaseDeadline) {
         return (
