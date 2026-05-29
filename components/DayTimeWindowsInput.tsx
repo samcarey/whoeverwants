@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import TimeGridModal from './TimeGridModal';
 import { windowDurationMinutes, formatDayLabel, pickNextTimeWindow, pickVoterSplitWindow, isWindowWithinQuestionWindows, windowsOverlap, periodColorClass } from '@/lib/timeUtils';
 
@@ -109,6 +109,13 @@ interface AnimRow {
   window: TimeWindow;
   phase: SlotPhase;
 }
+
+// Monotonic id source for animated rows. Module-level (not a ref) so the
+// useState initializer can allocate ids without reading a ref during render
+// (which the react-hooks lint rule forbids). Ids only need to be unique within
+// a component instance; a global counter satisfies that trivially.
+let nextSlotId = 0;
+const allocSlotId = (): number => nextSlotId++;
 
 function sameAnimRows(a: AnimRow[], b: AnimRow[]): boolean {
   if (a.length !== b.length) return false;
@@ -252,13 +259,12 @@ export default function DayTimeWindowsInput({
 
   // Creator-form slot enter/leave animation. The voter form keeps its existing
   // ghost-row render path and is not animated.
-  const idCounter = useRef(0);
   const [animRows, setAnimRows] = useState<AnimRow[]>(() =>
-    windows.map(w => ({ id: idCounter.current++, window: w, phase: 'shown' as SlotPhase }))
+    windows.map(w => ({ id: allocSlotId(), window: w, phase: 'shown' as SlotPhase }))
   );
   useEffect(() => {
     if (isVoterForm) return;
-    setAnimRows(prev => reconcileRows(prev, windows, () => idCounter.current++));
+    setAnimRows(prev => reconcileRows(prev, windows, allocSlotId));
   }, [windows, isVoterForm]);
   const handleAnimLeaveDone = (id: number) => {
     setAnimRows(prev => prev.filter(r => r.id !== id));
