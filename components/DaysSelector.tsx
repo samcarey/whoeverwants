@@ -244,7 +244,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
   );
 
   const weekdayHeader = (
-    <div className="grid grid-cols-7 mb-2">
+    <div className="grid grid-cols-7 gap-1 mb-2">
       {WEEK_DAYS.map(day => (
         <div key={day} className="text-center text-xs font-medium text-gray-500 dark:text-gray-400 py-1">
           {day}
@@ -254,7 +254,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
   );
 
   const daysGrid = (
-    <div className="grid grid-cols-7">
+    <div className="grid grid-cols-7 gap-1">
       {(() => {
         const todayStr = formatLocalDateISO(new Date());
         return calendarDays.map(({ dateStr, isCurrentMonth, day }, index) => {
@@ -273,7 +273,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
                 data-date={dateStr}
                 data-testid={`calendar-day-${dateStr}`}
                 className={`
-                  aspect-[5/4] text-sm flex items-center justify-center
+                  aspect-[5/4] text-sm flex items-center justify-center rounded-lg
                   ${isDisabled
                     ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
                     : !isCurrentMonth
