@@ -401,26 +401,24 @@ export function SlideOverlayHost(): React.ReactElement | null {
     pushedRef.current = true;
     if (state.useHistoryBack) {
       router.back();
-    } else if (state.kind.type === 'group' || state.kind.type === 'pollDetail') {
-      // `scroll: false` tells Next.js to skip its scroll-to-top
-      // useEffect on this navigation. ONLY the `group` and `pollDetail`
-      // kinds own scroll restoration via their own useLayoutEffect
-      // (GroupContent / PollDetail). For those, Next.js'
-      // post-commit scroll-to-0 fights that and on iOS Safari leaves
-      // a 13-30ms window where scrollY=0 right when the overlay
-      // unmounts — visible as a bubble-bar / bottom-of-list flicker
-      // when the user's saved scroll is near the doc bottom.
-      router.push(state.href, { scroll: false });
     } else {
-      // Subroutes (groupInfo / groupEditTitle / groupInviteMembers /
-      // pollInfo) have NO scroll management and must land at the top.
-      // The overlay always shows them at scrollTop 0, so suppressing
-      // Next's scroll-to-top would preserve the (taller) parent page's
+      // Only the `group` and `pollDetail` kinds run their own
+      // scroll-restoration layoutEffect (GroupContent / PollDetail), so
+      // they need `scroll: false` to stop Next.js' post-commit
+      // scroll-to-0 from fighting it — on iOS Safari that leaves a
+      // 13-30ms window where scrollY=0 right when the overlay unmounts,
+      // visible as a bubble-bar / bottom-of-list flicker when the saved
+      // scroll is near the doc bottom. Every other kind (groupInfo /
+      // groupEditTitle / groupInviteMembers / pollInfo) has NO scroll
+      // management and must land at the top: suppressing Next's
+      // scroll-to-top there would preserve the (taller) parent page's
       // scrolled-down position underneath — clamped to the shorter
       // subroute's max — and reveal it jumped down when the overlay
-      // unmounts. Let Next scroll the document to the top behind the
-      // overlay so the handoff is seamless.
-      router.push(state.href);
+      // unmounts. So let Next scroll the document to the top behind the
+      // overlay for those, keeping the handoff seamless.
+      const ownsScrollRestore =
+        state.kind.type === 'group' || state.kind.type === 'pollDetail';
+      router.push(state.href, { scroll: !ownsScrollRestore });
     }
   }, [state?.phase, router]);
 
