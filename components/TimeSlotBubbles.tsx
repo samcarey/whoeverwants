@@ -333,7 +333,7 @@ export default function TimeSlotBubbles({
         </span>
         {hasExcluded && (
           <span className="flex items-center gap-1">
-            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white">N</span> Excludes N Voter(s)
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white">N</span> Excludes Voters
           </span>
         )}
       </div>
