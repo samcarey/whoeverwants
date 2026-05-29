@@ -95,14 +95,21 @@ export default function TimeSlotBubbles({
     if (disabled) clearSelection();
   }, [disabled, clearSelection]);
 
+  // How many voters a slot excludes (max availability minus its own count).
+  const excludedCount = useCallback(
+    (slot: string) =>
+      maxAvailability != null && availabilityCounts != null
+        ? maxAvailability - (availabilityCounts[slot] ?? 0)
+        : 0,
+    [maxAvailability, availabilityCounts],
+  );
+
   // Whether any slot would render an orange "excludes N voter(s)" badge — used
   // to gate the matching legend entry.
-  const hasExcluded = useMemo(() => {
-    if (maxAvailability == null || availabilityCounts == null) return false;
-    return options.some(
-      (slot) => maxAvailability - (availabilityCounts[slot] ?? 0) > 0,
-    );
-  }, [options, maxAvailability, availabilityCounts]);
+  const hasExcluded = useMemo(
+    () => options.some((slot) => excludedCount(slot) > 0),
+    [options, excludedCount],
+  );
 
   const days = useMemo(
     () =>
@@ -237,10 +244,7 @@ export default function TimeSlotBubbles({
     }
     const state = getState(cell.slot);
     const isSelected = selection.has(cell.slot);
-    const excluded =
-      maxAvailability != null && availabilityCounts != null
-        ? maxAvailability - (availabilityCounts[cell.slot] ?? 0)
-        : 0;
+    const excluded = excludedCount(cell.slot);
     return (
       <button
         key={cell.slot}
