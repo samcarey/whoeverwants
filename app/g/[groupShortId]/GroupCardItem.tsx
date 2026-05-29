@@ -240,21 +240,28 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     if (inSuggestionPhase && wrapperPrephaseDeadline) {
       return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Suggestions" wide />;
     }
+    // Time questions: show the "Availability" countdown only while the prephase
+    // (availability) deadline is still in the future. Once it passes the poll is
+    // in its preferences-voting phase — fall through to the response-deadline
+    // countdown labeled "Preferences" (NOT a stale "Availability: Expired",
+    // which is what showed while `question.options` lagged behind the cutoff).
     if (inTimeAvailability) {
-      if (wrapperPrephaseDeadline) {
+      if (wrapperPrephaseDeadline && new Date(wrapperPrephaseDeadline) > new Date()) {
         return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" wide />;
       }
-      return (
-        <span className="font-semibold text-blue-600 dark:text-blue-400">
-          Collecting Availability
-        </span>
-      );
+      if (!wrapperPrephaseDeadline) {
+        return (
+          <span className="font-semibold text-blue-600 dark:text-blue-400">
+            Collecting Availability
+          </span>
+        );
+      }
     }
     if (wrapperResponseDeadline) {
       return (
         <SimpleCountdown
           deadline={wrapperResponseDeadline}
-          label="Voting"
+          label={question.question_type === "time" ? "Preferences" : "Voting"}
           colorClass="text-green-600 dark:text-green-400"
           wide
         />

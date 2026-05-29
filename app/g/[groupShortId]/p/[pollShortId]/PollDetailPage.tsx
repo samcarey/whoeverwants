@@ -606,21 +606,28 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     if (inSuggestions && wrapperPrephaseDeadline) {
       return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Suggestions" />;
     }
+    // Time questions: show the "Availability" countdown only while the prephase
+    // (availability) deadline is still in the future. Once it passes the poll is
+    // in its preferences-voting phase — fall through to the response-deadline
+    // countdown labeled "Preferences" (NOT a stale "Availability: Expired",
+    // which is what showed while `anchor.options` lagged behind the cutoff).
     if (inTimeAvailability) {
-      if (wrapperPrephaseDeadline) {
+      if (wrapperPrephaseDeadline && new Date(wrapperPrephaseDeadline) > new Date()) {
         return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" />;
       }
-      return (
-        <span className="font-semibold text-blue-600 dark:text-blue-400">
-          Collecting Availability
-        </span>
-      );
+      if (!wrapperPrephaseDeadline) {
+        return (
+          <span className="font-semibold text-blue-600 dark:text-blue-400">
+            Collecting Availability
+          </span>
+        );
+      }
     }
     if (wrapperResponseDeadline) {
       return (
         <SimpleCountdown
           deadline={wrapperResponseDeadline}
-          label="Voting"
+          label={anchor.question_type === "time" ? "Preferences" : "Voting"}
           colorClass="text-green-600 dark:text-green-400"
         />
       );
