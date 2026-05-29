@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect, type ReactNode } from 'react';
 import TimeGridModal from './TimeGridModal';
 import { windowDurationMinutes, formatDayLabel, pickNextTimeWindow, pickVoterSplitWindow, isWindowWithinQuestionWindows, windowsOverlap, periodColorClass } from '@/lib/timeUtils';
 
@@ -97,6 +97,143 @@ function pillBorderClass(
   return isVoterForm ? 'border-gray-300 dark:border-gray-600' : 'border-transparent';
 }
 
+// ── Slot enter/leave animation (creator form only) ──────────────────────────
+// Each time slot is rendered inside a grid-rows clip that animates its height
+// (and opacity) open on add and closed on remove, so the rest of the UI moves
+// to make room. Stable ids are assigned via reconciliation so an EDIT (which
+// re-sorts the list) doesn't read as a remove+add — only genuine adds/removes
+// animate.
+type SlotPhase = 'enter' | 'shown' | 'leave';
+interface AnimRow {
+  id: number;
+  window: TimeWindow;
+  phase: SlotPhase;
+}
+
+function sameAnimRows(a: AnimRow[], b: AnimRow[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id || a[i].phase !== b[i].phase || a[i].window !== b[i].window) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Reconcile the animated row list against the latest `windows` prop. Exact
+// value matches first (unchanged slots keep their id), then positional pairing
+// for in-place edits (id preserved, no animation), then leftover prop windows
+// become entering rows (inserted at sorted position) and unmatched existing
+// rows become leaving rows (kept in place so they collapse out where they sat).
+// Returns the same array reference when nothing changed so the effect can't loop.
+function reconcileRows(
+  prev: AnimRow[],
+  windows: TimeWindow[],
+  allocId: () => number,
+): AnimRow[] {
+  const used = windows.map(() => false);
+  const takeExact = (w: TimeWindow): number => {
+    for (let i = 0; i < windows.length; i++) {
+      if (!used[i] && windows[i].min === w.min && windows[i].max === w.max) {
+        used[i] = true;
+        return i;
+      }
+    }
+    return -1;
+  };
+  const takeNext = (): number => {
+    for (let i = 0; i < windows.length; i++) {
+      if (!used[i]) { used[i] = true; return i; }
+    }
+    return -1;
+  };
+
+  const nonLeaving = prev.filter(r => r.phase !== 'leave');
+  const assignment = new Map<number, number>(); // row id -> prop index (-1 => leave)
+  for (const r of nonLeaving) {
+    const idx = takeExact(r.window);
+    if (idx >= 0) assignment.set(r.id, idx);
+  }
+  for (const r of nonLeaving) {
+    if (!assignment.has(r.id)) assignment.set(r.id, takeNext());
+  }
+
+  const result: AnimRow[] = [];
+  for (const r of prev) {
+    if (r.phase === 'leave') { result.push(r); continue; }
+    const idx = assignment.get(r.id);
+    if (idx === undefined || idx < 0) {
+      result.push({ ...r, phase: 'leave' });
+    } else {
+      const w = windows[idx];
+      result.push(r.phase === 'shown' && r.window === w ? r : { ...r, window: w, phase: 'shown' });
+    }
+  }
+
+  for (let i = 0; i < windows.length; i++) {
+    if (used[i]) continue;
+    used[i] = true;
+    const w = windows[i];
+    const row: AnimRow = { id: allocId(), window: w, phase: 'enter' };
+    let insertAt = result.length;
+    for (let j = 0; j < result.length; j++) {
+      if (result[j].phase === 'leave') continue;
+      if (result[j].window.min > w.min) { insertAt = j; break; }
+    }
+    result.splice(insertAt, 0, row);
+  }
+
+  return sameAnimRows(prev, result) ? prev : result;
+}
+
+// Grid-rows clip that animates a slot's height + opacity. New rows ('enter')
+// mount collapsed and open on the next frame; removed rows ('leave') collapse
+// and fire onLeaveDone once the height transition completes so the parent can
+// drop them. Existing rows ('shown') render open with no animation.
+function AnimatedSlotRow({
+  phase,
+  onLeaveDone,
+  children,
+}: {
+  phase: SlotPhase;
+  onLeaveDone: () => void;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(phase !== 'enter');
+  useEffect(() => {
+    if (phase === 'enter') {
+      let raf2 = 0;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setOpen(true));
+      });
+      return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+    }
+    if (phase === 'leave') {
+      const raf = requestAnimationFrame(() => setOpen(false));
+      return () => cancelAnimationFrame(raf);
+    }
+    setOpen(true);
+  }, [phase]);
+
+  return (
+    <div
+      className="grid overflow-hidden"
+      style={{
+        gridTemplateRows: open ? '1fr' : '0fr',
+        opacity: open ? 1 : 0,
+        transition: 'grid-template-rows 300ms ease-in-out, opacity 300ms ease-in-out',
+      }}
+      onTransitionEnd={(e) => {
+        if (e.propertyName === 'grid-template-rows' && phase === 'leave' && !open) {
+          onLeaveDone();
+        }
+      }}
+    >
+      <div className="min-h-0 overflow-hidden">{children}</div>
+    </div>
+  );
+}
+
 export default function DayTimeWindowsInput({
   day,
   windows,
@@ -112,6 +249,20 @@ export default function DayTimeWindowsInput({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   const isVoterForm = !!questionWindows;
+
+  // Creator-form slot enter/leave animation. The voter form keeps its existing
+  // ghost-row render path and is not animated.
+  const idCounter = useRef(0);
+  const [animRows, setAnimRows] = useState<AnimRow[]>(() =>
+    windows.map(w => ({ id: idCounter.current++, window: w, phase: 'shown' as SlotPhase }))
+  );
+  useEffect(() => {
+    if (isVoterForm) return;
+    setAnimRows(prev => reconcileRows(prev, windows, () => idCounter.current++));
+  }, [windows, isVoterForm]);
+  const handleAnimLeaveDone = (id: number) => {
+    setAnimRows(prev => prev.filter(r => r.id !== id));
+  };
 
   const handleAddWindow = () => {
     if (isVoterForm) {
@@ -236,74 +387,126 @@ export default function DayTimeWindowsInput({
           start time is <= the previous end time. Creators keep the "can't
           delete the last slot" rule (use the day picker to remove a day);
           voters may clear a day entirely and re-add via a ghost checkbox. */}
-      <div className="flex-1 flex flex-col gap-2 items-end">
-        {(() => {
-          type Row =
-            | { kind: 'window'; window: TimeWindow; index: number; isTooShort: boolean; flagged: boolean }
-            | { kind: 'ghost'; window: TimeWindow };
-          const realRows: Row[] = windows.map((window, index) => {
-            const duration = windowDurationMinutes(window);
-            const isTooShort = minDurationMinutes != null && minDurationMinutes > 0 && duration < minDurationMinutes;
-            const prev = index > 0 ? windows[index - 1] : null;
-            const intersectsPrev = !!prev && window.min <= prev.max;
-            // Voter slots must stay inside one of the creator's allowed windows;
-            // a slot that escapes them (e.g. dragged out of range) gets the same
-            // orange treatment as an intersecting slot and blocks submit.
-            const outsideConstraint = isVoterForm && !!questionWindows && questionWindows.length > 0
-              && !isWindowWithinQuestionWindows(window, questionWindows);
-            return { kind: 'window', window, index, isTooShort, flagged: intersectsPrev || outsideConstraint };
-          });
-          // Ghost rows: original windows the voter has fully removed (no overlap).
-          // Suppressed in the read-only summary (`disabled`) — there they'd read
-          // as "options you forgot" rather than a re-add affordance.
-          const ghostRows: Row[] = isVoterForm && !disabled
-            ? (questionWindows ?? [])
-                .filter(orig => !windows.some(w => windowsOverlap(w, orig)))
-                .map(orig => ({ kind: 'ghost', window: orig }))
-            : [];
-          const rows = [...realRows, ...ghostRows].sort((a, b) => a.window.min.localeCompare(b.window.min));
+      {isVoterForm ? (
+        <div className="flex-1 flex flex-col gap-2 items-end">
+          {(() => {
+            type Row =
+              | { kind: 'window'; window: TimeWindow; index: number; isTooShort: boolean; flagged: boolean }
+              | { kind: 'ghost'; window: TimeWindow };
+            const realRows: Row[] = windows.map((window, index) => {
+              const duration = windowDurationMinutes(window);
+              const isTooShort = minDurationMinutes != null && minDurationMinutes > 0 && duration < minDurationMinutes;
+              const prev = index > 0 ? windows[index - 1] : null;
+              const intersectsPrev = !!prev && window.min <= prev.max;
+              // Voter slots must stay inside one of the creator's allowed windows;
+              // a slot that escapes them (e.g. dragged out of range) gets the same
+              // orange treatment as an intersecting slot and blocks submit.
+              const outsideConstraint = isVoterForm && !!questionWindows && questionWindows.length > 0
+                && !isWindowWithinQuestionWindows(window, questionWindows);
+              return { kind: 'window', window, index, isTooShort, flagged: intersectsPrev || outsideConstraint };
+            });
+            // Ghost rows: original windows the voter has fully removed (no overlap).
+            // Suppressed in the read-only summary (`disabled`) — there they'd read
+            // as "options you forgot" rather than a re-add affordance.
+            const ghostRows: Row[] = isVoterForm && !disabled
+              ? (questionWindows ?? [])
+                  .filter(orig => !windows.some(w => windowsOverlap(w, orig)))
+                  .map(orig => ({ kind: 'ghost', window: orig }))
+              : [];
+            const rows = [...realRows, ...ghostRows].sort((a, b) => a.window.min.localeCompare(b.window.min));
 
-          return rows.map((row) => {
-            if (row.kind === 'ghost') {
+            return rows.map((row) => {
+              if (row.kind === 'ghost') {
+                return (
+                  <label
+                    key={`ghost-${row.window.min}-${row.window.max}`}
+                    className="flex items-center gap-[7px] cursor-pointer"
+                  >
+                    <span className="flex items-center p-1">
+                      <input
+                        type="checkbox"
+                        checked={false}
+                        onChange={() => handleRestoreWindow(row.window)}
+                        disabled={disabled}
+                        className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 cursor-pointer"
+                        aria-label="Add this time window"
+                      />
+                    </span>
+                    <span className={`${PILL_BASE} ${PILL_STATE_CLASSES.disabled} ${pillBorderClass('disabled', isVoterForm)}`}>
+                      {renderPillContent(row.window, false)}
+                    </span>
+                  </label>
+                );
+              }
+              const showTrash = isVoterForm || windows.length > 1;
+              const variant = pillVariant(row.isTooShort, row.flagged);
               return (
-                <label
-                  key={`ghost-${row.window.min}-${row.window.max}`}
-                  className="flex items-center gap-[7px] cursor-pointer"
-                >
-                  <span className="flex items-center p-1">
-                    <input
-                      type="checkbox"
-                      checked={false}
-                      onChange={() => handleRestoreWindow(row.window)}
-                      disabled={disabled}
-                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 cursor-pointer"
-                      aria-label="Add this time window"
-                    />
-                  </span>
-                  <span className={`${PILL_BASE} ${PILL_STATE_CLASSES.disabled} ${pillBorderClass('disabled', isVoterForm)}`}>
-                    {renderPillContent(row.window, false)}
-                  </span>
-                </label>
+                <div key={`win-${row.index}`} className="flex items-center gap-[7px]">
+                  {showTrash ? renderDeleteButton(row.index) : null}
+                  <button
+                    type="button"
+                    onClick={() => handleEditWindow(row.index)}
+                    disabled={disabled}
+                    className={`${PILL_BASE} ${PILL_STATE_CLASSES[variant]} ${pillBorderClass(variant, isVoterForm)}`}
+                  >
+                    {renderPillContent(row.window, true)}
+                  </button>
+                </div>
               );
-            }
-            const showTrash = isVoterForm || windows.length > 1;
-            const variant = pillVariant(row.isTooShort, row.flagged);
+            });
+          })()}
+        </div>
+      ) : (
+        // Creator form: each slot animates its height (and the rest of the UI
+        // moving to make room) on add/remove. The inter-row spacing is `pb-2`
+        // INSIDE each animated clip so it collapses with the row rather than
+        // leaving an 8px gap snap. Rows not present in `windows` (mid-leave, or
+        // the one-frame window before the reconcile effect runs) render as a
+        // neutral non-interactive pill.
+        <div className="flex-1 flex flex-col items-stretch">
+          {animRows.map((row) => {
+            const index = windows.indexOf(row.window);
+            const isPresent = index >= 0;
+            const duration = isPresent ? windowDurationMinutes(row.window) : 0;
+            const isTooShort = isPresent && minDurationMinutes != null && minDurationMinutes > 0
+              && duration < minDurationMinutes;
+            const prevWin = isPresent && index > 0 ? windows[index - 1] : null;
+            const intersectsPrev = !!prevWin && row.window.min <= prevWin.max;
+            const variant = isPresent ? pillVariant(isTooShort, intersectsPrev) : 'normal';
+            const showTrash = isPresent && windows.length > 1;
             return (
-              <div key={`win-${row.index}`} className="flex items-center gap-[7px]">
-                {showTrash ? renderDeleteButton(row.index) : null}
-                <button
-                  type="button"
-                  onClick={() => handleEditWindow(row.index)}
-                  disabled={disabled}
-                  className={`${PILL_BASE} ${PILL_STATE_CLASSES[variant]} ${pillBorderClass(variant, isVoterForm)}`}
-                >
-                  {renderPillContent(row.window, true)}
-                </button>
-              </div>
+              <AnimatedSlotRow
+                key={row.id}
+                phase={row.phase}
+                onLeaveDone={() => handleAnimLeaveDone(row.id)}
+              >
+                <div className="pb-2 flex justify-end">
+                  <div className="flex items-center gap-[7px]">
+                    {showTrash ? renderDeleteButton(index) : null}
+                    {isPresent ? (
+                      <button
+                        type="button"
+                        onClick={() => handleEditWindow(index)}
+                        disabled={disabled}
+                        className={`${PILL_BASE} ${PILL_STATE_CLASSES[variant]} ${pillBorderClass(variant, isVoterForm)}`}
+                      >
+                        {renderPillContent(row.window, true)}
+                      </button>
+                    ) : (
+                      <span
+                        className={`${PILL_BASE} ${PILL_STATE_CLASSES.normal} ${pillBorderClass('normal', isVoterForm)}`}
+                        aria-hidden="true"
+                      >
+                        {renderPillContent(row.window, true)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </AnimatedSlotRow>
             );
-          });
-        })()}
-      </div>
+          })}
+        </div>
+      )}
 
       {/* Time Grid Modal. No hard clamp on the voter form: a window can range
           anywhere and is soft-validated against the creator's allowed windows
