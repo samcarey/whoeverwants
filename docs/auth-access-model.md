@@ -232,6 +232,71 @@ read-time filter audit test. If the requirement ever returns, the
 original design is preserved in git history (commit search for
 "Phase H").
 
+## SMS sign-in (future option — NOT currently planned)
+
+SMS one-time-code sign-in is documented here as a *future* option, not a
+committed phase. The blocker is cost + regulatory overhead, not technical
+fit — the model already has a clean slot for it (a 5th `user_identities`
+provider). Captured so a future session can pick it up without re-deriving
+the economics.
+
+**Why it's parked.** Every other sign-in method on this stack is genuinely
+free (magic-link via Resend's free tier, Google/Apple OAuth, passkeys).
+SMS is the only channel that bottoms out at a paid carrier hop on *every*
+message — there is no free production-scale SMS API. It's also the weakest
+factor (SIM-swap, number recycling), and the four existing methods already
+cover the reachable user base. So the cost buys little incremental reach.
+
+**Cost (US, per successful login = one OTP segment), researched May 2026:**
+
+| Approach | Per-login | Fixed monthly |
+|---|---|---|
+| **DIY** — Plivo/Telnyx raw SMS + our own OTP table (the lowest-cost option) | **~$0.01–0.02** | ~$1/mo number + ~$2/mo A2P 10DLC + ~$4 one-time brand registration |
+| Twilio Verify (managed OTP lifecycle, charges per *success* so resends are free) | ~$0.05 | ~$1.15/mo number + 10DLC |
+| Firebase Phone Auth | ~$0.01–0.06 | phone auth is excluded from the 50K-MAU free tier — billed from message one |
+| AWS End User Messaging | ~$0.012/msg + carrier fees | — |
+
+Caveats baked into the per-login number: headline "$0.0079/SMS" rates
+become ~$0.013–0.018 delivered once US carrier passthrough + per-segment
+surcharges are added (an OTP fits in one segment, so no multiplier). On the
+DIY path a user who taps "resend" pays 2×; Twilio Verify only bills on
+success. International is 3–20× US rates, but this app is US-centric.
+
+**The real gate is US A2P 10DLC, not the cents.** Sending OTPs to US
+numbers without carrier filtering legally requires registering a brand +
+campaign (~$4 one-time + ~$2/mo, plus a review that can take days and
+occasionally rejects unclear/hobby use cases). Skipping it means codes
+silently fail to arrive for a fraction of users with no error surfaced. So
+the practical floor is "~$3/mo + a registration hoop" before the first
+message — versus $0 and zero-setup for the existing methods.
+
+**Worked example at ~500 logins/month:** DIY ≈ $10/mo (~2¢/login
+effective); Twilio Verify ≈ $26/mo (~5¢/login effective).
+
+**If/when it ships — the lowest-cost (DIY) design.** Slots in as a 5th
+provider with almost no new patterns, mirroring the magic-link plumbing:
+- `user_identities.provider` gains `'sms'`; `provider_user_id` = the E.164
+  phone number (normalized). Cross-provider merge can key on a verified
+  phone the same way email does today, if ever needed.
+- New `sms_otp_tokens` table modeled exactly on `magic_link_tokens`:
+  sha256-hashed code, short TTL (~5 min), single-use via the atomic
+  `UPDATE ... SET used_at = NOW() WHERE used_at IS NULL AND expires_at >
+  NOW() RETURNING ...` consume, plus a per-number request throttle reusing
+  the `email_throttled` shape.
+- `services/sms.py` mirroring `services/email.py`: httpx POST to the
+  provider (Plivo/Telnyx), env-gated (`SMS_API_KEY` etc. in `.env.api`
+  per-tier) so dev stays zero-config and logs the code to stdout, exactly
+  like `send_email` does without `RESEND_API_KEY`.
+- `POST /api/auth/sms/request` + `POST /api/auth/sms/verify`, both routed
+  through the existing `resolve_or_merge_user` → `link_browser_to_user` →
+  `issue_session` rhythm — same `SessionResponse` shape, no FE provider
+  branching beyond a new button in `<SignInOptions>`.
+- Provider key per-tier in `.env.api` like `RESEND_API_KEY`; a 10DLC brand
+  must be registered with the chosen provider before prod use.
+
+No code, no migration, no dependency added until a session explicitly
+picks this up and a provider key is provisioned.
+
 ## Phasing
 
 Independent PRs, each leaves `main` shippable. See the top-level summary in
@@ -248,6 +313,7 @@ the original session for the rationale.
 | G | Invite links (shipped) | `group_invites` table (migration 116), creator-side create/list/revoke endpoints, anonymous-allowed `/invite/<token>` landing page that auto-redeems for signed-in viewers, `InviteLinksSection` on /info | E |
 | H | ~~Per-vote anonymity~~ | **NOT PLANNED.** Anonymity flags on votes + read-time filter were originally designed but retired. Anonymous participation is "leave the voter name blank"; no per-vote on/off toggle. | — |
 | I | Polish (partial — **shipped**) | linked-identities display, **add recovery email** (migration 118: `magic_link_tokens.user_id`; `POST /api/auth/recovery-email/{request,verify}`), **delete account** (`DELETE /api/auth/me`), sign out (Phase A). Still deferred: retire `creator_secret`; "claim an anonymous-created group". | A–G |
+| J | ~~SMS sign-in~~ | **NOT PLANNED (future option).** Lowest-cost path = DIY Plivo/Telnyx + own `sms_otp_tokens` table, ~$0.01–0.02/US login + ~$3/mo + A2P 10DLC registration. Parked because it's the only non-free method and adds little reach over email/OAuth/passkey. Full cost analysis + DIY design in the "SMS sign-in" section above. | A |
 
 Phase A and B ship together as the first PR — A is invisible alone; B is
 the smallest end-to-end auth that proves the model.
