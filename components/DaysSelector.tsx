@@ -273,7 +273,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
                 data-date={dateStr}
                 data-testid={`calendar-day-${dateStr}`}
                 className={`
-                  aspect-[5/4] text-sm flex items-center justify-center
+                  aspect-[5/4] text-sm flex items-center justify-center rounded-lg
                   ${isDisabled
                     ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
                     : !isCurrentMonth
@@ -281,11 +281,11 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
                       : 'hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
                   }
                   ${isSelected
-                    ? 'bg-blue-500 text-white hover:bg-blue-600'
+                    ? 'bg-blue-400/70 dark:bg-blue-500/50 text-white hover:bg-blue-400/80 dark:hover:bg-blue-500/60'
                     : ''
                   }
                   ${isToday && !isSelected && !isDisabled
-                    ? 'border-2 border-blue-500'
+                    ? 'border-2 border-blue-400/70 dark:border-blue-500/60'
                     : ''
                   }
                 `}
