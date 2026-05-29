@@ -2047,6 +2047,22 @@ different FE origin, extend the allowlist.
 > the old poll"). `?p=` is purely cosmetic at the API level — it drives
 > FE auto-expand + scroll target + link-preview metadata, nothing else.
 >
+> **TODO — don't silently omit a link-targeted poll the recipient can't see;
+> tell them it closed before they joined.** (Decision from the social-test
+> review, May 2026 — this refines the "just show the group, don't try to show
+> the old poll" spec above.) Silently dropping the targeted poll reads as a
+> broken link to whoever shared a just-closed result. Desired: when a direct
+> poll link (`/g/<g>/p/<poll>` or legacy `?p=<poll>`) targets a poll that's
+> hidden ONLY by the closed-before-join watermark (as opposed to genuinely not
+> existing), render the group plus a clear "this poll closed before you joined
+> the group" note where the poll would be — instead of nothing. Implementation:
+> the FE can't tell "filtered out" from "doesn't exist" today (the read returns
+> only the visible subset). Either (a) FE does a cheap existence check —
+> requested poll short_id resolves within this group but isn't in the visible
+> list — or (b) the read endpoint returns a small marker `{hidden_pre_join:
+> [pollShortId]}` for exactly this case. Return existence + closure timing
+> ONLY; never the hidden poll's contents — the visibility rule stands.
+>
 > `/by-route-id/{id}` only 404s when route resolution itself fails. An
 > empty visible-polls list returns 200 with `[]` so the group page can
 > still render its chrome (header + tappable title to /info + the
