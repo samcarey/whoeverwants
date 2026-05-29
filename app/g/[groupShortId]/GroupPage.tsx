@@ -48,7 +48,7 @@ import { forgetQuestion } from "@/lib/forgetQuestion";
 import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
 import { GroupCardItem, ROW_DIVIDER_CLASS, type GroupCardGroup } from "./GroupCardItem";
-import BubbleBarPanel, { PANEL_HEIGHT_VAR, PANEL_OFFSET_VAR } from "@/components/BubbleBarPanel";
+import { PANEL_HEIGHT_VAR, PANEL_OFFSET_VAR } from "@/components/BubbleBarPanel";
 import { GroupNotFound as GroupNotFoundFallback } from "@/components/GroupLoadState";
 
 import type { Group } from "@/lib/groupUtils";
@@ -805,15 +805,14 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // gear at the viewport's left edge.
   const upArrowRef = useRef<HTMLButtonElement | null>(null);
   const downArrowRef = useRef<HTMLButtonElement | null>(null);
-  // BubbleBarPanel's outer shell. Registered as a swipe extra-target so
-  // the panel slides horizontally with the page during a back-swipe to
-  // home (the panel sits OUTSIDE the swipeWrapper so its position:fixed
-  // stays viewport-anchored — without this ref the panel would stay put
-  // while the rest of the page slid off).
-  const bubbleBarShellRef = useRef<HTMLDivElement | null>(null);
+  // The bubble bar now lives at the layout level (components/BubbleBarHost),
+  // a single persistent instance, so it's no longer a swipe extra-target
+  // here. During the group→home swipe-back BubbleBarHost hides itself (it
+  // listens for SHOW/HIDE_HOME_BACKDROP_EVENT), so the bar doesn't float
+  // over the revealed home page.
   const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
     headerRef,
-    extraTargets: [upArrowRef, downArrowRef, bubbleBarShellRef],
+    extraTargets: [upArrowRef, downArrowRef],
     showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
     hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
     // No scroll save here: returning home intentionally resets every group's
@@ -2048,28 +2047,12 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           })}
       </div>
       </div>
-      {/* Floating bubble bar — sits OUTSIDE the swipe wrapper so its
-          `position: fixed` stays viewport-relative during a back-swipe
-          (any transformed ancestor would re-anchor it to the wrapper's
-          containing block, landing it far below the viewport on tall
-          pages). Its outer shell is registered as a swipe extra-target
-          so it still translates horizontally with the rest of the page
-          during the gesture.
-
-          Rendered ONLY in the real route (not the slide overlay): an
-          earlier design rendered a copy in the overlay's GroupContent too
-          so the bar would "slide in" with the group, but during the slide
-          the overlay's transform-shifted copy met the real route's static
-          copy at the slide seam with mismatched horizontal content —
-          reading as a jumbled / flickering bar. Instead, render once and
-          elevate above the overlay (z-70) while a group-kind overlay is
-          mounted, so the bar is stable bottom chrome the group content
-          slides BEHIND. Because the bar never moves portals there's also
-          no overlay-unmount blink. Same pattern as the scroll-helper
-          arrows. */}
-      {!inOverlay && (
-        <BubbleBarPanel ref={bubbleBarShellRef} elevated={elevateArrowsForOverlay} />
-      )}
+      {/* The bubble bar is mounted ONCE at the layout level
+          (components/BubbleBarHost) rather than per-GroupContent-instance,
+          so it appears instantly (independent of this heavy component's
+          commit) and can never be rendered twice during a slide. It still
+          reserves bottom space here via the --bubble-bar-panel-height CSS
+          var (set by the single BubbleBarPanel instance). */}
 
       {/* Group-aware long-press modal — Copy + Forget, plus Reopen when
            the poll is closed and the current browser is the creator (or dev). */}

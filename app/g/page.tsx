@@ -7,7 +7,6 @@ import { getGroupHrefForPoll } from "@/lib/groupUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupHeader from "@/components/GroupHeader";
-import BubbleBarPanel from "@/components/BubbleBarPanel";
 import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 
 export const dynamic = 'force-dynamic';
@@ -85,7 +84,9 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
     <>
       <GroupHeader {...headerProps} />
       <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }} />
-      <BubbleBarPanel />
+      {/* Bubble bar is mounted once at the layout level
+          (components/BubbleBarHost), which shows it on group-root views
+          (including this empty `/g` placeholder) — no per-route copy. */}
     </>
   );
 }
