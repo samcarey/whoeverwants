@@ -220,7 +220,10 @@ for SUB in cmd-api webhook; do
 done
 
 # Install the Caddyfile (matches scripts/mac-mini/Caddyfile in this repo;
-# includes per-branch dev-server snippet imports).
+# includes the *.dev wildcard TLS block + per-branch dev-server snippet imports).
+# NOTE: the wildcard block needs the route53-enabled Caddy binary + AWS env —
+# do § 9d BEFORE restarting, or the restart fails with
+# "unknown module: dns.providers.route53".
 sudo cp scripts/mac-mini/Caddyfile /opt/homebrew/etc/Caddyfile
 sudo brew services restart caddy
 sleep 45  # cert provisioning
@@ -266,6 +269,108 @@ refresh:
 ```bash
 ~/devbox/ddns.sh   # one-shot: upserts both mac-test.dev and *.dev to home IP
 ```
+
+### 9d. Wildcard TLS via Route 53 DNS-01 (REQUIRED — do not use stock Caddy)
+
+`*.dev.whoeverwants.com` is served by a **single wildcard certificate** obtained
+via the **DNS-01** challenge over Route 53. This is mandatory, not optional:
+the earlier per-hostname on-demand TLS approach obtained **one Let's Encrypt
+cert per branch dev server**, and with a dozen-plus active branches it blew
+past LE's **50-certs / week / registered-domain** rate limit. The symptom was
+brutal to diagnose because it looks exactly like an outage: every
+`*.dev.whoeverwants.com` site fails the TLS handshake (`tlsv1 alert internal
+error` / curl exit 35) while the VM, containers, and Caddy process are all
+perfectly healthy. The log line to grep for is:
+
+```
+HTTP 429 ... too many certificates (50) already issued for "whoeverwants.com"
+```
+
+The wildcard cert renews ~every 60 days with **zero** per-host issuance, so the
+rate limit can never be hit again.
+
+**1. Caddy binary with the route53 plugin.** The stock Homebrew Caddy does NOT
+include `caddy-dns/route53`. Download a prebuilt binary from Caddy's download
+service (no Go toolchain needed) and swap it into the Homebrew Cellar path the
+LaunchDaemon runs:
+
+```bash
+P=$(printf 'git%s.%s/caddy-dns/route53' hub com)   # github.com/caddy-dns/route53
+curl -fSL -o ~/caddy-route53 \
+  "https://caddyserver.com/api/download?os=darwin&arch=arm64&p=$P"
+chmod +x ~/caddy-route53
+~/caddy-route53 list-modules | grep route53        # -> dns.providers.route53
+
+# Stop the snippet watcher so it can't reload mid-swap, then replace the binary.
+launchctl bootout gui/$(id -u)/com.devbox.caddy-watch 2>/dev/null
+sudo cp ~/caddy-route53 /opt/homebrew/opt/caddy/bin/caddy
+
+# CRITICAL: re-sign ad-hoc. Overwriting Homebrew's signed binary at its original
+# path with differently-signed bytes makes macOS AMFI SIGKILL it on exec
+# (`zsh: killed`). Re-signing in place clears the stale signature AMFI rejects.
+sudo codesign --force --sign - /opt/homebrew/opt/caddy/bin/caddy
+/opt/homebrew/opt/caddy/bin/caddy version          # -> v2.11.x, exit 0
+```
+
+**2. IAM permissions.** The `mac-devbox-ddns` IAM user already has
+`AmazonRoute53FullAccess` (§ "Route 53 IAM" above), which covers both the DDNS
+UPSERTs AND the DNS-01 challenge (the plugin needs `ListHostedZonesByName` +
+`ChangeResourceRecordSets`; a tightly-scoped policy that grants the change but
+omits the zone-list permission will silently fail to create the TXT record).
+
+**3. AWS env on the Caddy LaunchDaemon.** Caddy runs as **root** via
+`/Library/LaunchDaemons/homebrew.mxcl.caddy.plist` and won't see the user's
+`~/.aws` by default. Point it there via `EnvironmentVariables` in the plist
+(the `homebrew.mxcl.caddy.plist` template in `scripts/mac-mini/` already has
+these — install it over the stock one):
+
+```bash
+sudo cp scripts/mac-mini/homebrew.mxcl.caddy.plist /Library/LaunchDaemons/homebrew.mxcl.caddy.plist
+# plist sets AWS_SHARED_CREDENTIALS_FILE=/Users/sccarey/.aws/credentials,
+# AWS_CONFIG_FILE=/Users/sccarey/.aws/config, AWS_REGION=us-east-1
+```
+
+**4. Restart onto the new binary (NOT `caddy reload`).** `caddy reload` only
+re-feeds config to the *running* process — it can't load a new module, so it
+fails with `unknown module: dns.providers.route53` if the running daemon is
+still the stock binary. You must restart the LaunchDaemon so the new on-disk
+binary becomes the running process. Boot the watchdog out first so it can't
+race the restart:
+
+```bash
+sudo launchctl bootout system/com.whoeverwants.caddy-watchdog 2>/dev/null
+sudo launchctl bootout system/homebrew.mxcl.caddy 2>/dev/null
+sleep 2
+sudo launchctl bootstrap system /Library/LaunchDaemons/homebrew.mxcl.caddy.plist
+sleep 4
+pgrep -fl caddy   # confirm exactly one caddy proc on the route53 binary
+```
+
+**5. Caddyfile wildcard block.** The `scripts/mac-mini/Caddyfile` in this repo
+already has the `*.dev.whoeverwants.com` block with `tls { dns route53 }` plus
+`propagation_delay 30s` / `propagation_timeout 5m` / `resolvers 1.1.1.1
+8.8.8.8`. The **propagation_delay is load-bearing**: without it, LE checks for
+the `_acme-challenge` TXT ~6s after Caddy writes it — before Route 53
+propagates — and the challenge fails `403 "No TXT record found"` on a loop.
+Re-enable the watchdog + watcher after the wildcard cert issues:
+
+```bash
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.whoeverwants.caddy-watchdog.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.devbox.caddy-watch.plist
+# Watch the cert land:
+sudo tail -f /opt/homebrew/var/log/caddy.log | grep -iE 'obtain|challenge|certificate obtained|429'
+# Success: "certificate obtained successfully ... *.dev.whoeverwants.com"
+# Cert on disk:
+sudo find /opt/homebrew/var/lib/caddy -iname '*wildcard*'
+```
+
+**Per-branch snippets are matcher fragments, not site blocks.**
+`dev-server-manager.sh: configure_caddy` writes
+`@<slug> host <slug>.dev.whoeverwants.com` + `handle @<slug> { reverse_proxy
+localhost:<port> }` fragments that are `import`ed INTO the wildcard block. A
+standalone `<slug>.dev.whoeverwants.com { ... }` site block would re-trigger
+per-hostname cert issuance and reintroduce the rate-limit bug — never revert to
+that form.
 
 ### 10. Verify externally
 

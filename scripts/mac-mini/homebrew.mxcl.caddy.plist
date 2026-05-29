@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  /Library/LaunchDaemons/homebrew.mxcl.caddy.plist on the Mac mini.
+
+  This is Homebrew's stock caddy LaunchDaemon with one addition: the
+  EnvironmentVariables block points root's Caddy at the user's AWS credentials
+  so the caddy-dns/route53 DNS-01 plugin can manage the _acme-challenge TXT
+  record for the *.dev.whoeverwants.com wildcard cert. Without these, Caddy
+  runs as root (to bind :80/:443) and never sees ~/.aws, so DNS-01 issuance
+  silently fails. See docs/mac-mini-setup.md § 9d.
+
+  NOTE: ProgramArguments points at /opt/homebrew/opt/caddy/bin/caddy, which
+  must be the route53-enabled binary (see § 9d for the swap + ad-hoc re-sign).
+-->
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/opt/homebrew/var/lib</string>
+		<key>XDG_DATA_HOME</key>
+		<string>/opt/homebrew/var/lib</string>
+		<key>AWS_SHARED_CREDENTIALS_FILE</key>
+		<string>/Users/sccarey/.aws/credentials</string>
+		<key>AWS_CONFIG_FILE</key>
+		<string>/Users/sccarey/.aws/config</string>
+		<key>AWS_REGION</key>
+		<string>us-east-1</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>homebrew.mxcl.caddy</string>
+	<key>LimitLoadToSessionType</key>
+	<array>
+		<string>Aqua</string>
+		<string>Background</string>
+		<string>LoginWindow</string>
+		<string>StandardIO</string>
+		<string>System</string>
+	</array>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/opt/caddy/bin/caddy</string>
+		<string>run</string>
+		<string>--config</string>
+		<string>/opt/homebrew/etc/Caddyfile</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/opt/homebrew/var/log/caddy.log</string>
+	<key>StandardOutPath</key>
+	<string>/opt/homebrew/var/log/caddy.log</string>
+</dict>
+</plist>

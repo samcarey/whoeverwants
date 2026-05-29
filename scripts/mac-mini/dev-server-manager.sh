@@ -248,9 +248,20 @@ configure_caddy() {
   local slug="$1"
   local port="$2"
   mkdir -p "$CADDY_DEV_DIR"
+  # Emit a host-matcher FRAGMENT, not a standalone site block. The fragment is
+  # imported into the single "*.dev.whoeverwants.com" wildcard block in the main
+  # Caddyfile, which holds one DNS-01/Route 53 wildcard cert covering every
+  # branch host. A standalone "<slug>.dev.whoeverwants.com { ... }" block would
+  # make Caddy obtain a per-hostname Let's Encrypt cert again, which is exactly
+  # what blew through LE's 50-certs/week/registered-domain limit (HTTP 429 ->
+  # aborted TLS handshakes -> every dev site appeared down). The matcher name
+  # must be alnum/underscore (Caddy rejects '-' and '.' in @matcher names), so
+  # the slug's non-alnum chars are folded to '_'.
+  local mname
+  mname=$(echo "$slug" | tr -c 'a-zA-Z0-9' '_')
   cat > "${CADDY_DEV_DIR}/${slug}.caddy" <<EOF
-${slug}.dev.whoeverwants.com {
-    bind 0.0.0.0 ::
+@${mname} host ${slug}.dev.whoeverwants.com
+handle @${mname} {
     reverse_proxy localhost:${port}
 }
 EOF
