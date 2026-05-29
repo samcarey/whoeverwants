@@ -95,6 +95,15 @@ export default function TimeSlotBubbles({
     if (disabled) clearSelection();
   }, [disabled, clearSelection]);
 
+  // Whether any slot would render an orange "excludes N voter(s)" badge — used
+  // to gate the matching legend entry.
+  const hasExcluded = useMemo(() => {
+    if (maxAvailability == null || availabilityCounts == null) return false;
+    return options.some(
+      (slot) => maxAvailability - (availabilityCounts[slot] ?? 0) > 0,
+    );
+  }, [options, maxAvailability, availabilityCounts]);
+
   const days = useMemo(
     () =>
       groupSlotsByDay(options).map(([dateStr, slots]) => ({
@@ -312,19 +321,19 @@ export default function TimeSlotBubbles({
       ))}
 
       {/* Legend */}
-      <div className="flex items-center gap-3 pt-1 text-xs text-gray-400 dark:text-gray-500">
+      <div className="flex flex-wrap items-center justify-center gap-3 pt-1 text-xs text-gray-400 dark:text-gray-500">
         <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-3 rounded-full bg-green-500" /> liked
+          <span className="inline-block w-3 h-3 rounded-full bg-green-500" /> Liked
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-3 rounded-full bg-red-500" /> disliked
+          <span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Disliked
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-3 rounded-full border border-gray-300 dark:border-gray-600" /> neutral
+          <span className="inline-block w-3 h-3 rounded-full border border-gray-300 dark:border-gray-600" /> Neutral
         </span>
-        {maxAvailability != null && maxAvailability > 0 && (
+        {hasExcluded && (
           <span className="flex items-center gap-1">
-            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white">N</span> excludes N voter(s)
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white">N</span> Excludes N Voter(s)
           </span>
         )}
       </div>
