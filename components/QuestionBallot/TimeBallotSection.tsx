@@ -4,6 +4,7 @@ import type { Dispatch, SetStateAction, ReactNode } from "react";
 import type { Question, QuestionResults, DayTimeWindow } from "@/lib/types";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
 import TimeSlotBubbles from "@/components/TimeSlotBubbles";
+import AbstainLink from "@/components/AbstainLink";
 import { formatTimeSlot, hasInvalidVoterWindows } from "@/lib/timeUtils";
 
 export interface TimeBallotSectionProps {
@@ -197,16 +198,7 @@ export default function TimeBallotSection({
               />
             </div>
 
-            <div className="mb-2 text-center">
-              <button
-                type="button"
-                onClick={handleAbstain}
-                disabled={isSubmitting}
-                className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
-              >
-                {isAbstaining ? 'Abstaining' : 'Abstain'}
-              </button>
-            </div>
+            <AbstainLink isAbstaining={isAbstaining} onClick={handleAbstain} disabled={isSubmitting} className="mb-2" />
 
             {availabilityWindowsInvalid && (
               <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-400 dark:border-amber-500 rounded-md">
@@ -269,16 +261,7 @@ export default function TimeBallotSection({
               />
             </div>
 
-            <div className="mb-2 text-center">
-              <button
-                type="button"
-                onClick={handleAbstain}
-                disabled={isSubmitting}
-                className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
-              >
-                {isAbstaining ? 'Abstaining' : 'Abstain'}
-              </button>
-            </div>
+            <AbstainLink isAbstaining={isAbstaining} onClick={handleAbstain} disabled={isSubmitting} className="mb-2" />
 
             {voteError && (
               <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 rounded-md">
