@@ -434,8 +434,17 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         }
         const anchorPoll = findChainRoot(polls);
         if (!anchorPoll) { setError(true); return; }
+        // Warm the votes cache only for yes_no questions the viewer has
+        // already voted on — the sole remaining per-question votes consumer
+        // is the userVoteMap pill-highlight in `maybeFetch` below. Respondent
+        // bubbles now render from the poll wrapper's static voter_names, so
+        // the old blanket "fetch every question's votes" prefetch is gone.
         for (const mp of polls) {
-          for (const sp of mp.questions) void apiGetVotes(sp.id).catch(() => null);
+          for (const sp of mp.questions) {
+            if (sp.question_type === 'yes_no' && getStoredVoteId(sp.id)) {
+              void apiGetVotes(sp.id).catch(() => null);
+            }
+          }
         }
 
         // Re-read voted state — discovery or the user voting elsewhere may have changed it.
