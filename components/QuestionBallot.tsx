@@ -11,7 +11,7 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 
 import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
-import AbstainButton from "@/components/AbstainButton";
+import AbstainLink from "@/components/AbstainLink";
 import { Question, QuestionResults, OptionsMetadata, DayTimeWindow, Poll } from "@/lib/types";
 import { apiGetQuestionResults, apiGetVotes, apiSubmitPollVotes, apiCutoffPollSuggestions, apiGetQuestionById, apiGetPollById, QUESTION_VOTES_CHANGED_EVENT, type PollVoteItem } from "@/lib/api";
 import { invalidateQuestion, getCachedQuestionById, getCachedQuestionResults, getCachedVotes } from "@/lib/questionCache";
@@ -1422,10 +1422,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
                         onYesClick={() => handleYesNoVote('yes')}
                         onNoClick={() => handleYesNoVote('no')}
                       />
-                      <AbstainButton
-                        isAbstaining={isAbstaining}
-                        onClick={handleAbstain}
-                      />
+                      <AbstainLink isAbstaining={isAbstaining} onClick={handleAbstain} disabled={isSubmitting} className="mt-2" />
                     </div>
                     
                     {voteError && (

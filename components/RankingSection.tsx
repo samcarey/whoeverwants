@@ -6,6 +6,7 @@ import RankableOptions from "@/components/RankableOptions";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import BinaryRankedChoiceBallot from "@/components/QuestionBallot/BinaryRankedChoiceBallot";
 import NewOptionsBanner from "@/components/NewOptionsBanner";
+import AbstainLink from "@/components/AbstainLink";
 import type { OptionsMetadata, QuestionResults } from "@/lib/types";
 
 interface RankingSectionProps {
@@ -244,16 +245,7 @@ export default function RankingSection({
                     newOptions={newOptions}
                   />
                 )}
-                <div className="mt-3 text-center">
-                  <button
-                    type="button"
-                    onClick={handleAbstain}
-                    disabled={isSubmitting}
-                    className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
-                  >
-                    {isAbstaining ? 'Abstaining' : 'Abstain'}
-                  </button>
-                </div>
+                <AbstainLink isAbstaining={isAbstaining} onClick={handleAbstain} disabled={isSubmitting} className="mt-3" />
               </>
             )}
 
