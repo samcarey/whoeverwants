@@ -5,7 +5,7 @@ import type { Question, QuestionResults, DayTimeWindow } from "@/lib/types";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
 import TimeSlotBubbles from "@/components/TimeSlotBubbles";
 import AbstainLink from "@/components/AbstainLink";
-import { formatTimeSlot, hasInvalidVoterWindows } from "@/lib/timeUtils";
+import { hasInvalidVoterWindows } from "@/lib/timeUtils";
 
 export interface TimeBallotSectionProps {
   question: Question;
@@ -152,17 +152,15 @@ export default function TimeBallotSection({
               } : {})}
             />
           ) : !isAvailabilitySubmission && (userVoteData?.liked_slots !== null || userVoteData?.disliked_slots !== null) ? (
-            <div className="p-3 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-800 dark:text-green-200">
-              {(userVoteData?.liked_slots?.length ?? 0) > 0 && (
-                <p>Liked: {userVoteData!.liked_slots!.map(formatTimeSlot).join(', ')}</p>
-              )}
-              {(userVoteData?.disliked_slots?.length ?? 0) > 0 && (
-                <p>Disliked: {userVoteData!.disliked_slots!.map(formatTimeSlot).join(', ')}</p>
-              )}
-              {(userVoteData?.liked_slots?.length ?? 0) === 0 && (userVoteData?.disliked_slots?.length ?? 0) === 0 && (
-                <p>Preferences submitted (all neutral).</p>
-              )}
-            </div>
+            <TimeSlotBubbles
+              options={preferenceSlotsForVoter}
+              likedSlots={userVoteData?.liked_slots ?? []}
+              dislikedSlots={userVoteData?.disliked_slots ?? []}
+              onToggle={() => {}}
+              availabilityCounts={questionResults?.availability_counts}
+              maxAvailability={questionResults?.max_availability}
+              disabled={true}
+            />
           ) : null}
         </div>
       </div>
