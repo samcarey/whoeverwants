@@ -80,7 +80,7 @@ export default function TimeQuestionFields({
       {onDurationMinChange && onDurationMaxChange && onDurationMinEnabledChange && onDurationMaxEnabledChange && (
         <div>
           <label className="block text-sm font-medium mb-1">
-            Duration (hours)
+            Duration
           </label>
           <MinMaxCounter
             minValue={durationMinValue}
@@ -98,6 +98,7 @@ export default function TimeQuestionFields({
             formatValue={formatDurationValue}
             minCheckboxEnabled={durationMinEnabled}
             onMinCheckboxChange={onDurationMinEnabledChange}
+            suffix="h"
           />
         </div>
       )}
