@@ -129,13 +129,21 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
       rafId = null;
       const currentY = window.scrollY;
       // A back-nav scroll restore is replaying programmatic scroll jumps
-      // (often 0 → a mid-list offset). Don't read those as the user scrolling
-      // down — that would hide the bar at the restored position. Sync
-      // lastScrollY so the first real post-restore scroll computes a correct
-      // delta, and leave visibility untouched (the fresh-mounted panel starts
-      // visible, which is what we want after a back-nav).
+      // (often 0 → a mid-list offset, plus Next.js' own back-scroll-restore).
+      // Don't read those as the user scrolling down — that would hide the bar
+      // at the restored position. FORCE the bar visible (not just skip): a
+      // downward restore jump can land on an instance whose `visible` is
+      // already false (e.g. the slide-overlay's bar that registered the jump
+      // before the real route set the restore flag, or the user having
+      // scrolled down to hide the bar before tapping the poll they're now
+      // returning from). Forcing guarantees the bar is shown the moment we
+      // land back on the group page. Sync lastScrollY too so the first real
+      // post-restore scroll computes a correct delta. lastDirection stays
+      // "up" so normal hide-on-scroll-down resumes cleanly once the restore
+      // window ends.
       if (isScrollRestoring()) {
         lastScrollY = currentY;
+        setVisible((prev) => (prev ? prev : true));
         return;
       }
       const maxScroll = Math.max(
