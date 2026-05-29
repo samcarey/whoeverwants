@@ -2054,11 +2054,22 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           containing block, landing it far below the viewport on tall
           pages). Its outer shell is registered as a swipe extra-target
           so it still translates horizontally with the rest of the page
-          during the gesture. Two instances coexist during a slide-overlay
-          handoff (overlay's GroupContent + real route's GroupContent);
-          both register their own `#draft-poll-portal` target and the
-          bar's dual-portal rendering pipes the JSX into both. */}
-      <BubbleBarPanel ref={bubbleBarShellRef} />
+          during the gesture.
+
+          Rendered ONLY in the real route (not the slide overlay): an
+          earlier design rendered a copy in the overlay's GroupContent too
+          so the bar would "slide in" with the group, but during the slide
+          the overlay's transform-shifted copy met the real route's static
+          copy at the slide seam with mismatched horizontal content —
+          reading as a jumbled / flickering bar. Instead, render once and
+          elevate above the overlay (z-70) while a group-kind overlay is
+          mounted, so the bar is stable bottom chrome the group content
+          slides BEHIND. Because the bar never moves portals there's also
+          no overlay-unmount blink. Same pattern as the scroll-helper
+          arrows. */}
+      {!inOverlay && (
+        <BubbleBarPanel ref={bubbleBarShellRef} elevated={elevateArrowsForOverlay} />
+      )}
 
       {/* Group-aware long-press modal — Copy + Forget, plus Reopen when
            the poll is closed and the current browser is the creator (or dev). */}

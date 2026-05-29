@@ -88,7 +88,7 @@ export const PANEL_OFFSET_VAR = "--bubble-bar-panel-offset";
  * other. The forwarded ref points at the shell so callers can register
  * it as an extra swipe target.
  */
-const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) => {
+const BubbleBarPanel = forwardRef<HTMLDivElement, { elevated?: boolean }>(({ elevated }, forwardedShellRef) => {
   const [visible, setVisible] = useState(true);
   // Bumped on every `visualViewport.resize` so `useMeasuredHeight`'s
   // ResizeObserver re-attaches and re-reads `offsetHeight`. iOS browsers
@@ -243,7 +243,13 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
   return (
     <div
       ref={forwardedShellRef}
-      className="fixed bottom-0 left-0 right-0 z-30"
+      // Elevated above the slide overlay (z-60) while a group-kind overlay is
+      // mounted, so the bar reads as stable bottom chrome that the sliding
+      // group content passes *behind* — instead of being rendered a second
+      // time inside the overlay (which produced a jumbled/doubled bar at the
+      // slide seam, where the overlay's transform-shifted copy met the real
+      // route's static copy). Mirrors the scroll-helper arrows' elevation.
+      className={`fixed bottom-0 left-0 right-0 ${elevated ? "z-[70]" : "z-30"}`}
       onTouchStart={stopTouchPropagation}
       onTouchMove={stopTouchPropagation}
       onTouchEnd={stopTouchPropagation}
