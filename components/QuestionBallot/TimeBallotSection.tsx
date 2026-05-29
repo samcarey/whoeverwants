@@ -234,7 +234,7 @@ export default function TimeBallotSection({
               <h3 className="text-lg font-semibold mb-3 text-center">Mark Your Preferences</h3>
               {inAvailabilityPhase && (
                 <p className="mb-3 text-xs text-amber-600 dark:text-amber-400 text-center">
-                  Tentative slots — list may shift as more voters submit availability.
+                  Options may change during availability phase
                 </p>
               )}
               <TimeSlotBubbles
