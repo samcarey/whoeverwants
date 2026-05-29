@@ -38,10 +38,11 @@ export function useDayTimeWindowsState(
         working.push({ day: d, windows: cached });
         continue;
       }
-      // Inherit windows from the chronologically previous day in the
-      // working list; fall back to 8am–5pm when there is no prior day.
+      // Inherit windows from the latest (chronologically last) already-selected
+      // day, regardless of whether it sorts before or after the new day; fall
+      // back to 8am–5pm when no other day has windows.
       const prev = working
-        .filter(x => x.day < d && x.windows.length > 0)
+        .filter(x => x.day !== d && x.windows.length > 0)
         .sort((a, b) => a.day.localeCompare(b.day))
         .pop();
       const inheritedWindows: TimeWindow[] = prev
