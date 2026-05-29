@@ -16,6 +16,24 @@ The Supabase-to-Python migration and infrastructure improvements (Phases 1-10) a
 
 > **Historical note on What/When/Where:** Earlier iterations of the redesign shipped a 3-bubble bar (What/When/Where) that preselected via `?mode=time` / `?category=restaurant`. That trichotomy was eliminated; references to "What/When/Where" in Phase 2.3 / Navigation Layout / Always-On Draft Poll Card sections below are historical context, NOT the current UI. The current bar is per-category.
 
+### TODO — Group-as-a-hub: make a group a legible shared decision space (social-test review, May 2026)
+
+**Thesis.** The app's real competitor is the group chat thread where decisions die ("so are we doing Friday??" × 40 messages, no resolution). A single poll is a weak substitute; a *group* a circle returns to — where decisions accrete and outcomes are legible — is a strong one, and the multi-question event poll ("plan the whole night in one link") is its sharpest expression. This initiative makes a group feel like a lightweight shared decision space, NOT a folder of polls. **Explicitly NOT a chat** — the value is the decision layer the chat lacks; do not add messaging.
+
+**Foundations already shipped (build on, don't rebuild):** first-class groups (`group_id` + group short_id, title override, avatar image, privacy, invites, join requests, claim, invite-members address book); notifications on new-poll / poll-closed / phase-transition with per-group mute; the home group list with per-group unread indicators + countdowns + awaiting-first sort; atomic multi-question polls with per-question abstain. What's missing is the *legibility* layer on top.
+
+**Gaps to close, highest-leverage first:**
+1. **"What's still open / what did we decide" — the biggest gap.** A group is currently a reverse-chronological stream of cards with no answer to the two questions a returning member has: *what needs me?* and *what did we land on?* Add (a) a group-header summary + Open/Decided filter ("2 open · 1 awaiting you · 5 decided"), and (b) a **decisions ledger** / "Outcomes" view (compact "Dinner → Thai · Movie → Dune · Offsite → Yes 4-2"). Mostly presentation over existing data (closed polls + winners). The single clearest "this beats our group chat" moment.
+2. **The multi-question event poll should resolve into "the plan," not N separate pills.** Today each sub-question resolves independently with its own pill; there's no consolidated read. Add a combined "the plan" summary ("Fri 7pm · Thai · Escape Room after · partners optional") on the detail page and as the group-card result. Optionally a first-class **Event template** that pre-seeds Dinner+Time+yes/no and names the poll. This is what justifies bundling questions at all.
+3. **Re-engagement that closes the loop.** Notifications announce *activity*; make them also deliver *outcomes* — a closed-poll push that carries the winner ("Your group decided: Thai, Fri 7pm"), turning the app into the place results land.
+4. **Home-list shared-space affordances.** A small per-group "3 open · 1 awaiting you" rollup so a member can triage across groups at a glance.
+
+**Risks that compound in a persistent hub (cross-references):** late-joiner history loss (the "closed before you joined" TODO in the Migration-106 note) bites harder as new members miss prior decisions; two-round time-poll drop-off (social-test recommendation #6) erodes trust if scheduling keeps stalling; roster identity issues (the ballot-privacy + duplicate-name TODOs) are felt continuously since the same names recur.
+
+**Suggested order:** gap 1 first (presentation over existing data; answers both returning-member questions), then gap 2.
+
+**⚠️ Process note — this is exploratory UI work; the owner will be hands-on.** Much of the above (especially the Open/Decided view, the ledger, and the "the plan" summary) is **design-heavy and not obvious** — expect to spin up multiple candidate implementations on separate branches/dev servers and iterate. **The owner (Sam) wants to be in the loop, trying out several implementations on real devices to pick the best one** — do NOT pick a single design and ship it unilaterally. Branch, build 2-3 variants where the right answer is unclear, deploy them to per-branch dev servers, and hand the owner links to compare before converging. Treat the spec above as direction, not a fixed design.
+
 ## DigitalOcean Droplets — Two-Tier Deploy
 
 WhoeverWants runs on **two** DigitalOcean droplets that are software-identical (same `scripts/provision-droplet.sh`, same Docker stack, same migrations). Only the public hostnames and deploy trigger differ — see "Development Workflow" below for the gating.
