@@ -131,10 +131,13 @@ def build_markdown(results: list[dict], critique_map: dict[str, str] | None = No
             soc_badge = badge_html(r["social_badge"], soc_color)
 
             anchor = r["test_name"]
-            poll_id = r["details"].get("poll_id")
+            # Canonical poll URL is the path form /g/<groupShort>/p/<pollShort>.
+            # (The legacy /p/<id>/ form still redirects, but link to the real one.)
+            group_short = r["details"].get("group_short_id")
+            poll_short = r["details"].get("poll_short_id")
             poll_link = ""
-            if poll_id and site_url:
-                poll_link = f' <a href="{site_url}/p/{poll_id}/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a>'
+            if group_short and poll_short and site_url:
+                poll_link = f' <a href="{site_url}/g/{group_short}/p/{poll_short}" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a>'
 
             lines.append(f'<details id="{anchor}">')
             lines.append(f"<summary>{tech_badge} {soc_badge} <code>{anchor}</code>{poll_link}</summary>\n")

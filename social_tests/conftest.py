@@ -1,13 +1,44 @@
 """Shared fixtures and report infrastructure for social testing.
 
-Tests run against the live API on the droplet (or a dev server).
-Set SOCIAL_TEST_API_URL to target a specific server.
+Tests run against the live API on a dev/canary server. Set
+SOCIAL_TEST_API_URL to target a specific server (defaults to the canary
+tier, api.latest.whoeverwants.com, which auto-deploys on every push to
+main).
 
-PollHelper exposes the *legacy* single-poll-type API surface (poll_type,
-vote_type) on top of the current poll-of-questions architecture: each
-`create_poll(title, poll_type, ...)` mints a 1-question poll, and every
-vote / read routes through the poll's first question by default. Tests
-that want multi-question behavior can read `poll['questions']` directly.
+--------------------------------------------------------------------------
+WHAT CHANGED (May 2026 refresh)
+--------------------------------------------------------------------------
+The original social suite was written against an API surface that has
+since shifted in three load-bearing ways. The harness now models the
+*current* contract:
+
+  1. **A name is required to participate.** `POST /api/polls` rejects a
+     blank `creator_name` (400) and `POST /api/polls/{id}/votes` rejects a
+     blank `voter_name` (400). There is no hidden-ballot anonymous vote
+     anymore — every voter supplies a *name or alias* that the rest of the
+     group sees. The old "anonymous dissenter" model is gone; see
+     `test_identity_and_naming.py` for the social fallout.
+
+  2. **Authorship is identity-based, not secret-based.** `creator_secret`
+     was retired (migration 123). The creator of a poll is the account
+     resolved from the request's bearer token, or — for an anonymous
+     creator — a lightweight account auto-minted at create time and bound
+     to the request's `X-Browser-Id`. Close / reopen / cutoff authorize by
+     matching that account; a different browser gets 403. The harness pins
+     one browser id per `Person`, so the person who created a poll is the
+     one who can administer it.
+
+  3. **Groups, not chains.** `follow_up_to` / forks are gone. Polls live in
+     flat **groups** keyed by `group_id` (a uuid the create response
+     returns). A follow-up is "another poll added to the same group_id."
+     A multi-question poll bundles several category ballots (Restaurant +
+     Time + Yes/No) under one wrapper that votes and closes atomically.
+
+`Person` is the unit of a human-with-a-device: a name + its own browser id
++ HTTP client. Most scenarios run with one `organizer` casting every
+named vote (a single browser may cast many votes, one per name); spawn
+extra people with `api.person("Pat")` when a scenario needs a *distinct*
+author, member, or unauthorized stranger.
 """
 
 import json
@@ -25,191 +56,232 @@ REPORT_URL = os.environ.get("SOCIAL_TEST_REPORT_URL", "")
 MAX_RETRIES = 8
 MAX_BACKOFF_SECONDS = 30
 
-
-# ── Fixtures ──────────────────────────────────────────────────────────────────
-
-
-@pytest.fixture(scope="session")
-def http_client():
-    """Shared HTTP client for all tests. Pins one X-Browser-Id per session
-    so that group-visibility (membership) is preserved across reads —
-    otherwise every read mints a fresh browser_id and Phase C.3 visibility
-    filter hides our own polls from us."""
-    browser_id = str(uuid.uuid4())
-    with httpx.Client(
-        base_url=API_URL,
-        timeout=30.0,
-        headers={"X-Browser-Id": browser_id},
-    ) as client:
-        yield client
+DEFAULT_ORGANIZER = "Organizer"
 
 
-@pytest.fixture
-def creator_secret():
-    """Unique creator secret per test."""
-    return f"social-test-{uuid.uuid4().hex[:12]}"
-
-
-# ── Helper functions available to all tests ───────────────────────────────────
-
-
-# Fields the server accepts on each request shape — used to split incoming
-# kwargs into per-question vs poll-level vs vote-item bags.
+# ── Field routing ───────────────────────────────────────────────────────────
+# The server accepts different fields on each request shape; split incoming
+# kwargs into per-question / poll-level / vote-item bags.
 _QUESTION_FIELDS = (
     "options", "options_metadata", "context", "suggestion_deadline_minutes",
-    "min_availability_percent", "day_time_windows", "duration_window",
-    "reference_latitude", "reference_longitude", "reference_location_label",
-    "is_auto_title",
+    "initial_suggestions", "min_availability_percent", "day_time_windows",
+    "duration_window", "reference_latitude", "reference_longitude",
+    "reference_location_label", "category", "category_icon", "is_auto_title",
 )
 _POLL_FIELDS = (
-    "creator_name", "response_deadline", "prephase_deadline",
-    "prephase_deadline_minutes", "group_id", "group_title",
-    "context", "details", "min_responses", "show_preliminary_results",
-    "allow_pre_ranking", "is_auto_title",
+    "response_deadline", "prephase_deadline", "prephase_deadline_minutes",
+    "group_id", "group_title", "context", "details", "min_responses",
+    "show_preliminary_results", "allow_pre_ranking",
 )
 _VOTE_ITEM_FIELDS = (
     "vote_type", "yes_no_choice", "ranked_choices", "ranked_choice_tiers",
     "suggestions", "is_abstain", "is_ranking_abstain",
     "voter_day_time_windows", "voter_duration",
-    "liked_slots", "disliked_slots",
+    "liked_slots", "disliked_slots", "options_metadata",
 )
 
 
 def _question_payload(poll_type: str, **kwargs) -> dict:
+    """Build one `questions[]` entry. Legacy `poll_type='suggestion'` maps to
+    a ranked_choice question with a suggestion-collection phase."""
+    if poll_type == "suggestion":
+        poll_type = "ranked_choice"
+        kwargs.setdefault("suggestion_deadline_minutes", 60)
     q: dict = {
         "question_type": poll_type,
-        # yes_no polls need category="yes_no" so the server's auto-title
-        # function recognises the label; everything else defaults to "custom".
-        "category": kwargs.pop("category", None) or ("yes_no" if poll_type == "yes_no" else "custom"),
+        # yes_no needs category="yes_no" for the server's auto-title;
+        # everything else defaults to "custom".
+        "category": kwargs.pop("category", None)
+        or ("yes_no" if poll_type == "yes_no" else "custom"),
     }
     for k in _QUESTION_FIELDS:
         if k in kwargs and kwargs[k] is not None:
-            q[k] = kwargs.pop(k)
+            q[k] = kwargs[k]
     return q
 
 
-class PollHelper:
-    """Convenience wrapper for poll API operations with rate-limit retry.
+def make_client() -> httpx.Client:
+    """A client pinned to one fresh X-Browser-Id (one device / identity)."""
+    browser_id = str(uuid.uuid4())
+    return httpx.Client(
+        base_url=API_URL,
+        timeout=30.0,
+        headers={"X-Browser-Id": browser_id},
+    )
 
-    The external `(title, poll_type, ...)` shape matches the original
-    social-tests API; internally each call mints a 1-question poll and
-    routes votes through the poll batch endpoint."""
 
-    def __init__(self, client: httpx.Client, result: "SocialTestResult | None" = None):
-        self.client = client
+class Person:
+    """One human-with-a-device. Owns a name, a browser id, and an HTTP client.
+
+    Creating a poll auto-mints an account bound to this browser, so this is
+    also the identity that can close/reopen/cutoff what it created. Voting
+    just needs a name, so one Person can cast many differently-named votes
+    (the common single-organizer scenario)."""
+
+    def __init__(self, name: str, result: "SocialTestResult | None" = None):
+        self.name = name
+        self.client = make_client()
         self._result = result
-        # Tracks the first-question id for each poll we create so the test
-        # can keep using `poll["id"]` (a poll id) and we route into the
-        # right question id on the wire.
         self._first_question_id: dict[str, str] = {}
 
-    def _request(self, method: str, url: str, expected: int, err_prefix: str, **kwargs) -> httpx.Response:
-        """Make a request with automatic rate-limit retry."""
+    def close(self):
+        self.client.close()
+
+    # -- low-level request with rate-limit retry -----------------------------
+
+    def _request(self, method, url, expected, err_prefix, **kwargs) -> httpx.Response:
         for attempt in range(MAX_RETRIES):
             resp = self.client.request(method, url, **kwargs)
             if resp.status_code == 429:
-                wait = min(2 ** attempt, MAX_BACKOFF_SECONDS)
-                time.sleep(wait)
+                time.sleep(min(2 ** attempt, MAX_BACKOFF_SECONDS))
                 continue
-            assert resp.status_code == expected, f"{err_prefix}: {resp.text}"
+            if expected is not None:
+                assert resp.status_code == expected, f"{err_prefix}: {resp.status_code} {resp.text}"
             return resp
         raise AssertionError(f"{err_prefix}: rate limited after {MAX_RETRIES} retries")
 
-    def create_poll(self, title: str, poll_type: str, creator_secret: str, **kwargs) -> dict:
-        """Create a single-question poll wrapping one `poll_type` question.
+    def _record_poll(self, data: dict):
+        """Stash question ids + record the first poll for report linking."""
+        if data.get("questions"):
+            self._first_question_id[data["id"]] = data["questions"][0]["id"]
+        if self._result is not None and "poll_id" not in self._result.details:
+            self._result.record("poll_id", data.get("id"))
+            self._result.record("group_short_id", data.get("group_short_id"))
+            self._result.record("poll_short_id", data.get("short_id"))
 
-        Legacy `poll_type='suggestion'` translates to a ranked_choice question
-        with `suggestion_deadline_minutes` set (the new architecture treats
-        suggestion-collection as a phase of a ranked_choice question, not a
-        separate type). Default 60-minute suggestion window unless overridden.
-        """
-        # Inject report back-link into poll details if report URL is configured
+    # -- create --------------------------------------------------------------
+
+    def create_poll(self, title: str, poll_type: str, *,
+                    creator_name: str | None = None, group_id: str | None = None,
+                    **kwargs) -> dict:
+        """Create a single-question poll. `creator_name` defaults to this
+        Person's name. Pass `group_id` to add the poll to an existing group
+        (the new-architecture replacement for follow_up_to)."""
         if REPORT_URL and self._result and "details" not in kwargs:
             anchor = self._result.test_name
             kwargs["details"] = f"Test: {anchor}\n{REPORT_URL}#{anchor}"
-
-        if poll_type == "suggestion":
-            poll_type = "ranked_choice"
-            kwargs.setdefault("suggestion_deadline_minutes", 60)
-
         poll_fields = {k: kwargs.pop(k) for k in _POLL_FIELDS if k in kwargs}
         question = _question_payload(poll_type, **kwargs)
         payload = {
-            "creator_secret": creator_secret,
+            "creator_name": creator_name or self.name,
             "title": title,
             "questions": [question],
             **poll_fields,
         }
+        if group_id:
+            payload["group_id"] = group_id
         resp = self._request("POST", "/api/polls", 201, "Failed to create poll", json=payload)
         data = resp.json()
-        # Stash the first question's id so vote/get_results/etc. can find it.
-        if data.get("questions"):
-            self._first_question_id[data["id"]] = data["questions"][0]["id"]
-        # Record the first poll's ID for report linking
-        if self._result and "poll_id" not in self._result.details:
-            self._result.record("poll_id", data.get("id"))
+        self._record_poll(data)
         return data
 
-    def _question_id_for(self, poll_id: str) -> str:
-        """Resolve a poll_id to its first question's id, fetching if needed."""
-        if poll_id in self._first_question_id:
-            return self._first_question_id[poll_id]
-        poll = self.get_poll(poll_id)
-        qid = poll["questions"][0]["id"]
-        self._first_question_id[poll_id] = qid
-        return qid
+    def create_multi_poll(self, title: str | None, questions: list[dict], *,
+                          creator_name: str | None = None, group_id: str | None = None,
+                          **poll_fields) -> dict:
+        """Create a multi-question poll. `questions` is a list of dicts, each
+        `{"poll_type": ..., **question_fields}`. The whole poll votes and
+        closes atomically."""
+        if REPORT_URL and self._result and "details" not in poll_fields:
+            poll_fields["details"] = f"Test: {self._result.test_name}\n{REPORT_URL}#{self._result.test_name}"
+        q_payloads = [
+            _question_payload(q.pop("poll_type"), **q) for q in (dict(x) for x in questions)
+        ]
+        payload = {
+            "creator_name": creator_name or self.name,
+            "questions": q_payloads,
+            **{k: v for k, v in poll_fields.items() if k in _POLL_FIELDS or k in ("is_auto_title",)},
+        }
+        if title is not None:
+            payload["title"] = title
+        if group_id:
+            payload["group_id"] = group_id
+        resp = self._request("POST", "/api/polls", 201, "Failed to create multi poll", json=payload)
+        data = resp.json()
+        self._record_poll(data)
+        return data
 
-    def _submit(
-        self, poll_id: str, err_prefix: str, *,
-        vote_id: str | None = None, voter_name: str | None = None, **kwargs,
-    ) -> dict:
-        if kwargs.get("vote_type") == "suggestion":
-            kwargs["vote_type"] = "ranked_choice"
-        question_id = kwargs.pop("question_id", None) or self._question_id_for(poll_id)
-        item: dict = {"question_id": question_id}
+    # -- vote ----------------------------------------------------------------
+
+    def _question_id_for(self, poll_id: str, index: int = 0) -> str:
+        poll = self.get_poll(poll_id)
+        return poll["questions"][index]["id"]
+
+    def _build_item(self, poll_id: str, *, question_index=0, question_id=None,
+                    vote_id=None, **fields) -> dict:
+        if fields.get("vote_type") == "suggestion":
+            fields["vote_type"] = "ranked_choice"
+        qid = question_id or self._first_question_id.get(poll_id) or self._question_id_for(poll_id, question_index)
+        item: dict = {"question_id": qid}
         if vote_id is not None:
             item["vote_id"] = vote_id
         for k in _VOTE_ITEM_FIELDS:
-            if k in kwargs:
-                item[k] = kwargs.pop(k)
-        body: dict = {"items": [item]}
-        if voter_name is not None:
-            body["voter_name"] = voter_name
-        resp = self._request("POST", f"/api/polls/{poll_id}/votes", 201, err_prefix, json=body)
+            if k in fields:
+                item[k] = fields[k]
+        return item
+
+    def vote(self, poll_id: str, voter_name: str, *, question_index=0,
+             vote_id=None, expect=201, **fields) -> dict | httpx.Response:
+        """Cast (or edit, if vote_id) one question's ballot. `voter_name` is
+        required by the server. Pass `expect=400` to assert a rejection and
+        get the raw Response back."""
+        item = self._build_item(poll_id, question_index=question_index, vote_id=vote_id, **fields)
+        body: dict = {"voter_name": voter_name, "items": [item]}
+        resp = self._request("POST", f"/api/polls/{poll_id}/votes", expect, "Failed to vote", json=body)
+        if expect != 201:
+            return resp
         votes = resp.json()
         return votes[0] if isinstance(votes, list) and votes else votes
 
-    def vote(self, poll_id: str, voter_name: str | None = None, **kwargs) -> dict:
-        return self._submit(poll_id, "Failed to vote", voter_name=voter_name, **kwargs)
+    def vote_anonymous(self, poll_id: str, *, question_index=0, **fields) -> httpx.Response:
+        """Attempt a vote with NO name — the server rejects this (400). Returns
+        the raw Response so the test can assert the rejection."""
+        item = self._build_item(poll_id, question_index=question_index, **fields)
+        return self._request("POST", f"/api/polls/{poll_id}/votes", None, "Anon vote", json={"items": [item]})
 
-    def edit_vote(self, poll_id: str, vote_id: str, **kwargs) -> dict:
-        voter_name = kwargs.pop("voter_name", None)
-        return self._submit(poll_id, "Failed to edit vote", vote_id=vote_id, voter_name=voter_name, **kwargs)
+    def vote_batch(self, poll_id: str, voter_name: str, items: list[dict], expect=201):
+        """Submit ballots across several questions of one poll, atomically.
+        Each item is `{"question_index" or "question_id": ..., **fields}`."""
+        built = [
+            self._build_item(poll_id, **item) for item in (dict(x) for x in items)
+        ]
+        body = {"voter_name": voter_name, "items": built}
+        resp = self._request("POST", f"/api/polls/{poll_id}/votes", expect, "Failed batch vote", json=body)
+        return resp.json() if expect == 201 else resp
 
-    def close_poll(self, poll_id: str, creator_secret: str, reason: str = "manual") -> dict:
-        resp = self._request(
-            "POST", f"/api/polls/{poll_id}/close", 200, "Failed to close poll",
-            json={"creator_secret": creator_secret, "close_reason": reason},
-        )
-        return resp.json()
+    def edit_vote(self, poll_id: str, vote_id: str, voter_name: str, *, question_index=0, **fields):
+        return self.vote(poll_id, voter_name, question_index=question_index, vote_id=vote_id, **fields)
 
-    def reopen_poll(self, poll_id: str, creator_secret: str) -> dict:
-        resp = self._request(
-            "POST", f"/api/polls/{poll_id}/reopen", 200, "Failed to reopen poll",
-            json={"creator_secret": creator_secret},
-        )
-        return resp.json()
+    # -- admin (identity-authorized; only the creator's Person succeeds) -----
 
-    def cutoff_suggestions(self, poll_id: str, creator_secret: str) -> dict:
-        resp = self._request(
-            "POST", f"/api/polls/{poll_id}/cutoff-suggestions", 200, "Failed to cutoff suggestions",
-            json={"creator_secret": creator_secret},
-        )
-        return resp.json()
+    def close_poll(self, poll_id: str, reason: str = "manual", expect=200):
+        resp = self._request("POST", f"/api/polls/{poll_id}/close", expect,
+                             "Failed to close poll", json={"close_reason": reason})
+        return resp.json() if expect == 200 else resp
 
-    def get_results(self, poll_id: str) -> dict:
-        """Fetch the first question's results."""
-        qid = self._question_id_for(poll_id)
+    def reopen_poll(self, poll_id: str, expect=200):
+        resp = self._request("POST", f"/api/polls/{poll_id}/reopen", expect,
+                             "Failed to reopen poll", json={})
+        return resp.json() if expect == 200 else resp
+
+    def cutoff_suggestions(self, poll_id: str, expect=200):
+        resp = self._request("POST", f"/api/polls/{poll_id}/cutoff-suggestions", expect,
+                             "Failed to cutoff suggestions", json={})
+        return resp.json() if expect == 200 else resp
+
+    def cutoff_availability(self, poll_id: str, expect=200):
+        resp = self._request("POST", f"/api/polls/{poll_id}/cutoff-availability", expect,
+                             "Failed to cutoff availability", json={})
+        return resp.json() if expect == 200 else resp
+
+    def view_poll(self, poll_id: str):
+        """Record a 'viewed' watermark (opens the poll detail page)."""
+        return self._request("POST", f"/api/polls/{poll_id}/viewed", 204, "Failed to view poll")
+
+    # -- reads ---------------------------------------------------------------
+
+    def get_results(self, poll_id: str, question_index: int = 0) -> dict:
+        qid = self._first_question_id.get(poll_id) if question_index == 0 else None
+        qid = qid or self._question_id_for(poll_id, question_index)
         resp = self._request("GET", f"/api/questions/{qid}/results", 200, "Failed to get results")
         return resp.json()
 
@@ -217,17 +289,56 @@ class PollHelper:
         resp = self._request("GET", f"/api/polls/by-id/{poll_id}", 200, "Failed to get poll")
         return resp.json()
 
-    def get_votes(self, poll_id: str) -> list[dict]:
-        """Fetch the first question's votes."""
-        qid = self._question_id_for(poll_id)
+    def get_votes(self, poll_id: str, question_index: int = 0) -> list[dict]:
+        qid = self._first_question_id.get(poll_id) if question_index == 0 else None
+        qid = qid or self._question_id_for(poll_id, question_index)
         resp = self._request("GET", f"/api/questions/{qid}/votes", 200, "Failed to get votes")
         return resp.json()
 
+    def get_group(self, route_id: str, expect=200):
+        """Fetch the group's visible polls (membership-aware). 404 → no access."""
+        resp = self._request("GET", f"/api/groups/by-route-id/{route_id}", expect,
+                             "Failed to get group")
+        return resp.json() if expect == 200 else resp
+
+
+class World:
+    """A scenario's cast. `organizer` is the default actor; `person(name)`
+    mints additional people with their own device identities."""
+
+    def __init__(self, result):
+        self._result = result
+        self.organizer = Person(DEFAULT_ORGANIZER, result)
+        self._people = [self.organizer]
+
+    def person(self, name: str) -> Person:
+        p = Person(name, self._result)
+        self._people.append(p)
+        return p
+
+    def stranger(self) -> Person:
+        """An unrelated device — for unauthorized-action tests."""
+        p = Person("Stranger", self._result)
+        self._people.append(p)
+        return p
+
+    def close(self):
+        for p in self._people:
+            p.close()
+
+    # Delegate the common organizer operations so `api.create_poll(...)`,
+    # `api.vote(...)`, etc. read naturally for single-actor scenarios.
+    def __getattr__(self, item):
+        return getattr(self.organizer, item)
+
 
 @pytest.fixture
-def api(http_client, result):
-    """PollHelper instance for convenient API calls."""
-    return PollHelper(http_client, result)
+def api(result):
+    world = World(result)
+    try:
+        yield world
+    finally:
+        world.close()
 
 
 # ── Result collection for report generation ───────────────────────────────────
@@ -244,24 +355,21 @@ class SocialTestResult:
         self.docstring = ""
         self.technical_pass = True
         self.social_badge = "FAIR"  # FAIR | AWKWARD | INSIGHT
-        self.details = {}  # Arbitrary data for the report
-        self.assertions = []  # List of (description, passed, detail)
+        self.details = {}
+        self.assertions = []
         self.failure_message = ""
 
     def assert_technical(self, description: str, condition: bool, detail: str = ""):
-        """Record a technical assertion."""
         self.assertions.append((description, condition, detail))
         if not condition:
             self.technical_pass = False
 
     def mark_social(self, badge: str, note: str = ""):
-        """Set the social evaluation badge."""
         self.social_badge = badge
         if note:
             self.details["social_note"] = note
 
     def record(self, key: str, value):
-        """Store arbitrary data for report."""
         self.details[key] = value
 
     def to_dict(self) -> dict:
@@ -282,12 +390,10 @@ class SocialTestResult:
 
 @pytest.fixture
 def result(request):
-    """A SocialTestResult for the current test to populate."""
     r = SocialTestResult()
     r.test_name = request.node.name
     r.category = request.node.module.__name__.replace("test_", "").replace("_scenarios", "")
     raw_doc = request.node.function.__doc__ or ""
-    # First line is flush with """, rest is indented — dedent them separately
     first, _, rest = raw_doc.strip().partition("\n")
     r.docstring = (first + "\n" + textwrap.dedent(rest)).strip() if rest else first.strip()
     _test_results.append(r)
@@ -295,7 +401,6 @@ def result(request):
 
 
 def pytest_runtest_makereport(item, call):
-    """Capture failure info into the test's SocialTestResult."""
     if call.when == "call" and call.excinfo:
         for r in _test_results:
             if r.test_name == item.name:
@@ -305,7 +410,6 @@ def pytest_runtest_makereport(item, call):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """Write collected results to JSON for report generation."""
     output_path = os.environ.get("SOCIAL_TEST_RESULTS_PATH", "/tmp/social_test_results.json")
     results = [r.to_dict() for r in _test_results]
     with open(output_path, "w") as f:

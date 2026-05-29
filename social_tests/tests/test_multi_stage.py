@@ -1,268 +1,167 @@
-"""Multi-Stage Workflows — suggestion→preference pipelines and follow-ups.
+"""Multi-Stage Workflows — groups as the unit of an ongoing decision.
 
-These tests exercise the full lifecycle of multi-step polls where one
-poll's output feeds into another. This models real-world group decision
-processes that naturally have multiple phases.
+The old model chained polls via `follow_up_to` and supported forks; both are
+gone. Now related polls share a **group_id** (a flat list, sorted by
+creation). A follow-up is simply "another poll added to the same group." This
+models how a real group's decision-making accretes: brainstorm, then decide;
+tie, then add context and revote; one event spawns several questions over
+days.
 """
 
 
 class TestSuggestionThenRank:
-    """The classic 'brainstorm then vote' pattern."""
+    """The classic 'brainstorm, then vote' pattern — two polls in one group."""
 
-    def test_suggestion_to_ranked_choice_pipeline(self, api, creator_secret, result):
-        """Full pipeline: suggestions collected, then ranked.
+    def test_diverge_then_converge_in_one_group(self, api, result):
+        """Phase 1 collect suggestions, Phase 2 rank the top ones — same group.
 
-        SCENARIO: A team is picking a name for their project. Phase 1:
-        everyone suggests names (suggestion poll). Phase 2: the top
-        suggestions go to a ranked choice vote.
+        SCENARIO: A team names their project. Poll 1 (suggestion phase)
+        collects ideas. The organizer reads the top suggestions and creates
+        Poll 2 (ranked choice) on the shortlist, attached to the SAME group so
+        the two phases live together in the group's history.
 
-        This simulates the manual version of the pipeline (creator
-        creates the follow-up ranked choice poll themselves).
+        EXPECTATION: Both polls share one group_id; the group view returns
+        both; ranked choice produces a winner from the shortlist.
         """
-        # Phase 1: Collect suggestions
-        suggest_poll = api.create_poll(
-            "Suggest names for our project!", "suggestion", creator_secret,
-            creator_name="PM Pat",
+        suggest = api.create_poll("Suggest names for our project!", "suggestion", creator_name="PM Pat")
+
+        api.vote(suggest["id"], "Alice", vote_type="suggestion", suggestions=["Moonshot", "Catalyst"])
+        api.vote(suggest["id"], "Bob", vote_type="suggestion", suggestions=["Catalyst", "Zenith"])
+        api.vote(suggest["id"], "Carol", vote_type="suggestion", suggestions=["Moonshot", "Nova"])
+        api.vote(suggest["id"], "Dave", vote_type="suggestion", suggestions=["Catalyst", "Moonshot"])
+        api.vote(suggest["id"], "Erin", vote_type="suggestion", suggestions=["Zenith", "Moonshot"])
+
+        api.close_poll(suggest["id"])
+        suggest_results = api.get_results(suggest["id"])
+        top = [s["option"] for s in suggest_results["suggestion_counts"] if s["count"] >= 2]
+
+        # Phase 2: ranked choice on the shortlist, in the SAME group.
+        rank = api.create_poll(
+            "Vote on the project name!", "ranked_choice", creator_name="PM Pat",
+            options=top, group_id=suggest["group_id"],
         )
 
-        api.vote(suggest_poll["id"], voter_name="Alice", vote_type="suggestion",
-                 suggestions=["Moonshot", "Catalyst"])
-        api.vote(suggest_poll["id"], voter_name="Bob", vote_type="suggestion",
-                 suggestions=["Catalyst", "Zenith"])
-        api.vote(suggest_poll["id"], voter_name="Carol", vote_type="suggestion",
-                 suggestions=["Moonshot", "Nova"])
-        api.vote(suggest_poll["id"], voter_name="Dave", vote_type="suggestion",
-                 suggestions=["Catalyst", "Moonshot"])
-        api.vote(suggest_poll["id"], vote_type="suggestion",
-                 suggestions=["Zenith", "Moonshot"])
+        api.vote(rank["id"], "Alice", vote_type="ranked_choice", ranked_choices=["Moonshot", "Catalyst", "Zenith"])
+        api.vote(rank["id"], "Bob", vote_type="ranked_choice", ranked_choices=["Catalyst", "Zenith", "Moonshot"])
+        api.vote(rank["id"], "Carol", vote_type="ranked_choice", ranked_choices=["Moonshot", "Catalyst", "Zenith"])
+        api.vote(rank["id"], "Dave", vote_type="ranked_choice", ranked_choices=["Catalyst", "Moonshot", "Zenith"])
+        api.vote(rank["id"], "Erin", vote_type="ranked_choice", ranked_choices=["Moonshot", "Zenith", "Catalyst"])
 
-        api.close_poll(suggest_poll["id"], creator_secret)
-        suggest_results = api.get_results(suggest_poll["id"])
+        api.close_poll(rank["id"])
+        rank_results = api.get_results(rank["id"])
 
-        # Extract top suggestions
-        top_suggestions = [
-            s["option"] for s in suggest_results["suggestion_counts"]
-            if s["count"] >= 2
-        ]
+        group_polls = api.get_group(suggest["group_short_id"])
+        group_poll_ids = {p["id"] for p in group_polls}
 
-        result.record("suggestion_results", suggest_results)
-        result.record("top_suggestions", top_suggestions)
-
-        # Phase 2: Ranked choice on top suggestions
-        rank_secret = creator_secret + "-rank"
-        rank_poll = api.create_poll(
-            "Vote on project name!", "ranked_choice", rank_secret,
-            creator_name="PM Pat",
-            options=top_suggestions,
-            follow_up_to=suggest_poll["id"],
-        )
-
-        # Same voters rank their favorites
-        api.vote(rank_poll["id"], voter_name="Alice", vote_type="ranked_choice",
-                 ranked_choices=["Moonshot", "Catalyst", "Zenith"])
-        api.vote(rank_poll["id"], voter_name="Bob", vote_type="ranked_choice",
-                 ranked_choices=["Catalyst", "Zenith", "Moonshot"])
-        api.vote(rank_poll["id"], voter_name="Carol", vote_type="ranked_choice",
-                 ranked_choices=["Moonshot", "Catalyst", "Zenith"])
-        api.vote(rank_poll["id"], voter_name="Dave", vote_type="ranked_choice",
-                 ranked_choices=["Catalyst", "Moonshot", "Zenith"])
-        api.vote(rank_poll["id"], vote_type="ranked_choice",
-                 ranked_choices=["Moonshot", "Zenith", "Catalyst"])
-
-        api.close_poll(rank_poll["id"], rank_secret)
-        rank_results = api.get_results(rank_poll["id"])
-
+        result.record("top_suggestions", top)
         result.record("rank_results", rank_results)
-        result.assert_technical(
-            "Top suggestions carried forward",
-            "Moonshot" in top_suggestions and "Catalyst" in top_suggestions,
-        )
-        result.assert_technical("Ranked choice produced winner", rank_results["ranked_choice_winner"] is not None)
-        result.assert_technical(
-            "Follow-up link preserved",
-            rank_poll.get("follow_up_to") == suggest_poll["id"],
-        )
+        result.record("group_size", len(group_polls))
+        result.assert_technical("Top suggestions carried forward", "Moonshot" in top and "Catalyst" in top)
+        result.assert_technical("Both polls share one group", rank["group_id"] == suggest["group_id"])
+        result.assert_technical("Group view returns both polls", {suggest["id"], rank["id"]} <= group_poll_ids)
+        result.assert_technical("Ranked choice produced a winner", rank_results["ranked_choice_winner"] is not None)
         result.mark_social(
             "FAIR",
-            f"Two-phase process: brainstorm surfaced top ideas, ranked choice "
-            f"picked '{rank_results['ranked_choice_winner']}'. This mimics natural "
-            "group decision-making: diverge (suggest), then converge (rank).",
+            f"Diverge (suggest) then converge (rank), both preserved in one "
+            f"group → '{rank_results['ranked_choice_winner']}'. This is the "
+            "manual two-step. The app ALSO offers it in a single poll: a "
+            "ranked-choice question with a suggestion-collection phase that "
+            "auto-opens ranking at cutoff (see test_suggestion_collaboration) — "
+            "fewer taps, one shareable link.",
         )
 
-    def test_auto_preferences_workflow(self, api, creator_secret, result):
-        """Auto-preferences: suggestion poll automatically creates a follow-up ranked choice.
 
-        SCENARIO: Creator enables auto_create_preferences. When the
-        suggestion poll closes, the server automatically creates a
-        ranked choice poll with the suggestions as options.
+class TestFollowUps:
+    """Adding a follow-up poll to an existing group."""
 
-        EXPECTATION: The follow-up poll exists, is linked, and contains
-        the right options.
+    def test_follow_up_after_tie(self, api, result):
+        """A tie leads to a follow-up poll with more context, same group.
+
+        SCENARIO: A yes/no poll ties 3-3. The organizer adds a second poll to
+        the same group with budget context. Some people change their minds.
+
+        EXPECTATION: Both polls live in one group; the follow-up resolves.
         """
-        poll = api.create_poll(
-            "Suggest team activities!", "suggestion", creator_secret,
-            creator_name="Lead Lisa",
-            auto_create_preferences=True,
-            auto_preferences_deadline_minutes=60,
-        )
-
-        api.vote(poll["id"], voter_name="A", vote_type="suggestion",
-                 suggestions=["Bowling", "Escape Room"])
-        api.vote(poll["id"], voter_name="B", vote_type="suggestion",
-                 suggestions=["Escape Room", "Laser Tag"])
-        api.vote(poll["id"], voter_name="C", vote_type="suggestion",
-                 suggestions=["Bowling", "Mini Golf"])
-
-        api.close_poll(poll["id"], creator_secret)
-
-        # The server should have auto-created a follow-up ranked choice poll
-        # Check by looking for polls that follow_up_to this one
-        # We'll use the accessible endpoint with the original poll to find related
-        original = api.get_poll(poll["id"])
-        suggest_results = api.get_results(poll["id"])
-
-        result.record("original_poll", original)
-        result.record("suggest_results", suggest_results)
-        result.assert_technical("Suggestion poll is closed", original["is_closed"])
-
-        # Try to find the auto-created follow-up via the related polls endpoint
-        try:
-            related = api.get_related([poll["id"]])
-            follow_up_ids = [pid for pid in related.get("all_related_ids", []) if pid != poll["id"]]
-            result.record("follow_up_ids", follow_up_ids)
-
-            if follow_up_ids:
-                follow_up = api.get_poll(follow_up_ids[0])
-                result.record("follow_up_poll", follow_up)
-                result.assert_technical("Follow-up is ranked_choice", follow_up["poll_type"] == "ranked_choice")
-                result.assert_technical("Follow-up linked to original", follow_up.get("follow_up_to") == poll["id"])
-                result.assert_technical("Follow-up has options from suggestions",
-                                        follow_up.get("options") is not None and len(follow_up["options"]) > 0)
-                result.mark_social(
-                    "FAIR",
-                    "Auto-preferences seamlessly creates the second phase. Users don't "
-                    "need to manually extract suggestions and create a new poll — the "
-                    "workflow handles the transition automatically.",
-                )
-            else:
-                result.mark_social(
-                    "INSIGHT",
-                    "No follow-up poll found via related endpoint. The auto-creation may "
-                    "use a different linking mechanism or the related endpoint may not "
-                    "discover it. Worth investigating the discovery path.",
-                )
-        except Exception as e:
-            result.record("related_error", str(e))
-            result.mark_social("INSIGHT", f"Related polls endpoint error: {e}")
-
-
-class TestFollowUpChains:
-    """Testing chains of polls where each builds on the last."""
-
-    def test_fork_preserves_context(self, api, creator_secret, result):
-        """Fork: someone creates a variant of an existing poll.
-
-        SCENARIO: Original poll asks "Best pizza topping?" with options.
-        Someone forks it to ask "Best pizza topping for KIDS?" — same
-        concept, different audience.
-
-        EXPECTATION: Fork link is preserved. Both polls function independently.
-        """
-        original_secret = creator_secret + "-orig"
-        fork_secret = creator_secret + "-fork"
-
-        original = api.create_poll(
-            "Best pizza topping?", "ranked_choice", original_secret,
-            options=["Pepperoni", "Mushroom", "Pineapple", "Plain"],
-        )
-
-        fork = api.create_poll(
-            "Best pizza topping for KIDS?", "ranked_choice", fork_secret,
-            options=["Pepperoni", "Plain", "Mac & Cheese"],
-            fork_of=original["id"],
-        )
-
-        # Vote on both independently
-        api.vote(original["id"], voter_name="Adult A", vote_type="ranked_choice",
-                 ranked_choices=["Mushroom", "Pepperoni", "Pineapple", "Plain"])
-        api.vote(original["id"], voter_name="Adult B", vote_type="ranked_choice",
-                 ranked_choices=["Pineapple", "Mushroom", "Plain", "Pepperoni"])
-
-        api.vote(fork["id"], voter_name="Parent 1", vote_type="ranked_choice",
-                 ranked_choices=["Plain", "Pepperoni", "Mac & Cheese"])
-        api.vote(fork["id"], voter_name="Parent 2", vote_type="ranked_choice",
-                 ranked_choices=["Pepperoni", "Plain", "Mac & Cheese"])
-
-        api.close_poll(original["id"], original_secret)
-        api.close_poll(fork["id"], fork_secret)
-
-        orig_results = api.get_results(original["id"])
-        fork_results = api.get_results(fork["id"])
-
-        result.record("original_results", orig_results)
-        result.record("fork_results", fork_results)
-        result.assert_technical("Fork linked to original", fork.get("fork_of") == original["id"])
-        result.assert_technical("Both have winners",
-                                orig_results["ranked_choice_winner"] is not None and
-                                fork_results["ranked_choice_winner"] is not None)
-        result.assert_technical("Polls are independent (different option sets)",
-                                set(original.get("options", [])) != set(fork.get("options", [])))
-        result.mark_social(
-            "FAIR",
-            "Fork maintains provenance while allowing the new poll to diverge. "
-            "Different options, different voters, independent results — but the "
-            "link back to the original provides context for why this poll exists.",
-        )
-
-    def test_follow_up_after_tie(self, api, creator_secret, result):
-        """Follow-up: tie leads to a runoff with fewer options.
-
-        SCENARIO: A yes/no poll ties 3-3. The creator creates a follow-up
-        with more context to break the tie.
-
-        EXPECTATION: The follow-up is linked and can reference the tied result.
-        """
-        first_secret = creator_secret + "-1"
-        second_secret = creator_secret + "-2"
-
-        first_poll = api.create_poll("Team offsite this quarter?", "yes_no", first_secret)
+        first = api.create_poll("Team offsite this quarter?", "yes_no", creator_name="Org")
 
         for name in ["A", "B", "C"]:
-            api.vote(first_poll["id"], voter_name=name, vote_type="yes_no", yes_no_choice="yes")
+            api.vote(first["id"], name, vote_type="yes_no", yes_no_choice="yes")
         for name in ["D", "E", "F"]:
-            api.vote(first_poll["id"], voter_name=name, vote_type="yes_no", yes_no_choice="no")
+            api.vote(first["id"], name, vote_type="yes_no", yes_no_choice="no")
 
-        api.close_poll(first_poll["id"], first_secret)
-        first_results = api.get_results(first_poll["id"])
+        api.close_poll(first["id"])
+        first_results = api.get_results(first["id"])
 
-        # Creator creates follow-up with more detail
-        second_poll = api.create_poll(
-            "Team offsite: budget is $500/person, 2 days. Still interested?",
-            "yes_no", second_secret,
-            follow_up_to=first_poll["id"],
-            details="Previous vote tied 3-3. Adding budget context to help decide.",
+        second = api.create_poll(
+            "Offsite: $500/person, 2 days. Still in?", "yes_no", creator_name="Org",
+            group_id=first["group_id"],
+            details="Previous vote tied 3-3. Adding budget context to decide.",
         )
 
-        # Some people change their mind with new info
-        api.vote(second_poll["id"], voter_name="A", vote_type="yes_no", yes_no_choice="yes")
-        api.vote(second_poll["id"], voter_name="B", vote_type="yes_no", yes_no_choice="yes")
-        api.vote(second_poll["id"], voter_name="C", vote_type="yes_no", yes_no_choice="yes")  # Changed with budget context
-        api.vote(second_poll["id"], voter_name="D", vote_type="yes_no", yes_no_choice="yes")  # Changed with budget context
-        api.vote(second_poll["id"], voter_name="E", vote_type="yes_no", yes_no_choice="no")
-        api.vote(second_poll["id"], voter_name="F", vote_type="yes_no", yes_no_choice="no")
+        for name in ["A", "B", "C", "D"]:  # C and D swayed by the budget context
+            api.vote(second["id"], name, vote_type="yes_no", yes_no_choice="yes")
+        for name in ["E", "F"]:
+            api.vote(second["id"], name, vote_type="yes_no", yes_no_choice="no")
 
-        api.close_poll(second_poll["id"], second_secret)
-        second_results = api.get_results(second_poll["id"])
+        api.close_poll(second["id"])
+        second_results = api.get_results(second["id"])
+        group_polls = api.get_group(first["group_short_id"])
 
         result.record("first_results", first_results)
         result.record("second_results", second_results)
         result.assert_technical("First poll tied", first_results["winner"] == "tie")
-        result.assert_technical("Second poll has a winner", second_results["winner"] in ("yes", "no"))
-        result.assert_technical("Follow-up linked", second_poll.get("follow_up_to") == first_poll["id"])
+        result.assert_technical("Follow-up resolved", second_results["winner"] in ("yes", "no"))
+        result.assert_technical("Follow-up in same group", second["group_id"] == first["group_id"])
+        result.assert_technical("Group holds both polls", len(group_polls) >= 2)
         result.mark_social(
             "FAIR",
-            "Following up a tie with more context is a natural group behavior. "
-            "The link between polls preserves the decision history: 'We tied, "
-            "so we added more info and voted again.' Result: "
-            f"{second_results['winner']} ({second_results['yes_count']}-{second_results['no_count']}).",
+            "Following a tie with more context is natural group behavior. The "
+            "group preserves the history ('we tied, added budget info, "
+            f"revoted'). Result: {second_results['winner']} "
+            f"({second_results['yes_count']}-{second_results['no_count']}). The "
+            "decision narrative stays in one shareable place.",
+        )
+
+    def test_group_as_ongoing_conversation(self, api, result):
+        """A friend group accumulates several decisions in one group over time.
+
+        SCENARIO: One friend group uses a single group as their hub: where to
+        eat, what to watch, whether to make it a sleepover. Three polls, all in
+        the same group.
+
+        EXPECTATION: The group view returns all three; each is independently
+        resolvable. The group is the durable 'place' the friends return to.
+        """
+        eat = api.create_poll("Dinner this Friday?", "suggestion", creator_name="Riley")
+        api.vote(eat["id"], "Riley", vote_type="suggestion", suggestions=["Pho House", "Taqueria"])
+        api.vote(eat["id"], "Sky", vote_type="suggestion", suggestions=["Pho House"])
+
+        gid = eat["group_id"]
+        watch = api.create_poll(
+            "What to watch after?", "ranked_choice", creator_name="Riley",
+            options=["Comedy", "Thriller", "Documentary"], group_id=gid,
+        )
+        api.vote(watch["id"], "Riley", vote_type="ranked_choice", ranked_choices=["Comedy", "Thriller", "Documentary"])
+        api.vote(watch["id"], "Sky", vote_type="ranked_choice", ranked_choices=["Thriller", "Comedy", "Documentary"])
+
+        sleepover = api.create_poll("Make it a sleepover?", "yes_no", creator_name="Riley", group_id=gid)
+        api.vote(sleepover["id"], "Riley", vote_type="yes_no", yes_no_choice="yes")
+        api.vote(sleepover["id"], "Sky", vote_type="yes_no", yes_no_choice="yes")
+
+        group_polls = api.get_group(eat["group_short_id"])
+        ids = {p["id"] for p in group_polls}
+
+        result.record("group_size", len(group_polls))
+        result.assert_technical("All three polls share the group",
+                                watch["group_id"] == gid and sleepover["group_id"] == gid)
+        result.assert_technical("Group view returns all three",
+                                {eat["id"], watch["id"], sleepover["id"]} <= ids)
+        result.mark_social(
+            "INSIGHT",
+            "A group as a persistent hub for a friend circle's many small "
+            "decisions is one of the strongest real-life uses of this app — it "
+            "competes with the endless 'so where are we eating??' group chat. "
+            "Worth leaning into: a group title/avatar, notifications on new "
+            "polls, and an at-a-glance 'what's still open' view make the group "
+            "feel like a lightweight shared space, not a one-off poll.",
         )
