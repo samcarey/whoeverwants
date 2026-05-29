@@ -105,7 +105,9 @@ def make_client() -> httpx.Client:
     browser_id = str(uuid.uuid4())
     return httpx.Client(
         base_url=API_URL,
-        timeout=30.0,
+        # Generous: dev servers share one VM and a cold `next dev` route can be
+        # slow on first hit. 60s avoids spurious ReadTimeouts under load.
+        timeout=60.0,
         headers={"X-Browser-Id": browser_id},
     )
 
@@ -131,8 +133,16 @@ class Person:
 
     def _request(self, method, url, expected, err_prefix, **kwargs) -> httpx.Response:
         for attempt in range(MAX_RETRIES):
-            resp = self.client.request(method, url, **kwargs)
-            if resp.status_code == 429:
+            try:
+                resp = self.client.request(method, url, **kwargs)
+            except httpx.TransportError:
+                # Network blip / dev server mid-restart on the shared VM.
+                time.sleep(min(2 ** attempt, MAX_BACKOFF_SECONDS))
+                continue
+            # 429 = rate limited; 502/503/504 = dev server briefly unreachable
+            # under VM contention. Both are transient — back off and retry
+            # rather than recording a spurious failure in the report.
+            if resp.status_code in (429, 502, 503, 504):
                 time.sleep(min(2 ** attempt, MAX_BACKOFF_SECONDS))
                 continue
             if expected is not None:
@@ -162,6 +172,13 @@ class Person:
             kwargs["details"] = f"Test: {anchor}\n{REPORT_URL}#{anchor}"
         poll_fields = {k: kwargs.pop(k) for k in _POLL_FIELDS if k in kwargs}
         question = _question_payload(poll_type, **kwargs)
+        # A suggestion phase is only ACTIVE when the poll has a prephase
+        # deadline. The per-question suggestion_deadline_minutes signals "this
+        # question has a phase"; the poll-level prephase_deadline_minutes arms
+        # the clock. Inject it so the legacy `poll_type="suggestion"` shortcut
+        # produces a working suggestion phase.
+        if question.get("suggestion_deadline_minutes") and "prephase_deadline_minutes" not in poll_fields:
+            poll_fields["prephase_deadline_minutes"] = question["suggestion_deadline_minutes"]
         payload = {
             "creator_name": creator_name or self.name,
             "title": title,
@@ -186,10 +203,14 @@ class Person:
         q_payloads = [
             _question_payload(q.pop("poll_type"), **q) for q in (dict(x) for x in questions)
         ]
+        filtered_poll_fields = {k: v for k, v in poll_fields.items() if k in _POLL_FIELDS or k in ("is_auto_title",)}
+        phase_minutes = max((q.get("suggestion_deadline_minutes") or 0 for q in q_payloads), default=0)
+        if phase_minutes and "prephase_deadline_minutes" not in filtered_poll_fields:
+            filtered_poll_fields["prephase_deadline_minutes"] = phase_minutes
         payload = {
             "creator_name": creator_name or self.name,
             "questions": q_payloads,
-            **{k: v for k, v in poll_fields.items() if k in _POLL_FIELDS or k in ("is_auto_title",)},
+            **filtered_poll_fields,
         }
         if title is not None:
             payload["title"] = title
@@ -210,7 +231,10 @@ class Person:
                     vote_id=None, **fields) -> dict:
         if fields.get("vote_type") == "suggestion":
             fields["vote_type"] = "ranked_choice"
-        qid = question_id or self._first_question_id.get(poll_id) or self._question_id_for(poll_id, question_index)
+        # The cached id is only the FIRST question's — never reuse it for a
+        # non-zero index (that collapsed every batch item onto question 0).
+        cached = self._first_question_id.get(poll_id) if question_index == 0 else None
+        qid = question_id or cached or self._question_id_for(poll_id, question_index)
         item: dict = {"question_id": qid}
         if vote_id is not None:
             item["vote_id"] = vote_id
@@ -250,6 +274,30 @@ class Person:
 
     def edit_vote(self, poll_id: str, vote_id: str, voter_name: str, *, question_index=0, **fields):
         return self.vote(poll_id, voter_name, question_index=question_index, vote_id=vote_id, **fields)
+
+    # -- time-question phase helpers -----------------------------------------
+
+    def submit_availability(self, poll_id: str, voter_name: str, day: str,
+                            windows: list[dict], *, duration_hours: int = 1,
+                            question_index=0) -> dict:
+        """Phase 1 of a time poll: declare which windows on `day` you can make.
+        `windows` is a list of {"min": "HH:MM", "max": "HH:MM"}."""
+        return self.vote(
+            poll_id, voter_name, question_index=question_index, vote_type="time",
+            voter_day_time_windows=[{"day": day, "windows": windows}],
+            voter_duration={"minEnabled": True, "minValue": duration_hours,
+                            "maxEnabled": True, "maxValue": duration_hours},
+        )
+
+    def submit_preferences(self, poll_id: str, voter_name: str, *,
+                           liked: list[str] | None = None,
+                           disliked: list[str] | None = None,
+                           question_index=0) -> dict:
+        """Phase 2 of a time poll: like/dislike specific finalized slots."""
+        return self.vote(
+            poll_id, voter_name, question_index=question_index, vote_type="time",
+            liked_slots=liked or [], disliked_slots=disliked or [],
+        )
 
     # -- admin (identity-authorized; only the creator's Person succeeds) -----
 

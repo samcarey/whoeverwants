@@ -37,7 +37,9 @@ def run_tests(site_url: str | None = None) -> list[dict]:
 
     print("Running social tests...")
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short", "-x"],
+        # No -x: capture every test's result for the report even if one flakes
+        # (dev servers share a VM; an occasional timeout shouldn't truncate it).
+        [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short", "-p", "no:cacheprovider"],
         cwd=str(Path(__file__).parent),
         env=env,
         capture_output=True,

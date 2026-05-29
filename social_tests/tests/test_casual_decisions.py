@@ -221,7 +221,7 @@ class TestLunchBrainstorm:
         api.vote(poll["id"], "Priya", vote_type="suggestion", suggestions=["Thai Palace"])
         api.vote(poll["id"], "Alex", vote_type="suggestion", suggestions=["Thai Palace"])
         api.vote(poll["id"], "Kim", vote_type="suggestion", suggestions=["Burger Barn"])
-        api.vote(poll["id"], "Jordan", vote_type="suggestion", is_ranking_abstain=True)
+        api.vote(poll["id"], "Jordan", vote_type="suggestion", is_abstain=True)
 
         api.close_poll(poll["id"])
         results = api.get_results(poll["id"])
