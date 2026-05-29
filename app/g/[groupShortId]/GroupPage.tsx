@@ -1754,8 +1754,18 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       );
       const showDown = window.scrollY < maxScroll - 1;
       setScrollHelpers((prev) => {
-        const nextShowUp = isScrolling && !prev.showUp ? false : showUp;
-        const nextShowDown = isScrolling && !prev.showDown ? false : showDown;
+        // Suppress OFF→ON while the user is mid-scroll OR a back-nav scroll
+        // restore is replaying programmatic jumps. Without the restore guard,
+        // the transient pre-restore position (e.g. scrollY=0 with full content
+        // below) computes showDown=true and the down arrow flashes ON for the
+        // duration of the slide, then OFF once the restore lands at the bottom
+        // — the "down arrow appears then disappears" artifact. Keeping arrows
+        // in their current (initially OFF) state until the restore settles
+        // means a bottom-landing never shows the arrow at all; a mid-list
+        // landing surfaces it on the next settle re-eval.
+        const suppressOn = isScrolling || isScrollRestoring();
+        const nextShowUp = suppressOn && !prev.showUp ? false : showUp;
+        const nextShowDown = suppressOn && !prev.showDown ? false : showDown;
         currentShowUp = nextShowUp;
         currentShowDown = nextShowDown;
         return (
@@ -2227,7 +2237,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           buttons elevate above the slide overlay (z-70) while a
           group-kind overlay is mounted, so they don't get hidden by the
           overlay's opaque background during the slide. */}
-      {scrollHelperPortal && createPortal(
+      {!inOverlay && scrollHelperPortal && createPortal(
         <>
           {scrollHelpers.showUp && (
             <ScrollHelperButton
