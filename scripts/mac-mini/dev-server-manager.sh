@@ -55,8 +55,8 @@ DEV_IMAGE="whoeverwants-devserver:latest"
 
 REPO_URL="https://github.com/samcarey/whoeverwants.git"
 FRONTEND_PORT_START=3001
-FRONTEND_PORT_MAX=3010
-MAX_DEV_SERVERS=5
+FRONTEND_PORT_MAX=3015
+MAX_DEV_SERVERS=15
 
 # Slug length cap. A DNS label maxes out at 63 chars; we reserve plenty of
 # headroom for the `.dev.whoeverwants.com` suffix and for container/volume
