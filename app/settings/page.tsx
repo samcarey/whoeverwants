@@ -122,6 +122,8 @@ export default function SettingsPage() {
   const [platformAuthAvailable, setPlatformAuthAvailable] = useState<boolean | null>(null);
   const [passkeyRegisterInFlight, setPasskeyRegisterInFlight] = useState(false);
   const [passkeyDeletePending, setPasskeyDeletePending] = useState<string | null>(null);
+  // The passkey the user has tapped "Remove" on, awaiting confirmation.
+  const [passkeyToDelete, setPasskeyToDelete] = useState<PasskeySummary | null>(null);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
   // Name + reference location are read-only here (edited on /settings/edit).
@@ -452,7 +454,7 @@ export default function SettingsPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleDeletePasskey(p.credential_id)}
+                      onClick={() => setPasskeyToDelete(p)}
                       disabled={passkeyDeletePending === p.credential_id}
                       className="text-sm text-red-600 dark:text-red-400 hover:underline disabled:opacity-50 shrink-0"
                     >
@@ -651,6 +653,20 @@ export default function SettingsPage() {
           await handleSignOut();
         }}
         onCancel={() => setShowSignOutConfirm(false)}
+      />
+
+      <ConfirmationModal
+        isOpen={passkeyToDelete !== null}
+        title="Remove passkey?"
+        message={`Remove "${passkeyToDelete?.name || "Passkey"}"? You won't be able to sign in with it anymore.`}
+        confirmText="Remove"
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        onConfirm={() => {
+          const target = passkeyToDelete;
+          setPasskeyToDelete(null);
+          if (target) void handleDeletePasskey(target.credential_id);
+        }}
+        onCancel={() => setPasskeyToDelete(null)}
       />
 
       <SignInModal
