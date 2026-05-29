@@ -2196,7 +2196,7 @@ export function CreateQuestionContent() {
                       <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
                         Duration
                       </label>
-                      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+                      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-1.5">
                         <MinMaxCounter
                           minValue={durationMinValue}
                           maxValue={durationMaxValue}
