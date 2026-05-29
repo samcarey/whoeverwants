@@ -954,6 +954,12 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     }
 
     setVoteError(null);
+    // Time questions (availability + preferences phases) submit immediately,
+    // skipping the confirmation modal.
+    if (question.question_type === 'time') {
+      void submitVote();
+      return;
+    }
     setShowVoteConfirmModal(true);
   };
 
