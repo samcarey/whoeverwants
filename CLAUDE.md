@@ -1475,6 +1475,14 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
 - H: ~~per-vote anonymity~~ **NOT PLANNED.** Voters can already submit
   without a name (existing `voter_name` nullability); no per-vote on/off
   toggle is on the roadmap.
+- J: ~~SMS sign-in~~ **NOT PLANNED (future option).** It's the only
+  non-free auth channel (no free production-scale SMS API; ~$0.01–0.02/US
+  login + ~$3/mo + A2P 10DLC registration on the lowest-cost DIY
+  Plivo/Telnyx path) and adds little reach over email/OAuth/passkey. Full
+  cost analysis + a ready-to-pick-up DIY design (5th `user_identities`
+  provider, `sms_otp_tokens` table mirroring `magic_link_tokens`,
+  `services/sms.py` mirroring `services/email.py`) live in
+  `docs/auth-access-model.md` → "SMS sign-in (future option)".
 - I (account settings — **shipped**): linked-identities display +
   add-recovery-email + delete-account (migration 118). See "Phase I"
   below.
