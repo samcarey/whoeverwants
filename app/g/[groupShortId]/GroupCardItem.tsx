@@ -22,7 +22,6 @@ import * as React from "react";
 import { useCallback } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { Poll, Question, QuestionResults } from "@/lib/types";
-import type { ApiVote } from "@/lib/api";
 import type {
   UserYesNoVote,
 } from "@/lib/useGroupVoting";
@@ -53,12 +52,6 @@ export type GroupCardGroup = {
   subQuestions: Question[];
   anchor: Question;
 };
-
-// Stable filter: votes submitted during the suggestion phase (gave suggestions
-// or fully abstained from suggestions). Module-scope so VoterList doesn't
-// re-run its effect on every parent render.
-const suggestionPhaseRespondentFilter = (v: ApiVote) =>
-  !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
 
 /** Shared between row bottom-borders, the placeholder height-reservation
  *  div, and the top-of-list sentinel divider in GroupPage. Keep all three
@@ -339,28 +332,26 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
 
   // Bottom-right column: pill (centered) + respondent row (right-justified
   // against the rectangle's right edge). Both collapse cleanly when empty
-  // so the row doesn't reserve dead vertical space. Multi-question polls
-  // use the poll wrapper's aggregated voter list per the Addressability
-  // paradigm — never client-aggregated across sub-question fetches.
+  // so the row doesn't reserve dead vertical space. EVERY poll (single- and
+  // multi-question) uses the poll wrapper's aggregated voter list per the
+  // Addressability paradigm — never client-aggregated across sub-question
+  // fetches. Wrapper `voter_names` + `anonymous_count` arrive up front with
+  // `apiGetGroupByRouteId` (and survive in `accessiblePollsCache` for the
+  // drag-back backdrop), so the row paints on the first frame instead of
+  // skeleton→async-fetch, and it's part of the cards-wrapper that gets
+  // translated during overlay slides + swipe-back. Single-question polls
+  // previously used a live per-question `apiGetVotes` fetch (which loaded
+  // afterward); the wrapper aggregate equals the one question's voters, so
+  // static is equivalent and loads up front.
   const respondentRow: React.ReactNode = !isPlaceholder ? (
-    isMultiGroup ? (
-      <VoterList
-        singleLine
-        className="min-w-0 justify-end"
-        staticVoterNames={wrapper?.voter_names ?? []}
-        staticAnonymousCount={wrapper?.anonymous_count ?? 0}
-        emptyText="No voters"
-      />
-    ) : (
-      <VoterList
-        questionId={question.id}
-        singleLine
-        className="min-w-0 justify-end"
-        filter={inSuggestionPhase ? suggestionPhaseRespondentFilter : undefined}
-        emptyText={inSuggestionPhase ? "No suggestions yet" : "No voters"}
-        includeSelf={inSuggestionPhase}
-      />
-    )
+    <VoterList
+      singleLine
+      className="min-w-0 justify-end"
+      staticVoterNames={wrapper?.voter_names ?? []}
+      staticAnonymousCount={wrapper?.anonymous_count ?? 0}
+      emptyText={!isMultiGroup && inSuggestionPhase ? "No suggestions yet" : "No voters"}
+      includeSelf={!isMultiGroup && inSuggestionPhase}
+    />
   ) : null;
 
   // Edge-to-edge rectangle with a full-bleed `border-b` divider between
