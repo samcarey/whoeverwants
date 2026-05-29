@@ -124,6 +124,21 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
     let lastScrollY = window.scrollY;
     let lastDirection: "up" | "down" = "up";
     let rafId: number | null = null;
+    // The panel only HIDES in response to a genuine user gesture. Many
+    // scrolls on this page are programmatic and must never hide the bar:
+    // the back-nav scroll restore, Next.js' own back-scroll-restore, the
+    // group page's bottom-pin, and iOS scroll-anchoring as async content
+    // settles. All of those fire `scroll` events with no preceding
+    // pointer/wheel/keydown, so gating the hide on `userInteracted`
+    // guarantees the bar is still visible when the user lands back on a
+    // group page (and stays so until they actually scroll). Mirrors the
+    // `userInteractedRef` gate GroupContent uses for its scroll pins.
+    // pointerdown/wheel/keydown fire BEFORE the scroll they cause (capture
+    // phase), so the first real user scroll-down is attributed correctly.
+    let userInteracted = false;
+    const markInteracted = () => {
+      userInteracted = true;
+    };
 
     const evaluate = () => {
       rafId = null;
@@ -162,7 +177,10 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
         lastScrollY = currentY;
       }
 
-      const nextVisible = atTop || atBottom || lastDirection === "up";
+      // Hide only on a user-driven scroll-down; programmatic scrolls (which
+      // never set `userInteracted`) keep the bar visible.
+      const nextVisible =
+        atTop || atBottom || lastDirection === "up" || !userInteracted;
       setVisible((prev) => (prev === nextVisible ? prev : nextVisible));
     };
 
@@ -172,11 +190,17 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
     };
 
     window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("pointerdown", markInteracted, { passive: true, capture: true });
+    window.addEventListener("wheel", markInteracted, { passive: true, capture: true });
+    window.addEventListener("keydown", markInteracted, { passive: true, capture: true });
     // Initial eval — handles cases like back-nav landing scrolled.
     schedule();
 
     return () => {
       window.removeEventListener("scroll", schedule);
+      window.removeEventListener("pointerdown", markInteracted, { capture: true } as EventListenerOptions);
+      window.removeEventListener("wheel", markInteracted, { capture: true } as EventListenerOptions);
+      window.removeEventListener("keydown", markInteracted, { capture: true } as EventListenerOptions);
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, []);
