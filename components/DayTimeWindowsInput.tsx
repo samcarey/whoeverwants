@@ -464,7 +464,7 @@ export default function DayTimeWindowsInput({
         // the one-frame window before the reconcile effect runs) render as a
         // neutral non-interactive pill.
         <div className="flex-1 flex flex-col items-stretch">
-          {animRows.map((row) => {
+          {animRows.map((row, idx) => {
             const index = windows.indexOf(row.window);
             const isPresent = index >= 0;
             const duration = isPresent ? windowDurationMinutes(row.window) : 0;
@@ -480,7 +480,11 @@ export default function DayTimeWindowsInput({
                 phase={row.phase}
                 onLeaveDone={() => handleAnimLeaveDone(row.id)}
               >
-                <div className="pb-2 flex justify-end">
+                {/* Inter-row gap lives in `pt-2` INSIDE the clip (so it
+                    collapses with enter/leave) but is skipped on the first row
+                    so there's no static trailing/leading space against the
+                    day's hairline dividers. */}
+                <div className={`${idx > 0 ? 'pt-2' : ''} flex justify-end`}>
                   <div className="flex items-center gap-[7px]">
                     {showTrash ? renderDeleteButton(index) : null}
                     {isPresent ? (
