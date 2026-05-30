@@ -463,16 +463,19 @@ whoeverwants/
 │   └── setup.js                    # Vitest setup (dotenv, mocks)
 │
 ├── social_tests/                   # Social scenario testing framework
-│   ├── conftest.py                 # Fixtures, QuestionHelper, result collection
-│   ├── generate_report.py          # Test runner → MD → HTML → droplet deploy
-│   ├── testing_strategy.md         # Philosophy doc (embedded in report)
+│   ├── conftest.py                 # Person/World helpers (names required, identity auth, groups), result collection
+│   ├── generate_report.py          # Test runner → MD → HTML (runs vs a dev/canary server)
+│   ├── testing_strategy.md         # Philosophy + key findings/recommendations (embedded in report)
 │   ├── reports/                    # Generated reports (gitignored)
-│   └── tests/                      # Scenario test modules
-│       ├── test_casual_decisions.py    # Yes/no & suggestion questions
-│       ├── test_ranked_preferences.py  # Ranked choice / IRV scenarios
-│       ├── test_event_planning.py      # Multi-stage event planning scenarios
-│       ├── test_edge_cases.py          # Anonymity, editing, large groups
-│       └── test_multi_stage.py         # Multi-question workflows (follow-up)
+│   └── tests/                      # Scenario test modules (8 files, 36 scenarios)
+│       ├── test_casual_decisions.py        # Yes/no & suggestion basics; name-required model
+│       ├── test_ranked_preferences.py      # Ranked choice / IRV / Borda scenarios
+│       ├── test_edge_cases.py              # Vote editing, creator power, scale, identity-based authz
+│       ├── test_multi_stage.py             # Groups: diverge→converge, follow-up, group-as-hub
+│       ├── test_event_planning.py          # Multi-question polls (atomic batch, partial abstain)
+│       ├── test_time_coordination.py       # Two-phase scheduling, min-availability filter
+│       ├── test_suggestion_collaboration.py # Seed→collect→cutoff→rank in one poll
+│       └── test_identity_and_naming.py     # Name gate, pseudonymity, collisions, viewers, late joiner
 │
 ├── scripts/                        # Utility scripts
 │   ├── remote.sh                   # Execute commands on droplet
@@ -675,9 +678,16 @@ BENCH_URL=https://... npm run bench:nav  # Navigation performance benchmark
 npm run publish                # Full workflow: commit, merge, push, migrate
 
 # Social Tests (run from social_tests/ directory)
-# Runs scenario tests against a live API and generates an HTML report
-cd social_tests && uv run python generate_report.py  # Full pipeline: test → report → deploy
-cd social_tests && uv run python generate_report.py --skip-deploy  # Local report only
+# Runs scenario tests against a live API and generates an HTML report.
+# TARGET A PER-BRANCH DEV SERVER, NOT CANARY: the suite does ~200 POSTs, and
+# canary's 30 POST/min rate limit makes the full run time out under backoff.
+# A dev server has DISABLE_RATE_LIMIT=1. Set SOCIAL_TEST_API_URL to the dev
+# host (the in-container API is proxied at /api/* by the dev FE), e.g.:
+#   SOCIAL_TEST_API_URL=https://<branch-slug>.dev.whoeverwants.com uv run pytest tests/ -v
+# generate_report.py builds reports/social_test_report.{md,html}; deploy is a
+# no-op (the droplet /var/www/reports path isn't served) — use --skip-deploy and
+# serve the HTML from the dev container's public/ for a clickable URL.
+cd social_tests && uv run python generate_report.py --skip-deploy --site-url https://<slug>.dev.whoeverwants.com
 cd social_tests && uv run pytest tests/ -v           # Run tests without report
 
 # Python Server (run from server/ directory)
