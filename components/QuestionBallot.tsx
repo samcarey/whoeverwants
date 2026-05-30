@@ -1060,8 +1060,9 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
           setIsAbstaining(false);
         }
         setTimeout(async () => {
+          // loadExistingSuggestions refreshes questionResults from /results
+          // (suggestion_counts), so a separate fetchQuestionResults here is redundant.
           await loadExistingSuggestions();
-          await fetchQuestionResults();
         }, 500);
       }
 
@@ -1205,8 +1206,9 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
           setIsAbstaining(false);
         }
         setTimeout(async () => {
+          // loadExistingSuggestions refreshes questionResults from /results
+          // (suggestion_counts), so a separate fetchQuestionResults here is redundant.
           await loadExistingSuggestions();
-          await fetchQuestionResults();
         }, 500);
       }
       if (hasSuggestionPhase && capturedQuestionOptions.length > 0) {
