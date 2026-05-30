@@ -1508,37 +1508,50 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
   required to vote (`validate_user_name` 400s a blank `voter_name`), so
   "submit without a name" is no longer possible. True hidden-ballot voting
   is a separate, unbuilt consideration — see the BALLOT-PRIVACY TODO below.
-- **TODO — ballot privacy: store identity on every vote, but NEVER expose
-  another voter's ballot-with-identity via the API.** (Decision from the
-  social-test review, May 2026.) We DO want to keep storing identity
-  (`voter_name` + `browser_id` + resolved `user_id`) on each vote row —
-  it's needed for future aggregation/analytics. But the only cross-voter
-  data the API may return is **render-necessary aggregates**: result
-  counts / IRV rounds / slot winner, plus the participant **roster**
-  (names only, *decoupled* from choices), plus the **caller's own** vote.
-  The server computes results internally and returns only what the client
-  needs to draw the screen; raw "who voted what" must never cross the API
-  boundary for anyone but the voter themselves.
-  - **Current bug this fixes:** `GET /api/questions/{id}/votes`
-    (`server/routers/questions.py: get_votes`) returns *every* vote row
-    with `voter_name` AND its exact choice, with **no access control** —
-    it only checks the question exists. Since a question id is derivable
-    from any shared group/poll, one unauthenticated request reconstructs
-    the full who-voted-what map for every named voter of every poll.
-    The app's UI never shows this (VoterList renders names only;
-    per-question vote fetches elsewhere are scoped to the caller's own
-    `vote_id`), so the leak is "privacy by UI" only.
-  - **Work:** (a) restrict `get_votes` to the caller's own vote(s) —
-    resolve `actor_id_from_request` and filter, or replace it with a
-    dedicated "my vote" endpoint and drop the bulk one from the public
-    surface; (b) keep `PollResponse.voter_names` / results aggregates as
-    the sole cross-voter exposure (already name-decoupled); (c) audit
-    every other endpoint that could emit `voter_name` alongside choice
-    fields (`VoteResponse` consumers) and confirm none leak a non-caller's
-    pairing. Worth doing NOW independent of any hidden-ballot feature —
-    the leak applies to all existing polls. It's also the necessary
-    foundation for a future opt-in hidden ballot (which would additionally
-    withhold the name from the roster).
+- **Ballot privacy — SHIPPED. The API never returns another voter's
+  ballot-with-identity.** Identity is still stored on every vote row
+  (`voter_name` + `browser_id` + resolved `user_id`) for aggregation; the only
+  cross-voter data the API exposes is **render-necessary aggregates**: result
+  counts / IRV rounds / slot winner (`/results`), the participant **roster**
+  (names only, *decoupled* from choices, on `PollResponse.voter_names`), the
+  public suggestion brainstorm (`QuestionResultsResponse.suggestion_counts` —
+  option names + counts, no names), plus the **caller's own** vote. Raw
+  "who voted what" never crosses the API boundary for anyone but the voter.
+  - **The leak that was fixed:** `GET /api/questions/{id}/votes`
+    (`server/routers/questions.py: get_votes`) used to return *every* vote row
+    with `voter_name` AND its exact choice, with **no access control** — one
+    unauthenticated request reconstructed the full who-voted-what map for every
+    named voter (the app UI never showed it, so it was "privacy by UI" only).
+  - **What changed:** `get_votes` now returns ONLY the caller's own vote(s),
+    filtered by `votes.browser_id::text = ANY(caller_browser_ids(...))` — the
+    current browser + every browser linked to their signed-in account. Empty
+    when no identity resolves. Votes cast before migration 120 (NULL
+    `browser_id`) are omitted rather than leaked; the FE only ever needs its
+    own vote (it finds its locally-stored `vote_id` among the returned rows),
+    so this is exactly the set it consumes. `caller_browser_ids(conn, *,
+    browser_id, user_id)` is the shared identity-union primitive in
+    `services/auth.py` (lifted from push.py's `_caller_browser_ids`, which now
+    delegates to it) — the single source of truth for "this caller's own data"
+    across the badge count AND own-vote reads.
+  - **FE adaptations:** `CompactRankedChoiceResults` dropped its
+    `apiGetVotes` "all-abstained?" probe (it was dead — both branches set the
+    same empty visualization). `QuestionBallot.loadExistingSuggestions` now
+    derives the public suggestion list from `suggestion_counts` (via
+    `/results`) instead of raw vote rows — the name-decoupled aggregate that
+    `SuggestionVotingInterface` already preferred. `fetchVoteData`,
+    GroupPage/PollDetailPage own-vote prefetch, and the GroupList warm-cache
+    all already scoped to the caller's stored `vote_id`, so they're unchanged.
+  - **VoteResponse audit (the other emitter):** `POST /api/polls/{id}/votes`
+    returns only the caller's just-inserted/edited rows — no cross-voter
+    leak. `_edit_vote_on_question` edits by `vote_id` without a browser
+    ownership check, but vote UUIDs are no longer discoverable cross-voter
+    once `get_votes` is scoped, so it's a capability gated by possession; a
+    belt-and-suspenders browser-ownership gate on edit is a possible
+    follow-up but was left alone to avoid regressing legacy (pre-120,
+    NULL-browser_id) votes.
+  - This is the foundation for a future opt-in hidden ballot (which would
+    additionally withhold the name from the roster). Tests:
+    `server/tests/test_ballot_privacy.py`.
 - J: ~~SMS sign-in~~ **NOT PLANNED (future option).** It's the only
   non-free auth channel (no free production-scale SMS API; ~$0.01–0.02/US
   login + ~$3/mo + A2P 10DLC registration on the lowest-cost DIY

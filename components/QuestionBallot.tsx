@@ -438,45 +438,31 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     }
   }, [showPrelimResults, questionResults, fetchQuestionResults]);
 
-  // Load existing suggestions from other votes
-  const loadExistingSuggestions = async (excludeUserVote = false) => {
+  // Load the public list of every suggestion contributed so far.
+  //
+  // Ballot privacy: we read this from the aggregated `suggestion_counts` on
+  // `/results` (option names + counts, no per-voter pairing) rather than the
+  // raw vote rows — the votes endpoint no longer exposes other voters'
+  // ballots. The suggestion brainstorm is intentionally public (suggestions
+  // become the ranking options everyone shares), so the name-decoupled
+  // aggregate is the right source. Also refreshes `questionResults` so the
+  // seconding list + ranking options stay in sync.
+  const loadExistingSuggestions = async () => {
     try {
-      // Fetch all votes and filter for suggestion votes with suggestions
-      const allVotes = await apiGetVotes(question.id);
-      const votes = allVotes
-        .filter(v => v.suggestions && v.suggestions.length > 0 && !v.is_abstain)
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 100);
+      const results = await apiGetQuestionResults(question.id);
+      setQuestionResults(results);
 
       const allSuggestions = new Set<string>();
-      
-      // Add starting options from question creation
+      // Starting options from question creation.
       if (question.options && Array.isArray(question.options)) {
         question.options.forEach((option: string) => allSuggestions.add(option));
       }
-      
-      // For suggestion questions, to handle edited votes properly, we use only the latest vote
-      // If there are multiple voters in the future, this logic would need to be enhanced
-      // to track the latest vote per unique voter
-      
-      let validVotes = votes || [];
-      
-      // Skip user's vote if we're in edit mode
-      if (excludeUserVote && userVoteId) {
-        validVotes = votes?.filter(vote => vote.id !== userVoteId) || [];
-      }
-      
-      // Each vote record represents a unique voter's current suggestions
-      // When a voter edits their vote, their record is updated in place
-      // So we should aggregate all current suggestions from all voters
-      validVotes.forEach(vote => {
-        if (vote.suggestions && Array.isArray(vote.suggestions)) {
-          vote.suggestions.forEach((sug: string) => allSuggestions.add(sug));
-        }
+      // Every suggestion anyone has submitted (aggregated server-side).
+      (results.suggestion_counts ?? []).forEach((sc) => {
+        if (sc.option) allSuggestions.add(sc.option);
       });
 
-      const suggestionsArray = Array.from(allSuggestions);
-      setExistingSuggestions(suggestionsArray);
+      setExistingSuggestions(Array.from(allSuggestions));
     } catch (error) {
       console.error('Error loading suggestions:', error);
     }
@@ -1074,7 +1060,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
           setIsAbstaining(false);
         }
         setTimeout(async () => {
-          await loadExistingSuggestions(false);
+          await loadExistingSuggestions();
           await fetchQuestionResults();
         }, 500);
       }
@@ -1219,7 +1205,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
           setIsAbstaining(false);
         }
         setTimeout(async () => {
-          await loadExistingSuggestions(false);
+          await loadExistingSuggestions();
           await fetchQuestionResults();
         }, 500);
       }

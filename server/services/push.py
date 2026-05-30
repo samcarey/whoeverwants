@@ -44,7 +44,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from pywebpush import WebPushException, webpush
 
 from database import get_db
-from services.auth import resolve_actor_user_id
+from services.auth import caller_browser_ids
 from services.groups import NIL_UUID
 
 log = logging.getLogger("push")
@@ -302,25 +302,11 @@ def _badge_settings_for_browser(conn, browser_id: str) -> tuple[bool, bool, bool
 
 
 def _caller_browser_ids(conn, browser_id: str | None, user_id: str | None) -> list[str]:
-    """The set of browser_ids that count as "this caller" for badge purposes:
-    the current browser plus every browser linked to their resolved account.
-    Mirrors `load_user_visibility`'s union so the badge is account-aware —
-    membership, votes, and views on ANY of the user's devices all count, so
-    viewing/voting on one device clears the badge on the others.
-
-    The poll_views / votes / group_members rows stay browser-keyed (written
-    per-device); only the READ unions, exactly like group visibility."""
-    bids: set[str] = set()
-    if browser_id and browser_id != NIL_UUID:
-        bids.add(browser_id)
-    uid = resolve_actor_user_id(conn, user_id=user_id, browser_id=browser_id)
-    if uid:
-        rows = conn.execute(
-            "SELECT browser_id::text AS b FROM user_browsers WHERE user_id = %(u)s::uuid",
-            {"u": uid},
-        ).fetchall()
-        bids.update(r["b"] for r in rows)
-    return list(bids)
+    """Badge-side alias for the shared identity helper. The canonical
+    implementation lives in `services.auth.caller_browser_ids` so the
+    "caller's own data" union (badge counts AND the caller's own votes) has a
+    single source of truth."""
+    return caller_browser_ids(conn, browser_id=browser_id, user_id=user_id)
 
 
 def compute_badge_count(
