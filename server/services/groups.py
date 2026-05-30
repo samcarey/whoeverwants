@@ -346,6 +346,41 @@ def is_caller_member_of_group(
     return row is not None
 
 
+def resolve_group_for_visit(
+    conn,
+    route_id: str,
+    *,
+    browser_id: str | None,
+    user_id: str | None,
+) -> str | None:
+    """Shared read-boundary gate for the `/by-route-id/{route_id}` endpoints:
+    resolve `route_id` → group_id, enforce Phase E privacy, and auto-join
+    public-group visitors inline.
+
+    Returns the group_id on success. Returns None when the route doesn't
+    resolve OR the group is private and the caller isn't a member — callers
+    raise their own 404 with whatever detail fits ("Group not found" for the
+    whole-group read, "Poll not found" for the single-poll read). Keeping the
+    privacy gate + auto-join in one place is load-bearing: the single-poll
+    read and the whole-group read can't drift on who's allowed in, so a
+    private group can't become readable through one endpoint but not the
+    other.
+    """
+    group_id = resolve_group_id_from_route_id(conn, route_id)
+    if not group_id:
+        return None
+    meta = get_group_metadata(conn, group_id)
+    privacy = meta["privacy"] if meta else "public"
+    if privacy == "private":
+        if not is_caller_member_of_group(
+            conn, group_id, browser_id=browser_id, user_id=user_id
+        ):
+            return None
+    else:
+        grant_group_membership_inline(conn, group_id, browser_id, privacy=privacy)
+    return group_id
+
+
 def polls_for_poll_ids(
     conn,
     poll_ids: list[str],

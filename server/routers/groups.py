@@ -77,6 +77,7 @@ from services.groups import (
     load_user_visibility,
     poll_ids_for_group_ids,
     polls_for_poll_ids,
+    resolve_group_for_visit,
     resolve_group_id_from_route_id,
 )
 from services.push import fan_out_join_request, fan_out_member_added
@@ -444,24 +445,11 @@ def get_group_by_route_id(
     user_id = _user_id(request)
 
     with get_db() as conn:
-        group_id = resolve_group_id_from_route_id(conn, route_id)
+        group_id = resolve_group_for_visit(
+            conn, route_id, browser_id=browser_id, user_id=user_id
+        )
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-
-        meta = get_group_metadata(conn, group_id)
-        privacy = meta["privacy"] if meta else "public"
-
-        # Phase E: strangers don't auto-join private groups via URL and
-        # don't see any polls — 404 at the boundary instead.
-        if privacy == "private":
-            if not is_caller_member_of_group(
-                conn, group_id, browser_id=browser_id, user_id=user_id
-            ):
-                raise HTTPException(status_code=404, detail="Group not found")
-        else:
-            grant_group_membership_inline(
-                conn, group_id, browser_id, privacy=privacy
-            )
 
         visibility = load_user_visibility(conn, browser_id, user_id=user_id)
         group_pids = poll_ids_for_group_ids(conn, [group_id])
@@ -501,21 +489,11 @@ def get_group_poll(route_id: str, poll_ref: str, request: Request):
     user_id = _user_id(request)
 
     with get_db() as conn:
-        group_id = resolve_group_id_from_route_id(conn, route_id)
+        group_id = resolve_group_for_visit(
+            conn, route_id, browser_id=browser_id, user_id=user_id
+        )
         if not group_id:
             raise HTTPException(status_code=404, detail="Poll not found")
-
-        meta = get_group_metadata(conn, group_id)
-        privacy = meta["privacy"] if meta else "public"
-        if privacy == "private":
-            if not is_caller_member_of_group(
-                conn, group_id, browser_id=browser_id, user_id=user_id
-            ):
-                raise HTTPException(status_code=404, detail="Poll not found")
-        else:
-            grant_group_membership_inline(
-                conn, group_id, browser_id, privacy=privacy
-            )
 
         # Resolve the poll WITHIN this group (short_id, then uuid). Scoping
         # to group_id keeps a cross-group poll id from resolving here.

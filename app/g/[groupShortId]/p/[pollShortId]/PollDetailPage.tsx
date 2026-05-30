@@ -215,35 +215,27 @@ export function PollDetailView({ groupId, pollShortId, overlayCardsOffset }: Pol
 
   if (hiddenPreJoin && !poll) {
     return (
-      <SimpleFrame onBack={goBack}>
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Poll Closed</h2>
-        <p className="text-gray-600 dark:text-gray-400 mb-4">
-          {hiddenPreJoin.closedAt
+      <MessageFrame
+        onBack={goBack}
+        onBackToGroup={() => router.push(`/g/${groupId}`)}
+        heading="Poll Closed"
+        message={
+          hiddenPreJoin.closedAt
             ? `This poll closed ${relativeTime(hiddenPreJoin.closedAt)}, before you joined the group, so it's no longer available to view.`
-            : "This poll closed before you joined the group, so it's no longer available to view."}
-        </p>
-        <button
-          onClick={() => router.push(`/g/${groupId}`)}
-          className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-        >
-          Back to Group
-        </button>
-      </SimpleFrame>
+            : "This poll closed before you joined the group, so it's no longer available to view."
+        }
+      />
     );
   }
 
   if (error || !poll) {
     return (
-      <SimpleFrame onBack={goBack}>
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Poll Not Found</h2>
-        <p className="text-gray-600 dark:text-gray-400 mb-4">This poll may have been removed.</p>
-        <button
-          onClick={() => router.push(`/g/${groupId}`)}
-          className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-        >
-          Back to Group
-        </button>
-      </SimpleFrame>
+      <MessageFrame
+        onBack={goBack}
+        onBackToGroup={() => router.push(`/g/${groupId}`)}
+        heading="Poll Not Found"
+        message="This poll may have been removed."
+      />
     );
   }
 
@@ -269,6 +261,33 @@ function SimpleFrame({ onBack, children }: { onBack: () => void; children: React
         {children}
       </div>
     </>
+  );
+}
+
+/** Terminal "can't show the poll" frame (not-found / closed-before-join):
+ *  heading + message + a single "Back to Group" button. */
+function MessageFrame({
+  onBack,
+  onBackToGroup,
+  heading,
+  message,
+}: {
+  onBack: () => void;
+  onBackToGroup: () => void;
+  heading: string;
+  message: string;
+}) {
+  return (
+    <SimpleFrame onBack={onBack}>
+      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">{heading}</h2>
+      <p className="text-gray-600 dark:text-gray-400 mb-4">{message}</p>
+      <button
+        onClick={onBackToGroup}
+        className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+      >
+        Back to Group
+      </button>
+    </SimpleFrame>
   );
 }
 
