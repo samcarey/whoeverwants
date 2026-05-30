@@ -32,10 +32,7 @@ import { slideToNewGroup } from "@/lib/slideOverlay";
 import { rememberCurrentScroll, HOME_SCROLL_KEY } from "@/lib/scrollMemory";
 import { apiCreateGroup } from "@/lib/api";
 import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
-import {
-  SHOW_HOME_BACKDROP_EVENT,
-  HIDE_HOME_BACKDROP_EVENT,
-} from "@/lib/eventChannels";
+import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
 import { haptic } from "@/lib/haptics";
 import { getUserName } from "@/lib/userProfile";
 import { isValidUserName } from "@/lib/nameValidation";
@@ -49,19 +46,12 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
   const pathname = usePathname();
   const inFlight = useRef(false);
   const [mounted, setMounted] = useState(false);
-  const [swipeBackActive, setSwipeBackActive] = useState(false);
+  // Hide the FAB during a group→home swipe-back (shared listener hook).
+  const swipeBackActive = useHomeBackdropActive();
   const [nameModalOpen, setNameModalOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-    const onShow = () => setSwipeBackActive(true);
-    const onHide = () => setSwipeBackActive(false);
-    window.addEventListener(SHOW_HOME_BACKDROP_EVENT, onShow);
-    window.addEventListener(HIDE_HOME_BACKDROP_EVENT, onHide);
-    return () => {
-      window.removeEventListener(SHOW_HOME_BACKDROP_EVENT, onShow);
-      window.removeEventListener(HIDE_HOME_BACKDROP_EVENT, onHide);
-    };
   }, []);
 
   if (!mounted) return null;

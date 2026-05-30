@@ -33,14 +33,10 @@
  */
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 import BubbleBarPanel from "./BubbleBarPanel";
 import { useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { isGroupRootView } from "@/lib/questionId";
-import {
-  HIDE_HOME_BACKDROP_EVENT,
-  SHOW_HOME_BACKDROP_EVENT,
-} from "@/lib/eventChannels";
+import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
 
 export default function BubbleBarHost(): React.ReactElement | null {
   const pathname = usePathname();
@@ -49,17 +45,7 @@ export default function BubbleBarHost(): React.ReactElement | null {
   // still the current path (until the gesture commits), so isGroupRootView
   // would keep the bar on — floating it over the revealed home page. Track
   // the backdrop and hide the bar for the duration of that gesture.
-  const [homeBackdrop, setHomeBackdrop] = useState(false);
-  useEffect(() => {
-    const on = () => setHomeBackdrop(true);
-    const off = () => setHomeBackdrop(false);
-    window.addEventListener(SHOW_HOME_BACKDROP_EVENT, on);
-    window.addEventListener(HIDE_HOME_BACKDROP_EVENT, off);
-    return () => {
-      window.removeEventListener(SHOW_HOME_BACKDROP_EVENT, on);
-      window.removeEventListener(HIDE_HOME_BACKDROP_EVENT, off);
-    };
-  }, []);
+  const homeBackdrop = useHomeBackdropActive();
 
   // Withhold the bar entirely while a group-arrival slide is in flight, then
   // mount it once the slide overlay has unmounted (slideActive flips false on
