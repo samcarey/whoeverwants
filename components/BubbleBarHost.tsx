@@ -61,8 +61,19 @@ export default function BubbleBarHost(): React.ReactElement | null {
     };
   }, []);
 
+  // Withhold the bar entirely while a group-arrival slide is in flight, then
+  // mount it once the slide overlay has unmounted (slideActive flips false on
+  // the settled group route). BubbleBarPanel starts hidden and slides up on
+  // mount, so the sequence the user sees is: page transition plays with NO
+  // bar, then — once we're settled on the group page — the bar slides up from
+  // the bottom. This sidesteps the slide-seam doubling/flicker entirely
+  // (the bar is simply never present during the transition).
+  //
+  // On a direct group-page load (no slide) slideActive is already false, so
+  // the bar mounts and slides up immediately — matching "every time we load
+  // the group page, animate the bar sliding up".
   const onGroupRoute = isGroupRootView(pathname || "");
-  const show = (onGroupRoute || slideActive) && !homeBackdrop;
+  const show = onGroupRoute && !slideActive && !homeBackdrop;
   if (!show) return null;
-  return <BubbleBarPanel elevated={slideActive} />;
+  return <BubbleBarPanel />;
 }
