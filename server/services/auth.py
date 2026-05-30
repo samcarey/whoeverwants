@@ -323,6 +323,35 @@ def resolve_actor_user_id(
     return get_user_id_for_browser(conn, browser_id)
 
 
+def caller_browser_ids(conn, *, browser_id: str | None, user_id: str | None) -> list[str]:
+    """The set of browser_ids that count as "this caller": the current browser
+    plus every browser linked to their resolved account. Mirrors
+    `load_user_visibility`'s union so account-aware reads (badge counts, the
+    caller's own votes) span every device the user is signed in on — voting on
+    one device is visible to the same account on another.
+
+    The underlying rows (votes, poll_views, group_members) stay browser-keyed
+    (written per-device); only the READ unions, exactly like group visibility.
+    The nil UUID is never a legitimate identity (see BrowserIdMiddleware), so
+    it's excluded."""
+    # Local import keeps this low-level identity helper free of a top-level
+    # services.groups import (groups → questions); matches the cycle-avoidance
+    # pattern used elsewhere in services/*.
+    from services.groups import NIL_UUID
+
+    bids: set[str] = set()
+    if browser_id and browser_id != NIL_UUID:
+        bids.add(browser_id)
+    uid = resolve_actor_user_id(conn, user_id=user_id, browser_id=browser_id)
+    if uid:
+        rows = conn.execute(
+            "SELECT browser_id::text AS b FROM user_browsers WHERE user_id = %(u)s::uuid",
+            {"u": uid},
+        ).fetchall()
+        bids.update(r["b"] for r in rows)
+    return list(bids)
+
+
 def create_anonymous_user(
     conn, *, browser_id: str | None, display_name: str | None
 ) -> str:

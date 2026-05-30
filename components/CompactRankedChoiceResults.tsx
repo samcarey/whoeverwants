@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { QuestionResults, RankedChoiceRound, OptionsMetadata } from "@/lib/types";
-import { apiGetVotes, ApiRankedChoiceRound } from "@/lib/api";
+import { ApiRankedChoiceRound } from "@/lib/api";
 import { isPollDetailView } from "@/lib/questionId";
 import OptionLabel, { isLocationEntry, isRestaurantEntry } from "./OptionLabel";
 
@@ -64,22 +64,11 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
         // Get ranked choice rounds from the results object (populated by Python API)
         const apiRounds: ApiRankedChoiceRound[] = (results as any).ranked_choice_rounds || [];
 
-        // If no rounds data, check if all votes are abstains
+        // No rounds means no ranked ballots to visualize (no votes yet, or
+        // everyone abstained). The empty-state copy is the same either way, so
+        // there's nothing to disambiguate from the raw votes — and per the
+        // ballot-privacy model the API no longer exposes other voters' ballots.
         if (apiRounds.length === 0) {
-          try {
-            const allVotes = await apiGetVotes(results.question_id);
-            const rankedVotes = allVotes.filter(v => v.vote_type === 'ranked_choice');
-            const hasNonAbstainVotes = rankedVotes.some(vote => !vote.is_abstain && !vote.is_ranking_abstain);
-
-            if (!hasNonAbstainVotes && rankedVotes.length > 0) {
-              setRoundVisualizations([]);
-              setLoading(false);
-              return;
-            }
-          } catch (voteError) {
-            console.error('Error checking votes:', voteError);
-          }
-
           setRoundVisualizations([]);
           setLoading(false);
           return;

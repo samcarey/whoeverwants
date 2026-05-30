@@ -732,6 +732,7 @@ The user's saved display name (`lib/userProfile.ts: getUserName/saveUserName`, l
 - **`<SignInOptions mode="signin"|"link">` (`components/SignInOptions.tsx`) is the single shared provider-button block** (Google / Apple / passkey / email) behind `SignInModal`, `AccountGateModal`, `AddSignInOptionsModal`, and (via SignInModal) Settings — so every "auth surface" looks identical. `mode` only changes labels, the passkey button set, and the email endpoint; the OAuth handlers are byte-identical because the SERVER decides link-vs-switch from the bearer token (signed-in `/oauth/{provider}` ATTACHES the identity to the current account via `attach_oauth_identity`; anonymous creates/switches via `complete_sign_in`). `onComplete` fires only on SYNCHRONOUS success (OAuth/passkey) — email is async ("check your inbox" is its terminal inline state). Don't re-inline the buttons anywhere; extend this component.
 - **Providing a name creates a browser-tied account (migration 123 + 128).** `POST /api/auth/account/name` mints a `users` row (`display_name` set) + a device-bound `browser` identity (migration 128 — so `providers: ['browser']`, NOT empty; the invariant is "every account has ≥1 identity, no session without one"), links the browser, issues a session — OR, when already signed in, just sets the name on the existing account. The `browser` identity is a first-class-but-weak sign-in method (shows as "This browser" in Settings, `provider_user_id` is a random marker NOT the browser_id, resolution stays via `user_browsers`); `account_has_durable_identity` (`provider <> 'browser'`) is the "real account?" predicate. Existing `group_members` rows (browser-keyed) carry over for free. Because such an account can't be recovered if the device is lost, `users.recovery_reminder_dismissed` + the home-page banner nudge the user to add a DURABLE method (`hasRecoveryMethod` in `RecoveryReminderHost` counts only email/google/apple, never `browser`/passkey).
 - **A name is required for every account; sign-in completion enforces it (no nameless accounts).** A name is needed for any action beyond viewing public groups / generating link previews. A durable sign-in (OAuth / passkey / magic link) can land on a brand-new nameless account, so every interactive sign-in completion collects one: the shared `<NamePromptPanel>` (`components/NamePromptPanel.tsx`, name input + `apiCreateNameAccount`) is shown by `SignInModal` + `/auth/verify` when the resulting account is nameless, and is `AccountGateModal`'s always-visible "or just provide a name" path. `NamePromptPanel` focuses on mount only when passed `autoFocus` (SignInModal / verify, where it mounts only-when-needed); `AccountGateModal` passes `focusNonce` (bumped after a nameless sign-in) so the name field does NOT steal focus / pop the mobile keyboard when the gate first opens as a passive alternative to signing in.
+- **TODO — the home empty-state "Sign In" button offers NO name-only option on first open.** `app/page.tsx`'s Sign In button opens `<SignInModal>`, which renders `<SignInOptions mode="signin">` (Google / Apple / passkey / email provider buttons) and only shows the `<NamePromptPanel>` name field in its `needName` state — which is reached ONLY *after* a durable sign-in completes onto a nameless account (`handleSignInComplete`). So a brand-new user who just wants a name-only (recovery-less, browser-tied) account from the home button can't get one without first completing an OAuth/passkey/magic-link ceremony. By contrast, `<AccountGateModal>` (the action-gate at vote / create-poll / create-group) shows the name field as an always-visible "or just provide a name" alternative beneath the provider buttons. **Desired:** surface the same always-visible name-or-alias path in `SignInModal` (or route the home button through `AccountGateModal`), so name-only account creation is reachable directly from "Sign In". Decide whether `SignInModal` should host the name field unconditionally (like `AccountGateModal`) or whether the home empty-state should just open `AccountGateModal` with a generic message; the former keeps the two surfaces visually divergent on purpose (SignInModal = "sign in", gate = "we need an account"), the latter unifies them. Mind the `focusNonce` vs `autoFocus` distinction (the name field should NOT steal focus / pop the mobile keyboard when it's a passive alternative — see the name-required bullet above).
 - **`<RecoveryReminderHost>` (`components/RecoveryReminderHost.tsx`, mounted in `app/layout.tsx` outside ResponsiveScaling like CreateGroupButtonHost)** shows a bottom-left "Secure your account" banner on `/` when signed in AND the account has no email/Google/Apple identity (`hasRecoveryMethod`) AND `!recovery_reminder_dismissed`. Tapping opens `<AddSignInOptionsModal>` = `<SignInOptions mode="link">` (links a method to the current account; OAuth/passkey appear only when the tier+device support them — on dev with no OAuth config + no platform authenticator, only the email path shows) + a "Don't remind me again" toggle (`apiSetRecoveryReminderDismissed`). Adding a recovery identity hides the banner automatically (providers change); the toggle hides it without one. Settings opens the SAME `AddSignInOptionsModal` via the "Add a sign-in method" row (shown when signed in + no email identity) — it replaced the old bespoke inline recovery-email section.
   - **Pitfall: `addInitScript(() => localStorage.clear())` in a Playwright demo re-runs on EVERY navigation**, so it wipes a session created mid-flow on the next `goto`. A fresh `browser.newContext()` already starts anonymous — don't clear at all.
 - **No inline `<CompactNameField>` in ballots or the create-poll form.** Earlier iterations rendered "Your Name" inputs in the wrapper Submit sections of `app/g/[groupShortId]/p/[pollShortId]/page.tsx`, the create-poll modal bottom card, and each ballot's internal Submit (`QuestionBallot.tsx`, `RankingSection.tsx`, `QuestionBallot/TimeBallotSection.tsx`, `SuggestionVotingInterface.tsx`). They're all gone. Per-poll name overrides are not supported — your name is your name.
@@ -1508,37 +1509,50 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
   required to vote (`validate_user_name` 400s a blank `voter_name`), so
   "submit without a name" is no longer possible. True hidden-ballot voting
   is a separate, unbuilt consideration — see the BALLOT-PRIVACY TODO below.
-- **TODO — ballot privacy: store identity on every vote, but NEVER expose
-  another voter's ballot-with-identity via the API.** (Decision from the
-  social-test review, May 2026.) We DO want to keep storing identity
-  (`voter_name` + `browser_id` + resolved `user_id`) on each vote row —
-  it's needed for future aggregation/analytics. But the only cross-voter
-  data the API may return is **render-necessary aggregates**: result
-  counts / IRV rounds / slot winner, plus the participant **roster**
-  (names only, *decoupled* from choices), plus the **caller's own** vote.
-  The server computes results internally and returns only what the client
-  needs to draw the screen; raw "who voted what" must never cross the API
-  boundary for anyone but the voter themselves.
-  - **Current bug this fixes:** `GET /api/questions/{id}/votes`
-    (`server/routers/questions.py: get_votes`) returns *every* vote row
-    with `voter_name` AND its exact choice, with **no access control** —
-    it only checks the question exists. Since a question id is derivable
-    from any shared group/poll, one unauthenticated request reconstructs
-    the full who-voted-what map for every named voter of every poll.
-    The app's UI never shows this (VoterList renders names only;
-    per-question vote fetches elsewhere are scoped to the caller's own
-    `vote_id`), so the leak is "privacy by UI" only.
-  - **Work:** (a) restrict `get_votes` to the caller's own vote(s) —
-    resolve `actor_id_from_request` and filter, or replace it with a
-    dedicated "my vote" endpoint and drop the bulk one from the public
-    surface; (b) keep `PollResponse.voter_names` / results aggregates as
-    the sole cross-voter exposure (already name-decoupled); (c) audit
-    every other endpoint that could emit `voter_name` alongside choice
-    fields (`VoteResponse` consumers) and confirm none leak a non-caller's
-    pairing. Worth doing NOW independent of any hidden-ballot feature —
-    the leak applies to all existing polls. It's also the necessary
-    foundation for a future opt-in hidden ballot (which would additionally
-    withhold the name from the roster).
+- **Ballot privacy — SHIPPED. The API never returns another voter's
+  ballot-with-identity.** Identity is still stored on every vote row
+  (`voter_name` + `browser_id` + resolved `user_id`) for aggregation; the only
+  cross-voter data the API exposes is **render-necessary aggregates**: result
+  counts / IRV rounds / slot winner (`/results`), the participant **roster**
+  (names only, *decoupled* from choices, on `PollResponse.voter_names`), the
+  public suggestion brainstorm (`QuestionResultsResponse.suggestion_counts` —
+  option names + counts, no names), plus the **caller's own** vote. Raw
+  "who voted what" never crosses the API boundary for anyone but the voter.
+  - **The leak that was fixed:** `GET /api/questions/{id}/votes`
+    (`server/routers/questions.py: get_votes`) used to return *every* vote row
+    with `voter_name` AND its exact choice, with **no access control** — one
+    unauthenticated request reconstructed the full who-voted-what map for every
+    named voter (the app UI never showed it, so it was "privacy by UI" only).
+  - **What changed:** `get_votes` now returns ONLY the caller's own vote(s),
+    filtered by `votes.browser_id::text = ANY(caller_browser_ids(...))` — the
+    current browser + every browser linked to their signed-in account. Empty
+    when no identity resolves. Votes cast before migration 120 (NULL
+    `browser_id`) are omitted rather than leaked; the FE only ever needs its
+    own vote (it finds its locally-stored `vote_id` among the returned rows),
+    so this is exactly the set it consumes. `caller_browser_ids(conn, *,
+    browser_id, user_id)` is the shared identity-union primitive in
+    `services/auth.py` (lifted from push.py's `_caller_browser_ids`, which now
+    delegates to it) — the single source of truth for "this caller's own data"
+    across the badge count AND own-vote reads.
+  - **FE adaptations:** `CompactRankedChoiceResults` dropped its
+    `apiGetVotes` "all-abstained?" probe (it was dead — both branches set the
+    same empty visualization). `QuestionBallot.loadExistingSuggestions` now
+    derives the public suggestion list from `suggestion_counts` (via
+    `/results`) instead of raw vote rows — the name-decoupled aggregate that
+    `SuggestionVotingInterface` already preferred. `fetchVoteData`,
+    GroupPage/PollDetailPage own-vote prefetch, and the GroupList warm-cache
+    all already scoped to the caller's stored `vote_id`, so they're unchanged.
+  - **VoteResponse audit (the other emitter):** `POST /api/polls/{id}/votes`
+    returns only the caller's just-inserted/edited rows — no cross-voter
+    leak. `_edit_vote_on_question` edits by `vote_id` without a browser
+    ownership check, but vote UUIDs are no longer discoverable cross-voter
+    once `get_votes` is scoped, so it's a capability gated by possession; a
+    belt-and-suspenders browser-ownership gate on edit is a possible
+    follow-up but was left alone to avoid regressing legacy (pre-120,
+    NULL-browser_id) votes.
+  - This is the foundation for a future opt-in hidden ballot (which would
+    additionally withhold the name from the roster). Tests:
+    `server/tests/test_ballot_privacy.py`.
 - J: ~~SMS sign-in~~ **NOT PLANNED (future option).** It's the only
   non-free auth channel (no free production-scale SMS API; ~$0.01–0.02/US
   login + ~$3/mo + A2P 10DLC registration on the lowest-cost DIY

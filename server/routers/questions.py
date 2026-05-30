@@ -12,7 +12,7 @@ from middleware import (
     browser_id_from_request as _browser_id,
     user_id_from_request as _user_id,
 )
-from services.auth import resolve_actor_user_id
+from services.auth import caller_browser_ids, resolve_actor_user_id
 
 from database import get_db
 from models import (
@@ -129,11 +129,31 @@ def get_question(question_id: str):
 
 
 @router.get("/{question_id}/votes", response_model=list[VoteResponse])
-def get_votes(question_id: str):
-    """Get all votes for a question."""
+def get_votes(question_id: str, request: Request):
+    """Return ONLY the caller's own vote(s) on this question.
+
+    Ballot privacy (see the Auth & Access Model TODO in CLAUDE.md): a vote row
+    pairs an identity (`voter_name`) with a choice, so it must never cross the
+    API boundary for anyone but the voter who cast it. The render-necessary
+    cross-voter data lives elsewhere — aggregate results / IRV rounds / slot
+    winners come from `/results`, the participant roster (names decoupled from
+    choices) rides `PollResponse.voter_names`, and the public suggestion
+    brainstorm is exposed as `QuestionResultsResponse.suggestion_counts`.
+
+    "The caller's own" = any vote whose `browser_id` is in the caller's browser
+    set (current browser + every browser linked to their signed-in account, via
+    `caller_browser_ids`). The endpoint previously returned EVERY vote with its
+    `voter_name` and exact choice with no access control, reconstructing the
+    full who-voted-what map from a single unauthenticated request.
+
+    Votes cast before migration 120 (which added `votes.browser_id`) have a NULL
+    `browser_id` and so can't be attributed to a caller; they're omitted rather
+    than leaked. The FE only ever needs its own vote (it stores the vote_id in
+    localStorage and finds it among the returned rows), so this is exactly the
+    set it consumes."""
     require_uuid(question_id, "question_id")
     with get_db() as conn:
-        # Verify question exists
+        # Verify question exists (404 before any identity work).
         question = conn.execute(
             "SELECT id FROM questions WHERE id = %(question_id)s",
             {"question_id": question_id},
@@ -141,9 +161,21 @@ def get_votes(question_id: str):
         if not question:
             raise HTTPException(status_code=404, detail="Question not found")
 
+        bids = caller_browser_ids(
+            conn,
+            browser_id=_browser_id(request),
+            user_id=_user_id(request),
+        )
+        if not bids:
+            # No resolvable identity → the caller has no votes to see.
+            return []
+
         rows = conn.execute(
-            "SELECT * FROM votes WHERE question_id = %(question_id)s ORDER BY created_at",
-            {"question_id": question_id},
+            """SELECT * FROM votes
+               WHERE question_id = %(question_id)s
+                 AND browser_id::text = ANY(%(bids)s)
+               ORDER BY created_at""",
+            {"question_id": question_id, "bids": bids},
         ).fetchall()
     return [_row_to_vote(r) for r in rows]
 

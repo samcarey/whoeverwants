@@ -11,7 +11,7 @@ empty. See server/routers/polls.py: create_poll.
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from tests.conftest import create_poll, cutoff_poll
+from tests.conftest import create_poll, creator_headers, cutoff_poll
 
 
 def _bid():
@@ -41,8 +41,10 @@ def _create_suggestion_poll(client, initial=None, *, prephase=True, browser_id=N
     return create_poll(client, browser_id=bid, **kwargs)
 
 
-def _question_votes(client, question_id):
-    resp = client.get(f"/api/questions/{question_id}/votes")
+def _question_votes(client, question_id, *, headers=None):
+    # GET /votes is privacy-scoped to the caller's own votes, so reading the
+    # creator's seeded suggestion vote back needs the creator's browser header.
+    resp = client.get(f"/api/questions/{question_id}/votes", headers=headers or {})
     assert resp.status_code == 200, resp.text
     return resp.json()
 
@@ -56,7 +58,7 @@ class TestInitialSuggestions:
         assert question["options"] in (None, [])
         assert poll["prephase_deadline"] is not None
 
-        votes = _question_votes(client, question["id"])
+        votes = _question_votes(client, question["id"], headers=creator_headers(poll))
         assert len(votes) == 1
         vote = votes[0]
         assert vote["suggestions"] == ["Tacos", "Pizza"]

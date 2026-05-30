@@ -925,6 +925,9 @@ class TestPollUnifiedVoting:
     def test_edits_existing_votes_when_vote_id_set(self, client, creator_secret):
         multi = self._make_multi(client, creator_secret)
         sp_a, sp_b = multi["questions"]
+        # Pin the voter's browser so the privacy-scoped GET /votes can read
+        # back this voter's own rows (the endpoint only returns the caller's).
+        voter = str(uuid.uuid4())
         first = client.post(
             f"/api/polls/{multi['id']}/votes",
             json={
@@ -942,6 +945,7 @@ class TestPollUnifiedVoting:
                     },
                 ],
             },
+            headers={"X-Browser-Id": voter},
         ).json()
         vote_a, vote_b = first[0], first[1]
         # Same voter changes both votes from yes → no via vote_id.
@@ -964,18 +968,25 @@ class TestPollUnifiedVoting:
                     },
                 ],
             },
+            headers={"X-Browser-Id": voter},
         )
         assert resp.status_code == 201, resp.text
         rows = resp.json()
         assert all(r["yes_no_choice"] == "no" for r in rows)
         # Only one vote per question (the existing rows were updated, not appended).
         for sub in multi["questions"]:
-            votes = client.get(f"/api/questions/{sub['id']}/votes").json()
+            votes = client.get(
+                f"/api/questions/{sub['id']}/votes",
+                headers={"X-Browser-Id": voter},
+            ).json()
             assert len(votes) == 1
 
     def test_mixed_insert_and_update_in_one_request(self, client, creator_secret):
         multi = self._make_multi(client, creator_secret)
         sp_a, sp_b = multi["questions"]
+        # Pin the voter's browser across every insert + read so the
+        # privacy-scoped GET /votes returns this voter's own rows.
+        voter = str(uuid.uuid4())
         # Existing vote on A — seed via the poll batch endpoint.
         seed = client.post(
             f"/api/polls/{multi['id']}/votes",
@@ -989,6 +1000,7 @@ class TestPollUnifiedVoting:
                     }
                 ],
             },
+            headers={"X-Browser-Id": voter},
         ).json()
         existing_a = next(v for v in seed if v["question_id"] == sp_a["id"])
         # Now batch: edit A + insert B.
@@ -1010,12 +1022,17 @@ class TestPollUnifiedVoting:
                     },
                 ],
             },
+            headers={"X-Browser-Id": voter},
         )
         assert resp.status_code == 201, resp.text
-        votes_a = client.get(f"/api/questions/{sp_a['id']}/votes").json()
+        votes_a = client.get(
+            f"/api/questions/{sp_a['id']}/votes", headers={"X-Browser-Id": voter}
+        ).json()
         assert len(votes_a) == 1
         assert votes_a[0]["yes_no_choice"] == "no"  # was 'yes', edited
-        votes_b = client.get(f"/api/questions/{sp_b['id']}/votes").json()
+        votes_b = client.get(
+            f"/api/questions/{sp_b['id']}/votes", headers={"X-Browser-Id": voter}
+        ).json()
         assert len(votes_b) == 1
         assert votes_b[0]["yes_no_choice"] == "yes"
 
