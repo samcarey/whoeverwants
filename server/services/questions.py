@@ -611,6 +611,7 @@ def _compute_results(question, votes, *, include_tentative_time_options: bool = 
         # tiered ballot.
         rc_rounds = []
         rc_winner = None
+        rc_borda = None
         ranking_votes = [
             v for v in votes
             if v.get("ranked_choices") or v.get("ranked_choice_tiers")
@@ -618,6 +619,7 @@ def _compute_results(question, votes, *, include_tentative_time_options: bool = 
         if question_options and len(question_options) >= 2 and ranking_votes:
             result = calculate_ranked_choice_winner(ranking_votes, question_options)
             rc_winner = result.winner
+            rc_borda = result.borda_scores or None
 
             for round_idx, round_entries in enumerate(result.rounds):
                 for entry in round_entries:
@@ -641,6 +643,7 @@ def _compute_results(question, votes, *, include_tentative_time_options: bool = 
             winner=rc_winner,
             ranked_choice_winner=rc_winner,
             ranked_choice_rounds=rc_rounds if rc_rounds else None,
+            borda_scores=rc_borda,
             suggestion_counts=suggestion_counts_data,
         )
 

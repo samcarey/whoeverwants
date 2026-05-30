@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { QuestionResults, RankedChoiceRound, OptionsMetadata } from "@/lib/types";
 import { ApiRankedChoiceRound } from "@/lib/api";
 import { isPollDetailView } from "@/lib/questionId";
+import { rankedChoiceResultGloss } from "@/lib/rankedChoiceGloss";
 import OptionLabel, { isLocationEntry, isRestaurantEntry } from "./OptionLabel";
 
 interface CompactRankedChoiceResultsProps {
@@ -287,6 +288,26 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
   }
 
   if (roundVisualizations.length === 0) {
+    // Explicit terminal outcome for a suggestion poll that ended with zero
+    // suggestions, instead of the misleading "No Voters" / "All voters
+    // abstained" + empty options list. A suggestion poll always carries a
+    // (possibly empty) suggestion_counts array; a fixed-option ranked-choice
+    // poll has it undefined — so an empty array + no finalized options + closed
+    // uniquely identifies "expired with nothing to rank."
+    const isEmptySuggestionPoll =
+      isQuestionClosed &&
+      Array.isArray(results.suggestion_counts) &&
+      results.suggestion_counts.length === 0 &&
+      (!results.options || results.options.length === 0);
+    if (isEmptySuggestionPoll) {
+      return (
+        <div className="text-center">
+          <p className="text-gray-600 dark:text-gray-400">
+            No suggestions were added, so there was nothing to decide.
+          </p>
+        </div>
+      );
+    }
     const optionsList = results.options && results.options.length > 0 ? (
       <ul className="mt-3 space-y-1 text-left max-w-xs mx-auto">
         {results.options.map((opt) => (
@@ -316,9 +337,25 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
   }
 
   const currentRound = roundVisualizations[currentRoundIndex];
+  // Plain-language outcome explanation. Gated on isQuestionClosed so we never
+  // claim an option was "eliminated early" while preliminary results are still
+  // moving — it describes the final outcome, not an in-progress tally.
+  const gloss = isQuestionClosed ? rankedChoiceResultGloss(results) : null;
 
   return (
     <div className="relative">
+      {gloss && (
+        <div
+          className={
+            gloss.tone === "warn"
+              ? "mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border-l-4 border-amber-400 dark:border-amber-600 text-sm text-amber-800 dark:text-amber-200"
+              : "mb-4 px-1 text-xs text-gray-500 dark:text-gray-400 italic"
+          }
+        >
+          {gloss.text}
+        </div>
+      )}
+
       {/* Navigation buttons for desktop - only show if multiple rounds */}
       {roundVisualizations.length > 1 ? (
         <div className="flex justify-between items-center mb-4">
