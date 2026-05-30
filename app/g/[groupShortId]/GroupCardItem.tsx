@@ -361,6 +361,25 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     />
   ) : null;
 
+  // Turnout context: how many opened the poll vs how many responded, so a
+  // reader can tell "no consensus" from "no attention" — e.g. a closed 1-0
+  // result that 6 people actually saw. The respondent bubbles to the right
+  // show WHO responded; this muted "{V} seen · {M} voted" prefix supplies the
+  // denominator. Only shown when ≥2 people saw it AND there's a gap (some
+  // saw it without responding) — that filters out the trivial "just the
+  // viewer glanced at a fresh poll" case. Counts only; viewer identities
+  // never leave the API. See CLAUDE.md 'App-Icon Badge Model + Viewed
+  // Tracking' → turnout TODO.
+  const respondedCount =
+    (wrapper?.voter_names?.length ?? 0) + (wrapper?.anonymous_count ?? 0);
+  const seenCount = wrapper?.viewed_total ?? 0;
+  const turnoutEl: React.ReactNode =
+    !isPlaceholder && seenCount >= 2 && seenCount > respondedCount ? (
+      <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+        {seenCount} seen &middot; {respondedCount} voted
+      </span>
+    ) : null;
+
   // Edge-to-edge rectangle with a full-bleed `border-b` divider between
   // rows. The awaiting state surfaces as a left-edge amber bar (the old
   // rounded-card amber border doesn't translate to a row layout) so users
@@ -474,7 +493,8 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             </ClientOnly>
 
             <ClientOnly fallback={null}>
-              <div className="flex-1 min-w-0 flex justify-end">
+              <div className="flex-1 min-w-0 flex items-end justify-end gap-2">
+                {turnoutEl}
                 {respondentRow}
               </div>
             </ClientOnly>

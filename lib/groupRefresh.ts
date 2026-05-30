@@ -112,6 +112,7 @@ function isPollContentEqual(a: Poll, b: Poll): boolean {
   if (a.context !== b.context) return false;
   if (a.details !== b.details) return false;
   if (a.anonymous_count !== b.anonymous_count) return false;
+  if ((a.viewed_total ?? 0) !== (b.viewed_total ?? 0)) return false;
   if (a.updated_at !== b.updated_at) return false;
   if (a.creator_name !== b.creator_name) return false;
   if (!isStringArrayEqual(a.voter_names, b.voter_names)) return false;

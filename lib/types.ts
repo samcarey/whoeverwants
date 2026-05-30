@@ -217,4 +217,8 @@ export interface Poll {
   // voted/abstained. Optional for pre-feature cached polls. See CLAUDE.md
   // 'App-Icon Badge Model + Viewed Tracking'.
   viewed_ignored_count?: number;
+  // Turnout denominator: distinct viewers who opened the poll (account-collapsed
+  // so two devices of one signed-in viewer count once). Drives the "M of V seen"
+  // turnout line on the group card. Optional for pre-feature cached polls.
+  viewed_total?: number;
 }
