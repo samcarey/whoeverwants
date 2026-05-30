@@ -2138,6 +2138,46 @@ different FE origin, extend the allowlist.
 >     dedicated endpoint is the targeted realization of option (a)/(b) for the
 >     path-form-link architecture.
 >
+> **TODO — backdate `joined_at` to invite-SEND time for directly-invited
+> members (so they see polls that closed between invite and accept).** When
+> someone is invited to a group *directly* — via an invite link (Phase G), a
+> member-add (migration 126 `add_member_for_user`), or a join-request approval
+> (Phase F `decide_request`) — the `joined_at` watermark that drives the
+> closed-before-join filter should be the time the INVITATION WAS SENT, not the
+> time the recipient finally redeems / opens / is approved. Today every
+> membership-write site uses the `group_members.joined_at` default of `NOW()`
+> (redeem time / approve time / add time), so a poll that closed in the gap
+> between "invite sent" and "invite accepted" is hidden from the invitee —
+> wrong, since the inviter meant to share the whole group as it stood when they
+> reached out. Desired: the invitee can see polls that closed AFTER the invite
+> was sent even if they don't open/accept until later.
+>   * **Plain group-URL share is UNCHANGED:** when someone pastes a bare
+>     `/g/<id>` link and the recipient auto-joins on visit
+>     (`grant_group_membership_inline`), `joined_at = visit time` stays correct
+>     — there's no "send" event distinct from the visit, and an open invitation
+>     to anyone-with-the-URL shouldn't retroactively expose polls closed before
+>     they ever arrived. Only the *targeted* invite flows get the backdate.
+>   * **Per-flow send-time source:** invite link → `group_invites.created_at`
+>     (the moment the creator minted the link; thread it into `redeem_invite`'s
+>     membership INSERT). Member-add → effectively already correct (the add is
+>     instantaneous, so add time ≈ send time) — but if a future "invite, accept
+>     later" variant lands, record the add/send time. Join-request approval is
+>     the ambiguous one: the "invitation" is the creator's approval, so approve
+>     time is arguably right; OR, if we want the requester to see what existed
+>     when they asked, use the request's `requested_at`. Decide per-flow.
+>   * **Implementation caution:** the membership INSERTs all use
+>     `ON CONFLICT (group_id, browser_id) DO NOTHING` to PRESERVE the earliest
+>     `joined_at` across re-visits (load-bearing — advancing it would un-hide
+>     newly-closed polls). Backdating means passing an explicit older
+>     `joined_at` on the INSERT. Two wrinkles: (a) the conflict path must not
+>     overwrite an already-EARLIER watermark (a plain-URL visit that predates
+>     the invite should win — use `DO UPDATE SET joined_at = LEAST(group_members.joined_at, EXCLUDED.joined_at)`
+>     rather than DO NOTHING for the invite path); (b) `load_user_visibility`
+>     already takes `MIN(joined_at)` across linked browsers, so backdating one
+>     browser's row correctly makes the user's effective join the earliest.
+>     Backend-only change to the membership-write sites + the visibility
+>     watermark; no FE work and no new endpoint.
+>
 > `/by-route-id/{id}` only 404s when route resolution itself fails. An
 > empty visible-polls list returns 200 with `[]` so the group page can
 > still render its chrome (header + tappable title to /info + the
