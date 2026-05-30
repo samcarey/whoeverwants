@@ -199,8 +199,13 @@ const BubbleBarPanel = forwardRef<HTMLDivElement, Record<string, never>>((_props
     window.addEventListener("pointerdown", markInteracted, { passive: true, capture: true });
     window.addEventListener("wheel", markInteracted, { passive: true, capture: true });
     window.addEventListener("keydown", markInteracted, { passive: true, capture: true });
-    // Initial eval — handles cases like back-nav landing scrolled.
-    schedule();
+    // NOTE: no initial schedule() here. The entrance effect below owns the
+    // initial reveal (a double-rAF slide-up). Calling schedule() here would
+    // set visible=true on a SINGLE rAF, which batches with the mount commit
+    // and skips the enter transition (the panel would pop in instead of
+    // sliding up). Scroll-restore / bottom-pin still drive evaluate() via the
+    // scroll events they fire, so the isScrollRestoring() force-visible path
+    // is unaffected.
 
     return () => {
       window.removeEventListener("scroll", schedule);
@@ -208,6 +213,23 @@ const BubbleBarPanel = forwardRef<HTMLDivElement, Record<string, never>>((_props
       window.removeEventListener("wheel", markInteracted, { capture: true } as EventListenerOptions);
       window.removeEventListener("keydown", markInteracted, { capture: true } as EventListenerOptions);
       if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, []);
+
+  // Slide-up entrance. Flip visible=true only after the hidden
+  // (translateY(100%)) mount frame has painted, so the transition actually
+  // animates. A double rAF is load-bearing: a single rAF can land in the
+  // same paint pass as the mount commit, so the browser never sees the
+  // hidden frame and optimizes the transition away (the panel pops in). Same
+  // double-rAF lesson as the slide overlay's enter→shown handoff.
+  useEffect(() => {
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setVisible(true));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      if (inner) cancelAnimationFrame(inner);
     };
   }, []);
 
