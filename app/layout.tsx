@@ -11,6 +11,7 @@ import GroupBackdropHost from "@/components/GroupBackdropHost";
 import CreateGroupButtonHost from "@/components/CreateGroupButtonHost";
 import RecoveryReminderHost from "@/components/RecoveryReminderHost";
 import { PersistentCreatePollHost } from "@/components/PersistentCreatePollHost";
+import BubbleBarHost from "@/components/BubbleBarHost";
 import { UniversalLinksHandler } from "@/components/UniversalLinksHandler";
 import { ClipboardLinkPrompt } from "@/components/ClipboardLinkPrompt";
 import { PushAutoRegister } from "@/components/PushAutoRegister";
@@ -158,6 +159,14 @@ export default function RootLayout({
             cause the bubble bar's portal target to be briefly cleared
             (visible as "buttons blink after slide"). */}
         <PersistentCreatePollHost />
+
+        {/* Bubble bar chrome + #draft-poll-portal target. Mounted at layout
+            level (single instance) so it appears the instant a group-kind
+            slide starts — independent of the heavy GroupContent commit,
+            which can take 1–3.5s on the dev server — and can never be
+            rendered twice (the doubling that caused the slide-seam flicker).
+            See components/BubbleBarHost.tsx. */}
+        <BubbleBarHost />
 
         {/* iOS Universal Links — converts an `appUrlOpen` event from the
             Capacitor shell into a Next.js client-side navigation. Inert

@@ -71,13 +71,11 @@ export const PANEL_OFFSET_VAR = "--bubble-bar-panel-offset";
  * `you've reached the end, here's how to keep going` case; showing on
  * scroll-up is the iOS-style "I want chrome back" gesture.
  *
- * Initial state is visible. Mounted by `GroupContent` and `EmptyPlaceholder`
- * as a sibling of the swipe wrapper (NOT a child): the panel is
- * `position: fixed`, and any transformed ancestor would re-anchor it to
- * that ancestor's containing block — pushing it far below the viewport on
- * tall pages during a back-swipe. Both the slide overlay's copy of
- * GroupContent and the real route's copy render their own BubbleBarPanel
- * — same dual-portal pattern the bubble bar already relies on.
+ * Initial state is HIDDEN — the panel slides up from the bottom on mount
+ * (see the `visible` useState comment). Mounted ONCE at the layout level by
+ * `BubbleBarHost`, which defers mounting until any group-arrival slide has
+ * completed, so the bar is never present during a page transition (no
+ * slide-seam doubling) and instead animates up onto the settled group page.
  *
  * **Two-layer structure**: outer `shell` div is the swipe-back transform
  * target (position-fixed, no visuals); inner `panel` div carries the
@@ -88,8 +86,16 @@ export const PANEL_OFFSET_VAR = "--bubble-bar-panel-offset";
  * other. The forwarded ref points at the shell so callers can register
  * it as an extra swipe target.
  */
-const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) => {
-  const [visible, setVisible] = useState(true);
+const BubbleBarPanel = forwardRef<HTMLDivElement, Record<string, never>>((_props, forwardedShellRef) => {
+  // Start HIDDEN (translated fully off the bottom) and slide up on mount.
+  // The scroll-visibility effect below calls schedule() once at the end of
+  // its setup, which runs AFTER the first paint (useEffect) — so the
+  // translateY(100%) frame paints first, then the rAF'd evaluate() sets
+  // visible=true (lastDirection starts "up", so nextVisible is always true
+  // on that initial eval), and the panel transitions up. Net effect: every
+  // time the bar mounts (which BubbleBarHost defers until AFTER any
+  // group-arrival slide completes) it animates up from the bottom edge.
+  const [visible, setVisible] = useState(false);
   // Bumped on every `visualViewport.resize` so `useMeasuredHeight`'s
   // ResizeObserver re-attaches and re-reads `offsetHeight`. iOS browsers
   // resolve `env(safe-area-inset-bottom)` differently depending on URL
@@ -124,18 +130,41 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
     let lastScrollY = window.scrollY;
     let lastDirection: "up" | "down" = "up";
     let rafId: number | null = null;
+    // The panel only HIDES in response to a genuine user gesture. Many
+    // scrolls on this page are programmatic and must never hide the bar:
+    // the back-nav scroll restore, Next.js' own back-scroll-restore, the
+    // group page's bottom-pin, and iOS scroll-anchoring as async content
+    // settles. All of those fire `scroll` events with no preceding
+    // pointer/wheel/keydown, so gating the hide on `userInteracted`
+    // guarantees the bar is still visible when the user lands back on a
+    // group page (and stays so until they actually scroll). Mirrors the
+    // `userInteractedRef` gate GroupContent uses for its scroll pins.
+    // pointerdown/wheel/keydown fire BEFORE the scroll they cause (capture
+    // phase), so the first real user scroll-down is attributed correctly.
+    let userInteracted = false;
+    const markInteracted = () => {
+      userInteracted = true;
+    };
 
     const evaluate = () => {
       rafId = null;
       const currentY = window.scrollY;
       // A back-nav scroll restore is replaying programmatic scroll jumps
-      // (often 0 → a mid-list offset). Don't read those as the user scrolling
-      // down — that would hide the bar at the restored position. Sync
-      // lastScrollY so the first real post-restore scroll computes a correct
-      // delta, and leave visibility untouched (the fresh-mounted panel starts
-      // visible, which is what we want after a back-nav).
+      // (often 0 → a mid-list offset, plus Next.js' own back-scroll-restore).
+      // Don't read those as the user scrolling down — that would hide the bar
+      // at the restored position. FORCE the bar visible (not just skip): a
+      // downward restore jump can land on an instance whose `visible` is
+      // already false (e.g. the slide-overlay's bar that registered the jump
+      // before the real route set the restore flag, or the user having
+      // scrolled down to hide the bar before tapping the poll they're now
+      // returning from). Forcing guarantees the bar is shown the moment we
+      // land back on the group page. Sync lastScrollY too so the first real
+      // post-restore scroll computes a correct delta. lastDirection stays
+      // "up" so normal hide-on-scroll-down resumes cleanly once the restore
+      // window ends.
       if (isScrollRestoring()) {
         lastScrollY = currentY;
+        setVisible((prev) => (prev ? prev : true));
         return;
       }
       const maxScroll = Math.max(
@@ -154,7 +183,10 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
         lastScrollY = currentY;
       }
 
-      const nextVisible = atTop || atBottom || lastDirection === "up";
+      // Hide only on a user-driven scroll-down; programmatic scrolls (which
+      // never set `userInteracted`) keep the bar visible.
+      const nextVisible =
+        atTop || atBottom || lastDirection === "up" || !userInteracted;
       setVisible((prev) => (prev === nextVisible ? prev : nextVisible));
     };
 
@@ -164,12 +196,40 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
     };
 
     window.addEventListener("scroll", schedule, { passive: true });
-    // Initial eval — handles cases like back-nav landing scrolled.
-    schedule();
+    window.addEventListener("pointerdown", markInteracted, { passive: true, capture: true });
+    window.addEventListener("wheel", markInteracted, { passive: true, capture: true });
+    window.addEventListener("keydown", markInteracted, { passive: true, capture: true });
+    // NOTE: no initial schedule() here. The entrance effect below owns the
+    // initial reveal (a double-rAF slide-up). Calling schedule() here would
+    // set visible=true on a SINGLE rAF, which batches with the mount commit
+    // and skips the enter transition (the panel would pop in instead of
+    // sliding up). Scroll-restore / bottom-pin still drive evaluate() via the
+    // scroll events they fire, so the isScrollRestoring() force-visible path
+    // is unaffected.
 
     return () => {
       window.removeEventListener("scroll", schedule);
+      window.removeEventListener("pointerdown", markInteracted, { capture: true } as EventListenerOptions);
+      window.removeEventListener("wheel", markInteracted, { capture: true } as EventListenerOptions);
+      window.removeEventListener("keydown", markInteracted, { capture: true } as EventListenerOptions);
       if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, []);
+
+  // Slide-up entrance. Flip visible=true only after the hidden
+  // (translateY(100%)) mount frame has painted, so the transition actually
+  // animates. A double rAF is load-bearing: a single rAF can land in the
+  // same paint pass as the mount commit, so the browser never sees the
+  // hidden frame and optimizes the transition away (the panel pops in). Same
+  // double-rAF lesson as the slide overlay's enter→shown handoff.
+  useEffect(() => {
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setVisible(true));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      if (inner) cancelAnimationFrame(inner);
     };
   }, []);
 
@@ -211,6 +271,10 @@ const BubbleBarPanel = forwardRef<HTMLDivElement>((_props, forwardedShellRef) =>
   return (
     <div
       ref={forwardedShellRef}
+      // z-30 always. The bar is never on-screen DURING a group-arrival slide
+      // (BubbleBarHost withholds it until the slide overlay unmounts), so it
+      // no longer needs to elevate above the overlay — it just mounts fresh
+      // on the settled group page and slides up.
       className="fixed bottom-0 left-0 right-0 z-30"
       onTouchStart={stopTouchPropagation}
       onTouchMove={stopTouchPropagation}

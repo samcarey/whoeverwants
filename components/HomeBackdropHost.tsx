@@ -28,30 +28,15 @@
  * backdrop → real home without any white frame in between.
  */
 
-import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import GroupList from "@/components/GroupList";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { getCachedEmptyGroups } from "@/lib/simpleQuestionQueries";
 import { getRememberedScroll, HOME_SCROLL_KEY } from "@/lib/scrollMemory";
-import {
-  HIDE_HOME_BACKDROP_EVENT,
-  SHOW_HOME_BACKDROP_EVENT,
-} from "@/lib/eventChannels";
+import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
 
 export default function HomeBackdropHost(): React.ReactElement | null {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const onShow = () => setVisible(true);
-    const onHide = () => setVisible(false);
-    window.addEventListener(SHOW_HOME_BACKDROP_EVENT, onShow);
-    window.addEventListener(HIDE_HOME_BACKDROP_EVENT, onHide);
-    return () => {
-      window.removeEventListener(SHOW_HOME_BACKDROP_EVENT, onShow);
-      window.removeEventListener(HIDE_HOME_BACKDROP_EVENT, onHide);
-    };
-  }, []);
+  const visible = useHomeBackdropActive();
 
   if (!visible || typeof document === "undefined") return null;
 

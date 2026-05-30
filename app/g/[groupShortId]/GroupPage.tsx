@@ -48,7 +48,7 @@ import { forgetQuestion } from "@/lib/forgetQuestion";
 import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
 import { GroupCardItem, ROW_DIVIDER_CLASS, type GroupCardGroup } from "./GroupCardItem";
-import BubbleBarPanel, { PANEL_HEIGHT_VAR, PANEL_OFFSET_VAR } from "@/components/BubbleBarPanel";
+import { PANEL_HEIGHT_VAR, PANEL_OFFSET_VAR } from "@/components/BubbleBarPanel";
 import { GroupNotFound as GroupNotFoundFallback } from "@/components/GroupLoadState";
 
 import type { Group } from "@/lib/groupUtils";
@@ -805,15 +805,14 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // gear at the viewport's left edge.
   const upArrowRef = useRef<HTMLButtonElement | null>(null);
   const downArrowRef = useRef<HTMLButtonElement | null>(null);
-  // BubbleBarPanel's outer shell. Registered as a swipe extra-target so
-  // the panel slides horizontally with the page during a back-swipe to
-  // home (the panel sits OUTSIDE the swipeWrapper so its position:fixed
-  // stays viewport-anchored — without this ref the panel would stay put
-  // while the rest of the page slid off).
-  const bubbleBarShellRef = useRef<HTMLDivElement | null>(null);
+  // The bubble bar now lives at the layout level (components/BubbleBarHost),
+  // a single persistent instance, so it's no longer a swipe extra-target
+  // here. During the group→home swipe-back BubbleBarHost hides itself (it
+  // listens for SHOW/HIDE_HOME_BACKDROP_EVENT), so the bar doesn't float
+  // over the revealed home page.
   const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
     headerRef,
-    extraTargets: [upArrowRef, downArrowRef, bubbleBarShellRef],
+    extraTargets: [upArrowRef, downArrowRef],
     showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
     hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
     // No scroll save here: returning home intentionally resets every group's
@@ -1754,8 +1753,18 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       );
       const showDown = window.scrollY < maxScroll - 1;
       setScrollHelpers((prev) => {
-        const nextShowUp = isScrolling && !prev.showUp ? false : showUp;
-        const nextShowDown = isScrolling && !prev.showDown ? false : showDown;
+        // Suppress OFF→ON while the user is mid-scroll OR a back-nav scroll
+        // restore is replaying programmatic jumps. Without the restore guard,
+        // the transient pre-restore position (e.g. scrollY=0 with full content
+        // below) computes showDown=true and the down arrow flashes ON for the
+        // duration of the slide, then OFF once the restore lands at the bottom
+        // — the "down arrow appears then disappears" artifact. Keeping arrows
+        // in their current (initially OFF) state until the restore settles
+        // means a bottom-landing never shows the arrow at all; a mid-list
+        // landing surfaces it on the next settle re-eval.
+        const suppressOn = isScrolling || isScrollRestoring();
+        const nextShowUp = suppressOn && !prev.showUp ? false : showUp;
+        const nextShowDown = suppressOn && !prev.showDown ? false : showDown;
         currentShowUp = nextShowUp;
         currentShowDown = nextShowDown;
         return (
@@ -2038,17 +2047,12 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           })}
       </div>
       </div>
-      {/* Floating bubble bar — sits OUTSIDE the swipe wrapper so its
-          `position: fixed` stays viewport-relative during a back-swipe
-          (any transformed ancestor would re-anchor it to the wrapper's
-          containing block, landing it far below the viewport on tall
-          pages). Its outer shell is registered as a swipe extra-target
-          so it still translates horizontally with the rest of the page
-          during the gesture. Two instances coexist during a slide-overlay
-          handoff (overlay's GroupContent + real route's GroupContent);
-          both register their own `#draft-poll-portal` target and the
-          bar's dual-portal rendering pipes the JSX into both. */}
-      <BubbleBarPanel ref={bubbleBarShellRef} />
+      {/* The bubble bar is mounted ONCE at the layout level
+          (components/BubbleBarHost) rather than per-GroupContent-instance,
+          so it appears instantly (independent of this heavy component's
+          commit) and can never be rendered twice during a slide. It still
+          reserves bottom space here via the --bubble-bar-panel-height CSS
+          var (set by the single BubbleBarPanel instance). */}
 
       {/* Group-aware long-press modal — Copy + Forget, plus Reopen when
            the poll is closed and the current browser is the creator (or dev). */}
@@ -2227,7 +2231,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           buttons elevate above the slide overlay (z-70) while a
           group-kind overlay is mounted, so they don't get hidden by the
           overlay's opaque background during the slide. */}
-      {scrollHelperPortal && createPortal(
+      {!inOverlay && scrollHelperPortal && createPortal(
         <>
           {scrollHelpers.showUp && (
             <ScrollHelperButton
