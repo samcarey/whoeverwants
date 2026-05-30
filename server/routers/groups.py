@@ -154,6 +154,28 @@ class GroupPreviewResponse(BaseModel):
     description: str | None = None
 
 
+class GroupPollResponse(BaseModel):
+    """Visibility-aware single-poll read for the direct-poll-link landing
+    (`GET /api/groups/by-route-id/{route_id}/poll/{poll_ref}`).
+
+    `status`:
+      - "visible": the caller can see this poll; `poll` carries the full
+        PollResponse (identical shape to the group read's entries).
+      - "hidden_pre_join": the poll exists in this group and the caller IS
+        a member, but it closed before the caller joined the group, so the
+        visibility rule withholds its contents. `poll` is null; `closed_at`
+        is the closure timestamp (the `polls.updated_at` close proxy) so the
+        FE can render a clear "this poll closed before you joined" note —
+        existence + closure timing ONLY, never the hidden poll's contents.
+
+    A poll that doesn't exist in this group (or a private group the caller
+    isn't a member of) returns 404, never this body."""
+
+    status: str
+    poll: PollResponse | None = None
+    closed_at: str | None = None
+
+
 class GroupImageRequest(BaseModel):
     """`POST /api/groups/{route_id}/image` body.
 
@@ -450,6 +472,91 @@ def get_group_by_route_id(
         return polls_for_poll_ids(
             conn, visible_pids, include_results=include_results,
             viewer_user_id=viewer_user_id,
+        )
+
+
+@router.get(
+    "/by-route-id/{route_id}/poll/{poll_ref}",
+    response_model=GroupPollResponse,
+)
+def get_group_poll(route_id: str, poll_ref: str, request: Request):
+    """Visibility-aware fetch of one poll within a group — the direct
+    poll-link landing path (`/g/<group>/p/<poll>`).
+
+    Unlike the visibility-blind `GET /api/polls/{short_id}`, this enforces
+    the group visibility rule (documented in `services/groups.py`) so a
+    late joiner who taps a link to a poll that closed BEFORE they joined
+    the group gets a `hidden_pre_join` marker — existence + closure timing
+    only, never the poll's contents — instead of either the leaked
+    contents or a misleading "not found". The visibility rule stands.
+
+    Auto-join semantics match the group read: landing on a public group's
+    poll link joins the caller (so the closed-before-join watermark is
+    "now"); private groups 404 non-members at the boundary.
+
+    `poll_ref` is resolved against THIS group as a `polls.short_id` or a
+    `polls.id` uuid — a poll id from a different group does not resolve
+    here (404)."""
+    browser_id = _browser_id(request)
+    user_id = _user_id(request)
+
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Poll not found")
+
+        meta = get_group_metadata(conn, group_id)
+        privacy = meta["privacy"] if meta else "public"
+        if privacy == "private":
+            if not is_caller_member_of_group(
+                conn, group_id, browser_id=browser_id, user_id=user_id
+            ):
+                raise HTTPException(status_code=404, detail="Poll not found")
+        else:
+            grant_group_membership_inline(
+                conn, group_id, browser_id, privacy=privacy
+            )
+
+        # Resolve the poll WITHIN this group (short_id, then uuid). Scoping
+        # to group_id keeps a cross-group poll id from resolving here.
+        poll_row = conn.execute(
+            "SELECT id, updated_at FROM polls "
+            "WHERE group_id = %(gid)s::uuid AND short_id = %(ref)s",
+            {"gid": group_id, "ref": poll_ref},
+        ).fetchone()
+        if not poll_row and _is_uuid_like(poll_ref):
+            poll_row = conn.execute(
+                "SELECT id, updated_at FROM polls "
+                "WHERE group_id = %(gid)s::uuid AND id = %(ref)s::uuid",
+                {"gid": group_id, "ref": poll_ref},
+            ).fetchone()
+        if not poll_row:
+            raise HTTPException(status_code=404, detail="Poll not found")
+
+        poll_id = str(poll_row["id"])
+        visibility = load_user_visibility(conn, browser_id, user_id=user_id)
+        visible = filter_visible_polls(conn, [poll_id], visibility)
+        if visible:
+            viewer_user_id = resolve_actor_user_id(
+                conn, user_id=user_id, browser_id=browser_id
+            )
+            polls = polls_for_poll_ids(
+                conn, visible, include_results=True,
+                viewer_user_id=viewer_user_id,
+            )
+            return GroupPollResponse(
+                status="visible", poll=polls[0] if polls else None,
+            )
+
+        # The caller is a member of this group (auto-joined above for
+        # public, confirmed for private), so the ONLY way the poll filtered
+        # out is the closed-before-join watermark. Return existence +
+        # closure timing; never the contents.
+        closed_at = poll_row.get("updated_at")
+        return GroupPollResponse(
+            status="hidden_pre_join",
+            poll=None,
+            closed_at=closed_at.isoformat() if closed_at else None,
         )
 
 

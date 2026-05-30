@@ -40,6 +40,7 @@ export { apiGetQuestionResults } from "./results";
 export {
   apiGetMyGroups,
   apiGetGroupByRouteId,
+  apiGetGroupPoll,
   apiCreateGroup,
   apiGetMyEmptyGroups,
   apiGetGroupSummary,
@@ -64,6 +65,7 @@ export type {
   CreateGroupJoinRequestResult,
   GroupInvite,
   CreateGroupInviteOptions,
+  GroupPollResult,
   InvitableAccount,
 } from "./groups";
 
