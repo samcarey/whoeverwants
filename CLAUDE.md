@@ -16,6 +16,24 @@ The Supabase-to-Python migration and infrastructure improvements (Phases 1-10) a
 
 > **Historical note on What/When/Where:** Earlier iterations of the redesign shipped a 3-bubble bar (What/When/Where) that preselected via `?mode=time` / `?category=restaurant`. That trichotomy was eliminated; references to "What/When/Where" in Phase 2.3 / Navigation Layout / Always-On Draft Poll Card sections below are historical context, NOT the current UI. The current bar is per-category.
 
+### TODO — Group-as-a-hub: make a group a legible shared decision space (social-test review, May 2026)
+
+**Thesis.** The app's real competitor is the group chat thread where decisions die ("so are we doing Friday??" × 40 messages, no resolution). A single poll is a weak substitute; a *group* a circle returns to — where decisions accrete and outcomes are legible — is a strong one, and the multi-question event poll ("plan the whole night in one link") is its sharpest expression. This initiative makes a group feel like a lightweight shared decision space, NOT a folder of polls. **Explicitly NOT a chat** — the value is the decision layer the chat lacks; do not add messaging.
+
+**Foundations already shipped (build on, don't rebuild):** first-class groups (`group_id` + group short_id, title override, avatar image, privacy, invites, join requests, claim, invite-members address book); notifications on new-poll / poll-closed / phase-transition with per-group mute; the home group list with per-group unread indicators + countdowns + awaiting-first sort; atomic multi-question polls with per-question abstain. What's missing is the *legibility* layer on top.
+
+**Gaps to close, highest-leverage first:**
+1. **"What's still open / what did we decide" — the biggest gap.** A group is currently a reverse-chronological stream of cards with no answer to the two questions a returning member has: *what needs me?* and *what did we land on?* Add (a) a group-header summary + Open/Decided filter ("2 open · 1 awaiting you · 5 decided"), and (b) a **decisions ledger** / "Outcomes" view (compact "Dinner → Thai · Movie → Dune · Offsite → Yes 4-2"). Mostly presentation over existing data (closed polls + winners). The single clearest "this beats our group chat" moment.
+2. **The multi-question event poll should resolve into "the plan," not N separate pills.** Today each sub-question resolves independently with its own pill; there's no consolidated read. Add a combined "the plan" summary ("Fri 7pm · Thai · Escape Room after · partners optional") on the detail page and as the group-card result. Optionally a first-class **Event template** that pre-seeds Dinner+Time+yes/no and names the poll. This is what justifies bundling questions at all.
+3. **Re-engagement that closes the loop.** Notifications announce *activity*; make them also deliver *outcomes* — a closed-poll push that carries the winner ("Your group decided: Thai, Fri 7pm"), turning the app into the place results land.
+4. **Home-list shared-space affordances.** A small per-group "3 open · 1 awaiting you" rollup so a member can triage across groups at a glance.
+
+**Risks that compound in a persistent hub (cross-references):** late-joiner history loss (the "closed before you joined" TODO in the Migration-106 note) bites harder as new members miss prior decisions; two-round time-poll drop-off (social-test recommendation #6) erodes trust if scheduling keeps stalling; roster identity issues (the ballot-privacy + duplicate-name TODOs) are felt continuously since the same names recur.
+
+**Suggested order:** gap 1 first (presentation over existing data; answers both returning-member questions), then gap 2.
+
+**⚠️ Process note — this is exploratory UI work; the owner will be hands-on.** Much of the above (especially the Open/Decided view, the ledger, and the "the plan" summary) is **design-heavy and not obvious** — expect to spin up multiple candidate implementations on separate branches/dev servers and iterate. **The owner (Sam) wants to be in the loop, trying out several implementations on real devices to pick the best one** — do NOT pick a single design and ship it unilaterally. Branch, build 2-3 variants where the right answer is unclear, deploy them to per-branch dev servers, and hand the owner links to compare before converging. Treat the spec above as direction, not a fixed design.
+
 ## DigitalOcean Droplets — Two-Tier Deploy
 
 WhoeverWants runs on **two** DigitalOcean droplets that are software-identical (same `scripts/provision-droplet.sh`, same Docker stack, same migrations). Only the public hostnames and deploy trigger differ — see "Development Workflow" below for the gating.
@@ -445,16 +463,19 @@ whoeverwants/
 │   └── setup.js                    # Vitest setup (dotenv, mocks)
 │
 ├── social_tests/                   # Social scenario testing framework
-│   ├── conftest.py                 # Fixtures, QuestionHelper, result collection
-│   ├── generate_report.py          # Test runner → MD → HTML → droplet deploy
-│   ├── testing_strategy.md         # Philosophy doc (embedded in report)
+│   ├── conftest.py                 # Person/World helpers (names required, identity auth, groups), result collection
+│   ├── generate_report.py          # Test runner → MD → HTML (runs vs a dev/canary server)
+│   ├── testing_strategy.md         # Philosophy + key findings/recommendations (embedded in report)
 │   ├── reports/                    # Generated reports (gitignored)
-│   └── tests/                      # Scenario test modules
-│       ├── test_casual_decisions.py    # Yes/no & suggestion questions
-│       ├── test_ranked_preferences.py  # Ranked choice / IRV scenarios
-│       ├── test_event_planning.py      # Multi-stage event planning scenarios
-│       ├── test_edge_cases.py          # Anonymity, editing, large groups
-│       └── test_multi_stage.py         # Multi-question workflows (follow-up)
+│   └── tests/                      # Scenario test modules (8 files, 36 scenarios)
+│       ├── test_casual_decisions.py        # Yes/no & suggestion basics; name-required model
+│       ├── test_ranked_preferences.py      # Ranked choice / IRV / Borda scenarios
+│       ├── test_edge_cases.py              # Vote editing, creator power, scale, identity-based authz
+│       ├── test_multi_stage.py             # Groups: diverge→converge, follow-up, group-as-hub
+│       ├── test_event_planning.py          # Multi-question polls (atomic batch, partial abstain)
+│       ├── test_time_coordination.py       # Two-phase scheduling, min-availability filter
+│       ├── test_suggestion_collaboration.py # Seed→collect→cutoff→rank in one poll
+│       └── test_identity_and_naming.py     # Name gate, pseudonymity, collisions, viewers, late joiner
 │
 ├── scripts/                        # Utility scripts
 │   ├── remote.sh                   # Execute commands on droplet
@@ -561,6 +582,7 @@ whoeverwants/
 - **Status countdowns in the top-right corner use `SimpleCountdown wide`** which formats via `formatCompactCountdownWide(diffMs)` in `lib/timeUtils.ts` — same single-unit shape as `formatCompactCountdown` but with a ≥ 2 threshold (0–119s show seconds, 2m–119m minutes, 2h–47h hours, 2d–13d days, 2w–8w weeks, 2mo–23mo months, then years). Preserves more precision near the unit boundary so a viewer never sees a "1h" label that actually meant "60m left" — useful when the countdown is the sole timing signal visible. The default `compact` (no `wide`) keeps the 1-threshold behavior for surfaces like the home-page group rows that prefer the larger glyph. Don't use `wide` everywhere — pick based on whether the surface trades precision for shorter glyph width.
 - **`transform: scale(1.4)` is the universally-supported way to grow the pill.** We tried CSS `zoom: 1.4` first (renders correctly in Chromium/Playwright screenshots but didn't take effect in WebKit even on a fresh load). `transform: scale` works everywhere with no quirks; the trade-off is that the bounding box doesn't reflow — sibling rows see the unscaled box. Compensate with explicit padding on the outer flex container (we use `py-2` on the pill row to absorb the ~20% visual overflow on each side). For any future scaled element, do NOT reach for `zoom`; use `transform: scale` + matching padding compensation.
 - **Below-row respondent slot uses `VoterList singleLine`** as the right-hand flex child of a `flex items-end justify-between` row. The wrapping `<div className="flex-1 min-w-0 flex justify-end">` is load-bearing — it gives VoterList a constrained width so its internal `overflow-hidden whitespace-nowrap` + trailing `+N` badge actually truncate. Dropping the wrapper makes VoterList content-sized, the constraint disappears, and long respondent lists overflow into the bottom row instead of collapsing. The mode hides the count/icon prefix, renders one horizontal row, and collapses overflow into a `+N` badge. Measuring a React-hidden `+N` badge with `offsetWidth` returns 0 — temporarily force `plusEl.style.display = ''` before measuring, save and restore the previous value. **The measured/observed container MUST be `w-full` (`SingleLineVoters` in `components/VoterList.tsx`), NOT content-sized.** The `ResizeObserver` observes that same div AND `measure()` reads `el.clientWidth` from it for the fit math. If the div is content-sized, hiding/showing bubbles in `measure()` resizes it, re-firing the observer — a feedback loop. Chromium's reflow settles deterministically so it looked fine in headless, but on iOS (sub-pixel rounding + reflow timing) the two outcomes (`fit=N, +N hidden` ↔ `fit=N-1, +1 shown`) alternate every frame: the bubble row visibly oscillates and can paint all bubbles PLUS a stale `+N` badge at once (imperative `style.display` desyncs from the React `overflow` state). `w-full` pins `clientWidth` to the stable parent track regardless of which children are visible, so toggling visibility never resizes the observed element. The justify (`justify-end` on the group card via the passed `className`, default `justify-start` on the poll-detail roster) still aligns the visible bubbles. General rule: never observe + content-measure the same element whose own children's visibility you mutate inside the callback.
+- **TODO — disambiguate duplicate names in the roster (multiplicity, not a name suffix).** (Decision from the social-test review, May 2026.) Two genuinely different voters who use the same name (two "Alex"es) currently collapse to a single roster entry, because `_compute_poll_voter_data` aggregates with `array_agg(DISTINCT voter_name)` — so multiplicity is lost server-side and the count disagrees with the roster ("3 voters" but 2 names shown). Fix: surface the per-name occurrence count (e.g. return `voter_names` as `{name, count}` or a parallel name→count map; keep it name-decoupled-from-choices per the ballot-privacy TODO) and render a multiplier on the chip when count > 1. **Hard requirement: the "×2" must be a visually DISTINCT multiplier element — a small muted badge / superscript separated from the name — NEVER concatenated into the name string.** Rendering the literal text `"Alex ×2"` is wrong: it reads as if someone is named "Alex ×2" (or as a typo). The name and the count are two different things and must look like two different things (and the accessible label should read like "Alex, 2 voters", not "Alex times 2"). Applies to both the `VoterList` chips and the `RespondentCircles` initials avatar (where the same collision silently merges two people into one circle).
 - **`inSuggestionPhase` is hoisted per render** in `GroupCardItem.tsx` (above `respondentRow`) since the status label, respondent filter, respondent empty-text, and `includeSelf` gate all read it. Don't re-inline the `isInSuggestionPhase(question, wrapperPrephaseDeadline)` call at multiple sites — they would all reduce to the same boolean and the function call overhead, while microscopic, was four-redundant before the cleanup pass.
 - **Detail page renders sub-questions stacked, no card chrome.** Single-question polls drop the section header entirely (the page header IS the question). Multi-question polls render a section header per sub-question (`InlineCategoryIcon` + `getQuestionSectionTitle(sp)`). The `HangingCategoryIcon` (negative-left positioning into the group-card's creator-bubble column) does NOT apply here — there's no such column on the detail page; use `InlineCategoryIcon` (positioned in normal flow, not absolute) instead. Symptom of forgetting: the icon clips off the left viewport edge.
 - **Ranked-choice polls in their suggestion phase split the suggestion entry and the ranking-area into two separate cards.** On the detail page (`PollDetail`), the gate is `splitSuggestionPhaseCards = sp.question_type === 'ranked_choice' && isInSuggestionPhase(sp, poll.prephase_deadline ?? null)` — note it does NOT check `allow_pre_ranking` (it intentionally covers BOTH layouts). When true, the page **drops its own outer `POLL_SUBCARD_CLASS` card** and passes `splitEarlyVotingCards` (the QuestionBallot prop is still named for the early-voting case it originated in) to `QuestionBallot`; the multi-poll section header (if any) renders outside/above the cards. `QuestionBallot` wraps `SuggestionVotingInterface` in one `POLL_SUBCARD_CLASS` card and passes `cardClass={POLL_SUBCARD_CLASS + ' mt-3'}` to `RankingSection`, which renders one of two things in its own card depending on `allow_pre_ranking`:
@@ -656,9 +678,16 @@ BENCH_URL=https://... npm run bench:nav  # Navigation performance benchmark
 npm run publish                # Full workflow: commit, merge, push, migrate
 
 # Social Tests (run from social_tests/ directory)
-# Runs scenario tests against a live API and generates an HTML report
-cd social_tests && uv run python generate_report.py  # Full pipeline: test → report → deploy
-cd social_tests && uv run python generate_report.py --skip-deploy  # Local report only
+# Runs scenario tests against a live API and generates an HTML report.
+# TARGET A PER-BRANCH DEV SERVER, NOT CANARY: the suite does ~200 POSTs, and
+# canary's 30 POST/min rate limit makes the full run time out under backoff.
+# A dev server has DISABLE_RATE_LIMIT=1. Set SOCIAL_TEST_API_URL to the dev
+# host (the in-container API is proxied at /api/* by the dev FE), e.g.:
+#   SOCIAL_TEST_API_URL=https://<branch-slug>.dev.whoeverwants.com uv run pytest tests/ -v
+# generate_report.py builds reports/social_test_report.{md,html}; deploy is a
+# no-op (the droplet /var/www/reports path isn't served) — use --skip-deploy and
+# serve the HTML from the dev container's public/ for a clickable URL.
+cd social_tests && uv run python generate_report.py --skip-deploy --site-url https://<slug>.dev.whoeverwants.com
 cd social_tests && uv run pytest tests/ -v           # Run tests without report
 
 # Python Server (run from server/ directory)
@@ -1473,9 +1502,42 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
 - F: `group_join_requests` + push notification to creator. **Shipped.**
 - G: `group_invites` with single + multi-use modes and optional
   target_poll_id. **Shipped.**
-- H: ~~per-vote anonymity~~ **NOT PLANNED.** Voters can already submit
-  without a name (existing `voter_name` nullability); no per-vote on/off
-  toggle is on the roadmap.
+- H: ~~per-vote anonymity~~ **NOT PLANNED (no per-vote on/off toggle).**
+  Note the original justification here is now stale: a name/alias IS
+  required to vote (`validate_user_name` 400s a blank `voter_name`), so
+  "submit without a name" is no longer possible. True hidden-ballot voting
+  is a separate, unbuilt consideration — see the BALLOT-PRIVACY TODO below.
+- **TODO — ballot privacy: store identity on every vote, but NEVER expose
+  another voter's ballot-with-identity via the API.** (Decision from the
+  social-test review, May 2026.) We DO want to keep storing identity
+  (`voter_name` + `browser_id` + resolved `user_id`) on each vote row —
+  it's needed for future aggregation/analytics. But the only cross-voter
+  data the API may return is **render-necessary aggregates**: result
+  counts / IRV rounds / slot winner, plus the participant **roster**
+  (names only, *decoupled* from choices), plus the **caller's own** vote.
+  The server computes results internally and returns only what the client
+  needs to draw the screen; raw "who voted what" must never cross the API
+  boundary for anyone but the voter themselves.
+  - **Current bug this fixes:** `GET /api/questions/{id}/votes`
+    (`server/routers/questions.py: get_votes`) returns *every* vote row
+    with `voter_name` AND its exact choice, with **no access control** —
+    it only checks the question exists. Since a question id is derivable
+    from any shared group/poll, one unauthenticated request reconstructs
+    the full who-voted-what map for every named voter of every poll.
+    The app's UI never shows this (VoterList renders names only;
+    per-question vote fetches elsewhere are scoped to the caller's own
+    `vote_id`), so the leak is "privacy by UI" only.
+  - **Work:** (a) restrict `get_votes` to the caller's own vote(s) —
+    resolve `actor_id_from_request` and filter, or replace it with a
+    dedicated "my vote" endpoint and drop the bulk one from the public
+    surface; (b) keep `PollResponse.voter_names` / results aggregates as
+    the sole cross-voter exposure (already name-decoupled); (c) audit
+    every other endpoint that could emit `voter_name` alongside choice
+    fields (`VoteResponse` consumers) and confirm none leak a non-caller's
+    pairing. Worth doing NOW independent of any hidden-ballot feature —
+    the leak applies to all existing polls. It's also the necessary
+    foundation for a future opt-in hidden ballot (which would additionally
+    withhold the name from the roster).
 - J: ~~SMS sign-in~~ **NOT PLANNED (future option).** It's the only
   non-free auth channel (no free production-scale SMS API; ~$0.01–0.02/US
   login + ~$3/mo + A2P 10DLC registration on the lowest-cost DIY
@@ -2012,6 +2074,22 @@ different FE origin, extend the allowlist.
 > closed before they joined, just show the group and don't try to show
 > the old poll"). `?p=` is purely cosmetic at the API level — it drives
 > FE auto-expand + scroll target + link-preview metadata, nothing else.
+>
+> **TODO — don't silently omit a link-targeted poll the recipient can't see;
+> tell them it closed before they joined.** (Decision from the social-test
+> review, May 2026 — this refines the "just show the group, don't try to show
+> the old poll" spec above.) Silently dropping the targeted poll reads as a
+> broken link to whoever shared a just-closed result. Desired: when a direct
+> poll link (`/g/<g>/p/<poll>` or legacy `?p=<poll>`) targets a poll that's
+> hidden ONLY by the closed-before-join watermark (as opposed to genuinely not
+> existing), render the group plus a clear "this poll closed before you joined
+> the group" note where the poll would be — instead of nothing. Implementation:
+> the FE can't tell "filtered out" from "doesn't exist" today (the read returns
+> only the visible subset). Either (a) FE does a cheap existence check —
+> requested poll short_id resolves within this group but isn't in the visible
+> list — or (b) the read endpoint returns a small marker `{hidden_pre_join:
+> [pollShortId]}` for exactly this case. Return existence + closure timing
+> ONLY; never the hidden poll's contents — the visibility rule stands.
 >
 > `/by-route-id/{id}` only 404s when route resolution itself fails. An
 > empty visible-polls list returns 200 with `[]` so the group page can
@@ -2978,6 +3056,7 @@ New polls always contribute (no switch) — in unread they're a never-opened pol
 - **"Seen" = opening the poll detail page** (`/g/<g>/p/<p>`). The FE pings `POST /api/polls/{id}/viewed` on **every** detail-page open (migration 120 added the endpoint + `_record_poll_view`; this broadens the ping from prephase-only to always). That single watermark (`poll_views.last_viewed_at`) feeds BOTH the unread badge (clears it) and the viewed list.
 - **`poll_views.first_viewed_at`** (added in migration 121, set on insert, NOT bumped on re-view) is the stable clock for "ignored": a viewer is **ignored** when they have a `poll_views` row, `first_viewed_at` is older than **5 minutes**, and they have no vote/abstain on the poll. Within the 5-minute window a no-action viewer is "still looking" (not yet ignored). Derived at read time — no cron, no client beacon needed; "navigates away" and "5 min elapsed" both collapse to "first saw it ≥5 min ago without acting".
 - **The respondents roster becomes "Viewed (N)".** N = everyone who opened the poll = named voters + anonymous voters + ignored (viewed-no-action) viewers. Vote state is a **secondary per-person marker**: named/anon voters render as chips (via the existing `VoterList`), and the ignored viewers — mostly nameless (they never submitted a `voter_name`) — surface as a muted "N viewed but haven't responded yet" sub-line. Backend adds `viewed_ignored_count` to the poll-level voter aggregate (alongside `voter_names` + `anonymous_count`) via `_compute_poll_voter_data` (a 3-tuple now — all 7 callsites + `_row_to_poll` updated); FE threads it `PollResponse` → `Poll` (`toPoll`). **The relabel lives at the poll-detail page level, NOT in `VoterList`**: the detail page's "Respondents" `<h2>` becomes "Viewed ({named + anon + ignored})" and renders the muted sub-line when `viewed_ignored_count > 0`. `VoterList` itself is unchanged — it still renders the voter chips below the heading. (An earlier pass added a `staticIgnoredCount` prop + a multi-line "Viewed (N)" branch to `VoterList`, but both static callers — poll detail + group card — use `singleLine`, so that branch was unreachable; it was reverted. If a future multi-line static roster needs the count, do the relabel at that callsite too rather than reviving the dead `VoterList` branch.)
+- **TODO — surface turnout context ("voted M of V seen") on the RESULT / card, not just the detail roster.** (Decision from the social-test review, May 2026.) The viewer-vs-voter distinction is a strong social signal — a 1-vote poll that 6 people OPENED is "low turnout," but today a closed 1-0 result reads as decisive everywhere except the poll-detail "Viewed (N)" roster. **What already exists (don't rebuild):** the detail-page "Viewed (N)" list, `viewed_ignored_count` on `PollResponse` (the >5-min-no-action subset only — NOT a raw view total; it excludes voters and within-5-min lookers), and the `poll_views` table. **The gap:** show a turnout line where the result is consumed — the group card's result pill / status area and any result summary — e.g. "3 voted · 2 saw, didn't respond" or "voted 3 of 5 seen", so the reader can tell "no consensus" from "no attention", and optionally nudge the lurkers. **Work:** add a counts-only `viewed_total` (distinct viewers) to the poll voter aggregate alongside `voter_names`/`anonymous_count`/`viewed_ignored_count` — `COUNT(DISTINCT browser_id)` over `poll_views`, unioning linked browsers per the account-aware pattern (`load_user_visibility`) so a signed-in viewer on two devices isn't double-counted; thread it `PollResponse` → `Poll` → the card/result UI. **Counts only — never viewer identities** (consistent with the ballot-privacy TODO; a "who saw it" list is a separate, more sensitive feature and is out of scope here).
 
 ### Storage (per account, synced)
 
@@ -3283,6 +3362,11 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **`is_abstain` vs `is_ranking_abstain`**: The `votes` table has two abstain columns. `is_abstain` means "fully abstained" (no suggestions, no rankings) or, in non-suggestion questions, "abstained from voting." `is_ranking_abstain` means "abstained from ranking specifically but has suggestions." In suggestion-phase questions, `is_abstain=true` does NOT mean ranking abstain — don't restore `isAbstaining` state or show "Ranking: Abstained" based on `is_abstain` during the suggestion phase. Use `userAbstainedFromRanking` (computed in QuestionBallot) for display checks.
 - **Auto-finalization in `get_question`**: When `suggestion_deadline` has passed but `options` is still NULL, the endpoint auto-calls `_finalize_suggestion_options()`. This handles the case where the deadline expires naturally without a manual cutoff.
 - **Manual cutoff requires suggestions**: The `cutoff-suggestions` endpoint rejects requests (400) when no suggestions have been submitted, enforced via an EXISTS subquery in the UPDATE.
+- **TODO — explain decision OUTCOMES in plain language; fix the empty-brainstorm dead-end.** (Decision from the social-test review, May 2026.) Two related gaps where the app surfaces *mechanics* but not *meaning*:
+  - **(a) Empty-brainstorm cold start (actionable, small).** A suggestion poll with zero suggestions is a real dead-end: `cutoff-suggestions` correctly 400s (can't rank nothing), but (1) there's no empty-state nudge on the poll, and (2) a prephase deadline reached with zero suggestions auto-finalizes to an EMPTY ballot (a degenerate "rank nothing" poll). Fixes: surface "No suggestions yet — add the first idea or share the link" on an empty suggestion poll (the creator can already pre-seed via `initial_suggestions` at create time — *encourage* it); and define an explicit "expired with no suggestions" terminal outcome instead of an empty ranking ballot. Brainstorms have a notorious cold-start / bystander problem — the first idea is the hardest.
+  - **(b) IRV result is opaque, and may be the wrong method for social groups.** Pure Instant-Runoff (Borda only as tiebreak, then alphabetical) eliminates the option with the FEWEST first-place votes each round — so a broadly-liked compromise (everyone's #2, few #1s) is eliminated EARLY and a polarizing plurality wins (documented in `social_tests/tests/test_ranked_preferences.py::test_condorcet_scenario`). For a friend group picking a restaurant, that's often just wrong — they usually want "the thing nobody hates," exactly what IRV throws out first. Two layers:
+    - **Layer 1 (actionable, low-risk): explain the result.** The app already computes + renders the round-by-round data (`ranked_choice_rounds`, the `CompactRankedChoiceResults` visualizer, Borda scores) — but that's mechanics; non-experts don't infer "the compromise lost because it had few first choices." Add a one-line plain-language gloss on the result, especially when the winner is NOT the broadly-acceptable option — detect "an option was on (nearly) every ballot but eliminated early" and say so ("X was on every ballot but had the fewest first picks, so ranked-choice eliminated it early; the winner reflects strongest first choices, not broadest acceptance"). Turns a "this is broken / not what we wanted" moment into a trusted, understood one.
+    - **Layer 2 (design-exploratory — owner in the loop): reconsider the headline aggregation.** Since the full ranked ballots + Borda are already computed, the app is well-positioned to offer a method matching social-group intent better: Borda/Condorcet as the headline ("least objectionable"), or a create-time **"favorite vs consensus"** framing (same ballots, different aggregation, in plain words instead of an algorithm name). Do NOT change the headline method silently — "correct" voting method is genuinely contested and existing users would be surprised. Prototype variants and have the owner compare on real scenarios before converging (same hands-on process as the group-as-hub + min-availability TODOs).
 - **New options detection uses localStorage**: `storeSeenQuestionOptions(questionId, options)` in `browserQuestionAccess.ts` stores the option set at vote time. On next load, `getSeenQuestionOptions` retrieves it and `newOptions` useMemo computes the diff. Excludes the user's own suggestions (they already know about those) and only fires for users who have already ranked. Cross-device limitation: no baseline on a new device, so no banner — acceptable given the app's localStorage-first model.
 - **`ClientOnly` wrapper breaks flex row layout** even with `fallback={null}`. `ClientOnly` renders a block-level `<div>` during SSR/initial render which disrupts flex containers. For content guarded by React state that starts empty and populates in `useEffect` (like `questionsWithNewOptions`), skip `ClientOnly` entirely — the empty initial state IS the SSR-safe behavior. Only use `ClientOnly` for content that would cause a hydration mismatch if rendered during SSR.
 
@@ -3389,6 +3473,13 @@ The voter availability form (rendered by `TimeBallotSection` → `TimeQuestionFi
 - **`components/TimeQuestionFields.tsx` is now exclusively voter-facing and renders NO day-picker.** The create-poll form inlines `DayTimeWindowsInput`/`DaysSelector` directly (the creator defines the days); `TimeQuestionFields` is only mounted by `QuestionBallot/TimeBallotSection.tsx` (active availability form + the read-only submitted-availability summary). A voter replies *within* the creator-defined days, so the old "Select Days / Add/Remove Days" button + its `DaysSelector` were removed — voters toggle availability via the per-window checkboxes (`isVoterForm` branch in `DayTimeWindowsInput`, gated on a truthy `questionWindows`) but can't add or remove days. The `highlightDaysButton` prop went with it; `renderDaysSection` still gates the label + day rows. Don't reintroduce a day-picker here — if a creator-side embedded use ever returns, render the picker at that call site, not inside the voter component.
 - **`TimeWindow.enabled?: boolean`** in `lib/types.ts` is the per-window "on/off" toggle the voter form writes. **The availability algorithms (FE `isVoterAvailableForSlot` + server `_voter_available_at`) do NOT read it.** Disabled windows must be stripped before submission, AND the day must be dropped if all its windows are disabled — leaving an empty `windows` array on a day means "all day available" per the helper's contract, which silently inverts the voter's "I'm NOT available" intent. The `voteDataBuilders.ts` time-availability branch handles both filters; mirror the pattern in any future direct-submit path. Submit-button disabled-state gating also reads `w.enabled !== false` so an all-unchecked state surfaces as a disabled CTA rather than silently sending null availability.
 - **`min_availability_percent` is relative to the most-available slot, not total respondents.** A value of 95 means "slots within 5% of the best slot's count pass". Basing this on the top slot (not total voter count) keeps the question robust when lots of voters mark themselves unavailable — the filter still picks the best-attended times. Migration 090 renamed the old `availability_threshold` column and inverted its values (new = 100 − old) so existing questions preserve the same effective filter.
+- **TODO — reconsider the minimum-availability model: a slot-QUALITY filter vs an event-VIABILITY gate.** (Decision from the social-test review, May 2026 — "consider further," not a spec.) `min_availability_percent` today does exactly one thing — filter which slots survive, relative to the best-attended slot — but it conflates two intents the owner wants distinguished:
+  - (a) **"find the best slot regardless of attendance"** — a loose filter that should always yield a slot (the closest-we-can-get), vs
+  - (b) **"I'd rather the event NOT happen than happen below a threshold"** — a viability/cancel gate where, if nothing clears the bar, the honest answer is "no time works / event's off," not "here's a thin one."
+
+  At 100% the current setting accidentally produces (b)'s *symptom* (zero finalized slots) without (b)'s *intent or messaging* — the dead-end called out in social-test recommendation #6.
+
+  Think creatively; weigh options rather than picking one: split into two controls (a soft slot-quality filter PLUS an explicit absolute "minimum headcount to hold the event, else cancel" gate); express the gate as an ABSOLUTE attendee count instead of a percentage-of-best (a percentage is unintuitive for "we need at least 4 people"); and/or **revive the participation min/max RANGE** ("at least N, at most M"). The participation *question type* was removed (migration 094 — see the "Participation Questions (Removed)" section), but the `MinMaxCounter` widget survives (it's what the Duration field uses) and the greedy min/max inclusion algorithm is preserved in git history; a range could express both "need ≥ N to bother" and "cap at M." Whatever the model, when a viability gate isn't met, surface a clear "no time worked for everyone — here's the closest" outcome (or an explicit "event cancelled") instead of an empty ballot. Design-exploratory like the group-as-hub TODO: prototype a couple of semantics/UX variants and have the owner try them before converging.
 - **Preference-phase bubbles must be filtered per-voter by their availability.** A voter who said they can't attend a slot in the availability phase should not see (or be able to react to) that slot in the preferences phase. `preferenceSlotsForVoter` in `QuestionBallot.tsx` runs `isVoterAvailableForSlot()` (from `lib/timeUtils.ts`) against the loaded `userVoteData.voter_day_time_windows` and passes the filtered list to `TimeSlotBubbles`. Voters who never submitted availability see every finalized slot.
 - **`null` vs `[]` semantics for liked/disliked slots**: `null` = voter hasn't submitted preferences yet; `[]` = submitted with all bubbles neutral. The frontend uses this distinction to show an implicit edit prompt (hasNotReactedYet).
 - **Preferences-phase vote edits MUST re-send `voter_day_time_windows` + `voter_duration`.** `_edit_vote_on_question` writes both columns directly (not `COALESCE`d), because the same NULL-on-the-wire value carries two different meanings: in the availability phase it means "clear my availability" (abstain edit), but in the preferences phase the FE just leaves the field out of its UI. Symptom of forgetting: a voter who submits availability in phase 1, then submits preferences in phase 2, ends up with `voter_day_time_windows = NULL` because the phase-2 edit overwrote it — `compute_slot_availability` then returns 0 for every slot (winner is still picked from likes/dislikes, but the displayed "X of Y available" reads "0 of 0"). The fix lives in the FE: `voteDataBuilders.ts` preferences-phase branch reads `state.userVoteData?.voter_day_time_windows` / `voter_duration` and passes them through, so the SQL UPDATE writes the existing values back (effective no-op). Don't try to fix this with `COALESCE` server-side — that breaks the legitimate availability-phase abstain flow.
