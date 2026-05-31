@@ -294,5 +294,6 @@ export function toPoll(data: any): Poll {
     anonymous_count: typeof data.anonymous_count === 'number' ? data.anonymous_count : 0,
     viewed_ignored_count: typeof data.viewed_ignored_count === 'number' ? data.viewed_ignored_count : 0,
     viewed_total: typeof data.viewed_total === 'number' ? data.viewed_total : 0,
+    suggestion_count: typeof data.suggestion_count === 'number' ? data.suggestion_count : 0,
   };
 }

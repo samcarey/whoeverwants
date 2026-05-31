@@ -36,7 +36,6 @@ import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { slideToPollDetail } from "@/lib/slideOverlay";
 import { groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
 import ClientOnly from "@/components/ClientOnly";
-import VoterList from "@/components/VoterList";
 import QuestionResultsDisplay, {
   CompactRankedChoicePreview,
   CompactSuggestionPreview,
@@ -337,48 +336,20 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
   }
 
-  // Bottom-right column: pill (centered) + respondent row (right-justified
-  // against the rectangle's right edge). Both collapse cleanly when empty
-  // so the row doesn't reserve dead vertical space. EVERY poll (single- and
-  // multi-question) uses the poll wrapper's aggregated voter list per the
-  // Addressability paradigm — never client-aggregated across sub-question
-  // fetches. Wrapper `voter_names` + `anonymous_count` arrive up front with
-  // `apiGetGroupByRouteId` (and survive in `accessiblePollsCache` for the
-  // drag-back backdrop), so the row paints on the first frame instead of
-  // skeleton→async-fetch, and it's part of the cards-wrapper that gets
-  // translated during overlay slides + swipe-back. Single-question polls
-  // previously used a live per-question `apiGetVotes` fetch (which loaded
-  // afterward); the wrapper aggregate equals the one question's voters, so
-  // static is equivalent and loads up front.
-  const respondentRow: React.ReactNode = !isPlaceholder ? (
-    <VoterList
-      singleLine
-      className="min-w-0 justify-end"
-      staticVoterNames={wrapper?.voter_names ?? []}
-      staticAnonymousCount={wrapper?.anonymous_count ?? 0}
-      emptyText={!isMultiGroup && inSuggestionPhase ? "No suggestions yet" : "No voters"}
-      includeSelf={!isMultiGroup && inSuggestionPhase}
-    />
-  ) : null;
-
-  // Turnout context: how many opened the poll vs how many responded, so a
-  // reader can tell "no consensus" from "no attention" — e.g. a closed 1-0
-  // result that 6 people actually saw. The respondent bubbles to the right
-  // show WHO responded; this muted "{V} seen · {M} voted" prefix supplies the
-  // denominator. Only shown when ≥2 people saw it AND there's a gap (some
-  // saw it without responding) — that filters out the trivial "just the
-  // viewer glanced at a fresh poll" case. Counts only; viewer identities
-  // never leave the API. See CLAUDE.md 'App-Icon Badge Model + Viewed
-  // Tracking' → turnout TODO.
+  // Engagement counts shown inline with author·date (no respondent bubbles on
+  // the group card — those live only on the poll detail page). "seen" + "voted"
+  // are always shown; "suggestions" only when there are any. EVERY poll uses
+  // the poll wrapper's server-computed aggregates (per the Addressability
+  // paradigm — never client-aggregated across sub-question fetches): they
+  // arrive up front with `apiGetGroupByRouteId` (and survive in
+  // `accessiblePollsCache` for the drag-back backdrop) so the line paints on
+  // the first frame. `voted` = named + anonymous responders; `seen` =
+  // distinct account-collapsed viewers; `suggestions` = distinct proposed
+  // options. Counts only — viewer identities never leave the API.
   const respondedCount =
     (wrapper?.voter_names?.length ?? 0) + (wrapper?.anonymous_count ?? 0);
   const seenCount = wrapper?.viewed_total ?? 0;
-  const turnoutEl: React.ReactNode =
-    !isPlaceholder && seenCount >= 2 && seenCount > respondedCount ? (
-      <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-        {seenCount} seen &middot; {respondedCount} voted
-      </span>
-    ) : null;
+  const suggestionCount = wrapper?.suggestion_count ?? 0;
 
   // Edge-to-edge rectangle with a full-bleed `border-b` divider between
   // rows. The awaiting state surfaces as a left-edge amber bar (the old
@@ -455,50 +426,53 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           </div>
         )}
 
-        {/* Bottom row: author + timestamp (left) / respondents (right).
-            Skipped during the placeholder/FLIP phase so only the title
-            is visible until the real poll hydrates. The pill above gives
-            its own mb-3 spacing; when the pill is absent we keep mt-2 on
-            this row so there's still a visible gap from the title. */}
+        {/* Bottom row: a single metadata line — author · date · seen · voted
+            [· suggestions], dots between. The respondent/viewed bubbles live
+            only on the poll detail page now, not here. seen + voted are always
+            shown; suggestions only when there are any. The author name is the
+            only part that truncates (the counts stay visible); the date keeps
+            its hover/tap tooltip. Skipped during the placeholder/FLIP phase. */}
         {!isPlaceholder && (
-          <div className={`${pillEl ? "" : "mt-2 "}flex items-end justify-between gap-3 min-w-0`}>
-            <ClientOnly fallback={null}>
-              <span className="shrink-0 truncate text-xs text-gray-400 dark:text-gray-500">
-                {wrapper?.creator_name && <>{wrapper.creator_name} &middot; </>}
-                <span
-                  className="relative cursor-help"
-                  onClick={() =>
-                    setTooltipQuestionId((prev) =>
-                      prev === question.id ? null : question.id,
-                    )
-                  }
-                  onMouseEnter={() => setTooltipQuestionId(question.id)}
-                  onMouseLeave={() =>
-                    setTooltipQuestionId((prev) =>
-                      prev === question.id ? null : prev,
-                    )
-                  }
-                >
-                  {relativeTime(question.created_at)}
-                  {isTooltipActive && (
-                    <span
-                      role="tooltip"
-                      className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-gray-100 shadow-lg dark:bg-gray-900"
-                    >
-                      {formatCreationTimestamp(question.created_at)}
-                    </span>
-                  )}
-                </span>
+          <ClientOnly fallback={null}>
+            <div className={`${pillEl ? "" : "mt-2 "}flex items-baseline min-w-0 text-xs text-gray-400 dark:text-gray-500`}>
+              {wrapper?.creator_name && (
+                <>
+                  <span className="truncate shrink min-w-0">{wrapper.creator_name}</span>
+                  <span className="shrink-0">&nbsp;&middot;&nbsp;</span>
+                </>
+              )}
+              <span
+                className="shrink-0 relative cursor-help"
+                onClick={() =>
+                  setTooltipQuestionId((prev) =>
+                    prev === question.id ? null : question.id,
+                  )
+                }
+                onMouseEnter={() => setTooltipQuestionId(question.id)}
+                onMouseLeave={() =>
+                  setTooltipQuestionId((prev) =>
+                    prev === question.id ? null : prev,
+                  )
+                }
+              >
+                {relativeTime(question.created_at)}
+                {isTooltipActive && (
+                  <span
+                    role="tooltip"
+                    className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-gray-100 shadow-lg dark:bg-gray-900"
+                  >
+                    {formatCreationTimestamp(question.created_at)}
+                  </span>
+                )}
               </span>
-            </ClientOnly>
-
-            <ClientOnly fallback={null}>
-              <div className="flex-1 min-w-0 flex items-end justify-end gap-2">
-                {turnoutEl}
-                {respondentRow}
-              </div>
-            </ClientOnly>
-          </div>
+              <span className="shrink-0 whitespace-nowrap">
+                &nbsp;&middot;&nbsp;{seenCount} seen&nbsp;&middot;&nbsp;{respondedCount} voted
+                {suggestionCount > 0 && (
+                  <>&nbsp;&middot;&nbsp;{suggestionCount} suggestion{suggestionCount === 1 ? "" : "s"}</>
+                )}
+              </span>
+            </div>
+          </ClientOnly>
         )}
       </div>
     </div>

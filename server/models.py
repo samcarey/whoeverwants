@@ -391,6 +391,11 @@ class PollResponse(BaseModel):
     # lets a reader tell "no consensus" from "no attention". Counts only,
     # never identities. See CLAUDE.md 'App-Icon Badge Model + Viewed Tracking'.
     viewed_total: int = 0
+    # Distinct non-empty suggestions voters proposed across the poll's
+    # ranked_choice suggestion phase(s) (read from votes.suggestions). 0 for
+    # polls with no suggestion phase. Drives the "N suggestions" segment of
+    # the group-card info line.
+    suggestion_count: int = 0
     # Only set on the create response: maps question_id → the vote_id of the
     # creator's auto-submitted initial-suggestions vote (see
     # CreateQuestionRequest.initial_suggestions). The FE stores these so the

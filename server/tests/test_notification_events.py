@@ -275,6 +275,31 @@ def test_viewed_total_collapses_account_browsers(client, creator_secret):
     assert resp.json()["viewed_total"] == 2
 
 
+def test_suggestion_count_distinct(client, creator_secret):
+    # Two voters propose options (one is a duplicate); suggestion_count is the
+    # distinct non-empty set. A plain yes/no poll has 0.
+    cbid = str(uuid.uuid4())
+    poll = _suggestion_poll(client, creator_secret, cbid)
+    qid = poll["questions"][0]["id"]
+    for name, sugg in [("Ana", ["Thai", "Pizza"]), ("Ben", ["Sushi", "Thai"])]:
+        r = client.post(
+            f"/api/polls/{poll['id']}/votes",
+            headers=bid_headers(str(uuid.uuid4())),
+            json={
+                "voter_name": name,
+                "items": [
+                    {"question_id": qid, "vote_type": "ranked_choice", "suggestions": sugg}
+                ],
+            },
+        )
+        assert r.status_code == 201, r.text
+    # distinct across both: Thai, Pizza, Sushi = 3
+    assert client.get(f"/api/polls/by-id/{poll['id']}").json()["suggestion_count"] == 3
+    # yes/no poll has no suggestions.
+    yn = create_poll(client, creator_secret, browser_id=str(uuid.uuid4()))
+    assert client.get(f"/api/polls/by-id/{yn['id']}").json()["suggestion_count"] == 0
+
+
 # --------------------------------------------------------------------------
 # close / reopen / cutoff flags + inline fan-out wiring
 # --------------------------------------------------------------------------
