@@ -336,20 +336,96 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
   }
 
-  // Engagement counts shown inline with author·date (no respondent bubbles on
-  // the group card — those live only on the poll detail page). "seen" + "voted"
-  // are always shown; "suggestions" only when there are any. EVERY poll uses
-  // the poll wrapper's server-computed aggregates (per the Addressability
-  // paradigm — never client-aggregated across sub-question fetches): they
-  // arrive up front with `apiGetGroupByRouteId` (and survive in
-  // `accessiblePollsCache` for the drag-back backdrop) so the line paints on
-  // the first frame. `voted` = named + anonymous responders; `seen` =
-  // distinct account-collapsed viewers; `suggestions` = distinct proposed
-  // options. Counts only — viewer identities never leave the API.
+  // Engagement counts shown in the bottom-right corner cluster (no respondent
+  // bubbles on the group card — those live only on the poll detail page).
+  // `voted` = named + anonymous responders; `suggestions` = distinct proposed
+  // options. Counts only — viewer identities never leave the API. (The "seen"
+  // / viewed_total stat was dropped from the card per the owner.)
   const respondedCount =
     (wrapper?.voter_names?.length ?? 0) + (wrapper?.anonymous_count ?? 0);
-  const seenCount = wrapper?.viewed_total ?? 0;
   const suggestionCount = wrapper?.suggestion_count ?? 0;
+
+  // TEMP scaffold: 3 layout variants for the bottom-right corner, switchable
+  // via ?variant=a|b|c, so the owner can compare. Remove once a design is
+  // chosen. Reads after mount (isClient pattern) to avoid a hydration mismatch.
+  const [cornerVariant, setCornerVariant] = React.useState<"a" | "b" | "c">("a");
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const v = new URLSearchParams(window.location.search).get("variant");
+    if (v === "b" || v === "c") setCornerVariant(v);
+  }, []);
+
+  const votedStat = (
+    <span aria-label={`${respondedCount} voted`} className="whitespace-nowrap">
+      {respondedCount}&nbsp;<span aria-hidden="true">🗳️</span>
+    </span>
+  );
+  const suggestionStat =
+    suggestionCount > 0 ? (
+      <span aria-label={`${suggestionCount} suggestions`} className="whitespace-nowrap">
+        {suggestionCount}&nbsp;<span aria-hidden="true">💡</span>
+      </span>
+    ) : null;
+  const statsInline = (
+    <span className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
+      {votedStat}
+      {suggestionStat && (
+        <>
+          <span className="text-gray-300 dark:text-gray-600" aria-hidden="true">&middot;</span>
+          {suggestionStat}
+        </>
+      )}
+    </span>
+  );
+  const statusNode = statusEl ? <ClientOnly fallback={null}>{statusEl}</ClientOnly> : null;
+  const chevronGlyph = (
+    <svg
+      className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  );
+  const cornerDot = (
+    <span className="text-gray-300 dark:text-gray-600" aria-hidden="true">&middot;</span>
+  );
+
+  let cornerCluster: React.ReactNode;
+  if (cornerVariant === "b") {
+    // B — stacked: status countdown on top, stats below, chevron at the right.
+    cornerCluster = (
+      <div className="shrink-0 flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
+        <div className="flex flex-col items-end leading-tight gap-0.5">
+          {statusNode}
+          {statsInline}
+        </div>
+        {chevronGlyph}
+      </div>
+    );
+  } else if (cornerVariant === "c") {
+    // C — status first (primary), then stats, then chevron.
+    cornerCluster = (
+      <div className="shrink-0 flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+        {statusNode}
+        {statusNode && cornerDot}
+        {statsInline}
+        {chevronGlyph}
+      </div>
+    );
+  } else {
+    // A (default) — flat single line: stats first, then status, then chevron.
+    cornerCluster = (
+      <div className="shrink-0 flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+        {statsInline}
+        {statusNode && cornerDot}
+        {statusNode}
+        {chevronGlyph}
+      </div>
+    );
+  }
 
   // Edge-to-edge rectangle with a full-bleed `border-b` divider between
   // rows. The awaiting state surfaces as a left-edge amber bar (the old
@@ -413,14 +489,13 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           </div>
         )}
 
-        {/* Bottom row: metadata line (left) + status countdown & nav chevron
-            (right). The metadata line is author · date · {N}👁 · {N}🗳️ [· {N}💡]
-            — counts use emoji (eye = seen, ballot = voted, lightbulb =
-            suggestions), dots between. seen + voted always show; suggestions
-            only when there are any. The author name is the only part that
-            truncates (counts stay visible); the date keeps its hover/tap
-            tooltip. Respondent/viewed bubbles live only on the poll detail
-            page now. Skipped during the placeholder/FLIP phase. */}
+        {/* Bottom row: author · date (left) + the corner cluster (right)
+            holding the voted/suggestions emoji counts + status countdown + nav
+            chevron. TEMP: 3 corner arrangements via ?variant=a|b|c (see
+            cornerCluster above). The author name is the only truncating part;
+            the date keeps its hover/tap tooltip. The "seen" stat + respondent
+            bubbles live only on the poll detail page now. Skipped during the
+            placeholder/FLIP phase. */}
         {!isPlaceholder && (
           <div className={`${pillEl ? "" : "mt-2 "}flex items-center justify-between gap-2 min-w-0`}>
             <ClientOnly fallback={null}>
@@ -455,32 +530,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                     </span>
                   )}
                 </span>
-                <span className="shrink-0 whitespace-nowrap">
-                  &nbsp;&middot;&nbsp;
-                  <span aria-label={`${seenCount} viewed`}>{seenCount}&nbsp;<span aria-hidden="true">👁️</span></span>
-                  &nbsp;&middot;&nbsp;
-                  <span aria-label={`${respondedCount} voted`}>{respondedCount}&nbsp;<span aria-hidden="true">🗳️</span></span>
-                  {suggestionCount > 0 && (
-                    <>
-                      &nbsp;&middot;&nbsp;
-                      <span aria-label={`${suggestionCount} suggestions`}>{suggestionCount}&nbsp;<span aria-hidden="true">💡</span></span>
-                    </>
-                  )}
-                </span>
               </div>
             </ClientOnly>
-            <div className="shrink-0 flex items-center gap-1 text-sm leading-tight text-gray-500 dark:text-gray-400">
-              {statusEl && <ClientOnly fallback={null}>{statusEl}</ClientOnly>}
-              <svg
-                className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
+            {cornerCluster}
           </div>
         )}
       </div>
