@@ -379,26 +379,13 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             : "bg-transparent"
         } hover:bg-gray-100 dark:hover:bg-gray-900 active:bg-blue-100 dark:active:bg-blue-900/40`}
       >
-        {/* Top row: icon + title (left) / status + chevron (right). */}
-        <div className="flex items-start justify-between gap-2 min-w-0">
+        {/* Top row: icon + title only. The status countdown + nav chevron
+            moved to the bottom-right (see the metadata row below). */}
+        <div className="flex items-start min-w-0">
           <h3 className="flex-1 min-w-0 flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white">
             <span className="mr-1.5 shrink-0" aria-hidden="true">{categoryIcon}</span>
             <span className="min-w-0">{question.title}</span>
           </h3>
-          {!isPlaceholder && (
-            <div className="shrink-0 pt-0.5 flex items-center gap-1 text-sm leading-tight text-gray-500 dark:text-gray-400">
-              {statusEl && <ClientOnly fallback={null}>{statusEl}</ClientOnly>}
-              <svg
-                className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          )}
         </div>
 
         {/* Pill row: centered across the FULL rectangle width (not just
@@ -426,53 +413,75 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           </div>
         )}
 
-        {/* Bottom row: a single metadata line — author · date · seen · voted
-            [· suggestions], dots between. The respondent/viewed bubbles live
-            only on the poll detail page now, not here. seen + voted are always
-            shown; suggestions only when there are any. The author name is the
-            only part that truncates (the counts stay visible); the date keeps
-            its hover/tap tooltip. Skipped during the placeholder/FLIP phase. */}
+        {/* Bottom row: metadata line (left) + status countdown & nav chevron
+            (right). The metadata line is author · date · {N}👁 · {N}🗳️ [· {N}💡]
+            — counts use emoji (eye = seen, ballot = voted, lightbulb =
+            suggestions), dots between. seen + voted always show; suggestions
+            only when there are any. The author name is the only part that
+            truncates (counts stay visible); the date keeps its hover/tap
+            tooltip. Respondent/viewed bubbles live only on the poll detail
+            page now. Skipped during the placeholder/FLIP phase. */}
         {!isPlaceholder && (
-          <ClientOnly fallback={null}>
-            <div className={`${pillEl ? "" : "mt-2 "}flex items-baseline min-w-0 text-xs text-gray-400 dark:text-gray-500`}>
-              {wrapper?.creator_name && (
-                <>
-                  <span className="truncate shrink min-w-0">{wrapper.creator_name}</span>
-                  <span className="shrink-0">&nbsp;&middot;&nbsp;</span>
-                </>
-              )}
-              <span
-                className="shrink-0 relative cursor-help"
-                onClick={() =>
-                  setTooltipQuestionId((prev) =>
-                    prev === question.id ? null : question.id,
-                  )
-                }
-                onMouseEnter={() => setTooltipQuestionId(question.id)}
-                onMouseLeave={() =>
-                  setTooltipQuestionId((prev) =>
-                    prev === question.id ? null : prev,
-                  )
-                }
+          <div className={`${pillEl ? "" : "mt-2 "}flex items-center justify-between gap-2 min-w-0`}>
+            <ClientOnly fallback={null}>
+              <div className="flex items-baseline min-w-0 text-xs text-gray-400 dark:text-gray-500">
+                {wrapper?.creator_name && (
+                  <>
+                    <span className="truncate shrink min-w-0">{wrapper.creator_name}</span>
+                    <span className="shrink-0">&nbsp;&middot;&nbsp;</span>
+                  </>
+                )}
+                <span
+                  className="shrink-0 relative cursor-help"
+                  onClick={() =>
+                    setTooltipQuestionId((prev) =>
+                      prev === question.id ? null : question.id,
+                    )
+                  }
+                  onMouseEnter={() => setTooltipQuestionId(question.id)}
+                  onMouseLeave={() =>
+                    setTooltipQuestionId((prev) =>
+                      prev === question.id ? null : prev,
+                    )
+                  }
+                >
+                  {relativeTime(question.created_at)}
+                  {isTooltipActive && (
+                    <span
+                      role="tooltip"
+                      className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-gray-100 shadow-lg dark:bg-gray-900"
+                    >
+                      {formatCreationTimestamp(question.created_at)}
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 whitespace-nowrap">
+                  &nbsp;&middot;&nbsp;
+                  <span aria-label={`${seenCount} viewed`}>{seenCount}&nbsp;<span aria-hidden="true">👁️</span></span>
+                  &nbsp;&middot;&nbsp;
+                  <span aria-label={`${respondedCount} voted`}>{respondedCount}&nbsp;<span aria-hidden="true">🗳️</span></span>
+                  {suggestionCount > 0 && (
+                    <>
+                      &nbsp;&middot;&nbsp;
+                      <span aria-label={`${suggestionCount} suggestions`}>{suggestionCount}&nbsp;<span aria-hidden="true">💡</span></span>
+                    </>
+                  )}
+                </span>
+              </div>
+            </ClientOnly>
+            <div className="shrink-0 flex items-center gap-1 text-sm leading-tight text-gray-500 dark:text-gray-400">
+              {statusEl && <ClientOnly fallback={null}>{statusEl}</ClientOnly>}
+              <svg
+                className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
               >
-                {relativeTime(question.created_at)}
-                {isTooltipActive && (
-                  <span
-                    role="tooltip"
-                    className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-gray-100 shadow-lg dark:bg-gray-900"
-                  >
-                    {formatCreationTimestamp(question.created_at)}
-                  </span>
-                )}
-              </span>
-              <span className="shrink-0 whitespace-nowrap">
-                &nbsp;&middot;&nbsp;{seenCount} seen&nbsp;&middot;&nbsp;{respondedCount} voted
-                {suggestionCount > 0 && (
-                  <>&nbsp;&middot;&nbsp;{suggestionCount} suggestion{suggestionCount === 1 ? "" : "s"}</>
-                )}
-              </span>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </div>
-          </ClientOnly>
+          </div>
         )}
       </div>
     </div>
