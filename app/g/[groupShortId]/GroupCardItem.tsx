@@ -29,7 +29,6 @@ import {
   getCategoryIcon,
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
-  compactDurationSince,
   relativeTime,
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
@@ -123,8 +122,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   // them without re-deriving.
   const wrapperResponseDeadline = wrapper?.response_deadline ?? null;
   const wrapperPrephaseDeadline = wrapper?.prephase_deadline ?? null;
-  const wrapperCloseReason = wrapper?.close_reason ?? null;
-  const wrapperUpdatedAt = wrapper?.updated_at ?? question.updated_at;
   const categoryIcon = getCategoryIcon(question);
   // Hoisted: every row reads this 1–3 times (status label, respondent
   // filter, respondent empty-text, includeSelf gate).
@@ -213,62 +210,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
   };
 
-  // Status label is anchor-based: the poll's voting and prephase deadlines
-  // are shared across questions (per the poll design), and `isClosed` is
-  // enforced poll-atomically by Phase 3.1 close/reopen.
-  const statusEl: React.ReactNode = (() => {
-    const inTimeAvailability = isInTimeAvailabilityPhase(question);
-    if (isClosed) {
-      // Prefer the response_deadline whenever it has passed — covers both the
-      // server-flipped `close_reason === "deadline"` case AND the brief window
-      // where the FE flips isClosed via expired deadline before the server
-      // tick records the close (without this, that window would show a wrong
-      // "Closed Xm ago" based on `updated_at`).
-      const deadlineHasPassed =
-        !!wrapperResponseDeadline && new Date(wrapperResponseDeadline) <= new Date();
-      const closedAt =
-        (wrapperCloseReason === "deadline" || deadlineHasPassed) && wrapperResponseDeadline
-          ? wrapperResponseDeadline
-          : wrapperUpdatedAt;
-      return (
-        <span className="text-xs text-gray-400 dark:text-gray-500">
-          Closed {compactDurationSince(closedAt)} ago
-        </span>
-      );
-    }
-    if (inSuggestionPhase && wrapperPrephaseDeadline) {
-      return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Suggestions" wide />;
-    }
-    // Time questions: show the "Availability" countdown only while the prephase
-    // (availability) deadline is still in the future. Once it passes the poll is
-    // in its preferences-voting phase — fall through to the response-deadline
-    // countdown labeled "Preferences" (NOT a stale "Availability: Expired",
-    // which is what showed while `question.options` lagged behind the cutoff).
-    if (inTimeAvailability) {
-      if (wrapperPrephaseDeadline && new Date(wrapperPrephaseDeadline) > new Date()) {
-        return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" wide />;
-      }
-      if (!wrapperPrephaseDeadline) {
-        return (
-          <span className="font-semibold text-blue-600 dark:text-blue-400">
-            Collecting Availability
-          </span>
-        );
-      }
-    }
-    if (wrapperResponseDeadline) {
-      return (
-        <SimpleCountdown
-          deadline={wrapperResponseDeadline}
-          label={question.question_type === "time" ? "Preferences" : "Voting"}
-          colorClass="text-green-600 dark:text-green-400"
-          wide
-        />
-      );
-    }
-    return null;
-  })();
-
   // Returns the type-specific compact pill JSX for one question, or null
   // when there's nothing to show yet. Cards are navigation-only now —
   // pill taps fall through to the card click handler that slides to the
@@ -336,48 +277,65 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
   }
 
-  // Engagement counts shown in the bottom-right corner cluster (no respondent
-  // bubbles on the group card — those live only on the poll detail page).
-  // `voted` = named + anonymous responders; `suggestions` = distinct proposed
-  // options. Counts only — viewer identities never leave the API. (The "seen"
-  // / viewed_total stat was dropped from the card per the owner.)
+  // Engagement counts. `views` (= viewed_total) shows in the bottom-LEFT after
+  // author·date; `voted` + `suggestions` show in the bottom-RIGHT corner with
+  // their phase countdowns. Counts only — viewer identities never leave the
+  // API. No respondent bubbles on the group card (poll-detail-only).
   const respondedCount =
     (wrapper?.voter_names?.length ?? 0) + (wrapper?.anonymous_count ?? 0);
   const suggestionCount = wrapper?.suggestion_count ?? 0;
+  const viewsCount = wrapper?.viewed_total ?? 0;
 
-  // TEMP scaffold: 3 layout variants for the bottom-right corner, switchable
-  // via ?variant=a|b|c, so the owner can compare. Remove once a design is
-  // chosen. Reads after mount (isClient pattern) to avoid a hydration mismatch.
-  const [cornerVariant, setCornerVariant] = React.useState<"a" | "b" | "c">("a");
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    const v = new URLSearchParams(window.location.search).get("variant");
-    if (v === "b" || v === "c") setCornerVariant(v);
-  }, []);
+  // Bottom-right corner: a blue "{N} Suggestions (Xd)" prephase part + a green
+  // "{N} Votes (Xd)" voting part, separated by a bullet, then the nav chevron.
+  // The parenthesized countdowns are the phase deadlines (suggestion cutoff /
+  // voting cutoff). Rules: hide the suggestions part once CLOSED; hide the
+  // votes part while voting hasn't opened yet (a prephase is still active).
+  const now = Date.now();
+  const inTimeAvailability = isInTimeAvailabilityPhase(question);
+  const notOpenYet = inSuggestionPhase || inTimeAvailability; // voting not open
+  const prephaseFuture =
+    !!wrapperPrephaseDeadline && new Date(wrapperPrephaseDeadline).getTime() > now;
+  const votingFuture =
+    !!wrapperResponseDeadline && new Date(wrapperResponseDeadline).getTime() > now;
 
-  const votedStat = (
-    <span aria-label={`${respondedCount} voted`} className="whitespace-nowrap">
-      {respondedCount}&nbsp;<span aria-hidden="true">🗳️</span>
-    </span>
+  const parenCountdown = (deadline: string) => (
+    <>
+      {" ("}
+      <SimpleCountdown deadline={deadline} wide colorClass="" numberClass="font-medium" />
+      {")"}
+    </>
   );
-  const suggestionStat =
-    suggestionCount > 0 ? (
-      <span aria-label={`${suggestionCount} suggestions`} className="whitespace-nowrap">
-        {suggestionCount}&nbsp;<span aria-hidden="true">💡</span>
+
+  let prephasePart: React.ReactNode = null;
+  if (!isClosed) {
+    if (inSuggestionPhase || suggestionCount > 0) {
+      prephasePart = (
+        <span className="text-blue-600 dark:text-blue-400 whitespace-nowrap">
+          {suggestionCount} Suggestion{suggestionCount === 1 ? "" : "s"}
+          {inSuggestionPhase && prephaseFuture && parenCountdown(wrapperPrephaseDeadline!)}
+        </span>
+      );
+    } else if (inTimeAvailability) {
+      prephasePart = (
+        <span className="text-blue-600 dark:text-blue-400 whitespace-nowrap">
+          Availability
+          {prephaseFuture && parenCountdown(wrapperPrephaseDeadline!)}
+        </span>
+      );
+    }
+  }
+
+  let votesPart: React.ReactNode = null;
+  if (!notOpenYet) {
+    votesPart = (
+      <span className="text-green-600 dark:text-green-400 whitespace-nowrap">
+        {respondedCount} Vote{respondedCount === 1 ? "" : "s"}
+        {!isClosed && votingFuture && parenCountdown(wrapperResponseDeadline!)}
       </span>
-    ) : null;
-  const statsInline = (
-    <span className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
-      {votedStat}
-      {suggestionStat && (
-        <>
-          <span className="text-gray-300 dark:text-gray-600" aria-hidden="true">&middot;</span>
-          {suggestionStat}
-        </>
-      )}
-    </span>
-  );
-  const statusNode = statusEl ? <ClientOnly fallback={null}>{statusEl}</ClientOnly> : null;
+    );
+  }
+
   const chevronGlyph = (
     <svg
       className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"
@@ -389,43 +347,17 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
     </svg>
   );
-  const cornerDot = (
-    <span className="text-gray-300 dark:text-gray-600" aria-hidden="true">&middot;</span>
-  );
 
-  let cornerCluster: React.ReactNode;
-  if (cornerVariant === "b") {
-    // B — stacked: status countdown on top, stats below, chevron at the right.
-    cornerCluster = (
-      <div className="shrink-0 flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
-        <div className="flex flex-col items-end leading-tight gap-0.5">
-          {statusNode}
-          {statsInline}
-        </div>
-        {chevronGlyph}
-      </div>
-    );
-  } else if (cornerVariant === "c") {
-    // C — status first (primary), then stats, then chevron.
-    cornerCluster = (
-      <div className="shrink-0 flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-        {statusNode}
-        {statusNode && cornerDot}
-        {statsInline}
-        {chevronGlyph}
-      </div>
-    );
-  } else {
-    // A (default) — flat single line: stats first, then status, then chevron.
-    cornerCluster = (
-      <div className="shrink-0 flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-        {statsInline}
-        {statusNode && cornerDot}
-        {statusNode}
-        {chevronGlyph}
-      </div>
-    );
-  }
+  const cornerCluster: React.ReactNode = (
+    <div className="shrink-0 flex items-center gap-1.5 text-xs whitespace-nowrap">
+      {prephasePart}
+      {prephasePart && votesPart && (
+        <span className="text-gray-300 dark:text-gray-600" aria-hidden="true">&bull;</span>
+      )}
+      {votesPart}
+      {chevronGlyph}
+    </div>
+  );
 
   // Edge-to-edge rectangle with a full-bleed `border-b` divider between
   // rows. The awaiting state surfaces as a left-edge amber bar (the old
@@ -529,6 +461,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                       {formatCreationTimestamp(question.created_at)}
                     </span>
                   )}
+                </span>
+                <span className="shrink-0 whitespace-nowrap">
+                  &nbsp;&middot;&nbsp;{viewsCount} View{viewsCount === 1 ? "" : "s"}
                 </span>
               </div>
             </ClientOnly>
