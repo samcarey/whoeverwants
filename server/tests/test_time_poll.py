@@ -3,7 +3,33 @@
 from algorithms.time_question import (
     compute_slot_availability,
     filter_slots_by_min_availability,
+    filter_slots_by_min_participants,
 )
+
+
+class TestFilterSlotsByMinParticipants:
+    """The "Minimum Participants" gate keeps only slots that at least N people
+    can attend (absolute headcount, not relative to the best slot). An empty
+    result means no time cleared the bar → the caller cancels the event."""
+
+    def test_keeps_slots_at_or_above_threshold(self):
+        slots = ["a", "b", "c"]
+        counts = {"a": 3, "b": 2, "c": 1}
+        assert filter_slots_by_min_participants(slots, counts, 2) == ["a", "b"]
+
+    def test_no_slot_clears_bar_returns_empty(self):
+        # No slot reaches 4 → empty → event's off.
+        slots = ["a", "b"]
+        counts = {"a": 3, "b": 1}
+        assert filter_slots_by_min_participants(slots, counts, 4) == []
+
+    def test_default_two_excludes_single_person_slots(self):
+        slots = ["a", "b"]
+        counts = {"a": 2, "b": 1}
+        assert filter_slots_by_min_participants(slots, counts, 2) == ["a"]
+
+    def test_missing_count_treated_as_zero(self):
+        assert filter_slots_by_min_participants(["a"], {}, 2) == []
 
 
 class TestFilterSlotsByMinAvailability:

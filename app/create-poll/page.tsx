@@ -23,7 +23,7 @@ import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import SliderSwitch from "@/components/SliderSwitch";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
-import MinimumParticipationModal from "@/components/MinimumParticipationModal";
+import CompactMinParticipantsField from "@/components/CompactMinParticipantsField";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import DayTimeWindowsInput from "@/components/DayTimeWindowsInput";
 import DaysSelector from "@/components/DaysSelector";
@@ -196,8 +196,7 @@ export function CreateQuestionContent() {
   const [durationMinEnabled, setDurationMinEnabled] = useState(true);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
-  const [minimumParticipation, setMinimumParticipation] = useState<number>(95);
-  const [showMinParticipationModal, setShowMinParticipationModal] = useState(false);
+  const [minParticipants, setMinParticipants] = useState<number>(2);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -800,10 +799,10 @@ export function CreateQuestionContent() {
     durationMinEnabled,
     durationMaxEnabled,
     dayTimeWindows: [...dayTimeWindows],
-    minimumParticipation,
+    minParticipants,
     collectSuggestions,
     collectAvailability,
-  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minimumParticipation, collectSuggestions, collectAvailability]);
+  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, collectSuggestions, collectAvailability]);
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
@@ -824,7 +823,7 @@ export function CreateQuestionContent() {
     setDurationMinEnabled(d.durationMinEnabled);
     setDurationMaxEnabled(d.durationMaxEnabled);
     setDayTimeWindows([...d.dayTimeWindows]);
-    setMinimumParticipation(d.minimumParticipation);
+    setMinParticipants(d.minParticipants);
     // Default ON for drafts persisted before these fields existed.
     setCollectSuggestions(d.collectSuggestions ?? true);
     setCollectAvailability(d.collectAvailability ?? true);
@@ -1143,7 +1142,7 @@ export function CreateQuestionContent() {
           } else if (duplicateData.question_type === 'time') {
             setQuestionType('time');
             setOptions(['']);
-            if (duplicateData.min_availability_percent != null) setMinimumParticipation(duplicateData.min_availability_percent);
+            if (duplicateData.time_min_participants != null) setMinParticipants(duplicateData.time_min_participants);
             // A duplicated time poll re-opens as a fresh availability-phase
             // poll (the default). The duplicate snapshot doesn't carry the
             // creator's windows, so a no-availability copy couldn't derive
@@ -2253,6 +2252,20 @@ export function CreateQuestionContent() {
                       />
                     )}
 
+                    {/* Time polls get "Minimum Participants" in the same slot
+                        Minimum Votes occupies for other poll types. A time slot
+                        counts only if at least this many people are available
+                        for it; if none clears the bar the event is cancelled.
+                        Only meaningful when an availability phase collects that
+                        data. */}
+                    {showTimeFields && collectAvailability && (
+                      <CompactMinParticipantsField
+                        value={minParticipants}
+                        setValue={setMinParticipants}
+                        disabled={isLoading}
+                      />
+                    )}
+
                     {pollHasPrephase && (
                       <div
                         className="flex items-center justify-between gap-3 h-12 cursor-pointer"
@@ -2272,30 +2285,6 @@ export function CreateQuestionContent() {
 
                   </form>
                 </section>
-
-                {/* Minimum Availability filters slots by how many voters were
-                    free — only meaningful when an availability phase actually
-                    collects that data. Hidden when "Ask for Availability before
-                    Voting" is off. */}
-                {showTimeFields && collectAvailability && (
-                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
-                    <div className="flex items-center justify-between gap-3 h-12">
-                      <span className="text-base font-normal shrink-0">
-                        Minimum Availability{' '}
-                        <span className="text-xs text-gray-500 dark:text-gray-400">of the top slot</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowMinParticipationModal(true)}
-                        disabled={isLoading}
-                        className="text-base font-normal text-gray-500 dark:text-gray-500 disabled:opacity-50"
-                        aria-label="Adjust minimum availability percentage"
-                      >
-                        {minimumParticipation}%
-                      </button>
-                    </div>
-                  </section>
-                )}
 
                 {/* Notes card — sits at the bottom, after poll settings.
                     The label is rendered as an external left-justified
@@ -2342,14 +2331,6 @@ export function CreateQuestionContent() {
           </div>
         </ModalPortal>
       )}
-
-      <MinimumParticipationModal
-        isOpen={showMinParticipationModal}
-        onClose={() => setShowMinParticipationModal(false)}
-        value={minimumParticipation}
-        onChange={setMinimumParticipation}
-        disabled={isLoading}
-      />
 
       <ConfirmationModal
         isOpen={showDiscardConfirm}

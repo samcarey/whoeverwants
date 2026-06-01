@@ -260,6 +260,18 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
     return null;
   }
 
+  // No slot met the "Minimum Participants" gate → the event is off.
+  if (results.time_event_cancelled) {
+    return (
+      <div className="text-center py-4 space-y-1">
+        <p className="text-base font-semibold text-gray-800 dark:text-gray-100">No time works — the event&apos;s off</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          No time had enough people available.
+        </p>
+      </div>
+    );
+  }
+
   if (options.length === 0) {
     return (
       <div className="text-center py-4">
@@ -503,6 +515,19 @@ export function CompactTimePreview({
 }) {
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
+  // No slot met the "Minimum Participants" gate → the event is off.
+  if (results.time_event_cancelled) {
+    return (
+      <div className="flex items-center justify-end gap-2 min-w-0">
+        {categoryIcon && (
+          <span className="text-xs shrink-0">{categoryIcon}</span>
+        )}
+        <span className={`${PILL_CLASS} ${PILL_COLORS_CLOSED}`}>
+          Event&apos;s off
+        </span>
+      </div>
+    );
+  }
   if (totalVotes === 0 || !winner) {
     return null;
   }

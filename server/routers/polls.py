@@ -332,6 +332,7 @@ def _insert_question(
             reference_latitude, reference_longitude,
             reference_location_label,
             min_availability_percent,
+            time_min_participants,
             is_auto_title,
             poll_id, question_index,
             created_at, updated_at
@@ -345,6 +346,7 @@ def _insert_question(
             %(reference_latitude)s, %(reference_longitude)s,
             %(reference_location_label)s,
             %(min_availability_percent)s,
+            %(time_min_participants)s,
             %(is_auto_title)s,
             %(poll_id)s, %(question_index)s,
             %(now)s, %(now)s
@@ -367,6 +369,9 @@ def _insert_question(
             "reference_location_label": sub.reference_location_label,
             "min_availability_percent": (
                 sub.min_availability_percent if sub.question_type == QuestionType.time else None
+            ),
+            "time_min_participants": (
+                sub.min_participants if sub.question_type == QuestionType.time else None
             ),
             "is_auto_title": sub.is_auto_title,
             "poll_id": str(poll_row["id"]),
