@@ -118,6 +118,40 @@ export async function apiGetGroupByRouteId(
   return hydrateAndCache(data);
 }
 
+/** Result of a visibility-aware single-poll read within a group.
+ *  - `{ status: 'visible', poll }` — the caller can see the poll.
+ *  - `{ status: 'hidden_pre_join', closedAt }` — the poll exists in the
+ *    group and the caller is a member, but it closed before they joined,
+ *    so its contents are withheld. `closedAt` is the closure timestamp
+ *    (ISO) or null. */
+export type GroupPollResult =
+  | { status: "visible"; poll: Poll }
+  | { status: "hidden_pre_join"; closedAt: string | null };
+
+/** Visibility-aware fetch of one poll within a group, used by the
+ *  direct-poll-link landing page (`/g/<group>/p/<poll>`).
+ *
+ *  Unlike `apiGetPollByShortId` (which hits the visibility-BLIND
+ *  `/api/polls/{short_id}` and would leak a closed-before-join poll's
+ *  contents to a late joiner), this enforces the group visibility rule.
+ *  Throws ApiError(404) when the poll doesn't exist in the group (or the
+ *  group is private and the caller isn't a member). On a `visible` result
+ *  the poll is cached (and the group's accessible-polls cache primed) just
+ *  like `apiGetGroupByRouteId`. */
+export async function apiGetGroupPoll(
+  routeId: string,
+  pollRef: string,
+): Promise<GroupPollResult> {
+  const data = await groupFetch<any>(
+    `/by-route-id/${encodeURIComponent(routeId)}/poll/${encodeURIComponent(pollRef)}`,
+  );
+  if (data?.status === "visible" && data.poll) {
+    const [poll] = hydrateAndCache([data.poll]);
+    return { status: "visible", poll };
+  }
+  return { status: "hidden_pre_join", closedAt: data?.closed_at ?? null };
+}
+
 /** Create a brand-new empty group and auto-join the caller as a member.
  *  Used by the home new group button. The next `getMyGroups()` call picks up the
  *  new group via the always-fresh `/api/groups/empty` parallel fetch;

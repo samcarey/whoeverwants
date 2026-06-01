@@ -14,8 +14,8 @@ import { Fragment, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, u
 import { useParams, useRouter } from "next/navigation";
 import { flushSync } from "react-dom";
 import {
+  apiGetGroupPoll,
   apiGetPollById,
-  apiGetPollByShortId,
   apiGetQuestionResults,
   apiGetVotes,
   apiRecordPollView,
@@ -54,7 +54,6 @@ import {
   pollScrollKey,
   rememberCurrentScroll,
 } from "@/lib/scrollMemory";
-import { isUuidLike } from "@/lib/questionId";
 import {
   compactDurationSince,
   getCategoryIcon,
@@ -149,6 +148,12 @@ export function PollDetailView({ groupId, pollShortId, overlayCardsOffset }: Pol
   });
   const [loading, setLoading] = useState(!poll);
   const [error, setError] = useState(false);
+  // Set when the poll exists in this group but closed BEFORE the caller
+  // joined — its contents are withheld by the visibility rule, so we show
+  // a "closed before you joined" note instead of either the leaked
+  // contents or a misleading "not found". `closedAt` is the closure
+  // timestamp (ISO) or null. See `apiGetGroupPoll`.
+  const [hiddenPreJoin, setHiddenPreJoin] = useState<{ closedAt: string | null } | null>(null);
 
   useEffect(() => {
     if (poll) return;
@@ -157,11 +162,16 @@ export function PollDetailView({ groupId, pollShortId, overlayCardsOffset }: Pol
     (async () => {
       try {
         setLoading(true);
-        const fetched = isUuidLike(pollShortId)
-          ? await apiGetPollById(pollShortId)
-          : await apiGetPollByShortId(pollShortId);
+        // Visibility-aware read (NOT the visibility-blind
+        // apiGetPollByShortId): a closed-before-join poll returns a marker,
+        // never its contents.
+        const result = await apiGetGroupPoll(groupId, pollShortId);
         if (cancelled) return;
-        setPoll(fetched);
+        if (result.status === "visible") {
+          setPoll(result.poll);
+        } else {
+          setHiddenPreJoin({ closedAt: result.closedAt });
+        }
       } catch (err) {
         if (cancelled) return;
         if (!(err instanceof ApiError && err.status === 404)) {
@@ -175,7 +185,7 @@ export function PollDetailView({ groupId, pollShortId, overlayCardsOffset }: Pol
     return () => {
       cancelled = true;
     };
-  }, [poll, pollShortId]);
+  }, [poll, pollShortId, groupId]);
 
   // POLL_HYDRATED swaps a placeholder poll for the real one. Handles the
   // case where the user clicked through to a freshly-submitted poll before
@@ -203,18 +213,29 @@ export function PollDetailView({ groupId, pollShortId, overlayCardsOffset }: Pol
 
   if (loading && !poll) return <SimpleFrame onBack={goBack}><p className="text-gray-600 dark:text-gray-400">Loading poll...</p></SimpleFrame>;
 
+  if (hiddenPreJoin && !poll) {
+    return (
+      <MessageFrame
+        onBack={goBack}
+        onBackToGroup={() => router.push(`/g/${groupId}`)}
+        heading="Poll Closed"
+        message={
+          hiddenPreJoin.closedAt
+            ? `This poll closed ${relativeTime(hiddenPreJoin.closedAt)}, before you joined the group, so it's no longer available to view.`
+            : "This poll closed before you joined the group, so it's no longer available to view."
+        }
+      />
+    );
+  }
+
   if (error || !poll) {
     return (
-      <SimpleFrame onBack={goBack}>
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Poll Not Found</h2>
-        <p className="text-gray-600 dark:text-gray-400 mb-4">This poll may have been removed.</p>
-        <button
-          onClick={() => router.push(`/g/${groupId}`)}
-          className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-        >
-          Back to Group
-        </button>
-      </SimpleFrame>
+      <MessageFrame
+        onBack={goBack}
+        onBackToGroup={() => router.push(`/g/${groupId}`)}
+        heading="Poll Not Found"
+        message="This poll may have been removed."
+      />
     );
   }
 
@@ -240,6 +261,33 @@ function SimpleFrame({ onBack, children }: { onBack: () => void; children: React
         {children}
       </div>
     </>
+  );
+}
+
+/** Terminal "can't show the poll" frame (not-found / closed-before-join):
+ *  heading + message + a single "Back to Group" button. */
+function MessageFrame({
+  onBack,
+  onBackToGroup,
+  heading,
+  message,
+}: {
+  onBack: () => void;
+  onBackToGroup: () => void;
+  heading: string;
+  message: string;
+}) {
+  return (
+    <SimpleFrame onBack={onBack}>
+      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">{heading}</h2>
+      <p className="text-gray-600 dark:text-gray-400 mb-4">{message}</p>
+      <button
+        onClick={onBackToGroup}
+        className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+      >
+        Back to Group
+      </button>
+    </SimpleFrame>
   );
 }
 

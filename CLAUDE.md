@@ -2087,28 +2087,96 @@ different FE origin, extend the allowlist.
 >
 > The closed-before-join filter still applies, so a brand-new member
 > sees open polls plus polls closed after their `joined_at` watermark
-> but NOT polls closed before. If the URL carries `?p=<closedPreJoin>`,
-> the linked poll is silently absent — the FE renders the rest of the
-> group (per the user spec: "if they received a direct link to a poll
-> closed before they joined, just show the group and don't try to show
-> the old poll"). `?p=` is purely cosmetic at the API level — it drives
-> FE auto-expand + scroll target + link-preview metadata, nothing else.
+> but NOT polls closed before. The closed-pre-join poll is omitted from
+> the group read's list; a direct LINK to such a poll is no longer
+> silently dropped — it surfaces a "Poll Closed — closed before you
+> joined" note (see the "Late-joiner closed-poll edge — SHIPPED" note
+> below). `?p=` is purely cosmetic at the API level — it drives FE
+> auto-expand + scroll target + link-preview metadata, nothing else.
 >
-> **TODO — don't silently omit a link-targeted poll the recipient can't see;
-> tell them it closed before they joined.** (Decision from the social-test
-> review, May 2026 — this refines the "just show the group, don't try to show
-> the old poll" spec above.) Silently dropping the targeted poll reads as a
-> broken link to whoever shared a just-closed result. Desired: when a direct
-> poll link (`/g/<g>/p/<poll>` or legacy `?p=<poll>`) targets a poll that's
-> hidden ONLY by the closed-before-join watermark (as opposed to genuinely not
-> existing), render the group plus a clear "this poll closed before you joined
-> the group" note where the poll would be — instead of nothing. Implementation:
-> the FE can't tell "filtered out" from "doesn't exist" today (the read returns
-> only the visible subset). Either (a) FE does a cheap existence check —
-> requested poll short_id resolves within this group but isn't in the visible
-> list — or (b) the read endpoint returns a small marker `{hidden_pre_join:
-> [pollShortId]}` for exactly this case. Return existence + closure timing
-> ONLY; never the hidden poll's contents — the visibility rule stands.
+> **Late-joiner closed-poll edge — SHIPPED (`hidden_pre_join` marker).**
+> A direct poll link (`/g/<g>/p/<poll>`; legacy `?p=<poll>` redirects to the
+> path form) that targets a poll hidden ONLY by the closed-before-join
+> watermark now shows a clear "Poll Closed — this poll closed {N} ago, before
+> you joined the group" note instead of either silently omitting it or (worse)
+> leaking its contents. The note renders on the poll DETAIL page (where the
+> link lands) with a "Back to Group" button — NOT as a phantom card injected
+> into the group list (closed-pre-join polls have no natural slot in the
+> sorted list, and reshaping the group read's `list[PollResponse]` to carry a
+> marker would break every consumer).
+>   * **The leak this also closed:** `GET /api/polls/{short_id}` /
+>     `/by-id/{poll_id}` are visibility-BLIND (they 200 the full poll
+>     regardless of membership/closure). The path-form detail page used to
+>     fetch the targeted poll through `apiGetPollByShortId` on a cache miss —
+>     so a late joiner tapping a closed-pre-join link saw the full contents.
+>     The detail page's cache-miss fetch now routes through the new
+>     visibility-aware endpoint instead.
+>   * **Backend:** `GET /api/groups/by-route-id/{route_id}/poll/{poll_ref}`
+>     (`routers/groups.py`, model `GroupPollResponse`). Resolves the group
+>     (404 on miss), gates private groups (404 non-members at the boundary,
+>     same as the group read), auto-joins public-group visitors (so the
+>     closed-before-join watermark is "now"), resolves `poll_ref` as a
+>     `polls.short_id` OR `polls.id` uuid SCOPED to that group (cross-group
+>     ref → 404), then runs `filter_visible_polls` on the single poll id.
+>     Visible → `{status:"visible", poll:<full PollResponse>}`; filtered out
+>     (the caller is now a member, so the only cause is closed-before-join) →
+>     `{status:"hidden_pre_join", poll:null, closed_at:<polls.updated_at>}` —
+>     existence + closure timing ONLY, never the contents. Tests:
+>     `server/tests/test_group_poll_visibility.py`.
+>   * **FE:** `apiGetGroupPoll(routeId, pollRef)` in `lib/api/groups.ts`
+>     returns `GroupPollResult` (`{status:"visible", poll}` |
+>     `{status:"hidden_pre_join", closedAt}`; throws ApiError 404 otherwise),
+>     caching the poll + priming `accessiblePollsCache` on visible (via the
+>     shared `hydrateAndCache`). `PollDetailView`'s cache-miss effect calls it
+>     and renders the `hiddenPreJoin` note branch. The cache-HIT path (slide
+>     overlay from the group, where the poll is already a visible cache entry)
+>     is unchanged — the new endpoint only fires on a direct-URL cache miss,
+>     which is exactly the late-joiner case.
+>   * **Why a dedicated endpoint vs reshaping the group read (spec option b):**
+>     the detail page doesn't call the group read; reshaping `list[PollResponse]`
+>     to a wrapper-with-markers would break every group-read consumer. The
+>     dedicated endpoint is the targeted realization of option (a)/(b) for the
+>     path-form-link architecture.
+>
+> **TODO — backdate `joined_at` to invite-SEND time for directly-invited
+> members (so they see polls that closed between invite and accept).** When
+> someone is invited to a group *directly* — via an invite link (Phase G), a
+> member-add (migration 126 `add_member_for_user`), or a join-request approval
+> (Phase F `decide_request`) — the `joined_at` watermark that drives the
+> closed-before-join filter should be the time the INVITATION WAS SENT, not the
+> time the recipient finally redeems / opens / is approved. Today every
+> membership-write site uses the `group_members.joined_at` default of `NOW()`
+> (redeem time / approve time / add time), so a poll that closed in the gap
+> between "invite sent" and "invite accepted" is hidden from the invitee —
+> wrong, since the inviter meant to share the whole group as it stood when they
+> reached out. Desired: the invitee can see polls that closed AFTER the invite
+> was sent even if they don't open/accept until later.
+>   * **Plain group-URL share is UNCHANGED:** when someone pastes a bare
+>     `/g/<id>` link and the recipient auto-joins on visit
+>     (`grant_group_membership_inline`), `joined_at = visit time` stays correct
+>     — there's no "send" event distinct from the visit, and an open invitation
+>     to anyone-with-the-URL shouldn't retroactively expose polls closed before
+>     they ever arrived. Only the *targeted* invite flows get the backdate.
+>   * **Per-flow send-time source:** invite link → `group_invites.created_at`
+>     (the moment the creator minted the link; thread it into `redeem_invite`'s
+>     membership INSERT). Member-add → effectively already correct (the add is
+>     instantaneous, so add time ≈ send time) — but if a future "invite, accept
+>     later" variant lands, record the add/send time. Join-request approval is
+>     the ambiguous one: the "invitation" is the creator's approval, so approve
+>     time is arguably right; OR, if we want the requester to see what existed
+>     when they asked, use the request's `requested_at`. Decide per-flow.
+>   * **Implementation caution:** the membership INSERTs all use
+>     `ON CONFLICT (group_id, browser_id) DO NOTHING` to PRESERVE the earliest
+>     `joined_at` across re-visits (load-bearing — advancing it would un-hide
+>     newly-closed polls). Backdating means passing an explicit older
+>     `joined_at` on the INSERT. Two wrinkles: (a) the conflict path must not
+>     overwrite an already-EARLIER watermark (a plain-URL visit that predates
+>     the invite should win — use `DO UPDATE SET joined_at = LEAST(group_members.joined_at, EXCLUDED.joined_at)`
+>     rather than DO NOTHING for the invite path); (b) `load_user_visibility`
+>     already takes `MIN(joined_at)` across linked browsers, so backdating one
+>     browser's row correctly makes the user's effective join the earliest.
+>     Backend-only change to the membership-write sites + the visibility
+>     watermark; no FE work and no new endpoint.
 >
 > `/by-route-id/{id}` only 404s when route resolution itself fails. An
 > empty visible-polls list returns 200 with `[]` so the group page can
