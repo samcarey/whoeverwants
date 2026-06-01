@@ -285,12 +285,14 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     (wrapper?.voter_names?.length ?? 0) + (wrapper?.anonymous_count ?? 0);
   const suggestionCount = wrapper?.suggestion_count ?? 0;
   const viewsCount = wrapper?.viewed_total ?? 0;
+  const pluralize = (n: number) => (n === 1 ? "" : "s");
 
-  // Bottom-right corner: a blue "{N} Suggestions (Xd)" prephase part + a green
-  // "{N} Votes (Xd)" voting part, separated by a bullet, then the nav chevron.
-  // The parenthesized countdowns are the phase deadlines (suggestion cutoff /
-  // voting cutoff). Rules: hide the suggestions part once CLOSED; hide the
-  // votes part while voting hasn't opened yet (a prephase is still active).
+  // Bottom-right corner: a "{N} Suggestions: Xd" prephase part + a "{N} Votes:
+  // Xd" voting part, separated by a bullet, then the nav chevron. Only the
+  // trailing countdown is colored (blue for suggestions/availability, green
+  // for votes) + bold; the label is muted gray. Visibility: suggestions show
+  // only while their phase is active (drops once closed/cutoff); votes show
+  // only once voting has opened.
   const now = Date.now();
   const inTimeAvailability = isInTimeAvailabilityPhase(question);
   const notOpenYet = inSuggestionPhase || inTimeAvailability; // voting not open
@@ -307,37 +309,43 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       <SimpleCountdown deadline={deadline} wide colorClass={colorClass} numberClass="font-bold" />
     </>
   );
+  // Muted-gray "{label}{timer}" span (only the timer suffix is colored+bold).
+  const metaPart = (label: React.ReactNode, timer: React.ReactNode = null) => (
+    <span className="text-gray-400 dark:text-gray-500 whitespace-nowrap">
+      {label}
+      {timer}
+    </span>
+  );
 
+  // The prephase (suggestions/availability) part shows ONLY while that phase is
+  // ACTIVE — `inSuggestionPhase` / `inTimeAvailability` both go false once it
+  // closes (cutoff / deadline) or the poll closes, so it drops out and the
+  // votes part takes over. `inSuggestionPhase` already implies the prephase
+  // deadline is in the future, so its timer is unconditional; the availability
+  // branch isn't deadline-gated, so it still checks `prephaseFuture`.
+  const BLUE = "text-blue-600 dark:text-blue-400";
   let prephasePart: React.ReactNode = null;
   if (!isClosed) {
-    // Only while the suggestion/availability phase is ACTIVE — once it closes
-    // (cutoff or deadline passed → voting opens), drop it entirely; the votes
-    // part takes over. `inSuggestionPhase` / `inTimeAvailability` are both
-    // false once the phase ends, so gating on them is the whole rule.
     if (inSuggestionPhase) {
-      prephasePart = (
-        <span className="text-gray-400 dark:text-gray-500 whitespace-nowrap">
-          {suggestionCount} Suggestion{suggestionCount === 1 ? "" : "s"}
-          {inSuggestionPhase && prephaseFuture && countdownSuffix(wrapperPrephaseDeadline!, "text-blue-600 dark:text-blue-400")}
-        </span>
+      prephasePart = metaPart(
+        `${suggestionCount} Suggestion${pluralize(suggestionCount)}`,
+        countdownSuffix(wrapperPrephaseDeadline!, BLUE),
       );
     } else if (inTimeAvailability) {
-      prephasePart = (
-        <span className="text-gray-400 dark:text-gray-500 whitespace-nowrap">
-          Availability
-          {prephaseFuture && countdownSuffix(wrapperPrephaseDeadline!, "text-blue-600 dark:text-blue-400")}
-        </span>
+      prephasePart = metaPart(
+        "Availability",
+        prephaseFuture ? countdownSuffix(wrapperPrephaseDeadline!, BLUE) : null,
       );
     }
   }
 
   let votesPart: React.ReactNode = null;
   if (!notOpenYet) {
-    votesPart = (
-      <span className="text-gray-400 dark:text-gray-500 whitespace-nowrap">
-        {respondedCount} Vote{respondedCount === 1 ? "" : "s"}
-        {!isClosed && votingFuture && countdownSuffix(wrapperResponseDeadline!, "text-green-600 dark:text-green-400")}
-      </span>
+    votesPart = metaPart(
+      `${respondedCount} Vote${pluralize(respondedCount)}`,
+      !isClosed && votingFuture
+        ? countdownSuffix(wrapperResponseDeadline!, "text-green-600 dark:text-green-400")
+        : null,
     );
   }
 
@@ -468,7 +476,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                   )}
                 </span>
                 <span className="shrink-0 whitespace-nowrap">
-                  &nbsp;&middot;&nbsp;{viewsCount} View{viewsCount === 1 ? "" : "s"}
+                  &nbsp;&middot;&nbsp;{viewsCount} View{pluralize(viewsCount)}
                 </span>
               </div>
             </ClientOnly>
