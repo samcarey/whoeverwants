@@ -170,6 +170,7 @@ function Editor({ group, groupId }: { group: Group; groupId: string }) {
                 imageUrl={effectiveImageUrl}
                 names={group.participantNames}
                 anonymousCount={group.anonymousRespondentCount}
+                nameCounts={group.participantNameCounts}
                 sizeClassName="w-28"
               />
               <span

@@ -507,6 +507,7 @@ def _row_to_poll(
         questions=[_row_to_question(sp) for sp in question_rows],
         voter_names=vd.voter_names,
         anonymous_count=vd.anonymous_count,
+        voter_name_counts=vd.voter_name_counts,
         viewed_ignored_count=vd.viewed_ignored_count,
         viewed_total=vd.viewed_total,
         suggestion_count=vd.suggestion_count,
@@ -532,6 +533,12 @@ class PollVoterData:
 
     voter_names: list[str] = field(default_factory=list)
     anonymous_count: int = 0
+    # Parallel name→count map: DISTINCT people per name, keyed on browser_id
+    # (GREATEST(...,1)) so one person voting across N sibling questions counts
+    # once while two different "Alex"es on two browsers count as 2. Lets the FE
+    # expand a shared name into that many separate bubbles. Decoupled from
+    # choices per the ballot-privacy TODO. See CLAUDE.md → VoterList note.
+    voter_name_counts: dict[str, int] = field(default_factory=dict)
     # Browsers that opened the poll >5 min ago but never voted/abstained
     # ("ignored" viewers — mostly nameless). Per-browser count.
     viewed_ignored_count: int = 0
@@ -545,14 +552,21 @@ class PollVoterData:
 
 def _compute_poll_voter_data(conn, poll_id: str) -> PollVoterData:
     """Poll-level voter aggregation in two round-trips: one over the poll's
-    votes (named voters deduped case-sensitively, anon = MAX-per-question, and
-    distinct suggestions), one over poll_views (account-collapsed viewer total
-    + the >5-min no-action "ignored" count). See CLAUDE.md 'App-Icon Badge
-    Model + Viewed Tracking'."""
+    votes (named voters deduped case-sensitively, anon = MAX-per-question,
+    distinct suggestions, and per-name DISTINCT-people counts), one over
+    poll_views (account-collapsed viewer total + the >5-min no-action "ignored"
+    count). See CLAUDE.md 'App-Icon Badge Model + Viewed Tracking'.
+
+    `voter_name_counts` carries the number of DISTINCT people who voted under
+    each name, keyed on `browser_id` (GREATEST(...,1)) — one person voting
+    across N sibling questions counts once, while two different "Alex"es (two
+    browsers) count as 2. Legacy NULL-browser_id votes floor to 1. The FE
+    expands each name into that many separate bubbles. Decoupled from choices
+    per the ballot-privacy TODO."""
     votes_row = conn.execute(
         """
         WITH all_votes AS (
-            SELECT v.question_id, v.voter_name, v.suggestions
+            SELECT v.question_id, v.voter_name, v.browser_id, v.suggestions
             FROM votes v
             JOIN questions p ON v.question_id = p.id
             WHERE p.poll_id = %(mid)s
@@ -562,14 +576,23 @@ def _compute_poll_voter_data(conn, poll_id: str) -> PollVoterData:
             FROM all_votes
             WHERE voter_name IS NULL OR voter_name = ''
             GROUP BY question_id
+        ),
+        named_counts AS (
+            SELECT voter_name, GREATEST(COUNT(DISTINCT browser_id), 1) AS c
+            FROM all_votes
+            WHERE voter_name IS NOT NULL AND voter_name != ''
+            GROUP BY voter_name
         )
         SELECT
             COALESCE(
-                (SELECT array_agg(DISTINCT voter_name ORDER BY voter_name)
-                 FROM all_votes
-                 WHERE voter_name IS NOT NULL AND voter_name != ''),
+                (SELECT array_agg(voter_name ORDER BY voter_name)
+                 FROM named_counts),
                 ARRAY[]::text[]
             ) AS voter_names,
+            COALESCE(
+                (SELECT jsonb_object_agg(voter_name, c) FROM named_counts),
+                '{}'::jsonb
+            ) AS voter_name_counts,
             COALESCE((SELECT MAX(c) FROM anon_per_question), 0) AS anonymous_count,
             (SELECT COUNT(DISTINCT s)
                FROM all_votes
@@ -607,6 +630,9 @@ def _compute_poll_voter_data(conn, poll_id: str) -> PollVoterData:
     return PollVoterData(
         voter_names=list(votes_row["voter_names"] or []),
         anonymous_count=int(votes_row["anonymous_count"] or 0),
+        voter_name_counts={
+            k: int(v) for k, v in (votes_row["voter_name_counts"] or {}).items()
+        },
         viewed_ignored_count=int(viewed_row["viewed_ignored"] or 0),
         viewed_total=int(viewed_row["viewed_total"] or 0),
         suggestion_count=int(votes_row["suggestion_count"] or 0),

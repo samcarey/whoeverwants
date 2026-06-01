@@ -9,6 +9,7 @@ import {
   slideToGroupInviteMembers,
 } from "@/lib/slideOverlay";
 import { useGroup } from "@/lib/useGroup";
+import { nameCount } from "@/lib/groupUtils";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupShareButton from "@/components/GroupShareButton";
 import GroupPrivacySection from "@/components/GroupPrivacySection";
@@ -81,9 +82,20 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   // see "0 Members".
   const currentUserName = getUserName()?.trim() || null;
   const viewerLabel = currentUserName ?? "You";
-  const membersList = [...group.participantNames, viewerLabel].sort((a, b) =>
-    a.localeCompare(b),
-  );
+  // Expand each name into one member row PER distinct person who used it
+  // (`participantNameCounts` carries the multiplicity), so two genuinely-
+  // different "Alex"es render as two "Alex" rows and the "N Members" header
+  // tallies them correctly — instead of collapsing to one member. The viewer
+  // is always exactly one person. `key` disambiguates the duplicate rows.
+  const membersList = [
+    ...group.participantNames.flatMap((name) =>
+      Array.from(
+        { length: nameCount(group.participantNameCounts, name) },
+        (_, i) => ({ name, key: `${name}#${i}` }),
+      ),
+    ),
+    { name: viewerLabel, key: "__viewer__" },
+  ].sort((a, b) => a.name.localeCompare(b.name));
   const totalCount = membersList.length;
 
   // Hero + title also surface the viewer in the solo case so the page
@@ -131,6 +143,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
               imageUrl={group.imageUrl}
               names={heroNames}
               anonymousCount={group.anonymousRespondentCount}
+              nameCounts={group.participantNameCounts}
               sizeClassName="w-[8.4rem]"
             />
             <div className="absolute left-full top-1/2 -translate-y-1/2 ml-[0.09rem]">
@@ -173,7 +186,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
 
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
           <ul className="divide-y divide-gray-200 dark:divide-gray-800">
-            {membersList.map((name) => {
+            {membersList.map(({ name, key }) => {
               // Viewer row resolves either as the literal "You" label
               // (no saved name) or as a real-name row matching the
               // current saved name. `name === "You"` passes `null` to
@@ -183,7 +196,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
               const imageUrl = isViewer ? myUserImageUrl : null;
               const bubbleName = name === "You" ? null : name;
               return (
-                <li key={name} className="flex items-center gap-3 px-4 py-3 text-gray-900 dark:text-white">
+                <li key={key} className="flex items-center gap-3 px-4 py-3 text-gray-900 dark:text-white">
                   <InitialBubble
                     name={bubbleName}
                     imageUrl={imageUrl}

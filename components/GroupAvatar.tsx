@@ -15,6 +15,10 @@ interface GroupAvatarProps {
   names: string[];
   anonymousCount: number;
   sizeClassName?: string;
+  /** Optional name→count map, forwarded to RespondentCircles so a name shared
+   *  by genuinely-different people gets a "×N" badge instead of merging them
+   *  into one circle. Ignored by the uploaded-image variant. */
+  nameCounts?: Record<string, number>;
 }
 
 export default function GroupAvatar({
@@ -22,6 +26,7 @@ export default function GroupAvatar({
   names,
   anonymousCount,
   sizeClassName = 'w-16',
+  nameCounts,
 }: GroupAvatarProps) {
   const reactId = useId();
   if (imageUrl) {
@@ -53,6 +58,7 @@ export default function GroupAvatar({
       names={names}
       anonymousCount={anonymousCount}
       sizeClassName={sizeClassName}
+      nameCounts={nameCounts}
     />
   );
 }

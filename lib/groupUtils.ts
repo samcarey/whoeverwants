@@ -48,6 +48,14 @@ export function filterOutCurrentUser(
  *  bottom (the draft form area). */
 export const POLL_QUERY_PARAM = 'p';
 
+/** How many distinct people voted under `name`, per a `voter_name_counts` /
+ *  `participantNameCounts` map. The single home for the "absent ⇒ 1, floor at
+ *  1" default rule — every roster surface that expands duplicate names reads
+ *  the count through here. */
+export function nameCount(counts: Record<string, number> | undefined, name: string): number {
+  return Math.max(1, counts?.[name] ?? 1);
+}
+
 /** True when `id` is a placeholder poll id synthesized by
  *  `synthesizePlaceholderPoll` (e.g. `pending-mosw8mkj-pp6476`). Their question
  *  ids (`<pollId>-q0`) aren't valid UUIDs, so per-question API calls 500 if
@@ -116,6 +124,12 @@ export interface Group {
    *  with the current user's name filtered out (matches the rule "don't
    *  list yourself in your own group's name or graphic"). */
   participantNames: string[];
+  /** Name→count multiplicity for the avatar's "×N" badge. A name maps to the
+   *  MAX distinct-people count across the group's polls (mirroring how
+   *  anonymousRespondentCount takes the max) — so two genuinely different
+   *  "Alex"es that voted on one poll surface as "×2" rather than merging into
+   *  one circle. Only names with count > 1 carry meaning; absent ⇒ 1. */
+  participantNameCounts: Record<string, number>;
   /** Display title: group_title override if set, otherwise the
    *  comma-separated participant-names default ("New Group" if filtered
    *  participantNames is empty). */
@@ -278,12 +292,29 @@ function buildGroupFromPolls(
   // user (case-insensitive) so they don't see themselves in the group
   // title or graphic.
   const nameSet = new Set<string>();
+  // Per-name multiplicity for the avatar "×N" badge: MAX distinct-people count
+  // across the group's polls (a poll's `voter_name_counts` is the truthful
+  // per-poll count; max never overstates beyond what a single poll proved).
+  const nameCounts = new Map<string, number>();
   for (const mp of polls) {
     if (mp.creator_name) nameSet.add(mp.creator_name);
     for (const name of mp.voter_names) nameSet.add(name);
+    const counts = mp.voter_name_counts;
+    if (counts) {
+      for (const [name, c] of Object.entries(counts)) {
+        nameCounts.set(name, Math.max(nameCounts.get(name) ?? 1, c));
+      }
+    }
   }
   const allNames = Array.from(nameSet).sort();
   const participantNames = filterOutCurrentUser(allNames, currentUserName);
+  // Keep only the names actually shown (current user already filtered out, so a
+  // shared-with-viewer name surfaces the other holders) with a multiplier > 1.
+  const participantNameCounts: Record<string, number> = {};
+  for (const name of participantNames) {
+    const c = nameCounts.get(name);
+    if (c && c > 1) participantNameCounts[name] = c;
+  }
 
   // Default title uses participant names; override comes from groups.title
   // (surfaced on every poll as `group_title`).
@@ -367,6 +398,7 @@ function buildGroupFromPolls(
     polls,
     questions,
     participantNames,
+    participantNameCounts,
     title,
     defaultTitle,
     groupTitleOverride,
@@ -395,6 +427,7 @@ function buildGroupFromPolls(
 export function buildEmptyGroup(summary: GroupSummary): Group {
   const groupTitleOverride = summary.title?.trim() || null;
   const participantNames: string[] = [];
+  const participantNameCounts: Record<string, number> = {};
   const defaultTitle = EMPTY_GROUP_TITLE;
   const title = groupTitleOverride || defaultTitle;
   const createdMs = summary.created_at
@@ -408,6 +441,7 @@ export function buildEmptyGroup(summary: GroupSummary): Group {
     polls: [],
     questions: [],
     participantNames,
+    participantNameCounts,
     title,
     defaultTitle,
     groupTitleOverride,
