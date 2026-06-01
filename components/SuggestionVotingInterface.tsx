@@ -277,9 +277,9 @@ export default function SuggestionVotingInterface({
             dead-end until someone breaks the ice. Nudge the first contributor
             (the input is right below). */}
         {!isQuestionClosed && existingSuggestions.length === 0 && (
-          <div className="mb-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 text-sm text-blue-800 dark:text-blue-200 text-center">
-            No suggestions yet — add the first idea below!
-          </div>
+          <p className="mb-3 text-sm text-blue-600 dark:text-blue-400 text-center">
+            No suggestions yet. Add the first idea below!
+          </p>
         )}
 
         {/* Existing suggestions - all can be toggled in edit mode */}
