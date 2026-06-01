@@ -310,7 +310,11 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
 
   let prephasePart: React.ReactNode = null;
   if (!isClosed) {
-    if (inSuggestionPhase || suggestionCount > 0) {
+    // Only while the suggestion/availability phase is ACTIVE — once it closes
+    // (cutoff or deadline passed → voting opens), drop it entirely; the votes
+    // part takes over. `inSuggestionPhase` / `inTimeAvailability` are both
+    // false once the phase ends, so gating on them is the whole rule.
+    if (inSuggestionPhase) {
       prephasePart = (
         <span className="text-gray-400 dark:text-gray-500 whitespace-nowrap">
           {suggestionCount} Suggestion{suggestionCount === 1 ? "" : "s"}
