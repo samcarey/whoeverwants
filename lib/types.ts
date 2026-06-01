@@ -116,6 +116,10 @@ export interface QuestionResults {
   dislike_counts?: Record<string, number>;
   ranked_choice_rounds?: RankedChoiceRound[];
   ranked_choice_winner?: string;
+  // {option_name: borda_score} across all non-abstain ballots. Used by the
+  // result gloss (lib/rankedChoiceGloss.ts) to spot a broadly-acceptable
+  // option that IRV eliminated early.
+  borda_scores?: Record<string, number>;
 }
 
 export interface RankedChoiceRound {

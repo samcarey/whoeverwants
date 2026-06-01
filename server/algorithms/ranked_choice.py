@@ -34,6 +34,12 @@ class RankedChoiceResult:
     winner: str | None
     total_rounds: int
     rounds: list[list[RoundEntry]] = field(default_factory=list)
+    # Full Borda count for EVERY option across all (non-abstain) ballots, not
+    # just the tied last-place subset the IRV loop computes on the fly. Used by
+    # the FE result gloss to detect a "broadly-acceptable option eliminated
+    # early" (high Borda — ranked on many ballots — yet knocked out before the
+    # winner). Empty when there were no ballots.
+    borda_scores: dict[str, int] = field(default_factory=dict)
 
 
 def _normalize_ballot(vote: dict) -> list[list[str]] | None:
@@ -96,6 +102,8 @@ def calculate_ranked_choice_winner(
         return RankedChoiceResult(winner=None, total_rounds=0)
 
     total_candidates = len(options)
+    # Full Borda over every option (computed once; one pass over the ballots).
+    full_borda = _calculate_borda_scores(ballots, options, total_candidates)
     eliminated: set[str] = set()
     rounds: list[list[RoundEntry]] = []
     max_rounds = 50
@@ -151,6 +159,7 @@ def calculate_ranked_choice_winner(
                 winner=winning_option,
                 total_rounds=round_num,
                 rounds=rounds,
+                borda_scores=full_borda,
             )
         last_winner = sorted_options[0]
 
@@ -194,6 +203,7 @@ def calculate_ranked_choice_winner(
         winner=last_winner,
         total_rounds=len(rounds),
         rounds=rounds,
+        borda_scores=full_borda,
     )
 
 

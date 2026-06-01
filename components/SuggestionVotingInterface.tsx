@@ -273,6 +273,15 @@ export default function SuggestionVotingInterface({
   return (
     <>
       <div className="mb-2">
+        {/* Empty-brainstorm cold start: a suggestion poll with zero ideas is a
+            dead-end until someone breaks the ice. Nudge the first contributor
+            (the input is right below). */}
+        {!isQuestionClosed && existingSuggestions.length === 0 && (
+          <p className="mb-3 text-sm text-blue-600 dark:text-blue-400 text-center">
+            No suggestions yet. Add the first idea below!
+          </p>
+        )}
+
         {/* Existing suggestions - all can be toggled in edit mode */}
         {filteredExistingSuggestions.length > 0 && (
           <div className="mb-3">

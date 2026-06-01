@@ -765,3 +765,41 @@ class TestBordaWithTiers:
         c_entry = next(e for e in round_0 if e.option_name == "C")
         assert c_entry.borda_score == 6
         assert c_entry.tie_broken_by_borda is True
+
+
+class TestFullBordaScores:
+    """The result now carries a full Borda count for every option (not just the
+    tied last-place subset the loop computes). The FE result gloss uses it to
+    surface a broadly-acceptable option that IRV eliminated early."""
+
+    def test_compromise_eliminated_early_has_higher_borda_than_winner(self):
+        # 4 voters A>B>C, 3 voters C>B>A, 2 voters B>C>A.
+        # First-choices: A=4, C=3, B=2 -> B eliminated, its ballots flow to C,
+        # C wins 5-4. But B (everyone's #2) is the broadest-acceptance option.
+        votes = _make_votes(
+            [["A", "B", "C"]] * 4
+            + [["C", "B", "A"]] * 3
+            + [["B", "C", "A"]] * 2
+        )
+        result = calculate_ranked_choice_winner(votes, ["A", "B", "C"])
+        assert result.winner == "C"
+        # Borda (3 options: 1st=3, 2nd=2, 3rd=1):
+        #   A = 4*3 + 3*1 + 2*1 = 17
+        #   B = 4*2 + 3*2 + 2*3 = 20
+        #   C = 4*1 + 3*3 + 2*2 = 17
+        assert result.borda_scores == {"A": 17, "B": 20, "C": 17}
+        # The eliminated compromise (B) outscores the winner (C) on breadth.
+        assert result.borda_scores["B"] > result.borda_scores["C"]
+
+    def test_borda_scores_cover_every_option(self):
+        votes = _make_votes([
+            ["A", "B", "C"],
+            ["A", "C", "B"],
+            ["A", "B", "C"],
+        ])
+        result = calculate_ranked_choice_winner(votes, ["A", "B", "C"])
+        assert set(result.borda_scores.keys()) == {"A", "B", "C"}
+
+    def test_no_ballots_yields_empty_borda(self):
+        result = calculate_ranked_choice_winner([], ["A", "B"])
+        assert result.borda_scores == {}

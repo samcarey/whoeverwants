@@ -226,6 +226,11 @@ class QuestionResultsResponse(BaseModel):
     suggestion_counts: list[SuggestionCountResponse] | None = None
     ranked_choice_rounds: list["RankedChoiceRoundResponse"] | None = None
     ranked_choice_winner: str | None = None
+    # {option_name: borda_score} over every option across all non-abstain
+    # ballots. Drives the FE result gloss's "broadly-acceptable option
+    # eliminated early" detection. None for non-ranked-choice or when no
+    # ranking votes were cast.
+    borda_scores: dict[str, int] | None = None
     # Time question fields
     availability_counts: dict | None = None  # {slot_key: voter_count}
     max_availability: int | None = None

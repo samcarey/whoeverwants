@@ -246,6 +246,7 @@ export function toQuestionResults(data: any): Results {
     suggestion_counts: data.suggestion_counts ?? undefined,
     ranked_choice_rounds: data.ranked_choice_rounds ?? undefined,
     ranked_choice_winner: data.ranked_choice_winner ?? undefined,
+    borda_scores: data.borda_scores ?? undefined,
     availability_counts: data.availability_counts ?? undefined,
     max_availability: data.max_availability ?? undefined,
     included_slots: data.included_slots ?? undefined,
