@@ -212,6 +212,95 @@ def test_viewed_unknown_poll_is_noop(client):
 
 
 # --------------------------------------------------------------------------
+# viewed_total turnout denominator (counts-only, account-collapsed)
+# --------------------------------------------------------------------------
+
+
+def test_viewed_total_counts_distinct_viewers(client, creator_secret):
+    # Three browsers open the poll (one of them also votes); the creator never
+    # views. viewed_total = 3 distinct viewers; the extra view from voting
+    # doesn't double-count its browser.
+    creator = str(uuid.uuid4())
+    poll = create_poll(client, creator_secret, browser_id=creator)
+    a, b, c = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    for bid in (a, b, c):
+        assert (
+            client.post(
+                f"/api/polls/{poll['id']}/viewed", headers=bid_headers(bid)
+            ).status_code
+            == 204
+        )
+    client.post(
+        f"/api/polls/{poll['id']}/votes",
+        headers=bid_headers(a),
+        json={
+            "voter_name": "Aa",
+            "items": [
+                {
+                    "question_id": poll["questions"][0]["id"],
+                    "vote_type": "yes_no",
+                    "yes_no_choice": "yes",
+                }
+            ],
+        },
+    )
+    resp = client.get(f"/api/polls/by-id/{poll['id']}")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["viewed_total"] == 3
+
+
+def test_viewed_total_collapses_account_browsers(client, creator_secret):
+    # Two browsers linked to one account + one anonymous browser all view the
+    # poll. The account's two devices collapse to a single viewer, so
+    # viewed_total = 2 (account + anon), not 3.
+    creator = str(uuid.uuid4())
+    poll = create_poll(client, creator_secret, browser_id=creator)
+    bid_a, bid_b, bid_other = (
+        str(uuid.uuid4()),
+        str(uuid.uuid4()),
+        str(uuid.uuid4()),
+    )
+    user_id = str(uuid.uuid4())
+    with _db() as conn:
+        conn.execute("INSERT INTO users (id) VALUES (%s)", (user_id,))
+        conn.execute(
+            "INSERT INTO user_browsers (browser_id, user_id) VALUES (%s, %s), (%s, %s)",
+            (bid_a, user_id, bid_b, user_id),
+        )
+        conn.commit()
+    for bid in (bid_a, bid_b, bid_other):
+        client.post(f"/api/polls/{poll['id']}/viewed", headers=bid_headers(bid))
+    resp = client.get(f"/api/polls/by-id/{poll['id']}")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["viewed_total"] == 2
+
+
+def test_suggestion_count_distinct(client, creator_secret):
+    # Two voters propose options (one is a duplicate); suggestion_count is the
+    # distinct non-empty set. A plain yes/no poll has 0.
+    cbid = str(uuid.uuid4())
+    poll = _suggestion_poll(client, creator_secret, cbid)
+    qid = poll["questions"][0]["id"]
+    for name, sugg in [("Ana", ["Thai", "Pizza"]), ("Ben", ["Sushi", "Thai"])]:
+        r = client.post(
+            f"/api/polls/{poll['id']}/votes",
+            headers=bid_headers(str(uuid.uuid4())),
+            json={
+                "voter_name": name,
+                "items": [
+                    {"question_id": qid, "vote_type": "ranked_choice", "suggestions": sugg}
+                ],
+            },
+        )
+        assert r.status_code == 201, r.text
+    # distinct across both: Thai, Pizza, Sushi = 3
+    assert client.get(f"/api/polls/by-id/{poll['id']}").json()["suggestion_count"] == 3
+    # yes/no poll has no suggestions.
+    yn = create_poll(client, creator_secret, browser_id=str(uuid.uuid4()))
+    assert client.get(f"/api/polls/by-id/{yn['id']}").json()["suggestion_count"] == 0
+
+
+# --------------------------------------------------------------------------
 # close / reopen / cutoff flags + inline fan-out wiring
 # --------------------------------------------------------------------------
 

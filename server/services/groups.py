@@ -371,6 +371,7 @@ def polls_for_poll_ids(
         _SELECT_POLLS_WITH_GROUP,
         _compute_poll_voter_data,
         _row_to_poll,
+        PollVoterData,
     )
 
     if not poll_ids:
@@ -476,7 +477,7 @@ def polls_for_poll_ids(
         for vn in vn_rows:
             voter_names_by_question[str(vn["question_id"])] = vn["names"]
 
-    voter_data_by_mp: dict[str, tuple[list[str], int, int]] = {}
+    voter_data_by_mp: dict[str, PollVoterData] = {}
     for mp_id in poll_ids_present:
         voter_data_by_mp[mp_id] = _compute_poll_voter_data(conn, mp_id)
 
@@ -484,9 +485,8 @@ def polls_for_poll_ids(
     for mp_row in poll_rows:
         mp_id = str(mp_row["id"])
         sp_rows = questions_by_mp.get(mp_id, [])
-        voter_names, anon_count, viewed_ignored = voter_data_by_mp.get(mp_id, ([], 0, 0))
         mp_resp = _row_to_poll(
-            mp_row, sp_rows, voter_names, anon_count, viewed_ignored,
+            mp_row, sp_rows, voter_data_by_mp.get(mp_id, PollVoterData()),
             viewer_user_id=viewer_user_id,
         )
         if include_results:

@@ -29,14 +29,12 @@ import {
   getCategoryIcon,
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
-  compactDurationSince,
   relativeTime,
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { slideToPollDetail } from "@/lib/slideOverlay";
 import { groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
 import ClientOnly from "@/components/ClientOnly";
-import VoterList from "@/components/VoterList";
 import QuestionResultsDisplay, {
   CompactRankedChoicePreview,
   CompactSuggestionPreview,
@@ -124,8 +122,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   // them without re-deriving.
   const wrapperResponseDeadline = wrapper?.response_deadline ?? null;
   const wrapperPrephaseDeadline = wrapper?.prephase_deadline ?? null;
-  const wrapperCloseReason = wrapper?.close_reason ?? null;
-  const wrapperUpdatedAt = wrapper?.updated_at ?? question.updated_at;
   const categoryIcon = getCategoryIcon(question);
   // Hoisted: every row reads this 1–3 times (status label, respondent
   // filter, respondent empty-text, includeSelf gate).
@@ -214,62 +210,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
   };
 
-  // Status label is anchor-based: the poll's voting and prephase deadlines
-  // are shared across questions (per the poll design), and `isClosed` is
-  // enforced poll-atomically by Phase 3.1 close/reopen.
-  const statusEl: React.ReactNode = (() => {
-    const inTimeAvailability = isInTimeAvailabilityPhase(question);
-    if (isClosed) {
-      // Prefer the response_deadline whenever it has passed — covers both the
-      // server-flipped `close_reason === "deadline"` case AND the brief window
-      // where the FE flips isClosed via expired deadline before the server
-      // tick records the close (without this, that window would show a wrong
-      // "Closed Xm ago" based on `updated_at`).
-      const deadlineHasPassed =
-        !!wrapperResponseDeadline && new Date(wrapperResponseDeadline) <= new Date();
-      const closedAt =
-        (wrapperCloseReason === "deadline" || deadlineHasPassed) && wrapperResponseDeadline
-          ? wrapperResponseDeadline
-          : wrapperUpdatedAt;
-      return (
-        <span className="text-xs text-gray-400 dark:text-gray-500">
-          Closed {compactDurationSince(closedAt)} ago
-        </span>
-      );
-    }
-    if (inSuggestionPhase && wrapperPrephaseDeadline) {
-      return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Suggestions" wide />;
-    }
-    // Time questions: show the "Availability" countdown only while the prephase
-    // (availability) deadline is still in the future. Once it passes the poll is
-    // in its preferences-voting phase — fall through to the response-deadline
-    // countdown labeled "Preferences" (NOT a stale "Availability: Expired",
-    // which is what showed while `question.options` lagged behind the cutoff).
-    if (inTimeAvailability) {
-      if (wrapperPrephaseDeadline && new Date(wrapperPrephaseDeadline) > new Date()) {
-        return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" wide />;
-      }
-      if (!wrapperPrephaseDeadline) {
-        return (
-          <span className="font-semibold text-blue-600 dark:text-blue-400">
-            Collecting Availability
-          </span>
-        );
-      }
-    }
-    if (wrapperResponseDeadline) {
-      return (
-        <SimpleCountdown
-          deadline={wrapperResponseDeadline}
-          label={question.question_type === "time" ? "Preferences" : "Voting"}
-          colorClass="text-green-600 dark:text-green-400"
-          wide
-        />
-      );
-    }
-    return null;
-  })();
-
   // Returns the type-specific compact pill JSX for one question, or null
   // when there's nothing to show yet. Cards are navigation-only now —
   // pill taps fall through to the card click handler that slides to the
@@ -337,29 +277,100 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
   }
 
-  // Bottom-right column: pill (centered) + respondent row (right-justified
-  // against the rectangle's right edge). Both collapse cleanly when empty
-  // so the row doesn't reserve dead vertical space. EVERY poll (single- and
-  // multi-question) uses the poll wrapper's aggregated voter list per the
-  // Addressability paradigm — never client-aggregated across sub-question
-  // fetches. Wrapper `voter_names` + `anonymous_count` arrive up front with
-  // `apiGetGroupByRouteId` (and survive in `accessiblePollsCache` for the
-  // drag-back backdrop), so the row paints on the first frame instead of
-  // skeleton→async-fetch, and it's part of the cards-wrapper that gets
-  // translated during overlay slides + swipe-back. Single-question polls
-  // previously used a live per-question `apiGetVotes` fetch (which loaded
-  // afterward); the wrapper aggregate equals the one question's voters, so
-  // static is equivalent and loads up front.
-  const respondentRow: React.ReactNode = !isPlaceholder ? (
-    <VoterList
-      singleLine
-      className="min-w-0 justify-end"
-      staticVoterNames={wrapper?.voter_names ?? []}
-      staticAnonymousCount={wrapper?.anonymous_count ?? 0}
-      emptyText={!isMultiGroup && inSuggestionPhase ? "No suggestions yet" : "No voters"}
-      includeSelf={!isMultiGroup && inSuggestionPhase}
-    />
-  ) : null;
+  // Engagement counts. `views` (= viewed_total) shows in the bottom-LEFT after
+  // author·date; `voted` + `suggestions` show in the bottom-RIGHT corner with
+  // their phase countdowns. Counts only — viewer identities never leave the
+  // API. No respondent bubbles on the group card (poll-detail-only).
+  const respondedCount =
+    (wrapper?.voter_names?.length ?? 0) + (wrapper?.anonymous_count ?? 0);
+  const suggestionCount = wrapper?.suggestion_count ?? 0;
+  const viewsCount = wrapper?.viewed_total ?? 0;
+  const pluralize = (n: number) => (n === 1 ? "" : "s");
+
+  // Bottom-right corner: a "{N} Suggestions: Xd" prephase part + a "{N} Votes:
+  // Xd" voting part, separated by a bullet, then the nav chevron. Only the
+  // trailing countdown is colored (blue for suggestions/availability, green
+  // for votes) + bold; the label is muted gray. Visibility: suggestions show
+  // only while their phase is active (drops once closed/cutoff); votes show
+  // only once voting has opened.
+  const now = Date.now();
+  const inTimeAvailability = isInTimeAvailabilityPhase(question);
+  const notOpenYet = inSuggestionPhase || inTimeAvailability; // voting not open
+  const prephaseFuture =
+    !!wrapperPrephaseDeadline && new Date(wrapperPrephaseDeadline).getTime() > now;
+  const votingFuture =
+    !!wrapperResponseDeadline && new Date(wrapperResponseDeadline).getTime() > now;
+
+  // Only the timer is colored (+ bold); the "N Suggestions" / "N Votes"
+  // label stays the muted metadata gray. Format: "<label>: <bold timer>".
+  const countdownSuffix = (deadline: string, colorClass: string) => (
+    <>
+      {": "}
+      <SimpleCountdown deadline={deadline} wide colorClass={colorClass} numberClass="font-bold" />
+    </>
+  );
+  // Muted-gray "{label}{timer}" span (only the timer suffix is colored+bold).
+  const metaPart = (label: React.ReactNode, timer: React.ReactNode = null) => (
+    <span className="text-gray-400 dark:text-gray-500 whitespace-nowrap">
+      {label}
+      {timer}
+    </span>
+  );
+
+  // The prephase (suggestions/availability) part shows ONLY while that phase is
+  // ACTIVE — `inSuggestionPhase` / `inTimeAvailability` both go false once it
+  // closes (cutoff / deadline) or the poll closes, so it drops out and the
+  // votes part takes over. `inSuggestionPhase` already implies the prephase
+  // deadline is in the future, so its timer is unconditional; the availability
+  // branch isn't deadline-gated, so it still checks `prephaseFuture`.
+  const BLUE = "text-blue-600 dark:text-blue-400";
+  let prephasePart: React.ReactNode = null;
+  if (!isClosed) {
+    if (inSuggestionPhase) {
+      prephasePart = metaPart(
+        `${suggestionCount} Suggestion${pluralize(suggestionCount)}`,
+        countdownSuffix(wrapperPrephaseDeadline!, BLUE),
+      );
+    } else if (inTimeAvailability) {
+      prephasePart = metaPart(
+        "Availability",
+        prephaseFuture ? countdownSuffix(wrapperPrephaseDeadline!, BLUE) : null,
+      );
+    }
+  }
+
+  let votesPart: React.ReactNode = null;
+  if (!notOpenYet) {
+    votesPart = metaPart(
+      `${respondedCount} Vote${pluralize(respondedCount)}`,
+      !isClosed && votingFuture
+        ? countdownSuffix(wrapperResponseDeadline!, "text-green-600 dark:text-green-400")
+        : null,
+    );
+  }
+
+  const chevronGlyph = (
+    <svg
+      className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  );
+
+  const cornerCluster: React.ReactNode = (
+    <div className="shrink-0 flex items-center gap-1.5 text-xs whitespace-nowrap">
+      {prephasePart}
+      {prephasePart && votesPart && (
+        <span className="text-gray-300 dark:text-gray-600" aria-hidden="true">&bull;</span>
+      )}
+      {votesPart}
+      {chevronGlyph}
+    </div>
+  );
 
   // Edge-to-edge rectangle with a full-bleed `border-b` divider between
   // rows. The awaiting state surfaces as a left-edge amber bar (the old
@@ -389,26 +400,13 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             : "bg-transparent"
         } hover:bg-gray-100 dark:hover:bg-gray-900 active:bg-blue-100 dark:active:bg-blue-900/40`}
       >
-        {/* Top row: icon + title (left) / status + chevron (right). */}
-        <div className="flex items-start justify-between gap-2 min-w-0">
+        {/* Top row: icon + title only. The status countdown + nav chevron
+            moved to the bottom-right (see the metadata row below). */}
+        <div className="flex items-start min-w-0">
           <h3 className="flex-1 min-w-0 flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white">
             <span className="mr-1.5 shrink-0" aria-hidden="true">{categoryIcon}</span>
             <span className="min-w-0">{question.title}</span>
           </h3>
-          {!isPlaceholder && (
-            <div className="shrink-0 pt-0.5 flex items-center gap-1 text-sm leading-tight text-gray-500 dark:text-gray-400">
-              {statusEl && <ClientOnly fallback={null}>{statusEl}</ClientOnly>}
-              <svg
-                className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          )}
         </div>
 
         {/* Pill row: centered across the FULL rectangle width (not just
@@ -436,18 +434,25 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           </div>
         )}
 
-        {/* Bottom row: author + timestamp (left) / respondents (right).
-            Skipped during the placeholder/FLIP phase so only the title
-            is visible until the real poll hydrates. The pill above gives
-            its own mb-3 spacing; when the pill is absent we keep mt-2 on
-            this row so there's still a visible gap from the title. */}
+        {/* Bottom row: author · date (left) + the corner cluster (right)
+            holding the voted/suggestions emoji counts + status countdown + nav
+            chevron. TEMP: 3 corner arrangements via ?variant=a|b|c (see
+            cornerCluster above). The author name is the only truncating part;
+            the date keeps its hover/tap tooltip. The "seen" stat + respondent
+            bubbles live only on the poll detail page now. Skipped during the
+            placeholder/FLIP phase. */}
         {!isPlaceholder && (
-          <div className={`${pillEl ? "" : "mt-2 "}flex items-end justify-between gap-3 min-w-0`}>
+          <div className={`${pillEl ? "" : "mt-2 "}flex items-center justify-between gap-2 min-w-0`}>
             <ClientOnly fallback={null}>
-              <span className="shrink-0 truncate text-xs text-gray-400 dark:text-gray-500">
-                {wrapper?.creator_name && <>{wrapper.creator_name} &middot; </>}
+              <div className="flex items-baseline min-w-0 text-xs text-gray-400 dark:text-gray-500">
+                {wrapper?.creator_name && (
+                  <>
+                    <span className="truncate shrink min-w-0">{wrapper.creator_name}</span>
+                    <span className="shrink-0">&nbsp;&middot;&nbsp;</span>
+                  </>
+                )}
                 <span
-                  className="relative cursor-help"
+                  className="shrink-0 relative cursor-help"
                   onClick={() =>
                     setTooltipQuestionId((prev) =>
                       prev === question.id ? null : question.id,
@@ -470,14 +475,12 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                     </span>
                   )}
                 </span>
-              </span>
-            </ClientOnly>
-
-            <ClientOnly fallback={null}>
-              <div className="flex-1 min-w-0 flex justify-end">
-                {respondentRow}
+                <span className="shrink-0 whitespace-nowrap">
+                  &nbsp;&middot;&nbsp;{viewsCount} View{pluralize(viewsCount)}
+                </span>
               </div>
             </ClientOnly>
+            {cornerCluster}
           </div>
         )}
       </div>
