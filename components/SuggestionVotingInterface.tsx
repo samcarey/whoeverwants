@@ -277,7 +277,7 @@ export default function SuggestionVotingInterface({
         {filteredExistingSuggestions.length > 0 && (
           <div className="mb-3">
             <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              {isEditingVote ? 'All suggestions (select to second/unsecond):' : 'Existing suggestions (select to second):'}
+              {isEditingVote ? 'All suggestions:' : 'Existing suggestions:'}
             </h5>
             <div className="space-y-2">
               {filteredExistingSuggestions.map((suggestion, index) => {
