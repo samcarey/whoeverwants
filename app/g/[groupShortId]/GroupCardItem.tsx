@@ -299,11 +299,12 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   const votingFuture =
     !!wrapperResponseDeadline && new Date(wrapperResponseDeadline).getTime() > now;
 
-  const parenCountdown = (deadline: string) => (
+  // Only the timer is colored (+ bold); the "N Suggestions" / "N Votes"
+  // label stays the muted metadata gray. Format: "<label>: <bold timer>".
+  const countdownSuffix = (deadline: string, colorClass: string) => (
     <>
-      {" ("}
-      <SimpleCountdown deadline={deadline} wide colorClass="" numberClass="font-medium" />
-      {")"}
+      {": "}
+      <SimpleCountdown deadline={deadline} wide colorClass={colorClass} numberClass="font-bold" />
     </>
   );
 
@@ -311,16 +312,16 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   if (!isClosed) {
     if (inSuggestionPhase || suggestionCount > 0) {
       prephasePart = (
-        <span className="text-blue-600 dark:text-blue-400 whitespace-nowrap">
+        <span className="text-gray-400 dark:text-gray-500 whitespace-nowrap">
           {suggestionCount} Suggestion{suggestionCount === 1 ? "" : "s"}
-          {inSuggestionPhase && prephaseFuture && parenCountdown(wrapperPrephaseDeadline!)}
+          {inSuggestionPhase && prephaseFuture && countdownSuffix(wrapperPrephaseDeadline!, "text-blue-600 dark:text-blue-400")}
         </span>
       );
     } else if (inTimeAvailability) {
       prephasePart = (
-        <span className="text-blue-600 dark:text-blue-400 whitespace-nowrap">
+        <span className="text-gray-400 dark:text-gray-500 whitespace-nowrap">
           Availability
-          {prephaseFuture && parenCountdown(wrapperPrephaseDeadline!)}
+          {prephaseFuture && countdownSuffix(wrapperPrephaseDeadline!, "text-blue-600 dark:text-blue-400")}
         </span>
       );
     }
@@ -329,9 +330,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   let votesPart: React.ReactNode = null;
   if (!notOpenYet) {
     votesPart = (
-      <span className="text-green-600 dark:text-green-400 whitespace-nowrap">
+      <span className="text-gray-400 dark:text-gray-500 whitespace-nowrap">
         {respondedCount} Vote{respondedCount === 1 ? "" : "s"}
-        {!isClosed && votingFuture && parenCountdown(wrapperResponseDeadline!)}
+        {!isClosed && votingFuture && countdownSuffix(wrapperResponseDeadline!, "text-green-600 dark:text-green-400")}
       </span>
     );
   }
