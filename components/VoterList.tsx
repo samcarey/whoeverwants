@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { apiGetVotes, ApiVote, QUESTION_VOTES_CHANGED_EVENT } from '@/lib/api';
 import { getCachedVotes } from '@/lib/questionCache';
+import { nameCount } from '@/lib/groupUtils';
 import { getUserName } from '@/lib/userProfile';
 
 interface Voter {
@@ -31,6 +32,11 @@ interface VoterListProps {
    *  per-question voteId to disambiguate by here. */
   staticVoterNames?: string[];
   staticAnonymousCount?: number;
+  /** Static mode: parallel name→count map (poll wrapper's `voter_name_counts`).
+   *  When a name's count is > 1 — i.e. genuinely different people share that
+   *  name — the chip renders a distinct "×N" multiplier badge instead of
+   *  silently collapsing them. Names absent from the map default to count 1. */
+  staticVoterNameCounts?: Record<string, number>;
   /** When true, the current user is NOT excluded from the singleLine row.
    *  Used by the suggestion-phase below-card row so the suggester sees their
    *  own bubble there even when they're the only respondent. */
@@ -59,7 +65,18 @@ function EmptyPlaceholder({ text, className }: { text: string; className: string
   );
 }
 
-export default function VoterList({ questionId, className = "", label, filter, singleLine = false, emptyText, staticVoterNames, staticAnonymousCount, includeSelf = false }: VoterListProps) {
+/** Sum of distinct people across named voters, honoring the `voter_name_counts`
+ *  multiplicity map (names absent from the map count as 1). Use this for any
+ *  "how many named voters" total so duplicate names ("Alex" ×2) don't
+ *  undercount the roster. */
+export function namedVoterCount(
+  names: string[],
+  counts?: Record<string, number>,
+): number {
+  return names.reduce((sum, n) => sum + nameCount(counts, n), 0);
+}
+
+export default function VoterList({ questionId, className = "", label, filter, singleLine = false, emptyText, staticVoterNames, staticAnonymousCount, staticVoterNameCounts, includeSelf = false }: VoterListProps) {
   const isStatic = !!staticVoterNames;
 
   // Seed from the shared votes cache (or from static props) so warm
@@ -219,10 +236,28 @@ export default function VoterList({ questionId, className = "", label, filter, s
     return !!currentUserVoteId && v.id === currentUserVoteId;
   };
 
+  // Effective per-name display count, seeded from the static multiplicity map
+  // (live mode has no map — every chip is its own vote row, so count 1). When
+  // excluding self, decrement the matching name by 1 instead of dropping the
+  // whole entry: a name shared by the viewer AND a different person (count 2)
+  // must still surface the OTHER person rather than vanishing along with the
+  // viewer. The map is name-keyed and static mode dedupes to one chip per name.
+  const effectiveCounts = new Map<string, number>();
+  for (const v of namedVoters) {
+    const name = v.voter_name || '';
+    effectiveCounts.set(name, isStatic ? nameCount(staticVoterNameCounts, name) : 1);
+  }
+
   let currentUserIsAnonymous = false;
   if (isStatic) {
     if (!includeSelf && savedNameLcForSelf) {
-      namedVoters = namedVoters.filter(v => !isSelfVoter(v));
+      for (const v of namedVoters) {
+        if (!isSelfVoter(v)) continue;
+        const name = v.voter_name || '';
+        effectiveCounts.set(name, (effectiveCounts.get(name) ?? 1) - 1);
+      }
+      // Drop only names whose count hit 0 (the viewer was the sole holder).
+      namedVoters = namedVoters.filter(v => (effectiveCounts.get(v.voter_name || '') ?? 0) >= 1);
     }
   } else {
     const currentUserVote = currentUserVoteId
@@ -245,8 +280,25 @@ export default function VoterList({ questionId, className = "", label, filter, s
     }
   }
 
-  const labelFor = (voter: Voter): string =>
-    isSelfVoter(voter) ? `You (${voter.voter_name})` : (voter.voter_name || '');
+  // Expand each deduped name into one bubble PER distinct person who used it,
+  // so two genuinely-different "Alex"es render as two separate "Alex" bubbles
+  // rather than a single merged (or "×2"-labelled) entry. Live mode is already
+  // one row per vote (count 1), so this is a no-op there. The viewer's own name
+  // reads "You (name)" on its FIRST bubble in `includeSelf` mode; any further
+  // same-name bubbles are OTHER people and render plainly.
+  type DisplayChip = { key: string; label: string };
+  const displayChips: DisplayChip[] = [];
+  for (const voter of namedVoters) {
+    const name = voter.voter_name || '';
+    const count = effectiveCounts.get(name) ?? 1;
+    const isSelf = includeSelf && isSelfVoter(voter);
+    for (let i = 0; i < count; i++) {
+      displayChips.push({
+        key: `${voter.id}#${i}`,
+        label: isSelf && i === 0 ? `You (${name})` : name,
+      });
+    }
+  }
 
   const getVoterColor = (index: number) => {
     const colors = [
@@ -265,15 +317,14 @@ export default function VoterList({ questionId, className = "", label, filter, s
   if (singleLine) {
     // When the only voter is the current user (excluded since their state
     // lives on the question card itself), fall back to the empty placeholder.
-    if (namedVoters.length === 0 && adjustedAnonymousCount === 0 && emptyText) {
+    if (displayChips.length === 0 && adjustedAnonymousCount === 0 && emptyText) {
       return <EmptyPlaceholder text={emptyText} className={className} />;
     }
     return (
       <SingleLineVoters
-        namedVoters={namedVoters}
+        chips={displayChips}
         adjustedAnonymousCount={adjustedAnonymousCount}
         getVoterColor={getVoterColor}
-        labelFor={labelFor}
         className={className}
       />
     );
@@ -285,12 +336,12 @@ export default function VoterList({ questionId, className = "", label, filter, s
         {voters.length} 👥
       </span>
 
-      {namedVoters.map((voter, index) => (
+      {displayChips.map((chip, index) => (
         <span
-          key={voter.id}
+          key={chip.key}
           className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${getVoterColor(index)}`}
         >
-          {labelFor(voter)}
+          {chip.label}
         </span>
       ))}
 
@@ -304,18 +355,16 @@ export default function VoterList({ questionId, className = "", label, filter, s
 }
 
 interface SingleLineVotersProps {
-  namedVoters: Voter[];
+  chips: { key: string; label: string }[];
   adjustedAnonymousCount: number;
   getVoterColor: (index: number) => string;
-  labelFor: (voter: Voter) => string;
   className: string;
 }
 
 function SingleLineVoters({
-  namedVoters,
+  chips,
   adjustedAnonymousCount,
   getVoterColor,
-  labelFor,
   className,
 }: SingleLineVotersProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -324,7 +373,7 @@ function SingleLineVoters({
   const plusRef = useRef<HTMLSpanElement | null>(null);
   const [overflow, setOverflow] = useState(0);
 
-  const totalItems = namedVoters.length + (adjustedAnonymousCount > 0 ? 1 : 0);
+  const totalItems = chips.length + (adjustedAnonymousCount > 0 ? 1 : 0);
   const GAP = 6; // matches Tailwind gap-1.5
 
   useLayoutEffect(() => {
@@ -387,13 +436,13 @@ function SingleLineVoters({
       ref={containerRef}
       className={`flex w-full items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}
     >
-      {namedVoters.map((voter, index) => (
+      {chips.map((chip, index) => (
         <span
-          key={voter.id}
+          key={chip.key}
           ref={(el) => { bubbleRefs.current[index] = el; }}
           className={`inline-block shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium ${getVoterColor(index)}`}
         >
-          {labelFor(voter)}
+          {chip.label}
         </span>
       ))}
       {adjustedAnonymousCount > 0 && (

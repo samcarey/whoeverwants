@@ -3,6 +3,7 @@
 import React, { useId } from 'react';
 import { getUserInitials, isCurrentUserName } from '@/lib/userProfile';
 import { useMyUserImageUrl } from '@/lib/useMyUserImageUrl';
+import { nameCount } from '@/lib/groupUtils';
 
 // Shared bounding-disc geometry. The avatar's outer SVG is a 100×100
 // viewBox; everything inside fits inside a centered disc of diameter
@@ -62,9 +63,14 @@ interface RespondentCirclesProps {
   names: string[];
   anonymousCount: number;
   sizeClassName?: string;
+  /** Optional name→count map. When a shown name's count is > 1 (genuinely
+   *  different people share that name), its circle gets a small "×N" badge
+   *  instead of silently merging the people into one circle. Names beyond the
+   *  shown limit contribute their full count to the "+N" overflow. */
+  nameCounts?: Record<string, number>;
 }
 
-export default function RespondentCircles({ names, anonymousCount, sizeClassName = "w-16" }: RespondentCirclesProps) {
+export default function RespondentCircles({ names, anonymousCount, sizeClassName = "w-16", nameCounts }: RespondentCirclesProps) {
   // The current browser's uploaded profile image (or null). When one
   // of the rendered names matches the current user's saved name we
   // swap that one circle for the image — every other name keeps its
@@ -77,9 +83,16 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
   // same page don't collide on clipPath ids.
   const reactId = useId();
 
-  const validNames = names.filter(n => n.trim().length > 0);
-  const shownNames = validNames.slice(0, MAX_NAMED);
-  const overflow = Math.max(0, validNames.length - MAX_NAMED) + anonymousCount;
+  // Expand each name into one entry PER distinct person who used it, so two
+  // genuinely-different "Alex"es show as two separate circles rather than one
+  // merged circle. (`nameCounts` carries the multiplicity; absent ⇒ 1.)
+  const expandedNames: string[] = [];
+  for (const n of names) {
+    if (n.trim().length === 0) continue;
+    for (let i = 0; i < nameCount(nameCounts, n); i++) expandedNames.push(n);
+  }
+  const shownNames = expandedNames.slice(0, MAX_NAMED);
+  const overflow = Math.max(0, expandedNames.length - MAX_NAMED) + anonymousCount;
 
   type Circle = { label: string; fill: string; imageUrl: string | null };
   const circles: Circle[] = shownNames.map(name => {

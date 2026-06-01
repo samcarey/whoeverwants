@@ -292,6 +292,10 @@ export function toPoll(data: any): Poll {
     questions: Array.isArray(data.questions) ? data.questions.map(toQuestion) : [],
     voter_names: Array.isArray(data.voter_names) ? data.voter_names : [],
     anonymous_count: typeof data.anonymous_count === 'number' ? data.anonymous_count : 0,
+    voter_name_counts:
+      data.voter_name_counts && typeof data.voter_name_counts === 'object'
+        ? (data.voter_name_counts as Record<string, number>)
+        : undefined,
     viewed_ignored_count: typeof data.viewed_ignored_count === 'number' ? data.viewed_ignored_count : 0,
     viewed_total: typeof data.viewed_total === 'number' ? data.viewed_total : 0,
     suggestion_count: typeof data.suggestion_count === 'number' ? data.suggestion_count : 0,

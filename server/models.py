@@ -381,6 +381,13 @@ class PollResponse(BaseModel):
     # closer to truth than summing, which would double-count).
     voter_names: list[str] = Field(default_factory=list)
     anonymous_count: int = 0
+    # Parallel name→count map: number of DISTINCT people who voted under each
+    # name. Lets the FE render a "×2" multiplier when genuinely different
+    # voters share a name, instead of silently collapsing them (the count
+    # disagreeing with the roster). Only names with count > 1 carry meaning;
+    # names absent from the map default to 1. Decoupled from choices per the
+    # ballot-privacy TODO. See CLAUDE.md → VoterList duplicate-name note.
+    voter_name_counts: dict[str, int] = Field(default_factory=dict)
     # "Viewed (N)" roster: browsers that opened the poll (>5 min ago) but never
     # voted/abstained = "ignored" viewers. Mostly nameless; surfaced as a muted
     # count. See CLAUDE.md 'App-Icon Badge Model + Viewed Tracking'.

@@ -213,6 +213,11 @@ export interface Poll {
   // iterating questions — see CLAUDE.md → "Addressability paradigm".
   voter_names: string[];
   anonymous_count: number;
+  // Parallel name→count map: how many DISTINCT people voted under each name.
+  // Drives the "×2" multiplier when genuinely different voters share a name.
+  // Names absent from the map (or count ≤ 1) render with no multiplier.
+  // Optional for pre-feature cached polls. See CLAUDE.md → VoterList note.
+  voter_name_counts?: Record<string, number>;
   // "Viewed (N)" roster: browsers that opened the poll (>5 min ago) but never
   // voted/abstained. Optional for pre-feature cached polls. See CLAUDE.md
   // 'App-Icon Badge Model + Viewed Tracking'.

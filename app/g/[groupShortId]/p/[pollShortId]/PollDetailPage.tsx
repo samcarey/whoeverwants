@@ -78,7 +78,7 @@ import InitialBubble from "@/components/InitialBubble";
 import QuestionBallot, { type QuestionBallotHandle, POLL_SUBCARD_CLASS } from "@/components/QuestionBallot";
 import QuestionDetails from "@/components/QuestionDetails";
 import QuestionResultsDisplay from "@/components/QuestionResults";
-import VoterList from "@/components/VoterList";
+import VoterList, { namedVoterCount } from "@/components/VoterList";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import AccountGateModal from "@/components/AccountGateModal";
 import { isValidUserName } from "@/lib/nameValidation";
@@ -1007,8 +1007,13 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
             // state is the per-person marker (chips below; ignored = the muted
             // sub-line). See CLAUDE.md 'App-Icon Badge Model + Viewed Tracking'.
             const ignored = poll.viewed_ignored_count ?? 0;
+            // Sum the multiplicity map so two people sharing a name ("Alex" ×2)
+            // count as 2 named voters — otherwise the total disagrees with the
+            // roster ("Viewed (2)" while 3 people actually voted).
             const totalViewed =
-              (poll.voter_names?.length ?? 0) + (poll.anonymous_count ?? 0) + ignored;
+              namedVoterCount(poll.voter_names ?? [], poll.voter_name_counts) +
+              (poll.anonymous_count ?? 0) +
+              ignored;
             return (
               <>
                 <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
@@ -1019,6 +1024,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                   includeSelf
                   staticVoterNames={poll.voter_names ?? []}
                   staticAnonymousCount={poll.anonymous_count ?? 0}
+                  staticVoterNameCounts={poll.voter_name_counts}
                   emptyText="No voters yet"
                   className="px-1"
                 />

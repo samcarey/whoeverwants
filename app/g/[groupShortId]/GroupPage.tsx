@@ -1889,6 +1889,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         title={group.title}
         participantNames={group.participantNames}
         anonymousCount={group.anonymousRespondentCount}
+        participantNameCounts={group.participantNameCounts}
         imageUrl={group.imageUrl}
         onTitleClick={() => {
           rememberCurrentScroll(groupScrollKey(groupId));

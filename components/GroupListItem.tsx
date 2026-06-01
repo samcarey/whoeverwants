@@ -31,6 +31,9 @@ export interface GroupListItemProps {
   latestQuestionTitle: string;
   participantNames: string[];
   anonymousRespondentCount: number;
+  /** Name→count map forwarded to the avatar so duplicate participant names
+   *  render a "×N" badge rather than merging into one circle. */
+  participantNameCounts?: Record<string, number>;
   /** When set, "N min ago" appears in the metadata row; omit for drafts. */
   createdAt?: string | null;
   /** When set, the left column renders a countdown to this timestamp. */
@@ -79,6 +82,7 @@ export default function GroupListItem(props: GroupListItemProps) {
     latestQuestionTitle,
     participantNames,
     anonymousRespondentCount,
+    participantNameCounts,
     createdAt,
     soonestUnvotedDeadline,
     unvotedDeadlineKind,
@@ -160,6 +164,7 @@ export default function GroupListItem(props: GroupListItemProps) {
             imageUrl={imageUrl}
             names={participantNames}
             anonymousCount={anonymousRespondentCount}
+            nameCounts={participantNameCounts}
             sizeClassName="w-[4.8rem]"
           />
         )}

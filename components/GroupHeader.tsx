@@ -9,6 +9,9 @@ export interface GroupHeaderProps {
   title?: string;
   participantNames?: string[];
   anonymousCount?: number;
+  /** Name→count map forwarded to the GroupAvatar so duplicate participant
+   *  names render a "×N" badge instead of merging into one circle. */
+  participantNameCounts?: Record<string, number>;
   /** Migration 108: when set, the header shows the uploaded image circle
    *  instead of the initials graphic. Null/undefined → initials fallback. */
   imageUrl?: string | null;
@@ -64,6 +67,7 @@ export default function GroupHeader({
   title,
   participantNames,
   anonymousCount,
+  participantNameCounts,
   imageUrl,
   avatar: avatarOverride,
   subtitle,
@@ -127,6 +131,7 @@ export default function GroupHeader({
         imageUrl={imageUrl ?? null}
         names={participantNames}
         anonymousCount={anonymousCount ?? 0}
+        nameCounts={participantNameCounts}
       />
     ) : null);
   const middleContent = (
