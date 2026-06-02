@@ -2,20 +2,21 @@
 
 import { useState, useRef, useEffect, useId } from 'react';
 
-interface CompactMinParticipantsFieldProps {
+interface CompactNumberRowProps {
+  label: string;
   value: number;
   setValue: (value: number) => void;
+  min?: number;
   disabled?: boolean;
 }
 
 /**
- * Single settings row "Minimum Participants" for time polls — sits where
- * "Minimum Votes" (CompactMinResponsesField) sits for other poll types.
- * A time slot counts only if at least this many people are available for it;
- * if no slot clears the bar at the availability cutoff the event is cancelled.
- * Mirrors the inline tap-to-edit number row of CompactMinResponsesField.
+ * A single settings row: a label on the left and a tap-to-edit number on the
+ * right (faded-grey value → inline numeric input). Shared by the create-poll
+ * "Minimum Votes" and "Minimum Participants" fields so the edit-toggle pattern
+ * lives in one place.
  */
-export default function CompactMinParticipantsField({ value, setValue, disabled = false }: CompactMinParticipantsFieldProps) {
+export default function CompactNumberRow({ label, value, setValue, min = 1, disabled = false }: CompactNumberRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const id = useId();
@@ -30,18 +31,18 @@ export default function CompactMinParticipantsField({ value, setValue, disabled 
   return (
     <div className="flex items-center justify-between gap-3 h-12">
       <label htmlFor={id} className="text-base font-normal shrink-0">
-        Minimum Participants
+        {label}
       </label>
       {isEditing ? (
         <input
           ref={inputRef}
           type="number"
           id={id}
-          min={1}
+          min={min}
           value={value}
           onChange={(e) => {
             const num = parseInt(e.target.value, 10);
-            if (!isNaN(num) && num >= 1) setValue(num);
+            if (!isNaN(num) && num >= min) setValue(num);
           }}
           onBlur={() => setIsEditing(false)}
           onKeyDown={(e) => { if (e.key === 'Enter') setIsEditing(false); }}

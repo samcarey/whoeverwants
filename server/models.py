@@ -173,7 +173,6 @@ class QuestionResponse(BaseModel):
     response_count: int | None = None
     min_availability_percent: int | None = None
     time_min_participants: int | None = None
-    time_event_cancelled: bool = False
     # Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
     # every non-participation question; migration 094 dropped the participation
     # question type entirely, so this is effectively NOT NULL on every row.

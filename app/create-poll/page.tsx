@@ -23,7 +23,7 @@ import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import SliderSwitch from "@/components/SliderSwitch";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
-import CompactMinParticipantsField from "@/components/CompactMinParticipantsField";
+import CompactNumberRow from "@/components/CompactNumberRow";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import DayTimeWindowsInput from "@/components/DayTimeWindowsInput";
 import DaysSelector from "@/components/DaysSelector";
@@ -2259,7 +2259,8 @@ export function CreateQuestionContent() {
                         Only meaningful when an availability phase collects that
                         data. */}
                     {showTimeFields && collectAvailability && (
-                      <CompactMinParticipantsField
+                      <CompactNumberRow
+                        label="Minimum Participants"
                         value={minParticipants}
                         setValue={setMinParticipants}
                         disabled={isLoading}

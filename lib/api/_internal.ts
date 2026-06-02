@@ -221,7 +221,6 @@ export function toQuestion(data: any): Question {
     response_count: data.response_count ?? undefined,
     min_availability_percent: data.min_availability_percent ?? undefined,
     time_min_participants: data.time_min_participants ?? undefined,
-    time_event_cancelled: data.time_event_cancelled ?? undefined,
     is_auto_title: data.is_auto_title ?? undefined,
     poll_id: data.poll_id ?? null,
     question_index: data.question_index ?? null,

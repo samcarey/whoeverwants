@@ -50,10 +50,9 @@ export interface Question {
   is_auto_title?: boolean;
   response_count?: number | null;
   min_availability_percent?: number | null;
-  // "Minimum Participants" viability gate for time questions (default 2) +
-  // the finalized "event's off" flag (set when no slot met the gate).
+  // "Minimum Participants" viability gate for time questions (default 2). The
+  // finalized "event's off" state is surfaced on QuestionResults, not here.
   time_min_participants?: number | null;
-  time_event_cancelled?: boolean | null;
   // Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
   // every existing question, so this is effectively NOT NULL on every row.
   poll_id?: string | null;

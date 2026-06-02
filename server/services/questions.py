@@ -184,7 +184,7 @@ def _finalize_suggestion_options(conn, question_id: str, now: datetime) -> None:
         )
 
 
-def _compute_candidate_time_slots(question: dict, votes: list[dict]) -> list[str]:
+def _compute_candidate_time_slots(question: dict, votes: list[dict]) -> tuple[list[str], bool]:
     """Compute candidate slots for a time question without writing them to the DB.
 
     Shared by `_finalize_time_slots` (which persists the result to `question.options`)
@@ -194,8 +194,11 @@ def _compute_candidate_time_slots(question: dict, votes: list[dict]) -> list[str
 
     Applies the "Minimum Participants" viability gate: a slot is kept only if at
     least `time_min_participants` people are available for it, then the
-    longest-duration slot per start time wins. An empty return means no time
-    cleared the bar (the caller treats that as "event's off").
+    longest-duration slot per start time wins.
+
+    Returns `(slots, has_availability)`. An empty `slots` with `has_availability`
+    True means no time cleared the bar (the caller treats that as "event's off");
+    empty with False means nobody submitted availability yet (no cancellation).
     """
     from algorithms.time_question import (
         generate_time_question_slots,
@@ -212,7 +215,7 @@ def _compute_candidate_time_slots(question: dict, votes: list[dict]) -> list[str
     # slot has a count of 0, so gating would wrongly cancel everything — skip it
     # and keep all of the creator's slots.
     if not any(v.get("voter_day_time_windows") for v in votes):
-        return _keep_longest_per_start_time(all_slots)
+        return _keep_longest_per_start_time(all_slots), False
 
     availability_counts = compute_slot_availability(all_slots, votes)
     slots = filter_slots_by_min_participants(
@@ -220,7 +223,7 @@ def _compute_candidate_time_slots(question: dict, votes: list[dict]) -> list[str
         availability_counts,
         question.get("time_min_participants") or 2,
     )
-    return _keep_longest_per_start_time(slots)
+    return _keep_longest_per_start_time(slots), True
 
 
 def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
@@ -241,8 +244,7 @@ def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
     ).fetchall()
     votes_list = [dict(v) for v in votes]
 
-    has_availability = any(v.get("voter_day_time_windows") for v in votes_list)
-    slots = _compute_candidate_time_slots(dict(question), votes_list)
+    slots, has_availability = _compute_candidate_time_slots(dict(question), votes_list)
 
     if slots:
         conn.execute(
@@ -295,7 +297,6 @@ def _row_to_question(row: dict) -> QuestionResponse:
         is_auto_title=row.get("is_auto_title", False),
         min_availability_percent=row.get("min_availability_percent"),
         time_min_participants=row.get("time_min_participants"),
-        time_event_cancelled=row.get("time_event_cancelled", False),
         poll_id=str(row["poll_id"]) if row.get("poll_id") else None,
         question_index=row.get("question_index"),
     )
@@ -695,7 +696,7 @@ def _compute_results(question, votes, *, include_tentative_time_options: bool = 
             and question.get("allow_pre_ranking") is not False
             and any(v.get("voter_day_time_windows") for v in vote_dicts)
         ):
-            tentative = _compute_candidate_time_slots(question, vote_dicts)
+            tentative, _ = _compute_candidate_time_slots(question, vote_dicts)
             if tentative:
                 question_options = tentative
                 options_are_tentative = True
