@@ -429,11 +429,10 @@ export function CreateQuestionContent() {
   // Handle category changes
   const handleCategoryChange = useCallback((val: string) => {
     setCategory(val);
-    // The emoji picker only applies to custom categories; built-in types
-    // have a fixed icon, so drop any chosen emoji when switching to one.
-    if (getBuiltInType(val)) {
-      setCategoryEmoji('');
-    }
+    // Reset any chosen emoji on a category change so the always-visible emoji
+    // field falls back to showing the new category's default icon (as the
+    // faded placeholder) until the creator deliberately picks an override.
+    setCategoryEmoji('');
     if (val === 'yes_no') {
       setIsAutoTitle(false);
       setTitle('');
@@ -2056,14 +2055,6 @@ export function CreateQuestionContent() {
                           />
                         </div>
                       </label>
-                      {!getBuiltInType(category) && (
-                        <CategoryEmojiField
-                          value={categoryEmoji}
-                          onChange={setCategoryEmoji}
-                          categoryWord={category}
-                          disabled={isLoading}
-                        />
-                      )}
                       {category !== 'yes_no' && category !== 'limited_supply' && (
                         <div className="flex items-center justify-between gap-3 h-12">
                           <label htmlFor="forField" className="text-base font-normal shrink-0">
@@ -2334,6 +2325,20 @@ export function CreateQuestionContent() {
                           aria-label="Allow voting before options are finalized"
                         />
                       </div>
+                    )}
+
+                    {/* Emoji field — always visible, last row of the poll
+                        settings card. Defaults (as the faded placeholder) to
+                        the current category's icon; the creator can pick an
+                        emoji to override it for any category. */}
+                    {category !== 'yes_no' && category !== 'limited_supply' && (
+                      <CategoryEmojiField
+                        value={categoryEmoji}
+                        onChange={setCategoryEmoji}
+                        categoryWord={category}
+                        disabled={isLoading}
+                        placeholder={getBuiltInType(category)?.icon}
+                      />
                     )}
 
                   </form>
