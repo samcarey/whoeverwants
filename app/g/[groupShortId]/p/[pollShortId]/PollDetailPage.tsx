@@ -700,8 +700,20 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   // yes_no AND limited_supply self-submit on tap (no wrapper Submit button) —
   // QuestionBallot owns their submission, so the wrapper must not render one.
   const SELF_SUBMIT_TYPES = ["yes_no", "limited_supply"];
+  // A single limited-supply poll keeps tap-to-claim UNTIL the voter adds a
+  // plus-one, then it routes through the explicit "Claim N spots" wrapper
+  // Submit so the claim and its plus-ones commit together (mirrors the
+  // yes/no-with-plus-ones staging). QuestionBallot's `supplySelectionMode`
+  // turns claim/decline into a selection in that case.
+  const limitedSupplyStaged =
+    !isMultiPoll &&
+    subQuestions[0]?.question_type === "limited_supply" &&
+    !!poll.allow_plus_ones &&
+    plusOnes.length > 0;
   const useWrapperSubmit =
-    !isMultiPoll && !SELF_SUBMIT_TYPES.includes(subQuestions[0]?.question_type ?? "");
+    !isMultiPoll &&
+    (!SELF_SUBMIT_TYPES.includes(subQuestions[0]?.question_type ?? "") ||
+      limitedSupplyStaged);
 
   // Restore any per-poll staged yes/no choices (multi-question polls) so taps
   // made before submitting survive a refresh or navigating away. Single-question
@@ -1011,6 +1023,8 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               }
               onReferenceLocationStateChange={handleReferenceLocationStateChange}
               onRequireName={sp.question_type === "limited_supply" ? gateOnName : undefined}
+              getPlusOnes={getPlusOnes}
+              plusOnesCount={plusOnesCount}
             />
           );
 
@@ -1165,6 +1179,13 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           const sp = subQuestions[0]!;
           const submitState = wrapperSubmitState.get(sp.id);
           if (!submitState?.visible) return null;
+          // limited_supply bakes the head count into its own label
+          // ("Claim 3 spots" / "Decline"), so the generic " for N" suffix
+          // would double it up — skip it for that type only.
+          const label =
+            sp.question_type === "limited_supply"
+              ? submitState.label
+              : `${submitState.label}${submitForSuffix}`;
           return (
             <div className="mt-3">
               <button
@@ -1176,7 +1197,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                 }}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
-                {`${submitState.label}${submitForSuffix}`}
+                {label}
               </button>
             </div>
           );

@@ -290,12 +290,15 @@ def _insert_poll(
             if prephase_deadline >= response_dt:
                 prephase_deadline = response_dt - timedelta(minutes=1)
     # "Plus one/more": default ON for polls with a time question (the common
-    # scheduling case — "I'm answering for my partner too"), OFF otherwise.
-    # An explicit `req.allow_plus_ones` (the FE toggle) overrides the default.
+    # scheduling case — "I'm answering for my partner too") or a limited-supply
+    # question (claiming a scarce slot for yourself + others, e.g. "2 tickets,
+    # I'll take both"), OFF otherwise. An explicit `req.allow_plus_ones` (the FE
+    # toggle) overrides the default.
     allow_plus_ones = req.allow_plus_ones
     if allow_plus_ones is None:
         allow_plus_ones = any(
-            sp.question_type == QuestionType.time for sp in req.questions
+            sp.question_type in (QuestionType.time, QuestionType.limited_supply)
+            for sp in req.questions
         )
     row = conn.execute(
         """
