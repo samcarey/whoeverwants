@@ -4,6 +4,8 @@ import { useMemo } from "react";
 import { QuestionResults, OptionsMetadata } from "@/lib/types";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 import CollapsibleFadeSection from "./CollapsibleFadeSection";
+import OutcomeInfoButton from "./OutcomeInfoButton";
+import { outcomeExplainer } from "@/lib/outcomeExplainer";
 import {
   expandHourRowsToQuarters,
   formatDayLabel,
@@ -209,8 +211,16 @@ function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick
     </button>
   ) : null;
 
+  // Plain-language outcome explanation, behind an info (ⓘ) icon — closed only.
+  const explanation = isQuestionClosed ? outcomeExplainer(results) : null;
+
   return (
     <div>
+      {explanation && (
+        <div className="flex justify-end mr-3 mb-1">
+          <OutcomeInfoButton text={explanation.text} tone={explanation.tone} />
+        </div>
+      )}
       {/* Cards row — items-center vertically aligns the abstain text's
           center with the cards' center. Stats render on their own row
           below so they don't skew that alignment. */}
@@ -285,8 +295,18 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
     );
   }
 
+  // Plain-language outcome explanation, behind an info (ⓘ) icon. The
+  // "event's off" branch above returns its own self-explanatory banner, so
+  // the explainer only applies to a decided winner here.
+  const explanation = outcomeExplainer(results);
+
   return (
     <div className="space-y-4">
+      {explanation && (
+        <div className="flex justify-end">
+          <OutcomeInfoButton text={explanation.text} tone={explanation.tone} />
+        </div>
+      )}
       {winner && (
         <div className="text-center">
           <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Scheduled Time</p>

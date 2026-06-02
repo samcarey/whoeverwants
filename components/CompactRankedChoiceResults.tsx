@@ -5,7 +5,8 @@ import { useRouter, usePathname } from "next/navigation";
 import { QuestionResults, RankedChoiceRound, OptionsMetadata } from "@/lib/types";
 import { ApiRankedChoiceRound } from "@/lib/api";
 import { isPollDetailView } from "@/lib/questionId";
-import { rankedChoiceResultGloss } from "@/lib/rankedChoiceGloss";
+import { outcomeExplainer } from "@/lib/outcomeExplainer";
+import OutcomeInfoButton from "@/components/OutcomeInfoButton";
 import OptionLabel, { isLocationEntry, isRestaurantEntry } from "./OptionLabel";
 
 interface CompactRankedChoiceResultsProps {
@@ -337,22 +338,17 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
   }
 
   const currentRound = roundVisualizations[currentRoundIndex];
-  // Plain-language outcome explanation. Gated on isQuestionClosed so we never
-  // claim an option was "eliminated early" while preliminary results are still
-  // moving — it describes the final outcome, not an in-progress tally.
-  const gloss = isQuestionClosed ? rankedChoiceResultGloss(results) : null;
+  // Plain-language outcome explanation, surfaced behind an info (ⓘ) icon (never
+  // inline). Gated on isQuestionClosed so we never claim an option was
+  // "eliminated early" while preliminary results are still moving — it
+  // describes the final outcome, not an in-progress tally.
+  const explanation = isQuestionClosed ? outcomeExplainer(results) : null;
 
   return (
     <div className="relative">
-      {gloss && (
-        <div
-          className={
-            gloss.tone === "warn"
-              ? "mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border-l-4 border-amber-400 dark:border-amber-600 text-sm text-amber-800 dark:text-amber-200"
-              : "mb-4 px-1 text-xs text-gray-500 dark:text-gray-400 italic"
-          }
-        >
-          {gloss.text}
+      {explanation && (
+        <div className="flex justify-end mb-2">
+          <OutcomeInfoButton text={explanation.text} tone={explanation.tone} />
         </div>
       )}
 
