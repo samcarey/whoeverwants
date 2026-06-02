@@ -1402,9 +1402,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   }, [question.id, showReferenceBelowCard, onReferenceLocationStateChange]);
 
   if (question.question_type === 'limited_supply') {
+    // No QuestionDetails here: the item name is already the page header
+    // (single-question) or the section header (multi-question), so rendering
+    // question.details would duplicate the title.
     return (
       <div className="question-content">
-        {question.details && !partOfPollGroup && question.is_auto_title !== true && <QuestionDetails details={question.details} />}
         <LimitedSupplyBallot
           supplyCount={question.supply_count ?? 0}
           results={questionResults}

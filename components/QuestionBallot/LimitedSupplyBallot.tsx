@@ -54,6 +54,35 @@ export default function LimitedSupplyBallot({
       ? claims.find((c) => c.created_at === ownVoteCreatedAt)
       : undefined;
 
+  const securedClaims = claims.filter((c) => c.secured);
+  const waitlistClaims = claims.filter((c) => !c.secured);
+
+  // The signup roster — who's in, who's waiting. Shown to everyone (it's a
+  // public signup sheet). The viewer's own row is bolded.
+  const roster = claims.length > 0 && (
+    <ul className="mt-3 space-y-1 border-t border-gray-200 dark:border-gray-700 pt-2">
+      {securedClaims.map((c) => (
+        <li key={`s-${c.position}`} className="flex items-center gap-2">
+          <span className="text-green-600 dark:text-green-400">✓</span>
+          <span className={`truncate ${c === ownClaim ? "font-semibold text-gray-900 dark:text-gray-50" : "text-gray-700 dark:text-gray-200"}`}>
+            {c.name || "Someone"}
+          </span>
+        </li>
+      ))}
+      {waitlistClaims.length > 0 && (
+        <li className="pt-1 text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">Waitlist</li>
+      )}
+      {waitlistClaims.map((c, i) => (
+        <li key={`w-${c.position}`} className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+          <span className="tabular-nums">{i + 1}.</span>
+          <span className={`truncate ${c === ownClaim ? "font-semibold text-gray-800 dark:text-gray-100" : ""}`}>
+            {c.name || "Someone"}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+
   const headline = isFull
     ? `All ${supplyCount} spot${supplyCount === 1 ? "" : "s"} claimed${waitlistCount > 0 ? ` · ${waitlistCount} on the waitlist` : ""}`
     : `${spotsLeft} of ${supplyCount} spot${supplyCount === 1 ? "" : "s"} left`;
@@ -79,6 +108,7 @@ export default function LimitedSupplyBallot({
                 : "You claimed a spot."}
           </p>
         )}
+        {roster}
       </div>
     );
   }
@@ -154,6 +184,7 @@ export default function LimitedSupplyBallot({
       )}
 
       {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {roster}
     </div>
   );
 }
