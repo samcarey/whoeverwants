@@ -80,12 +80,14 @@ export default function OutcomeInfoButton({
         </svg>
       </button>
       {open && (
-        <div
+        // A <span> (not <div>) so the popover stays valid phrasing content
+        // when this button sits inside a <p>/<h3> result label.
+        <span
           role="tooltip"
-          className={`absolute ${popoverAnchor} top-full mt-1 z-30 w-64 max-w-[80vw] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 text-left text-xs leading-relaxed font-normal normal-case text-gray-700 dark:text-gray-200 shadow-lg`}
+          className={`block absolute ${popoverAnchor} top-full mt-1 z-30 w-64 max-w-[80vw] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 text-left text-xs leading-relaxed font-normal normal-case text-gray-700 dark:text-gray-200 shadow-lg`}
         >
           {text}
-        </div>
+        </span>
       )}
     </span>
   );
