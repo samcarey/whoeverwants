@@ -24,13 +24,22 @@ from models import (
     EditVoteRequest,
     PollResponse,
     PollVoteItem,
+    PlusOneCandidateResponse,
     QuestionType,
     ReopenQuestionRequest,
     SubmitPollVotesRequest,
     SubmitVoteRequest,
     VoteResponse,
 )
-from services.groups import group_name_phrase, require_uuid
+from services.contacts import (
+    add_member_for_user,
+    earliest_browser_for_user,
+    is_contact,
+    list_plus_one_candidates,
+    reconcile_contacts,
+    user_responded_to_poll,
+)
+from services.groups import _is_uuid_like, group_name_phrase, require_uuid
 from services.memberships import join_group, join_group_for_poll
 from services.poll_categories import record_poll_categories
 from services.push import (
@@ -1314,6 +1323,66 @@ def _sanitize_plus_one_names(names: list[str] | None) -> list[str] | None:
     return cleaned or None
 
 
+def _seed_plus_one_votes(
+    conn,
+    poll_id: str,
+    items: list[PollVoteItem],
+    user_ids: list[str],
+    *,
+    submitter_user_id: str | None,
+    now: datetime,
+) -> None:
+    """Create a seeded, editable vote for each looked-up account the submitter
+    is voting for. Each account gets one vote per question mirroring the
+    submitter's choice, attributed to that account (via its earliest browser),
+    voter_name = the account's display_name. Also grants the account membership
+    so it can see + later change the response.
+
+    Skips: the submitter themself, non-contacts (can't seed an arbitrary
+    account), accounts with no linked browser, and accounts that already
+    responded to the poll. Each account is seeded at most once (dedup)."""
+    if not submitter_user_id:
+        return
+    group_row = conn.execute(
+        "SELECT group_id FROM polls WHERE id = %(id)s", {"id": poll_id}
+    ).fetchone()
+    group_id = str(group_row["group_id"]) if group_row and group_row.get("group_id") else None
+
+    seen: set[str] = set()
+    for raw_uid in user_ids[: _MAX_PLUS_ONES]:
+        uid = (raw_uid or "").strip()
+        if not _is_uuid_like(uid) or uid in seen or uid == str(submitter_user_id):
+            continue
+        seen.add(uid)
+        if not is_contact(conn, str(submitter_user_id), uid):
+            continue
+        if user_responded_to_poll(conn, poll_id, uid):
+            continue
+        their_browser = earliest_browser_for_user(conn, uid)
+        if not their_browser:
+            continue
+        name_row = conn.execute(
+            "SELECT display_name FROM users WHERE id = %(u)s::uuid", {"u": uid}
+        ).fetchone()
+        if not name_row:
+            continue
+        seeded_name = name_row.get("display_name")
+        # Membership so the account can see + edit the poll it was voted into.
+        if group_id:
+            add_member_for_user(conn, group_id, uid)
+        for item in items:
+            # Always an INSERT for the represented account (their first vote),
+            # mirroring the submitter's per-question choice. No plus-ones of
+            # their own.
+            _submit_vote_to_question(
+                conn,
+                item.question_id,
+                _vote_item_to_submit_req(item, seeded_name, None),
+                now,
+                browser_id=their_browser,
+            )
+
+
 def _vote_item_to_submit_req(
     item: PollVoteItem, voter_name: str | None, plus_one_names: list[str] | None
 ) -> SubmitVoteRequest:
@@ -1448,6 +1517,21 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
                 )
             result_rows.append(row)
 
+        # "Plus one/more" — looked-up accounts each get their OWN editable vote,
+        # seeded with the submitter's ballot, so they can change it later. Gated
+        # on allow_plus_ones; only the submitter's contacts can be seeded; an
+        # account that already responded is skipped (never overwrite their own
+        # vote). Runs in the same transaction as the submitter's votes.
+        if poll_row.get("allow_plus_ones") and req.plus_one_user_ids:
+            _seed_plus_one_votes(
+                conn,
+                poll_id,
+                req.items,
+                req.plus_one_user_ids,
+                submitter_user_id=_caller_user_id(conn, request),
+                now=now,
+            )
+
         # Voting IS viewing — record the watermark so the phase-transition
         # skip-logic treats this voter as having seen the options they just
         # acted on. The FE also pings /viewed on poll open; this covers the
@@ -1455,6 +1539,39 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
         _record_poll_view(conn, browser_id, poll_id, now)
 
     return [_row_to_vote(r) for r in result_rows]
+
+
+@router.get(
+    "/{poll_id}/plus-one-candidates",
+    response_model=list[PlusOneCandidateResponse],
+)
+def list_poll_plus_one_candidates(poll_id: str, request: Request):
+    """Accounts the caller can vote FOR as plus-ones on this poll: their
+    contacts (address book), each flagged `responded` when they've already cast
+    a vote here. The FE uses this for the name lookup dropdown — responded
+    accounts are greyed out + unselectable.
+
+    Empty when the poll doesn't allow plus-ones, the caller has no resolvable
+    account (no contacts), or the poll doesn't exist."""
+    require_uuid(poll_id, "poll_id")
+    with get_db() as conn:
+        poll_row = conn.execute(
+            "SELECT id, allow_plus_ones FROM polls WHERE id = %(id)s",
+            {"id": poll_id},
+        ).fetchone()
+        if not poll_row or not poll_row.get("allow_plus_ones"):
+            return []
+        me = _caller_user_id(conn, request)
+        if not me:
+            return []
+        reconcile_contacts(conn, me)
+        candidates = list_plus_one_candidates(conn, me, poll_id)
+    return [
+        PlusOneCandidateResponse(
+            user_id=c.user_id, name=c.name, responded=c.responded
+        )
+        for c in candidates
+    ]
 
 
 @router.post("/{poll_id}/cutoff-availability", response_model=PollResponse)

@@ -5,6 +5,12 @@ named plus-ones surface in the roster (unnamed → anonymous count)."""
 import uuid
 
 from tests.conftest import create_poll, yes_no_question
+from tests.test_invite_members import (
+    _add_member_direct,
+    _bearer_headers,
+    _create_group,
+    _sign_in,
+)
 
 
 def _time_question(**overrides) -> dict:
@@ -154,3 +160,133 @@ class TestPlusOneEdit:
         )
         assert edit.status_code == 201, edit.text
         assert _results(client, poll)["yes_count"] == 1
+
+
+def _create_poll_in_group(client, browser_id, token, group_id, **q):
+    body = {
+        "creator_name": "Alice",
+        "group_id": group_id,
+        "allow_plus_ones": True,
+        "questions": [{"question_type": "yes_no", "category": "yes_no", **q}],
+    }
+    resp = client.post("/api/polls", json=body, headers=_bearer_headers(browser_id, token))
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def _make_contacts(client):
+    """Two signed-in accounts (Alice, Bob) sharing a group, so Bob is in
+    Alice's contacts. Returns (a_browser, a_token, a_uid, b_browser, b_token,
+    b_uid, group)."""
+    a_b, b_b = str(uuid.uuid4()), str(uuid.uuid4())
+    tok_a, a_uid = _sign_in(client, a_b, name="Alice")
+    tok_b, b_uid = _sign_in(client, b_b, name="Bob")
+    group = _create_group(client, a_b, tok_a)
+    _add_member_direct(group["id"], a_b)
+    _add_member_direct(group["id"], b_b)
+    return a_b, tok_a, a_uid, b_b, tok_b, b_uid, group
+
+
+def _reconcile_contacts(client, browser_id, token, poll_id):
+    """Hit the candidate endpoint (real poll id) so its inline
+    reconcile_contacts records the caller's shared-group people as contacts —
+    a prerequisite for seeding plus-one votes for them."""
+    client.get(
+        f"/api/polls/{poll_id}/plus-one-candidates",
+        headers=_bearer_headers(browser_id, token),
+    )
+
+
+def _poll_results(client, poll):
+    qid = poll["questions"][0]["id"]
+    return client.get(f"/api/questions/{qid}/results").json()
+
+
+class TestPlusOneSeededVotes:
+    def test_seeds_an_editable_vote_for_a_looked_up_contact(self, client):
+        a_b, tok_a, a_uid, b_b, tok_b, b_uid, group = _make_contacts(client)
+        poll = _create_poll_in_group(client, a_b, tok_a, group["id"])
+        qid = poll["questions"][0]["id"]
+        _reconcile_contacts(client, a_b, tok_a, poll["id"])
+        # Alice votes yes FOR Bob (a looked-up contact).
+        resp = client.post(
+            f"/api/polls/{poll['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "plus_one_user_ids": [b_uid],
+                "items": [{"question_id": qid, "vote_type": "yes_no", "yes_no_choice": "yes"}],
+            },
+            headers=_bearer_headers(a_b, tok_a),
+        )
+        assert resp.status_code == 201, resp.text
+        # Bob got his own seeded yes vote → 2 yes; his name is in the roster.
+        assert _poll_results(client, poll)["yes_count"] == 2
+        fresh = client.get(f"/api/polls/by-id/{poll['id']}").json()
+        assert "Bob" in fresh["voter_names"]
+
+        # Candidate list now flags Bob as responded (can't vote for him again).
+        cands = client.get(
+            f"/api/polls/{poll['id']}/plus-one-candidates",
+            headers=_bearer_headers(a_b, tok_a),
+        ).json()
+        bob = next((c for c in cands if c["user_id"] == b_uid), None)
+        assert bob and bob["responded"] is True
+
+        # Bob can change his response: he sees his seeded vote and edits it.
+        bob_votes = client.get(
+            f"/api/questions/{qid}/votes", headers=_bearer_headers(b_b, tok_b)
+        ).json()
+        assert len(bob_votes) == 1
+        vote_id = bob_votes[0]["id"]
+        edit = client.post(
+            f"/api/polls/{poll['id']}/votes",
+            json={
+                "voter_name": "Bob",
+                "items": [{"question_id": qid, "vote_id": vote_id, "vote_type": "yes_no", "yes_no_choice": "no"}],
+            },
+            headers=_bearer_headers(b_b, tok_b),
+        )
+        assert edit.status_code == 201, edit.text
+        res = _poll_results(client, poll)
+        assert res["yes_count"] == 1 and res["no_count"] == 1  # no double-count
+
+    def test_cannot_seed_a_non_contact(self, client):
+        a_b, tok_a, a_uid, b_b, tok_b, b_uid, group = _make_contacts(client)
+        poll = _create_poll_in_group(client, a_b, tok_a, group["id"])
+        qid = poll["questions"][0]["id"]
+        _reconcile_contacts(client, a_b, tok_a, poll["id"])
+        stranger = str(uuid.uuid4())  # not in Alice's contacts
+        client.post(
+            f"/api/polls/{poll['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "plus_one_user_ids": [stranger],
+                "items": [{"question_id": qid, "vote_type": "yes_no", "yes_no_choice": "yes"}],
+            },
+            headers=_bearer_headers(a_b, tok_a),
+        )
+        assert _poll_results(client, poll)["yes_count"] == 1  # no seed
+
+    def test_skips_already_responded_account(self, client):
+        a_b, tok_a, a_uid, b_b, tok_b, b_uid, group = _make_contacts(client)
+        poll = _create_poll_in_group(client, a_b, tok_a, group["id"])
+        qid = poll["questions"][0]["id"]
+        _reconcile_contacts(client, a_b, tok_a, poll["id"])
+        # Bob votes for himself first.
+        client.post(
+            f"/api/polls/{poll['id']}/votes",
+            json={"voter_name": "Bob", "items": [{"question_id": qid, "vote_type": "yes_no", "yes_no_choice": "no"}]},
+            headers=_bearer_headers(b_b, tok_b),
+        )
+        # Alice tries to vote yes for Bob → skipped (his own 'no' stands).
+        client.post(
+            f"/api/polls/{poll['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "plus_one_user_ids": [b_uid],
+                "items": [{"question_id": qid, "vote_type": "yes_no", "yes_no_choice": "yes"}],
+            },
+            headers=_bearer_headers(a_b, tok_a),
+        )
+        res = _poll_results(client, poll)
+        assert res["yes_count"] == 1 and res["no_count"] == 1  # Bob not re-seeded

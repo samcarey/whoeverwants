@@ -60,6 +60,23 @@ export interface PollVoteItem {
   disliked_slots?: string[] | null;
 }
 
+// "Plus one/more": a contact the caller can vote for. `responded` accounts
+// (already have a vote on this poll) are greyed out + unselectable on the FE.
+export interface PlusOneCandidate {
+  user_id: string;
+  name: string | null;
+  responded: boolean;
+}
+
+export async function apiGetPlusOneCandidates(
+  pollId: string,
+): Promise<PlusOneCandidate[]> {
+  const data = await pollFetch<PlusOneCandidate[]>(
+    `/${encodeURIComponent(pollId)}/plus-one-candidates`,
+  );
+  return Array.isArray(data) ? data : [];
+}
+
 export async function apiSubmitPollVotes(
   pollId: string,
   params: {
@@ -68,6 +85,9 @@ export async function apiSubmitPollVotes(
     // for (one entry per person; "" = unnamed). The server clamps it to null
     // when the poll's allow_plus_ones is off.
     plus_one_names?: string[] | null;
+    // Looked-up accounts the caller is voting FOR — each gets its own seeded,
+    // editable vote attributed to them (they can change it later).
+    plus_one_user_ids?: string[] | null;
     items: PollVoteItem[];
   },
 ): Promise<ApiVote[]> {

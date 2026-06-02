@@ -111,7 +111,22 @@ class SubmitPollVotesRequest(BaseModel):
     # row so each question weighs 1 + len(plus_one_names). Ignored when the
     # poll's `allow_plus_ones` is off (server clamps it then).
     plus_one_names: list[str] | None = None
+    # Looked-up accounts the submitter is voting FOR. Each gets its OWN vote
+    # row (seeded with the submitter's ballot, attributed to that account) so
+    # they can change it later — unlike `plus_one_names`, which are weighted on
+    # the submitter's row. Ignored when the poll's allow_plus_ones is off;
+    # an account that already responded is skipped server-side.
+    plus_one_user_ids: list[str] | None = None
     items: list[PollVoteItem] = Field(..., min_length=1)
+
+
+class PlusOneCandidateResponse(BaseModel):
+    """A contact the caller can vote for as a plus-one. `responded` accounts are
+    greyed out + unselectable on the FE and refused server-side."""
+
+    user_id: str
+    name: str | None = None
+    responded: bool = False
 
 
 # Poll-mutation requests carry no authorization field. Authorship is purely

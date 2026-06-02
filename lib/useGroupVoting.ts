@@ -50,10 +50,11 @@ interface UseGroupVotingArgs {
   group: Group | null;
   setVotedQuestionIds: Dispatch<SetStateAction<Set<string>>>;
   setAbstainedQuestionIds: Dispatch<SetStateAction<Set<string>>>;
-  // "Plus one/more": returns the poll-level list of additional people the
-  // ballot counts for ("" = unnamed), or null when the poll doesn't allow
-  // plus-ones / none were added. Read at submit time so the latest list wins.
-  getPlusOneNames?: () => string[] | null;
+  // "Plus one/more": returns the poll-level plus-ones at submit time — freeform
+  // `names` (weighted on the submitter's row) and looked-up `userIds` (each
+  // gets its own seeded editable vote). Null when the poll doesn't allow
+  // plus-ones. Read at submit time so the latest list wins.
+  getPlusOnes?: () => { names: string[]; userIds: string[] } | null;
 }
 
 /**
@@ -72,7 +73,7 @@ export function useGroupVoting({
   group,
   setVotedQuestionIds,
   setAbstainedQuestionIds,
-  getPlusOneNames,
+  getPlusOnes,
 }: UseGroupVotingArgs) {
   const [userVoteMap, setUserVoteMap] = useState<Map<string, UserYesNoVote>>(
     () => new Map(),
@@ -182,9 +183,11 @@ export function useGroupVoting({
         return;
       }
       const voter_name = (getUserName() ?? "").trim() || null;
+      const plusOnes = getPlusOnes?.() ?? null;
       const returnedVotes = await apiSubmitPollVotes(pollId, {
         voter_name,
-        plus_one_names: getPlusOneNames?.() ?? null,
+        plus_one_names: plusOnes?.names ?? null,
+        plus_one_user_ids: plusOnes?.userIds ?? null,
         items,
       });
 
@@ -284,9 +287,11 @@ export function useGroupVoting({
         canSubmitSuggestions: false,
         isEditing: !!current?.voteId,
       });
+      const plusOnes = getPlusOnes?.() ?? null;
       const returned = await apiSubmitPollVotes(pollId, {
         voter_name,
-        plus_one_names: getPlusOneNames?.() ?? null,
+        plus_one_names: plusOnes?.names ?? null,
+        plus_one_user_ids: plusOnes?.userIds ?? null,
         items: [item],
       });
       const v = returned.find((r) => r.question_id === questionId);

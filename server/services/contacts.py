@@ -150,6 +150,94 @@ def list_invitable_accounts(
     ]
 
 
+@dataclass
+class PlusOneCandidate:
+    """A contact the owner can vote for as a plus-one. `responded` is true when
+    the account already has a vote on the poll (via any of their browsers) — the
+    FE greys those out + blocks selection, and the server refuses to seed a vote
+    for them (it would overwrite their own response)."""
+
+    user_id: str
+    name: str | None
+    responded: bool
+
+
+def list_plus_one_candidates(
+    conn, owner_user_id: str, poll_id: str
+) -> list[PlusOneCandidate]:
+    """The owner's contacts (their address book), each annotated with whether
+    they've already responded to `poll_id`. Unlike `list_invitable_accounts`,
+    this does NOT exclude current group members — you can vote for a member who
+    hasn't responded yet. Only contacts with a display_name are returned (the
+    name is what the submitter looks up + what attributes the seeded vote)."""
+    rows = conn.execute(
+        """
+        SELECT c.contact_user_id::text AS user_id,
+               u.display_name           AS name,
+               EXISTS (
+                 SELECT 1 FROM votes v
+                   JOIN questions q ON v.question_id = q.id
+                  WHERE q.poll_id = %(pid)s::uuid
+                    AND v.browser_id IN (
+                          SELECT browser_id FROM user_browsers
+                           WHERE user_id = c.contact_user_id
+                        )
+               )                        AS responded
+          FROM user_contacts c
+          JOIN users u ON u.id = c.contact_user_id
+         WHERE c.owner_user_id = %(me)s::uuid
+           AND c.contact_user_id <> %(me)s::uuid
+           AND u.display_name IS NOT NULL
+           AND btrim(u.display_name) <> ''
+         ORDER BY responded ASC, u.display_name ASC
+        """,
+        {"me": owner_user_id, "pid": poll_id},
+    ).fetchall()
+    return [
+        PlusOneCandidate(
+            user_id=r["user_id"],
+            name=r.get("name"),
+            responded=bool(r["responded"]),
+        )
+        for r in rows
+    ]
+
+
+def user_responded_to_poll(conn, poll_id: str, user_id: str) -> bool:
+    """Whether `user_id` has any vote on any question of `poll_id`, across all
+    their linked browsers. Guards plus-one seeding (don't overwrite someone's
+    own response)."""
+    row = conn.execute(
+        """
+        SELECT 1 FROM votes v
+          JOIN questions q ON v.question_id = q.id
+         WHERE q.poll_id = %(pid)s::uuid
+           AND v.browser_id IN (
+                 SELECT browser_id FROM user_browsers WHERE user_id = %(u)s::uuid
+               )
+         LIMIT 1
+        """,
+        {"pid": poll_id, "u": user_id},
+    ).fetchone()
+    return row is not None
+
+
+def earliest_browser_for_user(conn, user_id: str) -> str | None:
+    """The account's earliest-linked browser_id (or None) — used to attribute a
+    seeded plus-one vote + membership to the account, same pattern as
+    `add_member_for_user`."""
+    row = conn.execute(
+        """
+        SELECT browser_id FROM user_browsers
+         WHERE user_id = %(u)s::uuid
+         ORDER BY linked_at ASC
+         LIMIT 1
+        """,
+        {"u": user_id},
+    ).fetchone()
+    return str(row["browser_id"]) if row else None
+
+
 def is_contact(conn, owner_user_id: str, contact_user_id: str) -> bool:
     """Whether `contact_user_id` is in the owner's address book. The
     add-members endpoint gates on this so a caller can only add accounts they

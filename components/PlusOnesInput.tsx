@@ -2,15 +2,21 @@
 
 import { useRef, useState } from "react";
 import { enterAdvancesFocus } from "@/lib/formNavigation";
+import type { PlusOneCandidate } from "@/lib/api";
+
+export interface PlusOneEntry {
+  /** Display name. "" = an unnamed plus-one. */
+  name: string;
+  /** Set when the entry was picked from the contact lookup (a real account).
+   *  Those get their own editable vote; freeform entries are weighted. */
+  userId?: string;
+}
 
 interface PlusOnesInputProps {
-  /** One entry per represented person; "" = an unnamed plus-one. */
-  names: string[];
-  setNames: (names: string[]) => void;
-  /** Contact display names for the lookup dropdown (same source as adding
-   *  people to a group). Empty when none / not loaded — the field still works
-   *  as freeform text. */
-  candidates?: string[];
+  entries: PlusOneEntry[];
+  setEntries: (entries: PlusOneEntry[]) => void;
+  /** Contacts for the lookup dropdown. `responded` ones are greyed + unselectable. */
+  candidates?: PlusOneCandidate[];
   disabled?: boolean;
 }
 
@@ -20,58 +26,55 @@ const MAX_PLUS_ONES = 50;
  * The "Plus one/more" name list shown when voting on a poll that allows it.
  *
  * Reuses the suggestions/options field-card row visual (one input per row +
- * a red remove button) but with two deliberate differences from `OptionsInput`:
- *  - Adding a person is an explicit "+ Add a person" button, NOT type-to-grow,
- *    so a blank row is a valid *unnamed* plus-one (the name is optional).
- *  - The autocomplete is backed by the caller's contacts (passed in), filtered
- *    client-side — the same "look up a person who might be a user" mechanism as
- *    the invite-members screen, rather than the location/restaurant search the
- *    options field uses.
+ * a red remove button) with an explicit "+ Add a person" button (so a blank
+ * row is a valid *unnamed* plus-one). The autocomplete is backed by the
+ * caller's contacts (same "look up a person who might be a user" mechanism as
+ * the invite-members screen). Picking a contact attaches their `userId`, which
+ * gives them their OWN editable vote later; typing freeform keeps it weighted.
+ * Contacts who already responded to the poll are shown greyed with
+ * "(responded)" and can't be selected.
  */
 export default function PlusOnesInput({
-  names,
-  setNames,
+  entries,
+  setEntries,
   candidates = [],
   disabled = false,
 }: PlusOnesInputProps) {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  // Which row's dropdown is open (-1 = none). Tracked per-row so only the
-  // focused field shows suggestions.
   const [openRow, setOpenRow] = useState<number>(-1);
 
-  const updateName = (index: number, value: string) => {
-    const next = [...names];
-    next[index] = value;
-    setNames(next);
+  const update = (index: number, next: PlusOneEntry) => {
+    const copy = [...entries];
+    copy[index] = next;
+    setEntries(copy);
   };
 
   const removeRow = (index: number) => {
-    setNames(names.filter((_, i) => i !== index));
+    setEntries(entries.filter((_, i) => i !== index));
     setOpenRow(-1);
   };
 
   const addRow = () => {
-    if (names.length >= MAX_PLUS_ONES) return;
-    setNames([...names, ""]);
-    // Focus the new field on the next paint.
-    const newIndex = names.length;
+    if (entries.length >= MAX_PLUS_ONES) return;
+    setEntries([...entries, { name: "" }]);
+    const newIndex = entries.length;
     requestAnimationFrame(() => inputRefs.current[newIndex]?.focus());
   };
 
-  const suggestionsFor = (value: string): string[] => {
+  const suggestionsFor = (index: number, value: string): PlusOneCandidate[] => {
     const q = value.trim().toLowerCase();
-    const seen = new Set<string>();
-    const out: string[] = [];
+    // Hide accounts already chosen in another row so you can't add them twice.
+    const chosen = new Set(
+      entries
+        .filter((e, i) => i !== index && e.userId)
+        .map((e) => e.userId as string),
+    );
+    const out: PlusOneCandidate[] = [];
     for (const c of candidates) {
-      const name = (c ?? "").trim();
-      if (!name) continue;
-      const key = name.toLowerCase();
-      if (seen.has(key)) continue;
-      if (q && !key.includes(q)) continue;
-      // Don't suggest the exact value already typed.
-      if (key === q) continue;
-      seen.add(key);
-      out.push(name);
+      const name = (c.name ?? "").trim();
+      if (!name || chosen.has(c.user_id)) continue;
+      if (q && !name.toLowerCase().includes(q)) continue;
+      out.push(c);
       if (out.length >= 6) break;
     }
     return out;
@@ -80,8 +83,8 @@ export default function PlusOnesInput({
   return (
     <div>
       <div className="space-y-2">
-        {names.map((name, index) => {
-          const suggestions = openRow === index ? suggestionsFor(name) : [];
+        {entries.map((entry, index) => {
+          const suggestions = openRow === index ? suggestionsFor(index, entry.name) : [];
           return (
             <div key={index} className="flex items-start gap-2">
               <div className="flex-1 relative">
@@ -90,14 +93,16 @@ export default function PlusOnesInput({
                     inputRefs.current[index] = el;
                   }}
                   type="text"
-                  value={name}
+                  value={entry.name}
                   placeholder="Name (optional)"
-                  onChange={(e) => updateName(index, e.target.value)}
+                  onChange={(e) =>
+                    // Typing detaches any previously-selected account.
+                    update(index, { name: e.target.value })
+                  }
                   onFocus={() => setOpenRow(index)}
                   onBlur={(e) => {
                     const trimmed = e.target.value.trim();
-                    if (trimmed !== name) updateName(index, trimmed);
-                    // Defer so an option's onMouseDown can fire first.
+                    if (trimmed !== entry.name) update(index, { ...entry, name: trimmed });
                     setTimeout(() => setOpenRow((r) => (r === index ? -1 : r)), 120);
                   }}
                   onKeyDown={enterAdvancesFocus}
@@ -108,20 +113,29 @@ export default function PlusOnesInput({
                 />
                 {suggestions.length > 0 && (
                   <ul className="absolute z-20 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
-                    {suggestions.map((s) => (
-                      <li key={s}>
+                    {suggestions.map((c) => (
+                      <li key={c.user_id}>
                         <button
                           type="button"
+                          disabled={c.responded}
                           // onMouseDown (not onClick) so it fires before the
                           // input's onBlur closes the dropdown.
                           onMouseDown={(e) => {
                             e.preventDefault();
-                            updateName(index, s);
+                            if (c.responded) return;
+                            update(index, { name: c.name ?? "", userId: c.user_id });
                             setOpenRow(-1);
                           }}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                          className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between ${
+                            c.responded
+                              ? "text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                              : "hover:bg-gray-100 dark:hover:bg-gray-700"
+                          }`}
                         >
-                          {s}
+                          <span>{c.name}</span>
+                          {c.responded && (
+                            <span className="text-xs italic">(responded)</span>
+                          )}
                         </button>
                       </li>
                     ))}
@@ -146,7 +160,7 @@ export default function PlusOnesInput({
       <button
         type="button"
         onClick={addRow}
-        disabled={disabled || names.length >= MAX_PLUS_ONES}
+        disabled={disabled || entries.length >= MAX_PLUS_ONES}
         className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

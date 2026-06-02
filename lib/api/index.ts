@@ -31,9 +31,10 @@ export type { QuestionType, CreateQuestionParams, CreatePollParams } from "./pol
 export {
   QUESTION_VOTES_CHANGED_EVENT,
   apiGetVotes,
+  apiGetPlusOneCandidates,
   apiSubmitPollVotes,
 } from "./votes";
-export type { ApiVote, PollVoteItem } from "./votes";
+export type { ApiVote, PollVoteItem, PlusOneCandidate } from "./votes";
 
 export { apiGetQuestionResults } from "./results";
 
