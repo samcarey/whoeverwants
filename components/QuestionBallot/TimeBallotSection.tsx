@@ -38,9 +38,11 @@ export interface TimeBallotSectionProps {
   setDurationMinEnabled: (b: boolean) => void;
   setDurationMaxEnabled: (b: boolean) => void;
   // Per-voter conditional-attendance threshold ("only count me for a slot if at
-  // least N people total are available"). 1 = no constraint; >= 2 applies it.
+  // least N people total are available"). Floored at the creator's poll minimum
+  // (`voterMinParticipantsFloor`); equal to the floor = no extra constraint.
   voterMinParticipantsValue: number;
   setVoterMinParticipantsValue: (n: number) => void;
+  voterMinParticipantsFloor: number;
   voterDayTimeWindows: DayTimeWindow[];
   setVoterDayTimeWindows: (v: DayTimeWindow[]) => void;
   preferenceSlotsForVoter: string[];
@@ -85,6 +87,7 @@ export default function TimeBallotSection({
   setDurationMaxEnabled,
   voterMinParticipantsValue,
   setVoterMinParticipantsValue,
+  voterMinParticipantsFloor,
   voterDayTimeWindows,
   setVoterDayTimeWindows,
   preferenceSlotsForVoter,
@@ -218,7 +221,7 @@ export default function TimeBallotSection({
                 label="Minimum people for me to come"
                 value={voterMinParticipantsValue}
                 setValue={setVoterMinParticipantsValue}
-                min={1}
+                min={voterMinParticipantsFloor}
                 disabled={isSubmitting}
               />
             </div>

@@ -268,10 +268,12 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const [durationMinEnabled, setDurationMinEnabled] = useState(question.duration_window?.minEnabled ?? false);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(question.duration_window?.maxEnabled ?? false);
   // Per-voter conditional-attendance threshold ("only count me for a slot if at
-  // least N people total are available"). 1 = no constraint (you alone always
-  // counts, sent as null); >= 2 applies the minimum. No on/off toggle — the
-  // value itself encodes whether a constraint is set.
-  const [voterMinParticipantsValue, setVoterMinParticipantsValue] = useState(1);
+  // least N people total are available"). Floored at the creator's poll-level
+  // minimum participants ("original min") — a personal minimum below that is
+  // meaningless since the slot already requires it. A value equal to the floor
+  // means no extra constraint (sent as null); above it applies the minimum.
+  const pollMinParticipants = Math.max(1, question.time_min_participants ?? 2);
+  const [voterMinParticipantsValue, setVoterMinParticipantsValue] = useState(pollMinParticipants);
 
   // Draft-persistence bookkeeping for time questions:
   // - userTouchedPreferencesRef: flipped only by genuine user edits to the
@@ -608,8 +610,9 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
               if (voteData.voter_day_time_windows && Array.isArray(voteData.voter_day_time_windows)) {
                 setVoterDayTimeWindows(voteData.voter_day_time_windows);
               }
-              // Restore the per-voter conditional-attendance threshold (null/<=1 = none)
-              if (voteData.voter_min_participants != null && voteData.voter_min_participants > 1) {
+              // Restore the per-voter conditional-attendance threshold
+              // (null / <= the poll floor = no extra constraint)
+              if (voteData.voter_min_participants != null && voteData.voter_min_participants > pollMinParticipants) {
                 setVoterMinParticipantsValue(voteData.voter_min_participants);
               }
               // Restore preferences phase reactions (null = not yet submitted)
@@ -883,7 +886,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     durationMaxValue,
     durationMinEnabled,
     durationMaxEnabled,
-    voterMinParticipants: voterMinParticipantsValue > 1 ? voterMinParticipantsValue : null,
+    voterMinParticipants: voterMinParticipantsValue > pollMinParticipants ? voterMinParticipantsValue : null,
     likedSlots,
     dislikedSlots,
     voterName,
@@ -1482,6 +1485,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
               setDurationMaxEnabled={setDurationMaxEnabled}
               voterMinParticipantsValue={voterMinParticipantsValue}
               setVoterMinParticipantsValue={setVoterMinParticipantsValue}
+              voterMinParticipantsFloor={pollMinParticipants}
               voterDayTimeWindows={voterDayTimeWindows}
               setVoterDayTimeWindows={setVoterDayTimeWindows}
               preferenceSlotsForVoter={preferenceSlotsForVoter}
