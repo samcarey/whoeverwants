@@ -214,19 +214,7 @@ export default function LimitedSupplyBallot({
       ) : hasVoted && !committedDecline ? (
         // The voter currently holds a claim.
         <div className="space-y-2">
-          {ownClaim ? (
-            ownClaim.secured ? (
-              <p className="text-green-700 dark:text-green-300 font-medium">
-                ✓ You&apos;re in! (spot #{ownClaim.position})
-              </p>
-            ) : (
-              <p className="text-amber-600 dark:text-amber-400 font-medium">
-                ⏳ Waitlist #{ownClaim.position - supplyCount} — you&apos;ll get a spot if someone drops out
-              </p>
-            )
-          ) : (
-            <p className="text-green-700 dark:text-green-300 font-medium">✓ You claimed a spot</p>
-          )}
+          {committedStatus}
           <button
             type="button"
             onClick={onDecline}
@@ -239,7 +227,7 @@ export default function LimitedSupplyBallot({
       ) : hasVoted && committedDecline ? (
         // The voter declined; let them change their mind.
         <div className="space-y-2">
-          <p className="text-gray-500 dark:text-gray-400">You declined.</p>
+          {committedStatus}
           <button
             type="button"
             onClick={onClaim}
