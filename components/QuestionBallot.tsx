@@ -95,6 +95,10 @@ interface QuestionBallotProps {
   // (PlusOnesInput); reading it through a getter keeps the closure fresh.
   // Returns null when the poll doesn't allow plus-ones (or none were added).
   getPlusOnes?: () => { names: string[]; userIds: string[] } | null;
+  // Reactive count of plus-ones currently added (for labels like "Claim 3
+  // spots"). Distinct from getPlusOnes (a getter read at submit time) so the
+  // limited-supply staged Submit label updates as the voter adds/removes people.
+  plusOnesCount?: number;
 }
 
 export type PrepareBatchVoteItemResult =
@@ -112,7 +116,7 @@ export interface QuestionBallotHandle {
   prepareBatchVoteItem: () => PrepareBatchVoteItemResult;
 }
 
-const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(function QuestionBallot({ question, poll, createdDate, questionId, externalYesNoResults, isExpanded = true, partOfPollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange, onReferenceLocationStateChange, splitEarlyVotingCards = false, onRequireName, getPlusOnes }: QuestionBallotProps, ref) {
+const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(function QuestionBallot({ question, poll, createdDate, questionId, externalYesNoResults, isExpanded = true, partOfPollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange, onReferenceLocationStateChange, splitEarlyVotingCards = false, onRequireName, getPlusOnes, plusOnesCount = 0 }: QuestionBallotProps, ref) {
   // Set the page title in the template header
   usePageTitle(question.title);
 
@@ -990,9 +994,10 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     }
 
     setVoteError(null);
-    // Time questions (availability + preferences phases) submit immediately,
-    // skipping the confirmation modal.
-    if (question.question_type === 'time') {
+    // Time questions (availability + preferences phases) and limited_supply
+    // (the staged "Claim N spots" wrapper Submit) commit immediately — the
+    // explicit Submit IS the confirmation, so skip the modal.
+    if (question.question_type === 'time' || question.question_type === 'limited_supply') {
       void submitVote();
       return;
     }
@@ -1222,8 +1227,23 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   // slot per represented person (algorithms/limited_supply.py). No bespoke
   // quantity stepper / per-claim column needed; plus-ones is the shared
   // "respond for others" mechanism.
+  //
+  // Two submit modes, picked by the wrapper (PollDetailPage):
+  //  - SELF-SUBMIT (no plus-ones): tapping Claim/Decline submits immediately —
+  //    claiming a scarce slot is one tap. `wrapperHandlesSubmit` is false here.
+  //  - STAGED (plus-ones added): `wrapperHandlesSubmit` is true; the tap only
+  //    SELECTS claim-vs-decline (no submit) and the wrapper renders an explicit
+  //    "Claim N spots" Submit that commits with the plus-ones attached. Mirrors
+  //    the yes/no-with-plus-ones precedent. The name gate runs at the wrapper
+  //    Submit (gateOnName there), so the selection tap doesn't gate.
+  const supplySelectionMode = question.question_type === 'limited_supply' && wrapperHandlesSubmit;
   const handleSupplyClaim = () => {
     if (isSubmitting || isQuestionClosed) return;
+    if (supplySelectionMode) {
+      setIsAbstaining(false);
+      if (hasVoted && !isEditingVote) setIsEditingVote(true);
+      return;
+    }
     if (onRequireName && !onRequireName(handleSupplyClaim)) return;
     setIsAbstaining(false);
     if (hasVoted && !isEditingVote) setIsEditingVote(true);
@@ -1231,6 +1251,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   };
   const handleSupplyDecline = () => {
     if (isSubmitting || isQuestionClosed) return;
+    if (supplySelectionMode) {
+      setIsAbstaining(true);
+      if (hasVoted && !isEditingVote) setIsEditingVote(true);
+      return;
+    }
     if (onRequireName && !onRequireName(handleSupplyDecline)) return;
     setIsAbstaining(true);
     if (hasVoted && !isEditingVote) setIsEditingVote(true);
@@ -1350,6 +1375,12 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     if (!wrapperHandlesSubmit) return false;
     if (isQuestionClosed) return false;
     if (question.question_type === 'yes_no') return false; // external rendering uses tap-to-change
+    if (question.question_type === 'limited_supply') {
+      // Staged claim/decline: the selection defaults to "claim", so the Submit
+      // shows immediately for a fresh voter; after committing it hides until
+      // the voter taps Edit to re-stage (e.g. to add more people).
+      return !hasVoted || isEditingVote;
+    }
     if (hasVoted && !isEditingVote && !isEditingRanking && !canImplicitlyEdit) return false;
     return true;
   }, [wrapperHandlesSubmit, isQuestionClosed, question.question_type, hasVoted, isEditingVote, isEditingRanking, canImplicitlyEdit]);
@@ -1358,8 +1389,13 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     if (question.question_type === 'time') {
       return isAvailabilitySubmission ? 'Submit Availability' : 'Submit Preferences';
     }
+    if (question.question_type === 'limited_supply') {
+      if (isAbstaining) return 'Decline';
+      const n = 1 + plusOnesCount;
+      return n > 1 ? `Claim ${n} spots` : 'Claim a spot';
+    }
     return 'Submit Vote';
-  }, [question.question_type, isAvailabilitySubmission]);
+  }, [question.question_type, isAvailabilitySubmission, isAbstaining, plusOnesCount]);
 
   useEffect(() => {
     if (!wrapperHandlesSubmit || !onWrapperSubmitStateChange) return;
@@ -1468,6 +1504,10 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
           error={voteError}
           onClaim={handleSupplyClaim}
           onDecline={handleSupplyDecline}
+          selectionMode={supplySelectionMode}
+          stagedDecline={isAbstaining}
+          isEditing={isEditingVote}
+          onEdit={() => setIsEditingVote(true)}
         />
       </div>
     );

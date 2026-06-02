@@ -28,6 +28,16 @@ interface LimitedSupplyBallotProps {
   error?: string | null;
   onClaim: () => void;
   onDecline: () => void;
+  /** Staged mode: the poll has plus-ones, so claim/decline is a SELECTION here
+   *  and an explicit wrapper "Claim N spots" Submit commits. The claim/decline
+   *  controls become toggles instead of immediate-submit buttons. */
+  selectionMode?: boolean;
+  /** Current staged choice in selectionMode (true = decline selected). */
+  stagedDecline?: boolean;
+  /** Whether the voter is re-staging a committed vote (selectionMode only). */
+  isEditing?: boolean;
+  /** Re-enter selection after committing (selectionMode post-vote → Edit). */
+  onEdit?: () => void;
 }
 
 export default function LimitedSupplyBallot({
@@ -41,6 +51,10 @@ export default function LimitedSupplyBallot({
   error,
   onClaim,
   onDecline,
+  selectionMode = false,
+  stagedDecline = false,
+  isEditing = false,
+  onEdit,
 }: LimitedSupplyBallotProps) {
   const claims = results?.claims ?? [];
   const securedCount = results?.secured_count ?? claims.filter((c) => c.secured).length;
@@ -122,6 +136,57 @@ export default function LimitedSupplyBallot({
     );
   }
 
+  // The committed-vote status line, shared by the self-submit holding-a-claim
+  // view and the staged-mode post-commit view.
+  const committedStatus = !committedDecline ? (
+    ownClaim ? (
+      ownClaim.secured ? (
+        <p className="text-green-700 dark:text-green-300 font-medium">
+          ✓ You&apos;re in! (spot #{ownClaim.position})
+        </p>
+      ) : (
+        <p className="text-amber-600 dark:text-amber-400 font-medium">
+          ⏳ Waitlist #{ownClaim.position - supplyCount} — you&apos;ll get a spot if someone drops out
+        </p>
+      )
+    ) : (
+      <p className="text-green-700 dark:text-green-300 font-medium">✓ You claimed a spot</p>
+    )
+  ) : (
+    <p className="text-gray-500 dark:text-gray-400">You declined.</p>
+  );
+
+  // Staged mode (poll has plus-ones): claim/decline are a selection; the
+  // wrapper renders the "Claim N spots" Submit. Show the selector while the
+  // voter hasn't committed (or is re-editing), else the committed status + Edit.
+  const SELECTED_CLAIM = "bg-green-600 text-white";
+  const SELECTED_DECLINE = "bg-gray-600 dark:bg-gray-500 text-white";
+  const UNSELECTED = "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600";
+  const selectionControls = (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onClaim}
+          aria-pressed={!stagedDecline}
+          disabled={isSubmitting}
+          className={`px-4 py-3 rounded-xl font-semibold transition active:scale-95 disabled:opacity-50 ${stagedDecline ? UNSELECTED : SELECTED_CLAIM}`}
+        >
+          {isFull ? "Join waitlist" : "Claim a spot"}
+        </button>
+        <button
+          type="button"
+          onClick={onDecline}
+          aria-pressed={stagedDecline}
+          disabled={isSubmitting}
+          className={`px-4 py-3 rounded-xl font-semibold transition active:scale-95 disabled:opacity-50 ${stagedDecline ? SELECTED_DECLINE : UNSELECTED}`}
+        >
+          No thanks
+        </button>
+      </div>
+    </div>
+  );
+
   // --- Open: live status + the voter's outcome / actions ---
   return (
     <div className="text-sm">
@@ -130,7 +195,23 @@ export default function LimitedSupplyBallot({
         <span className="font-semibold text-gray-800 dark:text-gray-100">{headline}</span>
       </div>
 
-      {hasVoted && !committedDecline ? (
+      {selectionMode ? (
+        hasVoted && !isEditing ? (
+          <div className="space-y-2">
+            {committedStatus}
+            <button
+              type="button"
+              onClick={onEdit}
+              disabled={isSubmitting}
+              className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
+            >
+              Change my response
+            </button>
+          </div>
+        ) : (
+          selectionControls
+        )
+      ) : hasVoted && !committedDecline ? (
         // The voter currently holds a claim.
         <div className="space-y-2">
           {ownClaim ? (
