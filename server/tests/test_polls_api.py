@@ -60,7 +60,7 @@ class TestCreatePoll:
         data = resp.json()
         assert data["id"]
         assert data["short_id"]
-        assert data["title"] == "Yes/No?"  # computed at read time
+        assert data["title"] == "Question?"  # computed at read time
         assert len(data["questions"]) == 1
         assert data["questions"][0]["question_type"] == "yes_no"
         assert data["questions"][0]["category"] == "yes_no"

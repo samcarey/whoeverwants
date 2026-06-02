@@ -5,7 +5,7 @@ from algorithms.poll_title import generate_poll_title
 
 class TestSingleQuestion:
     def test_yes_no_no_context(self):
-        assert generate_poll_title(["yes_no"], None) == "Yes/No?"
+        assert generate_poll_title(["yes_no"], None) == "Question?"
 
     def test_time_no_context(self):
         assert generate_poll_title(["time"], None) == "Time?"
@@ -190,7 +190,7 @@ class TestEdgeCases:
         assert generate_poll_title(["restaurant"], "   ") == "Restaurant?"
 
     def test_yes_slash_no_alias(self):
-        assert generate_poll_title(["yes/no"], None) == "Yes/No?"
+        assert generate_poll_title(["yes/no"], None) == "Question?"
 
     def test_blank_question_contexts_treated_as_none(self):
         # All-empty per-question contexts behave like None.
