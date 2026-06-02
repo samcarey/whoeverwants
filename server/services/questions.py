@@ -240,7 +240,8 @@ def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
         return  # Already finalized / cancelled / missing
 
     votes = conn.execute(
-        "SELECT voter_day_time_windows, voter_duration, voter_min_participants FROM votes WHERE question_id = %(question_id)s",
+        "SELECT voter_day_time_windows, voter_duration, voter_min_participants, plus_one_names "
+        "FROM votes WHERE question_id = %(question_id)s",
         {"question_id": question_id},
     ).fetchall()
     votes_list = [dict(v) for v in votes]
@@ -323,6 +324,7 @@ def _row_to_vote(row: dict) -> VoteResponse:
         voter_min_participants=row.get("voter_min_participants"),
         liked_slots=row.get("liked_slots"),
         disliked_slots=row.get("disliked_slots"),
+        plus_one_names=row.get("plus_one_names"),
         created_at=row["created_at"].isoformat() if isinstance(row["created_at"], datetime) else str(row["created_at"]),
         updated_at=row["updated_at"].isoformat() if isinstance(row["updated_at"], datetime) else str(row["updated_at"]),
     )
@@ -406,13 +408,13 @@ def _submit_vote_to_question(
                            ranked_choice_tiers,
                            suggestions, is_abstain, is_ranking_abstain, voter_name,
                            voter_day_time_windows, voter_duration, voter_min_participants,
-                           liked_slots, disliked_slots, browser_id,
+                           liked_slots, disliked_slots, plus_one_names, browser_id,
                            created_at, updated_at)
         VALUES (%(question_id)s, %(vote_type)s, %(yes_no_choice)s, %(ranked_choices)s,
                 %(ranked_choice_tiers)s::jsonb,
                 %(suggestions)s, %(is_abstain)s, %(is_ranking_abstain)s, %(voter_name)s,
                 %(voter_day_time_windows)s::jsonb, %(voter_duration)s::jsonb, %(voter_min_participants)s,
-                %(liked_slots)s::jsonb, %(disliked_slots)s::jsonb, %(browser_id)s,
+                %(liked_slots)s::jsonb, %(disliked_slots)s::jsonb, %(plus_one_names)s::jsonb, %(browser_id)s,
                 %(now)s, %(now)s)
         RETURNING *
         """,
@@ -431,6 +433,7 @@ def _submit_vote_to_question(
             "voter_min_participants": req.voter_min_participants,
             "liked_slots": json.dumps(req.liked_slots) if req.liked_slots is not None else None,
             "disliked_slots": json.dumps(req.disliked_slots) if req.disliked_slots is not None else None,
+            "plus_one_names": json.dumps(req.plus_one_names) if req.plus_one_names is not None else None,
             "browser_id": browser_id,
             "now": now,
         },
@@ -535,6 +538,7 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
             voter_min_participants = %(voter_min_participants)s,
             liked_slots = COALESCE(%(liked_slots)s::jsonb, liked_slots),
             disliked_slots = COALESCE(%(disliked_slots)s::jsonb, disliked_slots),
+            plus_one_names = %(plus_one_names)s::jsonb,
             updated_at = %(now)s
         WHERE id = %(vote_id)s AND question_id = %(question_id)s
         RETURNING *
@@ -552,6 +556,7 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
             "voter_min_participants": req.voter_min_participants,
             "liked_slots": json.dumps(req.liked_slots) if req.liked_slots is not None else None,
             "disliked_slots": json.dumps(req.disliked_slots) if req.disliked_slots is not None else None,
+            "plus_one_names": json.dumps(req.plus_one_names) if req.plus_one_names is not None else None,
             "now": now,
             "vote_id": vote_id,
             "question_id": question_id,

@@ -293,6 +293,9 @@ export function CreateQuestionContent() {
   const [customSuggestionDate, setCustomSuggestionDate] = useState('');
   const [customSuggestionTime, setCustomSuggestionTime] = useState('');
   const [allowPreRanking, setAllowPreRanking] = useState(true);
+  // "Plus one/more": null = follow the type-based default (ON when the poll has
+  // a time question, OFF otherwise); true/false is an explicit user override.
+  const [allowPlusOnes, setAllowPlusOnes] = useState<boolean | null>(null);
   const [details, setDetails] = useState("");
   const detailsRef = useRef<HTMLTextAreaElement>(null);
   const [category, setCategory] = useState<string>('custom');
@@ -534,13 +537,14 @@ export function CreateQuestionContent() {
         minResponses,
         showPreliminaryResults,
         allowPreRanking,
+        allowPlusOnes,
         collectSuggestions,
         collectAvailability,
         drafts,
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, collectSuggestions, collectAvailability, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, collectSuggestions, collectAvailability, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -590,6 +594,7 @@ export function CreateQuestionContent() {
           if (formState.minResponses !== undefined) setMinResponses(formState.minResponses);
           if (formState.showPreliminaryResults !== undefined) setShowPreliminaryResults(formState.showPreliminaryResults);
           if (formState.allowPreRanking !== undefined) setAllowPreRanking(formState.allowPreRanking);
+          if (formState.allowPlusOnes !== undefined) setAllowPlusOnes(formState.allowPlusOnes);
           if (formState.collectSuggestions !== undefined) setCollectSuggestions(formState.collectSuggestions);
           if (formState.collectAvailability !== undefined) setCollectAvailability(formState.collectAvailability);
           if (Array.isArray(formState.drafts)) setDrafts(formState.drafts);
@@ -652,6 +657,19 @@ export function CreateQuestionContent() {
     : pollHasAvailability
       ? "Availability Cutoff"
       : "Suggestion Cutoff";
+
+  // "Plus one/more": the toggle defaults ON when the poll has a time question
+  // (the common "answering for my partner too" scheduling case), OFF otherwise.
+  // `allowPlusOnes === null` means "follow this default"; an explicit boolean is
+  // the user's override. The inline form's contribution isn't gated on
+  // isModalOpen — a time draft is a time question regardless of whether the
+  // modal is open (unlike the prephase fields, whose empty-default false-positive
+  // requires that gate).
+  const inlineFormIsTime = questionType === 'time' || category === 'time';
+  const pollHasTimeQuestion =
+    (isModalOpen && inlineFormIsTime) ||
+    drafts.some((d) => draftDbQuestionType(d) === 'time');
+  const effectiveAllowPlusOnes = allowPlusOnes ?? pollHasTimeQuestion;
 
   // Migration 098: poll-level results-display + ranked-choice settings.
   // The min-responses + show-results pair is meaningful iff the poll
@@ -870,6 +888,8 @@ export function CreateQuestionContent() {
     setError(null);
     setIsModalOpen(false);
     setDrafts([]);
+    // Back to the type-based default for the next poll.
+    setAllowPlusOnes(null);
     setShowDiscardConfirm(false);
   }, [applyDraftToState, resetDayTimeWindowsCache]);
 
@@ -1530,6 +1550,7 @@ export function CreateQuestionContent() {
         creatorName: creatorName.trim() || null,
         details: details.trim() || null,
         prephaseDeadline: effectivePrephaseDeadlineIso,
+        allowPlusOnes: effectiveAllowPlusOnes,
       });
 
       // For new-root submissions on /g/ (the empty placeholder), the
@@ -1596,6 +1617,8 @@ export function CreateQuestionContent() {
           min_responses: minResponses,
           show_preliminary_results: showPreliminaryResults,
           allow_pre_ranking: allowPreRanking,
+          // null → server applies the type-based default (ON for time polls).
+          allow_plus_ones: allowPlusOnes,
           questions: questionsForRequest,
         });
       } catch (apiError: any) {
@@ -2326,6 +2349,23 @@ export function CreateQuestionContent() {
                         />
                       </div>
                     )}
+
+                    {/* "Plus one/more": let one person answer on behalf of
+                        several. Defaults ON for time polls, OFF otherwise. */}
+                    <div
+                      className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+                      onClick={() => { if (!isLoading) setAllowPlusOnes(!effectiveAllowPlusOnes); }}
+                    >
+                      <span className="text-base font-normal">
+                        Allow voting for others (plus-ones)
+                      </span>
+                      <SliderSwitch
+                        checked={effectiveAllowPlusOnes}
+                        onChange={(next) => setAllowPlusOnes(next)}
+                        disabled={isLoading}
+                        aria-label="Allow voting for others (plus-ones)"
+                      />
+                    </div>
 
                     {/* Emoji field — always visible, last row of the poll
                         settings card. Defaults (as the faded placeholder) to

@@ -299,6 +299,7 @@ export function toPoll(data: any): Poll {
     min_responses: data.min_responses ?? undefined,
     show_preliminary_results: data.show_preliminary_results ?? true,
     allow_pre_ranking: data.allow_pre_ranking ?? true,
+    allow_plus_ones: data.allow_plus_ones ?? false,
     questions: Array.isArray(data.questions) ? data.questions.map(toQuestion) : [],
     voter_names: Array.isArray(data.voter_names) ? data.voter_names : [],
     anonymous_count: typeof data.anonymous_count === 'number' ? data.anonymous_count : 0,

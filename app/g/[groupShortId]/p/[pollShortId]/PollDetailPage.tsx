@@ -14,6 +14,7 @@ import { Fragment, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, u
 import { useParams, useRouter } from "next/navigation";
 import { flushSync } from "react-dom";
 import {
+  apiGetPlusOneCandidates,
   apiGetGroupPoll,
   apiGetPollById,
   apiGetQuestionResults,
@@ -21,7 +22,9 @@ import {
   apiRecordPollView,
   ApiError,
   QUESTION_VOTES_CHANGED_EVENT,
+  type PlusOneCandidate,
 } from "@/lib/api";
+import PlusOnesInput, { type PlusOneEntry } from "@/components/PlusOnesInput";
 import {
   POLL_HYDRATED_EVENT,
   SHOW_GROUP_BACKDROP_EVENT,
@@ -68,6 +71,8 @@ import {
   loadVotedQuestions,
   parseYesNoChoice,
   getStoredVoteId,
+  setStoredVoteId,
+  setVotedQuestionFlag,
   hasVotedOnQuestion,
 } from "@/lib/votedQuestionsStorage";
 import ClientOnly from "@/components/ClientOnly";
@@ -314,6 +319,27 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     return loadVotedQuestions().abstainedQuestionIds;
   });
 
+  // "Plus one/more": the poll-level list of additional people this ballot
+  // counts for. Only meaningful when `poll.allow_plus_ones`. Each entry is a
+  // freeform name (weighted on the submitter's row) OR a looked-up account
+  // (`userId` set → its own seeded editable vote). A ref mirror keeps the
+  // submit getter (read inside useGroupVoting) from going stale.
+  const [plusOnes, setPlusOnes] = useState<PlusOneEntry[]>([]);
+  const plusOnesRef = useRef<PlusOneEntry[]>([]);
+  plusOnesRef.current = plusOnes;
+  // Contacts for the lookup dropdown (responded ones greyed + unselectable).
+  const [plusOneCandidates, setPlusOneCandidates] = useState<PlusOneCandidate[]>([]);
+  const getPlusOnes = useRef(() => {
+    if (!poll.allow_plus_ones) return null;
+    const names: string[] = [];
+    const userIds: string[] = [];
+    for (const e of plusOnesRef.current) {
+      if (e.userId) userIds.push(e.userId);
+      else names.push((e.name ?? "").trim());
+    }
+    return { names, userIds };
+  }).current;
+
   // Synthetic single-poll Group: useGroupVoting only reads `group.questions`
   // to resolve poll_id per vote write. Voted/abstained sets are passed via
   // setters; rebuilding the Group on every vote would churn identity for
@@ -345,6 +371,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     group: syntheticGroup,
     setVotedQuestionIds,
     setAbstainedQuestionIds,
+    getPlusOnes,
   });
 
   const [questionResultsMap, setQuestionResultsMap] = useState<Map<string, QuestionResults>>(() => {
@@ -378,6 +405,77 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   // the initial-mount fetch loop for every sub-question.
   const pollRef = useRef(poll);
   useEffect(() => { pollRef.current = poll; }, [poll]);
+
+  // "Plus one/more": load the contact lookup candidates (with per-poll
+  // `responded` flags) + pre-fill the freeform list from the viewer's existing
+  // vote so editing doesn't silently drop previously-added people. Also a
+  // seeded-vote DISCOVERY pass: a looked-up account that someone voted for has
+  // a real vote attributed to them but no local stored id — fetch their vote
+  // from the server (ballot privacy scopes /votes to the caller's own rows) and
+  // adopt it so they see it as their response and can change it (rather than
+  // double-voting).
+  const plusOnesPrefilledRef = useRef(false);
+  const seededDiscoveryRef = useRef(false);
+  useEffect(() => {
+    if (!poll.allow_plus_ones) return;
+    let cancelled = false;
+    apiGetPlusOneCandidates(poll.id)
+      .then((cands) => {
+        if (!cancelled) setPlusOneCandidates(cands);
+      })
+      .catch(() => { /* freeform entry still works without candidates */ });
+
+    (async () => {
+      for (const sp of poll.questions) {
+        if (isPendingPollId(sp.id)) continue;
+        const localVoteId = getStoredVoteId(sp.id);
+        // Prefill the freeform plus-ones list once from the viewer's own vote.
+        if (localVoteId && !plusOnesPrefilledRef.current) {
+          const votes = await apiGetVotes(sp.id).catch(() => null);
+          if (cancelled) return;
+          const mine = votes?.find((v) => v.id === localVoteId);
+          if (mine?.plus_one_names && mine.plus_one_names.length > 0) {
+            setPlusOnes(mine.plus_one_names.map((name) => ({ name })));
+            plusOnesPrefilledRef.current = true;
+          }
+        }
+        // Discover a seeded vote: no local id but the server returns a vote for
+        // me (it can only be mine) → adopt it so the existing edit flow works.
+        if (!localVoteId && !seededDiscoveryRef.current) {
+          const votes = await apiGetVotes(sp.id).catch(() => null);
+          if (cancelled) return;
+          const mine = votes && votes.length > 0 ? votes[0] : null;
+          if (mine) {
+            setStoredVoteId(sp.id, mine.id);
+            setVotedQuestionFlag(sp.id, mine.is_abstain ? "abstained" : true);
+            const fresh = loadVotedQuestions();
+            setVotedQuestionIds(fresh.votedQuestionIds);
+            setAbstainedQuestionIds(fresh.abstainedQuestionIds);
+            // Surface the choice for the externally-rendered yes/no card too.
+            if (sp.question_type === "yes_no") {
+              setUserVoteMap((prev) => {
+                const next = new Map(prev);
+                next.set(sp.id, {
+                  choice: parseYesNoChoice(mine),
+                  voteId: mine.id,
+                  voterName: mine.voter_name ?? null,
+                });
+                return next;
+              });
+            }
+            // Wake QuestionBallot (ranked/time) so it loads the adopted vote.
+            window.dispatchEvent(
+              new CustomEvent(QUESTION_VOTES_CHANGED_EVENT, { detail: { questionId: sp.id } }),
+            );
+          }
+        }
+      }
+      plusOnesPrefilledRef.current = true;
+      seededDiscoveryRef.current = true;
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poll.allow_plus_ones, poll.id]);
 
   const fetchOneResults = useCallback(async (sp: Question) => {
     if (isPendingPollId(sp.id)) return;
@@ -593,7 +691,12 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     poll.is_closed ? [] : [poll.response_deadline, poll.prephase_deadline],
   );
   const isClosed = !isPollOpen(poll);
-  const usePollSubmit = isMultiPoll;
+  // A single yes/no keeps tap-to-submit UNLESS the voter has added plus-ones —
+  // then it routes through the explicit staged-Submit flow so they can finish
+  // adding people and the button can show "for X". Multi-question polls always
+  // use the staged flow.
+  const usePollSubmit =
+    isMultiPoll || (allYesNo && !!poll.allow_plus_ones && plusOnes.length > 0);
   // yes_no AND limited_supply self-submit on tap (no wrapper Submit button) —
   // QuestionBallot owns their submission, so the wrapper must not render one.
   const SELF_SUBMIT_TYPES = ["yes_no", "limited_supply"];
@@ -750,6 +853,11 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
       preparedNonYesNo,
     });
   };
+
+  // "Plus one/more": total responses being submitted = you (1) + each plus-one.
+  // Drives the "Submit Vote for X" button label.
+  const plusOnesCount = poll.allow_plus_ones ? plusOnes.length : 0;
+  const submitForSuffix = plusOnesCount > 0 ? ` for ${1 + plusOnesCount}` : "";
 
   const shareUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
@@ -990,6 +1098,27 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
           );
         })}
 
+        {/* "Plus one/more": when the poll allows it, the voter can add extra
+            people their single ballot counts for (each optionally named, with a
+            contact lookup). Poll-level — applies to every question. */}
+        {poll.allow_plus_ones && !isClosed && (
+          <div className="mt-6">
+            <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
+              Voting for others?
+            </h2>
+            {plusOnes.length > 0 && (
+              <p className="px-1 mb-2 text-xs text-gray-400 dark:text-gray-500">
+                Your response will be duplicated for each person you represent. If they already have the app, look them up below and they can change their response later.
+              </p>
+            )}
+            <PlusOnesInput
+              entries={plusOnes}
+              setEntries={setPlusOnes}
+              candidates={plusOneCandidates}
+            />
+          </div>
+        )}
+
         {/* Wrapper-level Submit for multi-question polls (batches yes/no
             staged choices + each non-yes_no ballot's prepared item). */}
         {usePollSubmit && !isClosed && (() => {
@@ -1022,7 +1151,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                 disabled={submitting || !hasStagedChange}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
-                {submitting ? "Submitting..." : "Submit Vote"}
+                {submitting ? "Submitting..." : `Submit Vote${submitForSuffix}`}
               </button>
             </div>
           );
@@ -1046,7 +1175,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                 }}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
-                {submitState.label}
+                {`${submitState.label}${submitForSuffix}`}
               </button>
             </div>
           );
@@ -1145,7 +1274,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               : `Submit your vote across ${pendingPollSubmit.stagedCount} questions?`
             : ""
         }
-        confirmText={pendingPollSubmit && pollSubmitting.has(pendingPollSubmit.pollId) ? "Submitting…" : "Submit Vote"}
+        confirmText={pendingPollSubmit && pollSubmitting.has(pendingPollSubmit.pollId) ? "Submitting…" : `Submit Vote${submitForSuffix}`}
         cancelText="Cancel"
         confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
         onConfirm={() => {

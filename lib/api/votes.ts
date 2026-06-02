@@ -23,6 +23,8 @@ export interface ApiVote {
   voter_min_participants: number | null;
   liked_slots: string[] | null;
   disliked_slots: string[] | null;
+  // "Plus one/more": additional people this ballot counts for ("" = unnamed).
+  plus_one_names?: string[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -60,9 +62,36 @@ export interface PollVoteItem {
   disliked_slots?: string[] | null;
 }
 
+// "Plus one/more": a contact the caller can vote for. `responded` accounts
+// (already have a vote on this poll) are greyed out + unselectable on the FE.
+export interface PlusOneCandidate {
+  user_id: string;
+  name: string | null;
+  responded: boolean;
+}
+
+export async function apiGetPlusOneCandidates(
+  pollId: string,
+): Promise<PlusOneCandidate[]> {
+  const data = await pollFetch<PlusOneCandidate[]>(
+    `/${encodeURIComponent(pollId)}/plus-one-candidates`,
+  );
+  return Array.isArray(data) ? data : [];
+}
+
 export async function apiSubmitPollVotes(
   pollId: string,
-  params: { voter_name?: string | null; items: PollVoteItem[] },
+  params: {
+    voter_name?: string | null;
+    // "Plus one/more": poll-level list of additional people this ballot counts
+    // for (one entry per person; "" = unnamed). The server clamps it to null
+    // when the poll's allow_plus_ones is off.
+    plus_one_names?: string[] | null;
+    // Looked-up accounts the caller is voting FOR — each gets its own seeded,
+    // editable vote attributed to them (they can change it later).
+    plus_one_user_ids?: string[] | null;
+    items: PollVoteItem[];
+  },
 ): Promise<ApiVote[]> {
   const data = await pollFetch<ApiVote[]>(
     `/${encodeURIComponent(pollId)}/votes`,

@@ -638,6 +638,20 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     }
   }, [question.id, question.question_type, hasVoted, fetchVoteData, isNewQuestion]);
 
+  // "Plus one/more" recognition: the poll detail page may DISCOVER a vote
+  // attributed to this signed-in viewer (a plus-one someone voted for them)
+  // and adopt it into localStorage, then fire QUESTION_VOTES_CHANGED_EVENT.
+  // Flip hasVoted so the load-vote effect above runs and they can edit it.
+  useEffect(() => {
+    const onVotesChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { questionId?: string } | undefined;
+      if (detail?.questionId !== question.id) return;
+      if (!hasVoted && hasVotedOnQuestion(question.id)) setHasVoted(true);
+    };
+    window.addEventListener(QUESTION_VOTES_CHANGED_EVENT, onVotesChanged);
+    return () => window.removeEventListener(QUESTION_VOTES_CHANGED_EVENT, onVotesChanged);
+  }, [question.id, hasVoted]);
+
   // Fetch results when question closes or for time questions in preferences phase.
   // Pre-ranking mode also needs results during the availability phase, but only
   // for voters who've already submitted availability — non-voters don't see

@@ -24,16 +24,26 @@ from models import (
     EditVoteRequest,
     PollResponse,
     PollVoteItem,
+    PlusOneCandidateResponse,
     QuestionType,
     ReopenQuestionRequest,
     SubmitPollVotesRequest,
     SubmitVoteRequest,
     VoteResponse,
 )
-from services.groups import group_name_phrase, require_uuid
+from services.contacts import (
+    earliest_browser_for_user,
+    is_contact,
+    list_plus_one_candidates,
+    reconcile_contacts,
+    user_responded_to_poll,
+)
+from services.invites import issue_invite
+from services.groups import _is_uuid_like, group_name_phrase, require_uuid
 from services.memberships import join_group, join_group_for_poll
 from services.poll_categories import record_poll_categories
 from services.push import (
+    fan_out_member_added,
     fan_out_new_poll,
     fan_out_phase_transition,
     fan_out_poll_closed,
@@ -279,6 +289,14 @@ def _insert_poll(
             )
             if prephase_deadline >= response_dt:
                 prephase_deadline = response_dt - timedelta(minutes=1)
+    # "Plus one/more": default ON for polls with a time question (the common
+    # scheduling case — "I'm answering for my partner too"), OFF otherwise.
+    # An explicit `req.allow_plus_ones` (the FE toggle) overrides the default.
+    allow_plus_ones = req.allow_plus_ones
+    if allow_plus_ones is None:
+        allow_plus_ones = any(
+            sp.question_type == QuestionType.time for sp in req.questions
+        )
     row = conn.execute(
         """
         INSERT INTO polls (
@@ -286,6 +304,7 @@ def _insert_poll(
             prephase_deadline, prephase_deadline_minutes,
             context, details,
             min_responses, show_preliminary_results, allow_pre_ranking,
+            allow_plus_ones,
             group_id,
             created_at, updated_at
         )
@@ -294,6 +313,7 @@ def _insert_poll(
             %(prephase_deadline)s, %(prephase_deadline_minutes)s,
             %(context)s, %(details)s,
             %(min_responses)s, %(show_preliminary_results)s, %(allow_pre_ranking)s,
+            %(allow_plus_ones)s,
             %(group_id)s,
             %(now)s, %(now)s
         )
@@ -310,6 +330,7 @@ def _insert_poll(
             "min_responses": req.min_responses,
             "show_preliminary_results": req.show_preliminary_results,
             "allow_pre_ranking": req.allow_pre_ranking,
+            "allow_plus_ones": allow_plus_ones,
             "group_id": group_id,
             "now": now,
         },
@@ -530,6 +551,7 @@ def _row_to_poll(
         min_responses=row.get("min_responses"),
         show_preliminary_results=row.get("show_preliminary_results", True),
         allow_pre_ranking=row.get("allow_pre_ranking", True),
+        allow_plus_ones=row.get("allow_plus_ones", False),
         questions=[_row_to_question(sp) for sp in question_rows],
         voter_names=vd.voter_names,
         anonymous_count=vd.anonymous_count,
@@ -592,7 +614,8 @@ def _compute_poll_voter_data(conn, poll_id: str) -> PollVoterData:
     votes_row = conn.execute(
         """
         WITH all_votes AS (
-            SELECT v.question_id, v.voter_name, v.browser_id, v.suggestions
+            SELECT v.question_id, v.voter_name, v.browser_id, v.suggestions,
+                   v.plus_one_names
             FROM votes v
             JOIN questions p ON v.question_id = p.id
             WHERE p.poll_id = %(mid)s
@@ -603,23 +626,58 @@ def _compute_poll_voter_data(conn, poll_id: str) -> PollVoterData:
             WHERE voter_name IS NULL OR voter_name = ''
             GROUP BY question_id
         ),
-        named_counts AS (
-            SELECT voter_name, GREATEST(COUNT(DISTINCT browser_id), 1) AS c
+        submitter_counts AS (
+            SELECT voter_name AS name, GREATEST(COUNT(DISTINCT browser_id), 1) AS c
             FROM all_votes
             WHERE voter_name IS NOT NULL AND voter_name != ''
             GROUP BY voter_name
+        ),
+        -- "Plus one/more": each submitter's plus-one array repeats across their
+        -- sibling-question rows, so dedup to one array per browser before
+        -- unnesting (otherwise an N-question poll would multiply the plus-ones
+        -- by N).
+        plus_one_arrays AS (
+            SELECT DISTINCT ON (browser_id) browser_id, plus_one_names
+            FROM all_votes
+            WHERE plus_one_names IS NOT NULL AND browser_id IS NOT NULL
+            ORDER BY browser_id
+        ),
+        plus_one_entries AS (
+            SELECT btrim(elem) AS name
+            FROM plus_one_arrays
+            CROSS JOIN LATERAL jsonb_array_elements_text(plus_one_names) AS elem
+        ),
+        plus_one_named AS (
+            SELECT name, COUNT(*)::int AS c
+            FROM plus_one_entries
+            WHERE name IS NOT NULL AND name <> ''
+            GROUP BY name
+        ),
+        -- Merge submitter names + named plus-ones, summing the per-name counts
+        -- so a name shared by a real voter and a plus-one (or two plus-ones)
+        -- expands into that many bubbles.
+        named_merged AS (
+            SELECT name, SUM(c)::int AS c
+            FROM (
+                SELECT name, c FROM submitter_counts
+                UNION ALL
+                SELECT name, c FROM plus_one_named
+            ) u
+            GROUP BY name
         )
         SELECT
             COALESCE(
-                (SELECT array_agg(voter_name ORDER BY voter_name)
-                 FROM named_counts),
+                (SELECT array_agg(name ORDER BY name) FROM named_merged),
                 ARRAY[]::text[]
             ) AS voter_names,
             COALESCE(
-                (SELECT jsonb_object_agg(voter_name, c) FROM named_counts),
+                (SELECT jsonb_object_agg(name, c) FROM named_merged),
                 '{}'::jsonb
             ) AS voter_name_counts,
-            COALESCE((SELECT MAX(c) FROM anon_per_question), 0) AS anonymous_count,
+            COALESCE((SELECT MAX(c) FROM anon_per_question), 0)
+              + COALESCE((SELECT COUNT(*) FROM plus_one_entries
+                           WHERE name IS NULL OR name = ''), 0) AS anonymous_count,
+            COALESCE((SELECT COUNT(*) FROM plus_one_entries), 0) AS plus_one_total,
             (SELECT COUNT(DISTINCT s)
                FROM all_votes
                CROSS JOIN LATERAL unnest(COALESCE(suggestions, ARRAY[]::text[])) AS s
@@ -660,7 +718,12 @@ def _compute_poll_voter_data(conn, poll_id: str) -> PollVoterData:
             k: int(v) for k, v in (votes_row["voter_name_counts"] or {}).items()
         },
         viewed_ignored_count=int(viewed_row["viewed_ignored"] or 0),
-        viewed_total=int(viewed_row["viewed_total"] or 0),
+        # "Plus one/more": represented people aren't browsers in poll_views, so
+        # add them to the viewer total too — keeps "voted ≤ viewed" (the group
+        # card's "M of V seen" turnout line) consistent now that the voted
+        # count includes plus-ones.
+        viewed_total=int(viewed_row["viewed_total"] or 0)
+        + int(votes_row["plus_one_total"] or 0),
         suggestion_count=int(votes_row["suggestion_count"] or 0),
     )
 
@@ -1335,43 +1398,181 @@ def cutoff_poll_suggestions(
     return _row_to_poll(poll_row, question_rows, voter_data, viewer_user_id=wrapper.get("creator_user_id"))
 
 
-def _vote_item_to_submit_req(item: PollVoteItem, voter_name: str | None) -> SubmitVoteRequest:
+# Bounds for the "plus one/more" name list — generous enough for any real
+# "answering for the group" case, tight enough to stop an abusive request from
+# inflating a poll's tallies arbitrarily.
+_MAX_PLUS_ONES = 50
+_MAX_PLUS_ONE_NAME_LEN = 50
+
+
+def _sanitize_plus_one_names(names: list[str] | None) -> list[str] | None:
+    """Normalize the poll-level plus-one list: trim each name (blanks kept as
+    unnamed plus-ones), drop non-strings, and bound count + per-name length.
+    Returns None when nothing was provided so the vote row's column stays NULL.
+    """
+    if not names:
+        return None
+    cleaned: list[str] = []
+    for n in names[:_MAX_PLUS_ONES]:
+        if not isinstance(n, str):
+            continue
+        cleaned.append(n.strip()[:_MAX_PLUS_ONE_NAME_LEN])
+    return cleaned or None
+
+
+def _seed_plus_one_votes(
+    conn,
+    poll_id: str,
+    items: list[PollVoteItem],
+    user_ids: list[str],
+    *,
+    submitter_user_id: str | None,
+    now: datetime,
+) -> list[tuple[str, str, dict]]:
+    """Create a seeded, editable vote for each looked-up account the submitter
+    is voting for. Each account gets one vote per question mirroring the
+    submitter's choice, attributed to that account (via its earliest browser),
+    voter_name = the account's display_name. Their vote counts immediately.
+
+    Does NOT add them to the group — instead mints a single-use INVITE (Phase G,
+    targeted at the poll) and returns a notification spec per account so the
+    caller can push "<submitter> voted for you — open to see or change your
+    response". Tapping the invite lets them join + reach the poll, where the
+    detail page's discovery pass adopts the seeded vote for editing.
+
+    Skips: the submitter themself, non-contacts (can't seed an arbitrary
+    account), accounts with no linked browser, and accounts that already
+    responded. Each account is seeded at most once (dedup). Returns
+    `[(group_id, user_id, payload)]` for the caller to fan out as pushes."""
+    if not submitter_user_id:
+        return []
+    poll_meta = conn.execute(
+        """
+        SELECT p.group_id, g.short_id AS group_short_id, g.title AS group_title
+          FROM polls p LEFT JOIN groups g ON p.group_id = g.id
+         WHERE p.id = %(id)s
+        """,
+        {"id": poll_id},
+    ).fetchone()
+    group_id = (
+        str(poll_meta["group_id"]) if poll_meta and poll_meta.get("group_id") else None
+    )
+    route_for_url = (poll_meta.get("group_short_id") if poll_meta else None) or group_id
+    group_phrase = (
+        group_name_phrase(conn, group_id, override=poll_meta.get("group_title"))
+        if group_id
+        else None
+    )
+    submitter_row = conn.execute(
+        "SELECT display_name FROM users WHERE id = %(u)s::uuid",
+        {"u": submitter_user_id},
+    ).fetchone()
+    submitter_name = (
+        (submitter_row.get("display_name") if submitter_row else None) or "Someone"
+    )
+
+    notifications: list[tuple[str, str, dict]] = []
+    seen: set[str] = set()
+    for raw_uid in user_ids[: _MAX_PLUS_ONES]:
+        uid = (raw_uid or "").strip()
+        if not _is_uuid_like(uid) or uid in seen or uid == str(submitter_user_id):
+            continue
+        seen.add(uid)
+        if not is_contact(conn, str(submitter_user_id), uid):
+            continue
+        if user_responded_to_poll(conn, poll_id, uid):
+            continue
+        their_browser = earliest_browser_for_user(conn, uid)
+        if not their_browser:
+            continue
+        name_row = conn.execute(
+            "SELECT display_name FROM users WHERE id = %(u)s::uuid", {"u": uid}
+        ).fetchone()
+        if not name_row:
+            continue
+        seeded_name = name_row.get("display_name")
+        for item in items:
+            # Always an INSERT for the represented account (their first vote),
+            # mirroring the submitter's per-question choice. No plus-ones of
+            # their own.
+            _submit_vote_to_question(
+                conn,
+                item.question_id,
+                _vote_item_to_submit_req(item, seeded_name, None),
+                now,
+                browser_id=their_browser,
+            )
+        # Invite (NOT auto-membership) + queue a notification so they can join,
+        # reach the poll, and change the response we seeded for them.
+        if group_id:
+            try:
+                invite = issue_invite(
+                    conn,
+                    group_id=group_id,
+                    created_by_user_id=str(submitter_user_id),
+                    mode="single",
+                    target_poll_id=poll_id,
+                )
+                title = f"{submitter_name} voted for you"
+                if group_phrase:
+                    title += f" in {group_phrase}"
+                notifications.append(
+                    (
+                        group_id,
+                        uid,
+                        {
+                            "title": title,
+                            "body": "Open to see or change your response.",
+                            "url": f"/invite/{invite.token}",
+                            "group_id": route_for_url,
+                            "group_uuid": group_id,
+                            "tag": f"plus-one-{poll_id}-{uid}",
+                        },
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("plus-one invite/notify failed for %s", uid)
+    return notifications
+
+
+def _common_vote_fields(
+    item: PollVoteItem, voter_name: str | None, plus_one_names: list[str] | None
+) -> dict:
+    """The fields SubmitVoteRequest and EditVoteRequest share — mapped once so a
+    new vote field only needs adding here, not in both converters below."""
+    return {
+        "yes_no_choice": item.yes_no_choice,
+        "ranked_choices": item.ranked_choices,
+        "ranked_choice_tiers": item.ranked_choice_tiers,
+        "suggestions": item.suggestions,
+        "is_abstain": item.is_abstain,
+        "is_ranking_abstain": item.is_ranking_abstain,
+        "voter_name": voter_name,
+        "voter_day_time_windows": item.voter_day_time_windows,
+        "voter_duration": item.voter_duration,
+        "voter_min_participants": item.voter_min_participants,
+        "options_metadata": item.options_metadata,
+        "liked_slots": item.liked_slots,
+        "disliked_slots": item.disliked_slots,
+        "plus_one_names": plus_one_names,
+    }
+
+
+def _vote_item_to_submit_req(
+    item: PollVoteItem, voter_name: str | None, plus_one_names: list[str] | None
+) -> SubmitVoteRequest:
     if not item.vote_type:
         raise HTTPException(status_code=400, detail="vote_type is required when inserting a new vote")
     return SubmitVoteRequest(
         vote_type=item.vote_type,
-        yes_no_choice=item.yes_no_choice,
-        ranked_choices=item.ranked_choices,
-        ranked_choice_tiers=item.ranked_choice_tiers,
-        suggestions=item.suggestions,
-        is_abstain=item.is_abstain,
-        is_ranking_abstain=item.is_ranking_abstain,
-        voter_name=voter_name,
-        voter_day_time_windows=item.voter_day_time_windows,
-        voter_duration=item.voter_duration,
-        voter_min_participants=item.voter_min_participants,
-        options_metadata=item.options_metadata,
-        liked_slots=item.liked_slots,
-        disliked_slots=item.disliked_slots,
+        **_common_vote_fields(item, voter_name, plus_one_names),
     )
 
 
-def _vote_item_to_edit_req(item: PollVoteItem, voter_name: str | None) -> EditVoteRequest:
-    return EditVoteRequest(
-        yes_no_choice=item.yes_no_choice,
-        ranked_choices=item.ranked_choices,
-        ranked_choice_tiers=item.ranked_choice_tiers,
-        suggestions=item.suggestions,
-        is_abstain=item.is_abstain,
-        is_ranking_abstain=item.is_ranking_abstain,
-        voter_name=voter_name,
-        voter_day_time_windows=item.voter_day_time_windows,
-        voter_duration=item.voter_duration,
-        voter_min_participants=item.voter_min_participants,
-        options_metadata=item.options_metadata,
-        liked_slots=item.liked_slots,
-        disliked_slots=item.disliked_slots,
-    )
+def _vote_item_to_edit_req(
+    item: PollVoteItem, voter_name: str | None, plus_one_names: list[str] | None
+) -> EditVoteRequest:
+    return EditVoteRequest(**_common_vote_fields(item, voter_name, plus_one_names))
 
 
 @router.post(
@@ -1379,7 +1580,12 @@ def _vote_item_to_edit_req(item: PollVoteItem, voter_name: str | None) -> EditVo
     response_model=list[VoteResponse],
     status_code=201,
 )
-def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Request):
+def submit_poll_votes(
+    poll_id: str,
+    req: SubmitPollVotesRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
     """Atomic batch vote across multiple questions of one poll.
 
     Each `items[i]` either inserts a new vote (vote_id null) or updates an
@@ -1410,13 +1616,24 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
 
     with get_db() as conn:
         poll_row = conn.execute(
-            "SELECT id, is_closed FROM polls WHERE id = %(id)s",
+            "SELECT id, is_closed, allow_plus_ones FROM polls WHERE id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         if not poll_row:
             raise HTTPException(status_code=404, detail="Poll not found")
         if poll_row.get("is_closed"):
             raise HTTPException(status_code=400, detail="Poll is closed")
+
+        # "Plus one/more" — one ballot can represent additional people. Clamp to
+        # None when the poll doesn't allow it (the FE shouldn't send any, but a
+        # crafted request must not inflate a poll that opted out), and sanitize
+        # otherwise (trim names, keep blanks as unnamed plus-ones, bound count +
+        # length). Poll-level: written onto every item's vote row below.
+        plus_one_names = (
+            _sanitize_plus_one_names(req.plus_one_names)
+            if poll_row.get("allow_plus_ones")
+            else None
+        )
 
         owned = conn.execute(
             """
@@ -1441,18 +1658,34 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
                     conn,
                     item.question_id,
                     item.vote_id,
-                    _vote_item_to_edit_req(item, req.voter_name),
+                    _vote_item_to_edit_req(item, req.voter_name, plus_one_names),
                     now,
                 )
             else:
                 row = _submit_vote_to_question(
                     conn,
                     item.question_id,
-                    _vote_item_to_submit_req(item, req.voter_name),
+                    _vote_item_to_submit_req(item, req.voter_name, plus_one_names),
                     now,
                     browser_id=browser_id,
                 )
             result_rows.append(row)
+
+        # "Plus one/more" — looked-up accounts each get their OWN editable vote,
+        # seeded with the submitter's ballot, so they can change it later. Gated
+        # on allow_plus_ones; only the submitter's contacts can be seeded; an
+        # account that already responded is skipped (never overwrite their own
+        # vote). Runs in the same transaction as the submitter's votes.
+        plus_one_notifications: list[tuple[str, str, dict]] = []
+        if poll_row.get("allow_plus_ones") and req.plus_one_user_ids:
+            plus_one_notifications = _seed_plus_one_votes(
+                conn,
+                poll_id,
+                req.items,
+                req.plus_one_user_ids,
+                submitter_user_id=_caller_user_id(conn, request),
+                now=now,
+            )
 
         # Voting IS viewing — record the watermark so the phase-transition
         # skip-logic treats this voter as having seen the options they just
@@ -1460,7 +1693,47 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
         # vote-without-a-separate-view path.
         _record_poll_view(conn, browser_id, poll_id, now)
 
+    # Notify each represented account (decoupled, after the response) that
+    # someone voted for them + invited them to change it.
+    for notif_group_id, notif_user_id, payload in plus_one_notifications:
+        background_tasks.add_task(
+            fan_out_member_added, notif_group_id, notif_user_id, payload
+        )
+
     return [_row_to_vote(r) for r in result_rows]
+
+
+@router.get(
+    "/{poll_id}/plus-one-candidates",
+    response_model=list[PlusOneCandidateResponse],
+)
+def list_poll_plus_one_candidates(poll_id: str, request: Request):
+    """Accounts the caller can vote FOR as plus-ones on this poll: their
+    contacts (address book), each flagged `responded` when they've already cast
+    a vote here. The FE uses this for the name lookup dropdown — responded
+    accounts are greyed out + unselectable.
+
+    Empty when the poll doesn't allow plus-ones, the caller has no resolvable
+    account (no contacts), or the poll doesn't exist."""
+    require_uuid(poll_id, "poll_id")
+    with get_db() as conn:
+        poll_row = conn.execute(
+            "SELECT id, allow_plus_ones FROM polls WHERE id = %(id)s",
+            {"id": poll_id},
+        ).fetchone()
+        if not poll_row or not poll_row.get("allow_plus_ones"):
+            return []
+        me = _caller_user_id(conn, request)
+        if not me:
+            return []
+        reconcile_contacts(conn, me)
+        candidates = list_plus_one_candidates(conn, me, poll_id)
+    return [
+        PlusOneCandidateResponse(
+            user_id=c.user_id, name=c.name, responded=c.responded
+        )
+        for c in candidates
+    ]
 
 
 @router.post("/{poll_id}/cutoff-availability", response_model=PollResponse)

@@ -370,7 +370,7 @@ function appendForSuffix(base: string, forField: string): string {
  */
 export function synthesizePlaceholderPoll(
   drafts: QuestionDraft[],
-  args: { wrapperTitle: string | null; responseDeadline: string | null; groupId: string | null; creatorName: string | null; details?: string | null; prephaseDeadline?: string | null },
+  args: { wrapperTitle: string | null; responseDeadline: string | null; groupId: string | null; creatorName: string | null; details?: string | null; prephaseDeadline?: string | null; allowPlusOnes?: boolean },
 ): Poll {
   const now = new Date().toISOString();
   const pollId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -432,6 +432,7 @@ export function synthesizePlaceholderPoll(
     title: titleForAllQuestions,
     created_at: now,
     updated_at: now,
+    allow_plus_ones: args.allowPlusOnes ?? false,
     questions,
     voter_names: [],
     anonymous_count: 0,

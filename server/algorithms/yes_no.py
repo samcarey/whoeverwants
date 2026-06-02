@@ -10,6 +10,8 @@ Reference: database/migrations/005_create_question_results_view_up.sql
 
 from dataclasses import dataclass
 
+from algorithms.weights import vote_weight
+
 
 @dataclass
 class YesNoResult:
@@ -38,14 +40,16 @@ def count_yes_no_votes(votes: list[dict]) -> YesNoResult:
     abstain_count = 0
 
     for vote in votes:
+        # "Plus one/more": one ballot can represent multiple people.
+        weight = vote_weight(vote)
         if vote.get("is_abstain", False):
-            abstain_count += 1
+            abstain_count += weight
             continue
         choice = vote.get("yes_no_choice")
         if choice == "yes":
-            yes_count += 1
+            yes_count += weight
         elif choice == "no":
-            no_count += 1
+            no_count += weight
 
     total_votes = yes_count + no_count + abstain_count
 
