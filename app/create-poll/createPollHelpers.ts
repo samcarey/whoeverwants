@@ -120,13 +120,15 @@ export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice
   return 'ranked_choice';
 }
 
-/** The emoji to persist for a draft's category: the trimmed custom emoji
- *  when the category is custom (built-in categories have a fixed icon), else
- *  null. Single source of truth for the create + optimistic-placeholder paths
- *  so the render gate, the API payload, and the placeholder can't diverge. */
+/** The emoji to persist for a draft's category: the trimmed chosen emoji when
+ *  the creator picked one, else null (the app then falls back to the category's
+ *  default icon — the built-in icon, or the generic glyph for a custom
+ *  category). The emoji field is always shown now, so a chosen emoji overrides
+ *  the default for ANY category. Single source of truth for the create +
+ *  optimistic-placeholder paths so the API payload and the placeholder can't
+ *  diverge. */
 export function effectiveCategoryIcon(d: QuestionDraft): string | null {
-  const icon = d.categoryIcon.trim();
-  return icon && !getBuiltInType(d.category) ? icon : null;
+  return d.categoryIcon.trim() || null;
 }
 
 /** Clamp a limited_supply slot count to a whole number >= 1. */
