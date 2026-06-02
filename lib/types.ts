@@ -50,6 +50,9 @@ export interface Question {
   is_auto_title?: boolean;
   response_count?: number | null;
   min_availability_percent?: number | null;
+  // "Minimum Participants" viability gate for time questions (default 2). The
+  // finalized "event's off" state is surfaced on QuestionResults, not here.
+  time_min_participants?: number | null;
   // Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
   // every existing question, so this is effectively NOT NULL on every row.
   poll_id?: string | null;
@@ -114,6 +117,9 @@ export interface QuestionResults {
   included_slots?: string[];
   like_counts?: Record<string, number>;
   dislike_counts?: Record<string, number>;
+  // True when the availability cutoff passed but no slot met the
+  // "Minimum Participants" gate → the event is off (no time works).
+  time_event_cancelled?: boolean;
   ranked_choice_rounds?: RankedChoiceRound[];
   ranked_choice_winner?: string;
   // {option_name: borda_score} across all non-abstain ballots. Used by the

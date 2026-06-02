@@ -184,7 +184,7 @@ def _finalize_suggestion_options(conn, question_id: str, now: datetime) -> None:
         )
 
 
-def _compute_candidate_time_slots(question: dict, votes: list[dict]) -> list[str]:
+def _compute_candidate_time_slots(question: dict, votes: list[dict]) -> tuple[list[str], bool]:
     """Compute candidate slots for a time question without writing them to the DB.
 
     Shared by `_finalize_time_slots` (which persists the result to `question.options`)
@@ -192,36 +192,51 @@ def _compute_candidate_time_slots(question: dict, votes: list[dict]) -> list[str
     availability phase when `allow_pre_ranking` is enabled, so voters can react to
     currently-viable slots before the cutoff).
 
-    Slots that fall below the min-availability threshold against the strongest slot
-    are filtered out, then the longest-duration slot per start time wins.
+    Applies the "Minimum Participants" viability gate: a slot is kept only if at
+    least `time_min_participants` people are available for it, then the
+    longest-duration slot per start time wins.
+
+    Returns `(slots, has_availability)`. An empty `slots` with `has_availability`
+    True means no time cleared the bar (the caller treats that as "event's off");
+    empty with False means nobody submitted availability yet (no cancellation).
     """
     from algorithms.time_question import (
         generate_time_question_slots,
         compute_slot_availability,
-        filter_slots_by_min_availability,
+        filter_slots_by_min_participants,
         _keep_longest_per_start_time,
     )
 
     all_slots = generate_time_question_slots(question, votes)
+
+    # The viability gate only applies once people have actually submitted
+    # availability. With no availability data (an availability-phase-off poll
+    # finalized at create, or a phase that closed with zero submissions) every
+    # slot has a count of 0, so gating would wrongly cancel everything — skip it
+    # and keep all of the creator's slots.
+    if not any(v.get("voter_day_time_windows") for v in votes):
+        return _keep_longest_per_start_time(all_slots), False
+
     availability_counts = compute_slot_availability(all_slots, votes)
-    slots = filter_slots_by_min_availability(
+    slots = filter_slots_by_min_participants(
         all_slots,
         availability_counts,
-        question.get("min_availability_percent") or 95,
+        question.get("time_min_participants") or 2,
     )
-    return _keep_longest_per_start_time(slots)
+    return _keep_longest_per_start_time(slots), True
 
 
 def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
     """Finalize time slots for a time question after its availability deadline passes.
 
     Generates all candidate time slots from the question's day_time_windows + duration_window,
-    then applies the availability threshold filter and longest-per-start-time dedup so
-    question.options contains only the slots voters will actually rank.
+    applies the "Minimum Participants" viability gate + longest-per-start-time dedup, and
+    writes the surviving slots to question.options. When availability was collected but no
+    slot met the gate, marks the question `time_event_cancelled` ("event's off") instead.
     """
     question = _fetch_question_full(conn, question_id)
-    if not question or question.get("options"):
-        return  # Already finalized or missing
+    if not question or question.get("options") or question.get("time_event_cancelled"):
+        return  # Already finalized / cancelled / missing
 
     votes = conn.execute(
         "SELECT voter_day_time_windows, voter_duration FROM votes WHERE question_id = %(question_id)s",
@@ -229,7 +244,7 @@ def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
     ).fetchall()
     votes_list = [dict(v) for v in votes]
 
-    slots = _compute_candidate_time_slots(dict(question), votes_list)
+    slots, has_availability = _compute_candidate_time_slots(dict(question), votes_list)
 
     if slots:
         conn.execute(
@@ -240,6 +255,16 @@ def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
                 "now": now,
                 "question_id": question_id,
             },
+        )
+    elif has_availability:
+        # People submitted availability but no slot met the Minimum Participants
+        # gate → the event is cancelled. Empty option list + the flag drive the
+        # "no time works — event's off" result UI.
+        conn.execute(
+            """UPDATE questions
+               SET options = '[]'::jsonb, time_event_cancelled = true, updated_at = %(now)s
+               WHERE id = %(question_id)s""",
+            {"now": now, "question_id": question_id},
         )
 
 
@@ -271,6 +296,7 @@ def _row_to_question(row: dict) -> QuestionResponse:
         reference_location_label=row.get("reference_location_label"),
         is_auto_title=row.get("is_auto_title", False),
         min_availability_percent=row.get("min_availability_percent"),
+        time_min_participants=row.get("time_min_participants"),
         poll_id=str(row["poll_id"]) if row.get("poll_id") else None,
         question_index=row.get("question_index"),
     )
@@ -670,7 +696,7 @@ def _compute_results(question, votes, *, include_tentative_time_options: bool = 
             and question.get("allow_pre_ranking") is not False
             and any(v.get("voter_day_time_windows") for v in vote_dicts)
         ):
-            tentative = _compute_candidate_time_slots(question, vote_dicts)
+            tentative, _ = _compute_candidate_time_slots(question, vote_dicts)
             if tentative:
                 question_options = tentative
                 options_are_tentative = True
@@ -695,6 +721,7 @@ def _compute_results(question, votes, *, include_tentative_time_options: bool = 
             max_availability=time_result["max_availability"],
             like_counts=time_result["like_counts"],
             dislike_counts=time_result["dislike_counts"],
+            time_event_cancelled=bool(question.get("time_event_cancelled")),
         )
 
     # Fallback for any unhandled question type — should be unreachable post-migration.

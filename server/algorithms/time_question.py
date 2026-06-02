@@ -163,6 +163,21 @@ def filter_slots_by_min_availability(
     return [s for s in slots if availability_counts.get(s, 0) >= min_acceptable]
 
 
+def filter_slots_by_min_participants(
+    slots: list[str],
+    availability_counts: dict[str, int],
+    min_participants: int,
+) -> list[str]:
+    """Keep only slots that at least `min_participants` availability voters can attend.
+
+    This is an absolute headcount viability gate (not relative to the best slot):
+    a time slot only "counts" if enough people are free for it. When no slot
+    clears the bar the returned list is empty, which the caller treats as
+    "no time works — the event's off".
+    """
+    return [s for s in slots if availability_counts.get(s, 0) >= min_participants]
+
+
 def compute_slot_availability(options: list[str], votes: list[dict]) -> dict[str, int]:
     """Count how many availability voters cover each time slot.
 

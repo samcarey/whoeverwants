@@ -40,7 +40,10 @@ export interface QuestionDraft {
   durationMinEnabled: boolean;
   durationMaxEnabled: boolean;
   dayTimeWindows: DayTimeWindow[];
-  minimumParticipation: number;
+  /** "Minimum Participants" viability gate for time questions (default 2):
+   *  a slot counts only if at least this many people are available for it;
+   *  if none clears the bar the event is cancelled. Maps to min_participants. */
+  minParticipants: number;
   /** "Collect Suggestions before Vote" — only meaningful for ranked_choice
    *  questions. ON → suggestion poll (any typed options become the creator's
    *  initial suggestions). OFF → fixed-options ranked_choice (options
@@ -89,7 +92,7 @@ export function emptyDraft(
     dayTimeWindows: isTime
       ? [{ day: todayStr, windows: [{ ...DEFAULT_TIME_WINDOW }] }]
       : [],
-    minimumParticipation: 95,
+    minParticipants: 2,
     collectSuggestions: opts.collectSuggestions ?? true,
     collectAvailability: opts.collectAvailability ?? true,
   };
@@ -239,7 +242,7 @@ export function draftToQuestionParams(
         maxEnabled: d.durationMaxEnabled,
       };
     }
-    params.min_availability_percent = d.minimumParticipation;
+    params.min_participants = d.minParticipants;
     // Availability phase ON → set the prephase cutoff so the poll collects
     // availability before opening preferences. OFF → leave it unset; the
     // server reads the absent `suggestion_deadline_minutes` as "no availability

@@ -28,6 +28,9 @@ export interface CreateQuestionParams {
    *  were typed. See server CreateQuestionRequest.initial_suggestions. */
   initial_suggestions?: string[] | null;
   min_availability_percent?: number;
+  /** "Minimum Participants" viability gate for time questions: a slot counts
+   *  only if at least this many people are available for it. Default 2. */
+  min_participants?: number;
   day_time_windows?: any[] | null;
   duration_window?: any | null;
   reference_latitude?: number | null;

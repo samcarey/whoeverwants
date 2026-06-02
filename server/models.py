@@ -172,6 +172,7 @@ class QuestionResponse(BaseModel):
     is_auto_title: bool = False
     response_count: int | None = None
     min_availability_percent: int | None = None
+    time_min_participants: int | None = None
     # Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
     # every non-participation question; migration 094 dropped the participation
     # question type entirely, so this is effectively NOT NULL on every row.
@@ -237,6 +238,9 @@ class QuestionResultsResponse(BaseModel):
     included_slots: list[str] | None = None  # slots passing availability threshold (kept for compat)
     like_counts: dict | None = None   # {slot_key: like_count}
     dislike_counts: dict | None = None  # {slot_key: dislike_count}
+    # True when the availability cutoff passed but no slot met the
+    # "Minimum Participants" gate → the event is off (no time works).
+    time_event_cancelled: bool = False
 
 
 class RankedChoiceRoundResponse(BaseModel):
@@ -275,6 +279,10 @@ class CreateQuestionRequest(BaseModel):
     # ranked_choice question whose poll has a prephase deadline.
     initial_suggestions: list[str] | None = None
     min_availability_percent: int = 95
+    # "Minimum Participants" viability gate for time questions: a slot counts
+    # only if at least this many people are available for it; if none clears the
+    # bar at the availability cutoff the event is cancelled. Default 2.
+    min_participants: int = 2
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None
     reference_latitude: float | None = None

@@ -74,3 +74,6 @@ ios/App/public/
 ios/.DS_Store
 ios/App/build/
 DerivedData/
+
+# Background-agent git worktrees (transient, auto-cleaned)
+.claude/worktrees/
