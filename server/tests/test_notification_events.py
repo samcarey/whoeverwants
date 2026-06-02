@@ -66,6 +66,31 @@ def _time_poll(client, creator_secret, creator_bid, **overrides) -> dict:
     return resp.json()
 
 
+def _viable_time_question(min_participants: int | None = None) -> dict:
+    """A time question with concrete creator windows + a 1-hour duration so
+    `_finalize_time_slots` can generate real candidate slots. With
+    min_participants=1 a single availability submission yields a surviving slot;
+    omit it (defaults to 2) to make a single voter unable to clear the gate →
+    'event's off'."""
+    q = {
+        "question_type": "time",
+        "category": "time",
+        "suggestion_deadline_minutes": 120,
+        "day_time_windows": [
+            {"day": "2030-01-01", "windows": [{"min": "09:00", "max": "17:00"}]}
+        ],
+        "duration_window": {
+            "minEnabled": True,
+            "minValue": 1,
+            "maxEnabled": True,
+            "maxValue": 1,
+        },
+    }
+    if min_participants is not None:
+        q["min_participants"] = min_participants
+    return q
+
+
 def _submit_availability(client, poll, voter_bid, name):
     resp = client.post(
         f"/api/polls/{poll['id']}/votes",
@@ -426,7 +451,12 @@ def test_cutoff_availability_uses_time_to_vote_copy(client, creator_secret, monk
         lambda group_id, poll_id, payload, **kw: calls.append((poll_id, payload, kw)),
     )
     cbid = str(uuid.uuid4())
-    poll = _time_poll(client, creator_secret, cbid)
+    # A VIABLE poll: creator windows + a 1-hr duration + min_participants=1, so
+    # Ann's single availability produces a surviving slot (no cancellation).
+    poll = _time_poll(
+        client, creator_secret, cbid,
+        questions=[_viable_time_question(min_participants=1)],
+    )
     _submit_availability(client, poll, str(uuid.uuid4()), "Ann")
     resp = client.post(
         f"/api/polls/{poll['id']}/cutoff-availability",
@@ -438,6 +468,41 @@ def test_cutoff_availability_uses_time_to_vote_copy(client, creator_secret, monk
     assert calls[0][1]["title"] == 'Time to vote in "Creator, Ann"'
     # Line 2 still carries the poll's own title prefixed with the 📅 icon.
     assert calls[0][1]["body"] == f"📅 {poll['title']}"
+
+
+def test_cutoff_availability_cancels_unviable_event(client, creator_secret, monkeypatch):
+    """A time poll where no slot meets the Minimum Participants gate is an
+    'event's off' cancellation: cutting off availability auto-closes the poll
+    and fires a poll-CLOSED push, NOT a 'voting is open' transition push."""
+    transition_calls = []
+    close_calls = []
+    monkeypatch.setattr(
+        routers.polls, "fan_out_phase_transition",
+        lambda group_id, poll_id, payload, **kw: transition_calls.append((poll_id, payload)),
+    )
+    monkeypatch.setattr(
+        routers.polls, "fan_out_poll_closed",
+        lambda group_id, poll_id, payload: close_calls.append((poll_id, payload)),
+    )
+    cbid = str(uuid.uuid4())
+    # min_participants defaults to 2; a single availability submission can't
+    # clear the bar for any slot, so the event cancels.
+    poll = _time_poll(
+        client, creator_secret, cbid, questions=[_viable_time_question()]
+    )
+    _submit_availability(client, poll, str(uuid.uuid4()), "Ann")
+    resp = client.post(
+        f"/api/polls/{poll['id']}/cutoff-availability",
+        json={},
+        headers=bid_headers(cbid),
+    )
+    assert resp.status_code == 200, resp.text
+    # Auto-closed as cancelled — no "voting is open" push.
+    assert resp.json()["is_closed"] is True
+    assert resp.json()["close_reason"] == "cancelled"
+    assert transition_calls == []
+    assert len(close_calls) == 1
+    assert close_calls[0][1]["title"] == 'Poll closed in "Creator, Ann"'
 
 
 def test_transition_event_phrase_per_prephase_kind():
@@ -702,6 +767,53 @@ def test_tick_transitions_past_prephase(client, creator_secret, monkeypatch):
         ).fetchone()[0]
     assert flag is True
     assert poll["id"] in fired
+
+
+def test_tick_cancels_unviable_time_event(client, creator_secret, monkeypatch):
+    """A deadline-driven availability cutoff where no slot meets the Minimum
+    Participants gate auto-closes the poll as 'cancelled' and fires NO 'voting
+    is open' transition push. The close push then fires on the NEXT tick (step
+    2 claims the un-notified close)."""
+    monkeypatch.setattr(routers.internal, "_TICK_SECRET", "sek")
+    transitions, closes = [], []
+    monkeypatch.setattr(
+        routers.internal, "fan_out_phase_transition",
+        lambda group_id, poll_id, payload, **kw: transitions.append(poll_id),
+    )
+    monkeypatch.setattr(
+        routers.internal, "fan_out_poll_closed",
+        lambda group_id, poll_id, payload: closes.append(poll_id),
+    )
+    cbid = str(uuid.uuid4())
+    # min_participants defaults to 2; one availability submission can't make any
+    # slot viable → the event cancels at the cutoff.
+    poll = _time_poll(
+        client, creator_secret, cbid, questions=[_viable_time_question()]
+    )
+    _submit_availability(client, poll, str(uuid.uuid4()), "Ann")
+    with _db() as conn:
+        conn.execute(
+            "UPDATE polls SET prephase_deadline = %s WHERE id = %s",
+            (datetime.now(timezone.utc) - timedelta(minutes=5), poll["id"]),
+        )
+
+    headers = {"Authorization": "Bearer sek"}
+    first = client.post("/api/internal/tick", headers=headers).json()
+    assert first["cancelled"] == 1
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT is_closed, close_reason, time_event_cancelled "
+            "FROM polls JOIN questions ON questions.poll_id = polls.id "
+            "WHERE polls.id=%s",
+            (poll["id"],),
+        ).fetchone()
+    assert row[0] is True and row[1] == "cancelled" and row[2] is True
+    assert transitions == []           # no misleading "voting is open" push
+    assert closes == []                # close push deferred to the next tick
+
+    # Next tick: the un-notified close gets claimed → poll-closed push.
+    client.post("/api/internal/tick", headers=headers)
+    assert closes == [poll["id"]]
 
 
 # --------------------------------------------------------------------------
