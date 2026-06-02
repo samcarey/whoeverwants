@@ -39,6 +39,9 @@ class SubmitVoteRequest(BaseModel):
     voter_name: str | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
+    # Per-voter conditional-attendance threshold ("only count me for a slot if
+    # at least N people total are available"). None = no constraint.
+    voter_min_participants: int | None = None
     # Metadata for suggested options (merged into question's options_metadata)
     options_metadata: dict | None = None
     # Time question preference reactions
@@ -56,6 +59,7 @@ class EditVoteRequest(BaseModel):
     voter_name: str | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
+    voter_min_participants: int | None = None
     # Metadata for suggested options (merged into question's options_metadata).
     # Required on edits too: adding a search-picked suggestion via an edit must
     # propagate its rich metadata cross-browser, same as the insert path.
@@ -89,6 +93,7 @@ class PollVoteItem(BaseModel):
     is_ranking_abstain: bool = False
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
+    voter_min_participants: int | None = None
     options_metadata: dict | None = None
     liked_slots: list[str] | None = None
     disliked_slots: list[str] | None = None
@@ -195,6 +200,7 @@ class VoteResponse(BaseModel):
     voter_name: str | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
+    voter_min_participants: int | None = None
     liked_slots: list[str] | None = None
     disliked_slots: list[str] | None = None
     created_at: str

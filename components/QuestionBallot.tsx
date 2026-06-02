@@ -267,6 +267,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const [durationMaxValue, setDurationMaxValue] = useState<number | null>(question.duration_window?.maxValue ?? 2);
   const [durationMinEnabled, setDurationMinEnabled] = useState(question.duration_window?.minEnabled ?? false);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(question.duration_window?.maxEnabled ?? false);
+  // Per-voter conditional-attendance threshold ("only count me for a slot if at
+  // least N people total are available"). Off by default (no constraint, sent as
+  // null); when on, the voteData carries voterMinParticipantsValue.
+  const [voterMinParticipantsEnabled, setVoterMinParticipantsEnabled] = useState(false);
+  const [voterMinParticipantsValue, setVoterMinParticipantsValue] = useState(2);
 
   // Draft-persistence bookkeeping for time questions:
   // - userTouchedPreferencesRef: flipped only by genuine user edits to the
@@ -308,6 +313,8 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     if (draft.durationMaxValue !== undefined) setDurationMaxValue(draft.durationMaxValue);
     if (draft.durationMinEnabled !== undefined) setDurationMinEnabled(draft.durationMinEnabled);
     if (draft.durationMaxEnabled !== undefined) setDurationMaxEnabled(draft.durationMaxEnabled);
+    if (draft.voterMinParticipantsEnabled !== undefined) setVoterMinParticipantsEnabled(draft.voterMinParticipantsEnabled);
+    if (draft.voterMinParticipantsValue !== undefined) setVoterMinParticipantsValue(draft.voterMinParticipantsValue);
     if (draft.likedSlots !== undefined) setLikedSlots(draft.likedSlots);
     if (draft.dislikedSlots !== undefined) setDislikedSlots(draft.dislikedSlots);
     // A draft on an already-voted time question can only come from editing
@@ -340,6 +347,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
         isAbstaining,
         voterDayTimeWindows,
         durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled,
+        voterMinParticipantsEnabled, voterMinParticipantsValue,
         likedSlots,
         dislikedSlots,
       });
@@ -347,7 +355,8 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
   }, [question.id, question.poll_id, question.question_type, hasVoted, isAbstaining,
       voterDayTimeWindows, durationMinValue, durationMaxValue,
-      durationMinEnabled, durationMaxEnabled, likedSlots, dislikedSlots]);
+      durationMinEnabled, durationMaxEnabled, voterMinParticipantsEnabled,
+      voterMinParticipantsValue, likedSlots, dislikedSlots]);
 
   const isQuestionExpired = useMemo(() => {
     // Use server-safe check
@@ -599,6 +608,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
               // Restore time question availability windows
               if (voteData.voter_day_time_windows && Array.isArray(voteData.voter_day_time_windows)) {
                 setVoterDayTimeWindows(voteData.voter_day_time_windows);
+              }
+              // Restore the per-voter conditional-attendance threshold (null/<=1 = none)
+              if (voteData.voter_min_participants != null && voteData.voter_min_participants > 1) {
+                setVoterMinParticipantsEnabled(true);
+                setVoterMinParticipantsValue(voteData.voter_min_participants);
               }
               // Restore preferences phase reactions (null = not yet submitted)
               if (voteData.liked_slots !== null && voteData.liked_slots !== undefined) {
@@ -871,6 +885,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     durationMaxValue,
     durationMinEnabled,
     durationMaxEnabled,
+    voterMinParticipants: voterMinParticipantsEnabled ? voterMinParticipantsValue : null,
     likedSlots,
     dislikedSlots,
     voterName,
@@ -1467,6 +1482,10 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
               setDurationMaxValue={setDurationMaxValue}
               setDurationMinEnabled={setDurationMinEnabled}
               setDurationMaxEnabled={setDurationMaxEnabled}
+              voterMinParticipantsEnabled={voterMinParticipantsEnabled}
+              voterMinParticipantsValue={voterMinParticipantsValue}
+              setVoterMinParticipantsEnabled={setVoterMinParticipantsEnabled}
+              setVoterMinParticipantsValue={setVoterMinParticipantsValue}
               voterDayTimeWindows={voterDayTimeWindows}
               setVoterDayTimeWindows={setVoterDayTimeWindows}
               preferenceSlotsForVoter={preferenceSlotsForVoter}

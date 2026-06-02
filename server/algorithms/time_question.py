@@ -7,6 +7,12 @@ Two-phase scheduling question:
 Slots are generated from the question creator's day_time_windows + duration_window.
 Resolution: fewest-dislikes → most-likes → earliest chronologically.
 
+Availability counts are EFFECTIVE counts: each voter can attach a personal
+`voter_min_participants` threshold ("only count me for a slot if at least N
+people total are available"), resolved per slot as a fixed point (see
+_effective_attendance). The creator's `time_min_participants` viability gate then
+runs against these effective counts.
+
 Slot key format: "YYYY-MM-DD HH:MM-HH:MM"
   e.g. "2026-04-15 09:00-10:00" or "2026-04-15 23:00-01:00" (cross-midnight)
 """
@@ -178,10 +184,55 @@ def filter_slots_by_min_participants(
     return [s for s in slots if availability_counts.get(s, 0) >= min_participants]
 
 
-def compute_slot_availability(options: list[str], votes: list[dict]) -> dict[str, int]:
-    """Count how many availability voters cover each time slot.
+def _voter_threshold(vote: dict) -> int:
+    """A voter's personal "minimum participants" (conditional-attendance) threshold.
 
-    Returns dict mapping slot_key → voter count.
+    `voter_min_participants` is the per-voter mirror of the creator's viability
+    gate: "only count me as available for a slot if at least N people total are
+    available for it." NULL / unset / invalid → 1 (no constraint — the voter
+    attends whenever they're available), which keeps the default count identical
+    to the pre-feature behavior.
+    """
+    raw = vote.get("voter_min_participants")
+    if raw is None:
+        return 1
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _effective_attendance(thresholds: list[int]) -> int:
+    """Resolve conditional attendance for one slot to a stable headcount.
+
+    Each available voter attends only if the number of attendees meets their
+    personal `voter_min_participants` threshold. Removing a voter lowers the
+    count, which can push another voter below their threshold, cascading. The
+    fixed point is the largest k for which at least k voters have a threshold
+    <= k — equivalently, keep the k voters with the smallest thresholds, where
+    the k-th smallest is still <= k. (All-default thresholds of 1 → k = n, so
+    the effective count equals the raw count and nothing changes.)
+    """
+    n = len(thresholds)
+    if n == 0:
+        return 0
+    ascending = sorted(thresholds)
+    best = 0
+    for k in range(1, n + 1):
+        if ascending[k - 1] <= k:
+            best = k
+    return best
+
+
+def compute_slot_availability(options: list[str], votes: list[dict]) -> dict[str, int]:
+    """Count how many availability voters can EFFECTIVELY attend each time slot.
+
+    "Effectively" applies each voter's personal `voter_min_participants` threshold
+    (conditional attendance) as a per-slot fixed point — so a voter who said
+    "only if >= N people come" stops counting toward slots that can't reach N.
+    With no per-voter thresholds set this is just a raw headcount.
+
+    Returns dict mapping slot_key → effective voter count.
     """
     avail_votes = [v for v in votes if v.get("voter_day_time_windows")]
     counts: dict[str, int] = {}
@@ -190,12 +241,12 @@ def compute_slot_availability(options: list[str], votes: list[dict]) -> dict[str
         date, start_min, end_min = parse_slot_key(slot_str)
         # Reconstruct absolute end for cross-midnight slots
         eff_end = end_min if end_min > start_min else end_min + 24 * 60
-        count = sum(
-            1
+        thresholds = [
+            _voter_threshold(v)
             for v in avail_votes
             if _voter_available_at(v["voter_day_time_windows"], date, start_min, eff_end)
-        )
-        counts[slot_str] = count
+        ]
+        counts[slot_str] = _effective_attendance(thresholds)
 
     return counts
 
