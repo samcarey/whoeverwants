@@ -15,7 +15,11 @@ from middleware import (
     browser_id_from_request as _browser_id,
     user_id_from_request as _user_id,
 )
-from services.auth import create_anonymous_user, resolve_actor_user_id
+from services.auth import (
+    caller_browser_ids,
+    create_anonymous_user,
+    resolve_actor_user_id,
+)
 from models import (
     CloseQuestionRequest,
     CreatePollRequest,
@@ -1655,6 +1659,14 @@ def submit_poll_votes(
                     detail=f"Sub-question {question_id} does not belong to this poll",
                 )
 
+        # Ballot-privacy belt-and-suspenders: an edit may only touch a vote the
+        # caller owns (their browser, or any browser on their account). Vote
+        # UUIDs aren't discoverable cross-voter (get_votes is scoped), so this
+        # guards crafted requests; legacy NULL-browser_id votes stay editable.
+        owner_bids = caller_browser_ids(
+            conn, browser_id=browser_id, user_id=_user_id(request)
+        )
+
         result_rows: list[dict] = []
         for item in req.items:
             if item.vote_id:
@@ -1664,6 +1676,7 @@ def submit_poll_votes(
                     item.vote_id,
                     _vote_item_to_edit_req(item, req.voter_name, plus_one_names),
                     now,
+                    owner_browser_ids=owner_bids,
                 )
             else:
                 row = _submit_vote_to_question(

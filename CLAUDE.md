@@ -1557,12 +1557,18 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
     all already scoped to the caller's stored `vote_id`, so they're unchanged.
   - **VoteResponse audit (the other emitter):** `POST /api/polls/{id}/votes`
     returns only the caller's just-inserted/edited rows — no cross-voter
-    leak. `_edit_vote_on_question` edits by `vote_id` without a browser
-    ownership check, but vote UUIDs are no longer discoverable cross-voter
-    once `get_votes` is scoped, so it's a capability gated by possession; a
-    belt-and-suspenders browser-ownership gate on edit is a possible
-    follow-up but was left alone to avoid regressing legacy (pre-120,
-    NULL-browser_id) votes.
+    leak. The edit path now has a **belt-and-suspenders browser-ownership
+    gate (SHIPPED):** `_edit_vote_on_question` takes an optional
+    `owner_browser_ids` kwarg; when provided (the poll batch endpoint passes
+    `caller_browser_ids(...)`), the existence-check SELECT requires the vote's
+    `browser_id` to be NULL **or** in that set, so a vote owned by another
+    voter is treated as "Vote not found" (no new status code, no existence
+    confirmation). Legacy votes (NULL `browser_id`, pre-migration-120) stay
+    editable — preserving the pre-120 flow rather than locking legacy voters
+    out of their own ballots. Vote UUIDs were already non-discoverable
+    cross-voter (`get_votes` is scoped), so this guards crafted requests.
+    Tests: `server/tests/test_vote_edit_ownership.py`. When the gate kwarg is
+    omitted it's off (back-compat); the poll endpoint is the only caller.
   - This is the foundation for a future opt-in hidden ballot (which would
     additionally withhold the name from the roster). Tests:
     `server/tests/test_ballot_privacy.py`.

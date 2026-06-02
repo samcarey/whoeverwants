@@ -514,14 +514,40 @@ def _merge_suggestion_metadata(conn, question_id: str, options_metadata, suggest
         )
 
 
-def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRequest, now: datetime) -> dict:
+def _edit_vote_on_question(
+    conn,
+    question_id: str,
+    vote_id: str,
+    req: EditVoteRequest,
+    now: datetime,
+    *,
+    owner_browser_ids: list[str] | None = None,
+) -> dict:
     """Update a vote row inside an existing transaction. Shared by the per-question
     `edit_vote` endpoint and the poll batch-vote endpoint. Returns the
-    updated row. Raises HTTPException on validation failures."""
-    existing = conn.execute(
-        "SELECT id FROM votes WHERE id = %(vote_id)s AND question_id = %(question_id)s",
-        {"vote_id": vote_id, "question_id": question_id},
-    ).fetchone()
+    updated row. Raises HTTPException on validation failures.
+
+    Ballot-privacy belt-and-suspenders (see CLAUDE.md → Auth & Access Model):
+    when `owner_browser_ids` is provided, the vote being edited must be owned by
+    the caller — its `browser_id` is in that set (the current browser + every
+    browser linked to their account, via `caller_browser_ids`). A vote owned by
+    someone else is treated as "not found" (no new status code, no existence
+    confirmation). Votes cast before migration 120 have a NULL `browser_id` and
+    can't be attributed to anyone, so they're always editable — preserving the
+    pre-120 flow rather than locking legacy voters out of their own ballots.
+    When the arg is omitted the gate is off (back-compat)."""
+    if owner_browser_ids is None:
+        existing = conn.execute(
+            "SELECT id FROM votes WHERE id = %(vote_id)s AND question_id = %(question_id)s",
+            {"vote_id": vote_id, "question_id": question_id},
+        ).fetchone()
+    else:
+        existing = conn.execute(
+            """SELECT id FROM votes
+               WHERE id = %(vote_id)s AND question_id = %(question_id)s
+                 AND (browser_id IS NULL OR browser_id::text = ANY(%(bids)s))""",
+            {"vote_id": vote_id, "question_id": question_id, "bids": owner_browser_ids},
+        ).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail="Vote not found")
 
