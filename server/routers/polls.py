@@ -1439,6 +1439,28 @@ def _seed_plus_one_votes(
     return notifications
 
 
+def _common_vote_fields(
+    item: PollVoteItem, voter_name: str | None, plus_one_names: list[str] | None
+) -> dict:
+    """The fields SubmitVoteRequest and EditVoteRequest share — mapped once so a
+    new vote field only needs adding here, not in both converters below."""
+    return {
+        "yes_no_choice": item.yes_no_choice,
+        "ranked_choices": item.ranked_choices,
+        "ranked_choice_tiers": item.ranked_choice_tiers,
+        "suggestions": item.suggestions,
+        "is_abstain": item.is_abstain,
+        "is_ranking_abstain": item.is_ranking_abstain,
+        "voter_name": voter_name,
+        "voter_day_time_windows": item.voter_day_time_windows,
+        "voter_duration": item.voter_duration,
+        "options_metadata": item.options_metadata,
+        "liked_slots": item.liked_slots,
+        "disliked_slots": item.disliked_slots,
+        "plus_one_names": plus_one_names,
+    }
+
+
 def _vote_item_to_submit_req(
     item: PollVoteItem, voter_name: str | None, plus_one_names: list[str] | None
 ) -> SubmitVoteRequest:
@@ -1446,40 +1468,14 @@ def _vote_item_to_submit_req(
         raise HTTPException(status_code=400, detail="vote_type is required when inserting a new vote")
     return SubmitVoteRequest(
         vote_type=item.vote_type,
-        yes_no_choice=item.yes_no_choice,
-        ranked_choices=item.ranked_choices,
-        ranked_choice_tiers=item.ranked_choice_tiers,
-        suggestions=item.suggestions,
-        is_abstain=item.is_abstain,
-        is_ranking_abstain=item.is_ranking_abstain,
-        voter_name=voter_name,
-        voter_day_time_windows=item.voter_day_time_windows,
-        voter_duration=item.voter_duration,
-        options_metadata=item.options_metadata,
-        liked_slots=item.liked_slots,
-        disliked_slots=item.disliked_slots,
-        plus_one_names=plus_one_names,
+        **_common_vote_fields(item, voter_name, plus_one_names),
     )
 
 
 def _vote_item_to_edit_req(
     item: PollVoteItem, voter_name: str | None, plus_one_names: list[str] | None
 ) -> EditVoteRequest:
-    return EditVoteRequest(
-        yes_no_choice=item.yes_no_choice,
-        ranked_choices=item.ranked_choices,
-        ranked_choice_tiers=item.ranked_choice_tiers,
-        suggestions=item.suggestions,
-        is_abstain=item.is_abstain,
-        is_ranking_abstain=item.is_ranking_abstain,
-        voter_name=voter_name,
-        voter_day_time_windows=item.voter_day_time_windows,
-        voter_duration=item.voter_duration,
-        options_metadata=item.options_metadata,
-        liked_slots=item.liked_slots,
-        disliked_slots=item.disliked_slots,
-        plus_one_names=plus_one_names,
-    )
+    return EditVoteRequest(**_common_vote_fields(item, voter_name, plus_one_names))
 
 
 @router.post(

@@ -132,6 +132,16 @@ export function useGroupVoting({
     }
   };
 
+  // "Plus one/more" params for an apiSubmitPollVotes call — read fresh at
+  // submit time (the getter mirrors the latest UI state).
+  const plusOnesParams = (): {
+    plus_one_names: string[] | null;
+    plus_one_user_ids: string[] | null;
+  } => {
+    const p = getPlusOnes?.() ?? null;
+    return { plus_one_names: p?.names ?? null, plus_one_user_ids: p?.userIds ?? null };
+  };
+
   const buildYesNoPollItems = (subQuestions: Question[]): PollVoteItem[] => {
     const items: PollVoteItem[] = [];
     for (const sp of subQuestions) {
@@ -183,11 +193,9 @@ export function useGroupVoting({
         return;
       }
       const voter_name = (getUserName() ?? "").trim() || null;
-      const plusOnes = getPlusOnes?.() ?? null;
       const returnedVotes = await apiSubmitPollVotes(pollId, {
         voter_name,
-        plus_one_names: plusOnes?.names ?? null,
-        plus_one_user_ids: plusOnes?.userIds ?? null,
+        ...plusOnesParams(),
         items,
       });
 
@@ -287,11 +295,9 @@ export function useGroupVoting({
         canSubmitSuggestions: false,
         isEditing: !!current?.voteId,
       });
-      const plusOnes = getPlusOnes?.() ?? null;
       const returned = await apiSubmitPollVotes(pollId, {
         voter_name,
-        plus_one_names: plusOnes?.names ?? null,
-        plus_one_user_ids: plusOnes?.userIds ?? null,
+        ...plusOnesParams(),
         items: [item],
       });
       const v = returned.find((r) => r.question_id === questionId);
