@@ -429,6 +429,7 @@ def polls_for_poll_ids(
     *,
     include_results: bool,
     viewer_user_id: str | None = None,
+    viewer_browser_id: str | None = None,
 ) -> list[PollResponse]:
     """Build PollResponse[] (with inline results / voter aggregates) for the
     given poll_ids. Order: most recently created first. Empty list in →
@@ -437,7 +438,12 @@ def polls_for_poll_ids(
     `viewer_user_id` (the caller's resolved user_id — bearer session or the
     account linked to their browser) is threaded into each `_row_to_poll`
     so every returned poll carries the per-viewer `viewer_is_creator` flag
-    that gates the FE's creator controls."""
+    that gates the FE's creator controls.
+
+    `viewer_browser_id` (the request's raw browser_id) drives the per-poll
+    `viewer_follow_state` (Gap 1): the caller's follow/ignore state, resolved
+    account-aware across every linked browser. Defaults 'new' when not
+    threaded in (so non-group reads keep the model default)."""
     # Local import keeps services/* free of router cycles. Reusing
     # `_SELECT_POLLS_WITH_GROUP` (rather than re-writing the JOIN) is what
     # actually keeps this read in lockstep with the rest of the polls reads —
@@ -558,6 +564,20 @@ def polls_for_poll_ids(
     for mp_id in poll_ids_present:
         voter_data_by_mp[mp_id] = _compute_poll_voter_data(conn, mp_id)
 
+    # Gap 1: the caller's per-poll follow/ignore state, account-aware across
+    # every browser linked to their account. Absent = 'new' (default-follow).
+    follow_states: dict[str, str] = {}
+    if viewer_browser_id:
+        from services.auth import caller_browser_ids
+        from services.follow_state import effective_follow_states
+
+        bids = caller_browser_ids(
+            conn, browser_id=viewer_browser_id, user_id=viewer_user_id
+        )
+        follow_states = effective_follow_states(
+            conn, poll_ids_present, browser_ids=bids
+        )
+
     responses: list[PollResponse] = []
     for mp_row in poll_rows:
         mp_id = str(mp_row["id"])
@@ -566,6 +586,7 @@ def polls_for_poll_ids(
             mp_row, sp_rows, voter_data_by_mp.get(mp_id, PollVoterData()),
             viewer_user_id=viewer_user_id,
         )
+        mp_resp.viewer_follow_state = follow_states.get(mp_id, "new")
         if include_results:
             for sp_resp in mp_resp.questions:
                 pid = sp_resp.id

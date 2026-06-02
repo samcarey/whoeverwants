@@ -5,6 +5,7 @@ import { GroupSummary, Poll } from "@/lib/types";
 import { buildGroups, getGroupHref, getGroupRouteId, isPendingPollId, Group } from "@/lib/groupUtils";
 import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
 import { computePollUnread, useUnreadReactivity } from "@/lib/unread";
+import { tallyFollowTabs, type FollowTabCounts } from "@/lib/followState";
 import GroupListItem from "@/components/GroupListItem";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import HeaderPortal from "@/components/HeaderPortal";
@@ -93,6 +94,20 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups, badgeSettings, votedQuestionIds, abstainedQuestionIds, pollViewsTick, groupKeyOf]);
+
+  // Gap 4: per-group follow rollup — "N to do · M new" on each home row. To Do
+  // = polls needing this viewer's input; New = followed (non-Old) poll count
+  // (To Do is a subset). Gives cross-group triage without surfacing the
+  // archive (Old is intentionally not shown here).
+  const followCountsByGroupKey = useMemo(() => {
+    const nowMs = Date.now();
+    const map = new Map<string, FollowTabCounts>();
+    for (const g of groups) {
+      map.set(groupKeyOf(g), tallyFollowTabs(g.polls, votedQuestionIds, abstainedQuestionIds, nowMs));
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups, votedQuestionIds, abstainedQuestionIds, pollViewsTick, groupKeyOf]);
 
   // Groups can drop out from under us (deletions, re-fetch). Strip selection
   // ids that no longer correspond to a visible group. (Selection mode stays
@@ -284,6 +299,7 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
         const latestQuestion = group.latestQuestion;
         const groupKey = groupKeyOf(group);
         const hasUnread = unreadByGroupKey.get(groupKey) ?? false;
+        const followCounts = followCountsByGroupKey.get(groupKey);
 
         const handleActivate = () => {
           if (selectionMode) {
@@ -366,6 +382,8 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
             soonestUnvotedDeadline={group.soonestUnvotedDeadline}
             unvotedDeadlineKind={group.unvotedDeadlineKind}
             hasUnread={hasUnread}
+            toDoCount={followCounts?.todo ?? 0}
+            newCount={followCounts?.new ?? 0}
             pressed={pressedGroupId === groupKey}
             isFirst={index === 0}
             selectionMode={selectionMode}

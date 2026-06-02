@@ -209,6 +209,12 @@ export interface Poll {
   // locally because an anonymous-with-account viewer doesn't know its own
   // user_id. Absent on synthesized placeholder / pre-this-change cached polls.
   viewer_is_creator?: boolean;
+  // Gap 1: the caller's per-poll follow/ignore state. 'new' = followed
+  // (default; shows in the New tab, To Do if it needs the viewer's input);
+  // 'old' = the viewer ✕'d it (Old tab, suppressed from badge + push).
+  // Account-aware server-side. Absent on synthesized placeholder polls →
+  // treated as 'new'.
+  viewer_follow_state?: "new" | "old";
   response_deadline?: string | null;
   prephase_deadline?: string | null;
   prephase_deadline_minutes?: number | null;

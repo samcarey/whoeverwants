@@ -9,7 +9,7 @@ import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, build
 // POLL_QUERY_PARAM is still used by `GroupPageInner` to redirect legacy
 // `?p=<pollShort>` URLs to the new `/g/<group>/p/<pollShort>` route.
 import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
-import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, apiSetPollFollowState, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useGroupVoting } from "@/lib/useGroupVoting";
 import type { QuestionResults } from "@/lib/types";
@@ -36,6 +36,7 @@ import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
 import { computePollUnread, useUnreadReactivity } from "@/lib/unread";
+import { classifyPollTab, type PollTab } from "@/lib/followState";
 import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
@@ -214,6 +215,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // POLL_VIEWED_CHANGED_EVENT is enough to recompute (e.g. clear the bar the
   // instant the user opens a poll).
   const { badgeSettings, pollViewsTick } = useUnreadReactivity();
+  // Gap 1: the active follow/ignore tab. null = follow the default (To Do when
+  // any, else New); a user tap pins it. Reset on group change (key remount).
+  const [selectedTab, setSelectedTab] = useState<PollTab | null>(null);
 
   // Phase 5b: poll-level mutations (close/reopen/cutoff) update the
   // polls array; question mutations (forget) update the questions array.
@@ -238,6 +242,19 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           ...prev,
           questions: prev.questions.map((p) => (predicate(p) ? { ...p, ...patcher(p) } : p)),
         };
+      });
+    },
+  ).current;
+
+  // Gap 1: ✕ (ignore → 'old') / + (re-follow → 'new'). Optimistically patch
+  // the poll's follow state so it moves tabs instantly, then persist; revert on
+  // failure. Stable ref-callback so it doesn't churn GroupCardItem's memo.
+  const handleToggleFollow = useRef(
+    (pollId: string, next: "new" | "old") => {
+      const prevState = next === "old" ? "new" : "old";
+      patchGroupPolls((mp) => mp.id === pollId, () => ({ viewer_follow_state: next }));
+      apiSetPollFollowState(pollId, next).catch(() => {
+        patchGroupPolls((mp) => mp.id === pollId, () => ({ viewer_follow_state: prevState }));
       });
     },
   ).current;
@@ -1480,21 +1497,64 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     return groups;
   }, [groupQuestions, pollWrapperMap]);
 
+  // === Gap 1: per-poll follow/ignore tabs (To Do · New · Old) ===
+  // Classify one card group into a tab. A resolved wrapper drives it via
+  // `classifyPollTab`; a not-yet-resolved wrapper (cache cold) is treated as
+  // followed — To Do when the anchor still wants input, else New.
+  const classifyEntry = (g: { poll: Poll | null; anchor: Question; subQuestions: Question[] }): PollTab => {
+    if (g.poll) {
+      return classifyPollTab(g.poll, votedQuestionIds, abstainedQuestionIds, now.getTime());
+    }
+    const responded = g.subQuestions.some(
+      (q) => votedQuestionIds.has(q.id) || abstainedQuestionIds.has(q.id),
+    );
+    return isQuestionOpen(g.anchor) && !responded ? "todo" : "new";
+  };
+  const tabCounts = useMemo(() => {
+    let todo = 0;
+    let newC = 0;
+    let old = 0;
+    for (const g of groupedGroupQuestions) {
+      const t = classifyEntry(g);
+      if (t === "old") old += 1;
+      else {
+        newC += 1; // every followed poll (To Do is a subset of New)
+        if (t === "todo") todo += 1;
+      }
+    }
+    return { todo, new: newC, old };
+    // classifyEntry reads votedQuestionIds/abstainedQuestionIds + the polls'
+    // follow state (carried on groupedGroupQuestions); pollViewsTick is a
+    // re-render nudge after a vote/view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupedGroupQuestions, votedQuestionIds, abstainedQuestionIds, pollViewsTick]);
+  // Default tab tracks counts until the user taps one (To Do if any, else New).
+  const effectiveTab: PollTab = selectedTab ?? (tabCounts.todo > 0 ? "todo" : "new");
+  const visibleGroupedQuestions = useMemo(() => {
+    return groupedGroupQuestions.filter((g) => {
+      const t = classifyEntry(g);
+      if (effectiveTab === "old") return t === "old";
+      if (effectiveTab === "todo") return t === "todo";
+      return t !== "old"; // New tab shows every followed poll
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupedGroupQuestions, effectiveTab, votedQuestionIds, abstainedQuestionIds, pollViewsTick]);
+
   // === Virtualization helpers (anchor + observer wiring) ===
   // Anchor = the last group, so the document stays pinned to the bottom
   // while cards above mount via progressive fill (matches the initial-load
   // bottom-pin target).
   const anchorGroupKey = useMemo(() => {
-    if (groupedGroupQuestions.length === 0) return null;
-    return groupedGroupQuestions[groupedGroupQuestions.length - 1].key;
-  }, [groupedGroupQuestions]);
+    if (visibleGroupedQuestions.length === 0) return null;
+    return visibleGroupedQuestions[visibleGroupedQuestions.length - 1].key;
+  }, [visibleGroupedQuestions]);
 
   // Drop mountedGroupKeys entries for groups that no longer exist (forget,
   // error reload). Always include the anchor. Progressive fill below adds
   // the rest of the keys.
   useEffect(() => {
-    if (groupedGroupQuestions.length === 0) return;
-    const validKeys = new Set(groupedGroupQuestions.map(g => g.key));
+    if (visibleGroupedQuestions.length === 0) return;
+    const validKeys = new Set(visibleGroupedQuestions.map(g => g.key));
     setMountedGroupKeys(prev => {
       const next = new Set<string>();
       for (const k of prev) if (validKeys.has(k)) next.add(k);
@@ -1506,7 +1566,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       }
       return next;
     });
-  }, [groupedGroupQuestions, anchorGroupKey]);
+  }, [visibleGroupedQuestions, anchorGroupKey]);
 
   // Progressive fill: after first paint, mount remaining groups in idle-time
   // batches, prioritizing the cards closest to the anchor so the user sees
@@ -1520,19 +1580,19 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // "Group-Page Layout Stability".
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (groupedGroupQuestions.length === 0) return;
-    if (mountedGroupKeys.size >= groupedGroupQuestions.length) return;
+    if (visibleGroupedQuestions.length === 0) return;
+    if (mountedGroupKeys.size >= visibleGroupedQuestions.length) return;
     const anchorIdx = anchorGroupKey
-      ? groupedGroupQuestions.findIndex(g => g.key === anchorGroupKey)
+      ? visibleGroupedQuestions.findIndex(g => g.key === anchorGroupKey)
       : 0;
     // Build a queue ordered by distance from anchor.
     const queue: string[] = [];
-    const len = groupedGroupQuestions.length;
+    const len = visibleGroupedQuestions.length;
     for (let d = 1; queue.length < len; d++) {
       const before = anchorIdx - d;
       const after = anchorIdx + d;
-      if (after < len) queue.push(groupedGroupQuestions[after].key);
-      if (before >= 0) queue.push(groupedGroupQuestions[before].key);
+      if (after < len) queue.push(visibleGroupedQuestions[after].key);
+      if (before >= 0) queue.push(visibleGroupedQuestions[before].key);
       if (before < 0 && after >= len) break;
     }
     const BATCH = 4;
@@ -1563,7 +1623,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     // once per groupedGroupQuestions change rather than on each batch
     // setState; the cursor + filter handle resumption.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupedGroupQuestions, anchorGroupKey]);
+  }, [visibleGroupedQuestions, anchorGroupKey]);
 
   // ResizeObserver: keep groupHeightById in sync with each rendered group's
   // actual height (mounted card OR placeholder). Placeholders use these
@@ -1730,7 +1790,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       // so iterating in order: the FIRST not-fully-in-view-above match is
       // the oldest such awaiting card, and the FIRST below-the-fold match
       // is the closest one beneath the viewport.
-      for (const group of groupedGroupQuestions) {
+      for (const group of visibleGroupedQuestions) {
         const question = group.anchor;
         if (!isCardUnread(question)) continue;
         const card = cardRefs.current.get(question.id);
@@ -1820,7 +1880,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       observer.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group, groupedGroupQuestions, headerHeight, votedQuestionIds, abstainedQuestionIds, badgeSettings, pollViewsTick]);
+  }, [group, visibleGroupedQuestions, headerHeight, votedQuestionIds, abstainedQuestionIds, badgeSettings, pollViewsTick]);
 
   // When an awaiting card is targeted: align its top flush with the
   // bottom of the fixed header. For wholly-above / wholly-below cards
@@ -1980,17 +2040,63 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
+        {/* Gap 1: To Do · New · Old segmented filter. Sticky just under the
+            fixed header so it stays reachable as the document scrolls. Only
+            shown when the group has polls.
+            NOTE: `position: sticky` resolves against the document scroller ONLY
+            because the enclosing cards-wrapper transform (cardsTransformOffset)
+            is transient — set only during overlay slides / saved-scroll restore,
+            never in the steady-state real route. If that transform ever becomes
+            persistent, this would stick to the transformed box instead of the
+            viewport; hoist the control out of the transformed wrapper then (it's
+            page chrome, not card content). */}
+        {groupedGroupQuestions.length > 0 && (
+          <div
+            className="sticky z-[5] bg-[var(--background)] px-2 pt-1 pb-2"
+            style={{ top: `${headerHeight}px` }}
+          >
+            <div className="flex rounded-full bg-gray-100 dark:bg-gray-800 p-0.5 text-sm font-medium">
+              {([
+                { id: "todo" as PollTab, label: "To Do", count: tabCounts.todo },
+                { id: "new" as PollTab, label: "New", count: tabCounts.new },
+                { id: "old" as PollTab, label: "Old", count: tabCounts.old },
+              ]).map((tab) => {
+                const active = effectiveTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setSelectedTab(tab.id)}
+                    aria-pressed={active}
+                    className={`flex-1 rounded-full py-1.5 transition-colors ${
+                      active
+                        ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                        : "text-gray-500 dark:text-gray-400"
+                    }`}
+                  >
+                    {tab.label}
+                    {tab.count > 0 && (
+                      <span className={active ? "ml-1 text-blue-600 dark:text-blue-400" : "ml-1 opacity-70"}>
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {/* Top divider above the first poll — pairs with each card's
             `border-b-2` so the rectangles are bracketed top + bottom.
             Rendered only when there's at least one poll so empty groups
             don't show a stray line above the bubble bar. */}
-        {groupedGroupQuestions.length > 0 && (
+        {visibleGroupedQuestions.length > 0 && (
           <div
             className={`border-t-2 ${ROW_DIVIDER_CLASS}`}
             aria-hidden="true"
           />
         )}
-        {groupedGroupQuestions.map((group) => {
+        {visibleGroupedQuestions.map((group) => {
             // Virtualized window: groups outside ±2 viewport heights of the
             // visible region render as a measured-height placeholder div. The
             // anchor (URL-targeted card or last group when suppressExpand) is
@@ -2044,9 +2150,21 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                 setTooltipQuestionId={setTooltipQuestionId}
                 setModalQuestion={setModalQuestion}
                 setShowModal={setShowModal}
+                onToggleFollow={handleToggleFollow}
               />
             );
           })}
+        {/* Gap 1: empty-state when the active tab has no polls (the group has
+            polls, just none in this filter). */}
+        {groupedGroupQuestions.length > 0 && visibleGroupedQuestions.length === 0 && (
+          <div className="px-4 py-10 text-center text-sm text-gray-400 dark:text-gray-500">
+            {effectiveTab === "todo"
+              ? "Nothing needs you right now — you're all caught up."
+              : effectiveTab === "old"
+              ? "No ignored polls. Tap the ✕ on a poll to file it here."
+              : "No followed polls."}
+          </div>
+        )}
       </div>
       </div>
       {/* The bubble bar is mounted ONCE at the layout level

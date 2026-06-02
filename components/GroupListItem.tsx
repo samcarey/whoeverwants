@@ -47,6 +47,10 @@ export interface GroupListItemProps {
    *  unread poll. See lib/unread.ts — "unread" follows the user's badge
    *  read-rule (opening marks read, or respond-to-mark-read). */
   hasUnread?: boolean;
+  /** Gap 4 rollup: # of polls in this group needing the viewer's input. */
+  toDoCount?: number;
+  /** Gap 4 rollup: # of followed (non-ignored) polls in this group. */
+  newCount?: number;
   pressed?: boolean;
   draftMode?: boolean;
   /** Transient: while true, the card visually morphs from draft → live. */
@@ -87,6 +91,8 @@ export default function GroupListItem(props: GroupListItemProps) {
     soonestUnvotedDeadline,
     unvotedDeadlineKind,
     hasUnread = false,
+    toDoCount = 0,
+    newCount = 0,
     pressed = false,
     draftMode = false,
     finalizing = false,
@@ -205,6 +211,22 @@ export default function GroupListItem(props: GroupListItemProps) {
               style={{ maxHeight: '2.55em', overflow: 'hidden' }}
             >
               {latestQuestionTitle}
+            </div>
+          )}
+
+          {/* Gap 4 rollup: "N to do · M new" — cross-group triage. Only when
+              there's something following (skips empty groups + all-ignored). */}
+          {newCount > 0 && (
+            <div className="mt-0.5 text-xs">
+              {toDoCount > 0 && (
+                <span className="font-semibold text-blue-600 dark:text-blue-400">
+                  {toDoCount} to do
+                </span>
+              )}
+              {toDoCount > 0 && (
+                <span className="text-gray-300 dark:text-gray-600"> · </span>
+              )}
+              <span className="text-gray-400 dark:text-gray-500">{newCount} new</span>
             </div>
           )}
         </div>

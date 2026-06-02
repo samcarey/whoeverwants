@@ -89,6 +89,10 @@ export interface GroupCardItemProps {
   setTooltipQuestionId: Dispatch<SetStateAction<string | null>>;
   setModalQuestion: Dispatch<SetStateAction<Question | null>>;
   setShowModal: Dispatch<SetStateAction<boolean>>;
+  /** Gap 1 follow/ignore toggle. `next` is the state to write: 'old' (the ✕,
+   *  ignore) or 'new' (the +, re-follow). Stable identity — not compared in
+   *  arePropsEqual. The current state is read off `group.poll.viewer_follow_state`. */
+  onToggleFollow: (pollId: string, next: "new" | "old") => void;
 }
 
 function GroupCardItemImpl(props: GroupCardItemProps) {
@@ -113,11 +117,16 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     setTooltipQuestionId,
     setModalQuestion,
     setShowModal,
+    onToggleFollow,
   } = props;
 
   const question = group.anchor;
   const isMultiGroup = group.subQuestions.length > 1;
   const wrapper = group.poll;
+  // Gap 1: the viewer's follow/ignore state for this poll. 'old' = ✕'d
+  // (filed in Old); anything else = followed.
+  const followState: "new" | "old" =
+    wrapper?.viewer_follow_state === "old" ? "old" : "new";
 
   // Wrapper-level reads (Phase 5b). Hoisted so every callsite below can use
   // them without re-deriving.
@@ -412,13 +421,42 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             : "bg-transparent"
         } hover:bg-gray-100 dark:hover:bg-gray-900 active:bg-blue-100 dark:active:bg-blue-900/40`}
       >
-        {/* Top row: icon + title only. The status countdown + nav chevron
-            moved to the bottom-right (see the metadata row below). */}
+        {/* Top row: icon + title, plus the follow/ignore toggle on the right.
+            The status countdown + nav chevron moved to the bottom-right (see
+            the metadata row below). */}
         <div className="flex items-start min-w-0">
           <h3 className="flex-1 min-w-0 flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white">
             <span className="mr-1.5 shrink-0" aria-hidden="true">{categoryIcon}</span>
             <span className="min-w-0">{question.title}</span>
           </h3>
+          {!isPlaceholder && group.pollId && (
+            <button
+              type="button"
+              aria-label={followState === "old" ? "Follow this poll" : "Ignore this poll"}
+              // Stop the tap/long-press/scroll handlers on the row from firing
+              // so toggling follow never navigates or opens the action modal.
+              onPointerDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                haptic.light();
+                onToggleFollow(group.pollId!, followState === "old" ? "new" : "old");
+              }}
+              className="shrink-0 -mt-1 -mr-1 ml-1 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 active:scale-90 transition"
+            >
+              {followState === "old" ? (
+                // green + (re-follow) — canonical plus path (matches PlusOnesInput etc.)
+                <svg className="w-5 h-5 text-green-600 dark:text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                </svg>
+              ) : (
+                // red ✕ (ignore) — canonical X path (matches GroupList / SignInModal etc.)
+                <svg className="w-5 h-5 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Pill row: centered across the FULL rectangle width (not just
