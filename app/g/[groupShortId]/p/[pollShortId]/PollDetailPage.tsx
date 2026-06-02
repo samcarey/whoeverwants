@@ -1011,6 +1011,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
               }
               onReferenceLocationStateChange={handleReferenceLocationStateChange}
               onRequireName={sp.question_type === "limited_supply" ? gateOnName : undefined}
+              getPlusOnes={getPlusOnes}
             />
           );
 

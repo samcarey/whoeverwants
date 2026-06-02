@@ -6,8 +6,13 @@ from algorithms.limited_supply import calculate_limited_supply_result
 from algorithms.vote_validation import validate_vote, VoteValidationError
 
 
-def _claim(name, t, abstain=False):
-    return {"voter_name": name, "created_at": t, "is_abstain": abstain}
+def _claim(name, t, abstain=False, plus_ones=None):
+    return {
+        "voter_name": name,
+        "created_at": t,
+        "is_abstain": abstain,
+        "plus_one_names": plus_ones,
+    }
 
 
 class TestLimitedSupplyAlgorithm:
@@ -64,6 +69,62 @@ class TestLimitedSupplyAlgorithm:
         assert r.secured_count == 0
         assert r.is_full is False
         assert r.claims == []
+
+
+class TestLimitedSupplyPlusOnes:
+    """A claim with plus-ones consumes one slot per represented person."""
+
+    def test_plus_one_claim_takes_multiple_slots(self):
+        # Ann claims for herself + 2 friends (weight 3); supply is 4.
+        votes = [
+            _claim("Ann", "2026-01-01T10:00:00", plus_ones=["Bo", "Cy"]),
+            _claim("Dan", "2026-01-01T10:01:00"),
+        ]
+        r = calculate_limited_supply_result(votes, supply_count=4)
+        assert r.claim_count == 4  # 3 from Ann's group + Dan
+        assert r.secured_count == 4
+        assert r.waitlist_count == 0
+        # Ann's group expands: submitter first, then plus-ones, all secured.
+        assert [c.name for c in r.claims] == ["Ann", "Bo", "Cy", "Dan"]
+        assert all(c.secured for c in r.claims)
+        # All of Ann's people share her claim's created_at.
+        assert r.claims[0].created_at == r.claims[1].created_at == r.claims[2].created_at
+
+    def test_plus_one_claim_can_straddle_the_boundary(self):
+        # Only 2 spots: Ann + 2 friends (weight 3) gets the first two heads,
+        # the third is waitlisted — per-person first-come, no wasted spots.
+        votes = [_claim("Ann", "2026-01-01T10:00:00", plus_ones=["Bo", "Cy"])]
+        r = calculate_limited_supply_result(votes, supply_count=2)
+        assert r.claim_count == 3
+        assert r.secured_count == 2
+        assert r.waitlist_count == 1
+        assert r.is_full is True
+        assert [c.secured for c in r.claims] == [True, True, False]
+        assert [c.name for c in r.claims] == ["Ann", "Bo", "Cy"]
+
+    def test_unnamed_plus_one_collapses_to_none(self):
+        # An empty-string plus-one (unnamed) yields name=None so the FE shows
+        # its generic placeholder.
+        votes = [_claim("Ann", "2026-01-01T10:00:00", plus_ones=[""])]
+        r = calculate_limited_supply_result(votes, supply_count=2)
+        assert [c.name for c in r.claims] == ["Ann", None]
+
+    def test_decline_with_plus_ones_takes_no_slot(self):
+        # plus_one_names on a decline never consumes a slot.
+        votes = [
+            _claim("Ann", "2026-01-01T10:00:00", abstain=True, plus_ones=["Bo"]),
+            _claim("Dan", "2026-01-01T10:01:00"),
+        ]
+        r = calculate_limited_supply_result(votes, supply_count=2)
+        assert r.claim_count == 1
+        assert [c.name for c in r.claims] == ["Dan"]
+
+    def test_legacy_row_without_plus_ones_weighs_one(self):
+        # plus_one_names=None (pre-migration row) → exactly one slot.
+        votes = [{"voter_name": "Ann", "created_at": "2026-01-01T10:00:00", "is_abstain": False}]
+        r = calculate_limited_supply_result(votes, supply_count=2)
+        assert r.claim_count == 1
+        assert r.claims[0].name == "Ann"
 
 
 class TestLimitedSupplyVoteValidation:

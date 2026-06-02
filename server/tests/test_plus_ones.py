@@ -13,6 +13,34 @@ from tests.test_invite_members import (
 )
 
 
+def _limited_supply_question(supply=3, **overrides) -> dict:
+    q = {
+        "question_type": "limited_supply",
+        "category": "limited_supply",
+        "supply_count": supply,
+    }
+    q.update(overrides)
+    return q
+
+
+def _claim(client, poll, voter_name, *, plus_one_names=None, decline=False, browser_id=None):
+    """Submit a limited-supply claim (decline=True → "No thanks")."""
+    body = {
+        "voter_name": voter_name,
+        "items": [
+            {
+                "question_id": poll["questions"][0]["id"],
+                "vote_type": "limited_supply",
+                "is_abstain": decline,
+            }
+        ],
+    }
+    if plus_one_names is not None:
+        body["plus_one_names"] = plus_one_names
+    headers = {"X-Browser-Id": browser_id} if browser_id else {}
+    return client.post(f"/api/polls/{poll['id']}/votes", json=body, headers=headers)
+
+
 def _time_question(**overrides) -> dict:
     q = {
         "question_type": "time",
@@ -55,6 +83,23 @@ class TestAllowPlusOnesDefault:
     def test_time_poll_defaults_on(self, client, creator_secret):
         poll = create_poll(client, creator_secret, questions=[_time_question()])
         assert poll["allow_plus_ones"] is True
+
+    def test_limited_supply_poll_defaults_on(self, client, creator_secret):
+        # Claiming a scarce slot for yourself + others is the headline use of
+        # plus-ones for limited-supply, so the toggle defaults ON.
+        poll = create_poll(
+            client, creator_secret, questions=[_limited_supply_question()]
+        )
+        assert poll["allow_plus_ones"] is True
+
+    def test_limited_supply_explicit_override_off(self, client, creator_secret):
+        poll = create_poll(
+            client,
+            creator_secret,
+            questions=[_limited_supply_question()],
+            allow_plus_ones=False,
+        )
+        assert poll["allow_plus_ones"] is False
 
     def test_explicit_override_on_for_yes_no(self, client, creator_secret):
         poll = create_poll(
@@ -348,3 +393,54 @@ class TestPlusOneInviteNotMembership:
                 (poll_group_id, poll["id"]),
             ).fetchone()
             assert invite is not None
+
+
+class TestLimitedSupplyPlusOnesEndToEnd:
+    """A limited-supply claim with plus-ones consumes one slot per person."""
+
+    def _supply_results(self, client, poll):
+        qid = poll["questions"][0]["id"]
+        return client.get(f"/api/questions/{qid}/results").json()
+
+    def test_claim_with_plus_ones_takes_multiple_slots(self, client, creator_secret):
+        poll = create_poll(
+            client,
+            creator_secret,
+            questions=[_limited_supply_question(supply=4)],
+            allow_plus_ones=True,
+        )
+        # Alice claims for herself + 2 friends → 3 of 4 spots secured.
+        resp = _claim(client, poll, "Alice", plus_one_names=["Bob", "Carol"])
+        assert resp.status_code == 201, resp.text
+        r = self._supply_results(client, poll)
+        assert r["secured_count"] == 3
+        assert r["waitlist_count"] == 0
+        names = [c["name"] for c in r["claims"]]
+        assert names == ["Alice", "Bob", "Carol"]
+        assert all(c["secured"] for c in r["claims"])
+
+    def test_claim_with_plus_ones_straddles_boundary(self, client, creator_secret):
+        poll = create_poll(
+            client,
+            creator_secret,
+            questions=[_limited_supply_question(supply=2)],
+            allow_plus_ones=True,
+        )
+        # Only 2 spots; Alice + 2 friends → 2 secured, 1 waitlisted.
+        _claim(client, poll, "Alice", plus_one_names=["Bob", "Carol"])
+        r = self._supply_results(client, poll)
+        assert r["secured_count"] == 2
+        assert r["waitlist_count"] == 1
+        assert [c["secured"] for c in r["claims"]] == [True, True, False]
+
+    def test_disallowed_poll_ignores_plus_ones(self, client, creator_secret):
+        poll = create_poll(
+            client,
+            creator_secret,
+            questions=[_limited_supply_question(supply=4)],
+            allow_plus_ones=False,
+        )
+        # allow_plus_ones off → a crafted plus_one_names must NOT take extra slots.
+        _claim(client, poll, "Alice", plus_one_names=["Bob", "Carol"])
+        r = self._supply_results(client, poll)
+        assert r["secured_count"] == 1

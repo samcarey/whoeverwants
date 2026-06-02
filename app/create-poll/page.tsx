@@ -659,17 +659,25 @@ export function CreateQuestionContent() {
       : "Suggestion Cutoff";
 
   // "Plus one/more": the toggle defaults ON when the poll has a time question
-  // (the common "answering for my partner too" scheduling case), OFF otherwise.
+  // (the common "answering for my partner too" scheduling case) or a
+  // limited-supply question (claiming a scarce slot for yourself + others —
+  // each represented person consumes one slot), OFF otherwise.
   // `allowPlusOnes === null` means "follow this default"; an explicit boolean is
   // the user's override. The inline form's contribution isn't gated on
-  // isModalOpen — a time draft is a time question regardless of whether the
-  // modal is open (unlike the prephase fields, whose empty-default false-positive
-  // requires that gate).
+  // isModalOpen — a time/limited-supply draft is that question type regardless
+  // of whether the modal is open (unlike the prephase fields, whose
+  // empty-default false-positive requires that gate). Must mirror the server
+  // default in `routers/polls.py: create_poll` so the toggle reflects what
+  // will actually persist.
   const inlineFormIsTime = questionType === 'time' || category === 'time';
-  const pollHasTimeQuestion =
-    (isModalOpen && inlineFormIsTime) ||
-    drafts.some((d) => draftDbQuestionType(d) === 'time');
-  const effectiveAllowPlusOnes = allowPlusOnes ?? pollHasTimeQuestion;
+  const inlineFormIsLimitedSupply = category === 'limited_supply';
+  const pollHasPlusOneDefaultType =
+    (isModalOpen && (inlineFormIsTime || inlineFormIsLimitedSupply)) ||
+    drafts.some((d) => {
+      const t = draftDbQuestionType(d);
+      return t === 'time' || t === 'limited_supply';
+    });
+  const effectiveAllowPlusOnes = allowPlusOnes ?? pollHasPlusOneDefaultType;
 
   // Migration 098: poll-level results-display + ranked-choice settings.
   // The min-responses + show-results pair is meaningful iff the poll
