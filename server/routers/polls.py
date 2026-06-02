@@ -704,11 +704,12 @@ def _format_slot_label(slot_key: str) -> str:
     """Friendly label for a time-slot key ("YYYY-MM-DD HH:MM-HH:MM") used in
     the close-notification outcome summary, e.g. "Sat Apr 28, 7 PM". Falls back
     to the raw key on any parse failure."""
+    from algorithms.time_question import parse_slot_key
+
     try:
-        date_str, time_range = slot_key.split(" ")
-        start_str = time_range.split("-")[0]
+        date_str, start_min, _end_min = parse_slot_key(slot_key)
         d = datetime.strptime(date_str, "%Y-%m-%d")
-        hour, minute = (int(x) for x in start_str.split(":"))
+        hour, minute = divmod(start_min, 60)
         period = "AM" if hour < 12 else "PM"
         hour12 = hour % 12 or 12
         minute_str = f":{minute:02d}" if minute else ""
@@ -747,7 +748,7 @@ def _question_decision_label(conn, question_row: dict) -> str | None:
     return winner
 
 
-def _poll_decision_summary(conn, poll_id: str, question_rows: list[dict]) -> str | None:
+def _poll_decision_summary(conn, question_rows: list[dict]) -> str | None:
     """The poll's combined outcome, e.g. "Thai · Sat Apr 28, 7 PM" — one part
     per question that reached a decision, joined with " · ". None when no
     question produced a winner (the caller then keeps the poll-title body)."""
@@ -778,7 +779,7 @@ def _build_close_notification(conn, poll_id: str) -> tuple[str, dict] | None:
     if not built:
         return None
     group_id, base, _row, group_phrase, question_rows = built
-    summary = _poll_decision_summary(conn, poll_id, question_rows)
+    summary = _poll_decision_summary(conn, question_rows)
     body = f"Decided: {summary}" if summary else base["body"]
     return group_id, {
         **base,
