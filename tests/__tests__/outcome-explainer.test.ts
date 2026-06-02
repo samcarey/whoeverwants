@@ -34,36 +34,35 @@ describe("outcomeExplainer — yes/no", () => {
     const e = outcomeExplainer(
       results({ question_type: "yes_no", total_votes: 6, yes_count: 4, no_count: 2, winner: "yes" }),
     );
-    expect(e).toEqual({ tone: "info", text: "Yes won, 4 to 2." });
+    expect(e).toBe("Yes won, 4 to 2.");
   });
 
   it("orders the winning side first when No wins", () => {
     const e = outcomeExplainer(
       results({ question_type: "yes_no", total_votes: 5, yes_count: 1, no_count: 4, winner: "no" }),
     );
-    expect(e?.text).toBe("No won, 4 to 1.");
+    expect(e).toBe("No won, 4 to 1.");
   });
 
   it("appends an abstain note", () => {
     const e = outcomeExplainer(
       results({ question_type: "yes_no", total_votes: 7, yes_count: 4, no_count: 2, abstain_count: 1, winner: "yes" }),
     );
-    expect(e?.text).toBe("Yes won, 4 to 2. (1 abstained)");
+    expect(e).toBe("Yes won, 4 to 2. (1 abstained)");
   });
 
   it("explains a tie", () => {
     const e = outcomeExplainer(
       results({ question_type: "yes_no", total_votes: 6, yes_count: 3, no_count: 3, winner: "tie" }),
     );
-    expect(e?.tone).toBe("info");
-    expect(e?.text).toContain("tie");
+    expect(e).toContain("tie");
   });
 
   it("explains all-abstain", () => {
     const e = outcomeExplainer(
       results({ question_type: "yes_no", total_votes: 3, yes_count: 0, no_count: 0, abstain_count: 3 }),
     );
-    expect(e?.text).toContain("abstained");
+    expect(e).toContain("abstained");
   });
 
   it("returns null with no votes", () => {
@@ -83,14 +82,13 @@ describe("outcomeExplainer — time", () => {
         availability_counts: { [slot]: 5 },
       }),
     );
-    expect(e?.tone).toBe("info");
-    expect(e?.text).toContain("5 of 6 can make it");
-    expect(e?.text).toContain("fewest people who'd rather not");
+    expect(e).toContain("5 of 6 can make it");
+    expect(e).toContain("fewest people who'd rather not");
   });
 
   it("omits the availability clause when counts are missing", () => {
     const e = outcomeExplainer(results({ question_type: "time", winner: slot }));
-    expect(e?.text).not.toContain("can make it");
+    expect(e).not.toContain("can make it");
   });
 
   it("returns null when the event was cancelled (banner is self-explanatory)", () => {
@@ -105,7 +103,7 @@ describe("outcomeExplainer — time", () => {
 });
 
 describe("outcomeExplainer — ranked choice", () => {
-  it("delegates the broadly-acceptable-lost warning (tone: warn)", () => {
+  it("delegates the broadly-acceptable-lost gloss", () => {
     const e = outcomeExplainer(
       results({
         question_type: "ranked_choice",
@@ -118,8 +116,7 @@ describe("outcomeExplainer — ranked choice", () => {
         ],
       }),
     );
-    expect(e?.tone).toBe("warn");
-    expect(e?.text).toContain("Sushi");
+    expect(e).toContain("Sushi");
   });
 
   it("gives a majority one-liner for a single-round winner", () => {
@@ -130,9 +127,8 @@ describe("outcomeExplainer — ranked choice", () => {
         ranked_choice_rounds: [round(1, "Tacos", false)],
       }),
     );
-    expect(e?.tone).toBe("info");
-    expect(e?.text).toContain("Tacos");
-    expect(e?.text).toContain("majority");
+    expect(e).toContain("Tacos");
+    expect(e).toContain("majority");
   });
 
   it("returns null with no winner", () => {

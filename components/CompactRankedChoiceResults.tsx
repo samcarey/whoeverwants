@@ -364,7 +364,7 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
 
           <div className="text-center flex items-center justify-center gap-1">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{currentRound.title}</h3>
-            {showInfo && <OutcomeInfoButton text={explanation!.text} />}
+            {showInfo && <OutcomeInfoButton text={explanation!} />}
           </div>
 
           <button
@@ -387,7 +387,7 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
           // small "Final Results" label.
           <div className="text-center mb-4 flex items-center justify-center gap-1">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Final Results</h3>
-            <OutcomeInfoButton text={explanation!.text} />
+            <OutcomeInfoButton text={explanation!} />
           </div>
         ) : null
       )}

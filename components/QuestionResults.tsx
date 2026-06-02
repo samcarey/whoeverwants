@@ -221,7 +221,7 @@ function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick
       {explanation && (
         <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1 inline-flex items-center gap-1">
           Final Results
-          <OutcomeInfoButton text={explanation.text} align="left" />
+          <OutcomeInfoButton text={explanation} align="left" />
         </p>
       )}
       {/* Cards row — items-center vertically aligns the abstain text's
@@ -310,7 +310,7 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
         <div className="text-center">
           <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1 inline-flex items-center gap-1">
             Scheduled Time
-            {explanation && <OutcomeInfoButton text={explanation.text} />}
+            {explanation && <OutcomeInfoButton text={explanation} />}
           </p>
           <div className="inline-flex items-center px-4 py-2 bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-700 rounded-xl">
             <span className="text-sm font-semibold text-green-800 dark:text-green-200">
