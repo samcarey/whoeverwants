@@ -40,6 +40,7 @@ from services.push import (
 )
 from services.validation import validate_category_icon, validate_user_name
 from services.questions import (
+    _compute_results,
     _edit_vote_on_question,
     _finalize_suggestion_options,
     _finalize_time_slots,
@@ -699,15 +700,89 @@ def _notification_base(conn, poll_id: str):
     return str(row["group_id"]), base, row, group_phrase, question_rows
 
 
+def _format_slot_label(slot_key: str) -> str:
+    """Friendly label for a time-slot key ("YYYY-MM-DD HH:MM-HH:MM") used in
+    the close-notification outcome summary, e.g. "Sat Apr 28, 7 PM". Falls back
+    to the raw key on any parse failure."""
+    try:
+        date_str, time_range = slot_key.split(" ")
+        start_str = time_range.split("-")[0]
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        hour, minute = (int(x) for x in start_str.split(":"))
+        period = "AM" if hour < 12 else "PM"
+        hour12 = hour % 12 or 12
+        minute_str = f":{minute:02d}" if minute else ""
+        return f"{d:%a} {d:%b} {d.day}, {hour12}{minute_str} {period}"
+    except Exception:
+        return slot_key
+
+
+def _question_decision_label(conn, question_row: dict) -> str | None:
+    """The human-readable winning choice for one closed question, or None when
+    no decision was reached (no votes / a tie / all-abstain). Drives the
+    poll-closed notification's "Decided: …" body."""
+    votes = conn.execute(
+        "SELECT * FROM votes WHERE question_id = %(qid)s",
+        {"qid": question_row["id"]},
+    ).fetchall()
+    # Tentative time-slot generation is irrelevant once the poll is closed and
+    # is the most expensive branch — skip it.
+    results = _compute_results(
+        dict(question_row), [dict(v) for v in votes],
+        include_tentative_time_options=False,
+    )
+    winner = results.winner
+    if not winner:
+        return None
+    qtype = question_row["question_type"]
+    if qtype == "yes_no":
+        if winner == "yes":
+            return "Yes"
+        if winner == "no":
+            return "No"
+        return None  # "tie" or anything unexpected → no decision
+    if qtype == "time":
+        return _format_slot_label(winner)
+    # ranked_choice (and any future type whose winner is the option text)
+    return winner
+
+
+def _poll_decision_summary(conn, poll_id: str, question_rows: list[dict]) -> str | None:
+    """The poll's combined outcome, e.g. "Thai · Sat Apr 28, 7 PM" — one part
+    per question that reached a decision, joined with " · ". None when no
+    question produced a winner (the caller then keeps the poll-title body)."""
+    parts = [
+        label
+        for sp in question_rows
+        if (label := _question_decision_label(conn, sp))
+    ]
+    if not parts:
+        return None
+    summary = " · ".join(parts)
+    # Keep the body bounded — push services truncate, but we'd rather control
+    # where the cut lands than ship an unbounded string.
+    if len(summary) > 120:
+        summary = summary[:119].rstrip() + "…"
+    return summary
+
+
 def _build_close_notification(conn, poll_id: str) -> tuple[str, dict] | None:
     """(group_id, payload) for a poll-closed push, or None when unroutable.
-    Shared by the inline close endpoint and the cron tick."""
+    Shared by the inline close endpoint and the cron tick.
+
+    Line 2 (body) delivers the OUTCOME — "Decided: <winners>" — when the poll
+    reached a decision, so a closed-poll push answers "what got decided?" not
+    just "a poll closed". Falls back to the poll's own title (the base body)
+    when nothing was decided (no votes / ties / all-abstain)."""
     built = _notification_base(conn, poll_id)
     if not built:
         return None
-    group_id, base, _row, group_phrase, _question_rows = built
+    group_id, base, _row, group_phrase, question_rows = built
+    summary = _poll_decision_summary(conn, poll_id, question_rows)
+    body = f"Decided: {summary}" if summary else base["body"]
     return group_id, {
         **base,
+        "body": body,
         "title": f"Poll closed in {group_phrase}",
         "tag": f"poll-closed-{poll_id}",
     }

@@ -457,6 +457,180 @@ def test_transition_event_phrase_per_prephase_kind():
 
 
 # --------------------------------------------------------------------------
+# poll-closed outcome summary ("Decided: …" body)
+# --------------------------------------------------------------------------
+
+
+def _capture_close(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        routers.polls, "fan_out_poll_closed",
+        lambda group_id, poll_id, payload: calls.append(payload),
+    )
+    return calls
+
+
+def _vote_yes_no(client, poll, qid, bid, name, choice):
+    resp = client.post(
+        f"/api/polls/{poll['id']}/votes",
+        headers=bid_headers(bid),
+        json={
+            "voter_name": name,
+            "items": [
+                {"question_id": qid, "vote_type": "yes_no", "yes_no_choice": choice}
+            ],
+        },
+    )
+    assert resp.status_code in (200, 201), resp.text
+
+
+def _vote_ranked(client, poll, qid, bid, name, ranking):
+    resp = client.post(
+        f"/api/polls/{poll['id']}/votes",
+        headers=bid_headers(bid),
+        json={
+            "voter_name": name,
+            "items": [
+                {
+                    "question_id": qid,
+                    "vote_type": "ranked_choice",
+                    "ranked_choices": ranking,
+                }
+            ],
+        },
+    )
+    assert resp.status_code in (200, 201), resp.text
+
+
+def test_close_notification_yes_no_outcome(client, creator_secret, monkeypatch):
+    """A decided yes/no poll's close push delivers the OUTCOME on line 2
+    ('Decided: Yes'), not just the poll title."""
+    calls = _capture_close(monkeypatch)
+    cbid = str(uuid.uuid4())
+    poll = create_poll(client, creator_secret, browser_id=cbid)
+    qid = poll["questions"][0]["id"]
+    _vote_yes_no(client, poll, qid, str(uuid.uuid4()), "Ann", "yes")
+    _vote_yes_no(client, poll, qid, str(uuid.uuid4()), "Bo", "yes")
+    _vote_yes_no(client, poll, qid, str(uuid.uuid4()), "Cy", "no")
+    resp = client.post(
+        f"/api/polls/{poll['id']}/close",
+        json={"close_reason": "manual"},
+        headers=creator_headers(poll),
+    )
+    assert resp.status_code == 200, resp.text
+    assert len(calls) == 1
+    assert calls[0]["body"] == "Decided: Yes"
+    assert calls[0]["title"].startswith("Poll closed in ")
+
+
+def test_close_notification_ranked_choice_outcome(client, creator_secret, monkeypatch):
+    """A fixed-options ranked_choice poll's close push names the winning option."""
+    calls = _capture_close(monkeypatch)
+    cbid = str(uuid.uuid4())
+    poll = create_poll(
+        client,
+        creator_secret,
+        browser_id=cbid,
+        questions=[
+            {
+                "question_type": "ranked_choice",
+                "category": "restaurant",
+                "options": ["Thai", "Sushi"],
+            }
+        ],
+    )
+    qid = poll["questions"][0]["id"]
+    _vote_ranked(client, poll, qid, str(uuid.uuid4()), "Ann", ["Thai", "Sushi"])
+    _vote_ranked(client, poll, qid, str(uuid.uuid4()), "Bo", ["Thai", "Sushi"])
+    _vote_ranked(client, poll, qid, str(uuid.uuid4()), "Cy", ["Sushi", "Thai"])
+    resp = client.post(
+        f"/api/polls/{poll['id']}/close",
+        json={"close_reason": "manual"},
+        headers=creator_headers(poll),
+    )
+    assert resp.status_code == 200, resp.text
+    assert len(calls) == 1
+    assert calls[0]["body"] == "Decided: Thai"
+
+
+def test_close_notification_multi_question_outcome(client, creator_secret, monkeypatch):
+    """A multi-question poll joins each question's winner with ' · '."""
+    calls = _capture_close(monkeypatch)
+    cbid = str(uuid.uuid4())
+    poll = create_poll(
+        client,
+        creator_secret,
+        browser_id=cbid,
+        questions=[
+            {"question_type": "yes_no", "category": "yes_no"},
+            {
+                "question_type": "ranked_choice",
+                "category": "restaurant",
+                "options": ["Thai", "Sushi"],
+            },
+        ],
+    )
+    yn_qid = poll["questions"][0]["id"]
+    rc_qid = poll["questions"][1]["id"]
+    vbid = str(uuid.uuid4())
+    # One voter answers both questions in a single atomic batch.
+    resp = client.post(
+        f"/api/polls/{poll['id']}/votes",
+        headers=bid_headers(vbid),
+        json={
+            "voter_name": "Ann",
+            "items": [
+                {"question_id": yn_qid, "vote_type": "yes_no", "yes_no_choice": "yes"},
+                {
+                    "question_id": rc_qid,
+                    "vote_type": "ranked_choice",
+                    "ranked_choices": ["Sushi", "Thai"],
+                },
+            ],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    resp = client.post(
+        f"/api/polls/{poll['id']}/close",
+        json={"close_reason": "manual"},
+        headers=creator_headers(poll),
+    )
+    assert resp.status_code == 200, resp.text
+    assert len(calls) == 1
+    assert calls[0]["body"] == "Decided: Yes · Sushi"
+
+
+def test_close_notification_no_decision_falls_back_to_title(client, creator_secret, monkeypatch):
+    """A yes/no tie reaches no decision, so the body keeps the poll-title form."""
+    calls = _capture_close(monkeypatch)
+    cbid = str(uuid.uuid4())
+    poll = create_poll(client, creator_secret, browser_id=cbid)
+    qid = poll["questions"][0]["id"]
+    _vote_yes_no(client, poll, qid, str(uuid.uuid4()), "Ann", "yes")
+    _vote_yes_no(client, poll, qid, str(uuid.uuid4()), "Bo", "no")
+    resp = client.post(
+        f"/api/polls/{poll['id']}/close",
+        json={"close_reason": "manual"},
+        headers=creator_headers(poll),
+    )
+    assert resp.status_code == 200, resp.text
+    assert len(calls) == 1
+    assert calls[0]["body"] == f"👍 {poll['title']}"
+
+
+def test_format_slot_label():
+    """The time-slot key formatter produces a compact friendly label and is
+    minute-aware (drops ':00')."""
+    fmt = routers.polls._format_slot_label
+    assert fmt("2030-01-05 19:00-20:00") == "Sat Jan 5, 7 PM"
+    assert fmt("2030-01-05 09:30-10:00") == "Sat Jan 5, 9:30 AM"
+    assert fmt("2030-01-05 00:00-01:00") == "Sat Jan 5, 12 AM"
+    assert fmt("2030-01-05 12:00-13:00") == "Sat Jan 5, 12 PM"
+    # Unparseable input falls back to the raw key rather than raising.
+    assert fmt("garbage") == "garbage"
+
+
+# --------------------------------------------------------------------------
 # cron tick
 # --------------------------------------------------------------------------
 
