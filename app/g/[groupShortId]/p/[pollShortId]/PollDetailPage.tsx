@@ -1010,6 +1010,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
                 wrapperOwnsSubmit ? handleWrapperSubmitStateChange : undefined
               }
               onReferenceLocationStateChange={handleReferenceLocationStateChange}
+              onRequireName={sp.question_type === "limited_supply" ? gateOnName : undefined}
             />
           );
 
