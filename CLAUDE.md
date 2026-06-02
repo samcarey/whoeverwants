@@ -1319,21 +1319,12 @@ to send real emails — check the API logs for the link" and
 `/api/auth/me` (or a magic-link request) reports `email_configured:
 false`. Re-add via `scripts/remote*.sh` then `docker compose up -d
 --force-recreate api` (env_file is re-read on recreate, not `restart`).
-- **TODO (rotate the Resend key — do this at the start of the next session).**
-  The `RESEND_API_KEY` currently live on both droplets (prefix `re_h4AdE…`)
-  was pasted into a chat transcript, so it must be rotated. The owner is
-  pre-setting a fresh send-only key as the session env var **`RESEND_API_KEY`**
-  and will revoke the old one in Resend. Next session: read `$RESEND_API_KEY`
-  from the environment and deploy it to BOTH droplets WITHOUT letting the
-  value enter chat — reference the var unexpanded and never echo it, e.g.
-  `bash scripts/remote.sh "sed -i '/^RESEND_API_KEY=/d' .env.api && printf 'RESEND_API_KEY=%s\n' \"$RESEND_API_KEY\" >> .env.api && chmod 600 .env.api && docker compose up -d --force-recreate api" /root/whoeverwants`
-  (and the same via `scripts/remote-latest.sh`). The transcript shows the
-  literal `$RESEND_API_KEY`, not its value; the value does land in the
-  droplet's cmd-api request log (root-only, same as today). Then verify with
-  a magic-link request to each tier (`email_configured: true` + no
-  `[email] RESEND_API_KEY not configured` fallback line in `docker compose
-  logs api`). Remove this TODO once rotated. If `$RESEND_API_KEY` isn't set in
-  the env, ask the owner before proceeding.
+  The previously-leaked key (prefix `re_h4AdE…`, pasted into a transcript)
+  was **rotated out** of both droplets — the fresh send-only key was deployed
+  via the `$RESEND_API_KEY` session env var and the recipe above, then
+  verified on each tier (`email_configured: true`, no `RESEND_API_KEY not
+  configured` fallback, no `[email] Resend rejected` line on a test send).
+  The old key should be revoked in the Resend dashboard if not already.
 
 **FE session storage: `lib/session.ts`.** localStorage-backed (works on
 iOS Capacitor WebView and survives app updates; Keychain via
