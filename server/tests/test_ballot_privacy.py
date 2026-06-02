@@ -111,6 +111,67 @@ def test_stranger_browser_sees_nothing():
     assert _get_votes(client, qid) == []
 
 
+def _edit_vote(client, poll, question_id, vote_id, *, name, choice, browser_id):
+    return client.post(
+        f"/api/polls/{poll['id']}/votes",
+        json={
+            "voter_name": name,
+            "items": [
+                {
+                    "question_id": question_id,
+                    "vote_id": vote_id,
+                    "vote_type": "yes_no",
+                    "yes_no_choice": choice,
+                }
+            ],
+        },
+        headers={"X-Browser-Id": browser_id},
+    )
+
+
+def test_cannot_edit_another_voters_ballot():
+    """Possession of a vote_id alone must not let one voter overwrite another's
+    ballot — the belt-and-suspenders edit-ownership gate. (Vote UUIDs aren't
+    cross-voter discoverable now that /votes is scoped, but the edit path
+    enforces ownership too.)"""
+    client = _client()
+    poll = _create_yes_no_poll(client, _bid())
+    qid = poll["questions"][0]["id"]
+
+    alice = _bid()
+    alice_vote = _vote(client, poll, qid, name="Alice", choice="yes", browser_id=alice)
+    alice_vote_id = alice_vote[0]["id"]
+
+    # Bob, somehow holding Alice's vote_id, tries to overwrite her ballot.
+    bob = _bid()
+    resp = _edit_vote(
+        client, poll, qid, alice_vote_id, name="Bob", choice="no", browser_id=bob
+    )
+    assert resp.status_code == 403, resp.text
+
+    # Alice's ballot is untouched.
+    alice_votes = _get_votes(client, qid, browser_id=alice)
+    assert len(alice_votes) == 1
+    assert alice_votes[0]["yes_no_choice"] == "yes"
+
+
+def test_owner_can_edit_their_own_ballot():
+    """The gate only blocks cross-voter edits — the owner still edits freely."""
+    client = _client()
+    poll = _create_yes_no_poll(client, _bid())
+    qid = poll["questions"][0]["id"]
+
+    alice = _bid()
+    alice_vote = _vote(client, poll, qid, name="Alice", choice="yes", browser_id=alice)
+    vote_id = alice_vote[0]["id"]
+
+    resp = _edit_vote(
+        client, poll, qid, vote_id, name="Alice", choice="no", browser_id=alice
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()[0]["yes_no_choice"] == "no"
+
+
 def test_roster_and_results_still_expose_aggregates():
     """The render-necessary cross-voter data is unaffected: the poll roster
     (names only) and the aggregate results remain available to anyone."""

@@ -514,16 +514,38 @@ def _merge_suggestion_metadata(conn, question_id: str, options_metadata, suggest
         )
 
 
-def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRequest, now: datetime) -> dict:
+def _edit_vote_on_question(
+    conn,
+    question_id: str,
+    vote_id: str,
+    req: EditVoteRequest,
+    now: datetime,
+    *,
+    caller_browser_ids: list[str] | None = None,
+) -> dict:
     """Update a vote row inside an existing transaction. Shared by the per-question
     `edit_vote` endpoint and the poll batch-vote endpoint. Returns the
-    updated row. Raises HTTPException on validation failures."""
+    updated row. Raises HTTPException on validation failures.
+
+    Ballot-privacy belt-and-suspenders (see the Auth & Access Model TODO in
+    CLAUDE.md): when `caller_browser_ids` is provided (the account-aware browser
+    set of whoever is editing), the vote's own `browser_id` must be in that set
+    — so possession of a vote_id alone can't let one voter edit another's ballot.
+    Legacy votes cast before migration 120 have a NULL `browser_id` (can't be
+    attributed to any caller) and stay editable by possession so we don't
+    regress them. When the set is empty/None (no resolvable identity) the gate is
+    skipped, preserving prior behavior — this only ever adds protection."""
     existing = conn.execute(
-        "SELECT id FROM votes WHERE id = %(vote_id)s AND question_id = %(question_id)s",
+        "SELECT id, browser_id FROM votes WHERE id = %(vote_id)s AND question_id = %(question_id)s",
         {"vote_id": vote_id, "question_id": question_id},
     ).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail="Vote not found")
+
+    if caller_browser_ids:
+        owner = existing["browser_id"]
+        if owner is not None and str(owner) not in caller_browser_ids:
+            raise HTTPException(status_code=403, detail="You can only edit your own vote")
 
     question = conn.execute(
         """SELECT p.question_type,
