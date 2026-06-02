@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ModalPortal from "./ModalPortal";
 import SignInOptions from "./SignInOptions";
 import NamePromptPanel from "./NamePromptPanel";
+import OrDivider from "./OrDivider";
 import { isValidUserName } from "@/lib/nameValidation";
 import { getUserName } from "@/lib/userProfile";
 import { getCurrentUser } from "@/lib/api";
@@ -20,24 +21,27 @@ interface SignInModalProps {
  * identically. This component owns only the modal chrome (backdrop, close
  * button, escape, body-scroll lock).
  *
+ * Like `AccountGateModal`, the provider buttons are followed by an
+ * always-visible "or just provide a name/alias" path so a brand-new user can
+ * mint a recovery-less, name-only account directly from "Sign in" without
+ * first completing an OAuth / passkey / magic-link ceremony. The name field
+ * is a passive alternative on first open (it does NOT steal focus / pop the
+ * mobile keyboard); a durable sign-in that lands on a still-nameless account
+ * bumps `nameFocusNonce` to draw the eye to it (and `NamePromptPanel` then
+ * writes the name onto the existing account).
+ *
  * Stacks above the create-poll bottom sheet (z-60) and the
  * ConfirmationModal (z-70) via z-80.
  */
 export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
   const openedAtRef = useRef<number>(0);
-  // The app requires a name for any account. A durable sign-in (OAuth /
-  // passkey) can land on a brand-new nameless account, so switch to the
-  // name step instead of closing until a name is set.
-  const [needName, setNeedName] = useState(false);
+  const [nameFocusNonce, setNameFocusNonce] = useState(0);
 
   // Suppress backdrop dismissal in the first 400ms after open so the
   // synthesized click after a long-press / tap that opened the modal doesn't
   // immediately close it. Mirrors FollowUpModal's pattern.
   useEffect(() => {
-    if (isOpen) {
-      openedAtRef.current = Date.now();
-      setNeedName(false);
-    }
+    if (isOpen) openedAtRef.current = Date.now();
   }, [isOpen]);
 
   const handleSignInComplete = () => {
@@ -47,7 +51,9 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
       onClose();
       return;
     }
-    setNeedName(true);
+    // Signed in but nameless: keep the modal open and focus the name field,
+    // which NamePromptPanel writes to the now-signed-in account.
+    setNameFocusNonce((n) => n + 1);
   };
 
   useEffect(() => {
@@ -96,20 +102,13 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
             </svg>
           </button>
 
-          <h2 className="text-lg font-semibold mb-4 pr-6">
-            {needName ? "Choose a name" : "Sign in"}
-          </h2>
+          <h2 className="text-lg font-semibold mb-4 pr-6">Sign in</h2>
 
-          {needName ? (
-            <>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                Add a name or alias so others can see who you are.
-              </p>
-              <NamePromptPanel onComplete={onClose} autoFocus />
-            </>
-          ) : (
-            <SignInOptions mode="signin" onComplete={handleSignInComplete} />
-          )}
+          <SignInOptions mode="signin" onComplete={handleSignInComplete} />
+
+          <OrDivider label="or just provide a name/alias" />
+
+          <NamePromptPanel onComplete={onClose} focusNonce={nameFocusNonce} />
         </div>
       </div>
     </ModalPortal>
