@@ -5,7 +5,6 @@ import type { Question, QuestionResults, DayTimeWindow } from "@/lib/types";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
 import TimeSlotBubbles from "@/components/TimeSlotBubbles";
 import AbstainLink from "@/components/AbstainLink";
-import SliderSwitch from "@/components/SliderSwitch";
 import CompactNumberRow from "@/components/CompactNumberRow";
 import { hasInvalidVoterWindows } from "@/lib/timeUtils";
 
@@ -39,10 +38,8 @@ export interface TimeBallotSectionProps {
   setDurationMinEnabled: (b: boolean) => void;
   setDurationMaxEnabled: (b: boolean) => void;
   // Per-voter conditional-attendance threshold ("only count me for a slot if at
-  // least N people total are available"). Off = no constraint.
-  voterMinParticipantsEnabled: boolean;
+  // least N people total are available"). 1 = no constraint; >= 2 applies it.
   voterMinParticipantsValue: number;
-  setVoterMinParticipantsEnabled: (b: boolean) => void;
   setVoterMinParticipantsValue: (n: number) => void;
   voterDayTimeWindows: DayTimeWindow[];
   setVoterDayTimeWindows: (v: DayTimeWindow[]) => void;
@@ -86,9 +83,7 @@ export default function TimeBallotSection({
   setDurationMaxValue,
   setDurationMinEnabled,
   setDurationMaxEnabled,
-  voterMinParticipantsEnabled,
   voterMinParticipantsValue,
-  setVoterMinParticipantsEnabled,
   setVoterMinParticipantsValue,
   voterDayTimeWindows,
   setVoterDayTimeWindows,
@@ -215,31 +210,17 @@ export default function TimeBallotSection({
               />
             </div>
 
-            {/* Per-voter conditional attendance: "only count me if enough people come". */}
+            {/* Per-voter conditional attendance: only count me toward a slot if at
+                least N people can come. 1 = no constraint (the toggle is implied by
+                the value being above 1). */}
             <div className="mb-4 rounded-2xl bg-gray-50 dark:bg-gray-800 px-4">
-              <div
-                className={`flex items-center justify-between gap-3 h-12 ${isSubmitting ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-                onClick={() => { if (!isSubmitting) setVoterMinParticipantsEnabled(!voterMinParticipantsEnabled); }}
-              >
-                <span className="text-base font-normal">Only if enough people can come</span>
-                <SliderSwitch
-                  checked={voterMinParticipantsEnabled}
-                  onChange={setVoterMinParticipantsEnabled}
-                  disabled={isSubmitting}
-                  aria-label="Only count me if a minimum number of people are available"
-                />
-              </div>
-              {voterMinParticipantsEnabled && (
-                <div className="border-t border-gray-200 dark:border-gray-700">
-                  <CompactNumberRow
-                    label="Minimum people (incl. you)"
-                    value={voterMinParticipantsValue}
-                    setValue={setVoterMinParticipantsValue}
-                    min={2}
-                    disabled={isSubmitting}
-                  />
-                </div>
-              )}
+              <CompactNumberRow
+                label="Minimum people for me to come"
+                value={voterMinParticipantsValue}
+                setValue={setVoterMinParticipantsValue}
+                min={1}
+                disabled={isSubmitting}
+              />
             </div>
 
             <AbstainLink isAbstaining={isAbstaining} onClick={handleAbstain} disabled={isSubmitting} className="mb-2" />
