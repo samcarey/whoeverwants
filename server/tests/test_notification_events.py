@@ -22,6 +22,8 @@ from tests.conftest import TEST_DB_URL, bid_headers, create_poll, creator_header
 import routers.internal
 import routers.polls
 import services.push
+from services.auth import generate_token, hash_token, normalize_email
+from services.follow_state import set_follow_state
 
 
 def _db():
@@ -913,6 +915,112 @@ def test_closed_fan_out_includes_whole_group(client, creator_secret, monkeypatch
     services.push.fan_out_poll_closed(group_id, poll["id"], {"title": "Poll closed"})
     # No actor exclusion — both members selected.
     assert {m1, m2} <= captured["ids"]
+
+
+# --------------------------------------------------------------------------
+# Gap 1: Old-set suppression on the fan-out (account-aware, cross-device)
+# --------------------------------------------------------------------------
+
+
+def _sign_in(client, browser_id, email):
+    """Sign `browser_id` into `email`'s account via magic-link verify, linking
+    the browser to the account's user_id (user_browsers)."""
+    token = generate_token()
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO magic_link_tokens (token_hash, email, browser_id, expires_at) "
+            "VALUES (%s, %s, %s, NOW() + INTERVAL '15 minutes')",
+            (hash_token(token), normalize_email(email), browser_id),
+        )
+        conn.commit()
+    resp = client.post(
+        "/api/auth/magic-link/verify",
+        json={"token": token},
+        headers=bid_headers(browser_id),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+def test_ignore_on_one_device_silences_account_push(client, creator_secret, monkeypatch):
+    """✕'ing a poll on device A files it in the viewer's Old tab; the poll-closed
+    push must then skip BOTH of that account's devices, not just A. Mirrors the
+    account-aware badge suppression."""
+    email = f"ignore-{uuid.uuid4().hex[:8]}@example.com"
+    bid_a, bid_b, other = (str(uuid.uuid4()) for _ in range(3))
+    poll = create_poll(client, creator_secret, browser_id=str(uuid.uuid4()))
+    group_id = poll["group_id"]
+    poll_id = poll["id"]
+
+    # A + B are the same account (same email); `other` is an unrelated member.
+    _sign_in(client, bid_a, email)
+    _sign_in(client, bid_b, email)
+    for bid in (bid_a, bid_b, other):
+        _insert_member_and_sub(group_id, bid)
+
+    # Sanity: before any ✕, every member is a recipient.
+    captured = _capture_recipients(monkeypatch)
+    services.push.fan_out_poll_closed(group_id, poll_id, {"title": "Poll closed"})
+    assert {bid_a, bid_b, other} <= captured["ids"]
+
+    # ✕ on device A only.
+    with _db() as conn:
+        set_follow_state(conn, poll_id, bid_a, "old")
+        conn.commit()
+
+    captured = _capture_recipients(monkeypatch)
+    services.push.fan_out_poll_closed(group_id, poll_id, {"title": "Poll closed"})
+    # Account-aware: BOTH A and B are silenced; the unrelated member still gets it.
+    assert bid_a not in captured["ids"]
+    assert bid_b not in captured["ids"]
+    assert other in captured["ids"]
+
+
+def test_refollow_on_other_device_wins_by_recency(client, creator_secret, monkeypatch):
+    """Effective state across an account is recency-based: ✕ on A then + on B
+    (later) → most-recent row is 'new' → the poll is no longer ignored, so both
+    devices are notified again. clock_timestamp() ordering makes same-test writes
+    deterministic."""
+    email = f"refollow-{uuid.uuid4().hex[:8]}@example.com"
+    bid_a, bid_b = str(uuid.uuid4()), str(uuid.uuid4())
+    poll = create_poll(client, creator_secret, browser_id=str(uuid.uuid4()))
+    group_id = poll["group_id"]
+    poll_id = poll["id"]
+
+    _sign_in(client, bid_a, email)
+    _sign_in(client, bid_b, email)
+    _insert_member_and_sub(group_id, bid_a)
+    _insert_member_and_sub(group_id, bid_b)
+
+    with _db() as conn:
+        set_follow_state(conn, poll_id, bid_a, "old")  # ✕ on A
+        set_follow_state(conn, poll_id, bid_b, "new")  # later + on B
+        conn.commit()
+
+    captured = _capture_recipients(monkeypatch)
+    services.push.fan_out_poll_closed(group_id, poll_id, {"title": "Poll closed"})
+    # Most-recent row ('new' on B) wins → not ignored → both notified.
+    assert {bid_a, bid_b} <= captured["ids"]
+
+
+def test_anonymous_ignore_stays_per_browser(client, creator_secret, monkeypatch):
+    """A member with no account (no user_browsers row) only suppresses their own
+    browser — there's no account to union across, so ✕ on one anonymous browser
+    can't silence an unrelated anonymous member."""
+    poll = create_poll(client, creator_secret, browser_id=str(uuid.uuid4()))
+    group_id = poll["group_id"]
+    poll_id = poll["id"]
+    m1, m2 = str(uuid.uuid4()), str(uuid.uuid4())
+    _insert_member_and_sub(group_id, m1)
+    _insert_member_and_sub(group_id, m2)
+
+    with _db() as conn:
+        set_follow_state(conn, poll_id, m1, "old")
+        conn.commit()
+
+    captured = _capture_recipients(monkeypatch)
+    services.push.fan_out_poll_closed(group_id, poll_id, {"title": "Poll closed"})
+    assert m1 not in captured["ids"]
+    assert m2 in captured["ids"]
 
 
 def test_compute_badge_count_nil_uuid_returns_zero():
