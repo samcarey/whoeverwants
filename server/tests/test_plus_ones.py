@@ -394,6 +394,82 @@ class TestPlusOneInviteNotMembership:
             ).fetchone()
             assert invite is not None
 
+    def test_resubmit_does_not_mint_duplicate_invite(self, client):
+        """Re-submitting (editing) the submitter's own vote with the SAME
+        plus-one account must NOT mint a second invite for that account.
+        The seeded vote written on the first submission makes the account
+        register as "responded", so `_seed_plus_one_votes` skips it on every
+        subsequent submission — bounding accumulation to ≤1 invite per
+        (poll, represented-account) without any explicit dedup. Locks the
+        invariant that retires the old "invites accumulate" follow-up."""
+        import psycopg
+        from tests.conftest import TEST_DB_URL
+
+        a_b, tok_a, a_uid, b_b, tok_b, b_uid, shared = _make_contacts(client)
+        poll = client.post(
+            "/api/polls",
+            json={
+                "creator_name": "Alice",
+                "title": "Dinner Friday?",
+                "allow_plus_ones": True,
+                "questions": [{"question_type": "yes_no", "category": "yes_no"}],
+            },
+            headers=_bearer_headers(a_b, tok_a),
+        ).json()
+        qid = poll["questions"][0]["id"]
+        poll_group_id = poll["group_id"]
+        _reconcile_contacts(client, a_b, tok_a, poll["id"])
+
+        def invite_count() -> int:
+            with psycopg.connect(TEST_DB_URL) as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM group_invites "
+                    "WHERE group_id = %s::uuid AND target_poll_id = %s::uuid",
+                    (poll_group_id, poll["id"]),
+                ).fetchone()
+            return int(row[0])
+
+        # First submission: seeds Bob's vote + mints exactly one invite.
+        client.post(
+            f"/api/polls/{poll['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "plus_one_user_ids": [b_uid],
+                "items": [{"question_id": qid, "vote_type": "yes_no", "yes_no_choice": "yes"}],
+            },
+            headers=_bearer_headers(a_b, tok_a),
+        )
+        assert _poll_results(client, poll)["yes_count"] == 2
+        assert invite_count() == 1
+
+        # Alice edits her own vote, re-sending the same plus-one account.
+        alice_votes = client.get(
+            f"/api/questions/{qid}/votes", headers=_bearer_headers(a_b, tok_a)
+        ).json()
+        alice_vote_id = alice_votes[0]["id"]
+        edit = client.post(
+            f"/api/polls/{poll['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "plus_one_user_ids": [b_uid],
+                "items": [
+                    {
+                        "question_id": qid,
+                        "vote_id": alice_vote_id,
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "no",
+                    }
+                ],
+            },
+            headers=_bearer_headers(a_b, tok_a),
+        )
+        assert edit.status_code == 201, edit.text
+        # Bob was skipped (already responded): no second invite, no re-seed.
+        assert invite_count() == 1
+        # Alice's edit flipped her own vote to no; Bob's seeded yes stands.
+        res = _poll_results(client, poll)
+        assert res["yes_count"] == 1 and res["no_count"] == 1
+
 
 class TestLimitedSupplyPlusOnesEndToEnd:
     """A limited-supply claim with plus-ones consumes one slot per person."""
