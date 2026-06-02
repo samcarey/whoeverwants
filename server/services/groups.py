@@ -209,6 +209,48 @@ def grant_group_membership_inline(
     )
 
 
+def backdate_membership_for_user(conn, group_id, user_id, joined_at) -> None:
+    """Establish (or back-date) `user_id`'s membership in `group_id`, keyed
+    on their earliest-linked browser, with `joined_at` set to when the
+    invitation was SENT (an invite-link's `created_at`, a join-request's
+    `requested_at`) rather than the accept time. Runs on the caller's
+    transaction so it commits atomically with the redeem / approve.
+
+    The closed-before-join filter hides polls that closed before
+    `joined_at`; back-dating to send-time keeps polls that closed in the
+    gap between invite-send and accept visible to the invitee.
+
+    ON CONFLICT ... LEAST can only pull an existing watermark EARLIER
+    (a re-clicked older invite, or preserving a prior plain-URL visit) —
+    never later, so it never reduces visibility. `load_user_visibility`
+    takes MIN(joined_at) across linked browsers, so writing ONE row makes
+    the user's effective join the earliest. No-op when the user has no
+    linked browser to key the row on.
+    """
+    bid_row = conn.execute(
+        """
+        SELECT browser_id FROM user_browsers
+         WHERE user_id = %(u)s::uuid
+         ORDER BY linked_at ASC
+         LIMIT 1
+        """,
+        {"u": user_id},
+    ).fetchone()
+    if not bid_row:
+        return
+    conn.execute(
+        """
+        INSERT INTO group_members (group_id, browser_id, joined_at)
+        VALUES (%(g)s::uuid, %(b)s::uuid, %(j)s)
+        ON CONFLICT (group_id, browser_id)
+            DO UPDATE SET joined_at = LEAST(
+                group_members.joined_at, EXCLUDED.joined_at
+            )
+        """,
+        {"g": str(group_id), "b": str(bid_row["browser_id"]), "j": joined_at},
+    )
+
+
 def get_group_metadata(conn, group_id: str) -> dict | None:
     """Read a group's privacy + creator_user_id in a single round-trip.
     Used by the read-side endpoints (Phase E) to decide whether to

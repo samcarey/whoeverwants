@@ -8,8 +8,10 @@ Four operations:
   * `redeem_invite(conn, token, user_id)` walks the redemption
     transaction: validates the token + use_count + expiry + revoked
     state, bumps use_count, writes a `group_members` row for the
-    requester's earliest-linked browser_id, returns the resolved
-    group_id + target poll info for the FE redirect.
+    requester's earliest-linked browser_id (with `joined_at` backdated
+    to the invite's `created_at` so the joiner sees polls that closed
+    between invite-send and redeem), returns the resolved group_id +
+    target poll info for the FE redirect.
   * `revoke_invite(conn, invite_id, by_user_id)` stamps `revoked_at`
     on a creator-owned invite. Idempotent.
 
@@ -29,6 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from services.auth import generate_token, hash_token
+from services.groups import backdate_membership_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -256,7 +259,7 @@ def redeem_invite(
            AND revoked_at IS NULL
            AND (expires_at IS NULL OR expires_at > NOW())
            AND (max_uses IS NULL OR use_count < max_uses)
-        RETURNING id, group_id, target_poll_id
+        RETURNING id, group_id, target_poll_id, created_at
         """,
         {"h": hash_token(token)},
     ).fetchone()
@@ -267,6 +270,12 @@ def redeem_invite(
     target_poll_id = (
         str(invite["target_poll_id"]) if invite.get("target_poll_id") else None
     )
+    # Backdate the joiner's membership watermark to the moment the invite
+    # was MINTED (`created_at`), not the redeem time. The closed-before-join
+    # filter (services/groups.py) hides polls that closed before joined_at;
+    # an invite is the creator sharing "the group as it stands now", so the
+    # joiner should see polls that closed between invite-send and redeem.
+    invite_created_at = invite["created_at"]
 
     # Check existing membership across every browser linked to the
     # requesting user_id. Same logic as
@@ -299,28 +308,14 @@ def redeem_invite(
             """,
             {"i": str(invite["id"])},
         )
-    else:
-        # Write membership keyed on the requester's earliest-linked
-        # browser_id — same pattern as Phase F's approve. ONE row is
-        # enough; load_user_visibility expands across user_browsers.
-        bid_row = conn.execute(
-            """
-            SELECT browser_id FROM user_browsers
-             WHERE user_id = %(u)s::uuid
-             ORDER BY linked_at ASC
-             LIMIT 1
-            """,
-            {"u": user_id},
-        ).fetchone()
-        if bid_row:
-            conn.execute(
-                """
-                INSERT INTO group_members (group_id, browser_id)
-                VALUES (%(g)s::uuid, %(b)s::uuid)
-                ON CONFLICT (group_id, browser_id) DO NOTHING
-                """,
-                {"g": group_id, "b": str(bid_row["browser_id"])},
-            )
+
+    # Write (or backdate) membership keyed on the requester's
+    # earliest-linked browser_id. Runs even for an already-member: the
+    # LEAST-upsert can only pull the watermark earlier, never later (see
+    # backdate_membership_for_user).
+    backdate_membership_for_user(
+        conn, group_id, user_id, invite_created_at
+    )
 
     # Resolve short_ids in one round-trip so the FE can build the
     # redirect URL without a follow-up call.

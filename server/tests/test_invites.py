@@ -510,6 +510,80 @@ def test_redeem_already_member_is_noop_no_use_count_bump(
     assert items[0]["use_count"] == 1
 
 
+def test_redeem_backdates_joined_at_to_invite_creation(
+    client, creator_browser, joiner_browser
+):
+    """A poll that closed AFTER the invite was minted but BEFORE the
+    joiner redeemed must remain visible to the joiner. `joined_at` is
+    backdated to the invite's `created_at`, not the redeem time, so the
+    closed-before-join filter doesn't hide polls that closed in the gap.
+    """
+    ctoken, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+
+    create = client.post(
+        f"/api/groups/{group['id']}/invites",
+        json={"mode": "multi"},
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    invite = create.json()
+    raw_token = invite["token"]
+
+    # A poll created in the group, then closed.
+    poll_resp = client.post(
+        "/api/polls",
+        json={
+            "creator_name": "Creator",
+            "group_id": group["id"],
+            "questions": [{"question_type": "yes_no", "category": "yes_no"}],
+        },
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert poll_resp.status_code == 201, poll_resp.text
+    poll = poll_resp.json()
+    close = client.post(
+        f"/api/polls/{poll['id']}/close",
+        json={"close_reason": "manual"},
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert close.status_code == 200, close.text
+
+    # Pin the timeline deterministically: invite minted 2h ago, poll
+    # closed 1h ago, redeem "now". Without the backdate joined_at would
+    # be "now" and the poll (closed_at = now - 1h) would fall outside the
+    # closed-before-join window.
+    with psycopg.connect(TEST_DB_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE group_invites SET created_at = NOW() - INTERVAL "
+                "'2 hours' WHERE id = %s",
+                (invite["id"],),
+            )
+            cur.execute(
+                "UPDATE polls SET updated_at = NOW() - INTERVAL '1 hour' "
+                "WHERE id = %s",
+                (poll["id"],),
+            )
+        conn.commit()
+
+    jtoken, _ = _sign_in(client, joiner_browser)
+    redeem = client.post(
+        f"/api/auth/invites/{raw_token}/redeem",
+        headers=_bearer_headers(joiner_browser, jtoken),
+    )
+    assert redeem.status_code == 200, redeem.text
+
+    listed = client.get(
+        f"/api/groups/by-route-id/{group['id']}",
+        headers=_bearer_headers(joiner_browser, jtoken),
+    )
+    assert listed.status_code == 200, listed.text
+    ids = [p["id"] for p in listed.json()]
+    assert poll["id"] in ids, (
+        "poll closed between invite-send and redeem must be visible"
+    )
+
+
 def test_redeem_returns_target_poll_short_id(
     client, creator_browser, joiner_browser
 ):
