@@ -341,6 +341,13 @@ def compute_badge_count(
     bids = _caller_browser_ids(conn, browser_id, user_id)
     if not bids:
         return 0
+    # Gap 1: polls the caller has ✕'d ('old') are silenced everywhere — they
+    # contribute to neither the to-do nor the unread badge. `bids` is already
+    # the account union, so this suppression is account-aware (ignore on one
+    # device clears the badge on the others).
+    from services.follow_state import old_poll_ids_for_browsers
+
+    old = list(old_poll_ids_for_browsers(conn, bids))
     if todo_mode:
         row = conn.execute(
             """
@@ -349,6 +356,7 @@ def compute_badge_count(
                 FROM group_members gm
                 JOIN polls p ON p.group_id = gm.group_id
                WHERE gm.browser_id = ANY(%(bids)s::uuid[])
+                 AND p.id <> ALL(%(old)s::uuid[])
                  AND p.is_closed = false
                  AND (p.response_deadline IS NULL OR p.response_deadline > NOW())
                  AND (p.prephase_deadline IS NULL OR p.prephase_deadline <= NOW())
@@ -359,7 +367,7 @@ def compute_badge_count(
                  )
             ) t
             """,
-            {"bids": bids},
+            {"bids": bids, "old": old},
         ).fetchone()
         return int(row["c"] or 0)
     row = conn.execute(
@@ -374,6 +382,7 @@ def compute_badge_count(
                WHERE pv.poll_id = p.id AND pv.browser_id = ANY(%(bids)s::uuid[])
             ) seen ON TRUE
            WHERE gm.browser_id = ANY(%(bids)s::uuid[])
+             AND p.id <> ALL(%(old)s::uuid[])
              AND (
                (seen.last_viewed_at IS NULL OR seen.last_viewed_at < p.created_at)
                OR (%(voting)s AND p.prephase_deadline IS NOT NULL
@@ -384,7 +393,7 @@ def compute_badge_count(
              )
         ) t
         """,
-        {"bids": bids, "voting": on_voting_open, "results": on_results},
+        {"bids": bids, "voting": on_voting_open, "results": on_results, "old": old},
     ).fetchone()
     return int(row["c"] or 0)
 
@@ -480,6 +489,19 @@ _PREF_JOIN = """
                   ON bpref.browser_id = gm.browser_id AND bpref.group_id = gm.group_id
 """
 _PREF_ON_TRUE = "COALESCE(apref.notify_new_poll, bpref.notify_new_poll, TRUE) = TRUE"
+
+# Gap 1: skip members who ✕'d THIS poll (filed it in their Old tab) — "ignore"
+# silences poll-closed + phase-transition pushes. Expects the recipient query to
+# alias the member row `gm` and bind %(pid)s to the poll_id. Suppression is
+# per-browser (one poll_follow_state row per (poll, browser)); the cross-device
+# account-union refinement (✕ on device A also silencing device B) is a
+# follow-up — the badge path is already account-aware via old_poll_ids_for_browsers.
+_NOT_IGNORED = """
+                gm.browser_id NOT IN (
+                  SELECT pfs.browser_id FROM poll_follow_state pfs
+                   WHERE pfs.poll_id = %(pid)s::uuid AND pfs.state = 'old'
+                )
+"""
 
 
 def fan_out_new_poll(group_id: str, creator_browser_id: str | None, payload: dict) -> None:
@@ -635,8 +657,9 @@ def fan_out_poll_closed(group_id: str, poll_id: str, payload: dict) -> None:
                 {_PREF_JOIN}
                 WHERE gm.group_id = %(gid)s
                   AND {_PREF_ON_TRUE}
+                  AND {_NOT_IGNORED}
                 """,
-                {"gid": group_id},
+                {"gid": group_id, "pid": poll_id},
             ).fetchall()
             browser_ids = [r["browser_id"] for r in recipients]
             if not browser_ids:
@@ -693,6 +716,7 @@ def fan_out_phase_transition(
                 {_PREF_JOIN}
                 WHERE gm.group_id = %(gid)s
                   AND {_PREF_ON_TRUE}
+                  AND {_NOT_IGNORED}
                   AND NOT (
                     %(prevoting_on)s
                     AND EXISTS (

@@ -5,6 +5,7 @@ import {
   getCachedPollById,
   getCachedPollByShortId,
   invalidatePoll,
+  updateAccessiblePollsIfFresh,
 } from "@/lib/questionCache";
 import { pollFetch, coalesced, toPoll } from "./_internal";
 import { setStoredVoteId, setVotedQuestionFlag } from "@/lib/votedQuestionsStorage";
@@ -135,6 +136,34 @@ export async function apiRecordPollView(pollId: string): Promise<void> {
   } catch {
     // ignore — the next view (or a vote) re-records the watermark
   }
+}
+
+/** Gap 1: set the caller's per-poll follow/ignore state. `'old'` (the ✕) files
+ *  the poll in the viewer's Old tab + silences its badge/push; `'new'` (the +)
+ *  re-follows it. Per-viewer + reversible; NOT a creator action and orthogonal
+ *  to group membership. Throws on failure so the caller can revert its
+ *  optimistic update. Patches the cached Poll's `viewer_follow_state` (per-poll
+ *  + accessible-polls caches) so home + a back-nav reflect the change without a
+ *  round-trip. */
+export async function apiSetPollFollowState(
+  pollId: string,
+  state: "new" | "old",
+): Promise<void> {
+  await pollFetch(`/${encodeURIComponent(pollId)}/follow-state`, {
+    method: "POST",
+    body: JSON.stringify({ state }),
+  });
+  const cached = getCachedPollById(pollId);
+  if (cached && cached.viewer_follow_state !== state) {
+    cachePoll({ ...cached, viewer_follow_state: state });
+  }
+  updateAccessiblePollsIfFresh((polls) =>
+    polls.map((p) =>
+      p.id === pollId && p.viewer_follow_state !== state
+        ? { ...p, viewer_follow_state: state }
+        : p,
+    ),
+  );
 }
 
 // Poll-level operations: close/reopen/cutoff the wrapper + every question

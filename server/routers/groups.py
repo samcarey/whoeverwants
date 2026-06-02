@@ -273,7 +273,7 @@ def get_my_groups(
         background_tasks.add_task(reconcile_contacts_safe, viewer_user_id)
         return polls_for_poll_ids(
             conn, visible_pids, include_results=req.include_results,
-            viewer_user_id=viewer_user_id,
+            viewer_user_id=viewer_user_id, viewer_browser_id=browser_id,
         )
 
 
@@ -459,7 +459,7 @@ def get_group_by_route_id(
         )
         return polls_for_poll_ids(
             conn, visible_pids, include_results=include_results,
-            viewer_user_id=viewer_user_id,
+            viewer_user_id=viewer_user_id, viewer_browser_id=browser_id,
         )
 
 

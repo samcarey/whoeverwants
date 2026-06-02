@@ -23,6 +23,7 @@ from models import (
     CutoffSuggestionsRequest,
     EditVoteRequest,
     PollResponse,
+    SetFollowStateRequest,
     PollVoteItem,
     PlusOneCandidateResponse,
     QuestionType,
@@ -39,7 +40,7 @@ from services.contacts import (
     user_responded_to_poll,
 )
 from services.invites import issue_invite
-from services.groups import _is_uuid_like, group_name_phrase, require_uuid
+from services.groups import NIL_UUID, _is_uuid_like, group_name_phrase, require_uuid
 from services.memberships import join_group, join_group_for_poll
 from services.poll_categories import record_poll_categories
 from services.push import (
@@ -1819,5 +1820,34 @@ def record_poll_viewed(poll_id: str, request: Request):
     now = datetime.now(timezone.utc)
     with get_db() as conn:
         _record_poll_view(conn, _browser_id(request), poll_id, now)
+
+
+@router.post("/{poll_id}/follow-state", status_code=204)
+def set_poll_follow_state(
+    poll_id: str, req: SetFollowStateRequest, request: Request
+):
+    """Set the calling browser's follow/ignore state for a poll (Gap 1).
+    `state='old'` (the ✕) FILES the poll in the viewer's Old tab + silences
+    its badge/push notifications; `state='new'` (the +) re-follows it.
+
+    Per-viewer + reversible; NOT a creator action and orthogonal to group
+    membership (✕ ≠ leaving the group). Requires a browser identity (400 when
+    absent) and a valid poll_id (404). 400 on an unknown state value."""
+    require_uuid(poll_id, "poll_id")
+    from services.follow_state import VALID_STATES, set_follow_state
+
+    if req.state not in VALID_STATES:
+        raise HTTPException(status_code=400, detail="Invalid follow state")
+    browser_id = _browser_id(request)
+    if not browser_id or browser_id == NIL_UUID:
+        raise HTTPException(status_code=400, detail="Browser identity required")
+    with get_db() as conn:
+        # Guard against an unknown poll_id 500ing on the FK violation.
+        exists = conn.execute(
+            "SELECT 1 FROM polls WHERE id = %(id)s::uuid", {"id": poll_id}
+        ).fetchone()
+        if not exists:
+            raise HTTPException(status_code=404, detail="Poll not found")
+        set_follow_state(conn, poll_id, browser_id, req.state)
 
 

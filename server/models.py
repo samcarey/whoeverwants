@@ -395,6 +395,12 @@ class CreatePollRequest(BaseModel):
     questions: list[CreateQuestionRequest] = Field(..., min_length=1)
 
 
+class SetFollowStateRequest(BaseModel):
+    # Gap 1: 'old' = ✕ (ignore this poll), 'new' = + (re-follow). Validated
+    # against follow_state.VALID_STATES server-side (400 on anything else).
+    state: str
+
+
 class PollResponse(BaseModel):
     id: str
     short_id: str | None = None
@@ -412,6 +418,14 @@ class PollResponse(BaseModel):
     # viewer doesn't know its own user_id. Defaults False; set by
     # `_row_to_poll` when a `viewer_user_id` is threaded in.
     viewer_is_creator: bool = False
+    # Gap 1 (migration 134): the caller's per-poll follow/ignore state.
+    # 'new' = followed (default, shows in the New tab; To Do if it needs the
+    # viewer's input); 'old' = the viewer ✕'d it (filed in the Old tab, and
+    # suppressed from badge + push notifications). Account-aware: the
+    # most-recently-updated row across every browser linked to the caller's
+    # account wins. Defaults 'new' (no row = default-follow); set by
+    # `polls_for_poll_ids` when a `viewer_browser_id` is threaded in.
+    viewer_follow_state: str = "new"
     response_deadline: str | None = None
     prephase_deadline: str | None = None
     prephase_deadline_minutes: int | None = None
