@@ -270,6 +270,50 @@ def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
         )
 
 
+def _maybe_close_cancelled_event_poll(
+    conn, poll_id: str, now: datetime, *, notified: bool = False
+) -> bool:
+    """Auto-close a poll whose ENTIRE content is a cancelled time event.
+
+    A time question is marked `time_event_cancelled` ("event's off") by
+    `_finalize_time_slots` when availability was collected but no slot met the
+    Minimum Participants gate. There's nothing left to vote on, and the
+    "event's off" result banner is closed-gated (`TimeResults`), so the poll
+    should close so that banner surfaces.
+
+    Scope is deliberately conservative: the poll closes ONLY when every question
+    is a `time` question AND every one is cancelled. A multi-question poll that
+    still has any non-time question (always votable) or any uncancelled time
+    question keeps that votable work open. The most common case — a
+    single-question time poll — is covered.
+
+    Idempotent (no-op when already closed) and returns whether it closed the
+    poll so callers can route the close notification instead of a "voting is
+    open" transition push. Pass `notified=True` to also set `close_notified`
+    when the caller fires the close push inline (the inline cutoff path); the
+    cron tick leaves it False so the next pass claims + sends the close push.
+    """
+    rows = conn.execute(
+        "SELECT question_type, time_event_cancelled FROM questions WHERE poll_id = %(pid)s",
+        {"pid": poll_id},
+    ).fetchall()
+    if not rows:
+        return False
+    if not all(
+        r["question_type"] == "time" and r["time_event_cancelled"] for r in rows
+    ):
+        return False
+    closed = conn.execute(
+        """UPDATE polls
+           SET is_closed = true, close_reason = 'cancelled',
+               close_notified = %(notified)s, updated_at = %(now)s
+           WHERE id = %(pid)s AND is_closed = false
+           RETURNING id""",
+        {"pid": poll_id, "now": now, "notified": notified},
+    ).fetchone()
+    return closed is not None
+
+
 def _row_to_question(row: dict) -> QuestionResponse:
     """Convert a database row to a QuestionResponse.
 

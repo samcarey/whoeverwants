@@ -16,7 +16,10 @@ over" lazily on read. The tick:
   3. Claims every poll whose prephase has ended but isn't `prephase_notified`,
      finalizes its options, and fires a phase-transition push. Catches both
      deadline-driven transitions and explicit cutoffs (the cutoff endpoints
-     set `prephase_deadline = now`, which this query matches).
+     set `prephase_deadline = now`, which this query matches). A poll whose
+     entire content turns out to be a cancelled time event ("event's off") is
+     auto-closed here instead of getting a "voting is open" push; its close
+     push then fires next tick via step 2.
 
 Each claim is an atomic `UPDATE ... RETURNING` so two overlapping ticks (or
 the inline endpoint racing the tick) can't double-send. Push dispatch runs
@@ -44,7 +47,11 @@ from routers.polls import (
     _build_transition_notification,
 )
 from services.push import fan_out_phase_transition, fan_out_poll_closed
-from services.questions import _finalize_suggestion_options, _finalize_time_slots
+from services.questions import (
+    _finalize_suggestion_options,
+    _finalize_time_slots,
+    _maybe_close_cancelled_event_poll,
+)
 
 log = logging.getLogger("internal")
 
@@ -122,8 +129,15 @@ def tick(request: Request):
         ).fetchall()
         transitioned_ids = [r["id"] for r in transitioned]
 
+        # Finalize each transitioned poll's options, then auto-close any whose
+        # entire content is a cancelled time event ("event's off"). A cancelled
+        # poll must NOT get a "voting is open" push — skip it below; its close
+        # push fires next tick (step 2 claims it via close_notified = false).
+        cancelled_ids: set[str] = set()
         for pid in transitioned_ids:
             _finalize_poll_questions(conn, pid, now)
+            if _maybe_close_cancelled_event_poll(conn, pid, now):
+                cancelled_ids.add(pid)
 
     # Dispatch outside the claim transaction. Each fan-out opens its own
     # connection and swallows errors, so one bad poll can't abort the batch.
@@ -135,6 +149,8 @@ def tick(request: Request):
             fan_out_poll_closed(group_id, pid, payload)
 
     for pid in transitioned_ids:
+        if pid in cancelled_ids:
+            continue  # event's off → close push fires next tick, not a transition push
         with get_db() as conn:
             built = _build_transition_notification(conn, pid)
         if built:
@@ -147,4 +163,8 @@ def tick(request: Request):
                 latest_contribution=latest,
             )
 
-    return {"closed": len(closed_ids), "transitioned": len(transitioned_ids)}
+    return {
+        "closed": len(closed_ids),
+        "transitioned": len(transitioned_ids),
+        "cancelled": len(cancelled_ids),
+    }

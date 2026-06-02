@@ -55,6 +55,7 @@ from services.questions import (
     _finalize_suggestion_options,
     _finalize_time_slots,
     _json_or_none,
+    _maybe_close_cancelled_event_poll,
     _row_to_question,
     _row_to_vote,
     _submit_vote_to_question,
@@ -1780,12 +1781,22 @@ def cutoff_poll_availability(
         for row in time_questions:
             _finalize_time_slots(conn, str(row["id"]), now)
 
-        _schedule_transition_notification(
-            conn,
-            poll_id,
-            already_notified=bool(wrapper.get("prephase_notified")),
-            background_tasks=background_tasks,
-        )
+        # If the whole poll is now a cancelled time event ("event's off"),
+        # auto-close it + fire the close push instead of "voting is open".
+        if _maybe_close_cancelled_event_poll(conn, poll_id, now, notified=True):
+            _schedule_close_notification(
+                conn,
+                poll_id,
+                already_notified=False,
+                background_tasks=background_tasks,
+            )
+        else:
+            _schedule_transition_notification(
+                conn,
+                poll_id,
+                already_notified=bool(wrapper.get("prephase_notified")),
+                background_tasks=background_tasks,
+            )
 
         poll_row = conn.execute(
             f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
