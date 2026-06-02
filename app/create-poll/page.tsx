@@ -198,6 +198,7 @@ export function CreateQuestionContent() {
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
   const [minParticipants, setMinParticipants] = useState<number>(2);
   const [supplyCount, setSupplyCount] = useState<number>(1);
+  const [revealClaimantNames, setRevealClaimantNames] = useState<boolean>(true);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -530,6 +531,7 @@ export function CreateQuestionContent() {
         durationMaxEnabled,
         dayTimeWindows,
         supplyCount,
+        revealClaimantNames,
         minResponses,
         showPreliminaryResults,
         allowPreRanking,
@@ -539,7 +541,7 @@ export function CreateQuestionContent() {
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, minResponses, showPreliminaryResults, allowPreRanking, collectSuggestions, collectAvailability, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, collectSuggestions, collectAvailability, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -585,6 +587,7 @@ export function CreateQuestionContent() {
           if (formState.durationMaxEnabled !== undefined) setDurationMaxEnabled(formState.durationMaxEnabled);
           if (formState.dayTimeWindows !== undefined) setDayTimeWindows(formState.dayTimeWindows);
           if (formState.supplyCount !== undefined) setSupplyCount(formState.supplyCount);
+          if (formState.revealClaimantNames !== undefined) setRevealClaimantNames(formState.revealClaimantNames);
           if (formState.minResponses !== undefined) setMinResponses(formState.minResponses);
           if (formState.showPreliminaryResults !== undefined) setShowPreliminaryResults(formState.showPreliminaryResults);
           if (formState.allowPreRanking !== undefined) setAllowPreRanking(formState.allowPreRanking);
@@ -821,9 +824,10 @@ export function CreateQuestionContent() {
     dayTimeWindows: [...dayTimeWindows],
     minParticipants,
     supplyCount,
+    revealClaimantNames,
     collectSuggestions,
     collectAvailability,
-  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, supplyCount, collectSuggestions, collectAvailability]);
+  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, supplyCount, revealClaimantNames, collectSuggestions, collectAvailability]);
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
@@ -846,6 +850,7 @@ export function CreateQuestionContent() {
     setDayTimeWindows([...d.dayTimeWindows]);
     setMinParticipants(d.minParticipants);
     setSupplyCount(d.supplyCount ?? 1);
+    setRevealClaimantNames(d.revealClaimantNames ?? true);
     // Default ON for drafts persisted before these fields existed.
     setCollectSuggestions(d.collectSuggestions ?? true);
     setCollectAvailability(d.collectAvailability ?? true);
@@ -2122,6 +2127,22 @@ export function CreateQuestionContent() {
                           setValue={setSupplyCount}
                           disabled={isLoading}
                         />
+                      )}
+                      {category === 'limited_supply' && (
+                        <div
+                          className={`flex items-center justify-between gap-3 h-12 ${isLoading ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                          onClick={() => { if (!isLoading) setRevealClaimantNames(!revealClaimantNames); }}
+                        >
+                          <span className="text-base font-normal">
+                            Show who claimed
+                          </span>
+                          <SliderSwitch
+                            checked={revealClaimantNames}
+                            onChange={setRevealClaimantNames}
+                            disabled={isLoading}
+                            aria-label="Show who claimed to everyone"
+                          />
+                        </div>
                       )}
                     </div>
                   )}

@@ -53,62 +53,12 @@ export default function QuestionResultsDisplay({ results, isQuestionClosed, user
     return <TimeResults results={results} isQuestionClosed={isQuestionClosed} />;
   }
 
-  if (results.question_type === 'limited_supply') {
-    return <LimitedSupplyResults results={results} isQuestionClosed={isQuestionClosed} />;
-  }
+  // limited_supply has no QuestionResultsDisplay branch: the group card uses
+  // CompactSupplyPreview (counts only) and the detail-page ballot renders the
+  // roster itself (LimitedSupplyBallot), so this dispatcher is never called
+  // for it.
 
   return null;
-}
-
-/** Full results view for a limited-supply question: a "N of M claimed"
- *  headline + the ordered signup roster (secured first, then waitlist). */
-function LimitedSupplyResults({ results, isQuestionClosed }: { results: QuestionResults; isQuestionClosed?: boolean }) {
-  const supply = results.supply_count ?? 0;
-  const claims = results.claims ?? [];
-  const secured = claims.filter((c) => c.secured);
-  const waitlist = claims.filter((c) => !c.secured);
-  const spotsLeft = Math.max(supply - secured.length, 0);
-
-  const headline = isQuestionClosed
-    ? `${secured.length} of ${supply} spot${supply === 1 ? "" : "s"} claimed`
-    : spotsLeft > 0
-      ? `${spotsLeft} spot${spotsLeft === 1 ? "" : "s"} left`
-      : `Full · ${waitlist.length} waitlisted`;
-
-  return (
-    <div className="text-sm">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-base">🎟️</span>
-        <span className="font-semibold text-gray-800 dark:text-gray-100">{headline}</span>
-        <span className="text-gray-400 dark:text-gray-500">
-          {secured.length}/{supply}
-        </span>
-      </div>
-      {claims.length === 0 ? (
-        <p className="text-gray-500 dark:text-gray-400">No one has claimed a spot yet.</p>
-      ) : (
-        <ul className="space-y-1">
-          {secured.map((c) => (
-            <li key={`s-${c.position}`} className="flex items-center gap-2">
-              <span className="text-green-600 dark:text-green-400">✓</span>
-              <span className="text-gray-800 dark:text-gray-100 truncate">{c.name || "Someone"}</span>
-            </li>
-          ))}
-          {waitlist.length > 0 && (
-            <li className="pt-1 text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
-              Waitlist
-            </li>
-          )}
-          {waitlist.map((c, i) => (
-            <li key={`w-${c.position}`} className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-              <span className="tabular-nums">{i + 1}.</span>
-              <span className="truncate">{c.name || "Someone"}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick, hideLoser = false, userVoteChoice, onVoteChange, isStagedChoice }: { results: QuestionResults, isQuestionClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean, userVoteChoice?: 'yes' | 'no' | 'abstain' | null, onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void, isStagedChoice?: boolean }) {

@@ -33,6 +33,8 @@ export interface CreateQuestionParams {
   min_participants?: number;
   /** Number of available slots for a limited_supply question (>= 1). */
   supply_count?: number | null;
+  /** limited_supply: when false, only the creator sees claimant names. */
+  reveal_claimant_names?: boolean;
   day_time_windows?: any[] | null;
   duration_window?: any | null;
   reference_latitude?: number | null;

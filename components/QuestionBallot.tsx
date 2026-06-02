@@ -1174,6 +1174,17 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   // auto-submit immediately (no Submit button — claiming a scarce slot should
   // be one tap). For a change after voting, enter edit mode so submitVote
   // treats it as an update of the existing row.
+  //
+  // TODO (name gate): a nameless user tapping Claim hits the server's
+  // "name is required" 400 (surfaced as voteError) instead of the friendly
+  // AccountGateModal. The gate is wired for the wrapper-Submit path, which
+  // limited_supply bypasses by self-submitting. Surface the gate here before
+  // firing submitVote (resolve getUserName(); if invalid, open the gate and
+  // replay the claim on save — mirror PollDetailPage's gateOnName thunk).
+  // TODO (per-person limit): today one slot per person (one claim per
+  // browser/account). A "claim N spots" variant would need a per-claim
+  // quantity column + the algorithm to consume N slots per claim and the
+  // ballot to offer a quantity stepper.
   const handleSupplyClaim = () => {
     if (isSubmitting || isQuestionClosed) return;
     setIsAbstaining(false);

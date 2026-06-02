@@ -56,16 +56,20 @@ export default function LimitedSupplyBallot({
 
   const securedClaims = claims.filter((c) => c.secured);
   const waitlistClaims = claims.filter((c) => !c.secured);
+  // When the creator hid names, the server strips them (null) for everyone
+  // else; the viewer still sees their OWN row labelled "You".
+  const namesHidden = !!results?.names_hidden;
+  const labelFor = (c: (typeof claims)[number], fallback: string) =>
+    c === ownClaim ? "You" : c.name || fallback;
 
-  // The signup roster — who's in, who's waiting. Shown to everyone (it's a
-  // public signup sheet). The viewer's own row is bolded.
+  // The signup roster — who's in, who's waiting. The viewer's own row is bolded.
   const roster = claims.length > 0 && (
     <ul className="mt-3 space-y-1 border-t border-gray-200 dark:border-gray-700 pt-2">
       {securedClaims.map((c) => (
         <li key={`s-${c.position}`} className="flex items-center gap-2">
           <span className="text-green-600 dark:text-green-400">✓</span>
           <span className={`truncate ${c === ownClaim ? "font-semibold text-gray-900 dark:text-gray-50" : "text-gray-700 dark:text-gray-200"}`}>
-            {c.name || "Someone"}
+            {labelFor(c, "Spot taken")}
           </span>
         </li>
       ))}
@@ -76,10 +80,15 @@ export default function LimitedSupplyBallot({
         <li key={`w-${c.position}`} className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
           <span className="tabular-nums">{i + 1}.</span>
           <span className={`truncate ${c === ownClaim ? "font-semibold text-gray-800 dark:text-gray-100" : ""}`}>
-            {c.name || "Someone"}
+            {labelFor(c, "Waiting")}
           </span>
         </li>
       ))}
+      {namesHidden && (
+        <li className="pt-1 text-xs italic text-gray-400 dark:text-gray-500">
+          Names are only visible to the organizer.
+        </li>
+      )}
     </ul>
   );
 

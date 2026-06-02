@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from models import PollResponse
-from services.questions import _compute_results
+from services.questions import _compute_results, should_reveal_claimant_names
 
 logger = logging.getLogger(__name__)
 
@@ -534,6 +534,14 @@ def polls_for_poll_ids(
                     enriched["close_reason"] = mp_row.get("close_reason")
                     enriched["is_closed"] = mp_row.get("is_closed", False)
                     enriched["suggestion_deadline"] = mp_row.get("prephase_deadline")
+                    # Limited-supply name visibility: creator always sees names;
+                    # others only when the reveal toggle is on. Strip in the warm
+                    # cache too so the group-read response can't leak names.
+                    reveal_names = should_reveal_claimant_names(
+                        reveal_flag=sp_row.get("reveal_claimant_names", True),
+                        viewer_user_id=viewer_user_id,
+                        creator_user_id=mp_row.get("creator_user_id"),
+                    )
                     try:
                         # Skip tentative time-slot generation: this path serves the
                         # /api/groups/mine + /by-route-id/{id} hot loop (5s page
@@ -543,6 +551,7 @@ def polls_for_poll_ids(
                             enriched,
                             votes_by_question[pid],
                             include_tentative_time_options=False,
+                            reveal_names=reveal_names,
                         )
                     except Exception:
                         logger.warning(

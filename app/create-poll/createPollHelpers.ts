@@ -47,6 +47,9 @@ export interface QuestionDraft {
   /** Number of available slots for a limited_supply question (>= 1). Maps to
    *  supply_count. Ignored for every other type. */
   supplyCount: number;
+  /** limited_supply: show claimant names to everyone (true, default) or only
+   *  to the creator (false). Maps to reveal_claimant_names. */
+  revealClaimantNames: boolean;
   /** "Collect Suggestions before Vote" — only meaningful for ranked_choice
    *  questions. ON → suggestion poll (any typed options become the creator's
    *  initial suggestions). OFF → fixed-options ranked_choice (options
@@ -100,6 +103,7 @@ export function emptyDraft(
       : [],
     minParticipants: 2,
     supplyCount: 1,
+    revealClaimantNames: true,
     collectSuggestions: opts.collectSuggestions ?? true,
     collectAvailability: opts.collectAvailability ?? true,
   };
@@ -123,6 +127,11 @@ export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice
 export function effectiveCategoryIcon(d: QuestionDraft): string | null {
   const icon = d.categoryIcon.trim();
   return icon && !getBuiltInType(d.category) ? icon : null;
+}
+
+/** Clamp a limited_supply slot count to a whole number >= 1. */
+export function normalizeSupplyCount(count: number): number {
+  return Math.max(Math.round(count) || 1, 1);
 }
 
 /** True when a draft is a "suggestion poll" — a ranked_choice question with
@@ -215,7 +224,8 @@ export function draftToQuestionParams(
     params.context = contextValue;
   }
   if (dbType === 'limited_supply') {
-    params.supply_count = Math.max(Math.round(d.supplyCount) || 1, 1);
+    params.supply_count = normalizeSupplyCount(d.supplyCount);
+    params.reveal_claimant_names = d.revealClaimantNames;
   }
   if (dbType === 'ranked_choice' && d.category !== 'custom') {
     params.category = d.category;
@@ -384,7 +394,8 @@ export function synthesizePlaceholderPoll(
       updated_at: now,
       category: dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : null,
       category_icon: effectiveCategoryIcon(d),
-      supply_count: dbType === 'limited_supply' ? Math.max(Math.round(d.supplyCount) || 1, 1) : null,
+      supply_count: dbType === 'limited_supply' ? normalizeSupplyCount(d.supplyCount) : null,
+      reveal_claimant_names: dbType === 'limited_supply' ? d.revealClaimantNames : null,
       is_auto_title: d.isAutoTitle,
       poll_id: pollId,
       question_index: i,
@@ -432,7 +443,7 @@ export function summarizeDraft(d: QuestionDraft): string {
     return d.title.trim() || 'Yes / No';
   }
   if (dbType === 'limited_supply') {
-    const n = Math.max(Math.round(d.supplyCount) || 1, 1);
+    const n = normalizeSupplyCount(d.supplyCount);
     const item = d.title.trim();
     return item ? `${n} × ${item}` : `${n} spot${n === 1 ? '' : 's'}`;
   }

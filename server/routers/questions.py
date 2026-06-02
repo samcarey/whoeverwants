@@ -33,6 +33,7 @@ from services.questions import (
     _finalize_time_slots,
     _row_to_question,
     _row_to_vote,
+    should_reveal_claimant_names,
 )
 from services.groups import polls_for_poll_ids, require_uuid
 
@@ -184,7 +185,7 @@ def get_votes(question_id: str, request: Request):
 
 
 @router.get("/{question_id}/results", response_model=QuestionResultsResponse)
-def get_results(question_id: str):
+def get_results(question_id: str, request: Request):
     """Compute and return question results."""
     require_uuid(question_id, "question_id")
     now = datetime.now(timezone.utc)
@@ -220,7 +221,22 @@ def get_results(question_id: str):
             {"question_id": question_id},
         ).fetchall()
 
-    return _compute_results(question, votes)
+        # Limited-supply name visibility: the creator always sees names; other
+        # viewers see them only when the reveal toggle is on. Resolve the viewer
+        # (a DB lookup) ONLY when the toggle is off — skip it on the common path.
+        reveal_names = True
+        reveal_flag = question.get("reveal_claimant_names", True)
+        if question.get("question_type") == "limited_supply" and not reveal_flag:
+            viewer_user_id = resolve_actor_user_id(
+                conn, user_id=_user_id(request), browser_id=_browser_id(request)
+            )
+            reveal_names = should_reveal_claimant_names(
+                reveal_flag=reveal_flag,
+                viewer_user_id=viewer_user_id,
+                creator_user_id=question.get("poll_creator_user_id"),
+            )
+
+    return _compute_results(question, votes, reveal_names=reveal_names)
 
 
 # --- Question management ---

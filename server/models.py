@@ -181,6 +181,7 @@ class QuestionResponse(BaseModel):
     time_min_participants: int | None = None
     # Number of available slots for a limited_supply question. NULL otherwise.
     supply_count: int | None = None
+    reveal_claimant_names: bool = True
     # Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
     # every non-participation question; migration 094 dropped the participation
     # question type entirely, so this is effectively NOT NULL on every row.
@@ -258,6 +259,9 @@ class QuestionResultsResponse(BaseModel):
     secured_count: int | None = None
     waitlist_count: int | None = None
     claims: list["SupplyClaimResponse"] | None = None
+    # True when claimant names were stripped for this viewer (reveal toggle
+    # off + viewer isn't the creator). Lets the FE render an anonymized roster.
+    names_hidden: bool = False
 
 
 class SupplyClaimResponse(BaseModel):
@@ -312,6 +316,9 @@ class CreateQuestionRequest(BaseModel):
     min_participants: int = 2
     # Number of available slots for a limited_supply question (>= 1).
     supply_count: int | None = None
+    # limited_supply: when False, only the creator sees claimant names; other
+    # viewers get an anonymized roster. Default True (names visible to all).
+    reveal_claimant_names: bool = True
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None
     reference_latitude: float | None = None

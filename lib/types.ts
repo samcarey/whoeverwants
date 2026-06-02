@@ -55,6 +55,8 @@ export interface Question {
   time_min_participants?: number | null;
   // Number of available slots for a limited_supply question. Null otherwise.
   supply_count?: number | null;
+  // limited_supply: when false, only the creator sees claimant names.
+  reveal_claimant_names?: boolean | null;
   // Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
   // every existing question, so this is effectively NOT NULL on every row.
   poll_id?: string | null;
@@ -138,6 +140,9 @@ export interface QuestionResults {
   secured_count?: number;
   waitlist_count?: number;
   claims?: SupplyClaim[];
+  // True when claimant names were stripped for this viewer (reveal toggle off
+  // + viewer isn't the creator) — the FE renders an anonymized roster.
+  names_hidden?: boolean;
   // {option_name: borda_score} across all non-abstain ballots. Used by the
   // result gloss (lib/rankedChoiceGloss.ts) to spot a broadly-acceptable
   // option that IRV eliminated early.

@@ -343,6 +343,7 @@ def _insert_question(
             min_availability_percent,
             time_min_participants,
             supply_count,
+            reveal_claimant_names,
             is_auto_title,
             poll_id, question_index,
             created_at, updated_at
@@ -358,6 +359,7 @@ def _insert_question(
             %(min_availability_percent)s,
             %(time_min_participants)s,
             %(supply_count)s,
+            %(reveal_claimant_names)s,
             %(is_auto_title)s,
             %(poll_id)s, %(question_index)s,
             %(now)s, %(now)s
@@ -387,6 +389,7 @@ def _insert_question(
             "supply_count": (
                 sub.supply_count if sub.question_type == QuestionType.limited_supply else None
             ),
+            "reveal_claimant_names": sub.reveal_claimant_names,
             "is_auto_title": sub.is_auto_title,
             "poll_id": str(poll_row["id"]),
             "question_index": question_index,

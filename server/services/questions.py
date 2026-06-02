@@ -41,6 +41,7 @@ _SELECT_QUESTION_FULL = """
     SELECT p.*,
            mp.short_id AS short_id,
            mp.creator_name AS creator_name,
+           mp.creator_user_id AS poll_creator_user_id,
            mp.response_deadline AS response_deadline,
            mp.is_closed AS is_closed,
            mp.close_reason AS close_reason,
@@ -298,6 +299,7 @@ def _row_to_question(row: dict) -> QuestionResponse:
         min_availability_percent=row.get("min_availability_percent"),
         time_min_participants=row.get("time_min_participants"),
         supply_count=row.get("supply_count"),
+        reveal_claimant_names=row.get("reveal_claimant_names", True),
         poll_id=str(row["poll_id"]) if row.get("poll_id") else None,
         question_index=row.get("question_index"),
     )
@@ -562,7 +564,21 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
     return row
 
 
-def _compute_results(question, votes, *, include_tentative_time_options: bool = True) -> QuestionResultsResponse:
+def should_reveal_claimant_names(*, reveal_flag: bool, viewer_user_id, creator_user_id) -> bool:
+    """Whether a limited_supply question's claimant names are visible to this
+    viewer. `reveal_flag` (the question's `reveal_claimant_names`) → visible to
+    everyone; otherwise only the poll creator. Shared by the per-question
+    `get_results` and the bulk `polls_for_poll_ids` read paths so the rule
+    can't diverge. Callers gate WHEN to resolve `viewer_user_id` (the
+    per-question path skips the lookup entirely when `reveal_flag` is true)."""
+    if reveal_flag:
+        return True
+    return viewer_user_id is not None and str(viewer_user_id) == str(creator_user_id)
+
+
+def _compute_results(
+    question, votes, *, include_tentative_time_options: bool = True, reveal_names: bool = True
+) -> QuestionResultsResponse:
     """Compute question results from a question row and its votes. Shared by get_results and get_accessible_questions.
 
     `include_tentative_time_options` gates the pre-ranking tentative-slots
@@ -573,6 +589,11 @@ def _compute_results(question, votes, *, include_tentative_time_options: bool = 
     cost scales with (polls × voters × duration_window × slot_grid) per active
     tab. The per-question results endpoint keeps it on so `QuestionBallot` can
     advance to the preferences bubble UI once a voter has submitted availability.
+
+    `reveal_names` only affects limited_supply: when False, claimant names are
+    stripped from the roster (the caller decides this per the reveal toggle +
+    whether the viewer is the creator). Counts/positions/timestamps are kept so
+    the FE can still show the viewer their own status.
     """
     question_type = question["question_type"]
 
@@ -694,9 +715,13 @@ def _compute_results(question, votes, *, include_tentative_time_options: bool = 
             supply_count=result.supply_count,
             secured_count=result.secured_count,
             waitlist_count=result.waitlist_count,
+            names_hidden=not reveal_names,
             claims=[
                 {
-                    "name": c.name,
+                    # Strip names when the viewer isn't allowed to see them
+                    # (reveal toggle off + not the creator). created_at stays so
+                    # the FE can match the viewer's OWN claim for their status.
+                    "name": c.name if reveal_names else None,
                     "secured": c.secured,
                     "position": c.position,
                     "created_at": c.created_at,
