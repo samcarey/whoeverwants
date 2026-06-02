@@ -4,6 +4,8 @@ from algorithms.time_question import (
     compute_slot_availability,
     filter_slots_by_min_availability,
     filter_slots_by_min_participants,
+    _effective_attendance,
+    _voter_threshold,
 )
 
 
@@ -95,3 +97,97 @@ class TestComputeSlotAvailability:
         counts = compute_slot_availability(slots, votes)
         assert counts["2026-04-18 10:00-11:00"] == 2
         assert counts["2026-04-18 14:00-15:00"] == 1
+
+
+class TestEffectiveAttendance:
+    """Per-voter conditional attendance: a voter only counts toward a slot if the
+    number of attendees meets their personal `voter_min_participants`. The fixed
+    point is resolved by greedy removal — _effective_attendance returns the
+    stable headcount."""
+
+    def _brute(self, thresholds):
+        cur = list(thresholds)
+        while True:
+            c = len(cur)
+            nxt = [t for t in cur if t <= c]
+            if len(nxt) == c:
+                return c
+            cur = nxt
+
+    def test_all_default_thresholds_equal_raw_count(self):
+        # No per-voter constraint (threshold 1) → effective == raw.
+        assert _effective_attendance([1, 1, 1]) == 3
+
+    def test_empty(self):
+        assert _effective_attendance([]) == 0
+
+    def test_high_thresholds_can_zero_out_a_slot(self):
+        # Everyone wants >= 4 but only 3 are available → nobody attends.
+        assert _effective_attendance([4, 4, 4]) == 0
+
+    def test_partial_cascade(self):
+        # One flexible voter (1) survives; two who demand 4 drop out.
+        assert _effective_attendance([1, 4, 4]) == 1
+
+    def test_stable_subset(self):
+        # The two threshold-2 voters are mutually satisfying; the 5 drops.
+        assert _effective_attendance([2, 2, 5]) == 2
+
+    def test_matches_greedy_removal_reference(self):
+        import random
+        for _ in range(2000):
+            n = random.randint(0, 8)
+            thresholds = [random.randint(1, 10) for _ in range(n)]
+            assert _effective_attendance(thresholds) == self._brute(thresholds)
+
+    def test_voter_threshold_defaults_to_one(self):
+        assert _voter_threshold({}) == 1
+        assert _voter_threshold({"voter_min_participants": None}) == 1
+        assert _voter_threshold({"voter_min_participants": 0}) == 1  # clamped >= 1
+        assert _voter_threshold({"voter_min_participants": 3}) == 3
+
+
+class TestConditionalAttendanceSlotAvailability:
+    """compute_slot_availability returns EFFECTIVE counts once voters attach a
+    personal `voter_min_participants` threshold."""
+
+    def _avail(self, mins, maxs="17:00", min_participants=None):
+        v = {"voter_day_time_windows": [
+            {"day": "2026-04-18", "windows": [{"min": mins, "max": maxs}]},
+        ]}
+        if min_participants is not None:
+            v["voter_min_participants"] = min_participants
+        return v
+
+    def test_voter_demanding_more_than_available_drops_out(self):
+        slots = ["2026-04-18 10:00-11:00"]
+        votes = [
+            self._avail("09:00"),
+            self._avail("09:00", min_participants=3),  # wants 3, only 2 here → drops
+        ]
+        # The threshold-3 voter can't be satisfied (max 2 available), so they
+        # leave, and the remaining single voter (default threshold 1) attends.
+        assert compute_slot_availability(slots, votes)["2026-04-18 10:00-11:00"] == 1
+
+    def test_mutually_satisfied_thresholds_all_count(self):
+        slots = ["2026-04-18 10:00-11:00"]
+        votes = [
+            self._avail("09:00", min_participants=3),
+            self._avail("09:00", min_participants=3),
+            self._avail("09:00", min_participants=3),
+        ]
+        # Exactly 3 available, all demanding 3 → all satisfied.
+        assert compute_slot_availability(slots, votes)["2026-04-18 10:00-11:00"] == 3
+
+    def test_per_slot_independent(self):
+        # The threshold-2 voter is only free in the morning; the afternoon slot
+        # has a single flexible voter, so the threshold-2 voter's constraint
+        # doesn't apply there.
+        slots = ["2026-04-18 10:00-11:00", "2026-04-18 14:00-15:00"]
+        votes = [
+            self._avail("09:00", "17:00"),                       # all day, default
+            self._avail("09:00", "12:00", min_participants=2),   # morning only, wants 2
+        ]
+        counts = compute_slot_availability(slots, votes)
+        assert counts["2026-04-18 10:00-11:00"] == 2  # both, both satisfied
+        assert counts["2026-04-18 14:00-15:00"] == 1  # only the flexible voter

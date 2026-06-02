@@ -36,6 +36,10 @@ export interface BallotInputs {
   durationMaxValue: number | null;
   durationMinEnabled: boolean;
   durationMaxEnabled: boolean;
+  // Per-voter conditional-attendance threshold for the availability phase:
+  // "only count me for a slot if at least N people total are available". null
+  // when the voter hasn't set a constraint (the default).
+  voterMinParticipants: number | null;
   likedSlots: string[] | null;
   dislikedSlots: string[] | null;
   voterName: string;
@@ -44,6 +48,7 @@ export interface BallotInputs {
     suggestions?: string[];
     voter_day_time_windows?: DayTimeWindow[] | null;
     voter_duration?: DurationWindow | null;
+    voter_min_participants?: number | null;
   } | null;
 }
 
@@ -178,6 +183,8 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
             minEnabled: state.durationMinEnabled,
             maxEnabled: state.durationMaxEnabled,
           } : null,
+          // An abstaining voter isn't attending, so their threshold is moot — send null.
+          voter_min_participants: effectiveIsAbstaining ? null : state.voterMinParticipants,
           is_abstain: effectiveIsAbstaining,
           voter_name: state.voterName.trim() || null,
         },
@@ -195,6 +202,10 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
         vote_type: 'time' as const,
         voter_day_time_windows: state.userVoteData?.voter_day_time_windows ?? null,
         voter_duration: state.userVoteData?.voter_duration ?? null,
+        // Re-send the stored threshold (same COALESCE-avoidance reasoning as
+        // voter_day_time_windows: the preferences phase has no UI for it, and
+        // the server writes the column directly, so omitting would clear it).
+        voter_min_participants: state.userVoteData?.voter_min_participants ?? null,
         liked_slots: effectiveIsAbstaining ? null : (state.likedSlots ?? []),
         disliked_slots: effectiveIsAbstaining ? null : (state.dislikedSlots ?? []),
         is_abstain: effectiveIsAbstaining,
@@ -231,6 +242,7 @@ export function buildPollVoteItem(
     options_metadata: voteData.options_metadata ?? null,
     voter_day_time_windows: voteData.voter_day_time_windows ?? null,
     voter_duration: voteData.voter_duration ?? null,
+    voter_min_participants: voteData.voter_min_participants ?? null,
     liked_slots: voteData.liked_slots ?? null,
     disliked_slots: voteData.disliked_slots ?? null,
   };

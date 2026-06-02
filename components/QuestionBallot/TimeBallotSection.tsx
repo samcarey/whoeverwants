@@ -5,6 +5,7 @@ import type { Question, QuestionResults, DayTimeWindow } from "@/lib/types";
 import TimeQuestionFields from "@/components/TimeQuestionFields";
 import TimeSlotBubbles from "@/components/TimeSlotBubbles";
 import AbstainLink from "@/components/AbstainLink";
+import CompactNumberRow from "@/components/CompactNumberRow";
 import { hasInvalidVoterWindows } from "@/lib/timeUtils";
 
 export interface TimeBallotSectionProps {
@@ -36,6 +37,12 @@ export interface TimeBallotSectionProps {
   setDurationMaxValue: (n: number | null) => void;
   setDurationMinEnabled: (b: boolean) => void;
   setDurationMaxEnabled: (b: boolean) => void;
+  // Per-voter conditional-attendance threshold ("only count me for a slot if at
+  // least N people total are available"). Floored at the creator's poll minimum
+  // (`voterMinParticipantsFloor`); equal to the floor = no extra constraint.
+  voterMinParticipantsValue: number;
+  setVoterMinParticipantsValue: (n: number) => void;
+  voterMinParticipantsFloor: number;
   voterDayTimeWindows: DayTimeWindow[];
   setVoterDayTimeWindows: (v: DayTimeWindow[]) => void;
   preferenceSlotsForVoter: string[];
@@ -78,6 +85,9 @@ export default function TimeBallotSection({
   setDurationMaxValue,
   setDurationMinEnabled,
   setDurationMaxEnabled,
+  voterMinParticipantsValue,
+  setVoterMinParticipantsValue,
+  voterMinParticipantsFloor,
   voterDayTimeWindows,
   setVoterDayTimeWindows,
   preferenceSlotsForVoter,
@@ -134,23 +144,30 @@ export default function TimeBallotSection({
               <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
             </div>
           ) : isAvailabilitySubmission && userVoteData?.voter_day_time_windows ? (
-            <TimeQuestionFields
-              disabled={true}
-              dayTimeWindows={userVoteData.voter_day_time_windows}
-              onDayTimeWindowsChange={() => {}}
-              questionDayTimeWindows={question.day_time_windows || undefined}
-              questionDurationWindow={question.duration_window || undefined}
-              {...(userVoteData.voter_duration ? {
-                durationMinValue: userVoteData.voter_duration.minValue,
-                durationMaxValue: userVoteData.voter_duration.maxValue,
-                durationMinEnabled: userVoteData.voter_duration.minEnabled,
-                durationMaxEnabled: userVoteData.voter_duration.maxEnabled,
-                onDurationMinChange: () => {},
-                onDurationMaxChange: () => {},
-                onDurationMinEnabledChange: () => {},
-                onDurationMaxEnabledChange: () => {},
-              } : {})}
-            />
+            <>
+              <TimeQuestionFields
+                disabled={true}
+                dayTimeWindows={userVoteData.voter_day_time_windows}
+                onDayTimeWindowsChange={() => {}}
+                questionDayTimeWindows={question.day_time_windows || undefined}
+                questionDurationWindow={question.duration_window || undefined}
+                {...(userVoteData.voter_duration ? {
+                  durationMinValue: userVoteData.voter_duration.minValue,
+                  durationMaxValue: userVoteData.voter_duration.maxValue,
+                  durationMinEnabled: userVoteData.voter_duration.minEnabled,
+                  durationMaxEnabled: userVoteData.voter_duration.maxEnabled,
+                  onDurationMinChange: () => {},
+                  onDurationMaxChange: () => {},
+                  onDurationMinEnabledChange: () => {},
+                  onDurationMaxEnabledChange: () => {},
+                } : {})}
+              />
+              {userVoteData.voter_min_participants > voterMinParticipantsFloor && (
+                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  Only if at least {userVoteData.voter_min_participants} people (incl. you) can come
+                </p>
+              )}
+            </>
           ) : !isAvailabilitySubmission && (userVoteData?.liked_slots !== null || userVoteData?.disliked_slots !== null) ? (
             <TimeSlotBubbles
               options={preferenceSlotsForVoter}
@@ -193,6 +210,19 @@ export default function TimeBallotSection({
                 onDayTimeWindowsChange={setVoterDayTimeWindows}
                 questionDayTimeWindows={question.day_time_windows || undefined}
                 questionDurationWindow={question.duration_window || undefined}
+              />
+            </div>
+
+            {/* Per-voter conditional attendance: only count me toward a slot if at
+                least N people can come. 1 = no constraint (the toggle is implied by
+                the value being above 1). */}
+            <div className="mb-4 rounded-2xl bg-gray-50 dark:bg-gray-800 px-4">
+              <CompactNumberRow
+                label="Minimum people for me to come"
+                value={voterMinParticipantsValue}
+                setValue={setVoterMinParticipantsValue}
+                min={voterMinParticipantsFloor}
+                disabled={isSubmitting}
               />
             </div>
 
