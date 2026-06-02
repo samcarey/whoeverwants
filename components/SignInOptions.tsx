@@ -25,6 +25,7 @@ import {
   signInWithPasskey,
 } from "@/lib/passkeys";
 import { resolveActiveTheme } from "@/lib/theme";
+import OrDivider from "./OrDivider";
 
 /**
  * Shared provider-button block (Google / Apple / passkey / email) reused by:
@@ -323,13 +324,7 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
         </form>
       ))}
 
-      {!isMerge && hasProviderButtons && (
-        <div className="flex items-center gap-3 my-4">
-          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-          <span className="text-xs text-gray-500 dark:text-gray-400">or</span>
-          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-        </div>
-      )}
+      {!isMerge && hasProviderButtons && <OrDivider />}
 
       {showGoogle &&
         (isNativeIOS() ? (

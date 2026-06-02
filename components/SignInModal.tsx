@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ModalPortal from "./ModalPortal";
 import SignInOptions from "./SignInOptions";
 import NamePromptPanel from "./NamePromptPanel";
+import OrDivider from "./OrDivider";
 import { isValidUserName } from "@/lib/nameValidation";
 import { getUserName } from "@/lib/userProfile";
 import { getCurrentUser } from "@/lib/api";
@@ -105,13 +106,7 @@ export default function SignInModal({ isOpen, onClose }: SignInModalProps) {
 
           <SignInOptions mode="signin" onComplete={handleSignInComplete} />
 
-          <div className="flex items-center gap-3 my-4">
-            <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              or just provide a name/alias
-            </span>
-            <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-          </div>
+          <OrDivider label="or just provide a name/alias" />
 
           <NamePromptPanel onComplete={onClose} focusNonce={nameFocusNonce} />
         </div>
