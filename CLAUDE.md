@@ -3561,7 +3561,7 @@ The voter availability form (rendered by `TimeBallotSection` → `TimeQuestionFi
 
 ### Limited Supply Question Type
 
-A first-come, first-served signup: the creator sets `supply_count` slots for something (tickets, leftover food, a carpool seat, a volunteer shift) and whoever **claims first** gets them. Later claimants are **waitlisted** in order. Shipped on migration 130 (type + `questions.supply_count`) + migration 131 (`questions.reveal_claimant_names`).
+A first-come, first-served signup: the creator sets `supply_count` slots for something (tickets, leftover food, a carpool seat, a volunteer shift) and whoever **claims first** gets them. Later claimants are **waitlisted** in order. Shipped on migration 131 (type + `questions.supply_count`) + migration 132 (`questions.reveal_claimant_names`).
 
 - **Vote shape: a claim carries NO payload.** `vote_type='limited_supply'` with `is_abstain=false` is a CLAIM, `is_abstain=true` is a DECLINE ("No thanks"). `yes_no_choice`/`ranked_choices`/`suggestions` are all NULL (enforced by the `vote_structure_valid` CHECK). No new vote columns — claim order is just `votes.created_at`.
 - **Resolution is pure ordering** (`server/algorithms/limited_supply.py: calculate_limited_supply_result`): take non-abstain votes, sort by `created_at`, the first `supply_count` are **secured**, the rest **waitlisted**. Declines take no slot, so when a secured claimant edits to a decline the next waitlister is promoted automatically (results recompute from the ordered claim list — there's no stored "secured" flag). `_compute_results` returns `supply_count` / `secured_count` / `waitlist_count` / `claims[]` (`{name, secured, position, created_at}`).
