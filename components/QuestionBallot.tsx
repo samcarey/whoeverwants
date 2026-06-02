@@ -82,6 +82,12 @@ interface QuestionBallotProps {
   // the "Early Voting" header/countdown/warning rendered outside (between)
   // them. The caller omits its own card wrapper in this case to avoid nesting.
   splitEarlyVotingCards?: boolean;
+  // Name gate for self-submitting ballots (limited_supply). The wrapper-Submit
+  // path gates on a saved name before firing; limited_supply self-submits on
+  // tap and bypasses that path, so the parent passes its gateOnName here.
+  // Returns true when a name is already saved (proceed), false when it opened
+  // the AccountGateModal and stashed the retry (bail; replayed on save).
+  onRequireName?: (retry: () => void) => boolean;
 }
 
 export type PrepareBatchVoteItemResult =
@@ -99,7 +105,7 @@ export interface QuestionBallotHandle {
   prepareBatchVoteItem: () => PrepareBatchVoteItemResult;
 }
 
-const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(function QuestionBallot({ question, poll, createdDate, questionId, externalYesNoResults, isExpanded = true, partOfPollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange, onReferenceLocationStateChange, splitEarlyVotingCards = false }: QuestionBallotProps, ref) {
+const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(function QuestionBallot({ question, poll, createdDate, questionId, externalYesNoResults, isExpanded = true, partOfPollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange, onReferenceLocationStateChange, splitEarlyVotingCards = false, onRequireName }: QuestionBallotProps, ref) {
   // Set the page title in the template header
   usePageTitle(question.title);
 
@@ -1189,24 +1195,25 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   // be one tap). For a change after voting, enter edit mode so submitVote
   // treats it as an update of the existing row.
   //
-  // TODO (name gate): a nameless user tapping Claim hits the server's
-  // "name is required" 400 (surfaced as voteError) instead of the friendly
-  // AccountGateModal. The gate is wired for the wrapper-Submit path, which
-  // limited_supply bypasses by self-submitting. Surface the gate here before
-  // firing submitVote (resolve getUserName(); if invalid, open the gate and
-  // replay the claim on save — mirror PollDetailPage's gateOnName thunk).
+  // Name gate: a nameless user tapping Claim/Decline would otherwise hit the
+  // server's "name is required" 400 (surfaced as voteError). limited_supply
+  // self-submits and bypasses the wrapper-Submit gate, so we surface the parent's
+  // AccountGateModal here before firing — onRequireName stashes the retry and
+  // replays the same tap once a name is saved (mirrors PollDetailPage's gateOnName).
   // TODO (per-person limit): today one slot per person (one claim per
   // browser/account). A "claim N spots" variant would need a per-claim
   // quantity column + the algorithm to consume N slots per claim and the
   // ballot to offer a quantity stepper.
   const handleSupplyClaim = () => {
     if (isSubmitting || isQuestionClosed) return;
+    if (onRequireName && !onRequireName(handleSupplyClaim)) return;
     setIsAbstaining(false);
     if (hasVoted && !isEditingVote) setIsEditingVote(true);
     setPendingSupplySubmit(true);
   };
   const handleSupplyDecline = () => {
     if (isSubmitting || isQuestionClosed) return;
+    if (onRequireName && !onRequireName(handleSupplyDecline)) return;
     setIsAbstaining(true);
     if (hasVoted && !isEditingVote) setIsEditingVote(true);
     setPendingSupplySubmit(true);
