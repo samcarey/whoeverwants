@@ -162,7 +162,7 @@ export default function TimeBallotSection({
                   onDurationMaxEnabledChange: () => {},
                 } : {})}
               />
-              {userVoteData.voter_min_participants > 1 && (
+              {userVoteData.voter_min_participants > voterMinParticipantsFloor && (
                 <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                   Only if at least {userVoteData.voter_min_participants} people (incl. you) can come
                 </p>
