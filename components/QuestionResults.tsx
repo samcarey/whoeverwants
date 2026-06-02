@@ -211,15 +211,18 @@ function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick
     </button>
   ) : null;
 
-  // Plain-language outcome explanation, behind an info (ⓘ) icon — closed only.
+  // Plain-language outcome explanation, behind a grey info (ⓘ) icon placed
+  // inline right after a "Final Results" label (yes/no has no other heading) —
+  // closed only.
   const explanation = isQuestionClosed ? outcomeExplainer(results) : null;
 
   return (
     <div>
       {explanation && (
-        <div className="flex justify-end mr-3 mb-1">
-          <OutcomeInfoButton text={explanation.text} tone={explanation.tone} />
-        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1 inline-flex items-center gap-1">
+          Final Results
+          <OutcomeInfoButton text={explanation.text} align="left" />
+        </p>
       )}
       {/* Cards row — items-center vertically aligns the abstain text's
           center with the cards' center. Stats render on their own row
@@ -295,21 +298,20 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
     );
   }
 
-  // Plain-language outcome explanation, behind an info (ⓘ) icon. The
-  // "event's off" branch above returns its own self-explanatory banner, so
-  // the explainer only applies to a decided winner here.
+  // Plain-language outcome explanation, behind a grey info (ⓘ) icon placed
+  // inline right after the "Scheduled Time" label. The "event's off" branch
+  // above returns its own self-explanatory banner, so the explainer only
+  // applies to a decided winner here.
   const explanation = outcomeExplainer(results);
 
   return (
     <div className="space-y-4">
-      {explanation && (
-        <div className="flex justify-end">
-          <OutcomeInfoButton text={explanation.text} tone={explanation.tone} />
-        </div>
-      )}
       {winner && (
         <div className="text-center">
-          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Scheduled Time</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1 inline-flex items-center gap-1">
+            Scheduled Time
+            {explanation && <OutcomeInfoButton text={explanation.text} />}
+          </p>
           <div className="inline-flex items-center px-4 py-2 bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-700 rounded-xl">
             <span className="text-sm font-semibold text-green-800 dark:text-green-200">
               {formatTimeSlot(winner)}

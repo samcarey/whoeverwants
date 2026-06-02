@@ -3,23 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Small info (ⓘ) affordance that reveals a plain-language outcome explanation
- * in a tap-to-toggle popover. The explanation text lives ONLY here — never
- * inline — so it stays out of the way until the viewer asks "why this result?".
- *
- * `tone: 'warn'` tints the icon amber (used for the ranked-choice
- * "a broadly-acceptable option lost" case) so a result worth a second look
- * draws a little attention without putting prose on the screen.
+ * Small grey info (ⓘ) affordance that sits inline right after a result label
+ * (e.g. "Scheduled Time", "Final Round", "Final Results") and reveals a
+ * plain-language outcome explanation in a tap-to-toggle popover. The
+ * explanation text lives ONLY here — never inline — so it stays out of the way
+ * until the viewer asks "why this result?".
  */
 export default function OutcomeInfoButton({
   text,
-  tone = "info",
-  align = "right",
+  align = "center",
   className = "",
 }: {
   text: string;
-  tone?: "info" | "warn";
-  align?: "left" | "right";
+  // Which edge of the icon the popover anchors to.
+  align?: "left" | "right" | "center";
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -45,13 +42,18 @@ export default function OutcomeInfoButton({
     };
   }, [open]);
 
-  const iconColor =
-    tone === "warn"
-      ? "text-amber-500 dark:text-amber-400"
-      : "text-gray-400 dark:text-gray-500";
+  const popoverAnchor =
+    align === "left"
+      ? "left-0"
+      : align === "right"
+        ? "right-0"
+        : "left-1/2 -translate-x-1/2";
 
   return (
-    <span ref={wrapRef} className={`relative inline-flex ${className}`}>
+    <span
+      ref={wrapRef}
+      className={`relative inline-flex items-center align-middle ${className}`}
+    >
       <button
         type="button"
         // Stop the tap from bubbling to the result card's own handlers
@@ -62,10 +64,10 @@ export default function OutcomeInfoButton({
         }}
         aria-expanded={open}
         aria-label="Why this result?"
-        className={`flex items-center justify-center w-6 h-6 rounded-full transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 ${iconColor}`}
+        className="flex items-center justify-center w-5 h-5 rounded-full text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
       >
         <svg
-          className="w-[18px] h-[18px]"
+          className="w-[15px] h-[15px]"
           fill="none"
           stroke="currentColor"
           strokeWidth={2}
@@ -80,9 +82,7 @@ export default function OutcomeInfoButton({
       {open && (
         <div
           role="tooltip"
-          className={`absolute ${
-            align === "right" ? "right-0" : "left-0"
-          } top-full mt-1 z-30 w-64 max-w-[80vw] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 text-xs leading-relaxed text-gray-700 dark:text-gray-200 shadow-lg`}
+          className={`absolute ${popoverAnchor} top-full mt-1 z-30 w-64 max-w-[80vw] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 text-left text-xs leading-relaxed font-normal normal-case text-gray-700 dark:text-gray-200 shadow-lg`}
         >
           {text}
         </div>

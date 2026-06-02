@@ -338,20 +338,17 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
   }
 
   const currentRound = roundVisualizations[currentRoundIndex];
-  // Plain-language outcome explanation, surfaced behind an info (ⓘ) icon (never
-  // inline). Gated on isQuestionClosed so we never claim an option was
-  // "eliminated early" while preliminary results are still moving — it
-  // describes the final outcome, not an in-progress tally.
+  // Plain-language outcome explanation, surfaced behind a grey info (ⓘ) icon
+  // placed inline right after the round label (never inline prose). Gated on
+  // isQuestionClosed so we never claim an option was "eliminated early" while
+  // preliminary results are still moving — it describes the final outcome.
   const explanation = isQuestionClosed ? outcomeExplainer(results) : null;
+  // The icon is only shown on the FINAL round so it reads as "about this
+  // result", not "about round 2 of 4".
+  const showInfo = explanation && currentRoundIndex === roundVisualizations.length - 1;
 
   return (
     <div className="relative">
-      {explanation && (
-        <div className="flex justify-end mb-2">
-          <OutcomeInfoButton text={explanation.text} tone={explanation.tone} />
-        </div>
-      )}
-
       {/* Navigation buttons for desktop - only show if multiple rounds */}
       {roundVisualizations.length > 1 ? (
         <div className="flex justify-between items-center mb-4">
@@ -364,11 +361,12 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          
-          <div className="text-center">
+
+          <div className="text-center flex items-center justify-center gap-1">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{currentRound.title}</h3>
+            {showInfo && <OutcomeInfoButton text={explanation!.text} />}
           </div>
-          
+
           <button
             onClick={() => navigateRound(1)}
             className="p-2 rounded-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
@@ -383,6 +381,13 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
         results.total_votes === 0 && results.winner && results.winner !== 'tie' ? (
           <div className="text-center mb-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">Uncontested</p>
+          </div>
+        ) : showInfo ? (
+          // Single-round majority: no round-nav header, so anchor the icon to a
+          // small "Final Results" label.
+          <div className="text-center mb-4 flex items-center justify-center gap-1">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Final Results</h3>
+            <OutcomeInfoButton text={explanation!.text} />
           </div>
         ) : null
       )}
