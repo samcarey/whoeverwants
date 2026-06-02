@@ -19,6 +19,7 @@ from algorithms.time_slots import (
     _voter_available_at,
     _window_effective_end,
 )
+from algorithms.weights import vote_weight
 
 
 def _minutes_to_time(minutes: int) -> str:
@@ -190,8 +191,10 @@ def compute_slot_availability(options: list[str], votes: list[dict]) -> dict[str
         date, start_min, end_min = parse_slot_key(slot_str)
         # Reconstruct absolute end for cross-midnight slots
         eff_end = end_min if end_min > start_min else end_min + 24 * 60
+        # "Plus one/more": each available voter counts for 1 + their plus-ones,
+        # so the viability gate (min_participants) sees represented headcount.
         count = sum(
-            1
+            vote_weight(v)
             for v in avail_votes
             if _voter_available_at(v["voter_day_time_windows"], date, start_min, eff_end)
         )
@@ -219,12 +222,15 @@ def _pick_winner_from_reactions(options: list[str], votes: list[dict]) -> tuple[
     dislike_counts: dict[str, int] = {s: 0 for s in options}
 
     for v in pref_votes:
+        # "Plus one/more": a preference ballot counts for the submitter + their
+        # plus-ones.
+        weight = vote_weight(v)
         for s in (v.get("liked_slots") or []):
             if s in like_counts:
-                like_counts[s] += 1
+                like_counts[s] += weight
         for s in (v.get("disliked_slots") or []):
             if s in dislike_counts:
-                dislike_counts[s] += 1
+                dislike_counts[s] += weight
 
     if not options:
         return None, like_counts, dislike_counts

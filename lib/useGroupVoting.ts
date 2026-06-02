@@ -50,6 +50,10 @@ interface UseGroupVotingArgs {
   group: Group | null;
   setVotedQuestionIds: Dispatch<SetStateAction<Set<string>>>;
   setAbstainedQuestionIds: Dispatch<SetStateAction<Set<string>>>;
+  // "Plus one/more": returns the poll-level list of additional people the
+  // ballot counts for ("" = unnamed), or null when the poll doesn't allow
+  // plus-ones / none were added. Read at submit time so the latest list wins.
+  getPlusOneNames?: () => string[] | null;
 }
 
 /**
@@ -68,6 +72,7 @@ export function useGroupVoting({
   group,
   setVotedQuestionIds,
   setAbstainedQuestionIds,
+  getPlusOneNames,
 }: UseGroupVotingArgs) {
   const [userVoteMap, setUserVoteMap] = useState<Map<string, UserYesNoVote>>(
     () => new Map(),
@@ -179,6 +184,7 @@ export function useGroupVoting({
       const voter_name = (getUserName() ?? "").trim() || null;
       const returnedVotes = await apiSubmitPollVotes(pollId, {
         voter_name,
+        plus_one_names: getPlusOneNames?.() ?? null,
         items,
       });
 
@@ -280,6 +286,7 @@ export function useGroupVoting({
       });
       const returned = await apiSubmitPollVotes(pollId, {
         voter_name,
+        plus_one_names: getPlusOneNames?.() ?? null,
         items: [item],
       });
       const v = returned.find((r) => r.question_id === questionId);

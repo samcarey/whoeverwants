@@ -270,6 +270,14 @@ def _insert_poll(
             )
             if prephase_deadline >= response_dt:
                 prephase_deadline = response_dt - timedelta(minutes=1)
+    # "Plus one/more": default ON for polls with a time question (the common
+    # scheduling case — "I'm answering for my partner too"), OFF otherwise.
+    # An explicit `req.allow_plus_ones` (the FE toggle) overrides the default.
+    allow_plus_ones = req.allow_plus_ones
+    if allow_plus_ones is None:
+        allow_plus_ones = any(
+            sp.question_type == QuestionType.time for sp in req.questions
+        )
     row = conn.execute(
         """
         INSERT INTO polls (
@@ -277,6 +285,7 @@ def _insert_poll(
             prephase_deadline, prephase_deadline_minutes,
             context, details,
             min_responses, show_preliminary_results, allow_pre_ranking,
+            allow_plus_ones,
             group_id,
             created_at, updated_at
         )
@@ -285,6 +294,7 @@ def _insert_poll(
             %(prephase_deadline)s, %(prephase_deadline_minutes)s,
             %(context)s, %(details)s,
             %(min_responses)s, %(show_preliminary_results)s, %(allow_pre_ranking)s,
+            %(allow_plus_ones)s,
             %(group_id)s,
             %(now)s, %(now)s
         )
@@ -301,6 +311,7 @@ def _insert_poll(
             "min_responses": req.min_responses,
             "show_preliminary_results": req.show_preliminary_results,
             "allow_pre_ranking": req.allow_pre_ranking,
+            "allow_plus_ones": allow_plus_ones,
             "group_id": group_id,
             "now": now,
         },
@@ -509,6 +520,7 @@ def _row_to_poll(
         min_responses=row.get("min_responses"),
         show_preliminary_results=row.get("show_preliminary_results", True),
         allow_pre_ranking=row.get("allow_pre_ranking", True),
+        allow_plus_ones=row.get("allow_plus_ones", False),
         questions=[_row_to_question(sp) for sp in question_rows],
         voter_names=vd.voter_names,
         anonymous_count=vd.anonymous_count,
@@ -571,7 +583,8 @@ def _compute_poll_voter_data(conn, poll_id: str) -> PollVoterData:
     votes_row = conn.execute(
         """
         WITH all_votes AS (
-            SELECT v.question_id, v.voter_name, v.browser_id, v.suggestions
+            SELECT v.question_id, v.voter_name, v.browser_id, v.suggestions,
+                   v.plus_one_names
             FROM votes v
             JOIN questions p ON v.question_id = p.id
             WHERE p.poll_id = %(mid)s
@@ -582,23 +595,58 @@ def _compute_poll_voter_data(conn, poll_id: str) -> PollVoterData:
             WHERE voter_name IS NULL OR voter_name = ''
             GROUP BY question_id
         ),
-        named_counts AS (
-            SELECT voter_name, GREATEST(COUNT(DISTINCT browser_id), 1) AS c
+        submitter_counts AS (
+            SELECT voter_name AS name, GREATEST(COUNT(DISTINCT browser_id), 1) AS c
             FROM all_votes
             WHERE voter_name IS NOT NULL AND voter_name != ''
             GROUP BY voter_name
+        ),
+        -- "Plus one/more": each submitter's plus-one array repeats across their
+        -- sibling-question rows, so dedup to one array per browser before
+        -- unnesting (otherwise an N-question poll would multiply the plus-ones
+        -- by N).
+        plus_one_arrays AS (
+            SELECT DISTINCT ON (browser_id) browser_id, plus_one_names
+            FROM all_votes
+            WHERE plus_one_names IS NOT NULL AND browser_id IS NOT NULL
+            ORDER BY browser_id
+        ),
+        plus_one_entries AS (
+            SELECT btrim(elem) AS name
+            FROM plus_one_arrays
+            CROSS JOIN LATERAL jsonb_array_elements_text(plus_one_names) AS elem
+        ),
+        plus_one_named AS (
+            SELECT name, COUNT(*)::int AS c
+            FROM plus_one_entries
+            WHERE name IS NOT NULL AND name <> ''
+            GROUP BY name
+        ),
+        -- Merge submitter names + named plus-ones, summing the per-name counts
+        -- so a name shared by a real voter and a plus-one (or two plus-ones)
+        -- expands into that many bubbles.
+        named_merged AS (
+            SELECT name, SUM(c)::int AS c
+            FROM (
+                SELECT name, c FROM submitter_counts
+                UNION ALL
+                SELECT name, c FROM plus_one_named
+            ) u
+            GROUP BY name
         )
         SELECT
             COALESCE(
-                (SELECT array_agg(voter_name ORDER BY voter_name)
-                 FROM named_counts),
+                (SELECT array_agg(name ORDER BY name) FROM named_merged),
                 ARRAY[]::text[]
             ) AS voter_names,
             COALESCE(
-                (SELECT jsonb_object_agg(voter_name, c) FROM named_counts),
+                (SELECT jsonb_object_agg(name, c) FROM named_merged),
                 '{}'::jsonb
             ) AS voter_name_counts,
-            COALESCE((SELECT MAX(c) FROM anon_per_question), 0) AS anonymous_count,
+            COALESCE((SELECT MAX(c) FROM anon_per_question), 0)
+              + COALESCE((SELECT COUNT(*) FROM plus_one_entries
+                           WHERE name IS NULL OR name = ''), 0) AS anonymous_count,
+            COALESCE((SELECT COUNT(*) FROM plus_one_entries), 0) AS plus_one_total,
             (SELECT COUNT(DISTINCT s)
                FROM all_votes
                CROSS JOIN LATERAL unnest(COALESCE(suggestions, ARRAY[]::text[])) AS s
@@ -639,7 +687,12 @@ def _compute_poll_voter_data(conn, poll_id: str) -> PollVoterData:
             k: int(v) for k, v in (votes_row["voter_name_counts"] or {}).items()
         },
         viewed_ignored_count=int(viewed_row["viewed_ignored"] or 0),
-        viewed_total=int(viewed_row["viewed_total"] or 0),
+        # "Plus one/more": represented people aren't browsers in poll_views, so
+        # add them to the viewer total too — keeps "voted ≤ viewed" (the group
+        # card's "M of V seen" turnout line) consistent now that the voted
+        # count includes plus-ones.
+        viewed_total=int(viewed_row["viewed_total"] or 0)
+        + int(votes_row["plus_one_total"] or 0),
         suggestion_count=int(votes_row["suggestion_count"] or 0),
     )
 
@@ -1239,7 +1292,31 @@ def cutoff_poll_suggestions(
     return _row_to_poll(poll_row, question_rows, voter_data, viewer_user_id=wrapper.get("creator_user_id"))
 
 
-def _vote_item_to_submit_req(item: PollVoteItem, voter_name: str | None) -> SubmitVoteRequest:
+# Bounds for the "plus one/more" name list — generous enough for any real
+# "answering for the group" case, tight enough to stop an abusive request from
+# inflating a poll's tallies arbitrarily.
+_MAX_PLUS_ONES = 50
+_MAX_PLUS_ONE_NAME_LEN = 50
+
+
+def _sanitize_plus_one_names(names: list[str] | None) -> list[str] | None:
+    """Normalize the poll-level plus-one list: trim each name (blanks kept as
+    unnamed plus-ones), drop non-strings, and bound count + per-name length.
+    Returns None when nothing was provided so the vote row's column stays NULL.
+    """
+    if not names:
+        return None
+    cleaned: list[str] = []
+    for n in names[:_MAX_PLUS_ONES]:
+        if not isinstance(n, str):
+            continue
+        cleaned.append(n.strip()[:_MAX_PLUS_ONE_NAME_LEN])
+    return cleaned or None
+
+
+def _vote_item_to_submit_req(
+    item: PollVoteItem, voter_name: str | None, plus_one_names: list[str] | None
+) -> SubmitVoteRequest:
     if not item.vote_type:
         raise HTTPException(status_code=400, detail="vote_type is required when inserting a new vote")
     return SubmitVoteRequest(
@@ -1256,10 +1333,13 @@ def _vote_item_to_submit_req(item: PollVoteItem, voter_name: str | None) -> Subm
         options_metadata=item.options_metadata,
         liked_slots=item.liked_slots,
         disliked_slots=item.disliked_slots,
+        plus_one_names=plus_one_names,
     )
 
 
-def _vote_item_to_edit_req(item: PollVoteItem, voter_name: str | None) -> EditVoteRequest:
+def _vote_item_to_edit_req(
+    item: PollVoteItem, voter_name: str | None, plus_one_names: list[str] | None
+) -> EditVoteRequest:
     return EditVoteRequest(
         yes_no_choice=item.yes_no_choice,
         ranked_choices=item.ranked_choices,
@@ -1273,6 +1353,7 @@ def _vote_item_to_edit_req(item: PollVoteItem, voter_name: str | None) -> EditVo
         options_metadata=item.options_metadata,
         liked_slots=item.liked_slots,
         disliked_slots=item.disliked_slots,
+        plus_one_names=plus_one_names,
     )
 
 
@@ -1312,13 +1393,24 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
 
     with get_db() as conn:
         poll_row = conn.execute(
-            "SELECT id, is_closed FROM polls WHERE id = %(id)s",
+            "SELECT id, is_closed, allow_plus_ones FROM polls WHERE id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         if not poll_row:
             raise HTTPException(status_code=404, detail="Poll not found")
         if poll_row.get("is_closed"):
             raise HTTPException(status_code=400, detail="Poll is closed")
+
+        # "Plus one/more" — one ballot can represent additional people. Clamp to
+        # None when the poll doesn't allow it (the FE shouldn't send any, but a
+        # crafted request must not inflate a poll that opted out), and sanitize
+        # otherwise (trim names, keep blanks as unnamed plus-ones, bound count +
+        # length). Poll-level: written onto every item's vote row below.
+        plus_one_names = (
+            _sanitize_plus_one_names(req.plus_one_names)
+            if poll_row.get("allow_plus_ones")
+            else None
+        )
 
         owned = conn.execute(
             """
@@ -1343,14 +1435,14 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
                     conn,
                     item.question_id,
                     item.vote_id,
-                    _vote_item_to_edit_req(item, req.voter_name),
+                    _vote_item_to_edit_req(item, req.voter_name, plus_one_names),
                     now,
                 )
             else:
                 row = _submit_vote_to_question(
                     conn,
                     item.question_id,
-                    _vote_item_to_submit_req(item, req.voter_name),
+                    _vote_item_to_submit_req(item, req.voter_name, plus_one_names),
                     now,
                     browser_id=browser_id,
                 )

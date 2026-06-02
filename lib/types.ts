@@ -218,6 +218,10 @@ export interface Poll {
   min_responses?: number | null;
   show_preliminary_results?: boolean;
   allow_pre_ranking?: boolean;
+  // "Plus one/more": when true, voters can add extra people their single ballot
+  // counts for (each with an optional name). Resolved server-side at create
+  // (default ON for time polls). Optional for pre-feature cached polls.
+  allow_plus_ones?: boolean;
   questions: Question[];
   // Poll-level voter aggregates (Phase 3.2). Use these instead of
   // iterating questions — see CLAUDE.md → "Addressability paradigm".

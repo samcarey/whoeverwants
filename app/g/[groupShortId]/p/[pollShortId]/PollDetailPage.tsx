@@ -14,6 +14,7 @@ import { Fragment, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, u
 import { useParams, useRouter } from "next/navigation";
 import { flushSync } from "react-dom";
 import {
+  apiGetGroupInvitableAccounts,
   apiGetGroupPoll,
   apiGetPollById,
   apiGetQuestionResults,
@@ -22,6 +23,7 @@ import {
   ApiError,
   QUESTION_VOTES_CHANGED_EVENT,
 } from "@/lib/api";
+import PlusOnesInput from "@/components/PlusOnesInput";
 import {
   POLL_HYDRATED_EVENT,
   SHOW_GROUP_BACKDROP_EVENT,
@@ -314,6 +316,20 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     return loadVotedQuestions().abstainedQuestionIds;
   });
 
+  // "Plus one/more": the poll-level list of additional people this ballot
+  // counts for (one entry per person; "" = unnamed). Only meaningful when
+  // `poll.allow_plus_ones`. A ref mirror keeps the submit getter (read inside
+  // useGroupVoting) from going stale.
+  const [plusOneNames, setPlusOneNames] = useState<string[]>([]);
+  const plusOneNamesRef = useRef<string[]>([]);
+  plusOneNamesRef.current = plusOneNames;
+  // Contact names for the lookup dropdown (same source as adding people to a
+  // group). Freeform entry works regardless; this is a convenience.
+  const [plusOneCandidates, setPlusOneCandidates] = useState<string[]>([]);
+  const getPlusOneNames = useRef(() =>
+    poll.allow_plus_ones ? plusOneNamesRef.current.map((n) => n.trim()) : null,
+  ).current;
+
   // Synthetic single-poll Group: useGroupVoting only reads `group.questions`
   // to resolve poll_id per vote write. Voted/abstained sets are passed via
   // setters; rebuilding the Group on every vote would churn identity for
@@ -345,6 +361,7 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     group: syntheticGroup,
     setVotedQuestionIds,
     setAbstainedQuestionIds,
+    getPlusOneNames,
   });
 
   const [questionResultsMap, setQuestionResultsMap] = useState<Map<string, QuestionResults>>(() => {
@@ -378,6 +395,46 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   // the initial-mount fetch loop for every sub-question.
   const pollRef = useRef(poll);
   useEffect(() => { pollRef.current = poll; }, [poll]);
+
+  // "Plus one/more": load contact names for the lookup dropdown (same endpoint
+  // as adding people to a group) + pre-fill the list from the viewer's existing
+  // vote so editing a ballot doesn't silently drop previously-added people.
+  const plusOnesPrefilledRef = useRef(false);
+  useEffect(() => {
+    if (!poll.allow_plus_ones) return;
+    const routeId = poll.group_short_id || poll.group_id;
+    let cancelled = false;
+    if (routeId) {
+      apiGetGroupInvitableAccounts(routeId)
+        .then((accounts) => {
+          if (cancelled) return;
+          const names = accounts
+            .map((a) => (a.name ?? "").trim())
+            .filter((n) => n.length > 0);
+          setPlusOneCandidates(names);
+        })
+        .catch(() => { /* freeform entry still works without candidates */ });
+    }
+    if (!plusOnesPrefilledRef.current) {
+      (async () => {
+        for (const sp of poll.questions) {
+          const voteId = getStoredVoteId(sp.id);
+          if (!voteId) continue;
+          const votes = await apiGetVotes(sp.id).catch(() => null);
+          if (cancelled || !votes) continue;
+          const mine = votes.find((v) => v.id === voteId);
+          if (mine?.plus_one_names && mine.plus_one_names.length > 0) {
+            if (!cancelled) setPlusOneNames(mine.plus_one_names);
+            plusOnesPrefilledRef.current = true;
+            return;
+          }
+        }
+        plusOnesPrefilledRef.current = true;
+      })();
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poll.allow_plus_ones, poll.id]);
 
   const fetchOneResults = useCallback(async (sp: Question) => {
     if (isPendingPollId(sp.id)) return;
@@ -985,6 +1042,25 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
             </Fragment>
           );
         })}
+
+        {/* "Plus one/more": when the poll allows it, the voter can add extra
+            people their single ballot counts for (each optionally named, with a
+            contact lookup). Poll-level — applies to every question. */}
+        {poll.allow_plus_ones && !isClosed && (
+          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800">
+            <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
+              Voting for others?
+            </h2>
+            <p className="px-1 mb-2 text-xs text-gray-400 dark:text-gray-500">
+              Add anyone you&apos;re answering on behalf of — your choices count for them too. Names are optional.
+            </p>
+            <PlusOnesInput
+              names={plusOneNames}
+              setNames={setPlusOneNames}
+              candidates={plusOneCandidates}
+            />
+          </div>
+        )}
 
         {/* Wrapper-level Submit for multi-question polls (batches yes/no
             staged choices + each non-yes_no ballot's prepared item). */}

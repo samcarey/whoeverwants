@@ -44,6 +44,11 @@ class SubmitVoteRequest(BaseModel):
     # Time question preference reactions
     liked_slots: list[str] | None = None
     disliked_slots: list[str] | None = None
+    # "Plus one/more": additional people this single ballot counts for. One
+    # entry per represented person; "" / blank = an unnamed plus-one. The
+    # vote weighs 1 + len(plus_one_names) everywhere. Poll-level in the batch
+    # endpoint (applied to every sibling question's row).
+    plus_one_names: list[str] | None = None
 
 
 class EditVoteRequest(BaseModel):
@@ -63,6 +68,8 @@ class EditVoteRequest(BaseModel):
     # Time question preference reactions
     liked_slots: list[str] | None = None
     disliked_slots: list[str] | None = None
+    # See SubmitVoteRequest.plus_one_names.
+    plus_one_names: list[str] | None = None
 
 
 class PollVoteItem(BaseModel):
@@ -99,6 +106,11 @@ class SubmitPollVotesRequest(BaseModel):
     in a single transaction; any item failure rolls back every other item."""
 
     voter_name: str | None = None
+    # "Plus one/more" — poll-level list of additional people this ballot counts
+    # for (one entry per person; "" = unnamed). Written onto every item's vote
+    # row so each question weighs 1 + len(plus_one_names). Ignored when the
+    # poll's `allow_plus_ones` is off (server clamps it then).
+    plus_one_names: list[str] | None = None
     items: list[PollVoteItem] = Field(..., min_length=1)
 
 
@@ -197,6 +209,7 @@ class VoteResponse(BaseModel):
     voter_duration: dict | None = None
     liked_slots: list[str] | None = None
     disliked_slots: list[str] | None = None
+    plus_one_names: list[str] | None = None
     created_at: str
     updated_at: str
 
@@ -324,6 +337,10 @@ class CreatePollRequest(BaseModel):
     min_responses: int | None = None
     show_preliminary_results: bool = True
     allow_pre_ranking: bool = True
+    # "Plus one/more": whether voters can submit on behalf of additional people.
+    # None → the server picks the default (ON when the poll has a time question,
+    # OFF otherwise). True/False is an explicit FE override.
+    allow_plus_ones: bool | None = None
     questions: list[CreateQuestionRequest] = Field(..., min_length=1)
 
 
@@ -384,6 +401,10 @@ class PollResponse(BaseModel):
     min_responses: int | None = None
     show_preliminary_results: bool = True
     allow_pre_ranking: bool = True
+    # "Plus one/more" — whether voters can add extra people their ballot counts
+    # for. Resolved at create time (default ON for time polls, OFF otherwise);
+    # the FE renders the plus-ones name list during voting when true.
+    allow_plus_ones: bool = False
     questions: list[QuestionResponse]
     # Poll-level voter aggregates (Phase 3.2).
     # Per CLAUDE.md → "Addressability paradigm", poll-scoped data lives

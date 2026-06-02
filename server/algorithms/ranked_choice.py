@@ -19,6 +19,8 @@ Reference: database/migrations/046_fix_majority_calculation_for_exhausted_ballot
 
 from dataclasses import dataclass, field
 
+from algorithms.weights import vote_weight
+
 
 @dataclass
 class RoundEntry:
@@ -88,7 +90,9 @@ def calculate_ranked_choice_winner(
     Returns:
         RankedChoiceResult with winner, round count, and per-round data.
     """
-    # Filter to valid, non-abstain ballots
+    # Filter to valid, non-abstain ballots. "Plus one/more": a ballot that
+    # represents N+1 people is duplicated N+1 times, so the duplicate-vote
+    # tally, majority threshold, and Borda all weight it correctly.
     ballots: list[list[list[str]]] = []
     for vote in votes:
         if vote.get("is_abstain", False) or vote.get("is_ranking_abstain", False):
@@ -96,7 +100,8 @@ def calculate_ranked_choice_winner(
         normalized = _normalize_ballot(vote)
         if normalized is None:
             continue
-        ballots.append(normalized)
+        for _ in range(vote_weight(vote)):
+            ballots.append(normalized)
 
     if not ballots:
         return RankedChoiceResult(winner=None, total_rounds=0)

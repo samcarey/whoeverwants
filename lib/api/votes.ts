@@ -22,6 +22,8 @@ export interface ApiVote {
   voter_duration: any | null;
   liked_slots: string[] | null;
   disliked_slots: string[] | null;
+  // "Plus one/more": additional people this ballot counts for ("" = unnamed).
+  plus_one_names?: string[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -60,7 +62,14 @@ export interface PollVoteItem {
 
 export async function apiSubmitPollVotes(
   pollId: string,
-  params: { voter_name?: string | null; items: PollVoteItem[] },
+  params: {
+    voter_name?: string | null;
+    // "Plus one/more": poll-level list of additional people this ballot counts
+    // for (one entry per person; "" = unnamed). The server clamps it to null
+    // when the poll's allow_plus_ones is off.
+    plus_one_names?: string[] | null;
+    items: PollVoteItem[];
+  },
 ): Promise<ApiVote[]> {
   const data = await pollFetch<ApiVote[]>(
     `/${encodeURIComponent(pollId)}/votes`,

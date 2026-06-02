@@ -60,6 +60,9 @@ export interface CreatePollParams {
   min_responses?: number | null;
   show_preliminary_results?: boolean;
   allow_pre_ranking?: boolean;
+  // "Plus one/more": null → server default (ON for time polls, OFF otherwise);
+  // true/false is the explicit FE toggle override.
+  allow_plus_ones?: boolean | null;
   questions: CreateQuestionParams[];
 }
 
