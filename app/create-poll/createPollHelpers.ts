@@ -44,6 +44,12 @@ export interface QuestionDraft {
    *  a slot counts only if at least this many people are available for it;
    *  if none clears the bar the event is cancelled. Maps to min_participants. */
   minParticipants: number;
+  /** Number of available slots for a limited_supply question (>= 1). Maps to
+   *  supply_count. Ignored for every other type. */
+  supplyCount: number;
+  /** limited_supply: show claimant names to everyone (true, default) or only
+   *  to the creator (false). Maps to reveal_claimant_names. */
+  revealClaimantNames: boolean;
   /** "Collect Suggestions before Vote" — only meaningful for ranked_choice
    *  questions. ON → suggestion poll (any typed options become the creator's
    *  initial suggestions). OFF → fixed-options ranked_choice (options
@@ -72,10 +78,13 @@ export function emptyDraft(
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const isTime = opts.mode === 'time' || opts.category === 'time';
   const isYesNo = opts.category === 'yes_no';
+  // limited_supply: the title IS the thing being handed out (e.g. "Concert
+  // tickets"), like a yes_no prompt — so the user types it, not auto-generated.
+  const isLimitedSupply = opts.category === 'limited_supply';
   return {
     questionType: opts.mode === 'time' ? 'time' : 'question',
     title: '',
-    isAutoTitle: !isYesNo,
+    isAutoTitle: !isYesNo && !isLimitedSupply,
     category: opts.category ?? 'custom',
     categoryIcon: '',
     forField: opts.forField ?? '',
@@ -93,6 +102,8 @@ export function emptyDraft(
       ? [{ day: todayStr, windows: [{ ...DEFAULT_TIME_WINDOW }] }]
       : [],
     minParticipants: 2,
+    supplyCount: 1,
+    revealClaimantNames: true,
     collectSuggestions: opts.collectSuggestions ?? true,
     collectAvailability: opts.collectAvailability ?? true,
   };
@@ -102,9 +113,10 @@ export function emptyDraft(
  * Resolve effective DB question_type for a draft. Mirrors the legacy
  * getQuestionType() in page.tsx so server-side validation rules stay aligned.
  */
-export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice' | 'time' {
+export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply' {
   if (d.questionType === 'time' || d.category === 'time') return 'time';
   if (d.category === 'yes_no') return 'yes_no';
+  if (d.category === 'limited_supply') return 'limited_supply';
   return 'ranked_choice';
 }
 
@@ -115,6 +127,11 @@ export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice
 export function effectiveCategoryIcon(d: QuestionDraft): string | null {
   const icon = d.categoryIcon.trim();
   return icon && !getBuiltInType(d.category) ? icon : null;
+}
+
+/** Clamp a limited_supply slot count to a whole number >= 1. */
+export function normalizeSupplyCount(count: number): number {
+  return Math.max(Math.round(count) || 1, 1);
 }
 
 /** True when a draft is a "suggestion poll" — a ranked_choice question with
@@ -197,10 +214,18 @@ export function draftToQuestionParams(
   // pass through here too, but `details` is unused on the single-card
   // layout, so it's harmless.
   const trimmedForField = d.forField.trim();
-  const yesNoPrompt = dbType === 'yes_no' ? d.title.trim() : '';
-  const contextValue = yesNoPrompt || trimmedForField;
+  // yes_no AND limited_supply both use the typed title as the question's own
+  // prompt/item-name (not auto-generated), so it rides along as `context` for
+  // the multi-question section header + same-kind disambiguation, the same way
+  // yes_no does.
+  const typedPrompt = dbType === 'yes_no' || dbType === 'limited_supply' ? d.title.trim() : '';
+  const contextValue = typedPrompt || trimmedForField;
   if (contextValue) {
     params.context = contextValue;
+  }
+  if (dbType === 'limited_supply') {
+    params.supply_count = normalizeSupplyCount(d.supplyCount);
+    params.reveal_claimant_names = d.revealClaimantNames;
   }
   if (dbType === 'ranked_choice' && d.category !== 'custom') {
     params.category = d.category;
@@ -265,6 +290,10 @@ export function deriveDraftTitle(d: QuestionDraft): string {
   // yes_no: the user-typed question text IS the title.
   if (d.category === 'yes_no') {
     return d.title.trim() || 'Yes/No?';
+  }
+  // limited_supply: the typed title is the item being handed out.
+  if (d.category === 'limited_supply') {
+    return d.title.trim() || 'Limited Supply';
   }
   // time questions: fixed "Time?" + optional " for X" suffix.
   if (d.questionType === 'time' || d.category === 'time') {
@@ -365,6 +394,8 @@ export function synthesizePlaceholderPoll(
       updated_at: now,
       category: dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : null,
       category_icon: effectiveCategoryIcon(d),
+      supply_count: dbType === 'limited_supply' ? normalizeSupplyCount(d.supplyCount) : null,
+      reveal_claimant_names: dbType === 'limited_supply' ? d.revealClaimantNames : null,
       is_auto_title: d.isAutoTitle,
       poll_id: pollId,
       question_index: i,
@@ -411,6 +442,11 @@ export function summarizeDraft(d: QuestionDraft): string {
   if (dbType === 'yes_no') {
     return d.title.trim() || 'Yes / No';
   }
+  if (dbType === 'limited_supply') {
+    const n = normalizeSupplyCount(d.supplyCount);
+    const item = d.title.trim();
+    return item ? `${n} × ${item}` : `${n} spot${n === 1 ? '' : 's'}`;
+  }
   if (dbType === 'time') {
     const dayCount = d.dayTimeWindows.length;
     if (dayCount === 0) return 'When?';
@@ -440,6 +476,7 @@ const _CATEGORY_LABELS: Record<string, string> = {
   video_game: 'Video Game',
   videogame: 'Video Game',
   petname: 'Pet Name',
+  limited_supply: 'Limited Supply',
   custom: 'Custom',
 };
 
@@ -458,6 +495,7 @@ function _singleQuestionDefaultTitle(category: string): string {
   const key = (category || '').trim().toLowerCase();
   if (key === 'yes_no') return 'Yes/No?';
   if (key === 'time') return 'Time?';
+  if (key === 'limited_supply') return 'Limited Supply';
   const label = labelForCategory(category);
   return label ? `${label}?` : 'Question?';
 }
@@ -468,6 +506,7 @@ function _draftCategory(d: QuestionDraft): string {
   const dbType = draftDbQuestionType(d);
   if (dbType === 'yes_no') return 'yes_no';
   if (dbType === 'time') return 'time';
+  if (dbType === 'limited_supply') return 'limited_supply';
   return d.category || 'custom';
 }
 
@@ -596,6 +635,7 @@ export function draftCardLabels(d: QuestionDraft): { icon: string; label: string
   const dbType = draftDbQuestionType(d);
   if (dbType === 'time') return { icon: '📅', label: 'Time' };
   if (dbType === 'yes_no') return { icon: '👍', label: 'Yes / No' };
+  if (dbType === 'limited_supply') return { icon: '🎟️', label: 'Limited Supply' };
   const builtIn = getBuiltInType(d.category);
   if (builtIn) return { icon: builtIn.icon, label: builtIn.label };
   return { icon: '🗳️', label: d.category && d.category !== 'custom' ? d.category : 'Section' };

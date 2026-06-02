@@ -594,8 +594,11 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   );
   const isClosed = !isPollOpen(poll);
   const usePollSubmit = isMultiPoll;
+  // yes_no AND limited_supply self-submit on tap (no wrapper Submit button) —
+  // QuestionBallot owns their submission, so the wrapper must not render one.
+  const SELF_SUBMIT_TYPES = ["yes_no", "limited_supply"];
   const useWrapperSubmit =
-    !isMultiPoll && subQuestions[0]?.question_type !== "yes_no";
+    !isMultiPoll && !SELF_SUBMIT_TYPES.includes(subQuestions[0]?.question_type ?? "");
 
   // Restore any per-poll staged yes/no choices (multi-question polls) so taps
   // made before submitting survive a refresh or navigating away. Single-question
@@ -864,9 +867,10 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
 
         {subQuestions.map((sp, idx) => {
           const isYesNo = sp.question_type === "yes_no";
+          const selfSubmits = SELF_SUBMIT_TYPES.includes(sp.question_type);
           const r = questionResultsMap.get(sp.id);
           const userVote = userVoteMap.get(sp.id);
-          const wrapperOwnsSubmit = useWrapperSubmit || (usePollSubmit && !isYesNo);
+          const wrapperOwnsSubmit = useWrapperSubmit || (usePollSubmit && !selfSubmits);
           // A ranked_choice question in its suggestion phase renders as two
           // stacked cards: the suggestion entry on top, and below it either the
           // ranking ballot (early voting, allow_pre_ranking !== false) or the

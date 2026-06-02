@@ -31,6 +31,7 @@ _CATEGORY_LABELS: dict[str, str] = {
     "video_game": "Video Game",
     "videogame": "Video Game",
     "petname": "Pet Name",
+    "limited_supply": "Limited Supply",
     "custom": "Custom",
 }
 
@@ -63,6 +64,8 @@ def _single_question_default_title(category: str) -> str:
     key = (category or "").strip().lower()
     if key == "time":
         return "Time?"
+    if key == "limited_supply":
+        return "Limited Supply"
     if _is_yes_no(category):
         return "Question?"
     label = _label_for(category)

@@ -55,6 +55,10 @@ def validate_vote(
         if ranked_choice_tiers:
             raise VoteValidationError("ranked_choice_tiers not allowed for time questions")
         _validate_time_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
+    elif question_type == "limited_supply":
+        if ranked_choice_tiers:
+            raise VoteValidationError("ranked_choice_tiers not allowed for limited supply questions")
+        _validate_limited_supply_vote(yes_no_choice, ranked_choices, suggestions)
     else:
         raise VoteValidationError(f"Unknown question type: {question_type}")
 
@@ -144,6 +148,22 @@ def _validate_ranked_choice_vote(
         raise VoteValidationError(
             "ranked_choices or suggestions is required for ranked choice questions"
         )
+
+
+def _validate_limited_supply_vote(
+    yes_no_choice: str | None,
+    ranked_choices: list[str] | None,
+    suggestions: list[str] | None,
+) -> None:
+    # A limited-supply vote carries no choice payload — claim vs decline is
+    # is_abstain alone (claim = false, decline = true). Both are valid, so
+    # there's nothing to require; just forbid the other types' fields.
+    if yes_no_choice:
+        raise VoteValidationError("yes_no_choice not allowed for limited supply questions")
+    if ranked_choices:
+        raise VoteValidationError("ranked_choices not allowed for limited supply questions")
+    if suggestions:
+        raise VoteValidationError("suggestions not allowed for limited supply questions")
 
 
 def _validate_time_vote(

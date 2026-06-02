@@ -53,6 +53,11 @@ export default function QuestionResultsDisplay({ results, isQuestionClosed, user
     return <TimeResults results={results} isQuestionClosed={isQuestionClosed} />;
   }
 
+  // limited_supply has no QuestionResultsDisplay branch: the group card uses
+  // CompactSupplyPreview (counts only) and the detail-page ballot renders the
+  // roster itself (LimitedSupplyBallot), so this dispatcher is never called
+  // for it.
+
   return null;
 }
 
@@ -541,6 +546,32 @@ export function CompactTimePreview({
         title={formatTimeSlot(winner)}
       >
         {formatSlotCompact(winner)}
+      </span>
+    </div>
+  );
+}
+
+/** Compact group-card pill for a limited-supply question: "3/4 claimed" or
+ *  "Full" once every slot is taken. supplyFallback is the question's
+ *  supply_count, used when no results have loaded yet (so a fresh poll still
+ *  shows "0/4 claimed" instead of nothing). */
+export function CompactSupplyPreview({
+  results,
+  supplyFallback,
+  isQuestionClosed,
+}: {
+  results?: QuestionResults | null;
+  supplyFallback?: number | null;
+  isQuestionClosed?: boolean;
+}) {
+  const supply = results?.supply_count ?? supplyFallback ?? 0;
+  if (!supply) return null;
+  const secured = results?.secured_count ?? 0;
+  const isFull = secured >= supply;
+  return (
+    <div className="flex items-center justify-end gap-2 min-w-0">
+      <span className={`${PILL_CLASS} ${isQuestionClosed || isFull ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}>
+        {isFull ? "Full" : `${secured}/${supply} claimed`}
       </span>
     </div>
   );
