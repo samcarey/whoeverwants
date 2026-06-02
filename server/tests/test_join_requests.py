@@ -639,7 +639,7 @@ def test_approve_backdates_joined_at_to_request_time(
 def test_approve_schedules_member_added_push(
     client, creator_browser, requester_browser, monkeypatch
 ):
-    """On approve, the endpoint must schedule a `fan_out_member_added`
+    """On approve, the endpoint must schedule a `fan_out_to_user`
     push targeting the requester's user_id. The push is what wakes the
     requester's open GroupNotFound screen so it can auto-reload into
     the group (no manual refresh required). Deny does NOT schedule a
@@ -653,16 +653,16 @@ def test_approve_schedules_member_added_push(
 
     captured: list[dict] = []
 
-    def fake_fan_out(group_id, added_user_id, payload):
+    def fake_fan_out(group_id, user_id, payload):
         captured.append(
             {
                 "group_id": group_id,
-                "user_id": added_user_id,
+                "user_id": user_id,
                 "payload": payload,
             }
         )
 
-    monkeypatch.setattr(groups_router, "fan_out_member_added", fake_fan_out)
+    monkeypatch.setattr(groups_router, "fan_out_to_user", fake_fan_out)
 
     ctoken, _, _ = _sign_in(client, creator_browser)
     group = _create_private_group(client, creator_browser, ctoken)
