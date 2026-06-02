@@ -5,7 +5,8 @@ import { useRouter, usePathname } from "next/navigation";
 import { QuestionResults, RankedChoiceRound, OptionsMetadata } from "@/lib/types";
 import { ApiRankedChoiceRound } from "@/lib/api";
 import { isPollDetailView } from "@/lib/questionId";
-import { rankedChoiceResultGloss } from "@/lib/rankedChoiceGloss";
+import { outcomeExplainer } from "@/lib/outcomeExplainer";
+import OutcomeInfoButton from "@/components/OutcomeInfoButton";
 import OptionLabel, { isLocationEntry, isRestaurantEntry } from "./OptionLabel";
 
 interface CompactRankedChoiceResultsProps {
@@ -337,25 +338,17 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
   }
 
   const currentRound = roundVisualizations[currentRoundIndex];
-  // Plain-language outcome explanation. Gated on isQuestionClosed so we never
-  // claim an option was "eliminated early" while preliminary results are still
-  // moving — it describes the final outcome, not an in-progress tally.
-  const gloss = isQuestionClosed ? rankedChoiceResultGloss(results) : null;
+  // Plain-language outcome explanation, surfaced behind a grey info (ⓘ) icon
+  // placed inline right after the round label (never inline prose). Gated on
+  // isQuestionClosed so we never claim an option was "eliminated early" while
+  // preliminary results are still moving — it describes the final outcome.
+  const explanation = isQuestionClosed ? outcomeExplainer(results) : null;
+  // The icon is only shown on the FINAL round so it reads as "about this
+  // result", not "about round 2 of 4".
+  const showInfo = explanation && currentRoundIndex === roundVisualizations.length - 1;
 
   return (
     <div className="relative">
-      {gloss && (
-        <div
-          className={
-            gloss.tone === "warn"
-              ? "mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border-l-4 border-amber-400 dark:border-amber-600 text-sm text-amber-800 dark:text-amber-200"
-              : "mb-4 px-1 text-xs text-gray-500 dark:text-gray-400 italic"
-          }
-        >
-          {gloss.text}
-        </div>
-      )}
-
       {/* Navigation buttons for desktop - only show if multiple rounds */}
       {roundVisualizations.length > 1 ? (
         <div className="flex justify-between items-center mb-4">
@@ -368,11 +361,12 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          
-          <div className="text-center">
+
+          <div className="text-center flex items-center justify-center gap-1">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{currentRound.title}</h3>
+            {showInfo && <OutcomeInfoButton text={explanation!} />}
           </div>
-          
+
           <button
             onClick={() => navigateRound(1)}
             className="p-2 rounded-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
@@ -387,6 +381,13 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
         results.total_votes === 0 && results.winner && results.winner !== 'tie' ? (
           <div className="text-center mb-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">Uncontested</p>
+          </div>
+        ) : showInfo ? (
+          // Single-round majority: no round-nav header, so anchor the icon to a
+          // small "Final Results" label.
+          <div className="text-center mb-4 flex items-center justify-center gap-1">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Final Results</h3>
+            <OutcomeInfoButton text={explanation!} />
           </div>
         ) : null
       )}
