@@ -30,6 +30,7 @@ import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { hasVotedOnQuestion, getStoredVoteId, setStoredVoteId, setVotedQuestionFlag } from "@/lib/votedQuestionsStorage";
 import { buildVoteData, buildPollVoteItem, type BallotInputs } from "./QuestionBallot/voteDataBuilders";
 import TimeBallotSection from "./QuestionBallot/TimeBallotSection";
+import LimitedSupplyBallot from "./QuestionBallot/LimitedSupplyBallot";
 import { haptic } from "@/lib/haptics";
 
 /** Card chrome shared between the poll detail page's per-question card and
@@ -115,6 +116,10 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   // inside submitVote reads the freshly-committed value (rather than the
   // stale empty array from the tap-event closure).
   const [pendingBinarySubmit, setPendingBinarySubmit] = useState(false);
+  // Same deferred-submit pattern for limited-supply claim/decline taps: set
+  // isAbstaining (+ enter edit mode for changes), flip the flag, and let the
+  // effect fire submitVote after React commits so it reads fresh state.
+  const [pendingSupplySubmit, setPendingSupplySubmit] = useState(false);
   // Tiered ballot (equal-ranking groups). Each inner array is a tier of
   // options tied for the same rank. When it has no ties, every inner array
   // is a singleton and this is equivalent to rankedChoices.
@@ -643,7 +648,9 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     const shouldFetchForTimeQuestion = question.question_type === 'time'
       && (!inAvailabilityPhase || (poll.allow_pre_ranking !== false && hasVoted));
 
-    if (isClosed || shouldFetchForTimeQuestion) {
+    // Limited-supply: always fetch so the "N of M claimed" roster + the
+    // viewer's own secured/waitlist status render (open or closed).
+    if (isClosed || shouldFetchForTimeQuestion || question.question_type === 'limited_supply') {
       fetchQuestionResults();
     }
   }, [questionClosed, poll.response_deadline, question.question_type, fetchQuestionResults, inAvailabilityPhase, poll.allow_pre_ranking, hasVoted]);
@@ -1111,6 +1118,7 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
         (hasSuggestionPhase && (isEditingVote || isEditingRanking))
         || isQuestionClosed
         || showPrelimResults
+        || question.question_type === 'limited_supply'
         || (question.question_type === 'time' && inAvailabilityPhase && poll.allow_pre_ranking !== false)
       ) {
         await fetchQuestionResults();
@@ -1162,11 +1170,38 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     void submitVoteRef.current();
   }, [pendingBinarySubmit, rankedChoices, isEditingRanking]);
 
+  // Limited-supply claim/decline. Both first-time and "change my mind" taps
+  // auto-submit immediately (no Submit button — claiming a scarce slot should
+  // be one tap). For a change after voting, enter edit mode so submitVote
+  // treats it as an update of the existing row.
+  const handleSupplyClaim = () => {
+    if (isSubmitting || isQuestionClosed) return;
+    setIsAbstaining(false);
+    if (hasVoted && !isEditingVote) setIsEditingVote(true);
+    setPendingSupplySubmit(true);
+  };
+  const handleSupplyDecline = () => {
+    if (isSubmitting || isQuestionClosed) return;
+    setIsAbstaining(true);
+    if (hasVoted && !isEditingVote) setIsEditingVote(true);
+    setPendingSupplySubmit(true);
+  };
+  useEffect(() => {
+    if (!pendingSupplySubmit) return;
+    setPendingSupplySubmit(false);
+    void submitVoteRef.current();
+  }, [pendingSupplySubmit, isAbstaining, isEditingVote]);
+
   // Validation + voteData/PollVoteItem construction is shared with
   // submitVote via voteDataBuilders. The two callers diverge only on the
   // POST-build side effects: submitVote calls the API itself; this returns
   // a deferred commit/fail pair the wrapper invokes after batching.
   const prepareBatchVoteItem = (): PrepareBatchVoteItemResult => {
+    // limited_supply self-submits on tap (claim/decline), so it never
+    // participates in the wrapper's batch — skip it to avoid a duplicate claim.
+    if (question.question_type === 'limited_supply') {
+      return { skip: true };
+    }
     const isAnyEditing = isEditingVote || isEditingRanking;
     if (isSubmitting || (hasVoted && !isAnyEditing) || isQuestionClosed) {
       return { skip: true };
@@ -1365,6 +1400,26 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   useEffect(() => {
     onReferenceLocationStateChange?.(question.id, { showBelow: showReferenceBelowCard });
   }, [question.id, showReferenceBelowCard, onReferenceLocationStateChange]);
+
+  if (question.question_type === 'limited_supply') {
+    return (
+      <div className="question-content">
+        {question.details && !partOfPollGroup && question.is_auto_title !== true && <QuestionDetails details={question.details} />}
+        <LimitedSupplyBallot
+          supplyCount={question.supply_count ?? 0}
+          results={questionResults}
+          hasVoted={hasVoted}
+          committedDecline={!!userVoteData?.is_abstain}
+          ownVoteCreatedAt={userVoteData?.created_at ?? null}
+          isClosed={isQuestionClosed}
+          isSubmitting={isSubmitting}
+          error={voteError}
+          onClaim={handleSupplyClaim}
+          onDecline={handleSupplyDecline}
+        />
+      </div>
+    );
+  }
 
   return (
     <>

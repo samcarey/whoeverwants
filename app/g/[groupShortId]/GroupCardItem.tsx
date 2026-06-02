@@ -39,6 +39,7 @@ import QuestionResultsDisplay, {
   CompactRankedChoicePreview,
   CompactSuggestionPreview,
   CompactTimePreview,
+  CompactSupplyPreview,
 } from "@/components/QuestionResults";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { haptic } from "@/lib/haptics";
@@ -248,6 +249,17 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
       if (!hasPreview) return null;
       return <CompactTimePreview results={r} isQuestionClosed={isClosed} />;
+    }
+    if (sp.question_type === "limited_supply") {
+      // Always show "N/M claimed" — falls back to the question's own
+      // supply_count when no results have loaded (fresh poll, no votes).
+      return (
+        <CompactSupplyPreview
+          results={r}
+          supplyFallback={sp.supply_count}
+          isQuestionClosed={isClosed}
+        />
+      );
     }
     return null;
   };

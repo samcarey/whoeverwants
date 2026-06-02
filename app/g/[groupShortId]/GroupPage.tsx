@@ -883,7 +883,8 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       const wantsResults =
         questionType === 'yes_no' ||
         questionType === 'ranked_choice' ||
-        questionType === 'time';
+        questionType === 'time' ||
+        questionType === 'limited_supply';
       if (!wantsResults) return;
       const voteId = questionType === 'yes_no' ? getStoredVoteId(questionId) : null;
       const [results, votes] = await Promise.all([

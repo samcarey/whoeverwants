@@ -297,6 +297,7 @@ def _row_to_question(row: dict) -> QuestionResponse:
         is_auto_title=row.get("is_auto_title", False),
         min_availability_percent=row.get("min_availability_percent"),
         time_min_participants=row.get("time_min_participants"),
+        supply_count=row.get("supply_count"),
         poll_id=str(row["poll_id"]) if row.get("poll_id") else None,
         question_index=row.get("question_index"),
     )
@@ -675,6 +676,33 @@ def _compute_results(question, votes, *, include_tentative_time_options: bool = 
             ranked_choice_rounds=rc_rounds if rc_rounds else None,
             borda_scores=rc_borda,
             suggestion_counts=suggestion_counts_data,
+        )
+
+    if question_type == "limited_supply":
+        from algorithms.limited_supply import calculate_limited_supply_result
+
+        result = calculate_limited_supply_result(
+            [dict(v) for v in votes], question.get("supply_count") or 0
+        )
+        return QuestionResultsResponse(
+            question_id=str(question["id"]),
+            title=question["title"],
+            question_type=question_type,
+            created_at=question["created_at"].isoformat() if isinstance(question["created_at"], datetime) else str(question["created_at"]),
+            response_deadline=question["response_deadline"].isoformat() if question.get("response_deadline") else None,
+            total_votes=len(votes),
+            supply_count=result.supply_count,
+            secured_count=result.secured_count,
+            waitlist_count=result.waitlist_count,
+            claims=[
+                {
+                    "name": c.name,
+                    "secured": c.secured,
+                    "position": c.position,
+                    "created_at": c.created_at,
+                }
+                for c in result.claims
+            ],
         )
 
     if question_type == "time":

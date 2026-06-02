@@ -85,6 +85,21 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
     };
   }
 
+  if (state.questionType === 'limited_supply') {
+    // A claim carries no payload — `is_abstain` alone is the claim/decline
+    // signal (false = claim a slot, true = decline). Always valid.
+    return {
+      ok: true,
+      effectiveIsAbstaining,
+      voteData: {
+        question_id: state.questionId,
+        vote_type: 'limited_supply' as const,
+        is_abstain: state.isAbstaining,
+        voter_name: state.voterName.trim() || null,
+      },
+    };
+  }
+
   if (state.questionType === 'ranked_choice') {
     const filteredRankedChoices = state.rankedChoices.filter(c => c && c.trim().length > 0);
     const filteredSuggestionsForValidation = state.suggestionChoices.filter(c => c && c.trim().length > 0);

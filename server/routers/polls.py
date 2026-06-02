@@ -101,6 +101,14 @@ def _validate_request(req: CreatePollRequest) -> None:
             detail="A poll can contain at most one time question",
         )
 
+    for sp in req.questions:
+        if sp.question_type == QuestionType.limited_supply:
+            if sp.supply_count is None or sp.supply_count < 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail="A limited supply question needs at least one available slot",
+                )
+
     seen: dict[tuple[str, str | None], list[str | None]] = {}
     for sp in req.questions:
         validate_category_icon(sp.category_icon)
@@ -334,6 +342,7 @@ def _insert_question(
             reference_location_label,
             min_availability_percent,
             time_min_participants,
+            supply_count,
             is_auto_title,
             poll_id, question_index,
             created_at, updated_at
@@ -348,6 +357,7 @@ def _insert_question(
             %(reference_location_label)s,
             %(min_availability_percent)s,
             %(time_min_participants)s,
+            %(supply_count)s,
             %(is_auto_title)s,
             %(poll_id)s, %(question_index)s,
             %(now)s, %(now)s
@@ -374,6 +384,9 @@ def _insert_question(
             "time_min_participants": (
                 sub.min_participants if sub.question_type == QuestionType.time else None
             ),
+            "supply_count": (
+                sub.supply_count if sub.question_type == QuestionType.limited_supply else None
+            ),
             "is_auto_title": sub.is_auto_title,
             "poll_id": str(poll_row["id"]),
             "question_index": question_index,
@@ -392,6 +405,8 @@ def _category_for_title(question_row: dict) -> str:
     "Custom for Movie" when the poll-level title is regenerated."""
     if question_row.get("question_type") == "time":
         return "time"
+    if question_row.get("question_type") == "limited_supply":
+        return "limited_supply"
     return question_row.get("category") or question_row.get("question_type") or ""
 
 
@@ -434,11 +449,13 @@ _CATEGORY_ICONS = {
     "location": "📍",
     "movie": "🎬",
     "video_game": "🎮",
+    "limited_supply": "🎟️",
 }
 _QUESTION_TYPE_SYMBOLS = {
     "yes_no": "👍",
     "ranked_choice": "🗳️",
     "time": "📅",
+    "limited_supply": "🎟️",
 }
 
 
