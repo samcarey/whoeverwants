@@ -290,3 +290,61 @@ class TestPlusOneSeededVotes:
         )
         res = _poll_results(client, poll)
         assert res["yes_count"] == 1 and res["no_count"] == 1  # Bob not re-seeded
+
+
+class TestPlusOneInviteNotMembership:
+    def test_seeds_invite_not_membership(self, client):
+        import psycopg
+        from tests.conftest import TEST_DB_URL
+
+        a_b, tok_a, a_uid, b_b, tok_b, b_uid, shared = _make_contacts(client)
+        # Poll lives in a FRESH group Alice mints (Bob is NOT a member of it);
+        # Bob is still Alice's contact via the shared group above.
+        poll = client.post(
+            "/api/polls",
+            json={
+                "creator_name": "Alice",
+                "title": "Dinner Friday?",
+                "allow_plus_ones": True,
+                "questions": [{"question_type": "yes_no", "category": "yes_no"}],
+            },
+            headers=_bearer_headers(a_b, tok_a),
+        ).json()
+        qid = poll["questions"][0]["id"]
+        poll_group_id = poll["group_id"]
+        _reconcile_contacts(client, a_b, tok_a, poll["id"])
+
+        client.post(
+            f"/api/polls/{poll['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "plus_one_user_ids": [b_uid],
+                "items": [{"question_id": qid, "vote_type": "yes_no", "yes_no_choice": "yes"}],
+            },
+            headers=_bearer_headers(a_b, tok_a),
+        )
+
+        # Bob's seeded vote counts + is readable by Bob...
+        assert _poll_results(client, poll)["yes_count"] == 2
+        bob_votes = client.get(
+            f"/api/questions/{qid}/votes", headers=_bearer_headers(b_b, tok_b)
+        ).json()
+        assert len(bob_votes) == 1
+
+        with psycopg.connect(TEST_DB_URL) as conn:
+            # ...but Bob was NOT auto-added to the poll's group...
+            member = conn.execute(
+                """
+                SELECT 1 FROM group_members
+                 WHERE group_id = %s::uuid
+                   AND browser_id IN (SELECT browser_id FROM user_browsers WHERE user_id = %s::uuid)
+                """,
+                (poll_group_id, b_uid),
+            ).fetchone()
+            assert member is None
+            # ...instead an invite to the group was minted.
+            invite = conn.execute(
+                "SELECT 1 FROM group_invites WHERE group_id = %s::uuid AND target_poll_id = %s::uuid",
+                (poll_group_id, poll["id"]),
+            ).fetchone()
+            assert invite is not None

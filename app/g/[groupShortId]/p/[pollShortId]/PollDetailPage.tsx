@@ -691,10 +691,12 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     poll.is_closed ? [] : [poll.response_deadline, poll.prephase_deadline],
   );
   const isClosed = !isPollOpen(poll);
-  // When the poll allows plus-ones, even a single yes/no routes through the
-  // explicit staged-Submit flow (instead of auto-submitting on tap) so the
-  // voter can add people first and the button can show "for X".
-  const usePollSubmit = isMultiPoll || (allYesNo && !!poll.allow_plus_ones);
+  // A single yes/no keeps tap-to-submit UNLESS the voter has added plus-ones —
+  // then it routes through the explicit staged-Submit flow so they can finish
+  // adding people and the button can show "for X". Multi-question polls always
+  // use the staged flow.
+  const usePollSubmit =
+    isMultiPoll || (allYesNo && !!poll.allow_plus_ones && plusOnes.length > 0);
   const useWrapperSubmit =
     !isMultiPoll && subQuestions[0]?.question_type !== "yes_no";
 

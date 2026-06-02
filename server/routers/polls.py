@@ -32,17 +32,18 @@ from models import (
     VoteResponse,
 )
 from services.contacts import (
-    add_member_for_user,
     earliest_browser_for_user,
     is_contact,
     list_plus_one_candidates,
     reconcile_contacts,
     user_responded_to_poll,
 )
+from services.invites import issue_invite
 from services.groups import _is_uuid_like, group_name_phrase, require_uuid
 from services.memberships import join_group, join_group_for_poll
 from services.poll_categories import record_poll_categories
 from services.push import (
+    fan_out_member_added,
     fan_out_new_poll,
     fan_out_phase_transition,
     fan_out_poll_closed,
@@ -1331,23 +1332,50 @@ def _seed_plus_one_votes(
     *,
     submitter_user_id: str | None,
     now: datetime,
-) -> None:
+) -> list[tuple[str, str, dict]]:
     """Create a seeded, editable vote for each looked-up account the submitter
     is voting for. Each account gets one vote per question mirroring the
     submitter's choice, attributed to that account (via its earliest browser),
-    voter_name = the account's display_name. Also grants the account membership
-    so it can see + later change the response.
+    voter_name = the account's display_name. Their vote counts immediately.
+
+    Does NOT add them to the group — instead mints a single-use INVITE (Phase G,
+    targeted at the poll) and returns a notification spec per account so the
+    caller can push "<submitter> voted for you — open to see or change your
+    response". Tapping the invite lets them join + reach the poll, where the
+    detail page's discovery pass adopts the seeded vote for editing.
 
     Skips: the submitter themself, non-contacts (can't seed an arbitrary
     account), accounts with no linked browser, and accounts that already
-    responded to the poll. Each account is seeded at most once (dedup)."""
+    responded. Each account is seeded at most once (dedup). Returns
+    `[(group_id, user_id, payload)]` for the caller to fan out as pushes."""
     if not submitter_user_id:
-        return
-    group_row = conn.execute(
-        "SELECT group_id FROM polls WHERE id = %(id)s", {"id": poll_id}
+        return []
+    poll_meta = conn.execute(
+        """
+        SELECT p.group_id, g.short_id AS group_short_id, g.title AS group_title
+          FROM polls p LEFT JOIN groups g ON p.group_id = g.id
+         WHERE p.id = %(id)s
+        """,
+        {"id": poll_id},
     ).fetchone()
-    group_id = str(group_row["group_id"]) if group_row and group_row.get("group_id") else None
+    group_id = (
+        str(poll_meta["group_id"]) if poll_meta and poll_meta.get("group_id") else None
+    )
+    route_for_url = (poll_meta.get("group_short_id") if poll_meta else None) or group_id
+    group_phrase = (
+        group_name_phrase(conn, group_id, override=poll_meta.get("group_title"))
+        if group_id
+        else None
+    )
+    submitter_row = conn.execute(
+        "SELECT display_name FROM users WHERE id = %(u)s::uuid",
+        {"u": submitter_user_id},
+    ).fetchone()
+    submitter_name = (
+        (submitter_row.get("display_name") if submitter_row else None) or "Someone"
+    )
 
+    notifications: list[tuple[str, str, dict]] = []
     seen: set[str] = set()
     for raw_uid in user_ids[: _MAX_PLUS_ONES]:
         uid = (raw_uid or "").strip()
@@ -1367,9 +1395,6 @@ def _seed_plus_one_votes(
         if not name_row:
             continue
         seeded_name = name_row.get("display_name")
-        # Membership so the account can see + edit the poll it was voted into.
-        if group_id:
-            add_member_for_user(conn, group_id, uid)
         for item in items:
             # Always an INSERT for the represented account (their first vote),
             # mirroring the submitter's per-question choice. No plus-ones of
@@ -1381,6 +1406,37 @@ def _seed_plus_one_votes(
                 now,
                 browser_id=their_browser,
             )
+        # Invite (NOT auto-membership) + queue a notification so they can join,
+        # reach the poll, and change the response we seeded for them.
+        if group_id:
+            try:
+                invite = issue_invite(
+                    conn,
+                    group_id=group_id,
+                    created_by_user_id=str(submitter_user_id),
+                    mode="single",
+                    target_poll_id=poll_id,
+                )
+                title = f"{submitter_name} voted for you"
+                if group_phrase:
+                    title += f" in {group_phrase}"
+                notifications.append(
+                    (
+                        group_id,
+                        uid,
+                        {
+                            "title": title,
+                            "body": "Open to see or change your response.",
+                            "url": f"/invite/{invite.token}",
+                            "group_id": route_for_url,
+                            "group_uuid": group_id,
+                            "tag": f"plus-one-{poll_id}-{uid}",
+                        },
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("plus-one invite/notify failed for %s", uid)
+    return notifications
 
 
 def _vote_item_to_submit_req(
@@ -1431,7 +1487,12 @@ def _vote_item_to_edit_req(
     response_model=list[VoteResponse],
     status_code=201,
 )
-def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Request):
+def submit_poll_votes(
+    poll_id: str,
+    req: SubmitPollVotesRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
     """Atomic batch vote across multiple questions of one poll.
 
     Each `items[i]` either inserts a new vote (vote_id null) or updates an
@@ -1522,8 +1583,9 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
         # on allow_plus_ones; only the submitter's contacts can be seeded; an
         # account that already responded is skipped (never overwrite their own
         # vote). Runs in the same transaction as the submitter's votes.
+        plus_one_notifications: list[tuple[str, str, dict]] = []
         if poll_row.get("allow_plus_ones") and req.plus_one_user_ids:
-            _seed_plus_one_votes(
+            plus_one_notifications = _seed_plus_one_votes(
                 conn,
                 poll_id,
                 req.items,
@@ -1537,6 +1599,13 @@ def submit_poll_votes(poll_id: str, req: SubmitPollVotesRequest, request: Reques
         # acted on. The FE also pings /viewed on poll open; this covers the
         # vote-without-a-separate-view path.
         _record_poll_view(conn, browser_id, poll_id, now)
+
+    # Notify each represented account (decoupled, after the response) that
+    # someone voted for them + invited them to change it.
+    for notif_group_id, notif_user_id, payload in plus_one_notifications:
+        background_tasks.add_task(
+            fan_out_member_added, notif_group_id, notif_user_id, payload
+        )
 
     return [_row_to_vote(r) for r in result_rows]
 
