@@ -43,10 +43,10 @@ from services.groups import _is_uuid_like, group_name_phrase, require_uuid
 from services.memberships import join_group, join_group_for_poll
 from services.poll_categories import record_poll_categories
 from services.push import (
-    fan_out_member_added,
     fan_out_new_poll,
     fan_out_phase_transition,
     fan_out_poll_closed,
+    fan_out_to_user,
 )
 from services.validation import validate_category_icon, validate_user_name
 from services.questions import (
@@ -1697,7 +1697,7 @@ def submit_poll_votes(
     # someone voted for them + invited them to change it.
     for notif_group_id, notif_user_id, payload in plus_one_notifications:
         background_tasks.add_task(
-            fan_out_member_added, notif_group_id, notif_user_id, payload
+            fan_out_to_user, notif_group_id, notif_user_id, payload
         )
 
     return [_row_to_vote(r) for r in result_rows]

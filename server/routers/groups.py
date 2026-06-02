@@ -80,7 +80,7 @@ from services.groups import (
     resolve_group_for_visit,
     resolve_group_id_from_route_id,
 )
-from services.push import fan_out_join_request, fan_out_member_added
+from services.push import fan_out_join_request, fan_out_to_user
 
 
 class GroupSummary(BaseModel):
@@ -1291,7 +1291,7 @@ def decide_group_join_request(
     `load_user_visibility` expands that to every device the requester
     is signed in on, so they see the group immediately on the next
     refresh — no per-device approval needed. Also fires a
-    `fan_out_member_added` push so the requester's open client (e.g.
+    `fan_out_to_user` push so the requester's open client (e.g.
     sitting on the GroupNotFound "Request to join" screen) can
     auto-refresh into the group without a manual reload, AND so
     devices that aren't open get a banner they can tap to navigate in.
@@ -1386,7 +1386,7 @@ def decide_group_join_request(
         )
     if notify_payload and notify_user_id and notify_group_id:
         background_tasks.add_task(
-            fan_out_member_added,
+            fan_out_to_user,
             notify_group_id,
             notify_user_id,
             notify_payload,
@@ -1550,7 +1550,7 @@ def add_group_members(
     )
     for uid in added_user_ids:
         background_tasks.add_task(
-            fan_out_member_added,
+            fan_out_to_user,
             group_id,
             uid,
             {

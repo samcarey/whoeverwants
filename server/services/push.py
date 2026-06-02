@@ -567,21 +567,21 @@ def fan_out_join_request(
         log.exception("fan_out_join_request failed: %s", exc)
 
 
-def fan_out_member_added(
+def fan_out_to_user(
     group_id: str,
-    added_user_id: str,
+    user_id: str,
     payload: dict,
 ) -> None:
-    """Send an 'added to a group' push to every browser the just-added
-    account is signed in on, subject to the per-group notification
-    preference (default ON for a freshly-added member — they have no pref
-    row yet). Same safety contract as `fan_out_join_request`: every error
-    caught, logged, and swallowed.
+    """Send a group-scoped push to every browser the given account is signed
+    in on, subject to the per-group notification preference (default ON when
+    the account has no pref row yet, e.g. a freshly-added member). Same safety
+    contract as `fan_out_join_request`: every error caught, logged, swallowed.
 
-    Targets `user_browsers WHERE user_id = added_user_id` — the recipient is
-    the invitee, not the group at large (the rest of the group already knows
-    about each other). Reuses the join-request `notify_new_poll` pref as the
-    single "do I want to hear about this group?" signal.
+    Targets `user_browsers WHERE user_id = user_id` — the recipient is one
+    specific account, not the group at large. Callers build their own payload
+    (member-added, plus-one invite, etc.); this just routes it. Reuses the
+    `notify_new_poll` pref as the single "do I want to hear about this group?"
+    signal.
     """
     try:
         with get_db() as conn:
@@ -598,7 +598,7 @@ def fan_out_member_added(
                  WHERE ub.user_id = %(uid)s::uuid
                    AND COALESCE(apref.notify_new_poll, bpref.notify_new_poll, TRUE) = TRUE
                 """,
-                {"gid": group_id, "uid": added_user_id},
+                {"gid": group_id, "uid": user_id},
             ).fetchall()
             browser_ids = [r["browser_id"] for r in recipients]
             if not browser_ids:
@@ -610,7 +610,7 @@ def fan_out_member_added(
 
         _dispatch_pushes(subscriptions, payload, vapid)
     except Exception as exc:  # noqa: BLE001
-        log.exception("fan_out_member_added failed: %s", exc)
+        log.exception("fan_out_to_user failed: %s", exc)
 
 
 def fan_out_poll_closed(group_id: str, poll_id: str, payload: dict) -> None:
