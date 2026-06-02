@@ -492,15 +492,31 @@ _PREF_ON_TRUE = "COALESCE(apref.notify_new_poll, bpref.notify_new_poll, TRUE) = 
 
 # Gap 1: skip members who ✕'d THIS poll (filed it in their Old tab) — "ignore"
 # silences poll-closed + phase-transition pushes. Expects the recipient query to
-# alias the member row `gm` and bind %(pid)s to the poll_id. Suppression is
-# per-browser (one poll_follow_state row per (poll, browser)); the cross-device
-# account-union refinement (✕ on device A also silencing device B) is a
-# follow-up — the badge path is already account-aware via old_poll_ids_for_browsers.
+# alias the member row `gm` AND join `gm_ub` (the `_PREF_JOIN` row, exposing
+# gm_ub.user_id) and bind %(pid)s to the poll_id.
+#
+# Account-aware, mirroring the badge path (`effective_follow_states` /
+# `old_poll_ids_for_browsers`): a member browser is ignored when the EFFECTIVE
+# follow state for this poll — the most-recently-updated `poll_follow_state` row
+# across every browser linked to the member's account — is 'old'. So ✕ on device
+# A also silences device B's push for the same account. Anonymous members
+# (gm_ub.user_id IS NULL) fall back to their own browser's row only, since the
+# `au.user_id = NULL` join matches nothing and the union reduces to gm.browser_id.
+# No row anywhere → COALESCE to 'new' (default-follow) → not ignored.
 _NOT_IGNORED = """
-                gm.browser_id NOT IN (
-                  SELECT pfs.browser_id FROM poll_follow_state pfs
-                   WHERE pfs.poll_id = %(pid)s::uuid AND pfs.state = 'old'
-                )
+                COALESCE((
+                  SELECT pfs.state
+                    FROM poll_follow_state pfs
+                   WHERE pfs.poll_id = %(pid)s::uuid
+                     AND pfs.browser_id IN (
+                       SELECT au.browser_id FROM user_browsers au
+                        WHERE au.user_id = gm_ub.user_id
+                       UNION ALL
+                       SELECT gm.browser_id
+                     )
+                   ORDER BY pfs.updated_at DESC
+                   LIMIT 1
+                ), 'new') <> 'old'
 """
 
 
