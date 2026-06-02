@@ -19,6 +19,10 @@ export interface QuestionDraft {
   durationMaxValue?: number | null;
   durationMinEnabled?: boolean;
   durationMaxEnabled?: boolean;
+  // Time-question per-voter conditional-attendance threshold ("only count me
+  // for a slot if at least N people total are available"). A value of 1 means
+  // no constraint (you alone always counts); >= 2 applies the minimum.
+  voterMinParticipantsValue?: number;
   // Time-question preferences phase: slots the voter has marked liked/disliked
   // but not yet submitted. Persisted so in-progress reactions survive a refresh
   // or navigation away, even after availability has already been submitted.

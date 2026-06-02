@@ -13,7 +13,7 @@ import { setStoredVoteId, setVotedQuestionFlag } from "@/lib/votedQuestionsStora
 // a 1-question poll renders identically to today's single question. See
 // docs/poll-phasing.md.
 
-export type QuestionType = 'yes_no' | 'ranked_choice' | 'time';
+export type QuestionType = 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply';
 
 export interface CreateQuestionParams {
   question_type?: QuestionType;
@@ -31,6 +31,10 @@ export interface CreateQuestionParams {
   /** "Minimum Participants" viability gate for time questions: a slot counts
    *  only if at least this many people are available for it. Default 2. */
   min_participants?: number;
+  /** Number of available slots for a limited_supply question (>= 1). */
+  supply_count?: number | null;
+  /** limited_supply: when false, only the creator sees claimant names. */
+  reveal_claimant_names?: boolean;
   day_time_windows?: any[] | null;
   duration_window?: any | null;
   reference_latitude?: number | null;

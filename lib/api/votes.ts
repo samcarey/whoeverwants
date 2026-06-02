@@ -20,6 +20,7 @@ export interface ApiVote {
   voter_name: string | null;
   voter_day_time_windows: any[] | null;
   voter_duration: any | null;
+  voter_min_participants: number | null;
   liked_slots: string[] | null;
   disliked_slots: string[] | null;
   // "Plus one/more": additional people this ballot counts for ("" = unnamed).
@@ -55,6 +56,7 @@ export interface PollVoteItem {
   is_ranking_abstain?: boolean;
   voter_day_time_windows?: any[] | null;
   voter_duration?: any | null;
+  voter_min_participants?: number | null;
   options_metadata?: OptionsMetadata | null;
   liked_slots?: string[] | null;
   disliked_slots?: string[] | null;

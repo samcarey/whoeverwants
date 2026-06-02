@@ -562,6 +562,80 @@ def test_approve_writes_membership_and_grants_visibility(
     assert post.status_code == 200, post.text
 
 
+def test_approve_backdates_joined_at_to_request_time(
+    client, creator_browser, requester_browser
+):
+    """A poll that closed while the request sat pending must stay
+    visible to the newly-approved member. `joined_at` is backdated to
+    the request's `requested_at`, not the approval time, so the
+    closed-before-join filter doesn't hide polls that closed in the gap.
+    """
+    ctoken, _, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+
+    rtoken, _, _ = _sign_in(client, requester_browser)
+    create = client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": "let me in"},
+        headers=_bearer_headers(requester_browser, rtoken),
+    )
+    request_id = create.json()["request"]["id"]
+
+    # A poll created in the group, then closed while the request pends.
+    poll_resp = client.post(
+        "/api/polls",
+        json={
+            "creator_name": "Creator",
+            "group_id": group["id"],
+            "questions": [{"question_type": "yes_no", "category": "yes_no"}],
+        },
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert poll_resp.status_code == 201, poll_resp.text
+    poll = poll_resp.json()
+    close = client.post(
+        f"/api/polls/{poll['id']}/close",
+        json={"close_reason": "manual"},
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert close.status_code == 200, close.text
+
+    # Pin the timeline: requested 2h ago, poll closed 1h ago, approve
+    # "now". Without the backdate joined_at would be "now" and the poll
+    # (closed_at = now - 1h) would fall outside the closed-before-join
+    # window.
+    with psycopg.connect(TEST_DB_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE group_join_requests SET requested_at = NOW() - "
+                "INTERVAL '2 hours' WHERE id = %s",
+                (request_id,),
+            )
+            cur.execute(
+                "UPDATE polls SET updated_at = NOW() - INTERVAL '1 hour' "
+                "WHERE id = %s",
+                (poll["id"],),
+            )
+        conn.commit()
+
+    decide = client.post(
+        f"/api/groups/{group['id']}/join-requests/{request_id}/decide",
+        json={"action": "approve"},
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert decide.status_code == 200, decide.text
+
+    listed = client.get(
+        f"/api/groups/by-route-id/{group['id']}",
+        headers=_bearer_headers(requester_browser, rtoken),
+    )
+    assert listed.status_code == 200, listed.text
+    ids = [p["id"] for p in listed.json()]
+    assert poll["id"] in ids, (
+        "poll closed while request pending must be visible after approve"
+    )
+
+
 def test_approve_schedules_member_added_push(
     client, creator_browser, requester_browser, monkeypatch
 ):

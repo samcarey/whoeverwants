@@ -25,6 +25,7 @@ import {
   signInWithPasskey,
 } from "@/lib/passkeys";
 import { resolveActiveTheme } from "@/lib/theme";
+import OrDivider from "./OrDivider";
 
 /**
  * Shared provider-button block (Google / Apple / passkey / email) reused by:
@@ -264,6 +265,14 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
   // into); in signin mode it accompanies the "sign in with a passkey" one.
   const showPasskeyRegister = showPasskey && platformPasskey === true && !isMerge;
   const busy = oauthSubmitting !== null;
+  // Whether any provider button renders below the email form. The "or"
+  // divider separates the email form (above) from these buttons (below), so
+  // it should only appear when there's actually a button section — otherwise
+  // (e.g. an email-only-configured server) it dangles with nothing after it,
+  // and a consumer's own following divider (AccountGateModal / SignInModal's
+  // "or just provide a name/alias") stacks against it.
+  const hasProviderButtons =
+    showGoogle || showApple || (showPasskey && !isLink) || showPasskeyRegister;
 
   return (
     <div>
@@ -315,13 +324,7 @@ export default function SignInOptions({ mode, onComplete }: SignInOptionsProps) 
         </form>
       ))}
 
-      {!isMerge && (
-        <div className="flex items-center gap-3 my-4">
-          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-          <span className="text-xs text-gray-500 dark:text-gray-400">or</span>
-          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-        </div>
-      )}
+      {!isMerge && hasProviderButtons && <OrDivider />}
 
       {showGoogle &&
         (isNativeIOS() ? (

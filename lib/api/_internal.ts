@@ -221,6 +221,8 @@ export function toQuestion(data: any): Question {
     response_count: data.response_count ?? undefined,
     min_availability_percent: data.min_availability_percent ?? undefined,
     time_min_participants: data.time_min_participants ?? undefined,
+    supply_count: data.supply_count ?? undefined,
+    reveal_claimant_names: data.reveal_claimant_names ?? undefined,
     is_auto_title: data.is_auto_title ?? undefined,
     poll_id: data.poll_id ?? null,
     question_index: data.question_index ?? null,
@@ -254,6 +256,11 @@ export function toQuestionResults(data: any): Results {
     like_counts: data.like_counts ?? undefined,
     dislike_counts: data.dislike_counts ?? undefined,
     time_event_cancelled: data.time_event_cancelled ?? undefined,
+    supply_count: data.supply_count ?? undefined,
+    secured_count: data.secured_count ?? undefined,
+    waitlist_count: data.waitlist_count ?? undefined,
+    claims: data.claims ?? undefined,
+    names_hidden: data.names_hidden ?? undefined,
   };
 }
 

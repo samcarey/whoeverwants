@@ -41,6 +41,7 @@ _SELECT_QUESTION_FULL = """
     SELECT p.*,
            mp.short_id AS short_id,
            mp.creator_name AS creator_name,
+           mp.creator_user_id AS poll_creator_user_id,
            mp.response_deadline AS response_deadline,
            mp.is_closed AS is_closed,
            mp.close_reason AS close_reason,
@@ -239,7 +240,7 @@ def _finalize_time_slots(conn, question_id: str, now: datetime) -> None:
         return  # Already finalized / cancelled / missing
 
     votes = conn.execute(
-        "SELECT voter_day_time_windows, voter_duration, plus_one_names "
+        "SELECT voter_day_time_windows, voter_duration, voter_min_participants, plus_one_names "
         "FROM votes WHERE question_id = %(question_id)s",
         {"question_id": question_id},
     ).fetchall()
@@ -298,6 +299,8 @@ def _row_to_question(row: dict) -> QuestionResponse:
         is_auto_title=row.get("is_auto_title", False),
         min_availability_percent=row.get("min_availability_percent"),
         time_min_participants=row.get("time_min_participants"),
+        supply_count=row.get("supply_count"),
+        reveal_claimant_names=row.get("reveal_claimant_names", True),
         poll_id=str(row["poll_id"]) if row.get("poll_id") else None,
         question_index=row.get("question_index"),
     )
@@ -318,6 +321,7 @@ def _row_to_vote(row: dict) -> VoteResponse:
         voter_name=row.get("voter_name"),
         voter_day_time_windows=row.get("voter_day_time_windows"),
         voter_duration=row.get("voter_duration"),
+        voter_min_participants=row.get("voter_min_participants"),
         liked_slots=row.get("liked_slots"),
         disliked_slots=row.get("disliked_slots"),
         plus_one_names=row.get("plus_one_names"),
@@ -403,13 +407,13 @@ def _submit_vote_to_question(
         INSERT INTO votes (question_id, vote_type, yes_no_choice, ranked_choices,
                            ranked_choice_tiers,
                            suggestions, is_abstain, is_ranking_abstain, voter_name,
-                           voter_day_time_windows, voter_duration,
+                           voter_day_time_windows, voter_duration, voter_min_participants,
                            liked_slots, disliked_slots, plus_one_names, browser_id,
                            created_at, updated_at)
         VALUES (%(question_id)s, %(vote_type)s, %(yes_no_choice)s, %(ranked_choices)s,
                 %(ranked_choice_tiers)s::jsonb,
                 %(suggestions)s, %(is_abstain)s, %(is_ranking_abstain)s, %(voter_name)s,
-                %(voter_day_time_windows)s::jsonb, %(voter_duration)s::jsonb,
+                %(voter_day_time_windows)s::jsonb, %(voter_duration)s::jsonb, %(voter_min_participants)s,
                 %(liked_slots)s::jsonb, %(disliked_slots)s::jsonb, %(plus_one_names)s::jsonb, %(browser_id)s,
                 %(now)s, %(now)s)
         RETURNING *
@@ -426,6 +430,7 @@ def _submit_vote_to_question(
             "voter_name": req.voter_name,
             "voter_day_time_windows": json.dumps(req.voter_day_time_windows) if req.voter_day_time_windows else None,
             "voter_duration": json.dumps(req.voter_duration) if req.voter_duration else None,
+            "voter_min_participants": req.voter_min_participants,
             "liked_slots": json.dumps(req.liked_slots) if req.liked_slots is not None else None,
             "disliked_slots": json.dumps(req.disliked_slots) if req.disliked_slots is not None else None,
             "plus_one_names": json.dumps(req.plus_one_names) if req.plus_one_names is not None else None,
@@ -530,6 +535,7 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
             voter_name = %(voter_name)s,
             voter_day_time_windows = %(voter_day_time_windows)s::jsonb,
             voter_duration = %(voter_duration)s::jsonb,
+            voter_min_participants = %(voter_min_participants)s,
             liked_slots = COALESCE(%(liked_slots)s::jsonb, liked_slots),
             disliked_slots = COALESCE(%(disliked_slots)s::jsonb, disliked_slots),
             plus_one_names = %(plus_one_names)s::jsonb,
@@ -547,6 +553,7 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
             "voter_name": req.voter_name,
             "voter_day_time_windows": json.dumps(req.voter_day_time_windows) if req.voter_day_time_windows else None,
             "voter_duration": json.dumps(req.voter_duration) if req.voter_duration else None,
+            "voter_min_participants": req.voter_min_participants,
             "liked_slots": json.dumps(req.liked_slots) if req.liked_slots is not None else None,
             "disliked_slots": json.dumps(req.disliked_slots) if req.disliked_slots is not None else None,
             "plus_one_names": json.dumps(req.plus_one_names) if req.plus_one_names is not None else None,
@@ -562,7 +569,21 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
     return row
 
 
-def _compute_results(question, votes, *, include_tentative_time_options: bool = True) -> QuestionResultsResponse:
+def should_reveal_claimant_names(*, reveal_flag: bool, viewer_user_id, creator_user_id) -> bool:
+    """Whether a limited_supply question's claimant names are visible to this
+    viewer. `reveal_flag` (the question's `reveal_claimant_names`) → visible to
+    everyone; otherwise only the poll creator. Shared by the per-question
+    `get_results` and the bulk `polls_for_poll_ids` read paths so the rule
+    can't diverge. Callers gate WHEN to resolve `viewer_user_id` (the
+    per-question path skips the lookup entirely when `reveal_flag` is true)."""
+    if reveal_flag:
+        return True
+    return viewer_user_id is not None and str(viewer_user_id) == str(creator_user_id)
+
+
+def _compute_results(
+    question, votes, *, include_tentative_time_options: bool = True, reveal_names: bool = True
+) -> QuestionResultsResponse:
     """Compute question results from a question row and its votes. Shared by get_results and get_accessible_questions.
 
     `include_tentative_time_options` gates the pre-ranking tentative-slots
@@ -573,6 +594,11 @@ def _compute_results(question, votes, *, include_tentative_time_options: bool = 
     cost scales with (polls × voters × duration_window × slot_grid) per active
     tab. The per-question results endpoint keeps it on so `QuestionBallot` can
     advance to the preferences bubble UI once a voter has submitted availability.
+
+    `reveal_names` only affects limited_supply: when False, claimant names are
+    stripped from the roster (the caller decides this per the reveal toggle +
+    whether the viewer is the creator). Counts/positions/timestamps are kept so
+    the FE can still show the viewer their own status.
     """
     question_type = question["question_type"]
 
@@ -676,6 +702,37 @@ def _compute_results(question, votes, *, include_tentative_time_options: bool = 
             ranked_choice_rounds=rc_rounds if rc_rounds else None,
             borda_scores=rc_borda,
             suggestion_counts=suggestion_counts_data,
+        )
+
+    if question_type == "limited_supply":
+        from algorithms.limited_supply import calculate_limited_supply_result
+
+        result = calculate_limited_supply_result(
+            [dict(v) for v in votes], question.get("supply_count") or 0
+        )
+        return QuestionResultsResponse(
+            question_id=str(question["id"]),
+            title=question["title"],
+            question_type=question_type,
+            created_at=question["created_at"].isoformat() if isinstance(question["created_at"], datetime) else str(question["created_at"]),
+            response_deadline=question["response_deadline"].isoformat() if question.get("response_deadline") else None,
+            total_votes=len(votes),
+            supply_count=result.supply_count,
+            secured_count=result.secured_count,
+            waitlist_count=result.waitlist_count,
+            names_hidden=not reveal_names,
+            claims=[
+                {
+                    # Strip names when the viewer isn't allowed to see them
+                    # (reveal toggle off + not the creator). created_at stays so
+                    # the FE can match the viewer's OWN claim for their status.
+                    "name": c.name if reveal_names else None,
+                    "secured": c.secured,
+                    "position": c.position,
+                    "created_at": c.created_at,
+                }
+                for c in result.claims
+            ],
         )
 
     if question_type == "time":

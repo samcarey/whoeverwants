@@ -22,7 +22,7 @@ export type OptionsMetadata = Record<string, OptionMetadataEntry>;
 export interface Question {
   id: string;
   title: string;
-  question_type: 'yes_no' | 'ranked_choice' | 'time';
+  question_type: 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply';
   options?: string[];
   created_at: string;
   updated_at: string;
@@ -53,6 +53,10 @@ export interface Question {
   // "Minimum Participants" viability gate for time questions (default 2). The
   // finalized "event's off" state is surfaced on QuestionResults, not here.
   time_min_participants?: number | null;
+  // Number of available slots for a limited_supply question. Null otherwise.
+  supply_count?: number | null;
+  // limited_supply: when false, only the creator sees claimant names.
+  reveal_claimant_names?: boolean | null;
   // Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
   // every existing question, so this is effectively NOT NULL on every row.
   poll_id?: string | null;
@@ -91,10 +95,17 @@ export interface SuggestionCount {
   count: number;
 }
 
+export interface SupplyClaim {
+  name?: string | null;
+  secured: boolean;
+  position: number;
+  created_at: string;
+}
+
 export interface QuestionResults {
   question_id: string;
   title: string;
-  question_type: 'yes_no' | 'ranked_choice' | 'time';
+  question_type: 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply';
   created_at: string;
   response_deadline?: string;
   options?: string[];
@@ -122,6 +133,16 @@ export interface QuestionResults {
   time_event_cancelled?: boolean;
   ranked_choice_rounds?: RankedChoiceRound[];
   ranked_choice_winner?: string;
+  // Limited-supply fields. supply_count = number of slots; claims = the
+  // ordered first-come signup roster (secured first). All undefined for
+  // non-limited_supply questions.
+  supply_count?: number;
+  secured_count?: number;
+  waitlist_count?: number;
+  claims?: SupplyClaim[];
+  // True when claimant names were stripped for this viewer (reveal toggle off
+  // + viewer isn't the creator) — the FE renders an anonymized roster.
+  names_hidden?: boolean;
   // {option_name: borda_score} across all non-abstain ballots. Used by the
   // result gloss (lib/rankedChoiceGloss.ts) to spot a broadly-acceptable
   // option that IRV eliminated early.

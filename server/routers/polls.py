@@ -50,6 +50,7 @@ from services.push import (
 )
 from services.validation import validate_category_icon, validate_user_name
 from services.questions import (
+    _compute_results,
     _edit_vote_on_question,
     _finalize_suggestion_options,
     _finalize_time_slots,
@@ -109,6 +110,14 @@ def _validate_request(req: CreatePollRequest) -> None:
             status_code=400,
             detail="A poll can contain at most one time question",
         )
+
+    for sp in req.questions:
+        if sp.question_type == QuestionType.limited_supply:
+            if sp.supply_count is None or sp.supply_count < 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail="A limited supply question needs at least one available slot",
+                )
 
     seen: dict[tuple[str, str | None], list[str | None]] = {}
     for sp in req.questions:
@@ -354,6 +363,8 @@ def _insert_question(
             reference_location_label,
             min_availability_percent,
             time_min_participants,
+            supply_count,
+            reveal_claimant_names,
             is_auto_title,
             poll_id, question_index,
             created_at, updated_at
@@ -368,6 +379,8 @@ def _insert_question(
             %(reference_location_label)s,
             %(min_availability_percent)s,
             %(time_min_participants)s,
+            %(supply_count)s,
+            %(reveal_claimant_names)s,
             %(is_auto_title)s,
             %(poll_id)s, %(question_index)s,
             %(now)s, %(now)s
@@ -394,6 +407,10 @@ def _insert_question(
             "time_min_participants": (
                 sub.min_participants if sub.question_type == QuestionType.time else None
             ),
+            "supply_count": (
+                sub.supply_count if sub.question_type == QuestionType.limited_supply else None
+            ),
+            "reveal_claimant_names": sub.reveal_claimant_names,
             "is_auto_title": sub.is_auto_title,
             "poll_id": str(poll_row["id"]),
             "question_index": question_index,
@@ -412,6 +429,8 @@ def _category_for_title(question_row: dict) -> str:
     "Custom for Movie" when the poll-level title is regenerated."""
     if question_row.get("question_type") == "time":
         return "time"
+    if question_row.get("question_type") == "limited_supply":
+        return "limited_supply"
     return question_row.get("category") or question_row.get("question_type") or ""
 
 
@@ -454,11 +473,13 @@ _CATEGORY_ICONS = {
     "location": "📍",
     "movie": "🎬",
     "video_game": "🎮",
+    "limited_supply": "🎟️",
 }
 _QUESTION_TYPE_SYMBOLS = {
     "yes_no": "👍",
     "ranked_choice": "🗳️",
     "time": "📅",
+    "limited_supply": "🎟️",
 }
 
 
@@ -762,15 +783,90 @@ def _notification_base(conn, poll_id: str):
     return str(row["group_id"]), base, row, group_phrase, question_rows
 
 
+def _format_slot_label(slot_key: str) -> str:
+    """Friendly label for a time-slot key ("YYYY-MM-DD HH:MM-HH:MM") used in
+    the close-notification outcome summary, e.g. "Sat Apr 28, 7 PM". Falls back
+    to the raw key on any parse failure."""
+    from algorithms.time_question import parse_slot_key
+
+    try:
+        date_str, start_min, _end_min = parse_slot_key(slot_key)
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        hour, minute = divmod(start_min, 60)
+        period = "AM" if hour < 12 else "PM"
+        hour12 = hour % 12 or 12
+        minute_str = f":{minute:02d}" if minute else ""
+        return f"{d:%a} {d:%b} {d.day}, {hour12}{minute_str} {period}"
+    except Exception:
+        return slot_key
+
+
+def _question_decision_label(conn, question_row: dict) -> str | None:
+    """The human-readable winning choice for one closed question, or None when
+    no decision was reached (no votes / a tie / all-abstain). Drives the
+    poll-closed notification's "Decided: …" body."""
+    votes = conn.execute(
+        "SELECT * FROM votes WHERE question_id = %(qid)s",
+        {"qid": question_row["id"]},
+    ).fetchall()
+    # Tentative time-slot generation is irrelevant once the poll is closed and
+    # is the most expensive branch — skip it.
+    results = _compute_results(
+        dict(question_row), [dict(v) for v in votes],
+        include_tentative_time_options=False,
+    )
+    winner = results.winner
+    if not winner:
+        return None
+    qtype = question_row["question_type"]
+    if qtype == "yes_no":
+        if winner == "yes":
+            return "Yes"
+        if winner == "no":
+            return "No"
+        return None  # "tie" or anything unexpected → no decision
+    if qtype == "time":
+        return _format_slot_label(winner)
+    # ranked_choice (and any future type whose winner is the option text)
+    return winner
+
+
+def _poll_decision_summary(conn, question_rows: list[dict]) -> str | None:
+    """The poll's combined outcome, e.g. "Thai · Sat Apr 28, 7 PM" — one part
+    per question that reached a decision, joined with " · ". None when no
+    question produced a winner (the caller then keeps the poll-title body)."""
+    parts = [
+        label
+        for sp in question_rows
+        if (label := _question_decision_label(conn, sp))
+    ]
+    if not parts:
+        return None
+    summary = " · ".join(parts)
+    # Keep the body bounded — push services truncate, but we'd rather control
+    # where the cut lands than ship an unbounded string.
+    if len(summary) > 120:
+        summary = summary[:119].rstrip() + "…"
+    return summary
+
+
 def _build_close_notification(conn, poll_id: str) -> tuple[str, dict] | None:
     """(group_id, payload) for a poll-closed push, or None when unroutable.
-    Shared by the inline close endpoint and the cron tick."""
+    Shared by the inline close endpoint and the cron tick.
+
+    Line 2 (body) delivers the OUTCOME — "Decided: <winners>" — when the poll
+    reached a decision, so a closed-poll push answers "what got decided?" not
+    just "a poll closed". Falls back to the poll's own title (the base body)
+    when nothing was decided (no votes / ties / all-abstain)."""
     built = _notification_base(conn, poll_id)
     if not built:
         return None
-    group_id, base, _row, group_phrase, _question_rows = built
+    group_id, base, _row, group_phrase, question_rows = built
+    summary = _poll_decision_summary(conn, question_rows)
+    body = f"Decided: {summary}" if summary else base["body"]
     return group_id, {
         **base,
+        "body": body,
         "title": f"Poll closed in {group_phrase}",
         "tag": f"poll-closed-{poll_id}",
     }
@@ -1454,6 +1550,7 @@ def _common_vote_fields(
         "voter_name": voter_name,
         "voter_day_time_windows": item.voter_day_time_windows,
         "voter_duration": item.voter_duration,
+        "voter_min_participants": item.voter_min_participants,
         "options_metadata": item.options_metadata,
         "liked_slots": item.liked_slots,
         "disliked_slots": item.disliked_slots,

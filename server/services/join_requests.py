@@ -28,6 +28,8 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 
+from services.groups import backdate_membership_for_user
+
 logger = logging.getLogger(__name__)
 
 
@@ -197,8 +199,9 @@ def decide_request(
     On approve, writes a `group_members` row keyed on the requester's
     earliest-linked browser_id. Picking one browser is sufficient —
     `load_user_visibility` expands membership across every linked
-    browser via `user_browsers` — and picking the earliest gives the
-    most-permissive `joined_at` for the closed-before-join filter.
+    browser via `user_browsers`. `joined_at` is backdated to the
+    request's `requested_at` (not approval time) so a poll that closed
+    while the request was pending stays visible to the new member.
 
     The decision row's `decided_at` is set to NOW(); `decided_by_user_id`
     records who clicked the button so the audit history is intact even
@@ -218,7 +221,7 @@ def decide_request(
                decided_by_user_id = %(d)s::uuid
          WHERE id = %(r)s::uuid
            AND status = 'pending'
-        RETURNING id, group_id, requester_user_id
+        RETURNING id, group_id, requester_user_id, requested_at
         """,
         {"s": decision, "r": request_id, "d": deciding_user_id},
     ).fetchone()
@@ -226,30 +229,20 @@ def decide_request(
         return None
 
     if decision == "approved":
-        # Pick the requester's earliest-linked browser_id. They must
-        # have at least one (the request endpoint required user_id,
-        # which requires a session, which requires linked browser),
-        # but defensive: skip the membership write if none exist (the
-        # row stays approved; next browser link picks it up via the
-        # auto-claim path described in docs/auth-access-model.md).
-        bid_row = conn.execute(
-            """
-            SELECT browser_id FROM user_browsers
-             WHERE user_id = %(u)s::uuid
-             ORDER BY linked_at ASC
-             LIMIT 1
-            """,
-            {"u": str(row["requester_user_id"])},
-        ).fetchone()
-        if bid_row:
-            conn.execute(
-                """
-                INSERT INTO group_members (group_id, browser_id)
-                VALUES (%(g)s::uuid, %(b)s::uuid)
-                ON CONFLICT (group_id, browser_id) DO NOTHING
-                """,
-                {"g": str(row["group_id"]), "b": str(bid_row["browser_id"])},
-            )
+        # Establish membership keyed on the requester's earliest-linked
+        # browser. `joined_at` is back-dated to when the request was MADE
+        # (`requested_at`), not approval time, so a poll that closed while
+        # the request sat pending stays visible to the new member — they
+        # reached out expecting to see the group as it stood then. A
+        # requester with no linked browser is a no-op (the row stays
+        # approved; the next browser link picks it up via the auto-claim
+        # path in docs/auth-access-model.md).
+        backdate_membership_for_user(
+            conn,
+            str(row["group_id"]),
+            str(row["requester_user_id"]),
+            row["requested_at"],
+        )
 
     return DecidedRequest(
         request_id=str(row["id"]),

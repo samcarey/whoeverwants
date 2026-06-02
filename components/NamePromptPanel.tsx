@@ -20,10 +20,10 @@ interface NamePromptPanelProps {
 /**
  * The "name or alias" entry step shared by every surface that must guarantee
  * an account ends up with a name (the app requires one for any action beyond
- * viewing public polls / link previews): `AccountGateModal` (always-shown
- * alternative to signing in), `SignInModal` + `/auth/verify` (shown only when
- * a durable sign-in landed on a still-nameless account). Owns the input,
- * validation, and the `apiCreateNameAccount` call so the three callsites can't
+ * viewing public polls / link previews): `AccountGateModal` + `SignInModal`
+ * (always-shown alternative to signing in), and `/auth/verify` (shown only
+ * when a durable sign-in landed on a still-nameless account). Owns the input,
+ * validation, and the `apiCreateNameAccount` call so the callsites can't
  * drift on the name rules.
  */
 export default function NamePromptPanel({

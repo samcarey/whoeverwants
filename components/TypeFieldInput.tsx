@@ -15,6 +15,7 @@ export const BUILT_IN_TYPES: BuiltInType[] = [
   { value: "location", label: "Place", icon: "📍" },
   { value: "movie", label: "Movie", icon: "🎬" },
   { value: "video_game", label: "Video Game", icon: "🎮" },
+  { value: "limited_supply", label: "Limited Supply", icon: "🎟️" },
 ];
 
 /** Placeholder examples for the "For" field, keyed by category value. */
@@ -37,7 +38,7 @@ export function isLocationLikeCategory(category: string): boolean {
 
 /** Categories that use autocomplete search (any built-in type except yes_no and time). */
 export function isAutocompleteCategory(category: string): boolean {
-  return category !== 'yes_no' && category !== 'time' && BUILT_IN_TYPES.some((t) => t.value === category);
+  return category !== 'yes_no' && category !== 'time' && category !== 'limited_supply' && BUILT_IN_TYPES.some((t) => t.value === category);
 }
 
 interface TypeFieldInputProps {

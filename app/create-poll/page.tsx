@@ -197,6 +197,8 @@ export function CreateQuestionContent() {
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
   const [minParticipants, setMinParticipants] = useState<number>(2);
+  const [supplyCount, setSupplyCount] = useState<number>(1);
+  const [revealClaimantNames, setRevealClaimantNames] = useState<boolean>(true);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -379,6 +381,11 @@ export function CreateQuestionContent() {
       if (category === 'yes_no') {
         return '';
       }
+      // limited_supply: the title is the user-typed item name (isAutoTitle is
+      // false), so there's nothing to auto-generate.
+      if (category === 'limited_supply') {
+        return '';
+      }
       if (category === 'time') {
         return appendFor("Time?");
       }
@@ -425,11 +432,10 @@ export function CreateQuestionContent() {
   // Handle category changes
   const handleCategoryChange = useCallback((val: string) => {
     setCategory(val);
-    // The emoji picker only applies to custom categories; built-in types
-    // have a fixed icon, so drop any chosen emoji when switching to one.
-    if (getBuiltInType(val)) {
-      setCategoryEmoji('');
-    }
+    // Reset any chosen emoji on a category change so the always-visible emoji
+    // field falls back to showing the new category's default icon (as the
+    // faded placeholder) until the creator deliberately picks an override.
+    setCategoryEmoji('');
     if (val === 'yes_no') {
       setIsAutoTitle(false);
       setTitle('');
@@ -526,6 +532,8 @@ export function CreateQuestionContent() {
         durationMinEnabled,
         durationMaxEnabled,
         dayTimeWindows,
+        supplyCount,
+        revealClaimantNames,
         minResponses,
         showPreliminaryResults,
         allowPreRanking,
@@ -536,7 +544,7 @@ export function CreateQuestionContent() {
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, collectSuggestions, collectAvailability, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, collectSuggestions, collectAvailability, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -581,6 +589,8 @@ export function CreateQuestionContent() {
           if (formState.durationMinEnabled !== undefined) setDurationMinEnabled(formState.durationMinEnabled);
           if (formState.durationMaxEnabled !== undefined) setDurationMaxEnabled(formState.durationMaxEnabled);
           if (formState.dayTimeWindows !== undefined) setDayTimeWindows(formState.dayTimeWindows);
+          if (formState.supplyCount !== undefined) setSupplyCount(formState.supplyCount);
+          if (formState.revealClaimantNames !== undefined) setRevealClaimantNames(formState.revealClaimantNames);
           if (formState.minResponses !== undefined) setMinResponses(formState.minResponses);
           if (formState.showPreliminaryResults !== undefined) setShowPreliminaryResults(formState.showPreliminaryResults);
           if (formState.allowPreRanking !== undefined) setAllowPreRanking(formState.allowPreRanking);
@@ -615,9 +625,10 @@ export function CreateQuestionContent() {
   };
 
   // Determine question type based on form selection and options
-  const getQuestionType = (): 'yes_no' | 'ranked_choice' | 'time' => {
+  const getQuestionType = (): 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply' => {
     if (questionType === 'time' || category === 'time') return 'time';
     if (category === 'yes_no') return 'yes_no';
+    if (category === 'limited_supply') return 'limited_supply';
     return 'ranked_choice';
   };
 
@@ -772,6 +783,17 @@ export function CreateQuestionContent() {
       }
       return null;
     }
+    if (dbQuestionType === 'limited_supply') {
+      if (!title.trim()) return "Please describe what's being handed out.";
+      if (title.length > 100) return "Title must be 100 characters or less.";
+      if (/https?:\/\/\S+|www\.\S+/i.test(title)) {
+        return "Links aren't allowed in the title. Use the Notes field for links.";
+      }
+      if (!Number.isFinite(supplyCount) || supplyCount < 1) {
+        return "Set at least one available spot.";
+      }
+      return null;
+    }
     if (dbQuestionType === 'ranked_choice') {
       return validateRankedChoiceOptions(options, category, collectSuggestions);
     }
@@ -818,9 +840,11 @@ export function CreateQuestionContent() {
     durationMaxEnabled,
     dayTimeWindows: [...dayTimeWindows],
     minParticipants,
+    supplyCount,
+    revealClaimantNames,
     collectSuggestions,
     collectAvailability,
-  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, collectSuggestions, collectAvailability]);
+  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, supplyCount, revealClaimantNames, collectSuggestions, collectAvailability]);
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
@@ -842,6 +866,8 @@ export function CreateQuestionContent() {
     setDurationMaxEnabled(d.durationMaxEnabled);
     setDayTimeWindows([...d.dayTimeWindows]);
     setMinParticipants(d.minParticipants);
+    setSupplyCount(d.supplyCount ?? 1);
+    setRevealClaimantNames(d.revealClaimantNames ?? true);
     // Default ON for drafts persisted before these fields existed.
     setCollectSuggestions(d.collectSuggestions ?? true);
     setCollectAvailability(d.collectAvailability ?? true);
@@ -1855,7 +1881,7 @@ export function CreateQuestionContent() {
   // Options card — rendered as a separate card below the bottom card,
   // with an external left-justified "Options" header. Only meaningful
   // for ranked-choice (non-yes_no, non-time) questions.
-  const showOptionsCard = questionType === 'question' && category !== 'yes_no' && category !== 'time';
+  const showOptionsCard = questionType === 'question' && category !== 'yes_no' && category !== 'time' && category !== 'limited_supply';
   const optionsCard = showOptionsCard ? (
     <div>
       <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
@@ -2052,15 +2078,7 @@ export function CreateQuestionContent() {
                           />
                         </div>
                       </label>
-                      {!getBuiltInType(category) && (
-                        <CategoryEmojiField
-                          value={categoryEmoji}
-                          onChange={setCategoryEmoji}
-                          categoryWord={category}
-                          disabled={isLoading}
-                        />
-                      )}
-                      {category !== 'yes_no' && (
+                      {category !== 'yes_no' && category !== 'limited_supply' && (
                         <div className="flex items-center justify-between gap-3 h-12">
                           <label htmlFor="forField" className="text-base font-normal shrink-0">
                             Context
@@ -2082,7 +2100,7 @@ export function CreateQuestionContent() {
                           />
                         </div>
                       )}
-                      {category !== 'yes_no' && category !== 'time' && (
+                      {category !== 'yes_no' && category !== 'time' && category !== 'limited_supply' && (
                         <div
                           className={`flex items-center justify-between gap-3 h-12 ${isLoading ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                           onClick={() => { if (!isLoading) setCollectSuggestions(!collectSuggestions); }}
@@ -2114,7 +2132,32 @@ export function CreateQuestionContent() {
                           />
                         </div>
                       )}
-                      {category === 'yes_no' && titleField}
+                      {(category === 'yes_no' || category === 'limited_supply') && titleField}
+                      {category === 'limited_supply' && (
+                        <CompactNumberRow
+                          label="Available spots"
+                          value={supplyCount}
+                          min={1}
+                          setValue={setSupplyCount}
+                          disabled={isLoading}
+                        />
+                      )}
+                      {category === 'limited_supply' && (
+                        <div
+                          className={`flex items-center justify-between gap-3 h-12 ${isLoading ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                          onClick={() => { if (!isLoading) setRevealClaimantNames(!revealClaimantNames); }}
+                        >
+                          <span className="text-base font-normal">
+                            Show who claimed
+                          </span>
+                          <SliderSwitch
+                            checked={revealClaimantNames}
+                            onChange={setRevealClaimantNames}
+                            disabled={isLoading}
+                            aria-label="Show who claimed to everyone"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                   {questionFormBody}
@@ -2323,6 +2366,20 @@ export function CreateQuestionContent() {
                         aria-label="Allow voting for others (plus-ones)"
                       />
                     </div>
+
+                    {/* Emoji field — always visible, last row of the poll
+                        settings card. Defaults (as the faded placeholder) to
+                        the current category's icon; the creator can pick an
+                        emoji to override it for any category. */}
+                    {category !== 'yes_no' && category !== 'limited_supply' && (
+                      <CategoryEmojiField
+                        value={categoryEmoji}
+                        onChange={setCategoryEmoji}
+                        categoryWord={category}
+                        disabled={isLoading}
+                        placeholder={getBuiltInType(category)?.icon}
+                      />
+                    )}
 
                   </form>
                 </section>
