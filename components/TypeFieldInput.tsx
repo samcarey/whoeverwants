@@ -194,7 +194,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
               type="button"
               onClick={() => inputRef.current?.focus()}
               disabled={disabled}
-              className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 text-base text-gray-500 dark:text-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Change category"
             >
               <span className="text-base leading-none" aria-hidden>{builtIn!.icon}</span>
@@ -216,7 +216,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
             className={
               inDisplayMode
                 ? "sr-only"
-                : "bg-transparent text-sm text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed w-auto min-w-0 max-w-full"
+                : "bg-transparent text-base text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed w-auto min-w-0 max-w-full"
             }
           />
           {value !== "custom" && !isOpen && (
