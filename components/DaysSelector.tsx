@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { formatLocalDateISO, formatMonthYearLabel, shiftMonth } from '@/lib/timeUtils';
 import { useMeasuredHeight } from '@/lib/useMeasuredHeight';
+import { useBodyScrollLock } from '@/lib/useBodyScrollLock';
 
 const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
@@ -103,31 +104,11 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
       const now = new Date();
       setInternalCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
     }
-
-    const body = document.body;
-    const html = document.documentElement;
-
-    // Store current scroll position
-    const scrollY = window.scrollY;
-
-    // Prevent background scrolling
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.width = '100%';
-    body.style.overscrollBehavior = 'none';
-    html.style.overscrollBehavior = 'none';
-
-    return () => {
-      // Restore scroll position
-      body.style.position = '';
-      body.style.top = '';
-      body.style.width = '';
-      body.style.overscrollBehavior = '';
-      html.style.overscrollBehavior = '';
-      window.scrollTo(0, scrollY);
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // Prevent background scrolling while the (non-inline) modal is open.
+  useBodyScrollLock(!inline && isOpen);
 
   // Format selected days for display - returns {label, dayNumber}
   const formatDate = (dateStr: string) => {
