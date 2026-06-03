@@ -109,6 +109,7 @@ export default function SettingsPage() {
   const [mergeOpen, setMergeOpen] = useState(false);
 
   const hasEmailIdentity = !!currentUser?.providers?.includes("email");
+  const signedIn = !!currentUser;
 
   // Phase D — passkeys. Only fetched + shown when signed in. The server
   // tier capability + browser capability are both gates: the server
@@ -550,27 +551,38 @@ export default function SettingsPage() {
         </h2>
         <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
           <div
-            className="flex items-center justify-between gap-3 h-12 cursor-pointer"
-            onClick={() => updateBadge({ ...badge, todoMode: !badge.todoMode })}
+            className={`flex items-center justify-between gap-3 h-12 ${
+              signedIn ? "cursor-pointer" : "cursor-not-allowed"
+            }`}
+            onClick={() => {
+              if (signedIn) updateBadge({ ...badge, todoMode: !badge.todoMode });
+            }}
           >
-            <span className="text-base font-normal shrink-0">Stay unread until I respond</span>
+            <span
+              className={`text-base font-normal shrink-0 ${
+                signedIn ? "" : "text-gray-400 dark:text-gray-500"
+              }`}
+            >
+              Stay unread until I respond
+            </span>
             <SliderSwitch
               checked={badge.todoMode}
               onChange={(v) => updateBadge({ ...badge, todoMode: v })}
+              disabled={!signedIn}
               aria-label="Stay unread until I respond"
             />
           </div>
           <div
             className={`flex items-center justify-between gap-3 h-12 ${
-              badge.todoMode ? "cursor-not-allowed" : "cursor-pointer"
+              !signedIn || badge.todoMode ? "cursor-not-allowed" : "cursor-pointer"
             }`}
             onClick={() => {
-              if (!badge.todoMode) updateBadge({ ...badge, onVotingOpen: !badge.onVotingOpen });
+              if (signedIn && !badge.todoMode) updateBadge({ ...badge, onVotingOpen: !badge.onVotingOpen });
             }}
           >
             <span
               className={`text-base font-normal shrink-0 ${
-                badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
+                !signedIn || badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
               }`}
             >
               Mark unread when voting opens
@@ -578,21 +590,21 @@ export default function SettingsPage() {
             <SliderSwitch
               checked={badge.onVotingOpen}
               onChange={(v) => updateBadge({ ...badge, onVotingOpen: v })}
-              disabled={badge.todoMode}
+              disabled={!signedIn || badge.todoMode}
               aria-label="Mark unread when voting opens"
             />
           </div>
           <div
             className={`flex items-center justify-between gap-3 h-12 ${
-              badge.todoMode ? "cursor-not-allowed" : "cursor-pointer"
+              !signedIn || badge.todoMode ? "cursor-not-allowed" : "cursor-pointer"
             }`}
             onClick={() => {
-              if (!badge.todoMode) updateBadge({ ...badge, onResults: !badge.onResults });
+              if (signedIn && !badge.todoMode) updateBadge({ ...badge, onResults: !badge.onResults });
             }}
           >
             <span
               className={`text-base font-normal shrink-0 ${
-                badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
+                !signedIn || badge.todoMode ? "text-gray-400 dark:text-gray-500" : ""
               }`}
             >
               Mark unread when results arrive
@@ -600,13 +612,15 @@ export default function SettingsPage() {
             <SliderSwitch
               checked={badge.onResults}
               onChange={(v) => updateBadge({ ...badge, onResults: v })}
-              disabled={badge.todoMode}
+              disabled={!signedIn || badge.todoMode}
               aria-label="Mark unread when results arrive"
             />
           </div>
         </section>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          {badge.todoMode
+          {!signedIn
+            ? "Sign in to adjust these settings"
+            : badge.todoMode
             ? "An open poll stays unread until you vote or abstain — opening it isn't enough. The app-icon badge counts these."
             : "Opening a poll marks it read. It becomes unread again when voting opens or results arrive (toggles above)."}
         </p>
