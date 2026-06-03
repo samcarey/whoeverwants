@@ -32,7 +32,7 @@ import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
-import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, formatMonthYearLabel, shiftMonth, DEFAULT_TIME_WINDOW } from "@/lib/timeUtils";
+import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, formatMonthYearLabel, shiftMonth, DEFAULT_TIME_WINDOW, formatLocalDateISO } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import { enterAdvancesFocus } from "@/lib/formNavigation";
 import { haptic } from "@/lib/haptics";
@@ -1200,10 +1200,34 @@ export function CreateQuestionContent() {
             setQuestionType('time');
             setOptions(['']);
             if (duplicateData.time_min_participants != null) setMinParticipants(duplicateData.time_min_participants);
-            // A duplicated time poll re-opens as a fresh availability-phase
-            // poll (the default). The duplicate snapshot doesn't carry the
-            // creator's windows, so a no-availability copy couldn't derive
-            // slots anyway — start it back at the two-phase flow.
+            // Carry over the creator's time windows, dropping any day that is
+            // now in the past (a poll copied weeks later would otherwise seed
+            // dead dates the calendar can't even select). The duration window
+            // copies verbatim. If every day is in the past, seed today so the
+            // form isn't left with an empty calendar.
+            const todayStr = formatLocalDateISO(new Date());
+            const sourceWindows: DayTimeWindow[] = Array.isArray(duplicateData.day_time_windows)
+              ? duplicateData.day_time_windows
+              : [];
+            // duplicateData is freshly JSON-parsed local data, so the surviving
+            // entries can be used directly (no defensive copy needed).
+            const futureWindows = sourceWindows.filter(
+              (dtw) => dtw && typeof dtw.day === 'string' && Array.isArray(dtw.windows) && dtw.day >= todayStr,
+            );
+            if (futureWindows.length > 0) {
+              setDayTimeWindows(futureWindows);
+            } else {
+              setDayTimeWindows([{ day: todayStr, windows: [{ ...DEFAULT_TIME_WINDOW }] }]);
+            }
+            const dur = duplicateData.duration_window;
+            if (dur && typeof dur === 'object') {
+              if (dur.minValue != null) setDurationMinValue(dur.minValue);
+              if (dur.maxValue != null) setDurationMaxValue(dur.maxValue);
+              if (dur.minEnabled != null) setDurationMinEnabled(dur.minEnabled);
+              if (dur.maxEnabled != null) setDurationMaxEnabled(dur.maxEnabled);
+            }
+            // Re-open as a fresh availability-phase poll (the default two-phase
+            // flow); the copied windows give it real slots to work from.
             setCollectAvailability(true);
           } else {
             // yes_no question
