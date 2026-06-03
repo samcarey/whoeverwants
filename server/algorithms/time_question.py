@@ -349,27 +349,23 @@ def calculate_time_question_results(question: dict, votes: list[dict]) -> dict:
         vote_weight(v) for v in votes if v.get("voter_day_time_windows")
     )
 
-    raw_options = question.get("options")
-    if raw_options is None:
+    def _empty(respondents: int) -> dict:
         return {
             "availability_counts": {},
             "max_availability": 0,
-            "availability_respondents": availability_respondents,
+            "availability_respondents": respondents,
             "winner": None,
             "like_counts": {},
             "dislike_counts": {},
         }
 
+    raw_options = question.get("options")
+    if raw_options is None:
+        return _empty(availability_respondents)
+
     options: list[str] = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
     if not options:
-        return {
-            "availability_counts": {},
-            "max_availability": 0,
-            "availability_respondents": availability_respondents,
-            "winner": None,
-            "like_counts": {},
-            "dislike_counts": {},
-        }
+        return _empty(availability_respondents)
 
     availability_counts = compute_slot_availability(options, votes)
     max_avail = max(availability_counts.values(), default=0)

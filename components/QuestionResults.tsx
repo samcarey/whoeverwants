@@ -16,6 +16,7 @@ import {
   parseSlotDate,
   parseSlotStart,
   periodColorClass,
+  slotExcludedCount,
   type SlotCell,
 } from "@/lib/timeUtils";
 
@@ -348,10 +349,7 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
                 }
                 const likes = likeCounts?.[cell.slot] ?? 0;
                 const dislikes = dislikeCounts?.[cell.slot] ?? 0;
-                const unavailable =
-                  respondents != null && availCounts?.[cell.slot] != null
-                    ? respondents - availCounts[cell.slot]
-                    : 0;
+                const unavailable = slotExcludedCount(respondents, availCounts?.[cell.slot]);
                 const isWinner = cell.slot === winner;
                 return (
                   <div

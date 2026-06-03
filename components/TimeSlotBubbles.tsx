@@ -23,6 +23,7 @@ import {
   getBubbleLabel,
   groupSlotsByDay,
   periodColorClass,
+  slotExcludedCount,
   type SlotCell,
 } from "@/lib/timeUtils";
 
@@ -108,8 +109,8 @@ export default function TimeSlotBubbles({
   const excludedBaseline = availabilityRespondents ?? maxAvailability;
   const excludedCount = useCallback(
     (slot: string) =>
-      excludedBaseline != null && availabilityCounts != null
-        ? excludedBaseline - (availabilityCounts[slot] ?? 0)
+      availabilityCounts != null
+        ? slotExcludedCount(excludedBaseline, availabilityCounts[slot] ?? 0)
         : 0,
     [excludedBaseline, availabilityCounts],
   );
