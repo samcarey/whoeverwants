@@ -212,6 +212,30 @@ def calculate_ranked_choice_winner(
     )
 
 
+def consensus_winner_from_borda(
+    borda_scores: dict[str, int] | None,
+    options: list[str],
+) -> str | None:
+    """The "consensus" (broadest-acceptance) winner: the option with the highest
+    full-ballot Borda score, alphabetical tiebreak.
+
+    Takes the already-computed `borda_scores` (which rides every ranked-choice
+    result) so the consensus headline is a free derivation of data the IRV pass
+    already produced — no second ballot scan. Returns None when there are no
+    scores (no ranking ballots). The alphabetical tiebreak mirrors the IRV
+    elimination tiebreak so the two methods break ties consistently.
+    """
+    if not borda_scores:
+        return None
+    best = max(borda_scores.values())
+    # Prefer the question's option ordering for determinism, then alphabetical;
+    # fall back to scanning the score dict if an option isn't listed.
+    candidates = [o for o in options if borda_scores.get(o) == best]
+    if not candidates:
+        candidates = [o for o, s in borda_scores.items() if s == best]
+    return sorted(candidates)[0]
+
+
 def _calculate_borda_scores(
     ballots: list[list[list[str]]],
     candidates: list[str],

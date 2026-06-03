@@ -57,6 +57,8 @@ export interface Question {
   supply_count?: number | null;
   // limited_supply: when false, only the creator sees claimant names.
   reveal_claimant_names?: boolean | null;
+  // ranked_choice headline method: 'favorite' (IRV) or 'consensus' (Borda).
+  winner_method?: "favorite" | "consensus" | null;
   // Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
   // every existing question, so this is effectively NOT NULL on every row.
   poll_id?: string | null;
@@ -132,7 +134,15 @@ export interface QuestionResults {
   // "Minimum Participants" gate → the event is off (no time works).
   time_event_cancelled?: boolean;
   ranked_choice_rounds?: RankedChoiceRound[];
+  // The Instant-Runoff winner ("favorite") — always the IRV outcome regardless
+  // of winner_method, so the consensus view can still name the favorite.
   ranked_choice_winner?: string;
+  // The Borda winner ("consensus" / broadest acceptance).
+  consensus_winner?: string;
+  // Which winner is the headline: 'favorite' (=> winner is ranked_choice_winner)
+  // or 'consensus' (=> winner is consensus_winner). Drives the result display +
+  // gloss. Absent on pre-migration-135 cached results — treat as 'favorite'.
+  winner_method?: "favorite" | "consensus";
   // Limited-supply fields. supply_count = number of slots; claims = the
   // ordered first-come signup roster (secured first). All undefined for
   // non-limited_supply questions.

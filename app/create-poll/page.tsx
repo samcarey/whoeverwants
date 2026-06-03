@@ -320,6 +320,10 @@ export function CreateQuestionContent() {
   // the poll directly as a preference poll over the slots derived from the
   // creator's time windows. Default ON; the last submitted value is remembered.
   const [collectAvailability, setCollectAvailability] = useState(true);
+  // Ranked-choice headline method — per-question (only shown for ranked_choice).
+  // 'favorite' (IRV, default): strongest core / most first-choice support.
+  // 'consensus' (Borda): the option ranked highest across the most ballots.
+  const [winnerMethod, setWinnerMethod] = useState<'favorite' | 'consensus'>('favorite');
 
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -539,12 +543,13 @@ export function CreateQuestionContent() {
         allowPreRanking,
         allowPlusOnes,
         collectSuggestions,
+        winnerMethod,
         collectAvailability,
         drafts,
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, collectSuggestions, collectAvailability, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, collectSuggestions, winnerMethod, collectAvailability, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -596,6 +601,7 @@ export function CreateQuestionContent() {
           if (formState.allowPreRanking !== undefined) setAllowPreRanking(formState.allowPreRanking);
           if (formState.allowPlusOnes !== undefined) setAllowPlusOnes(formState.allowPlusOnes);
           if (formState.collectSuggestions !== undefined) setCollectSuggestions(formState.collectSuggestions);
+          if (formState.winnerMethod === 'favorite' || formState.winnerMethod === 'consensus') setWinnerMethod(formState.winnerMethod);
           if (formState.collectAvailability !== undefined) setCollectAvailability(formState.collectAvailability);
           if (Array.isArray(formState.drafts)) setDrafts(formState.drafts);
 
@@ -851,8 +857,9 @@ export function CreateQuestionContent() {
     supplyCount,
     revealClaimantNames,
     collectSuggestions,
+    winnerMethod,
     collectAvailability,
-  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, supplyCount, revealClaimantNames, collectSuggestions, collectAvailability]);
+  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, supplyCount, revealClaimantNames, collectSuggestions, winnerMethod, collectAvailability]);
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
@@ -878,6 +885,7 @@ export function CreateQuestionContent() {
     setRevealClaimantNames(d.revealClaimantNames ?? true);
     // Default ON for drafts persisted before these fields existed.
     setCollectSuggestions(d.collectSuggestions ?? true);
+    setWinnerMethod(d.winnerMethod ?? 'favorite');
     setCollectAvailability(d.collectAvailability ?? true);
   }, []);
 
@@ -1193,6 +1201,8 @@ export function CreateQuestionContent() {
             const dupHasOptions = Array.isArray(duplicateData.options)
               && duplicateData.options.some((o: string) => o && o.trim() !== '');
             setCollectSuggestions(!dupHasOptions);
+            // Preserve the original's headline method (favorite/consensus).
+            setWinnerMethod(duplicateData.winner_method === 'consensus' ? 'consensus' : 'favorite');
           } else if (duplicateData.question_type === 'time') {
             setQuestionType('time');
             setOptions(['']);
@@ -1282,6 +1292,8 @@ export function CreateQuestionContent() {
           // ballot of the nominated options — never re-open suggestion mode,
           // regardless of the user's remembered toggle preference.
           setCollectSuggestions(false);
+          // Fresh ranking ballot defaults to the favorite (IRV) headline.
+          setWinnerMethod('favorite');
 
           // Auto-open: prefill is invisible until the user opens the modal.
           setIsModalOpen(true);
@@ -2122,6 +2134,41 @@ export function CreateQuestionContent() {
                             disabled={isLoading}
                             aria-label="Collect suggestions before vote"
                           />
+                        </div>
+                      )}
+                      {category !== 'yes_no' && category !== 'time' && category !== 'limited_supply' && (
+                        <div className="py-3">
+                          <span className="text-base font-normal">
+                            How to pick the winner
+                          </span>
+                          <div className="mt-2 grid grid-cols-2 gap-2" role="radiogroup" aria-label="How to pick the winner">
+                            {([
+                              { value: 'favorite' as const, label: 'Group favorite', sub: 'Most first-choice support' },
+                              { value: 'consensus' as const, label: "Everyone's okay with", sub: 'Broadest acceptance' },
+                            ]).map((opt) => {
+                              const selected = winnerMethod === opt.value;
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  role="radio"
+                                  aria-checked={selected}
+                                  disabled={isLoading}
+                                  onClick={() => { if (!isLoading) setWinnerMethod(opt.value); }}
+                                  className={`text-left rounded-xl border px-3 py-2 transition-colors disabled:opacity-50 ${
+                                    selected
+                                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/40 dark:border-blue-500'
+                                      : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600'
+                                  }`}
+                                >
+                                  <div className={`text-sm font-medium ${selected ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-200'}`}>
+                                    {opt.label}
+                                  </div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">{opt.sub}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
                       {category === 'time' && (

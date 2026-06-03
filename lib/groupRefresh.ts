@@ -74,6 +74,7 @@ function isResultsContentEqual(
     a.winner === b.winner &&
     a.total_rounds === b.total_rounds &&
     a.ranked_choice_winner === b.ranked_choice_winner &&
+    a.consensus_winner === b.consensus_winner &&
     a.max_availability === b.max_availability &&
     isStringArrayEqual(a.options, b.options) &&
     isStringArrayEqual(a.included_slots, b.included_slots) &&

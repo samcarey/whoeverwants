@@ -21,7 +21,10 @@ from models import (
     VoteResponse,
 )
 from algorithms.suggestion import count_suggestion_votes
-from algorithms.ranked_choice import calculate_ranked_choice_winner
+from algorithms.ranked_choice import (
+    calculate_ranked_choice_winner,
+    consensus_winner_from_borda,
+)
 from algorithms.vote_validation import VoteValidationError, validate_vote
 from algorithms.yes_no import count_yes_no_votes
 
@@ -345,6 +348,7 @@ def _row_to_question(row: dict) -> QuestionResponse:
         time_min_participants=row.get("time_min_participants"),
         supply_count=row.get("supply_count"),
         reveal_claimant_names=row.get("reveal_claimant_names", True),
+        winner_method=row.get("winner_method") or "favorite",
         poll_id=str(row["poll_id"]) if row.get("poll_id") else None,
         question_index=row.get("question_index"),
     )
@@ -706,6 +710,8 @@ def _compute_results(
             if not question_options and suggestion_counts_data:
                 question_options = [sc["option"] for sc in suggestion_counts_data]
 
+        winner_method = question.get("winner_method") or "favorite"
+
         # Uncontested: single option wins automatically
         if question.get("close_reason") == "uncontested" and question_options and len(question_options) == 1:
             return QuestionResultsResponse(
@@ -718,6 +724,8 @@ def _compute_results(
                 total_votes=0,
                 winner=question_options[0],
                 ranked_choice_winner=question_options[0],
+                consensus_winner=question_options[0],
+                winner_method=winner_method,
                 ranked_choice_rounds=[RankedChoiceRoundResponse(
                     round_number=1,
                     option_name=question_options[0],
@@ -739,10 +747,12 @@ def _compute_results(
             v for v in votes
             if v.get("ranked_choices") or v.get("ranked_choice_tiers")
         ]
+        consensus_winner = None
         if question_options and len(question_options) >= 2 and ranking_votes:
             result = calculate_ranked_choice_winner(ranking_votes, question_options)
             rc_winner = result.winner
             rc_borda = result.borda_scores or None
+            consensus_winner = consensus_winner_from_borda(rc_borda, question_options)
 
             for round_idx, round_entries in enumerate(result.rounds):
                 for entry in round_entries:
@@ -755,6 +765,10 @@ def _compute_results(
                         tie_broken_by_borda=entry.tie_broken_by_borda,
                     ))
 
+        # The headline winner: IRV ('favorite') or Borda ('consensus'). Same
+        # ballots; only which winner is surfaced as the decision differs. Both
+        # are returned so the FE can show "the other lens would've picked Y".
+        headline = consensus_winner if winner_method == "consensus" else rc_winner
         return QuestionResultsResponse(
             question_id=str(question["id"]),
             title=question["title"],
@@ -763,8 +777,10 @@ def _compute_results(
             response_deadline=question["response_deadline"].isoformat() if question.get("response_deadline") else None,
             options=question_options,
             total_votes=len(votes),
-            winner=rc_winner,
+            winner=headline,
             ranked_choice_winner=rc_winner,
+            consensus_winner=consensus_winner,
+            winner_method=winner_method,
             ranked_choice_rounds=rc_rounds if rc_rounds else None,
             borda_scores=rc_borda,
             suggestion_counts=suggestion_counts_data,

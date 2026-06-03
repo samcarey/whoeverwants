@@ -30,6 +30,23 @@ export function rankedChoiceResultGloss(
   results: QuestionResults,
 ): RankedChoiceGloss | null {
   const winner = results.winner;
+
+  // Consensus mode: the headline IS the broadest-acceptance option, so the
+  // "a compromise lost" warning never applies. Explain the method instead, and
+  // note the favorite when it differs so the result is fully legible.
+  if (results.winner_method === "consensus") {
+    if (!winner || winner === "tie") return null;
+    const favorite = results.ranked_choice_winner;
+    const favoriteNote =
+      favorite && favorite !== winner
+        ? ` (“${favorite}” had the most first-choice picks, but “${winner}” was the option more people were okay with.)`
+        : "";
+    return {
+      tone: "info",
+      text: `This poll was set to pick the option with the broadest acceptance: “${winner}” was ranked highest across the most ballots.${favoriteNote}`,
+    };
+  }
+
   const rounds = results.ranked_choice_rounds;
   if (!winner || winner === "tie" || !rounds || rounds.length === 0) {
     return null;

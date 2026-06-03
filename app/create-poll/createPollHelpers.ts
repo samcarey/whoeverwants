@@ -55,6 +55,12 @@ export interface QuestionDraft {
    *  initial suggestions). OFF → fixed-options ranked_choice (options
    *  required). Seeded from the user's remembered preference on open. */
   collectSuggestions: boolean;
+  /** Ranked-choice headline method — only meaningful for ranked_choice
+   *  questions. 'favorite' (IRV, default): the option with the strongest core /
+   *  most first-choice support. 'consensus' (Borda): the option ranked highest
+   *  across the most ballots — "what everyone's most okay with". Maps to the
+   *  API `winner_method`. */
+  winnerMethod: 'favorite' | 'consensus';
   /** "Ask for Availability before Voting" — only meaningful for time
    *  questions. ON → two-phase availability → preferences flow (current
    *  default). OFF → the poll starts directly as a preference poll over the
@@ -105,6 +111,7 @@ export function emptyDraft(
     supplyCount: 1,
     revealClaimantNames: true,
     collectSuggestions: opts.collectSuggestions ?? true,
+    winnerMethod: 'favorite',
     collectAvailability: opts.collectAvailability ?? true,
   };
 }
@@ -231,6 +238,9 @@ export function draftToQuestionParams(
   }
   if (dbType === 'ranked_choice' && d.category !== 'custom') {
     params.category = d.category;
+  }
+  if (dbType === 'ranked_choice') {
+    params.winner_method = d.winnerMethod;
   }
   const icon = effectiveCategoryIcon(d);
   if (icon) {
@@ -398,6 +408,7 @@ export function synthesizePlaceholderPoll(
       category_icon: effectiveCategoryIcon(d),
       supply_count: dbType === 'limited_supply' ? normalizeSupplyCount(d.supplyCount) : null,
       reveal_claimant_names: dbType === 'limited_supply' ? d.revealClaimantNames : null,
+      winner_method: dbType === 'ranked_choice' ? d.winnerMethod : null,
       is_auto_title: d.isAutoTitle,
       poll_id: pollId,
       question_index: i,

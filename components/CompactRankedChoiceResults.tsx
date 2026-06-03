@@ -275,6 +275,25 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
     });
   };
 
+  // Consensus headline ('consensus' / Borda): the IRV rounds would contradict
+  // the headline (they crown the favorite, not the broadest-acceptance pick),
+  // so render a breadth breakdown instead whenever ballots exist. With no
+  // ballots yet, fall through to the shared empty-state logic below.
+  const bordaScores = results.borda_scores;
+  if (
+    results.winner_method === "consensus" &&
+    bordaScores &&
+    Object.keys(bordaScores).length > 0
+  ) {
+    return (
+      <ConsensusResults
+        results={results}
+        isQuestionClosed={isQuestionClosed}
+        optionsMetadata={optionsMetadata}
+      />
+    );
+  }
+
   if (loading) {
     return (
       <div className="text-center">
@@ -521,6 +540,102 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
           })()}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Consensus ("broadest acceptance" / Borda) result view. Used when a
+// ranked_choice question was created with winner_method='consensus'. Shows
+// every option ranked by breadth of support (Borda score), winner highlighted,
+// instead of the IRV runoff (which would crown a different — favorite — option).
+function ConsensusResults({
+  results,
+  isQuestionClosed,
+  optionsMetadata,
+}: {
+  results: QuestionResults;
+  isQuestionClosed?: boolean;
+  optionsMetadata?: OptionsMetadata | null;
+}) {
+  const scores = results.borda_scores || {};
+  const winner = results.winner;
+  const favorite = results.ranked_choice_winner;
+  const maxScore = Math.max(1, ...Object.values(scores));
+
+  // Order by breadth desc, then alphabetical (mirrors the server tiebreak).
+  const ordered = Object.keys(scores).sort(
+    (a, b) => scores[b] - scores[a] || a.localeCompare(b),
+  );
+
+  const explanation = isQuestionClosed ? outcomeExplainer(results) : null;
+
+  return (
+    <div className="relative">
+      <div className="text-center mb-3 flex items-center justify-center gap-1">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          {isQuestionClosed ? "Final Results" : "Broadest Acceptance"}
+        </h3>
+        {explanation && <OutcomeInfoButton text={explanation} />}
+      </div>
+      <p className="text-center text-xs text-gray-500 dark:text-gray-400 mb-3">
+        Ranked by how broadly each option was supported across all ballots.
+      </p>
+
+      <div className="space-y-2">
+        {ordered.map((name, index) => {
+          const isWinner = name === winner;
+          const pct = Math.round((scores[name] / maxScore) * 100);
+          return (
+            <div key={name} className="flex items-center gap-2">
+              <div className="flex-shrink-0" style={{ width: "32px" }}>
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                    isWinner
+                      ? "bg-green-500 text-white dark:bg-green-600"
+                      : "bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-200"
+                  }`}
+                >
+                  {index + 1}
+                </div>
+              </div>
+              <div
+                className={`flex-1 border rounded-lg px-3 py-2 ${
+                  isWinner
+                    ? "bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600"
+                    : "bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600"
+                }`}
+              >
+                <div
+                  className={`leading-tight ${
+                    isLocationEntry(optionsMetadata?.[name]) || isRestaurantEntry(optionsMetadata?.[name])
+                      ? "overflow-hidden"
+                      : "line-clamp-2"
+                  } ${
+                    isWinner
+                      ? "text-green-900 dark:text-green-100 font-bold"
+                      : "text-gray-700/80 dark:text-gray-300/80 font-medium"
+                  }`}
+                >
+                  <OptionLabel text={name} metadata={optionsMetadata?.[name]} />
+                </div>
+                <div className="mt-1.5 h-2 rounded-full bg-gray-200 dark:bg-gray-600 overflow-hidden">
+                  <div
+                    className={`h-full ${isWinner ? "bg-green-500 dark:bg-green-500" : "bg-gray-400 dark:bg-gray-400"}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {favorite && favorite !== winner && (
+        <p className="text-center text-xs text-gray-500 dark:text-gray-400 mt-3">
+          The most first-choice picks went to{" "}
+          <span className="font-medium text-gray-700 dark:text-gray-300">{favorite}</span>.
+        </p>
+      )}
     </div>
   );
 }

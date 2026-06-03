@@ -7,7 +7,12 @@ Test scenarios ported from the JavaScript test suites in:
 - tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js
 """
 
-from algorithms.ranked_choice import RankedChoiceResult, RoundEntry, calculate_ranked_choice_winner
+from algorithms.ranked_choice import (
+    RankedChoiceResult,
+    RoundEntry,
+    calculate_ranked_choice_winner,
+    consensus_winner_from_borda,
+)
 
 
 def _make_votes(rankings: list[list[str]]) -> list[dict]:
@@ -803,3 +808,37 @@ class TestFullBordaScores:
     def test_no_ballots_yields_empty_borda(self):
         result = calculate_ranked_choice_winner([], ["A", "B"])
         assert result.borda_scores == {}
+
+
+class TestConsensusWinner:
+    """The 'consensus' (Borda) headline — migration 135 winner_method='consensus'.
+
+    Same ballots as IRV; the headline becomes the broadest-acceptance option.
+    """
+
+    def test_consensus_picks_the_compromise_irv_eliminates(self):
+        # The marquee divergence: IRV picks C, consensus picks the compromise B.
+        votes = _make_votes(
+            [["A", "B", "C"]] * 4
+            + [["C", "B", "A"]] * 3
+            + [["B", "C", "A"]] * 2
+        )
+        result = calculate_ranked_choice_winner(votes, ["A", "B", "C"])
+        assert result.winner == "C"  # IRV / favorite
+        assert consensus_winner_from_borda(result.borda_scores, ["A", "B", "C"]) == "B"
+
+    def test_consensus_agrees_with_irv_on_a_clear_favorite(self):
+        votes = _make_votes([["A", "B", "C"]] * 5)
+        result = calculate_ranked_choice_winner(votes, ["A", "B", "C"])
+        assert result.winner == "A"
+        assert consensus_winner_from_borda(result.borda_scores, ["A", "B", "C"]) == "A"
+
+    def test_consensus_winner_none_without_ballots(self):
+        assert consensus_winner_from_borda(None, ["A", "B"]) is None
+        assert consensus_winner_from_borda({}, ["A", "B"]) is None
+
+    def test_consensus_alphabetical_tiebreak(self):
+        # Symmetric ballots -> equal Borda -> alphabetical wins ("A").
+        votes = _make_votes([["A", "B"], ["B", "A"]])
+        result = calculate_ranked_choice_winner(votes, ["A", "B"])
+        assert consensus_winner_from_borda(result.borda_scores, ["A", "B"]) == "A"

@@ -53,7 +53,11 @@ from services.push import (
     fan_out_poll_closed,
     fan_out_to_user,
 )
-from services.validation import validate_category_icon, validate_user_name
+from services.validation import (
+    validate_category_icon,
+    validate_user_name,
+    validate_winner_method,
+)
 from services.questions import (
     _compute_results,
     _edit_vote_on_question,
@@ -128,6 +132,7 @@ def _validate_request(req: CreatePollRequest) -> None:
     seen: dict[tuple[str, str | None], list[str | None]] = {}
     for sp in req.questions:
         validate_category_icon(sp.category_icon)
+        validate_winner_method(sp.winner_method)
         key = (sp.question_type.value, (sp.category or "").strip().lower() or None)
         seen.setdefault(key, []).append((sp.context or "").strip() or None)
     for contexts in seen.values():
@@ -374,6 +379,7 @@ def _insert_question(
             time_min_participants,
             supply_count,
             reveal_claimant_names,
+            winner_method,
             is_auto_title,
             poll_id, question_index,
             created_at, updated_at
@@ -390,6 +396,7 @@ def _insert_question(
             %(time_min_participants)s,
             %(supply_count)s,
             %(reveal_claimant_names)s,
+            %(winner_method)s,
             %(is_auto_title)s,
             %(poll_id)s, %(question_index)s,
             %(now)s, %(now)s
@@ -420,6 +427,11 @@ def _insert_question(
                 sub.supply_count if sub.question_type == QuestionType.limited_supply else None
             ),
             "reveal_claimant_names": sub.reveal_claimant_names,
+            "winner_method": (
+                validate_winner_method(sub.winner_method)
+                if sub.question_type == QuestionType.ranked_choice
+                else "favorite"
+            ),
             "is_auto_title": sub.is_auto_title,
             "poll_id": str(poll_row["id"]),
             "question_index": question_index,

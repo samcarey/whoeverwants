@@ -88,6 +88,45 @@ describe('rankedChoiceResultGloss', () => {
     ).toBeNull();
   });
 
+  it('consensus mode: explains broadest-acceptance and names the favorite (info, no warn)', () => {
+    // Same divergent ballots, but the poll was created with winner_method
+    // 'consensus' — so the headline IS the broadly-accepted option (B). The
+    // gloss must explain the method, never "a compromise lost".
+    const g = rankedChoiceResultGloss(
+      results({
+        winner: 'B',
+        winner_method: 'consensus',
+        ranked_choice_winner: 'C',
+        borda_scores: { A: 17, B: 20, C: 17 },
+        // IRV rounds are still present but irrelevant to the consensus gloss.
+        ranked_choice_rounds: [
+          round(1, 'A', false),
+          round(1, 'C', false),
+          round(1, 'B', true),
+          round(2, 'A', false),
+          round(2, 'C', false),
+        ],
+      }),
+    );
+    expect(g?.tone).toBe('info');
+    expect(g?.text).toContain('broadest acceptance');
+    expect(g?.text).toContain('B');
+    expect(g?.text).toContain('C'); // names the favorite
+  });
+
+  it('consensus mode: needs no rounds and never warns when favorite == winner', () => {
+    const g = rankedChoiceResultGloss(
+      results({
+        winner: 'A',
+        winner_method: 'consensus',
+        ranked_choice_winner: 'A',
+        borda_scores: { A: 20, B: 12 },
+      }),
+    );
+    expect(g?.tone).toBe('info');
+    expect(g?.text).toContain('broadest acceptance');
+  });
+
   it('does not flag an equal-Borda eliminated option (strictly-greater only)', () => {
     // B is eliminated and ties the winner on Borda — not "more broadly
     // accepted", so no warn; falls through to the multi-round info gloss.

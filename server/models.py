@@ -209,6 +209,9 @@ class QuestionResponse(BaseModel):
     # Number of available slots for a limited_supply question. NULL otherwise.
     supply_count: int | None = None
     reveal_claimant_names: bool = True
+    # Ranked-choice headline method (migration 135): 'favorite' (IRV, default)
+    # or 'consensus' (Borda). Only meaningful for ranked_choice questions.
+    winner_method: str = "favorite"
     # Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
     # every non-participation question; migration 094 dropped the participation
     # question type entirely, so this is effectively NOT NULL on every row.
@@ -264,11 +267,21 @@ class QuestionResultsResponse(BaseModel):
     winner: str | None = None
     suggestion_counts: list[SuggestionCountResponse] | None = None
     ranked_choice_rounds: list["RankedChoiceRoundResponse"] | None = None
+    # The Instant-Runoff winner ("favorite"). Always the IRV outcome
+    # regardless of `winner_method`, so the FE can show "the group favorite
+    # would've been X" even in consensus mode.
     ranked_choice_winner: str | None = None
+    # The Borda winner ("consensus" / broadest acceptance). None for
+    # non-ranked-choice or when no ranking votes were cast.
+    consensus_winner: str | None = None
+    # Which winner is the HEADLINE for this question: 'favorite' (=> `winner`
+    # is `ranked_choice_winner`) or 'consensus' (=> `winner` is
+    # `consensus_winner`). The FE keys its result display + gloss on this.
+    winner_method: str = "favorite"
     # {option_name: borda_score} over every option across all non-abstain
-    # ballots. Drives the FE result gloss's "broadly-acceptable option
-    # eliminated early" detection. None for non-ranked-choice or when no
-    # ranking votes were cast.
+    # ballots. Drives the consensus breakdown bars AND the FE result gloss's
+    # "broadly-acceptable option eliminated early" detection. None for
+    # non-ranked-choice or when no ranking votes were cast.
     borda_scores: dict[str, int] | None = None
     # Time question fields
     availability_counts: dict | None = None  # {slot_key: voter_count}
@@ -347,6 +360,9 @@ class CreateQuestionRequest(BaseModel):
     # limited_supply: when False, only the creator sees claimant names; other
     # viewers get an anonymized roster. Default True (names visible to all).
     reveal_claimant_names: bool = True
+    # Ranked-choice headline method: 'favorite' (IRV, default) or 'consensus'
+    # (Borda). Stored only for ranked_choice questions; ignored otherwise.
+    winner_method: str = "favorite"
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None
     reference_latitude: float | None = None
