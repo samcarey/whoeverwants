@@ -32,6 +32,11 @@ export function buildQuestionSnapshot(question: Question, poll?: Poll | null) {
     category_icon: question.category_icon,
     winner_method: question.winner_method,
     options_metadata: question.options_metadata,
+    // Time-question creator inputs. The duplicate flow keeps only the
+    // not-in-the-past day windows (see the `time` branch in create-poll);
+    // duration is copied verbatim. Null for non-time questions.
+    day_time_windows: question.day_time_windows ?? null,
+    duration_window: question.duration_window ?? null,
     // Migration 098: these fields live on the poll wrapper now.
     min_responses: poll?.min_responses ?? null,
     show_preliminary_results: poll?.show_preliminary_results ?? true,
