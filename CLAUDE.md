@@ -3186,9 +3186,10 @@ Settings exposes three `SliderSwitch`es (account-synced — see storage below) u
 
 New polls always contribute (no switch) — in unread they're a never-opened poll, in to-do they're a fresh awaiting poll. Switches 2/3 are the Q4 "re-light" fork turned into user-tunable knobs.
 
-**Badge set, precisely.** A poll P contributes to browser B's badge iff B is a `group_members` row for P's group AND:
+**Badge set, precisely.** A poll P contributes to browser B's badge iff B is a `group_members` row for P's group, P is **visible** to B (NOT closed-before-join — see next bullet), AND:
 - **To-do mode**: P is not closed, votable now (`prephase_deadline` IS NULL or passed), deadline not passed, AND B has no `votes` row on any of P's questions (vote OR abstain — both insert a row). Views never matter.
 - **Unread mode** (any of, gated by the toggles): (a) P never viewed-since-created (`poll_views.last_viewed_at` IS NULL or `< P.created_at`); (b) `badge_on_voting_open` AND P transitioned (`prephase_deadline` passed) since last view; (c) `badge_on_results` AND P closed (`updated_at` close-proxy) since last view. Opening P's detail page bumps `last_viewed_at`, clearing all three.
+- **Closed-before-join filter (load-bearing — fixed June 2026):** `compute_badge_count` MUST apply the same visibility rule as `filter_visible_polls` (`services/groups.py`): a poll counts only if `p.is_closed = false OR p.updated_at >= gm.joined_at`. Without it, a poll that closed BEFORE the member joined the group — hidden in-app — was never-viewed → counted as unread, so the iOS app-icon badge read HIGHER than the visible poll count (reported as "badge 3, but 2 new inside"). The filter joins per-`gm`-row + `DISTINCT p.id`, which gives the most-permissive (MIN `joined_at`) account-union semantics. Only the unread branch needs it (the to-do branch already requires `is_closed = false`, so closed-before-join can't reach it). Regression: `server/tests/test_badge_account.py::test_closed_before_join_poll_does_not_inflate_unread_badge`. Whenever you touch the badge query, keep it in lockstep with `filter_visible_polls`.
 
 ### "Seen" + "Ignored" + the Viewed (N) list
 
