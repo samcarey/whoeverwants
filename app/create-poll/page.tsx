@@ -2433,25 +2433,28 @@ export function CreateQuestionContent() {
                     )}
 
                     {/* "Plus one/more": let one person answer on behalf of
-                        several. Defaults ON for time polls, OFF otherwise. */}
-                    <div
-                      className="flex items-center justify-between gap-3 h-12 cursor-pointer"
-                      onClick={() => { if (!isLoading) setAllowPlusOnes(!effectiveAllowPlusOnes); }}
-                    >
-                      <span className="text-base font-normal">
-                        {pollIsLimitedSupply
-                          ? 'Allow claiming for others (plus-ones)'
-                          : 'Allow voting for others (plus-ones)'}
-                      </span>
-                      <SliderSwitch
-                        checked={effectiveAllowPlusOnes}
-                        onChange={(next) => setAllowPlusOnes(next)}
-                        disabled={isLoading}
-                        aria-label={pollIsLimitedSupply
-                          ? 'Allow claiming for others (plus-ones)'
-                          : 'Allow voting for others (plus-ones)'}
-                      />
-                    </div>
+                        several. Defaults ON for time polls, OFF otherwise.
+                        Limited-supply polls say "claiming" instead of
+                        "voting". */}
+                    {(() => {
+                      const plusOnesLabel = pollIsLimitedSupply
+                        ? 'Allow claiming for others (plus-ones)'
+                        : 'Allow voting for others (plus-ones)';
+                      return (
+                        <div
+                          className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+                          onClick={() => { if (!isLoading) setAllowPlusOnes(!effectiveAllowPlusOnes); }}
+                        >
+                          <span className="text-base font-normal">{plusOnesLabel}</span>
+                          <SliderSwitch
+                            checked={effectiveAllowPlusOnes}
+                            onChange={(next) => setAllowPlusOnes(next)}
+                            disabled={isLoading}
+                            aria-label={plusOnesLabel}
+                          />
+                        </div>
+                      );
+                    })()}
 
                     {/* Emoji field — always visible, last row of the poll
                         settings card. Defaults (as the faded placeholder) to
