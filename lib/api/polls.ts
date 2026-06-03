@@ -32,6 +32,9 @@ export interface CreateQuestionParams {
   /** "Minimum Participants" viability gate for time questions: a slot counts
    *  only if at least this many people are available for it. Default 2. */
   min_participants?: number;
+  /** "Attendance Leeway" for time questions: slots within this many attendees
+   *  of the best-attended slot still reach the preference phase. Default 0. */
+  exclusion_tolerance?: number;
   /** Number of available slots for a limited_supply question (>= 1). */
   supply_count?: number | null;
   /** limited_supply: when false, only the creator sees claimant names. */

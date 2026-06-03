@@ -170,6 +170,30 @@ def filter_slots_by_min_availability(
     return [s for s in slots if availability_counts.get(s, 0) >= min_acceptable]
 
 
+def filter_slots_by_exclusion_tolerance(
+    slots: list[str],
+    availability_counts: dict[str, int],
+    tolerance: int,
+) -> list[str]:
+    """Keep slots whose effective attendance is within `tolerance` of the best.
+
+    "Attendance Leeway": a slot survives iff
+    `max_attendance - slot_attendance <= tolerance`. With `tolerance` 0 only the
+    best-attended slot(s) reach the preference phase; raising it widens the
+    field so a slightly-less-attended-but-otherwise-preferable slot can still be
+    considered and voted on. The orange "excludes N" badge a respondent sees on
+    a surviving slot is exactly `max_attendance - count`, which is therefore
+    always <= the configured tolerance.
+
+    The best-attended slot always survives (its `max - count` is 0), so when any
+    slot exists this never returns empty.
+    """
+    tolerance = max(0, tolerance)
+    max_avail = max((availability_counts.get(s, 0) for s in slots), default=0)
+    cutoff = max_avail - tolerance
+    return [s for s in slots if availability_counts.get(s, 0) >= cutoff]
+
+
 def filter_slots_by_min_participants(
     slots: list[str],
     availability_counts: dict[str, int],
@@ -311,29 +335,37 @@ def calculate_time_question_results(question: dict, votes: list[dict]) -> dict:
     Returns dict with:
         availability_counts: {slot_key: count}
         max_availability: int
+        availability_respondents: int  (weighted headcount of everyone who
+            submitted availability — the universe a slot's absolute exclusion is
+            measured against: excluded(slot) = availability_respondents - count)
         winner: slot_key | None
         like_counts: {slot_key: count}
         dislike_counts: {slot_key: count}
     """
-    raw_options = question.get("options")
-    if raw_options is None:
+    # Weighted count of everyone who submitted availability (submitter +
+    # plus-ones). Even the best-attended slot may leave some of these people
+    # out, so it's the denominator for the absolute "excludes N" badge.
+    availability_respondents = sum(
+        vote_weight(v) for v in votes if v.get("voter_day_time_windows")
+    )
+
+    def _empty(respondents: int) -> dict:
         return {
             "availability_counts": {},
             "max_availability": 0,
+            "availability_respondents": respondents,
             "winner": None,
             "like_counts": {},
             "dislike_counts": {},
         }
 
+    raw_options = question.get("options")
+    if raw_options is None:
+        return _empty(availability_respondents)
+
     options: list[str] = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
     if not options:
-        return {
-            "availability_counts": {},
-            "max_availability": 0,
-            "winner": None,
-            "like_counts": {},
-            "dislike_counts": {},
-        }
+        return _empty(availability_respondents)
 
     availability_counts = compute_slot_availability(options, votes)
     max_avail = max(availability_counts.values(), default=0)
@@ -343,6 +375,7 @@ def calculate_time_question_results(question: dict, votes: list[dict]) -> dict:
     return {
         "availability_counts": availability_counts,
         "max_availability": max_avail,
+        "availability_respondents": availability_respondents,
         "winner": winner,
         "like_counts": like_counts,
         "dislike_counts": dislike_counts,

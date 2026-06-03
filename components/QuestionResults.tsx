@@ -16,6 +16,7 @@ import {
   parseSlotDate,
   parseSlotStart,
   periodColorClass,
+  slotExcludedCount,
   type SlotCell,
 } from "@/lib/timeUtils";
 
@@ -259,6 +260,10 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
   const options = results.options ?? [];
   const availCounts = results.availability_counts;
   const maxAvail = results.max_availability;
+  // Absolute exclusion denominator: everyone who submitted availability. Even
+  // the best slot can leave some of them out. Falls back to maxAvail (relative)
+  // for older results that predate the field.
+  const respondents = results.availability_respondents ?? maxAvail;
   const likeCounts = results.like_counts;
   const dislikeCounts = results.dislike_counts;
 
@@ -317,9 +322,9 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
               {formatTimeSlot(winner)}
             </span>
           </div>
-          {maxAvail != null && maxAvail > 0 && availCounts?.[winner] != null && (
+          {respondents != null && respondents > 0 && availCounts?.[winner] != null && (
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
-              {availCounts[winner]} of {maxAvail} available
+              {availCounts[winner]} of {respondents} available
             </p>
           )}
         </div>
@@ -344,10 +349,7 @@ function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; 
                 }
                 const likes = likeCounts?.[cell.slot] ?? 0;
                 const dislikes = dislikeCounts?.[cell.slot] ?? 0;
-                const unavailable =
-                  maxAvail != null && availCounts?.[cell.slot] != null
-                    ? maxAvail - availCounts[cell.slot]
-                    : 0;
+                const unavailable = slotExcludedCount(respondents, availCounts?.[cell.slot]);
                 const isWinner = cell.slot === winner;
                 return (
                   <div

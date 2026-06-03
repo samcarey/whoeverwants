@@ -208,6 +208,7 @@ def _compute_candidate_time_slots(question: dict, votes: list[dict]) -> tuple[li
         generate_time_question_slots,
         compute_slot_availability,
         filter_slots_by_min_participants,
+        filter_slots_by_exclusion_tolerance,
         _keep_longest_per_start_time,
     )
 
@@ -226,6 +227,15 @@ def _compute_candidate_time_slots(question: dict, votes: list[dict]) -> tuple[li
         all_slots,
         availability_counts,
         question.get("time_min_participants") or 2,
+    )
+    # "Attendance Leeway": among viable slots, keep only those within
+    # `exclusion_tolerance` of the best-attended one (default 0 → just the
+    # best). Applied after the absolute viability gate so it narrows the field
+    # rather than deciding whether the event happens at all.
+    slots = filter_slots_by_exclusion_tolerance(
+        slots,
+        availability_counts,
+        question.get("exclusion_tolerance") or 0,
     )
     return _keep_longest_per_start_time(slots), True
 
@@ -346,6 +356,7 @@ def _row_to_question(row: dict) -> QuestionResponse:
         is_auto_title=row.get("is_auto_title", False),
         min_availability_percent=row.get("min_availability_percent"),
         time_min_participants=row.get("time_min_participants"),
+        exclusion_tolerance=row.get("exclusion_tolerance"),
         supply_count=row.get("supply_count"),
         reveal_claimant_names=row.get("reveal_claimant_names", True),
         winner_method=row.get("winner_method") or "favorite",
@@ -863,6 +874,7 @@ def _compute_results(
             winner=time_result["winner"],
             availability_counts=time_result["availability_counts"],
             max_availability=time_result["max_availability"],
+            availability_respondents=time_result["availability_respondents"],
             like_counts=time_result["like_counts"],
             dislike_counts=time_result["dislike_counts"],
             time_event_cancelled=bool(question.get("time_event_cancelled")),

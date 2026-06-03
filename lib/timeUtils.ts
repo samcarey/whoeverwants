@@ -30,6 +30,20 @@ export function timeToMinutes(t: string): number {
   return h * 60 + m;
 }
 
+/**
+ * How many availability respondents a time slot excludes, for the orange badge.
+ * `baseline` is the total respondents (absolute exclusion) — or max availability
+ * as the legacy relative fallback. Returns 0 when either input is unknown.
+ * Shared by the preference ballot (TimeSlotBubbles) and the results page
+ * (QuestionResults) so the formula can't drift between them.
+ */
+export function slotExcludedCount(
+  baseline: number | null | undefined,
+  slotCount: number | null | undefined,
+): number {
+  return baseline != null && slotCount != null ? baseline - slotCount : 0;
+}
+
 /** Calculate window duration in minutes, handling cross-midnight */
 export function windowDurationMinutes(w: { min: string; max: string }): number {
   const minMins = timeToMinutes(w.min);

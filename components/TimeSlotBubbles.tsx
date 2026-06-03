@@ -23,6 +23,7 @@ import {
   getBubbleLabel,
   groupSlotsByDay,
   periodColorClass,
+  slotExcludedCount,
   type SlotCell,
 } from "@/lib/timeUtils";
 
@@ -43,6 +44,11 @@ interface TimeSlotBubblesProps {
   /** availability_counts from results: slot_key → voter count */
   availabilityCounts?: Record<string, number>;
   maxAvailability?: number;
+  /** Weighted headcount of everyone who submitted availability. The orange
+   *  badge shows ABSOLUTE exclusion (respondents − count), so even the
+   *  best-attended slot shows how many it leaves out. Falls back to
+   *  maxAvailability (relative) when not provided. */
+  availabilityRespondents?: number;
   disabled?: boolean;
 }
 
@@ -53,6 +59,7 @@ export default function TimeSlotBubbles({
   onToggle,
   availabilityCounts,
   maxAvailability,
+  availabilityRespondents,
   disabled = false,
 }: TimeSlotBubblesProps) {
   const likedSet = useMemo(() => new Set(likedSlots), [likedSlots]);
@@ -95,13 +102,17 @@ export default function TimeSlotBubbles({
     if (disabled) clearSelection();
   }, [disabled, clearSelection]);
 
-  // How many voters a slot excludes (max availability minus its own count).
+  // How many voters a slot excludes, ABSOLUTE: everyone who submitted
+  // availability minus the slot's own count — so even the best-attended slot
+  // shows the people it leaves out. Falls back to the relative (max − count)
+  // baseline when the respondent total isn't supplied.
+  const excludedBaseline = availabilityRespondents ?? maxAvailability;
   const excludedCount = useCallback(
     (slot: string) =>
-      maxAvailability != null && availabilityCounts != null
-        ? maxAvailability - (availabilityCounts[slot] ?? 0)
+      availabilityCounts != null
+        ? slotExcludedCount(excludedBaseline, availabilityCounts[slot] ?? 0)
         : 0,
-    [maxAvailability, availabilityCounts],
+    [excludedBaseline, availabilityCounts],
   );
 
   // Whether any slot would render an orange "excludes N voter(s)" badge — used

@@ -377,6 +377,7 @@ def _insert_question(
             reference_location_label,
             min_availability_percent,
             time_min_participants,
+            exclusion_tolerance,
             supply_count,
             reveal_claimant_names,
             winner_method,
@@ -394,6 +395,7 @@ def _insert_question(
             %(reference_location_label)s,
             %(min_availability_percent)s,
             %(time_min_participants)s,
+            %(exclusion_tolerance)s,
             %(supply_count)s,
             %(reveal_claimant_names)s,
             %(winner_method)s,
@@ -422,6 +424,9 @@ def _insert_question(
             ),
             "time_min_participants": (
                 sub.min_participants if sub.question_type == QuestionType.time else None
+            ),
+            "exclusion_tolerance": (
+                max(0, sub.exclusion_tolerance) if sub.question_type == QuestionType.time else 0
             ),
             "supply_count": (
                 sub.supply_count if sub.question_type == QuestionType.limited_supply else None
