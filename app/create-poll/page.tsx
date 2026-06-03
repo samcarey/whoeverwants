@@ -689,6 +689,15 @@ export function CreateQuestionContent() {
     });
   const effectiveAllowPlusOnes = allowPlusOnes ?? pollHasPlusOneDefaultType;
 
+  // A limited-supply poll's action is "claiming" a spot, not "voting" — so the
+  // poll-level cutoff + plus-ones labels switch wording when EVERY question is
+  // limited supply. Mixed polls (a limited-supply question alongside a yes/no,
+  // etc.) keep the generic "voting" wording.
+  const allDraftsLimitedSupply =
+    drafts.length === 0 || drafts.every((d) => draftDbQuestionType(d) === 'limited_supply');
+  const pollIsLimitedSupply =
+    allDraftsLimitedSupply && (isModalOpen ? inlineFormIsLimitedSupply : drafts.length > 0);
+
   // Migration 098: poll-level results-display + ranked-choice settings.
   // The min-responses + show-results pair is meaningful iff the poll
   // contains at least one ranked_choice question.
@@ -2336,6 +2345,7 @@ export function CreateQuestionContent() {
                     className="divide-y divide-gray-200 dark:divide-gray-700"
                   >
                     <VotingCutoffField
+                      label={pollIsLimitedSupply ? 'Claiming Cutoff' : 'Voting Cutoff'}
                       deadlineOption={deadlineOption}
                       setDeadlineOption={setDeadlineOption}
                       customDate={customDate}
@@ -2429,21 +2439,26 @@ export function CreateQuestionContent() {
                       onClick={() => { if (!isLoading) setAllowPlusOnes(!effectiveAllowPlusOnes); }}
                     >
                       <span className="text-base font-normal">
-                        Allow voting for others (plus-ones)
+                        {pollIsLimitedSupply
+                          ? 'Allow claiming for others (plus-ones)'
+                          : 'Allow voting for others (plus-ones)'}
                       </span>
                       <SliderSwitch
                         checked={effectiveAllowPlusOnes}
                         onChange={(next) => setAllowPlusOnes(next)}
                         disabled={isLoading}
-                        aria-label="Allow voting for others (plus-ones)"
+                        aria-label={pollIsLimitedSupply
+                          ? 'Allow claiming for others (plus-ones)'
+                          : 'Allow voting for others (plus-ones)'}
                       />
                     </div>
 
                     {/* Emoji field — always visible, last row of the poll
                         settings card. Defaults (as the faded placeholder) to
                         the current category's icon; the creator can pick an
-                        emoji to override it for any category. */}
-                    {category !== 'yes_no' && category !== 'limited_supply' && (
+                        emoji to override it for any category. Shown for
+                        limited supply too (placeholder = the 🎟️ default). */}
+                    {category !== 'yes_no' && (
                       <CategoryEmojiField
                         value={categoryEmoji}
                         onChange={setCategoryEmoji}
