@@ -810,6 +810,12 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // pre-effect state.
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group], 80);
 
+  // The sticky To Do · New · Old filter switch sits just under the fixed
+  // header. Measure it so the up scroll-helper arrow can float below it
+  // rather than under (and overlapping) it. 0 when no filter is shown
+  // (empty group), which is also when no awaiting card / up arrow exists.
+  const [filterSwitchRef, filterSwitchHeight] = useMeasuredHeight<HTMLDivElement>([group], 0);
+
   // Swipe-back gesture: dragging rightward on the content slides the page
   // off to the right with the home backdrop revealed underneath. While the
   // gesture is active, HomeBackdropHost (at layout level) mounts the cached
@@ -2052,6 +2058,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
             page chrome, not card content). */}
         {groupedGroupQuestions.length > 0 && (
           <div
+            ref={filterSwitchRef}
             className="sticky z-[5] bg-[var(--background)] px-2 pt-1 pb-2"
             style={{ top: `${headerHeight}px` }}
           >
@@ -2360,7 +2367,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
               onClick={() => scrollAwaitingToHeader(scrollHelpers.upTargetId)}
               aria-label="Scroll to next poll awaiting your response"
               elevated={elevateArrowsForOverlay}
-              style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
+              // Float below the fixed header AND the sticky To Do · New · Old
+              // filter switch so the arrow never overlaps the tabs.
+              style={{ top: `calc(${headerHeight + filterSwitchHeight}px + 0.5rem)` }}
             />
           )}
           {scrollHelpers.showDown && (
