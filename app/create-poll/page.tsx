@@ -20,6 +20,7 @@ import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import CategoryEmojiField from "@/components/CategoryEmojiField";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
+import ScoringAlgorithmField from "@/components/ScoringAlgorithmField";
 import SliderSwitch from "@/components/SliderSwitch";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
@@ -323,7 +324,7 @@ export function CreateQuestionContent() {
   // Ranked-choice headline method — per-question (only shown for ranked_choice).
   // 'favorite' (IRV, default): strongest core / most first-choice support.
   // 'consensus' (Borda): the option ranked highest across the most ballots.
-  const [winnerMethod, setWinnerMethod] = useState<'favorite' | 'consensus'>('favorite');
+  const [winnerMethod, setWinnerMethod] = useState<'favorite' | 'consensus'>('consensus');
 
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -885,7 +886,7 @@ export function CreateQuestionContent() {
     setRevealClaimantNames(d.revealClaimantNames ?? true);
     // Default ON for drafts persisted before these fields existed.
     setCollectSuggestions(d.collectSuggestions ?? true);
-    setWinnerMethod(d.winnerMethod ?? 'favorite');
+    setWinnerMethod(d.winnerMethod ?? 'consensus');
     setCollectAvailability(d.collectAvailability ?? true);
   }, []);
 
@@ -1292,8 +1293,8 @@ export function CreateQuestionContent() {
           // ballot of the nominated options — never re-open suggestion mode,
           // regardless of the user's remembered toggle preference.
           setCollectSuggestions(false);
-          // Fresh ranking ballot defaults to the favorite (IRV) headline.
-          setWinnerMethod('favorite');
+          // Fresh ranking ballot follows the create-form default (Consensus).
+          setWinnerMethod('consensus');
 
           // Auto-open: prefill is invisible until the user opens the modal.
           setIsModalOpen(true);
@@ -2136,41 +2137,6 @@ export function CreateQuestionContent() {
                           />
                         </div>
                       )}
-                      {category !== 'yes_no' && category !== 'time' && category !== 'limited_supply' && (
-                        <div className="py-3">
-                          <span className="text-base font-normal">
-                            How to pick the winner
-                          </span>
-                          <div className="mt-2 grid grid-cols-2 gap-2" role="radiogroup" aria-label="How to pick the winner">
-                            {([
-                              { value: 'favorite' as const, label: 'Group favorite', sub: 'Most first-choice support' },
-                              { value: 'consensus' as const, label: "Everyone's okay with", sub: 'Broadest acceptance' },
-                            ]).map((opt) => {
-                              const selected = winnerMethod === opt.value;
-                              return (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  role="radio"
-                                  aria-checked={selected}
-                                  disabled={isLoading}
-                                  onClick={() => { if (!isLoading) setWinnerMethod(opt.value); }}
-                                  className={`text-left rounded-xl border px-3 py-2 transition-colors disabled:opacity-50 ${
-                                    selected
-                                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/40 dark:border-blue-500'
-                                      : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600'
-                                  }`}
-                                >
-                                  <div className={`text-sm font-medium ${selected ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-200'}`}>
-                                    {opt.label}
-                                  </div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400">{opt.sub}</div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
                       {category === 'time' && (
                         <div
                           className={`flex items-center justify-between gap-3 h-12 ${isLoading ? 'cursor-not-allowed' : 'cursor-pointer'}`}
@@ -2359,6 +2325,14 @@ export function CreateQuestionContent() {
                     />
 
                     {pollHasPrephase && suggestionCutoffField}
+
+                    {pollHasRankedChoice && (
+                      <ScoringAlgorithmField
+                        value={winnerMethod}
+                        setValue={setWinnerMethod}
+                        disabled={isLoading}
+                      />
+                    )}
 
                     {pollHasRankedChoice && (
                       <CompactMinResponsesField

@@ -111,7 +111,7 @@ export function emptyDraft(
     supplyCount: 1,
     revealClaimantNames: true,
     collectSuggestions: opts.collectSuggestions ?? true,
-    winnerMethod: 'favorite',
+    winnerMethod: 'consensus',
     collectAvailability: opts.collectAvailability ?? true,
   };
 }
