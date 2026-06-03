@@ -56,9 +56,9 @@ export interface QuestionDraft {
    *  required). Seeded from the user's remembered preference on open. */
   collectSuggestions: boolean;
   /** Ranked-choice headline method — only meaningful for ranked_choice
-   *  questions. 'favorite' (IRV, default): the option with the strongest core /
-   *  most first-choice support. 'consensus' (Borda): the option ranked highest
-   *  across the most ballots — "what everyone's most okay with". Maps to the
+   *  questions. 'consensus' (Borda, default): the option ranked highest across
+   *  the most ballots — "what everyone's most okay with". 'favorite' (IRV): the
+   *  option with the strongest core / most first-choice support. Maps to the
    *  API `winner_method`. */
   winnerMethod: 'favorite' | 'consensus';
   /** "Ask for Availability before Voting" — only meaningful for time

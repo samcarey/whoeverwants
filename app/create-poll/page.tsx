@@ -322,8 +322,8 @@ export function CreateQuestionContent() {
   // creator's time windows. Default ON; the last submitted value is remembered.
   const [collectAvailability, setCollectAvailability] = useState(true);
   // Ranked-choice headline method — per-question (only shown for ranked_choice).
-  // 'favorite' (IRV, default): strongest core / most first-choice support.
-  // 'consensus' (Borda): the option ranked highest across the most ballots.
+  // 'consensus' (Borda, default): the option ranked highest across the most ballots.
+  // 'favorite' (IRV): strongest core / most first-choice support.
   const [winnerMethod, setWinnerMethod] = useState<'favorite' | 'consensus'>('consensus');
 
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
