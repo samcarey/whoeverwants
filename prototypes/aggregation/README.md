@@ -51,7 +51,16 @@ In both divergent cases **Borda and Condorcet agree with each other**, so
 "consensus" is unambiguous — the real decision is only **favorite vs
 consensus**, not Borda-vs-Condorcet.
 
-## Forward options for the owner (no code written for any of these yet)
+## DECISION (owner, after reviewing report.html): option 2 — SHIPPED
+
+The owner chose the **per-poll "favorite vs consensus" framing** (option 2
+below). Implemented as `questions.winner_method` (migration 135) with a
+create-time two-option control ("Group favorite" / "Everyone's okay with") and a
+consensus (Borda) breadth-breakdown result view. Default stays `favorite` (IRV),
+so no existing poll changes silently. `seed_demo.py` seeds a live favorite vs
+consensus pair on the dev server. See CLAUDE.md → "Ranked-choice headline method".
+
+## Forward options that were on the table
 
 1. **Keep IRV; rely on the shipped Layer-1 gloss.** Lowest surprise; the ⓘ
    already explains "a broadly-acceptable option lost" when it happens.
