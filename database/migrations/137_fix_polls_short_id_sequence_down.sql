@@ -1,0 +1,7 @@
+-- No-op down migration for 137_fix_polls_short_id_sequence.
+--
+-- The up migration only advances `polls_sequential_id_seq` forward to a value
+-- that is already guaranteed unused in the short_id keyspace. Lowering a
+-- sequence back is both meaningless (the rows it skipped past were never
+-- consumed) and unsafe (it could re-introduce the very collision the up
+-- migration fixed). There is nothing to revert.
