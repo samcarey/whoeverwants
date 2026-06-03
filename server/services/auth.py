@@ -1021,12 +1021,16 @@ class UserProfile:
     # Migration 123: per-account "stop nagging me to add a recovery method"
     # flag for the home-page banner shown to recovery-less accounts.
     recovery_reminder_dismissed: bool = False
+    # Migration 136: per-account "remind me to vote" preference (see
+    # services/vote_reminder.py + validation.VOTE_REMINDER_OPTIONS).
+    vote_reminder: str = "0.2x"
 
 
 def load_user_profile(conn, user_id: str) -> UserProfile | None:
     user_row = conn.execute(
         "SELECT id, display_name, created_at, badge_todo_mode, "
-        "badge_on_voting_open, badge_on_results, recovery_reminder_dismissed "
+        "badge_on_voting_open, badge_on_results, recovery_reminder_dismissed, "
+        "vote_reminder "
         "FROM users WHERE id = %(u)s::uuid",
         {"u": user_id},
     ).fetchone()
@@ -1052,6 +1056,7 @@ def load_user_profile(conn, user_id: str) -> UserProfile | None:
         badge_on_voting_open=bool(user_row["badge_on_voting_open"]),
         badge_on_results=bool(user_row["badge_on_results"]),
         recovery_reminder_dismissed=bool(user_row["recovery_reminder_dismissed"]),
+        vote_reminder=user_row["vote_reminder"] or "0.2x",
     )
 
 
@@ -1075,6 +1080,20 @@ def update_user_badge_settings(
          WHERE id = %(u)s::uuid
         """,
         {"todo": todo_mode, "voting": on_voting_open, "results": on_results, "u": user_id},
+    )
+
+
+def update_user_vote_reminder(conn, *, user_id: str, vote_reminder: str) -> None:
+    """Set the account-synced "remind me to vote" preference. The caller has
+    already validated the value against VOTE_REMINDER_OPTIONS. Bumps
+    `updated_at` like the other preference writers."""
+    conn.execute(
+        """
+        UPDATE users
+           SET vote_reminder = %(v)s, updated_at = NOW()
+         WHERE id = %(u)s::uuid
+        """,
+        {"v": vote_reminder, "u": user_id},
     )
 
 

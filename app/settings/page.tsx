@@ -38,6 +38,13 @@ import {
   type BadgeSettings,
 } from "@/lib/badgeSettings";
 import SliderSwitch from "@/components/SliderSwitch";
+import {
+  getEffectiveVoteReminder,
+  saveVoteReminder,
+  VOTE_REMINDER_OPTIONS,
+  DEFAULT_VOTE_REMINDER,
+  type VoteReminder,
+} from "@/lib/voteReminder";
 
 const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; icon: React.ReactNode }> = [
   {
@@ -81,6 +88,8 @@ export default function SettingsPage() {
   // effective settings (account when signed in, else localStorage) on mount
   // and whenever the signed-in identity changes.
   const [badge, setBadge] = useState<BadgeSettings>(DEFAULT_BADGE_SETTINGS);
+  // "Remind me to vote" preference. Same init/sync model as the badge settings.
+  const [voteReminder, setVoteReminder] = useState<VoteReminder>(DEFAULT_VOTE_REMINDER);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   // Read-only display of the current profile image. Editing (upload /
@@ -165,11 +174,17 @@ export default function SettingsPage() {
   // preferences authoritative over the local copy.
   useEffect(() => {
     setBadge(getEffectiveBadgeSettings());
+    setVoteReminder(getEffectiveVoteReminder());
   }, [currentUser?.user_id]);
 
   const updateBadge = (next: BadgeSettings) => {
     setBadge(next);
     saveBadgeSettings(next);
+  };
+
+  const handleVoteReminderChange = (next: VoteReminder) => {
+    setVoteReminder(next);
+    saveVoteReminder(next);
   };
 
   const handleSignOut = async () => {
@@ -609,6 +624,52 @@ export default function SettingsPage() {
           {badge.todoMode
             ? "An open poll stays unread until you vote or abstain — opening it isn't enough. The app-icon badge counts these."
             : "Opening a poll marks it read. It becomes unread again when voting opens or results arrive (toggles above)."}
+        </p>
+      </div>
+
+      {/* Vote reminders: a one-shot push before a poll's deadline if you can
+          still vote but haven't. Account-synced; fractional choices fire when
+          that fraction of the poll's open window remains. */}
+      <div className="mb-6">
+        <h2 className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+          Reminders
+        </h2>
+        <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
+          <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
+            <span className="text-base font-normal shrink-0">Remind me to vote</span>
+            <span className="relative inline-flex items-center gap-1.5 text-base font-normal text-gray-500 dark:text-gray-500">
+              {VOTE_REMINDER_OPTIONS.find((o) => o.value === voteReminder)?.label}
+              <svg
+                aria-hidden="true"
+                className="w-4 h-4 shrink-0"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 3a.75.75 0 01.55.24l3.25 3.5a.75.75 0 11-1.1 1.02L10 4.852 7.3 7.76a.75.75 0 01-1.1-1.02l3.25-3.5A.75.75 0 0110 3zm-3.76 9.2a.75.75 0 011.06.04L10 15.148l2.7-2.908a.75.75 0 111.1 1.02l-3.25 3.5a.75.75 0 01-1.1 0l-3.25-3.5a.75.75 0 01.04-1.06z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <select
+                value={voteReminder}
+                onChange={(e) => handleVoteReminderChange(e.target.value as VoteReminder)}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+                aria-label="Remind me to vote"
+              >
+                {VOTE_REMINDER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </label>
+        </section>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          Get a push before a poll closes if you still haven&apos;t voted. Time-based
+          choices fire that long before the deadline; percentages fire when that
+          much of the poll&apos;s voting window remains.
         </p>
       </div>
 

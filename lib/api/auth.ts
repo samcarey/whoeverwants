@@ -175,6 +175,23 @@ export async function apiUpdateBadgeSettings(settings: {
 }
 
 /**
+ * Set the signed-in user's account-synced "remind me to vote" preference.
+ * Returns the updated profile and refreshes the cached session user so every
+ * surface reflects the change immediately. Signed-in only — anonymous callers
+ * persist locally via `lib/voteReminder.ts`.
+ */
+export async function apiUpdateVoteReminder(
+  voteReminder: string,
+): Promise<SessionUser> {
+  const user = await authFetch<SessionUser>("/me/vote-reminder", {
+    method: "POST",
+    body: JSON.stringify({ vote_reminder: voteReminder }),
+  });
+  updateCachedSessionUser(user);
+  return user;
+}
+
+/**
  * Create a recovery-less account from just a name (the "provide a name to
  * continue" path of the gating modal), or set the name on the existing
  * account when already signed in. Persists the issued session so subsequent

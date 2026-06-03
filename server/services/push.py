@@ -520,6 +520,46 @@ _NOT_IGNORED = """
 """
 
 
+# Skip members who have already voted/abstained on THIS poll. Account-aware,
+# mirroring `_NOT_IGNORED`: a vote on any of the poll's questions by ANY browser
+# linked to the member's account (gm_ub.user_id) — or the member browser itself
+# — counts as "acted". Expects the recipient query to alias the member row `gm`,
+# join `gm_ub` (the `_PREF_JOIN` row), and bind %(pid)s to the poll_id. Used by
+# the vote-reminder pass so a reminder only reaches people who haven't responded.
+_NOT_VOTED = """
+                NOT EXISTS (
+                  SELECT 1 FROM votes v
+                    JOIN questions q ON v.question_id = q.id
+                   WHERE q.poll_id = %(pid)s::uuid
+                     AND v.browser_id IN (
+                       SELECT au.browser_id FROM user_browsers au
+                        WHERE au.user_id = gm_ub.user_id
+                       UNION ALL
+                       SELECT gm.browser_id
+                     )
+                )
+"""
+
+
+def fan_out_to_browsers(browser_ids: list[str], payload: dict) -> None:
+    """Send a push to an explicit set of browser_ids. Unlike the group-scoped
+    fan-outs, the recipient set is computed by the caller (e.g. the vote-reminder
+    pass, which has already applied the mute / ignore / not-voted / due gates per
+    browser). Same safety contract: every error caught, logged, swallowed.
+    """
+    if not browser_ids:
+        return
+    try:
+        with get_db() as conn:
+            subscriptions = _fetch_subscriptions(conn, browser_ids)
+            if not subscriptions:
+                return
+            vapid = _load_vapid_from_db(conn)
+        _dispatch_pushes(subscriptions, payload, vapid)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("fan_out_to_browsers failed: %s", exc)
+
+
 def fan_out_new_poll(group_id: str, creator_browser_id: str | None, payload: dict) -> None:
     """Send a 'new poll' push to every group member (except the creator)
     whose notification preference is on. Safe to call inline OR from a
