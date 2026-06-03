@@ -1707,8 +1707,24 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
     (shared device):** a browser-only account IS "whoever is on this
     browser," so absorbing it moves polls made on this browser into the
     signed-in account — accepted as the lesser evil vs. orphaning them.
-    **Still no poll-edit-mutation endpoint** (title/options), so "edit"
-    remains the four close/reopen/cutoff endpoints.
+    **No poll-edit-mutation endpoint, BY DESIGN (decided June 2026 — do
+    NOT build one).** Editing an open poll's title/options after people
+    have responded is a trust violation: a respondent who voted against
+    the original wording/options would rightly feel betrayed if the
+    creator silently changed them out from under their ballot. So "edit"
+    is deliberately limited to the four lifecycle endpoints
+    (close/reopen/cutoff-suggestions/cutoff-availability) — none of which
+    touch title/options/question text. The supported "I made a typo / had
+    the wrong options / want a do-over" path is **close + recreate**: the
+    **Close Poll** (red) and **Copy** (blue, = duplicate) actions sit
+    one-tap apart in BOTH the long-press `FollowUpModal` AND the poll info
+    page (`/g/<id>/p/<short>/info`). **Copy** snapshots the poll into a
+    prefilled create-poll draft (`localStorage duplicate-data-<qid>` +
+    `?duplicate=<qid>`) and works regardless of closed state, so the
+    flow is: Close Poll → Copy → tweak → submit a fresh open poll, leaving
+    the original closed with its existing votes intact. If a future
+    request asks for in-place poll editing, push back with this rationale
+    first; the close-and-recreate flow is the intended UX.
   - **Explicit two-account merge — SHIPPED.** For users who ended up with
     TWO real accounts that never auto-merge (passkey-only + email,
     Apple-relay + Google — no shared verified-email signal). Settings →
