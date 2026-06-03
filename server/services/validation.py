@@ -86,3 +86,26 @@ def validate_winner_method(value: str | None) -> str:
             detail=f"winner_method must be one of {WINNER_METHODS}",
         )
     return value
+
+
+# Per-user "remind me to vote" preference (migration 136). Mirror these in
+# lib/voteReminder.ts on the FE. 'off' + fractional ('Nx' = fire when that
+# fraction of the poll's open window remains) + absolute lead times. The actual
+# offset math lives in services/vote_reminder.py (the only consumer that needs
+# it); validation only gates the stored string.
+VOTE_REMINDER_OPTIONS = ("off", "0.5x", "0.2x", "0.1x", "1h", "3h", "1d")
+DEFAULT_VOTE_REMINDER = "0.2x"
+
+
+def validate_vote_reminder(value: str | None) -> str:
+    """Validate a vote-reminder preference. Returns the canonical value,
+    defaulting None/empty to the default. Raises HTTPException(400) on an
+    unknown value."""
+    if value is None or value == "":
+        return DEFAULT_VOTE_REMINDER
+    if value not in VOTE_REMINDER_OPTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"vote_reminder must be one of {VOTE_REMINDER_OPTIONS}",
+        )
+    return value

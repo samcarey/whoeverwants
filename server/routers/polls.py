@@ -951,6 +951,22 @@ def _build_transition_notification(conn, poll_id: str):
     )
 
 
+def _build_reminder_notification(conn, poll_id: str) -> tuple[str, dict] | None:
+    """(group_id, payload) for a "you haven't voted yet" reminder push, or None
+    when unroutable. Used only by the cron tick's vote-reminder pass. Line 2
+    (body) is the poll's own title (the base body); line 1 nudges the recipient
+    to vote before the deadline."""
+    built = _notification_base(conn, poll_id)
+    if not built:
+        return None
+    group_id, base, _row, group_phrase, _question_rows = built
+    return group_id, {
+        **base,
+        "title": f"Reminder to vote in {group_phrase}",
+        "tag": f"vote-reminder-{poll_id}",
+    }
+
+
 def _schedule_close_notification(conn, poll_id, *, already_notified, background_tasks):
     """Build + schedule the poll-closed push, unless the poll was already
     close-notified. No-op when unroutable. Fan-out runs after the response."""

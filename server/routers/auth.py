@@ -65,9 +65,10 @@ from services.auth import (
     unlink_browser,
     update_user_badge_settings,
     update_user_display_name,
+    update_user_vote_reminder,
     user_has_email_identity,
 )
-from services.validation import validate_user_name
+from services.validation import validate_user_name, validate_vote_reminder
 from services.email import email_configured, send_magic_link, send_recovery_email
 from services.oauth import (
     OAuthVerificationError,
@@ -134,6 +135,9 @@ class UserSummary(BaseModel):
     # True = the user dismissed the nudge. The FE additionally gates the
     # banner on the account lacking an email/OAuth recovery identity.
     recovery_reminder_dismissed: bool = False
+    # Migration 136: account-synced "remind me to vote" preference. Rides
+    # every sign-in response + /me so the FE's local mirror stays in lockstep.
+    vote_reminder: str = "0.2x"
 
 
 def _summary_from_profile(profile) -> "UserSummary":
@@ -149,6 +153,7 @@ def _summary_from_profile(profile) -> "UserSummary":
         badge_on_voting_open=profile.badge_on_voting_open,
         badge_on_results=profile.badge_on_results,
         recovery_reminder_dismissed=profile.recovery_reminder_dismissed,
+        vote_reminder=profile.vote_reminder,
     )
 
 
@@ -767,6 +772,28 @@ def update_my_badge_settings(req: UpdateBadgeSettingsBody, request: Request):
             on_voting_open=req.badge_on_voting_open,
             on_results=req.badge_on_results,
         )
+        profile = load_user_profile(conn, user_id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account no longer exists",
+        )
+    return _summary_from_profile(profile)
+
+
+class UpdateVoteReminderBody(BaseModel):
+    vote_reminder: str = "0.2x"
+
+
+@router.post("/me/vote-reminder", response_model=UserSummary)
+def update_my_vote_reminder(req: UpdateVoteReminderBody, request: Request):
+    """Set the signed-in user's account-synced "remind me to vote" preference
+    (migration 136). Signed-in only; anonymous browsers keep their preference
+    in localStorage. The value is validated against VOTE_REMINDER_OPTIONS."""
+    user_id = _require_signed_in(request)
+    value = validate_vote_reminder(req.vote_reminder)
+    with get_db() as conn:
+        update_user_vote_reminder(conn, user_id=user_id, vote_reminder=value)
         profile = load_user_profile(conn, user_id)
     if not profile:
         raise HTTPException(

@@ -48,6 +48,10 @@ export interface SessionUser {
   // = the user dismissed the nudge. Optional so pre-feature cached profiles
   // deserialize (treated as not-dismissed until the next /me refresh).
   recovery_reminder_dismissed?: boolean;
+  // Migration 136: account-synced "remind me to vote" preference. Optional so
+  // pre-feature cached profiles deserialize; `lib/voteReminder.ts` applies the
+  // default when absent.
+  vote_reminder?: string;
 }
 
 let cachedToken: string | null | undefined; // undefined = not yet read
