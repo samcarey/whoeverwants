@@ -11,14 +11,10 @@ import { useEffect } from 'react';
  * `''`) so nested locks compose without clobbering an outer lock's state.
  *
  * @param locked  whether the lock is active
- * @param options.overscroll  also pin `overscroll-behavior: none` on
- *   `<body>` + `<html>` as an extra pull-to-refresh guard (default `true`)
+ * @param overscroll  also pin `overscroll-behavior: none` on `<body>` +
+ *   `<html>` as an extra pull-to-refresh guard (default `true`)
  */
-export function useBodyScrollLock(
-  locked: boolean,
-  options?: { overscroll?: boolean }
-): void {
-  const overscroll = options?.overscroll ?? true;
+export function useBodyScrollLock(locked: boolean, overscroll = true): void {
   useEffect(() => {
     if (!locked) return;
 

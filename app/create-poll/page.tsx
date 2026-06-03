@@ -960,7 +960,7 @@ export function CreateQuestionContent() {
 
   // `position: fixed` on body (vs. `overflow: hidden`) is required to
   // block iOS pull-to-refresh from bypassing the lock.
-  useBodyScrollLock(isModalOpen, { overscroll: false });
+  useBodyScrollLock(isModalOpen, false);
 
   // Escape closes the sheet (preserving state). Skip when the inner
   // ConfirmationModal is open — its own document-level Escape handler runs

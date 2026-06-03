@@ -82,7 +82,7 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
 
   // Body scroll lock — same pattern as other modals in the app. The modal
   // only mounts while open, so the lock is unconditionally active here.
-  useBodyScrollLock(true, { overscroll: false });
+  useBodyScrollLock(true, false);
 
   // Escape closes.
   useEffect(() => {
