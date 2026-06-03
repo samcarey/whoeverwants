@@ -340,7 +340,7 @@ export function CreateQuestionContent() {
   // A ranked_choice question is a "suggestion poll" when the creator left the
   // "Collect Suggestions before Vote" toggle on — regardless of whether they
   // typed any initial options. Drives the poll-level prephase fields.
-  const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && collectSuggestions;
+  const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && category !== 'limited_supply' && collectSuggestions;
 
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
@@ -695,7 +695,8 @@ export function CreateQuestionContent() {
   const inlineFormIsRankedChoice = isModalOpen
     && questionType === 'question'
     && category !== 'yes_no'
-    && category !== 'time';
+    && category !== 'time'
+    && category !== 'limited_supply';
   const pollHasRankedChoice = anyDraftIsRankedChoice(drafts) || inlineFormIsRankedChoice;
 
   // Validates the whole poll at submit time: drafts exist + poll-level
