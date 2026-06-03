@@ -176,6 +176,7 @@ export default function TimeBallotSection({
               onToggle={() => {}}
               availabilityCounts={questionResults?.availability_counts}
               maxAvailability={questionResults?.max_availability}
+              availabilityRespondents={questionResults?.availability_respondents}
               disabled={true}
             />
           ) : null}
@@ -285,6 +286,7 @@ export default function TimeBallotSection({
                 }}
                 availabilityCounts={questionResults?.availability_counts}
                 maxAvailability={questionResults?.max_availability}
+                availabilityRespondents={questionResults?.availability_respondents}
                 disabled={isSubmitting}
               />
             </div>

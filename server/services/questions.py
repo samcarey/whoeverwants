@@ -874,6 +874,7 @@ def _compute_results(
             winner=time_result["winner"],
             availability_counts=time_result["availability_counts"],
             max_availability=time_result["max_availability"],
+            availability_respondents=time_result["availability_respondents"],
             like_counts=time_result["like_counts"],
             dislike_counts=time_result["dislike_counts"],
             time_event_cancelled=bool(question.get("time_event_cancelled")),

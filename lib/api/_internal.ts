@@ -256,6 +256,7 @@ export function toQuestionResults(data: any): Results {
     borda_scores: data.borda_scores ?? undefined,
     availability_counts: data.availability_counts ?? undefined,
     max_availability: data.max_availability ?? undefined,
+    availability_respondents: data.availability_respondents ?? undefined,
     included_slots: data.included_slots ?? undefined,
     like_counts: data.like_counts ?? undefined,
     dislike_counts: data.dislike_counts ?? undefined,

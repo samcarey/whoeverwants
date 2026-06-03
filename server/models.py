@@ -290,6 +290,9 @@ class QuestionResultsResponse(BaseModel):
     # Time question fields
     availability_counts: dict | None = None  # {slot_key: voter_count}
     max_availability: int | None = None
+    # Weighted headcount of everyone who submitted availability; the denominator
+    # for the absolute "excludes N" badge (even the best slot may exclude some).
+    availability_respondents: int | None = None
     included_slots: list[str] | None = None  # slots passing availability threshold (kept for compat)
     like_counts: dict | None = None   # {slot_key: like_count}
     dislike_counts: dict | None = None  # {slot_key: dislike_count}

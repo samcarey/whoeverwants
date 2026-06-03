@@ -130,6 +130,9 @@ export interface QuestionResults {
   // Time question fields
   availability_counts?: Record<string, number>;
   max_availability?: number;
+  // Weighted headcount of everyone who submitted availability — the denominator
+  // for the absolute "excludes N" badge (even the best slot can exclude people).
+  availability_respondents?: number;
   included_slots?: string[];
   like_counts?: Record<string, number>;
   dislike_counts?: Record<string, number>;

@@ -335,15 +335,26 @@ def calculate_time_question_results(question: dict, votes: list[dict]) -> dict:
     Returns dict with:
         availability_counts: {slot_key: count}
         max_availability: int
+        availability_respondents: int  (weighted headcount of everyone who
+            submitted availability — the universe a slot's absolute exclusion is
+            measured against: excluded(slot) = availability_respondents - count)
         winner: slot_key | None
         like_counts: {slot_key: count}
         dislike_counts: {slot_key: count}
     """
+    # Weighted count of everyone who submitted availability (submitter +
+    # plus-ones). Even the best-attended slot may leave some of these people
+    # out, so it's the denominator for the absolute "excludes N" badge.
+    availability_respondents = sum(
+        vote_weight(v) for v in votes if v.get("voter_day_time_windows")
+    )
+
     raw_options = question.get("options")
     if raw_options is None:
         return {
             "availability_counts": {},
             "max_availability": 0,
+            "availability_respondents": availability_respondents,
             "winner": None,
             "like_counts": {},
             "dislike_counts": {},
@@ -354,6 +365,7 @@ def calculate_time_question_results(question: dict, votes: list[dict]) -> dict:
         return {
             "availability_counts": {},
             "max_availability": 0,
+            "availability_respondents": availability_respondents,
             "winner": None,
             "like_counts": {},
             "dislike_counts": {},
@@ -367,6 +379,7 @@ def calculate_time_question_results(question: dict, votes: list[dict]) -> dict:
     return {
         "availability_counts": availability_counts,
         "max_availability": max_avail,
+        "availability_respondents": availability_respondents,
         "winner": winner,
         "like_counts": like_counts,
         "dislike_counts": dislike_counts,
