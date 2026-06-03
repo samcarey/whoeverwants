@@ -25,6 +25,7 @@ import SliderSwitch from "@/components/SliderSwitch";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
 import CompactNumberRow from "@/components/CompactNumberRow";
+import OutcomeInfoButton from "@/components/OutcomeInfoButton";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import DayTimeWindowsInput from "@/components/DayTimeWindowsInput";
 import DaysSelector from "@/components/DaysSelector";
@@ -199,6 +200,7 @@ export function CreateQuestionContent() {
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
   const [minParticipants, setMinParticipants] = useState<number>(2);
+  const [exclusionTolerance, setExclusionTolerance] = useState<number>(0);
   const [supplyCount, setSupplyCount] = useState<number>(1);
   const [revealClaimantNames, setRevealClaimantNames] = useState<boolean>(true);
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -856,12 +858,13 @@ export function CreateQuestionContent() {
     durationMaxEnabled,
     dayTimeWindows: [...dayTimeWindows],
     minParticipants,
+    exclusionTolerance,
     supplyCount,
     revealClaimantNames,
     collectSuggestions,
     winnerMethod,
     collectAvailability,
-  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, supplyCount, revealClaimantNames, collectSuggestions, winnerMethod, collectAvailability]);
+  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, exclusionTolerance, supplyCount, revealClaimantNames, collectSuggestions, winnerMethod, collectAvailability]);
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
@@ -883,6 +886,7 @@ export function CreateQuestionContent() {
     setDurationMaxEnabled(d.durationMaxEnabled);
     setDayTimeWindows([...d.dayTimeWindows]);
     setMinParticipants(d.minParticipants);
+    setExclusionTolerance(d.exclusionTolerance ?? 0);
     setSupplyCount(d.supplyCount ?? 1);
     setRevealClaimantNames(d.revealClaimantNames ?? true);
     // Default ON for drafts persisted before these fields existed.
@@ -1200,6 +1204,7 @@ export function CreateQuestionContent() {
             setQuestionType('time');
             setOptions(['']);
             if (duplicateData.time_min_participants != null) setMinParticipants(duplicateData.time_min_participants);
+            if (duplicateData.exclusion_tolerance != null) setExclusionTolerance(duplicateData.exclusion_tolerance);
             // Carry over the creator's time windows, dropping any day that is
             // now in the past (a poll copied weeks later would otherwise seed
             // dead dates the calendar can't even select). The duration window
@@ -2374,6 +2379,27 @@ export function CreateQuestionContent() {
                         label="Minimum Participants"
                         value={minParticipants}
                         setValue={setMinParticipants}
+                        disabled={isLoading}
+                      />
+                    )}
+
+                    {/* "Attendance Leeway": how many fewer people than the
+                        best-attended slot a time may have and still be offered
+                        for preference voting. 0 (default) → only the
+                        best-attended slot(s). Only meaningful when an
+                        availability phase collects attendance to compare. */}
+                    {showTimeFields && collectAvailability && (
+                      <CompactNumberRow
+                        label="Attendance Leeway"
+                        labelInfo={
+                          <OutcomeInfoButton
+                            align="left"
+                            text="By default only the time(s) the most people can make are offered for a final preference vote. Attendance Leeway lets times with a few fewer people stay in the running too — sometimes a slightly less-attended slot is better for other reasons. Set it to how many fewer attendees you'll tolerate: e.g. 2 keeps any time that leaves out at most 2 more people than the best slot. Voters see an orange badge on each time showing how many it excludes."
+                          />
+                        }
+                        value={exclusionTolerance}
+                        setValue={setExclusionTolerance}
+                        min={0}
                         disabled={isLoading}
                       />
                     )}

@@ -170,6 +170,30 @@ def filter_slots_by_min_availability(
     return [s for s in slots if availability_counts.get(s, 0) >= min_acceptable]
 
 
+def filter_slots_by_exclusion_tolerance(
+    slots: list[str],
+    availability_counts: dict[str, int],
+    tolerance: int,
+) -> list[str]:
+    """Keep slots whose effective attendance is within `tolerance` of the best.
+
+    "Attendance Leeway": a slot survives iff
+    `max_attendance - slot_attendance <= tolerance`. With `tolerance` 0 only the
+    best-attended slot(s) reach the preference phase; raising it widens the
+    field so a slightly-less-attended-but-otherwise-preferable slot can still be
+    considered and voted on. The orange "excludes N" badge a respondent sees on
+    a surviving slot is exactly `max_attendance - count`, which is therefore
+    always <= the configured tolerance.
+
+    The best-attended slot always survives (its `max - count` is 0), so when any
+    slot exists this never returns empty.
+    """
+    tolerance = max(0, tolerance)
+    max_avail = max((availability_counts.get(s, 0) for s in slots), default=0)
+    cutoff = max_avail - tolerance
+    return [s for s in slots if availability_counts.get(s, 0) >= cutoff]
+
+
 def filter_slots_by_min_participants(
     slots: list[str],
     availability_counts: dict[str, int],

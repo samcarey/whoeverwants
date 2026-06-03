@@ -221,6 +221,7 @@ export function toQuestion(data: any): Question {
     response_count: data.response_count ?? undefined,
     min_availability_percent: data.min_availability_percent ?? undefined,
     time_min_participants: data.time_min_participants ?? undefined,
+    exclusion_tolerance: data.exclusion_tolerance ?? undefined,
     supply_count: data.supply_count ?? undefined,
     reveal_claimant_names: data.reveal_claimant_names ?? undefined,
     winner_method: data.winner_method ?? undefined,

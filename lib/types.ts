@@ -53,6 +53,9 @@ export interface Question {
   // "Minimum Participants" viability gate for time questions (default 2). The
   // finalized "event's off" state is surfaced on QuestionResults, not here.
   time_min_participants?: number | null;
+  // "Attendance Leeway": slots within this many attendees of the best-attended
+  // slot still reach the preference phase (default 0). Time questions only.
+  exclusion_tolerance?: number | null;
   // Number of available slots for a limited_supply question. Null otherwise.
   supply_count?: number | null;
   // limited_supply: when false, only the creator sees claimant names.

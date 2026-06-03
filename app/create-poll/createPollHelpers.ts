@@ -44,6 +44,10 @@ export interface QuestionDraft {
    *  a slot counts only if at least this many people are available for it;
    *  if none clears the bar the event is cancelled. Maps to min_participants. */
   minParticipants: number;
+  /** "Attendance Leeway" for time questions (default 0): slots within this many
+   *  attendees of the best-attended slot still reach the preference phase.
+   *  Maps to exclusion_tolerance. */
+  exclusionTolerance: number;
   /** Number of available slots for a limited_supply question (>= 1). Maps to
    *  supply_count. Ignored for every other type. */
   supplyCount: number;
@@ -108,6 +112,7 @@ export function emptyDraft(
       ? [{ day: todayStr, windows: [{ ...DEFAULT_TIME_WINDOW }] }]
       : [],
     minParticipants: 2,
+    exclusionTolerance: 0,
     supplyCount: 1,
     revealClaimantNames: true,
     collectSuggestions: opts.collectSuggestions ?? true,
@@ -280,6 +285,7 @@ export function draftToQuestionParams(
       };
     }
     params.min_participants = d.minParticipants;
+    params.exclusion_tolerance = d.exclusionTolerance;
     // Availability phase ON → set the prephase cutoff so the poll collects
     // availability before opening preferences. OFF → leave it unset; the
     // server reads the absent `suggestion_deadline_minutes` as "no availability

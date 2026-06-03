@@ -37,6 +37,8 @@ export function buildQuestionSnapshot(question: Question, poll?: Poll | null) {
     // duration is copied verbatim. Null for non-time questions.
     day_time_windows: question.day_time_windows ?? null,
     duration_window: question.duration_window ?? null,
+    time_min_participants: question.time_min_participants ?? null,
+    exclusion_tolerance: question.exclusion_tolerance ?? null,
     // Migration 098: these fields live on the poll wrapper now.
     min_responses: poll?.min_responses ?? null,
     show_preliminary_results: poll?.show_preliminary_results ?? true,

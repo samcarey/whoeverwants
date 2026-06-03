@@ -4,9 +4,48 @@ from algorithms.time_question import (
     compute_slot_availability,
     filter_slots_by_min_availability,
     filter_slots_by_min_participants,
+    filter_slots_by_exclusion_tolerance,
     _effective_attendance,
     _voter_threshold,
 )
+
+
+class TestFilterSlotsByExclusionTolerance:
+    """"Attendance Leeway": keep slots within `tolerance` attendees of the
+    best-attended slot (max - count <= tolerance). Default 0 → only the best."""
+
+    def test_zero_keeps_only_best_attended(self):
+        slots = ["a", "b", "c"]
+        counts = {"a": 4, "b": 3, "c": 2}
+        assert filter_slots_by_exclusion_tolerance(slots, counts, 0) == ["a"]
+
+    def test_zero_keeps_all_tied_best(self):
+        slots = ["a", "b", "c"]
+        counts = {"a": 4, "b": 4, "c": 2}
+        assert filter_slots_by_exclusion_tolerance(slots, counts, 0) == ["a", "b"]
+
+    def test_tolerance_widens_field(self):
+        slots = ["a", "b", "c"]
+        counts = {"a": 4, "b": 3, "c": 1}
+        # within 1 of the max (4) → keep a (0 below) and b (1 below), drop c (3 below).
+        assert filter_slots_by_exclusion_tolerance(slots, counts, 1) == ["a", "b"]
+
+    def test_large_tolerance_keeps_everything(self):
+        slots = ["a", "b", "c"]
+        counts = {"a": 4, "b": 3, "c": 1}
+        assert filter_slots_by_exclusion_tolerance(slots, counts, 99) == ["a", "b", "c"]
+
+    def test_negative_tolerance_clamped_to_zero(self):
+        slots = ["a", "b"]
+        counts = {"a": 3, "b": 2}
+        assert filter_slots_by_exclusion_tolerance(slots, counts, -5) == ["a"]
+
+    def test_best_slot_always_survives(self):
+        # Even with tolerance 0 and a single slot, it's the best → kept.
+        assert filter_slots_by_exclusion_tolerance(["a"], {"a": 1}, 0) == ["a"]
+
+    def test_empty_slots_returns_empty(self):
+        assert filter_slots_by_exclusion_tolerance([], {}, 0) == []
 
 
 class TestFilterSlotsByMinParticipants:

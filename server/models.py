@@ -206,6 +206,10 @@ class QuestionResponse(BaseModel):
     response_count: int | None = None
     min_availability_percent: int | None = None
     time_min_participants: int | None = None
+    # "Attendance Leeway" (migration 138): slots within this many attendees of
+    # the best-attended slot still reach the preference phase. NULL for
+    # non-time questions; 0 (default) means only the best-attended slot(s).
+    exclusion_tolerance: int | None = None
     # Number of available slots for a limited_supply question. NULL otherwise.
     supply_count: int | None = None
     reveal_claimant_names: bool = True
@@ -355,6 +359,10 @@ class CreateQuestionRequest(BaseModel):
     # only if at least this many people are available for it; if none clears the
     # bar at the availability cutoff the event is cancelled. Default 2.
     min_participants: int = 2
+    # "Attendance Leeway" for time questions: slots whose effective attendance
+    # is within this many people of the best-attended slot still reach the
+    # preference phase. Default 0 (only the best-attended slot(s)).
+    exclusion_tolerance: int = 0
     # Number of available slots for a limited_supply question (>= 1).
     supply_count: int | None = None
     # limited_supply: when False, only the creator sees claimant names; other

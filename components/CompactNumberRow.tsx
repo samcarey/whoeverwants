@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useId } from 'react';
+import { useState, useRef, useEffect, useId, type ReactNode } from 'react';
 
 interface CompactNumberRowProps {
   label: string;
@@ -8,6 +8,10 @@ interface CompactNumberRowProps {
   setValue: (value: number) => void;
   min?: number;
   disabled?: boolean;
+  /** Optional node rendered inline right after the label (e.g. an info button).
+   *  Kept a sibling of the <label>, not a child, so its own click handling
+   *  never triggers the label→input association. */
+  labelInfo?: ReactNode;
 }
 
 /**
@@ -21,7 +25,7 @@ interface CompactNumberRowProps {
  * `value` stays a valid number between edits — an empty or below-`min` draft is
  * auto-corrected UP to `min` when the edit commits (blur / Enter).
  */
-export default function CompactNumberRow({ label, value, setValue, min = 1, disabled = false }: CompactNumberRowProps) {
+export default function CompactNumberRow({ label, value, setValue, min = 1, disabled = false, labelInfo }: CompactNumberRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   // Editing draft (string so it can be empty). Seeded from `value` on edit start.
   const [draft, setDraft] = useState('');
@@ -50,9 +54,12 @@ export default function CompactNumberRow({ label, value, setValue, min = 1, disa
 
   return (
     <div className="flex items-center justify-between gap-3 h-12">
-      <label htmlFor={id} className="text-base font-normal shrink-0">
-        {label}
-      </label>
+      <span className="flex items-center gap-1 shrink-0">
+        <label htmlFor={id} className="text-base font-normal">
+          {label}
+        </label>
+        {labelInfo}
+      </span>
       {isEditing ? (
         <input
           ref={inputRef}
