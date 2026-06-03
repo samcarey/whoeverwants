@@ -1,0 +1,177 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ranked-choice aggregation — method comparison</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.55 -apple-system, system-ui, sans-serif; max-width: 860px;
+         margin: 0 auto; padding: 24px 16px 80px; background: #f7f7f8; color: #1a1a1a; }
+  @media (prefers-color-scheme: dark) { body { background:#0f1115; color:#e6e6e6; } }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  .lede { color: #666; margin: 0 0 18px; }
+  @media (prefers-color-scheme: dark) { .lede { color:#9aa0aa; } }
+  .frame { background: #eef0f3; border-radius: 12px; padding: 14px 16px; margin: 0 0 22px; font-size:14px; }
+  @media (prefers-color-scheme: dark) { .frame { background:#1a1d24; } }
+  .frame b { color:#1a1a1a; } @media (prefers-color-scheme: dark) { .frame b { color:#fff; } }
+  .card { background:#fff; border-radius:14px; padding:16px 18px; margin:0 0 16px;
+          border:1px solid #e3e5e9; }
+  @media (prefers-color-scheme: dark) { .card { background:#161922; border-color:#262a33; } }
+  .card.diverge { border-left:4px solid #e0a000; }
+  .card.agree { border-left:4px solid #2f9e44; }
+  .hd { display:flex; align-items:center; gap:10px; justify-content:space-between; }
+  h2 { font-size:18px; margin:0; }
+  .tag { font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+  .tag.diverge { background:#fff3d6; color:#8a6100; }
+  .tag.agree { background:#e3f5e8; color:#1d7a32; }
+  .blurb { color:#555; margin:8px 0 12px; }
+  @media (prefers-color-scheme: dark) { .blurb { color:#9aa0aa; } }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
+  .chip { font-size:13px; font-weight:600; padding:5px 10px; border-radius:8px; }
+  .chip.irv { background:#e7edff; color:#2545b8; }
+  .chip.borda { background:#efe7ff; color:#5b2db8; }
+  .chip.cond { background:#e3f5e8; color:#1d7a32; }
+  .note { font-size:14px; margin:6px 0 4px; }
+  .card.diverge .note { font-weight:600; }
+  details { margin-top:8px; }
+  summary { cursor:pointer; font-size:13px; color:#777; }
+  .cols { display:flex; gap:18px; flex-wrap:wrap; margin-top:10px; }
+  table.ballots { border-collapse:collapse; font-size:13px; flex:1; min-width:280px; }
+  table.ballots th, table.ballots td { text-align:left; padding:3px 8px; border-bottom:1px solid #eee; }
+  @media (prefers-color-scheme: dark) { table.ballots th, table.ballots td { border-color:#262a33; } }
+  .vn { font-weight:600; white-space:nowrap; }
+  .borda { flex:1; min-width:240px; }
+  .bh { font-size:12px; color:#888; margin-bottom:6px; }
+  .bb { display:flex; align-items:center; gap:8px; margin:3px 0; font-size:13px; }
+  .bl { width:120px; } .bv { width:24px; text-align:right; color:#888; }
+  .bt { flex:1; height:8px; background:#eceef2; border-radius:6px; overflow:hidden; }
+  @media (prefers-color-scheme: dark) { .bt { background:#262a33; } }
+  .bf { display:block; height:100%; background:#7b61ff; }
+  .src { font-size:11px; color:#aaa; margin:10px 0 0; }
+</style></head><body>
+<h1>Ranked-choice headline — method comparison</h1>
+<p class="lede">Prototype for the “Layer 2” decision: should the headline winner stay
+Instant-Runoff, or move to (or offer) a broad-acceptance method? Same ballots, three methods.
+Production is unchanged — this is a read-only comparison.</p>
+<div class="frame">
+  <p><b>The two intents, in plain words:</b></p>
+  <p>• <b>Favorite (IRV, current)</b> — “the option with the strongest core support”.
+  Each round drops the option with the fewest <i>first</i>-choice votes. Great for vote-splitting;
+  but a broadly-liked compromise with few #1s gets eliminated early.</p>
+  <p>• <b>Consensus (Borda / Condorcet)</b> — “the option the most people are okay with / nobody hates”.
+  Rewards breadth across the whole ballot. For a friend group settling “where do we eat?”, this is
+  usually what they actually mean.</p>
+  <p><b>2 of 6 scenarios below diverge.</b> When they agree, the method choice
+  doesn’t matter. The decision is only about the cases where they don’t — and whether to change the
+  default, offer a per-poll choice, or just keep explaining IRV (Layer 1, already shipped).</p>
+</div>
+
+        <section class="card agree">
+          <div class="hd">
+            <h2>Movie night — a clear consensus pick</h2>
+            <span class="tag agree">methods agree</span>
+          </div>
+          <p class="blurb">Dune is everyone&#x27;s #1 or #2 even though first-place votes are split. The sanity check: when there IS a broadly-loved option, every method should agree.</p>
+          <div class="chips"><span class='chip irv'>IRV → Dune</span><span class='chip borda'>Borda → Dune</span><span class='chip cond'>Condorcet → Dune</span></div>
+          <p class="note">All three methods agree on “Dune”. No headline change would move this result.</p>
+          <details>
+            <summary>Ballots &amp; Borda breakdown</summary>
+            <div class="cols">
+              <table class="ballots"><thead><tr><th>voter</th><th>ranking (best › worst)</th></tr></thead>
+                <tbody><tr><td class='vn'>Elena</td><td>Dune › Barbie › Oppenheimer › Spider-Verse</td></tr><tr><td class='vn'>Marcus</td><td>Dune › Oppenheimer › Spider-Verse › Barbie</td></tr><tr><td class='vn'>Priya</td><td>Barbie › Dune › Spider-Verse › Oppenheimer</td></tr><tr><td class='vn'>Jordan</td><td>Oppenheimer › Dune › Barbie › Spider-Verse</td></tr><tr><td class='vn'>Nia</td><td>Dune › Spider-Verse › Oppenheimer › Barbie</td></tr></tbody></table>
+              <div class="borda"><div class="bh">Borda score (breadth of support)</div><div class='bb'><span class='bl'>Dune</span><span class='bt'><span class='bf' style='width:100%'></span></span><span class='bv'>18</span></div><div class='bb'><span class='bl'>Oppenheimer</span><span class='bt'><span class='bf' style='width:67%'></span></span><span class='bv'>12</span></div><div class='bb'><span class='bl'>Barbie</span><span class='bt'><span class='bf' style='width:61%'></span></span><span class='bv'>11</span></div><div class='bb'><span class='bl'>Spider-Verse</span><span class='bt'><span class='bf' style='width:50%'></span></span><span class='bv'>9</span></div></div>
+            </div>
+          </details>
+          <p class="src">source: test_ranked_preferences.py::test_clear_favorite</p>
+        </section>
+        <section class="card diverge">
+          <div class="hd">
+            <h2>Movie genre — the polarized group with a compromise</h2>
+            <span class="tag diverge">methods DIVERGE</span>
+          </div>
+          <p class="blurb">THE marquee case (testing_strategy.md #7). Half want Action, half want RomCom, and the Dramedy is literally everyone&#x27;s #2 — the &#x27;thing nobody hates&#x27;. IRV eliminates Dramedy FIRST (fewest #1s) and crowns a polarizing plurality winner.</p>
+          <div class="chips"><span class='chip irv'>IRV → Romantic Comedy</span><span class='chip borda'>Borda → Dramedy</span><span class='chip cond'>Condorcet → Dramedy</span></div>
+          <p class="note">IRV crowns “Romantic Comedy” (strongest core / most #1s), but the option that beats every other head-to-head is “Dramedy” and Borda’s broad-acceptance winner is “Dramedy”. A group that wanted ‘the thing nobody hates’ would expect “Dramedy”.</p>
+          <details>
+            <summary>Ballots &amp; Borda breakdown</summary>
+            <div class="cols">
+              <table class="ballots"><thead><tr><th>voter</th><th>ranking (best › worst)</th></tr></thead>
+                <tbody><tr><td class='vn'>Alex</td><td>Action Blockbuster › Dramedy › Romantic Comedy</td></tr><tr><td class='vn'>Blake</td><td>Action Blockbuster › Dramedy › Romantic Comedy</td></tr><tr><td class='vn'>Casey</td><td>Action Blockbuster › Dramedy › Romantic Comedy</td></tr><tr><td class='vn'>Dana</td><td>Romantic Comedy › Dramedy › Action Blockbuster</td></tr><tr><td class='vn'>Ellis</td><td>Romantic Comedy › Dramedy › Action Blockbuster</td></tr><tr><td class='vn'>Finley</td><td>Romantic Comedy › Dramedy › Action Blockbuster</td></tr><tr><td class='vn'>Gray</td><td>Dramedy › Romantic Comedy › Action Blockbuster</td></tr></tbody></table>
+              <div class="borda"><div class="bh">Borda score (breadth of support)</div><div class='bb'><span class='bl'>Dramedy</span><span class='bt'><span class='bf' style='width:100%'></span></span><span class='bv'>15</span></div><div class='bb'><span class='bl'>Romantic Comedy</span><span class='bt'><span class='bf' style='width:93%'></span></span><span class='bv'>14</span></div><div class='bb'><span class='bl'>Action Blockbuster</span><span class='bt'><span class='bf' style='width:87%'></span></span><span class='bv'>13</span></div></div>
+            </div>
+          </details>
+          <p class="src">source: test_ranked_preferences.py::test_condorcet_scenario</p>
+        </section>
+        <section class="card diverge">
+          <div class="hd">
+            <h2>Dinner — the place nobody objects to</h2>
+            <span class="tag diverge">methods DIVERGE</span>
+          </div>
+          <p class="blurb">A friend group of 7. Two cliques each have a strong favorite (Sushi, BBQ) that the OTHER clique ranks dead last. Thai is everyone&#x27;s safe middle. This is the &#x27;so are we doing Friday??&#x27; decision the app exists to settle — does the headline pick the place half the group can&#x27;t stand, or the one they can all live with?</p>
+          <div class="chips"><span class='chip irv'>IRV → Sushi Bar</span><span class='chip borda'>Borda → Thai Place</span><span class='chip cond'>Condorcet → Thai Place</span></div>
+          <p class="note">IRV crowns “Sushi Bar” (strongest core / most #1s), but the option that beats every other head-to-head is “Thai Place” and Borda’s broad-acceptance winner is “Thai Place”. A group that wanted ‘the thing nobody hates’ would expect “Thai Place”.</p>
+          <details>
+            <summary>Ballots &amp; Borda breakdown</summary>
+            <div class="cols">
+              <table class="ballots"><thead><tr><th>voter</th><th>ranking (best › worst)</th></tr></thead>
+                <tbody><tr><td class='vn'>Ana</td><td>Sushi Bar › Thai Place › BBQ Joint</td></tr><tr><td class='vn'>Ben</td><td>Sushi Bar › Thai Place › BBQ Joint</td></tr><tr><td class='vn'>Cleo</td><td>Sushi Bar › Thai Place › BBQ Joint</td></tr><tr><td class='vn'>Dev</td><td>BBQ Joint › Thai Place › Sushi Bar</td></tr><tr><td class='vn'>Esha</td><td>BBQ Joint › Thai Place › Sushi Bar</td></tr><tr><td class='vn'>Finn</td><td>BBQ Joint › Thai Place › Sushi Bar</td></tr><tr><td class='vn'>Gus</td><td>Thai Place › Sushi Bar › BBQ Joint</td></tr></tbody></table>
+              <div class="borda"><div class="bh">Borda score (breadth of support)</div><div class='bb'><span class='bl'>Thai Place</span><span class='bt'><span class='bf' style='width:100%'></span></span><span class='bv'>15</span></div><div class='bb'><span class='bl'>Sushi Bar</span><span class='bt'><span class='bf' style='width:93%'></span></span><span class='bv'>14</span></div><div class='bb'><span class='bl'>BBQ Joint</span><span class='bt'><span class='bf' style='width:87%'></span></span><span class='bv'>13</span></div></div>
+            </div>
+          </details>
+          <p class="src">source: prototype (friend-group restaurant)</p>
+        </section>
+        <section class="card agree">
+          <div class="hd">
+            <h2>Movie pick — vote-splitting between similar options</h2>
+            <span class="tag agree">methods agree</span>
+          </div>
+          <p class="blurb">Two sci-fi films split the sci-fi vote 4 ways while one comedy leads on #1s. IRV&#x27;s strength: it consolidates the sci-fi vote after dropping the weaker sci-fi. Here IRV and consensus methods should mostly agree — IRV already fixes plurality&#x27;s spoiler.</p>
+          <div class="chips"><span class='chip irv'>IRV → Interstellar</span><span class='chip borda'>Borda → Interstellar</span><span class='chip cond'>Condorcet → Interstellar</span></div>
+          <p class="note">All three methods agree on “Interstellar”. No headline change would move this result.</p>
+          <details>
+            <summary>Ballots &amp; Borda breakdown</summary>
+            <div class="cols">
+              <table class="ballots"><thead><tr><th>voter</th><th>ranking (best › worst)</th></tr></thead>
+                <tbody><tr><td class='vn'>Ada</td><td>Dune › Interstellar › Mean Girls</td></tr><tr><td class='vn'>Ben</td><td>Dune › Interstellar › Mean Girls</td></tr><tr><td class='vn'>Cy</td><td>Interstellar › Dune › Mean Girls</td></tr><tr><td class='vn'>Di</td><td>Interstellar › Dune › Mean Girls</td></tr><tr><td class='vn'>Ed</td><td>Mean Girls › Interstellar › Dune</td></tr><tr><td class='vn'>Fi</td><td>Mean Girls › Dune › Interstellar</td></tr><tr><td class='vn'>Gi</td><td>Mean Girls › Interstellar › Dune</td></tr></tbody></table>
+              <div class="borda"><div class="bh">Borda score (breadth of support)</div><div class='bb'><span class='bl'>Interstellar</span><span class='bt'><span class='bf' style='width:100%'></span></span><span class='bv'>15</span></div><div class='bb'><span class='bl'>Dune</span><span class='bt'><span class='bf' style='width:93%'></span></span><span class='bv'>14</span></div><div class='bb'><span class='bl'>Mean Girls</span><span class='bt'><span class='bf' style='width:87%'></span></span><span class='bv'>13</span></div></div>
+            </div>
+          </details>
+          <p class="src">source: test_ranked_preferences.py::test_spoiler_effect</p>
+        </section>
+        <section class="card agree">
+          <div class="hd">
+            <h2>Team retreat — a perfect 3-way first-place tie</h2>
+            <span class="tag agree">methods agree</span>
+          </div>
+          <p class="blurb">9 people, 3 places, each with exactly 3 first-place votes. Mountain Lodge is everyone&#x27;s 1st-or-2nd. Production IRV already breaks this with Borda, so it should land on the consensus pick too.</p>
+          <div class="chips"><span class='chip irv'>IRV → Mountain Lodge</span><span class='chip borda'>Borda → Mountain Lodge</span><span class='chip cond'>Condorcet → Mountain Lodge</span></div>
+          <p class="note">All three methods agree on “Mountain Lodge”. No headline change would move this result.</p>
+          <details>
+            <summary>Ballots &amp; Borda breakdown</summary>
+            <div class="cols">
+              <table class="ballots"><thead><tr><th>voter</th><th>ranking (best › worst)</th></tr></thead>
+                <tbody><tr><td class='vn'>Lake1</td><td>Lake House › Mountain Lodge › Beach Resort</td></tr><tr><td class='vn'>Lake2</td><td>Lake House › Mountain Lodge › Beach Resort</td></tr><tr><td class='vn'>Lake3</td><td>Lake House › Mountain Lodge › Beach Resort</td></tr><tr><td class='vn'>Mtn1</td><td>Mountain Lodge › Lake House › Beach Resort</td></tr><tr><td class='vn'>Mtn2</td><td>Mountain Lodge › Lake House › Beach Resort</td></tr><tr><td class='vn'>Mtn3</td><td>Mountain Lodge › Lake House › Beach Resort</td></tr><tr><td class='vn'>Beach1</td><td>Beach Resort › Mountain Lodge › Lake House</td></tr><tr><td class='vn'>Beach2</td><td>Beach Resort › Mountain Lodge › Lake House</td></tr><tr><td class='vn'>Beach3</td><td>Beach Resort › Mountain Lodge › Lake House</td></tr></tbody></table>
+              <div class="borda"><div class="bh">Borda score (breadth of support)</div><div class='bb'><span class='bl'>Mountain Lodge</span><span class='bt'><span class='bf' style='width:100%'></span></span><span class='bv'>21</span></div><div class='bb'><span class='bl'>Lake House</span><span class='bt'><span class='bf' style='width:86%'></span></span><span class='bv'>18</span></div><div class='bb'><span class='bl'>Beach Resort</span><span class='bt'><span class='bf' style='width:71%'></span></span><span class='bv'>15</span></div></div>
+            </div>
+          </details>
+          <p class="src">source: test_ranked_preferences.py::test_borda_tiebreaker</p>
+        </section>
+        <section class="card agree">
+          <div class="hd">
+            <h2>Team dinner — 10 cuisines, 8 diners, partial ballots</h2>
+            <span class="tag agree">methods agree</span>
+          </div>
+          <p class="blurb">A messy real ballot: lots of options, everyone ranks only their top 5. Thai is a near-universal high pick. Tests whether the methods agree when ballots are long and partial.</p>
+          <div class="chips"><span class='chip irv'>IRV → Thai</span><span class='chip borda'>Borda → Thai</span><span class='chip cond'>Condorcet → Thai</span></div>
+          <p class="note">All three methods agree on “Thai”. No headline change would move this result.</p>
+          <details>
+            <summary>Ballots &amp; Borda breakdown</summary>
+            <div class="cols">
+              <table class="ballots"><thead><tr><th>voter</th><th>ranking (best › worst)</th></tr></thead>
+                <tbody><tr><td class='vn'>D1</td><td>Italian › Thai › Mexican › Indian › Chinese</td></tr><tr><td class='vn'>D2</td><td>Thai › Japanese › Korean › Italian › Ethiopian</td></tr><tr><td class='vn'>D3</td><td>Mexican › Italian › American › Thai › Greek</td></tr><tr><td class='vn'>D4</td><td>Indian › Thai › Italian › Ethiopian › Korean</td></tr><tr><td class='vn'>D5</td><td>Thai › Italian › Japanese › Chinese › Greek</td></tr><tr><td class='vn'>D6</td><td>Korean › Japanese › Thai › Italian › Chinese</td></tr><tr><td class='vn'>D7</td><td>Ethiopian › Indian › Thai › Italian › Greek</td></tr><tr><td class='vn'>D8</td><td>American › Mexican › Italian › Thai › Chinese</td></tr></tbody></table>
+              <div class="borda"><div class="bh">Borda score (breadth of support)</div><div class='bb'><span class='bl'>Thai</span><span class='bt'><span class='bf' style='width:100%'></span></span><span class='bv'>68</span></div><div class='bb'><span class='bl'>Italian</span><span class='bt'><span class='bf' style='width:96%'></span></span><span class='bv'>65</span></div><div class='bb'><span class='bl'>Mexican</span><span class='bt'><span class='bf' style='width:40%'></span></span><span class='bv'>27</span></div><div class='bb'><span class='bl'>Indian</span><span class='bt'><span class='bf' style='width:38%'></span></span><span class='bv'>26</span></div><div class='bb'><span class='bl'>Japanese</span><span class='bt'><span class='bf' style='width:38%'></span></span><span class='bv'>26</span></div><div class='bb'><span class='bl'>Chinese</span><span class='bt'><span class='bf' style='width:37%'></span></span><span class='bv'>25</span></div><div class='bb'><span class='bl'>Korean</span><span class='bt'><span class='bf' style='width:35%'></span></span><span class='bv'>24</span></div><div class='bb'><span class='bl'>Ethiopian</span><span class='bt'><span class='bf' style='width:34%'></span></span><span class='bv'>23</span></div><div class='bb'><span class='bl'>Greek</span><span class='bt'><span class='bf' style='width:26%'></span></span><span class='bv'>18</span></div><div class='bb'><span class='bl'>American</span><span class='bt'><span class='bf' style='width:26%'></span></span><span class='bv'>18</span></div></div>
+            </div>
+          </details>
+          <p class="src">source: test_ranked_preferences.py::test_ten_option_ranked_choice</p>
+        </section>
+<p class="src">* no true Condorcet winner; completed by minimax (smallest worst pairwise defeat).
+Generated by prototypes/aggregation/compare.py — re-run to regenerate.</p>
+</body></html>

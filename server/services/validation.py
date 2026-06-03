@@ -67,3 +67,22 @@ def validate_category_icon(value: str | None) -> str | None:
             status_code=400, detail="Category emoji must be an emoji"
         )
     return trimmed
+
+
+# Ranked-choice headline method (migration 135). Mirror in
+# lib/createPollHelpers / lib/types if the FE ever needs the literal set.
+WINNER_METHODS = ("favorite", "consensus")
+
+
+def validate_winner_method(value: str | None) -> str:
+    """Validate a ranked-choice headline method. Returns the canonical value,
+    defaulting None/empty to 'favorite' (current IRV behavior). Raises
+    HTTPException(400) on an unknown value."""
+    if value is None or value == "":
+        return "favorite"
+    if value not in WINNER_METHODS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"winner_method must be one of {WINNER_METHODS}",
+        )
+    return value

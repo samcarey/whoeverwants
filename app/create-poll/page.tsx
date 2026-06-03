@@ -20,6 +20,7 @@ import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import CategoryEmojiField from "@/components/CategoryEmojiField";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
+import ScoringAlgorithmField from "@/components/ScoringAlgorithmField";
 import SliderSwitch from "@/components/SliderSwitch";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
@@ -320,6 +321,10 @@ export function CreateQuestionContent() {
   // the poll directly as a preference poll over the slots derived from the
   // creator's time windows. Default ON; the last submitted value is remembered.
   const [collectAvailability, setCollectAvailability] = useState(true);
+  // Ranked-choice headline method — per-question (only shown for ranked_choice).
+  // 'consensus' (Borda, default): the option ranked highest across the most ballots.
+  // 'favorite' (IRV): strongest core / most first-choice support.
+  const [winnerMethod, setWinnerMethod] = useState<'favorite' | 'consensus'>('consensus');
 
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -539,12 +544,13 @@ export function CreateQuestionContent() {
         allowPreRanking,
         allowPlusOnes,
         collectSuggestions,
+        winnerMethod,
         collectAvailability,
         drafts,
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, collectSuggestions, collectAvailability, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, collectSuggestions, winnerMethod, collectAvailability, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -596,6 +602,7 @@ export function CreateQuestionContent() {
           if (formState.allowPreRanking !== undefined) setAllowPreRanking(formState.allowPreRanking);
           if (formState.allowPlusOnes !== undefined) setAllowPlusOnes(formState.allowPlusOnes);
           if (formState.collectSuggestions !== undefined) setCollectSuggestions(formState.collectSuggestions);
+          if (formState.winnerMethod === 'favorite' || formState.winnerMethod === 'consensus') setWinnerMethod(formState.winnerMethod);
           if (formState.collectAvailability !== undefined) setCollectAvailability(formState.collectAvailability);
           if (Array.isArray(formState.drafts)) setDrafts(formState.drafts);
 
@@ -851,8 +858,9 @@ export function CreateQuestionContent() {
     supplyCount,
     revealClaimantNames,
     collectSuggestions,
+    winnerMethod,
     collectAvailability,
-  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, supplyCount, revealClaimantNames, collectSuggestions, collectAvailability]);
+  }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, supplyCount, revealClaimantNames, collectSuggestions, winnerMethod, collectAvailability]);
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
@@ -878,6 +886,7 @@ export function CreateQuestionContent() {
     setRevealClaimantNames(d.revealClaimantNames ?? true);
     // Default ON for drafts persisted before these fields existed.
     setCollectSuggestions(d.collectSuggestions ?? true);
+    setWinnerMethod(d.winnerMethod ?? 'consensus');
     setCollectAvailability(d.collectAvailability ?? true);
   }, []);
 
@@ -1193,6 +1202,8 @@ export function CreateQuestionContent() {
             const dupHasOptions = Array.isArray(duplicateData.options)
               && duplicateData.options.some((o: string) => o && o.trim() !== '');
             setCollectSuggestions(!dupHasOptions);
+            // Preserve the original's headline method (favorite/consensus).
+            setWinnerMethod(duplicateData.winner_method === 'consensus' ? 'consensus' : 'favorite');
           } else if (duplicateData.question_type === 'time') {
             setQuestionType('time');
             setOptions(['']);
@@ -1282,6 +1293,8 @@ export function CreateQuestionContent() {
           // ballot of the nominated options — never re-open suggestion mode,
           // regardless of the user's remembered toggle preference.
           setCollectSuggestions(false);
+          // Fresh ranking ballot follows the create-form default (Consensus).
+          setWinnerMethod('consensus');
 
           // Auto-open: prefill is invisible until the user opens the modal.
           setIsModalOpen(true);
@@ -2312,6 +2325,14 @@ export function CreateQuestionContent() {
                     />
 
                     {pollHasPrephase && suggestionCutoffField}
+
+                    {pollHasRankedChoice && (
+                      <ScoringAlgorithmField
+                        value={winnerMethod}
+                        setValue={setWinnerMethod}
+                        disabled={isLoading}
+                      />
+                    )}
 
                     {pollHasRankedChoice && (
                       <CompactMinResponsesField

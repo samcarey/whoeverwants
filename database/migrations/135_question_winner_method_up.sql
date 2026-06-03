@@ -1,0 +1,15 @@
+-- Migration 135: per-question ranked-choice headline method.
+--
+-- Layer 2 of the ranked-choice headline exploration. A ranked_choice question
+-- can resolve its headline winner two ways, chosen by the creator at create
+-- time in plain words:
+--   'favorite'  -> Instant-Runoff (current behavior): the option with the
+--                  strongest core / most first-choice support.
+--   'consensus' -> Borda (broad acceptance): the option ranked highest across
+--                  the most ballots — "what everyone's most okay with".
+-- Same ballots either way; only which winner becomes the headline differs.
+--
+-- Defaults to 'favorite' so every existing ranked_choice poll keeps its exact
+-- current IRV outcome (no silent change). NULL/non-ranked-choice rows are
+-- treated as 'favorite' by the app.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS winner_method TEXT NOT NULL DEFAULT 'favorite';

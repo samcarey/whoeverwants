@@ -36,6 +36,9 @@ export interface CreateQuestionParams {
   supply_count?: number | null;
   /** limited_supply: when false, only the creator sees claimant names. */
   reveal_claimant_names?: boolean;
+  /** ranked_choice headline method: 'favorite' (IRV, default) or 'consensus'
+   *  (Borda). Ignored for other question types. */
+  winner_method?: "favorite" | "consensus";
   day_time_windows?: any[] | null;
   duration_window?: any | null;
   reference_latitude?: number | null;
