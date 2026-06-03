@@ -383,6 +383,11 @@ def compute_badge_count(
             ) seen ON TRUE
            WHERE gm.browser_id = ANY(%(bids)s::uuid[])
              AND p.id <> ALL(%(old)s::uuid[])
+             -- Closed-before-join filter (mirrors filter_visible_polls): a poll
+             -- closed before this member joined is hidden in the app, so it must
+             -- not inflate the badge. updated_at is the close_at proxy; gm.joined_at
+             -- per-row + DISTINCT gives the most-permissive (MIN joined_at) rule.
+             AND (p.is_closed = false OR p.updated_at >= gm.joined_at)
              AND (
                (seen.last_viewed_at IS NULL OR seen.last_viewed_at < p.created_at)
                OR (%(voting)s AND p.prephase_deadline IS NOT NULL

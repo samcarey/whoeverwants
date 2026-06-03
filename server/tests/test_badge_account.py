@@ -90,6 +90,47 @@ def test_view_on_one_device_clears_unread_badge_on_another(client):
     assert _badge(client, bid_a, token_a, todo_mode=False) == 0
 
 
+def _close_poll_before_join(group_id, poll_id, member_bid):
+    """Mark the poll closed with its close-proxy (updated_at) one hour BEFORE the
+    member joined the group — i.e. a poll the app hides via the closed-before-join
+    visibility filter."""
+    with psycopg.connect(TEST_DB_URL) as conn:
+        # Close the poll first; the close trigger stamps updated_at = NOW()
+        # (we can't write updated_at directly — the trigger overrides it).
+        conn.execute(
+            "UPDATE polls SET is_closed = true, close_reason = 'manual' WHERE id = %s",
+            (poll_id,),
+        )
+        # The member joined an hour AFTER the close → closed-before-join.
+        conn.execute(
+            "UPDATE group_members SET joined_at = NOW() + INTERVAL '1 hour' "
+            "WHERE group_id = %s AND browser_id = %s",
+            (group_id, member_bid),
+        )
+        conn.commit()
+
+
+def test_closed_before_join_poll_does_not_inflate_unread_badge(client):
+    """A poll closed before the member joined is hidden in-app (closed-before-join
+    filter) and must NOT count toward the unread badge — even though it was never
+    viewed. Regression for badge > visible-poll-count on the iOS app icon."""
+    bid = str(uuid.uuid4())
+    creator = str(uuid.uuid4())
+
+    poll = create_poll(client, browser_id=creator)
+    group_id = poll["group_id"]
+    _add_member(group_id, bid)
+
+    # Never-viewed open poll → unread badge counts it.
+    assert _badge(client, bid, None, todo_mode=False) == 1
+
+    # Same poll, now closed before this member joined → hidden in-app, so 0.
+    _close_poll_before_join(group_id, poll["id"], bid)
+    assert _badge(client, bid, None, todo_mode=False) == 0
+    # And it never enters the to-do badge either (it's closed).
+    assert _badge(client, bid, None, todo_mode=True) == 0
+
+
 def test_vote_on_one_device_clears_todo_badge_on_another(client):
     email = f"badge-{uuid.uuid4().hex[:8]}@example.com"
     bid_a, bid_b = str(uuid.uuid4()), str(uuid.uuid4())
