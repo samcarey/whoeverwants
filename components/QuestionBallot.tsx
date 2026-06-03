@@ -1189,8 +1189,17 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   // already voted), we only stage the choice + flip into edit mode so the
   // wrapper Submit button appears — the user must press Submit to actually
   // change their vote, mirroring yes/no's edit-mode confirmation flow.
+  //
+  // Name gate: a nameless user tapping a card would otherwise auto-submit and
+  // hit the server's "name is required" 400 (surfaced as voteError). Like the
+  // limited_supply self-submit path, this tap bypasses the wrapper-Submit
+  // gateOnName, so we surface the parent's AccountGateModal here before firing
+  // — onRequireName stashes the retry and replays the same tap once a name is
+  // saved. Only the first-time auto-submit needs gating; the edit case stages
+  // and routes through the wrapper Submit (gated there).
   const handleBinaryChoiceTap = (option: string) => {
     if (isSubmitting || isQuestionClosed) return;
+    if (!hasVoted && onRequireName && !onRequireName(() => handleBinaryChoiceTap(option))) return;
     setRankedChoices([option]);
     setRankedChoiceTiers([[option]]);
     setIsAbstaining(false);
