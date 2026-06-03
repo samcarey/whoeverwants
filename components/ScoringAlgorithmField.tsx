@@ -14,8 +14,8 @@
 export type WinnerMethod = 'favorite' | 'consensus';
 
 const OPTIONS: { value: WinnerMethod; label: string; sub: string }[] = [
-  { value: 'favorite', label: 'Favorite', sub: 'Ranked Choice' },
   { value: 'consensus', label: 'Consensus', sub: 'Borda Score' },
+  { value: 'favorite', label: 'Favorite', sub: 'Ranked Choice' },
 ];
 
 interface ScoringAlgorithmFieldProps {
@@ -29,7 +29,7 @@ export default function ScoringAlgorithmField({
   setValue,
   disabled = false,
 }: ScoringAlgorithmFieldProps) {
-  const selected = OPTIONS.find((o) => o.value === value) ?? OPTIONS[1];
+  const selected = OPTIONS.find((o) => o.value === value) ?? OPTIONS[0];
   return (
     <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
       <span className="text-base font-normal">Scoring Algorithm</span>
