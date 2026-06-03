@@ -220,15 +220,14 @@ router = APIRouter(prefix="/api/groups", tags=["groups"])
 class MyGroupsRequest(BaseModel):
     """Request body for `POST /api/groups/mine`.
 
-    `accessible_question_ids` is DEPRECATED and IGNORED. It used to feed
-    the localStorage "forget bridge" / legacy access bridge, both of
-    which have been removed — `group_members` is now the single source
-    of truth for visibility. The field is kept on the model (optional,
-    default empty) so older client bundles that still POST it don't 422;
-    the server never reads it.
+    `group_members` is the single source of truth for visibility. The old
+    localStorage `accessible_question_ids` "forget bridge" is fully gone —
+    the field was retired from this model too. Older client bundles that
+    still POST `accessible_question_ids` are unaffected: Pydantic's default
+    `extra="ignore"` drops the unknown key (no 422), matching the prior
+    behavior where the declared field was accepted-but-never-read.
     """
 
-    accessible_question_ids: list[str] = Field(default_factory=list)
     include_results: bool = True
 
 

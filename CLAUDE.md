@@ -2419,6 +2419,8 @@ different FE origin, extend the allowlist.
 >     bridge) so forget keeps its "group disappears from home"
 >     semantics. An explicit `DELETE /api/groups/{id}/membership`
 >     ("leave group") is a follow-up to retire the bridge.
+>     **(DONE — shipped; the bridge AND its `accessible_question_ids`
+>     request field are now fully removed. See the RETIRED banner above.)**
 >
 > `closed_at` proxy: `polls.updated_at`, refreshed by the close
 > trigger. Subsequent edits bump it forward — the filter fails open (a
@@ -2453,7 +2455,11 @@ different FE origin, extend the allowlist.
 > long as their FE passes `accessible_question_ids`. Once they vote
 > again, Phase C.2's auto-join writes restore membership and the
 > bridge becomes redundant. The bridge will be retired in a follow-up
-> phase after enough rollout time. Visibility enforcement on the
+> phase after enough rollout time. **(DONE — the bridge logic and the
+> deprecated `accessible_question_ids` request field on
+> `POST /api/groups/mine` are both removed; old bundles still posting the
+> key are unaffected since Pydantic ignores the extra field.)**
+> Visibility enforcement on the
 > legacy `POST /api/questions/accessible` is intentionally NOT added —
 > the FE migrated to /api/groups/* in B.3, and gating the legacy
 > endpoint retroactively risks breaking older client bundles.
