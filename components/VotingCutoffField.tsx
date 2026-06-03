@@ -12,6 +12,9 @@ interface VotingCutoffFieldProps {
   setCustomTime: (value: string) => void;
   isLoading: boolean;
   isClient: boolean;
+  /** Row label (default "Voting Cutoff"). Limited-supply polls pass
+   *  "Claiming Cutoff" since the action is claiming a spot, not voting. */
+  label?: string;
 }
 
 function getTodayDate(): string {
@@ -29,11 +32,12 @@ export default function VotingCutoffField({
   setCustomTime,
   isLoading,
   isClient,
+  label = 'Voting Cutoff',
 }: VotingCutoffFieldProps) {
   return (
     <div>
       <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
-        <span className="text-base font-normal">Voting Cutoff</span>
+        <span className="text-base font-normal">{label}</span>
         <span className="relative inline-flex">
           <span className="text-base font-normal text-gray-500 dark:text-gray-500 text-right">
             {(() => {
@@ -55,7 +59,7 @@ export default function VotingCutoffField({
             onChange={(e) => setDeadlineOption(e.target.value)}
             disabled={isLoading}
             className="absolute inset-0 opacity-0 cursor-pointer"
-            aria-label="Voting cutoff duration"
+            aria-label={`${label} duration`}
           >
             <option value="none">None</option>
             {VOTING_CUTOFF_OPTIONS.map(opt => (

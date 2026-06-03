@@ -340,7 +340,7 @@ export function CreateQuestionContent() {
   // A ranked_choice question is a "suggestion poll" when the creator left the
   // "Collect Suggestions before Vote" toggle on — regardless of whether they
   // typed any initial options. Drives the poll-level prephase fields.
-  const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && collectSuggestions;
+  const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && category !== 'limited_supply' && collectSuggestions;
 
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
@@ -689,13 +689,23 @@ export function CreateQuestionContent() {
     });
   const effectiveAllowPlusOnes = allowPlusOnes ?? pollHasPlusOneDefaultType;
 
+  // A limited-supply poll's action is "claiming" a spot, not "voting" — so the
+  // poll-level cutoff + plus-ones labels switch wording when EVERY question is
+  // limited supply. Mixed polls (a limited-supply question alongside a yes/no,
+  // etc.) keep the generic "voting" wording.
+  const allDraftsLimitedSupply =
+    drafts.length === 0 || drafts.every((d) => draftDbQuestionType(d) === 'limited_supply');
+  const pollIsLimitedSupply =
+    allDraftsLimitedSupply && (isModalOpen ? inlineFormIsLimitedSupply : drafts.length > 0);
+
   // Migration 098: poll-level results-display + ranked-choice settings.
   // The min-responses + show-results pair is meaningful iff the poll
   // contains at least one ranked_choice question.
   const inlineFormIsRankedChoice = isModalOpen
     && questionType === 'question'
     && category !== 'yes_no'
-    && category !== 'time';
+    && category !== 'time'
+    && category !== 'limited_supply';
   const pollHasRankedChoice = anyDraftIsRankedChoice(drafts) || inlineFormIsRankedChoice;
 
   // Validates the whole poll at submit time: drafts exist + poll-level
@@ -2335,6 +2345,7 @@ export function CreateQuestionContent() {
                     className="divide-y divide-gray-200 dark:divide-gray-700"
                   >
                     <VotingCutoffField
+                      label={pollIsLimitedSupply ? 'Claiming Cutoff' : 'Voting Cutoff'}
                       deadlineOption={deadlineOption}
                       setDeadlineOption={setDeadlineOption}
                       customDate={customDate}
@@ -2422,27 +2433,35 @@ export function CreateQuestionContent() {
                     )}
 
                     {/* "Plus one/more": let one person answer on behalf of
-                        several. Defaults ON for time polls, OFF otherwise. */}
-                    <div
-                      className="flex items-center justify-between gap-3 h-12 cursor-pointer"
-                      onClick={() => { if (!isLoading) setAllowPlusOnes(!effectiveAllowPlusOnes); }}
-                    >
-                      <span className="text-base font-normal">
-                        Allow voting for others (plus-ones)
-                      </span>
-                      <SliderSwitch
-                        checked={effectiveAllowPlusOnes}
-                        onChange={(next) => setAllowPlusOnes(next)}
-                        disabled={isLoading}
-                        aria-label="Allow voting for others (plus-ones)"
-                      />
-                    </div>
+                        several. Defaults ON for time polls, OFF otherwise.
+                        Limited-supply polls say "claiming" instead of
+                        "voting". */}
+                    {(() => {
+                      const plusOnesLabel = pollIsLimitedSupply
+                        ? 'Allow claiming for others (plus-ones)'
+                        : 'Allow voting for others (plus-ones)';
+                      return (
+                        <div
+                          className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+                          onClick={() => { if (!isLoading) setAllowPlusOnes(!effectiveAllowPlusOnes); }}
+                        >
+                          <span className="text-base font-normal">{plusOnesLabel}</span>
+                          <SliderSwitch
+                            checked={effectiveAllowPlusOnes}
+                            onChange={(next) => setAllowPlusOnes(next)}
+                            disabled={isLoading}
+                            aria-label={plusOnesLabel}
+                          />
+                        </div>
+                      );
+                    })()}
 
                     {/* Emoji field — always visible, last row of the poll
                         settings card. Defaults (as the faded placeholder) to
                         the current category's icon; the creator can pick an
-                        emoji to override it for any category. */}
-                    {category !== 'yes_no' && category !== 'limited_supply' && (
+                        emoji to override it for any category. Shown for
+                        limited supply too (placeholder = the 🎟️ default). */}
+                    {category !== 'yes_no' && (
                       <CategoryEmojiField
                         value={categoryEmoji}
                         onChange={setCategoryEmoji}
