@@ -435,8 +435,13 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
               aria-label={followState === "old" ? "Follow this poll" : "Ignore this poll"}
               // Stop the tap/long-press/scroll handlers on the row from firing
               // so toggling follow never navigates or opens the action modal.
+              // All four touch/pointer events must be stopped: touchend bubbles
+              // to the row's handleTouchEnd which would otherwise navigate to
+              // the poll detail page even though touchstart was stopped.
               onPointerDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 haptic.light();
