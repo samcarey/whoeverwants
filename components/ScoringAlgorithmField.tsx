@@ -3,9 +3,9 @@
 /**
  * Scoring-algorithm picker for ranked-choice polls. One-row field (h-12,
  * matching every other bottom-card setting): label left, the selected
- * option shown as two stacked lines on the right (main label + the
- * algorithm name under it), with an invisible native <select> overlaid
- * for the actual dropdown — same pattern as VotingCutoffField.
+ * option's name on the right (same value font as the other fields), with
+ * an invisible native <select> overlaid for the actual dropdown — same
+ * pattern as VotingCutoffField.
  *
  * 'favorite'  -> Instant-Runoff (most first-choice support).
  * 'consensus' -> Borda score (broadest acceptance). Default.
@@ -34,13 +34,8 @@ export default function ScoringAlgorithmField({
     <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">
       <span className="text-base font-normal">Scoring Algorithm</span>
       <span className="relative inline-flex">
-        <span className="flex flex-col items-end leading-tight text-right">
-          <span className="text-base font-normal text-gray-500 dark:text-gray-500">
-            {selected.label}
-          </span>
-          <span className="text-xs text-gray-400 dark:text-gray-500">
-            {selected.sub}
-          </span>
+        <span className="text-base font-normal text-gray-500 dark:text-gray-500 text-right whitespace-nowrap">
+          {selected.label}
         </span>
         <select
           value={value}
