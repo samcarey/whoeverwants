@@ -54,7 +54,7 @@ The Supabase-to-Python migration and infrastructure improvements (Phases 1-10) a
   - **F. Default tab on group open + home count source.** Proposed default tab: To Do if the group has any, else New. Home counts: server returns per-group To Do/New counts (or the FE computes them from the follow-state set it already has). Decide where the counts are computed.
   - **G. Anonymous viewers.** Follow state keys on `browser_id` so anonymous users get in-app filtering + notification suppression too; the account-union just widens it for signed-in users. Confirm acceptable.
 
-**Risks that compound in a persistent hub (cross-references):** late-joiner history loss (now partly addressed — see the "closed before you joined" handling in the Migration-106 / #553 notes); two-round time-poll drop-off (social-test recommendation #6) erodes trust if scheduling keeps stalling; roster identity issues (the ballot-privacy + duplicate-name TODOs) are felt continuously since the same names recur.
+**Risks that compound in a persistent hub (cross-references):** late-joiner history loss (now partly addressed — see the "closed before you joined" handling in the Migration-106 / #553 notes); two-round time-poll drop-off (social-test recommendation #6) erodes trust if scheduling keeps stalling; roster identity issues (the ballot-privacy TODO) are felt continuously since the same names recur.
 
 **Process note (satisfied for the gap-1 build; the rule still applies to future design-sensitive work):** the gap-1 ✕/+ affordance + row chrome were design-sensitive, so the build was deployed to a dev server and the owner reviewed the link before merge. Keep following this deploy-and-review pattern for new design-sensitive interactions rather than shipping unilaterally.
 
