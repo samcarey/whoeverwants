@@ -185,7 +185,6 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
     // empty value falls through to the input directly so the user can
     // type immediately.
     const inDisplayMode = !!builtIn && !isOpen && editText === null;
-    const inputSize = Math.max(inputText.length, 8);
     return (
       <div ref={containerRef} className="relative">
         <div className="flex items-center justify-end gap-1.5">
@@ -210,13 +209,12 @@ export default function TypeFieldInput({ value, onChange, disabled = false, bord
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             disabled={disabled}
-            size={inputSize}
             tabIndex={inDisplayMode ? -1 : 0}
             aria-hidden={inDisplayMode || undefined}
             className={
               inDisplayMode
                 ? "sr-only"
-                : "bg-transparent text-base text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed w-auto min-w-0 max-w-full"
+                : "flex-1 min-w-0 bg-transparent text-base text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             }
           />
           {value !== "custom" && !isOpen && (
