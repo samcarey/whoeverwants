@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
+import PollActionButton, { CutoffIcon } from "@/components/PollActionButton";
 import { Question, Poll } from "@/lib/types";
 import { buildQuestionSnapshot } from "@/lib/questionCreator";
 import { formatShortDateTime } from "@/lib/timeUtils";
@@ -35,21 +36,6 @@ interface FollowUpModalProps {
   // shown when the question is a ranked_choice in the suggestion phase AND the
   // caller deems ending possible (creator or dev).
   onCutoffSuggestions?: () => void;
-}
-
-function AmberCutoffButton({ label, onClick, onClose }: { label: string; onClick: () => void; onClose: () => void }) {
-  return (
-    <button
-      onClick={() => { onClick(); onClose(); }}
-      className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 mt-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
-    >
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-        <circle cx="12" cy="12" r="9" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2" />
-      </svg>
-      {label}
-    </button>
-  );
 }
 
 export default function FollowUpModal({ isOpen, question, poll, onClose, totalVotes, onDelete, onReopen, onCloseQuestion, onCutoffAvailability, onCutoffSuggestions }: FollowUpModalProps) {
@@ -129,79 +115,99 @@ export default function FollowUpModal({ isOpen, question, poll, onClose, totalVo
             </div>
           )}
           <div className="flex gap-3">
-            <button
+            <PollActionButton
+              variant="blue"
+              className="flex-1"
               onClick={() => {
                 localStorage.setItem(`duplicate-data-${question.id}`, JSON.stringify(questionSnapshot));
                 router.push(`${pathname}?duplicate=${question.id}`);
                 onClose();
               }}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-              Copy
-            </button>
+              icon={
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              }
+              label="Copy"
+            />
 
             {onDelete && (
-              <button
+              <PollActionButton
+                variant="yellow"
+                className="flex-1"
                 onClick={() => {
                   onDelete();
                   onClose();
                 }}
-                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-700 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-                </svg>
-                Forget
-              </button>
+                icon={
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                  </svg>
+                }
+                label="Forget"
+              />
             )}
           </div>
 
           {onReopen && (
-            <button
+            <PollActionButton
+              variant="green"
+              className="w-full mt-3"
               onClick={() => {
                 onReopen();
                 onClose();
               }}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 mt-3 bg-green-600 hover:bg-green-700 active:bg-green-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20 20v-6h-6" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 9.5A7 7 0 0119 12" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M18.5 14.5A7 7 0 015 12" />
-              </svg>
-              Reopen
-            </button>
+              icon={
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 20v-6h-6" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 9.5A7 7 0 0119 12" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.5 14.5A7 7 0 015 12" />
+                </svg>
+              }
+              label="Reopen"
+            />
           )}
 
           {onCloseQuestion && (
-            <button
+            <PollActionButton
+              variant="red"
+              className="w-full mt-3"
               onClick={() => {
                 onCloseQuestion();
                 onClose();
               }}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 mt-3 bg-red-600 hover:bg-red-700 active:bg-red-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M18 6L6 18" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12" />
-              </svg>
-              Close Poll
-            </button>
+              icon={
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18 6L6 18" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12" />
+                </svg>
+              }
+              label="Close Poll"
+            />
           )}
 
           {onCutoffAvailability && (
-            <AmberCutoffButton label="End Availability Phase" onClick={onCutoffAvailability} onClose={onClose} />
+            <PollActionButton
+              variant="amber"
+              className="w-full mt-3"
+              onClick={() => { onCutoffAvailability(); onClose(); }}
+              icon={<CutoffIcon />}
+              label="End Availability Phase"
+            />
           )}
 
           {onCutoffSuggestions && (
-            <AmberCutoffButton label="Cutoff Suggestions" onClick={onCutoffSuggestions} onClose={onClose} />
+            <PollActionButton
+              variant="amber"
+              className="w-full mt-3"
+              onClick={() => { onCutoffSuggestions(); onClose(); }}
+              icon={<CutoffIcon />}
+              label="Cutoff Suggestions"
+            />
           )}
 
         </div>

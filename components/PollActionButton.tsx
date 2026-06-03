@@ -3,12 +3,9 @@
 import type { ReactNode } from "react";
 
 /**
- * Shared colored action button used by the poll info page. Variants encode
- * the semantic meaning: blue=primary, yellow=destructive-soft, green=resume,
- * red=destructive-hard, amber=time-sensitive cutoff.
- *
- * If FollowUpModal's parallel button stack is ever consolidated, that's the
- * second consumer — see the WIP migration note in CLAUDE.md.
+ * Shared colored action button used by the poll info page AND FollowUpModal.
+ * Variants encode the semantic meaning: blue=primary, yellow=destructive-soft,
+ * green=resume, red=destructive-hard, amber=time-sensitive cutoff.
  */
 export type PollActionVariant = "blue" | "yellow" | "green" | "red" | "amber";
 
