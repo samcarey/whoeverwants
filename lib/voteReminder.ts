@@ -27,12 +27,12 @@ export const VOTE_REMINDER_OPTIONS: ReadonlyArray<{
   label: string;
 }> = [
   { value: "off", label: "Off" },
-  { value: "0.5x", label: "When half the time is left" },
-  { value: "0.2x", label: "When 20% of the time is left" },
-  { value: "0.1x", label: "When 10% of the time is left" },
-  { value: "1h", label: "1 hour before closing" },
-  { value: "3h", label: "3 hours before closing" },
-  { value: "1d", label: "1 day before closing" },
+  { value: "0.5x", label: "Half the time left" },
+  { value: "0.2x", label: "20% of time left" },
+  { value: "0.1x", label: "10% of time left" },
+  { value: "1h", label: "1 hour before" },
+  { value: "3h", label: "3 hours before" },
+  { value: "1d", label: "1 day before" },
 ];
 
 export const DEFAULT_VOTE_REMINDER: VoteReminder = "0.2x";
