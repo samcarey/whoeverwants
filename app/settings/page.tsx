@@ -107,6 +107,9 @@ export default function SettingsPage() {
   const [signOutInFlight, setSignOutInFlight] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
+  // Tap-to-copy feedback for the #id chip under the avatar.
+  const [copiedId, setCopiedId] = useState(false);
+
   // "Add a sign-in method" — opens the shared AddSignInOptionsModal (the
   // same surface the home-page recovery banner opens), which links
   // email / Google / Apple / passkey to the current account. Shown when
@@ -119,6 +122,9 @@ export default function SettingsPage() {
 
   const hasEmailIdentity = !!currentUser?.providers?.includes("email");
   const signedIn = !!currentUser;
+  // The user's id as a dashless hex string (null when signed out) — shown
+  // as a tappable #id chip under the avatar and copied to the clipboard.
+  const userHex = currentUser?.user_id ? userIdToHex(currentUser.user_id) : null;
 
   // Phase D — passkeys. Only fetched + shown when signed in. The server
   // tier capability + browser capability are both gates: the server
@@ -186,6 +192,18 @@ export default function SettingsPage() {
   const handleVoteReminderChange = (next: VoteReminder) => {
     setVoteReminder(next);
     saveVoteReminder(next);
+  };
+
+  // Copy the user's id (hex, no dashes) to the clipboard for sharing.
+  const handleCopyId = async (hex: string) => {
+    try {
+      await navigator.clipboard.writeText(hex);
+    } catch {
+      // Clipboard unavailable (insecure context / denied) — still flash
+      // feedback so the tap doesn't feel inert.
+    }
+    setCopiedId(true);
+    window.setTimeout(() => setCopiedId(false), 1500);
   };
 
   const handleSignOut = async () => {
@@ -343,6 +361,16 @@ export default function SettingsPage() {
           sizeClassName="w-28 h-28"
           textSizeClassName="text-2xl"
         />
+        {userHex && (
+          <button
+            type="button"
+            onClick={() => handleCopyId(userHex)}
+            className="mt-2 max-w-full break-all font-mono text-xs text-gray-400 dark:text-gray-500 hover:text-gray-500 dark:hover:text-gray-400 active:opacity-70"
+            aria-label="Copy your ID to clipboard"
+          >
+            {copiedId ? "Copied!" : `#${userHex}`}
+          </button>
+        )}
       </div>
 
       {/* Account / sign-in cluster — sits directly below the account image:
@@ -759,6 +787,13 @@ export default function SettingsPage() {
       />
     </div>
   );
+}
+
+// The user's id is a UUID, which is already hexadecimal — the "hex
+// version" is just the canonical form with the dashes stripped (32 hex
+// chars). This is what gets displayed (prefixed with #) and copied.
+function userIdToHex(id: string): string {
+  return id.replace(/-/g, "");
 }
 
 // Human-readable labels for the provider strings the server returns
