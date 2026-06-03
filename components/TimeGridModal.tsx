@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import TimeMinMaxCounter from './TimeMinMaxCounter';
 import { timeToMinutes, formatDurationLabel } from '@/lib/timeUtils';
+import { useBodyScrollLock } from '@/lib/useBodyScrollLock';
 
 // Duration bar width scaling constants
 const MIN_DURATION = 15; // minutes
@@ -77,25 +78,14 @@ export default function TimeGridModal({
 
   const backdropRef = useRef<HTMLDivElement>(null);
 
-  // Prevent background scrolling and pull-to-refresh when modal is open
+  // Prevent background scrolling and pull-to-refresh when modal is open.
+  useBodyScrollLock(isOpen);
+
+  // Block pull-to-refresh by preventing touchmove everywhere in the modal
+  // except inside scroll wheels (which need touch scrolling to work).
   useEffect(() => {
     if (!isOpen) return;
 
-    const body = document.body;
-    const html = document.documentElement;
-
-    // Store current scroll position
-    const scrollY = window.scrollY;
-
-    // Prevent background scrolling
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.width = '100%';
-    body.style.overscrollBehavior = 'none';
-    html.style.overscrollBehavior = 'none';
-
-    // Block pull-to-refresh by preventing touchmove everywhere in the modal
-    // except inside scroll wheels (which need touch scrolling to work).
     // Must use non-passive listener to allow preventDefault.
     const backdrop = backdropRef.current;
     const preventRefresh = (e: TouchEvent) => {
@@ -108,13 +98,6 @@ export default function TimeGridModal({
 
     return () => {
       backdrop?.removeEventListener('touchmove', preventRefresh);
-      // Restore scroll position
-      body.style.position = '';
-      body.style.top = '';
-      body.style.width = '';
-      body.style.overscrollBehavior = '';
-      html.style.overscrollBehavior = '';
-      window.scrollTo(0, scrollY);
     };
   }, [isOpen]);
 

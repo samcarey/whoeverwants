@@ -31,6 +31,7 @@ import DaysSelector from "@/components/DaysSelector";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
+import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, formatMonthYearLabel, shiftMonth, DEFAULT_TIME_WINDOW } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import { enterAdvancesFocus } from "@/lib/formNavigation";
@@ -958,28 +959,19 @@ export function CreateQuestionContent() {
   }, [showDiscardConfirm]);
 
   // `position: fixed` on body (vs. `overflow: hidden`) is required to
-  // block iOS pull-to-refresh from bypassing the lock. Mirrors the
-  // pattern in TimeGridModal / DaysSelector / RankableOptions.
+  // block iOS pull-to-refresh from bypassing the lock.
+  useBodyScrollLock(isModalOpen, false);
+
+  // Escape closes the sheet (preserving state). Skip when the inner
+  // ConfirmationModal is open — its own document-level Escape handler runs
+  // too, and we don't want one Escape to dismiss both.
   useEffect(() => {
     if (!isModalOpen) return;
-    const scrollY = window.scrollY;
-    const prevPosition = document.body.style.position;
-    const prevTop = document.body.style.top;
-    const prevWidth = document.body.style.width;
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.width = '100%';
-    // Skip when the inner ConfirmationModal is open — its own document-level
-    // Escape handler runs too, and we don't want one Escape to dismiss both.
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !showDiscardConfirmRef.current) closeKeepState();
     };
     document.addEventListener('keydown', handleEsc);
     return () => {
-      document.body.style.position = prevPosition;
-      document.body.style.top = prevTop;
-      document.body.style.width = prevWidth;
-      window.scrollTo(0, scrollY);
       document.removeEventListener('keydown', handleEsc);
     };
   }, [isModalOpen, closeKeepState]);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useBodyScrollLock } from '@/lib/useBodyScrollLock';
 
 /**
  * Drag + pinch-zoom circular cropper modal.
@@ -79,24 +80,9 @@ export default function ImageCropModal({ file, onCancel, onConfirm }: Props) {
     };
   }, []);
 
-  // Body scroll lock — same pattern as other modals in the app.
-  useEffect(() => {
-    const scrollY = window.scrollY;
-    const prevStyle = {
-      position: document.body.style.position,
-      top: document.body.style.top,
-      width: document.body.style.width,
-    };
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.width = '100%';
-    return () => {
-      document.body.style.position = prevStyle.position;
-      document.body.style.top = prevStyle.top;
-      document.body.style.width = prevStyle.width;
-      window.scrollTo(0, scrollY);
-    };
-  }, []);
+  // Body scroll lock — same pattern as other modals in the app. The modal
+  // only mounts while open, so the lock is unconditionally active here.
+  useBodyScrollLock(true, false);
 
   // Escape closes.
   useEffect(() => {
