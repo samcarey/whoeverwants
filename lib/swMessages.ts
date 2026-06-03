@@ -67,6 +67,23 @@ export type SwNotificationClickDetail = SwPushReceivedDetail;
 let swInstalled = false;
 let capacitorInstalled = false;
 
+// Latest navigate function (usually router.push). Updated on every
+// installSwMessageBridge call so the freshest router is always used even
+// though listener registration is idempotent. Read at notification-tap
+// time on native iOS — see installCapacitorBridge. Web doesn't use this:
+// sw-push.js navigates via client.navigate() in its notificationclick
+// handler; only the native WebView (no service worker) needs the FE to
+// route the tap.
+let navigateFn: ((path: string) => void) | null = null;
+
+/** Accept only an in-app absolute path ("/g/<id>/p/<short>"), never a
+ *  protocol-relative ("//host") or absolute-URL ("https://…") target, so a
+ *  malformed/hostile payload can't navigate the WebView off-origin. Mirrors
+ *  the defensiveness in lib/universalLinks.ts: pathFromUniversalLinkUrl. */
+function isSafeInAppPath(url: string | null | undefined): url is string {
+  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
+}
+
 function normalizeDetail(data: unknown): SwPushReceivedDetail | null {
   if (!data || typeof data !== 'object') return null;
   const d = data as {
@@ -132,9 +149,14 @@ async function installCapacitorBridge(): Promise<void> {
     // covers the cross-platform case for any PWA install of the same
     // user account.
   });
-  // pushNotificationActionPerformed: the user tapped a banner. The native
-  // OS handles the foreground/navigation; we just need to wake any
-  // already-mounted React listener for the page they land on.
+  // pushNotificationActionPerformed: the user tapped a banner. Unlike web
+  // (where sw-push.js's notificationclick does client.navigate(url)), the
+  // native OS only foregrounds the app — it does NOT route the WebView, so
+  // the app stays on whatever page it was last showing (the reported bug:
+  // tapping a vote-reminder banner opened the app on Settings instead of the
+  // poll). We must navigate here. We ALSO dispatch the click event so an
+  // already-mounted listener (JoinRequestsSection / GroupNotFound) can refresh
+  // when the destination equals the current page and the navigate is a no-op.
   PushNotifications.addListener(
     'pushNotificationActionPerformed',
     (action: { notification?: { data?: Record<string, unknown> } }) => {
@@ -143,13 +165,22 @@ async function installCapacitorBridge(): Promise<void> {
       window.dispatchEvent(
         new CustomEvent<SwPushReceivedDetail>(SW_NOTIFICATION_CLICK_EVENT, { detail }),
       );
+      if (navigateFn && isSafeInAppPath(detail.url)) {
+        navigateFn(detail.url);
+      }
     },
   ).catch(() => {});
   capacitorInstalled = true;
 }
 
-export function installSwMessageBridge(): void {
+export function installSwMessageBridge(
+  navigate?: (path: string) => void,
+): void {
   if (typeof window === 'undefined') return;
+  // Always refresh the navigate fn (even when already installed) so the
+  // native tap handler routes via the latest router instance. Listener
+  // registration itself stays idempotent below.
+  if (navigate) navigateFn = navigate;
   // Each transport guards its own re-install so a failure in one doesn't
   // permanently latch the other off — and a future retry (HMR / mount
   // race) can fall through to the path that hasn't taken yet.

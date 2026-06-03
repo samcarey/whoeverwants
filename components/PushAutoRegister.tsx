@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 import { bootstrapCapacitorPushSubscription, refreshAppBadge } from "@/lib/pushNotifications";
 import { BADGE_SETTINGS_CHANGED_EVENT } from "@/lib/badgeSettings";
@@ -29,12 +30,15 @@ import { installSwMessageBridge } from "@/lib/swMessages";
  * per page load and survives client-side navigation.
  */
 export function PushAutoRegister() {
+  const router = useRouter();
   useEffect(() => {
     // Re-dispatch service worker postMessages as window CustomEvents so
     // JoinRequestsSection / GroupNotFound can refresh on push arrival
     // without each component duplicating the navigator.serviceWorker
     // listener boilerplate. Idempotent — safe to call on every mount.
-    installSwMessageBridge();
+    // The navigate callback is what routes the WebView when a notification
+    // is tapped on native iOS (web navigates via sw-push.js instead).
+    installSwMessageBridge((path) => router.push(path));
     void bootstrapCapacitorPushSubscription();
     // Recompute the true app-icon badge whenever the app is opened or
     // refocused, or when the badge model / sign-in state changes — so the
@@ -57,6 +61,6 @@ export function PushAutoRegister() {
       window.removeEventListener(BADGE_SETTINGS_CHANGED_EVENT, resync);
       window.removeEventListener(SESSION_CHANGED_EVENT, resync);
     };
-  }, []);
+  }, [router]);
   return null;
 }
