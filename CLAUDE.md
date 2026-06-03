@@ -1565,12 +1565,22 @@ helper mirrors the visibility query's `OR browser_id IN (SELECT
     all already scoped to the caller's stored `vote_id`, so they're unchanged.
   - **VoteResponse audit (the other emitter):** `POST /api/polls/{id}/votes`
     returns only the caller's just-inserted/edited rows — no cross-voter
-    leak. `_edit_vote_on_question` edits by `vote_id` without a browser
-    ownership check, but vote UUIDs are no longer discoverable cross-voter
-    once `get_votes` is scoped, so it's a capability gated by possession; a
-    belt-and-suspenders browser-ownership gate on edit is a possible
-    follow-up but was left alone to avoid regressing legacy (pre-120,
-    NULL-browser_id) votes.
+    leak. **The edit path now ALSO enforces browser-ownership (SHIPPED).**
+    `_edit_vote_on_question(conn, qid, vote_id, req, now, *, caller_browser_ids=None)`
+    takes the editing caller's account-aware browser set (`caller_browser_ids`
+    from `services/auth.py`, computed once per request in `submit_poll_votes`
+    and threaded in); when provided, the vote's own `browser_id` must be in
+    that set or the edit 403s — so possession of a vote_id alone can't let one
+    voter overwrite another's ballot. Legacy votes cast before migration 120
+    have a NULL `browser_id` (unattributable) and stay editable by possession
+    so they don't regress; an empty/None set skips the gate (preserves prior
+    behavior — this only ever adds protection). The seeded plus-one editable
+    votes pass cleanly: they're attributed to the represented account's browser,
+    which is in that signed-in account's `caller_browser_ids` when they edit.
+    Vote UUIDs were already non-discoverable cross-voter once `get_votes` was
+    scoped; this is the belt-and-suspenders on top. Tests:
+    `test_ballot_privacy.py::test_cannot_edit_another_voters_ballot` +
+    `::test_owner_can_edit_their_own_ballot`.
   - This is the foundation for a future opt-in hidden ballot (which would
     additionally withhold the name from the roster). Tests:
     `server/tests/test_ballot_privacy.py`.
