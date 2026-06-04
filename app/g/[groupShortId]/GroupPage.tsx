@@ -218,30 +218,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // Gap 1: the active follow/ignore tab. null = follow the default (To Do when
   // any, else New); a user tap pins it. Reset on group change (key remount).
   const [selectedTab, setSelectedTab] = useState<PollTab | null>(null);
-  // True between a tab's `touchstart` (which switches the tab) and the trailing
-  // synthetic `click`, so the click handler skips re-firing setState. See the
-  // tab button handlers below for why switching happens on touchstart.
-  const tabTouchHandledRef = useRef(false);
-
-  // TEMP DIAGNOSTIC: distinguish a tap that lands DURING active momentum scroll
-  // from one after the scroll has stopped, and compare what a raw document
-  // capture listener sees vs the React synthetic handler. `sinceScrollMs` small
-  // (~<150ms) at touchstart ⇒ the tap landed mid-scroll.
-  useEffect(() => {
-    let lastScroll = 0;
-    const onScroll = () => { lastScroll = Date.now(); };
-    const onTouch = (e: TouchEvent) => {
-      const t = e.target as HTMLElement | null;
-      const tabId = t?.closest?.("[data-tabtap]")?.getAttribute("data-tabtap") ?? "none";
-      console.log(`[SCROLLTAP] doc-touchstart tab=${tabId} sinceScrollMs=${Date.now() - lastScroll} y=${Math.round(window.scrollY)}`);
-    };
-    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
-    document.addEventListener("touchstart", onTouch, { passive: true, capture: true });
-    return () => {
-      window.removeEventListener("scroll", onScroll, { capture: true } as EventListenerOptions);
-      document.removeEventListener("touchstart", onTouch, { capture: true } as EventListenerOptions);
-    };
-  }, []);
 
   // Phase 5b: poll-level mutations (close/reopen/cutoff) update the
   // polls array; question mutations (forget) update the questions array.
@@ -2108,20 +2084,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                   <button
                     key={tab.id}
                     type="button"
-                    data-tabtap={tab.id}
-                    onTouchStart={() => {
-                      console.log(`[SCROLLTAP] react-touchstart ${tab.id}`);
-                      tabTouchHandledRef.current = true;
-                      setSelectedTab(tab.id);
-                    }}
-                    onClick={() => {
-                      console.log(`[SCROLLTAP] react-click ${tab.id}`);
-                      if (tabTouchHandledRef.current) {
-                        tabTouchHandledRef.current = false;
-                        return;
-                      }
-                      setSelectedTab(tab.id);
-                    }}
+                    onClick={() => setSelectedTab(tab.id)}
                     aria-pressed={active}
                     className={`flex-1 rounded-full py-1.5 transition-colors ${
                       active
