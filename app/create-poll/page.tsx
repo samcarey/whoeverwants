@@ -1775,7 +1775,13 @@ export function CreateQuestionContent() {
         disabled={isLoading}
         maxLength={100}
         className="flex-1 min-w-0 text-base bg-transparent text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
-        placeholder={isAutoTitle ? "auto" : "Enter your title..."}
+        placeholder={
+          isAutoTitle
+            ? "auto"
+            : category === 'limited_supply'
+              ? "What's being handed out? (e.g. 2 spare tickets)"
+              : "Enter your title..."
+        }
         required={!isAutoTitle}
       />
     </div>
