@@ -2,6 +2,7 @@ import UIKit
 import Capacitor
 import UserNotifications
 import AppIntents
+import Security
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -174,6 +175,125 @@ public class AppBadgePlugin: CAPPlugin, CAPBridgedPlugin {
             }
             call.resolve()
         }
+    }
+}
+
+// Phase 2 of docs/siri-integration-plan.md — native identity bridge.
+//
+// The WebView keeps the user's identity in localStorage
+// (`lib/session.ts: session_token`, `lib/browserIdentity.ts: browser_id`,
+// `lib/userProfile.ts: whoeverwants_user_name`), which native Swift cannot
+// see. This Keychain store is the bridge: `lib/nativeIdentity.ts` pushes the
+// current triple here whenever the session changes, so native code — and the
+// future in-process headless-creation App Intent (Phase 3) — can make API
+// calls *as the user* (Authorization: Bearer <token> + X-Browser-Id, with
+// creator_name from the display name the server requires).
+//
+// Storage posture: kSecClassGenericPassword with accessibility
+// kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly — readable by a background
+// App Intent after the first unlock, but NOT synced to iCloud and NOT migrated
+// to a new device on restore (a bearer token shouldn't travel). This is a
+// stronger posture than WebView localStorage, which the OS does not encrypt at
+// rest the same way. The service is namespaced per bundle id so the prod and
+// canary apps don't share a Keychain item.
+//
+// Plain Keychain (no App Group / kSecAttrAccessGroup) because Phase 3 starts as
+// an IN-PROCESS intent (the plan's "start in-process to avoid the pipeline
+// cost" decision) — an App Group would only be required if a SEPARATE extension
+// target had to read these, which also needs a one-time Apple Developer portal
+// entitlement. If Phase 3 ever moves to an extension, add the access group here
+// + the entitlement on both bundles.
+private enum NativeIdentityKeychain {
+    static let service = (Bundle.main.bundleIdentifier ?? "com.whoeverwants.app") + ".identity"
+    static let tokenAccount = "session_token"
+    static let browserIdAccount = "browser_id"
+    static let nameAccount = "display_name"
+
+    private static func baseQuery(_ account: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+    }
+
+    // Upsert when a non-empty value is provided; a nil / empty value DELETES the
+    // item (so the JS side can express "the token is gone" by passing null).
+    static func set(_ account: String, _ value: String?) {
+        guard let value = value, !value.isEmpty, let data = value.data(using: .utf8) else {
+            delete(account)
+            return
+        }
+        let attrs: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        let status = SecItemUpdate(baseQuery(account) as CFDictionary, attrs as CFDictionary)
+        if status == errSecItemNotFound {
+            var insert = baseQuery(account)
+            insert.merge(attrs) { _, new in new }
+            SecItemAdd(insert as CFDictionary, nil)
+        }
+    }
+
+    static func get(_ account: String) -> String? {
+        var query = baseQuery(account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data,
+              let str = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return str
+    }
+
+    static func delete(_ account: String) {
+        SecItemDelete(baseQuery(account) as CFDictionary)
+    }
+}
+
+// Custom Capacitor plugin: write/read the WebView's identity to/from the
+// Keychain (see NativeIdentityKeychain above). `setIdentity` is driven by
+// `lib/nativeIdentity.ts` on every session change (sign-out passes a null
+// token + null name, so it doubles as the clear path); `getIdentity` lets
+// native code (and an on-device round-trip check) read it back.
+//
+// Colocated in AppDelegate.swift for the same reason MainViewController /
+// ClipboardUrlPlugin / AppBadgePlugin are: a new .swift file means hand-patching
+// project.pbxproj in the headless CI build. Capacitor auto-discovers
+// CAPBridgedPlugin conformers at runtime — no project.pbxproj or cap-config
+// change is needed beyond compiling this class. Keychain APIs need no
+// `@available` gate (available on every supported iOS), unlike the iOS-18
+// OpenURLIntent below.
+@objc(NativeIdentityPlugin)
+public class NativeIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "NativeIdentityPlugin"
+    public let jsName = "NativeIdentity"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "setIdentity", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getIdentity", returnType: CAPPluginReturnPromise),
+    ]
+
+    // The JS side passes the FULL current triple every call, so a null token +
+    // null name with a non-null browser id (the sign-out shape) clears the
+    // secret while keeping the persistent browser id. `call.getString` returns
+    // nil for both an absent key and an explicit JSON null; `set` treats nil /
+    // "" as a delete.
+    @objc func setIdentity(_ call: CAPPluginCall) {
+        NativeIdentityKeychain.set(NativeIdentityKeychain.tokenAccount, call.getString("token"))
+        NativeIdentityKeychain.set(NativeIdentityKeychain.browserIdAccount, call.getString("browserId"))
+        NativeIdentityKeychain.set(NativeIdentityKeychain.nameAccount, call.getString("name"))
+        call.resolve()
+    }
+
+    @objc func getIdentity(_ call: CAPPluginCall) {
+        var result: [String: Any] = [:]
+        if let t = NativeIdentityKeychain.get(NativeIdentityKeychain.tokenAccount) { result["token"] = t }
+        if let b = NativeIdentityKeychain.get(NativeIdentityKeychain.browserIdAccount) { result["browserId"] = b }
+        if let n = NativeIdentityKeychain.get(NativeIdentityKeychain.nameAccount) { result["name"] = n }
+        call.resolve(result)
     }
 }
 
