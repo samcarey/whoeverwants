@@ -2070,8 +2070,13 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         {showFollowTabs && (
           <div
             ref={filterSwitchRef}
-            className="sticky z-[5] bg-[var(--background)] px-2 pt-1 pb-2"
-            style={{ top: `${headerHeight}px` }}
+            className="sticky z-[5] bg-[var(--background)] px-2 pb-2"
+            // Overlap the fixed header by 1px (added back to pt) so a subpixel
+            // rounding gap — headerHeight is an integer offsetHeight, but the
+            // header's real bottom can land on a fractional pixel — can't show
+            // scrolling polls through a hairline seam. The header (z-20,
+            // opaque bg-background) covers the 1px overlap.
+            style={{ top: `${headerHeight - 1}px`, paddingTop: "calc(0.25rem + 1px)" }}
           >
             <div className="flex rounded-full bg-gray-100 dark:bg-gray-800 p-0.5 text-sm font-medium">
               {([
