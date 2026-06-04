@@ -1753,6 +1753,20 @@ export function CreateQuestionContent() {
     }
   };
 
+  // Empty-state hint shown in the title-preview slot above the form card,
+  // before any title exists. Tailored per category so it only references
+  // fields the current form actually has: yes_no / limited_supply expose
+  // just a Title, while ranked-choice / time / custom expose Category +
+  // Context (+ Options). (time/ranked categories auto-title immediately, so
+  // their hint is rarely seen — but keep it accurate for the cleared-title
+  // case.)
+  const titlePreviewHint =
+    category === 'yes_no'
+      ? "Enter your yes/no question"
+      : category === 'limited_supply'
+        ? "Describe what's available"
+        : "Enter a Category, Context, and/or Options";
+
   const titleField = (
     <div className="flex items-center justify-between gap-3 h-12">
       <label htmlFor="title" className="text-base font-normal shrink-0">
@@ -1779,7 +1793,7 @@ export function CreateQuestionContent() {
           isAutoTitle
             ? "auto"
             : category === 'limited_supply'
-              ? "What's being handed out? (e.g. 2 spare tickets)"
+              ? "What's available?"
               : "Enter your title..."
         }
         required={!isAutoTitle}
@@ -2107,7 +2121,7 @@ export function CreateQuestionContent() {
                     </span>
                   ) : (
                     <span className="text-[0.9375rem] leading-7 italic text-gray-500 dark:text-gray-400">
-                      Enter a Category, Context, and/or Options
+                      {titlePreviewHint}
                     </span>
                   )}
                 </div>
