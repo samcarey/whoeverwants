@@ -279,6 +279,26 @@ private enum NativeIdentityKeychain {
     static func delete(_ account: String) {
         SecItemDelete(baseQuery(account) as CFDictionary)
     }
+
+    // Diagnostics only: read from the app's DEFAULT access group (NO explicit
+    // kSecAttrAccessGroup), so a readout can compare "what's in the .siri group"
+    // against "what's in the default group" and pin where writes actually land.
+    static func getDefaultGroup(_ account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data,
+              let str = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return str
+    }
 }
 
 // Custom Capacitor plugin: write/read the WebView's identity to/from the
@@ -497,6 +517,22 @@ enum QuickPollService {
         return URL(string: "https://\(host)/") ?? URL(string: "https://whoeverwants.com/")!
     }
 
+    // TEMP DIAGNOSTIC (remove once the headless name-read is resolved). Speakable
+    // summary of what THIS intent's process can read from the Keychain, spoken in
+    // the fallback dialog. "shared" = the `.siri` access group the app writes to;
+    // "default" = the app's default group (cross-process read test); "group" =
+    // whether the access-group string resolved. Since this only runs on the
+    // fallback, "shared" is expected "no" (that's why we fell back) — the
+    // informative bits are whether the intent can read the DEFAULT group at all
+    // (it couldn't read the app's keychain in either prior attempt), which tells
+    // us a shared App Group container is needed instead of keychain sharing.
+    static func keychainDebug() -> String {
+        let shared = NativeIdentityKeychain.get(NativeIdentityKeychain.nameAccount) != nil
+        let def = NativeIdentityKeychain.getDefaultGroup(NativeIdentityKeychain.nameAccount) != nil
+        let groupSet = NativeIdentityKeychain.accessGroup != nil
+        return "shared \(shared ? "yes" : "no"), default \(def ? "yes" : "no"), group \(groupSet ? "set" : "missing")"
+    }
+
     // Returns the created poll's title (echoed back by the server, which may have
     // normalized it). Throws a QuickPollError (spoken) on any failure.
     static func createPoll(prompt: String, identity: Identity) async throws -> String {
@@ -586,9 +622,13 @@ struct QuickPollIntent: AppIntent {
                 dialog: IntentDialog("Created your poll: \(title). Opening WhoeverWants.")
             )
         }
+        // TEMP DIAGNOSTIC in the spoken fallback (remove once headless is fixed):
+        // reports what this intent's process can read from the Keychain, so we can
+        // pin whether the bridge is even reachable cross-process. Ships in this
+        // branch's `latest` IPA directly (no canary FE / merge needed).
         return .result(
             opensIntent: OpenURLIntent(CreatePollIntent.createURL(prompt: trimmed)),
-            dialog: IntentDialog("Let's finish your poll in WhoeverWants.")
+            dialog: IntentDialog("Opening WhoeverWants to finish your poll. Debug: \(QuickPollService.keychainDebug()).")
         )
     }
 }
