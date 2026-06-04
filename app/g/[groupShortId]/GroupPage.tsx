@@ -2116,6 +2116,16 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                       e.preventDefault();
                       setSelectedTab(tab.id);
                     }}
+                    onTouchCancel={() => {
+                      // iOS fires `touchcancel` (NOT `touchend`) for the touch
+                      // that interrupts a momentum scroll — and never produces a
+                      // click. Without handling it here, that first tap only
+                      // stopped the scroll. Treat a non-dragged cancel as a tap.
+                      const start = tabTouchRef.current;
+                      tabTouchRef.current = null;
+                      if (!start || start.moved) return;
+                      setSelectedTab(tab.id);
+                    }}
                     onClick={() => setSelectedTab(tab.id)}
                     aria-pressed={active}
                     className={`flex-1 rounded-full py-1.5 transition-colors ${
