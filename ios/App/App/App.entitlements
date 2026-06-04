@@ -38,7 +38,7 @@
 	     and App Group storage is less hardened than the Keychain. Both bundles
 	     (prod + latest) carry the same group; needs the "App Groups" capability
 	     on each App ID (registered + enabled on com.whoeverwants.app and
-	     com.whoeverwants.app.latest in the Apple Developer portal on 2026-06-04;
+	     com.whoeverwants.app.latest in the Apple Developer portal on 2026-06-04 (group assignment reconfirmed);
 	     automatic signing did NOT auto-create it, unlike Keychain Sharing). -->
 	<key>com.apple.security.application-groups</key>
 	<array>
