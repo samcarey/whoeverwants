@@ -209,12 +209,39 @@ private enum NativeIdentityKeychain {
     static let browserIdAccount = "browser_id"
     static let nameAccount = "display_name"
 
+    // Dedicated keychain access group shared between the foreground app process
+    // (the NativeIdentity plugin WRITES the identity) and the headless
+    // QuickPollIntent (which READS it). MUST match the `.siri`-suffixed entry in
+    // the keychain-access-groups entitlement (App.entitlements).
+    //
+    // Why this exists: iOS can run a no-`openAppWhenRun` App Intent in a process
+    // separate from the app. Without an explicit shared group, a Keychain write
+    // lands in the WRITER's default access group and the intent's read (in its
+    // own default group) returns errSecItemNotFound — so loadIdentity() was nil
+    // and the intent spoke "set your name first" even with the name set. The
+    // Phase 2/3 "in-process, no entitlement needed" assumption was wrong;
+    // foregrounding the app (which DID write the keychain) never fixed it
+    // because the intent still read a different partition. Targeting one named
+    // group both contexts list makes them agree regardless of process.
+    //
+    // The prefix is the team / app-id prefix (mirrors the AASA appIDs
+    // `479DZ4AZT5.<bundle>`); the entitlement uses the $(AppIdentifierPrefix)
+    // macro, which can't be read at runtime, so it's hardcoded here. If it's
+    // ever wrong the queries fail closed (no other code reads this keychain),
+    // degrading to the pre-fix behavior rather than breaking anything else.
+    static let accessGroup: String? = {
+        guard let bundle = Bundle.main.bundleIdentifier else { return nil }
+        return "479DZ4AZT5.\(bundle).siri"
+    }()
+
     private static func baseQuery(_ account: String) -> [String: Any] {
-        [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        if let group = accessGroup { query[kSecAttrAccessGroup as String] = group }
+        return query
     }
 
     // Upsert when a non-empty value is provided; a nil / empty value DELETES the
@@ -407,11 +434,16 @@ struct CreatePollIntent: AppIntent {
 //
 // Colocated in AppDelegate.swift for the same reason everything else here is: a
 // new .swift file means hand-patching project.pbxproj in the headless CI build.
-// An App Intent is auto-discovered at build/run time — no pbxproj change, and
-// (since this is in-process, reading the plain Keychain) no App Group entitlement
-// / Apple Developer portal step. If a future revision moves headless creation to
-// a dedicated App Intents EXTENSION target, that DOES need pbxproj surgery + an
-// App-Group Keychain entitlement (see the NativeIdentityKeychain note above).
+// An App Intent is auto-discovered at build/run time — no pbxproj change.
+//
+// CORRECTION (the original "in-process, plain Keychain, no entitlement" claim
+// was WRONG): iOS runs this no-`openAppWhenRun` intent in a process separate
+// from the app, so it CANNOT read the app's default-group Keychain. The fix is
+// the `keychain-access-groups` entitlement + the dedicated `.siri` access group
+// both contexts target (see NativeIdentityKeychain above). That entitlement
+// needs the "Keychain Sharing" capability on each App ID; automatic signing
+// (`-allowProvisioningUpdates` + the Admin API key) auto-provisions it the same
+// way it does aps-environment / applesignin / associated-domains.
 
 // A graceful, Siri-speakable failure. Conforming to
 // CustomLocalizedStringResourceConvertible makes Siri read `message` aloud

@@ -15,5 +15,18 @@
 		<string>webcredentials:whoeverwants.com</string>
 		<string>webcredentials:latest.whoeverwants.com</string>
 	</array>
+	<!-- Keychain Sharing. Entry 0 is the app's existing DEFAULT group (kept
+	     first so any unscoped keychain user keeps its current default). Entry 1
+	     is a DEDICATED group that the foreground app (NativeIdentity plugin,
+	     writer) and the headless QuickPollIntent (reader) BOTH target
+	     explicitly, so the Siri intent can read the bridged identity even when
+	     iOS runs it in a separate process from the app — which it does (an
+	     in-process assumption was the Phase 2/3 bug). See NativeIdentityKeychain
+	     in AppDelegate.swift. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)$(CFBundleIdentifier)</string>
+		<string>$(AppIdentifierPrefix)$(CFBundleIdentifier).siri</string>
+	</array>
 </dict>
 </plist>
