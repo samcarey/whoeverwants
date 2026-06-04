@@ -2089,19 +2089,15 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                     key={tab.id}
                     type="button"
                     onTouchStart={() => {
-                      // Switch on the touch that LANDS, not the one that lifts.
-                      // On iOS the first tap during a momentum scroll is consumed
-                      // to STOP the scroll: it produces no `click`, and the
-                      // following touch event arrives as `touchcancel` (not
-                      // `touchend`) — so any lift-based handler left the first tap
-                      // only stopping the scroll. `touchstart` always fires on
-                      // contact, so switching here makes one tap always switch.
-                      // `tabTouchHandledRef` suppresses the trailing synthetic
-                      // click so it doesn't re-fire setState.
+                      console.log(`[TABTAP] touchstart ${tab.id}`);
                       tabTouchHandledRef.current = true;
                       setSelectedTab(tab.id);
                     }}
+                    onTouchEnd={() => console.log(`[TABTAP] touchend ${tab.id}`)}
+                    onTouchCancel={() => console.log(`[TABTAP] touchcancel ${tab.id}`)}
+                    onPointerDown={() => console.log(`[TABTAP] pointerdown ${tab.id}`)}
                     onClick={() => {
+                      console.log(`[TABTAP] click ${tab.id}`);
                       if (tabTouchHandledRef.current) {
                         tabTouchHandledRef.current = false;
                         return;
