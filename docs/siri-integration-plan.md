@@ -5,8 +5,9 @@
 > voice/Shortcuts/Spotlight surface. Written so a future session can pick it up
 > cold.
 >
-> **Status (June 2026): implementation underway. Phase 1 landed (pending real-device
-> verification).** Authored a few days before WWDC 2026 (~June 8–12).
+> **Status (June 2026): implementation underway. Phases 1, 2, and 3 landed (pending
+> real-device verification; Phase 3 also owes a WWDC re-check before prod).** Authored
+> a few days before WWDC 2026 (~June 8–12).
 >
 > **Ordering decision (owner, 2026-06-04): the WWDC-watch gate (Phase 0) is moved to
 > the END.** The original plan gated all coding on the keynote, but the keynote hadn't
@@ -305,7 +306,55 @@ existing auth model (`docs/auth-access-model.md`).
 
 ## Phase 3 — Headless poll creation App Intent ("create without opening the app")
 
-**Status: not started. Depends on Phase 2.**
+**Status: IMPLEMENTED (2026-06-04), pending real-device + TestFlight verification.
+Built as an IN-PROCESS intent (no extension target, no pbxproj surgery), per the
+plan's "start in-process" decision.** What shipped (all colocated in
+`ios/App/App/AppDelegate.swift`):
+- **`QuickPollIntent` (`AppIntent`, NOT `openAppWhenRun`)** — a free-text `prompt`
+  parameter (`requestValueDialog: "What should the poll ask?"`, same shape as Phase 1).
+  `perform()` reads the Phase 2 identity, creates the poll via the API, and returns
+  `.result(dialog: "Created your poll: <title>")`. Gated `@available(iOS 16.0, *)`
+  (App Intents' floor; no `OpenURLIntent` dependency since nothing opens). Added to
+  the iOS-18 `WhoeverWantsShortcuts` provider with distinct phrases ("Quick poll in
+  WhoeverWants" / "Quickly create a poll…" / "Post a poll…", `bolt.fill` glyph) so
+  Siri disambiguates it from the Phase 1 deep-link "Create a poll…" intent — both
+  coexist (review-then-submit vs headless).
+- **`QuickPollService`** — `loadIdentity()` reads `NativeIdentityKeychain` and gates
+  on the **display NAME**, not the token: `creator_name` is the only hard server
+  requirement (`validate_user_name` 400s a blank), and the bearer is optional (an
+  anonymous-but-named user has a browser-keyed auto-account, exactly as for an
+  in-app anonymous create). `createPoll()` POSTs the minimal single-yes/no-question
+  body (`creator_name` + `title` + one `{question_type: "yes_no", context: prompt}`,
+  mirroring the FE's `draftToQuestionParams` for a single yes_no draft) to the
+  **direct API host** (prod bundle → `api.whoeverwants.com`, canary →
+  `api.latest.whoeverwants.com`) with `Authorization: Bearer <token>` (when present)
+  + `X-Browser-Id`.
+- **`QuickPollError`** (`CustomLocalizedStringResourceConvertible`) — every failure
+  path (no name → "set your name first"; network → "couldn't reach…"; 401 → "sign-in
+  expired"; other non-2xx → "open the app and try there") throws a Siri-speakable
+  sentence rather than a generic error.
+- **NO "open it?" affordance, deliberately.** The plan listed it as a "+", but the
+  hard acceptance criterion is "app un-launched", and the only App-Intent way to open
+  the app (`OpensIntent`) ALWAYS foregrounds it — defeating headless. Kept as a pure
+  `ProvidesDialog` result. A tappable (non-forced) open would be a snippet view, not
+  `OpensIntent` — a future enhancement, not done here.
+- **No backend changes, no JS changes** (Phase 3 is purely native). The Keychain
+  round-trip + API call can't be unit-tested in the JS suite or demoed on the dev
+  server — native-iOS-only. The minimal payload shape is the only thing mirrored to
+  the FE, and that mirroring is documented inline.
+
+**WWDC re-check still owed (Phase 0).** This is the most keynote-sensitive phase; the
+in-process-vs-extension shape + the "headless in-app action" idiom should be
+re-validated against WWDC 2026 before this ships to **prod** (canary `latest` is fine
+to verify on now). See "Risks" + the open questions.
+
+**Real-device verification still owed (owner):** on a `latest` TestFlight build,
+signed in (or just named), say "Hey Siri, quick poll in WhoeverWants", answer the
+prompt, confirm Siri speaks "Created your poll: …" with the app NOT opening, then
+foreground the app and confirm the poll is in the right group attributed to you. A
+nameless/fresh install should hear "set your name first".
+
+Original scope/criteria retained for reference:
 
 **Goal.** "Hey Siri, ask WhoeverWants where we should eat dinner" → Siri creates the
 poll via the API and speaks confirmation; the app never opens.
@@ -424,7 +473,7 @@ Working order **1 → 2 → 3 → 4 → 0** (Phase 0 moved to the end, 2026-06-0
 |-------|------|------|------------------|------------|--------|
 | 1 | Deep-link App Intent (open + prefill) | ~1–2 days | Low | — | **done (pending device verify)** |
 | 2 | Native identity bridge (Keychain/App Group) | ~3–5 days | Low (scope: high) | — | **done (plain Keychain; pending device verify)** |
-| 3 | Headless poll creation App Intent | ~1 week (+extension) | Medium–High | 2, re-check 0 | not started |
+| 3 | Headless poll creation App Intent | ~1 week (+extension) | Medium–High | 2, re-check 0 | **done (in-process; pending device verify + WWDC re-check before prod)** |
 | 4 | Expanded intents (vote/results/entities/AI) | Large / open | High (by design) | 1–3, 0 | not started |
 | 0 | WWDC watch + decision gate (now last) | ~½ day | — | — | deferred |
 
@@ -443,6 +492,23 @@ pre-coding gate; see the ordering decision at the top.)
 _(Append dated entries; do not rewrite the phases above — note what changed and why.
 Post-keynote findings go here too, once Phase 0 runs.)_
 
+- **2026-06-04 — Shipped Phase 3 (headless poll creation, in-process intent).**
+  Added `QuickPollIntent` (no `openAppWhenRun`), `QuickPollService` (identity load +
+  direct-API POST), and `QuickPollError` (Siri-speakable failures), all colocated in
+  `AppDelegate.swift`; added a second `AppShortcut` to `WhoeverWantsShortcuts` with
+  distinct "quick poll" phrases so it coexists with the Phase 1 deep-link intent. The
+  intent reads the Phase 2 Keychain identity, gates on the display NAME (not the
+  token — `creator_name` is the only hard server requirement; bearer is optional),
+  POSTs the minimal single-yes/no payload to the per-tier direct API host
+  (`api[.latest].whoeverwants.com`), and speaks "Created your poll: <title>". No
+  backend or JS changes; the app never opens (no `OpensIntent` — that would force a
+  foreground and defeat headless; the plan's "+ open it?" affordance was intentionally
+  dropped). In-process (no extension target → no pbxproj surgery, no App-Group
+  entitlement), per the plan's "start in-process" decision. Pending: real-device +
+  TestFlight verification (owner), and — since this is the most keynote-sensitive
+  phase — a WWDC re-check (Phase 0) before it ships to PROD (canary `latest` is fine
+  to verify now). Next: Phase 4 (expanded intents) and Phase 0 (the deferred WWDC
+  watch), both post-keynote.
 - **2026-06-04 — Shipped Phase 2 (native identity bridge, plain Keychain).** Resolved the
   scope-sensitive Keychain-vs-App-Group question to **plain Keychain** (no App Group, no
   extension, no entitlement, no Apple Developer portal step), consistent with Phase 3
