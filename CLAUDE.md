@@ -2317,6 +2317,28 @@ different FE origin, extend the allowlist.
 > transition (when a placeholder/real poll lands via POLL_PENDING /
 > POLL_HYDRATED).
 >
+> **`GroupSummary.has_polls` + `Group.hasHiddenPolls` distinguish a
+> genuinely-empty group from one whose polls are all hidden pre-join.**
+> The closed-before-join filter (Migration 106) makes `/by-route-id/{id}`
+> return `[]` for a late joiner to an all-closed group — identical to a
+> brand-new empty group at the FE layer, so the group page rendered
+> **totally blank** (no To Do/New/Old tabs, no message: both were gated
+> on `groupedGroupQuestions.length > 0`). Fix: `GET /by-route-id/{id}/summary`
+> now returns a **visibility-blind** `has_polls` (`EXISTS (SELECT 1 FROM
+> polls WHERE group_id = g.id)`, folded into the one summary SELECT — not
+> a second round-trip). The FE threads it `GroupSummary.has_polls` →
+> `buildEmptyGroup` → `Group.hasHiddenPolls` (always false for populated
+> groups + genuinely-empty new groups). `GroupContent` renders the tabs +
+> a short per-tab empty message ("No to-dos" / "Nothing new" / "Nothing
+> ignored") when `showFollowTabs = groupedGroupQuestions.length > 0 ||
+> group.hasHiddenPolls`; a genuinely-empty group keeps the
+> create-first-poll flow (no tabs). This mirrors, at the group level, the
+> per-poll `hidden_pre_join` marker that direct poll links already use.
+> NOTE the deeper cause is per-viewer: an anonymous browser (not signed
+> into the creator's account) joins "now", so account-aware visibility
+> doesn't union the creator's old membership — signing in surfaces the
+> full history. The blank-page fix is independent of that.
+>
 > **`Group.groupTitleOverride` carries the raw `groups.title`** (or
 > null) so the edit-title page input can pre-fill with the raw value
 > rather than showing the computed "New Group" default. For populated

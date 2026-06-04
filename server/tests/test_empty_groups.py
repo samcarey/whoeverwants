@@ -153,6 +153,9 @@ class TestGroupSummary:
         assert body["short_id"] == new_group["short_id"]
         assert body["title"] is None
         assert body["created_at"]
+        # A brand-new group has no polls — the FE uses this to show the
+        # create-first-poll flow rather than the To Do/New/Old tabs.
+        assert body["has_polls"] is False
 
     def test_returns_metadata_for_populated_group(
         self, client, creator_secret, browser_id,
@@ -165,6 +168,26 @@ class TestGroupSummary:
         body = resp.json()
         assert body["id"] == poll["group_id"]
         assert body["short_id"] == poll["group_short_id"]
+        assert body["has_polls"] is True
+
+    def test_has_polls_true_even_when_all_hidden_pre_join(
+        self, client, creator_secret, browser_id,
+    ):
+        """A late joiner whose visibility hides every poll still gets
+        `has_polls: True` from the summary — so the group page shows the
+        To Do/New/Old tabs (with empty messages) rather than a blank page.
+
+        The summary endpoint is visibility-blind for public groups, so a
+        fresh browser that has never joined still sees `has_polls: True`
+        as long as the group has any poll at all."""
+        poll = create_poll(client, creator_secret, browser_id=browser_id)
+        stranger = str(uuid.uuid4())
+        resp = client.get(
+            f"/api/groups/by-route-id/{poll['group_short_id']}/summary",
+            headers=bid_headers(stranger),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["has_polls"] is True
 
     def test_unknown_route_id_returns_404(self, client):
         resp = client.get("/api/groups/by-route-id/zzznotreal/summary")

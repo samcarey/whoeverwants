@@ -109,6 +109,15 @@ class GroupSummary(BaseModel):
     image_updated_at: str | None = None
     privacy: str | None = None
     creator_user_id: str | None = None
+    # True iff the group has ANY polls at all, regardless of the caller's
+    # visibility (the closed-before-join filter can hide every poll from a
+    # late joiner, so `/by-route-id` returns [] while the group is not
+    # actually empty). Lets the FE distinguish a brand-new empty group
+    # (show the create-first-poll flow) from a group whose history is all
+    # hidden pre-join (show the To Do/New/Old tabs with empty messages).
+    # Only `get_group_summary` computes a real value; the /empty + create
+    # paths are genuinely poll-less so they keep the False default.
+    has_polls: bool = False
 
 
 class UpdateGroupPrivacyRequest(BaseModel):
@@ -321,7 +330,7 @@ def get_my_empty_groups(request: Request):
         return [_row_to_group_summary(r) for r in rows]
 
 
-def _row_to_group_summary(row) -> GroupSummary:
+def _row_to_group_summary(row, has_polls: bool = False) -> GroupSummary:
     created_at = row.get("created_at")
     image_updated_at = row.get("image_updated_at")
     creator_user_id = row.get("creator_user_id")
@@ -333,6 +342,7 @@ def _row_to_group_summary(row) -> GroupSummary:
         image_updated_at=image_updated_at.isoformat() if image_updated_at else None,
         privacy=row.get("privacy"),
         creator_user_id=str(creator_user_id) if creator_user_id else None,
+        has_polls=has_polls,
     )
 
 
@@ -407,13 +417,19 @@ def get_group_summary(route_id: str, request: Request):
                 conn, group_id, browser_id=browser_id, user_id=user_id
             ):
                 raise HTTPException(status_code=404, detail="Group not found")
+        # `has_polls` (visibility-blind) lets the FE tell "all my history is
+        # hidden pre-join" apart from "brand-new empty group" — folded into
+        # the one SELECT so the summary stays a single round-trip. See
+        # GroupSummary.has_polls.
         row = conn.execute(
-            f"SELECT {_GROUP_SUMMARY_COLUMNS} FROM groups WHERE id = %(id)s",
+            f"""SELECT {_GROUP_SUMMARY_COLUMNS},
+                       EXISTS (SELECT 1 FROM polls WHERE group_id = g.id) AS has_polls
+                  FROM groups g WHERE g.id = %(id)s""",
             {"id": group_id},
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Group not found")
-        return _row_to_group_summary(row)
+        return _row_to_group_summary(row, has_polls=row["has_polls"])
 
 
 @router.get("/by-route-id/{route_id}", response_model=list[PollResponse])
