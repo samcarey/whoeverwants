@@ -85,6 +85,17 @@ const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
 ];
 
+// Categories a deep-link / Siri `?category=` param is allowed to preselect.
+// Anything outside this set (or absent) falls back to the catch-all `custom`
+// category, so a malformed param can never push the form into an invalid state.
+const VALID_PREFILL_CATEGORIES = new Set<string>([
+  ...BUILT_IN_TYPES.map((t) => t.value),
+  "custom",
+]);
+function normalizePrefillCategory(raw: string | null): string {
+  return raw && VALID_PREFILL_CATEGORIES.has(raw) ? raw : "custom";
+}
+
 // Per-app-start random fallback order for category bubbles the user has
 // never created a poll for. Computed ONCE at module load (a fresh page
 // load / app cold-start reshuffles) so the order is stable across
@@ -181,6 +192,12 @@ export function CreateQuestionContent() {
   const followUpToParam = searchParams.get('followUpTo');
   const duplicateOfParam = searchParams.get('duplicate');
   const voteFromSuggestionParam = searchParams.get('voteFromSuggestion');
+  // Deep-link / Siri prefill (Phase 1 of docs/siri-integration-plan.md). An
+  // App Intent opens `/g/?create=1[&title=<spoken text>][&category=<cat>]`;
+  // these open the create modal with the spoken text preset as the title.
+  const prefillTitleParam = searchParams.get('title');
+  const prefillCategoryParam = searchParams.get('category');
+  const prefillCreateParam = searchParams.get('create');
 
   // Track relationship to source question as part of form state
   const [followUpTo, setFollowUpTo] = useState<string | null>(null);
@@ -1158,7 +1175,7 @@ export function CreateQuestionContent() {
       setCollectAvailability(savedCollectAvailability);
     }
 
-    if (!followUpToParam && !duplicateOfParam && !voteFromSuggestionParam) {
+    if (!followUpToParam && !duplicateOfParam && !voteFromSuggestionParam && !prefillTitleParam && !prefillCreateParam) {
       const savedFormState = loadFormState();
 
       // Initialize dayTimeWindows with today if no saved form state has them.
@@ -1173,7 +1190,7 @@ export function CreateQuestionContent() {
         setDayTimeWindows([{ day: todayStr, windows: [{ ...DEFAULT_TIME_WINDOW }] }]);
       }
     }
-  }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam]);
+  }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam, prefillTitleParam, prefillCreateParam]);
 
   // Load duplicate data if this is a duplicate (for follow-up questions)
   useEffect(() => {
@@ -1347,6 +1364,45 @@ export function CreateQuestionContent() {
       }
     }
   }, [voteFromSuggestionParam]);
+
+  // Deep-link / Siri prefill (Phase 1 of docs/siri-integration-plan.md). An
+  // App Intent opens `/g/?create=1[&title=<spoken text>][&category=<cat>]`
+  // (see ios/App/App/AppDelegate.swift); this opens the create modal with the
+  // spoken text preset as the poll title. Mirrors the ?duplicate= /
+  // ?voteFromSuggestion= auto-open flows. The params are consumed once and
+  // stripped so a refresh / re-render doesn't reopen the modal.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!prefillTitleParam && !prefillCreateParam) return;
+
+    const cat = normalizePrefillCategory(prefillCategoryParam);
+    // Fresh draft for the chosen category (resets any stale in-progress form).
+    applyDraftToState(emptyDraft({
+      category: cat,
+      collectSuggestions: getUserCollectSuggestions() ?? true,
+      collectAvailability: getUserCollectAvailability() ?? true,
+    }));
+    setCreatorName(getUserName() ?? "");
+
+    const spoken = prefillTitleParam?.trim();
+    if (spoken) {
+      const t = spoken.slice(0, 100);
+      setTitle(t);
+      // Treat the spoken text as a user-authored title so the auto-title
+      // effect doesn't overwrite it. Deliberately NOT setting loadedTitleRef —
+      // that path is for duplicate snapshots and could flip back to auto mode.
+      setIsAutoTitle(false);
+    }
+
+    setIsModalOpen(true);
+
+    // Consume the prefill params so refresh / back doesn't re-trigger.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('title');
+    url.searchParams.delete('category');
+    url.searchParams.delete('create');
+    window.history.replaceState({}, '', url.toString());
+  }, [prefillTitleParam, prefillCategoryParam, prefillCreateParam, applyDraftToState]);
 
   // Set default date/time values after client initialization
   useEffect(() => {
