@@ -512,7 +512,7 @@ enum QuickPollService {
 struct QuickPollIntent: AppIntent {
     static var title: LocalizedStringResource = "Quick poll"
     static var description = IntentDescription(
-        "Create a yes/no poll without opening the app. Siri reads back a confirmation; open WhoeverWants to see and share it."
+        "Create a yes/no poll without opening the app. You'll hear a spoken confirmation; open WhoeverWants to see and share it."
     )
     // NOT openAppWhenRun — this runs headless; the app stays closed.
 
