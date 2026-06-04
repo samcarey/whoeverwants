@@ -37,7 +37,9 @@
 	     enough for an attributed create (X-Browser-Id resolves to the account),
 	     and App Group storage is less hardened than the Keychain. Both bundles
 	     (prod + latest) carry the same group; needs the "App Groups" capability
-	     on each App ID (automatic signing should auto-provision it). -->
+	     on each App ID (registered + enabled on com.whoeverwants.app and
+	     com.whoeverwants.app.latest in the Apple Developer portal on 2026-06-04;
+	     automatic signing did NOT auto-create it, unlike Keychain Sharing). -->
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.com.whoeverwants.siri</string>
