@@ -128,7 +128,7 @@ class UserSummary(BaseModel):
     # Account-synced app-icon badge preferences (migration 121). Ride every
     # sign-in response + /me so the FE's local cache + client-side badge
     # resync stay in lockstep with the account.
-    badge_todo_mode: bool = False
+    badge_todo_mode: bool = True
     badge_on_voting_open: bool = True
     badge_on_results: bool = True
     # Migration 123: drives the home-page "add a recovery method" banner.
@@ -752,7 +752,7 @@ def update_my_name(req: UpdateNameBody, request: Request):
 
 
 class UpdateBadgeSettingsBody(BaseModel):
-    badge_todo_mode: bool = False
+    badge_todo_mode: bool = True
     badge_on_voting_open: bool = True
     badge_on_results: bool = True
 

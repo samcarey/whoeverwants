@@ -101,7 +101,7 @@ class BadgeCountResponse(BaseModel):
 @router.get("/badge", response_model=BadgeCountResponse)
 def get_badge_count(
     request: Request,
-    todo_mode: bool = False,
+    todo_mode: bool = True,
     on_voting_open: bool = True,
     on_results: bool = True,
 ):

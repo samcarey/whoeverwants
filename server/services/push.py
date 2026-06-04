@@ -279,9 +279,10 @@ def _fetch_subscriptions(conn, browser_ids: Iterable[str]) -> list[dict]:
 
 def _badge_settings_for_browser(conn, browser_id: str) -> tuple[bool, bool, bool]:
     """(todo_mode, on_voting_open, on_results) for a browser. Signed-in →
-    account columns; anonymous (no user_browsers row) → defaults (unread, both
-    re-light on). The push path can only see account/default settings — an
-    anonymous user's localStorage preference shapes only the client-side badge.
+    account columns; anonymous (no user_browsers row) → defaults (to-do model;
+    the on_voting_open/on_results re-lights are unread-only so inert here). The
+    push path can only see account/default settings — an anonymous user's
+    localStorage preference shapes only the client-side badge.
     """
     row = conn.execute(
         """
@@ -293,7 +294,7 @@ def _badge_settings_for_browser(conn, browser_id: str) -> tuple[bool, bool, bool
         {"b": browser_id},
     ).fetchone()
     if not row:
-        return (False, True, True)
+        return (True, True, True)
     return (
         bool(row["badge_todo_mode"]),
         bool(row["badge_on_voting_open"]),
