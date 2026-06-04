@@ -1754,12 +1754,8 @@ export function CreateQuestionContent() {
   };
 
   // Empty-state hint shown in the title-preview slot above the form card,
-  // before any title exists. Tailored per category so it only references
-  // fields the current form actually has: yes_no / limited_supply expose
-  // just a Title, while ranked-choice / time / custom expose Category +
-  // Context (+ Options). (time/ranked categories auto-title immediately, so
-  // their hint is rarely seen — but keep it accurate for the cleared-title
-  // case.)
+  // before any title exists. yes_no / limited_supply expose only a Title, so
+  // they shouldn't reference Category/Context/Options the form doesn't have.
   const titlePreviewHint =
     category === 'yes_no' || category === 'limited_supply'
       ? "Enter a title"
