@@ -15,6 +15,7 @@ import BubbleBarHost from "@/components/BubbleBarHost";
 import { UniversalLinksHandler } from "@/components/UniversalLinksHandler";
 import { ClipboardLinkPrompt } from "@/components/ClipboardLinkPrompt";
 import { PushAutoRegister } from "@/components/PushAutoRegister";
+import { NativeIdentityHost } from "@/components/NativeIdentityHost";
 import { THEME_KEY } from "@/lib/theme";
 
 
@@ -184,6 +185,13 @@ export default function RootLayout({
             UniversalLinksHandler above). */}
         <ClipboardLinkPrompt />
         <PushAutoRegister />
+
+        {/* iOS native identity bridge — mirrors the WebView's session token /
+            browser id / display name into the Keychain so native Swift (and the
+            future headless-creation App Intent) can call the API as the user.
+            Inert on non-native platforms. Lives in the layout so the
+            subscription survives client-side route changes. */}
+        <NativeIdentityHost />
         <script
           dangerouslySetInnerHTML={{
             __html: `

@@ -216,7 +216,52 @@ Intents shape; the web-side prefill stays useful.
 
 ## Phase 2 — Native identity bridge (Keychain / App Group)
 
-**Status: not started. Prerequisite for Phase 3.**
+**Status: IMPLEMENTED (2026-06-04), pending real-device + TestFlight verification.
+Scope resolved to PLAIN KEYCHAIN (no App Group / extension), per the "start in-process"
+decision.** What shipped:
+- **Swift (`ios/App/App/AppDelegate.swift`, colocated — no pbxproj change):**
+  `NativeIdentityKeychain` (a `kSecClassGenericPassword` store, service namespaced per
+  bundle id, accessibility `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` — readable
+  by a background App Intent after first unlock, NOT iCloud-synced, NOT migrated to a new
+  device) + `NativeIdentityPlugin` (`CAPBridgedPlugin`, jsName `NativeIdentity`) exposing
+  `setIdentity({token, browserId, name})` / `clearIdentity()` / `getIdentity()`. `set`
+  upserts a non-empty value and DELETES on null/`""`, so a single `setIdentity` call
+  expresses the full current triple (sign-out = null token + null name, kept browser id).
+  `import Security` added. No `@available` gate (Keychain is available on every supported
+  iOS, unlike the iOS-18 `OpenURLIntent`).
+- **JS (`lib/nativeIdentity.ts` + `components/NativeIdentityHost.tsx`):**
+  `syncNativeIdentity()` reads the live token (`getSessionToken`), browser id
+  (`getBrowserId`), and trimmed display name (`getUserName`) and pushes them via the
+  plugin; INERT on web/PWA (`!Capacitor.isNativePlatform()` short-circuit).
+  `installNativeIdentitySync()` (idempotent, mounted once from `app/layout.tsx` via
+  `<NativeIdentityHost/>`) subscribes to `SESSION_CHANGED_EVENT` + a focus/visibility
+  resync and does an initial sync at launch.
+- **Wiring choice — listener, not per-callsite.** Rather than threading `setIdentity`
+  through `saveSession` / `clearSession` / `persistSignIn` (which would need a lazy-require
+  to dodge the `session.ts ↔ nativeIdentity.ts` cycle), the bridge subscribes ONCE to
+  `SESSION_CHANGED_EVENT` — which `saveSession`, `clearSession`, and
+  `updateCachedSessionUser` all already dispatch. Equivalent coverage, no cycle, no
+  per-callsite plumbing. The foreground resync catches a browser id established after
+  mount and local-only name edits that don't dispatch the event.
+- **Security posture (review note).** This MOVES the bearer token from WebView
+  localStorage into the Keychain — a *stronger* at-rest posture (device-only, not
+  iCloud-synced, not restore-migrated, encrypted-at-rest by the Secure Enclave-backed
+  Keychain) rather than a regression. No App Group / `kSecAttrAccessGroup` is used, so the
+  credential is readable only by the app process itself — sufficient for an IN-PROCESS App
+  Intent (Phase 3's starting shape). If Phase 3 moves to a separate extension target, add
+  the access group + the App-Group/Keychain-sharing entitlement on both bundles (a
+  one-time Apple Developer portal step) — called out inline in the Swift. No entitlement,
+  no portal step, and no pbxproj change were needed for this in-process form.
+
+**Real-device verification still owed (owner):** on a `latest` TestFlight build, sign in,
+then confirm a native round-trip — e.g. a debug `NativeIdentity.getIdentity()` returns the
+token/browserId/name, and a native `URLSession` GET to `/api/auth/me` with
+`Authorization: Bearer <token>` + `X-Browser-Id` succeeds; after sign-out the token + name
+are gone (browser id retained). This closes the Phase 2 acceptance criteria below; the JS
+gating + payload assembly are unit-tested in `tests/__tests__/native-identity.test.ts`
+(the Keychain round-trip itself is device-only).
+
+Original scope/criteria retained for reference:
 
 **Goal.** Make the user's `session_token`, `browser_id`, and `display_name`
 readable by native Swift (and any future App Intents extension), so native code can
@@ -378,7 +423,7 @@ Working order **1 → 2 → 3 → 4 → 0** (Phase 0 moved to the end, 2026-06-0
 | Phase | What | Cost | WWDC sensitivity | Depends on | Status |
 |-------|------|------|------------------|------------|--------|
 | 1 | Deep-link App Intent (open + prefill) | ~1–2 days | Low | — | **done (pending device verify)** |
-| 2 | Native identity bridge (Keychain/App Group) | ~3–5 days | Low (scope: high) | — | not started |
+| 2 | Native identity bridge (Keychain/App Group) | ~3–5 days | Low (scope: high) | — | **done (plain Keychain; pending device verify)** |
 | 3 | Headless poll creation App Intent | ~1 week (+extension) | Medium–High | 2, re-check 0 | not started |
 | 4 | Expanded intents (vote/results/entities/AI) | Large / open | High (by design) | 1–3, 0 | not started |
 | 0 | WWDC watch + decision gate (now last) | ~½ day | — | — | deferred |
@@ -398,6 +443,21 @@ pre-coding gate; see the ordering decision at the top.)
 _(Append dated entries; do not rewrite the phases above — note what changed and why.
 Post-keynote findings go here too, once Phase 0 runs.)_
 
+- **2026-06-04 — Shipped Phase 2 (native identity bridge, plain Keychain).** Resolved the
+  scope-sensitive Keychain-vs-App-Group question to **plain Keychain** (no App Group, no
+  extension, no entitlement, no Apple Developer portal step), consistent with Phase 3
+  starting as an in-process intent. Added `NativeIdentityKeychain` + `NativeIdentityPlugin`
+  (colocated in `AppDelegate.swift`), `lib/nativeIdentity.ts` (`syncNativeIdentity` +
+  `installNativeIdentitySync`), and `<NativeIdentityHost/>` (mounted in `app/layout.tsx`).
+  Wired via a single `SESSION_CHANGED_EVENT` subscription + foreground resync rather than
+  per-callsite `setIdentity` calls (avoids the session↔nativeIdentity import cycle; same
+  coverage). Bearer token now lives in the Keychain on native (device-only,
+  non-iCloud-synced) — a stronger at-rest posture than WebView localStorage, not a
+  regression. Unit tests in `tests/__tests__/native-identity.test.ts` pin the gating +
+  payload; the Keychain round-trip is device-only, so real-device + TestFlight
+  verification is still owed (owner). Next: Phase 3 (headless creation) reuses this bridge,
+  but is the most keynote-sensitive — re-check against Phase 0's eventual findings before
+  prod.
 - **2026-06-04 — Reordered + shipped Phase 1.** Owner decided to move the WWDC-watch gate
   (Phase 0) to the end rather than wait for the keynote (~June 8–12), since the early
   phases are WWDC-resilient. Working order is now 1 → 2 → 3 → 4 → 0. Implemented Phase 1:
