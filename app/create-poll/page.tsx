@@ -1753,6 +1753,14 @@ export function CreateQuestionContent() {
     }
   };
 
+  // Empty-state hint shown in the title-preview slot above the form card,
+  // before any title exists. yes_no / limited_supply expose only a Title, so
+  // they shouldn't reference Category/Context/Options the form doesn't have.
+  const titlePreviewHint =
+    category === 'yes_no' || category === 'limited_supply'
+      ? "Enter a title"
+      : "Enter a Category, Context, and/or Options";
+
   const titleField = (
     <div className="flex items-center justify-between gap-3 h-12">
       <label htmlFor="title" className="text-base font-normal shrink-0">
@@ -1775,7 +1783,13 @@ export function CreateQuestionContent() {
         disabled={isLoading}
         maxLength={100}
         className="flex-1 min-w-0 text-base bg-transparent text-gray-500 dark:text-gray-500 text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic"
-        placeholder={isAutoTitle ? "auto" : "Enter your title..."}
+        placeholder={
+          isAutoTitle
+            ? "auto"
+            : category === 'limited_supply'
+              ? "What's available?"
+              : "Enter your title..."
+        }
         required={!isAutoTitle}
       />
     </div>
@@ -2101,7 +2115,7 @@ export function CreateQuestionContent() {
                     </span>
                   ) : (
                     <span className="text-[0.9375rem] leading-7 italic text-gray-500 dark:text-gray-400">
-                      Enter a Category, Context, and/or Options
+                      {titlePreviewHint}
                     </span>
                   )}
                 </div>
