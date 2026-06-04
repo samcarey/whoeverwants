@@ -301,11 +301,39 @@ private enum NativeIdentityKeychain {
     }
 }
 
+// Shared App Group store — the channel iOS ACTUALLY shares with the headless
+// QuickPollIntent's separate process (the Keychain isn't, proven on device:
+// "shared no, default no"). The NativeIdentity plugin mirrors the display name
+// + browser id here on every session change; QuickPollService.loadIdentity reads
+// them here. Deliberately NOT the bearer token (App Group UserDefaults is less
+// hardened than the Keychain, and name + browser id are enough for an attributed
+// create — X-Browser-Id resolves to the account). MUST match the
+// com.apple.security.application-groups entitlement.
+private enum NativeIdentityAppGroup {
+    static let suiteName = "group.com.whoeverwants.siri"
+    static let nameKey = "display_name"
+    static let browserIdKey = "browser_id"
+
+    private static var defaults: UserDefaults? { UserDefaults(suiteName: suiteName) }
+
+    // Upsert non-empty values; nil / "" clears (mirrors the Keychain set semantics
+    // so sign-out — null name — removes the headless identity too).
+    static func set(name: String?, browserId: String?) {
+        guard let d = defaults else { return }
+        if let n = name, !n.isEmpty { d.set(n, forKey: nameKey) } else { d.removeObject(forKey: nameKey) }
+        if let b = browserId, !b.isEmpty { d.set(b, forKey: browserIdKey) } else { d.removeObject(forKey: browserIdKey) }
+    }
+
+    static func name() -> String? { defaults?.string(forKey: nameKey) }
+    static func browserId() -> String? { defaults?.string(forKey: browserIdKey) }
+}
+
 // Custom Capacitor plugin: write/read the WebView's identity to/from the
-// Keychain (see NativeIdentityKeychain above). `setIdentity` is driven by
-// `lib/nativeIdentity.ts` on every session change (sign-out passes a null
-// token + null name, so it doubles as the clear path); `getIdentity` lets
-// native code (and an on-device round-trip check) read it back.
+// Keychain (see NativeIdentityKeychain above) AND mirror name + browser id into
+// the shared App Group (NativeIdentityAppGroup) for the headless intent.
+// `setIdentity` is driven by `lib/nativeIdentity.ts` on every session change
+// (sign-out passes a null token + null name, so it doubles as the clear path);
+// `getIdentity` lets native code (and an on-device round-trip check) read it back.
 //
 // Colocated in AppDelegate.swift for the same reason MainViewController /
 // ClipboardUrlPlugin / AppBadgePlugin are: a new .swift file means hand-patching
@@ -329,9 +357,15 @@ public class NativeIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
     // nil for both an absent key and an explicit JSON null; `set` treats nil /
     // "" as a delete.
     @objc func setIdentity(_ call: CAPPluginCall) {
-        NativeIdentityKeychain.set(NativeIdentityKeychain.tokenAccount, call.getString("token"))
-        NativeIdentityKeychain.set(NativeIdentityKeychain.browserIdAccount, call.getString("browserId"))
-        NativeIdentityKeychain.set(NativeIdentityKeychain.nameAccount, call.getString("name"))
+        let token = call.getString("token")
+        let browserId = call.getString("browserId")
+        let name = call.getString("name")
+        NativeIdentityKeychain.set(NativeIdentityKeychain.tokenAccount, token)
+        NativeIdentityKeychain.set(NativeIdentityKeychain.browserIdAccount, browserId)
+        NativeIdentityKeychain.set(NativeIdentityKeychain.nameAccount, name)
+        // Mirror name + browser id into the shared App Group so the headless
+        // QuickPollIntent (separate process, can't read the Keychain) can read them.
+        NativeIdentityAppGroup.set(name: name, browserId: browserId)
         call.resolve()
     }
 
@@ -488,15 +522,19 @@ enum QuickPollService {
     // runs `validate_user_name(creator_name)` and 400s on blank. The bearer token
     // is optional — an anonymous-but-named user has a browser-keyed auto-minted
     // account, exactly as when they create a poll in the app without signing in.
-    // So we gate on the NAME (mirroring the app: name-required, sign-in optional),
-    // not on the token. A fresh install with nothing bridged yet → nil → the
-    // intent speaks "set your name first".
+    // So we gate on the NAME (mirroring the app: name-required, sign-in optional).
+    //
+    // Reads from the shared App GROUP, NOT the Keychain: on-device diagnostics
+    // proved this intent's process can't read the app's Keychain in any access
+    // group. The App Group is the channel iOS shares with the intent's process.
+    // The token isn't mirrored there (browser id → account attribution suffices),
+    // so headless creates resolve to the user's account via X-Browser-Id. A fresh
+    // install with nothing bridged yet → nil → the intent falls back to opening
+    // the prefilled form.
     static func loadIdentity() -> Identity? {
-        guard let name = NativeIdentityKeychain.get(NativeIdentityKeychain.nameAccount),
-              !name.isEmpty else { return nil }
-        let token = NativeIdentityKeychain.get(NativeIdentityKeychain.tokenAccount)
-        let browserId = NativeIdentityKeychain.get(NativeIdentityKeychain.browserIdAccount)
-        return Identity(token: token, browserId: browserId, name: name)
+        guard let name = NativeIdentityAppGroup.name(), !name.isEmpty else { return nil }
+        let browserId = NativeIdentityAppGroup.browserId()
+        return Identity(token: nil, browserId: browserId, name: name)
     }
 
     // Direct cross-origin API host (NOT the FE host the WebView loads), mirroring
@@ -517,20 +555,19 @@ enum QuickPollService {
         return URL(string: "https://\(host)/") ?? URL(string: "https://whoeverwants.com/")!
     }
 
-    // TEMP DIAGNOSTIC (remove once the headless name-read is resolved). Speakable
-    // summary of what THIS intent's process can read from the Keychain, spoken in
-    // the fallback dialog. "shared" = the `.siri` access group the app writes to;
-    // "default" = the app's default group (cross-process read test); "group" =
-    // whether the access-group string resolved. Since this only runs on the
-    // fallback, "shared" is expected "no" (that's why we fell back) — the
-    // informative bits are whether the intent can read the DEFAULT group at all
-    // (it couldn't read the app's keychain in either prior attempt), which tells
-    // us a shared App Group container is needed instead of keychain sharing.
+    // TEMP DIAGNOSTIC (remove once headless is confirmed). Spoken in the fallback
+    // dialog: what THIS intent's process can read from the shared App Group.
+    // "appgroup name <y/n>" is the decisive bit — if the App Group is shared with
+    // the intent (as designed) it should be "yes" once the app has synced, in
+    // which case loadIdentity succeeds and we never reach the fallback. If it's
+    // "no" here, either the App Group entitlement didn't provision or the
+    // foreground write never lands (App Group reads can't fail if the write did,
+    // so "no" ⇒ the write side). "kc" is the old Keychain read (expected no).
     static func keychainDebug() -> String {
-        let shared = NativeIdentityKeychain.get(NativeIdentityKeychain.nameAccount) != nil
-        let def = NativeIdentityKeychain.getDefaultGroup(NativeIdentityKeychain.nameAccount) != nil
-        let groupSet = NativeIdentityKeychain.accessGroup != nil
-        return "shared \(shared ? "yes" : "no"), default \(def ? "yes" : "no"), group \(groupSet ? "set" : "missing")"
+        let agName = NativeIdentityAppGroup.name() != nil
+        let agBrowser = NativeIdentityAppGroup.browserId() != nil
+        let kc = NativeIdentityKeychain.get(NativeIdentityKeychain.nameAccount) != nil
+        return "appgroup name \(agName ? "yes" : "no"), browser \(agBrowser ? "yes" : "no"), kc \(kc ? "yes" : "no")"
     }
 
     // Returns the created poll's title (echoed back by the server, which may have

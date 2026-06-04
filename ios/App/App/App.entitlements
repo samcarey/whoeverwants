@@ -28,5 +28,19 @@
 		<string>$(AppIdentifierPrefix)$(CFBundleIdentifier)</string>
 		<string>$(AppIdentifierPrefix)$(CFBundleIdentifier).siri</string>
 	</array>
+	<!-- App Group: the canonical channel iOS DOES share with the headless
+	     QuickPollIntent's (separate) process. On-device diagnostics proved the
+	     intent can't read the Keychain in any access group (shared no, default
+	     no), so the bridge mirrors the display name + browser id into this App
+	     Group's UserDefaults suite (NativeIdentityAppGroup in AppDelegate.swift);
+	     the intent reads them here. NOT the bearer token — name + browser id are
+	     enough for an attributed create (X-Browser-Id resolves to the account),
+	     and App Group storage is less hardened than the Keychain. Both bundles
+	     (prod + latest) carry the same group; needs the "App Groups" capability
+	     on each App ID (automatic signing should auto-provision it). -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.whoeverwants.siri</string>
+	</array>
 </dict>
 </plist>
