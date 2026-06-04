@@ -343,6 +343,19 @@ plan's "start in-process" decision.** What shipped (all colocated in
   server — native-iOS-only. The minimal payload shape is the only thing mirrored to
   the FE, and that mirroring is documented inline.
 
+**PITFALL — App Intent `IntentDescription` (and any App-Store-facing intent
+metadata) MUST NOT contain the literal word "siri" (case-insensitive).** Apple's
+App Store automated review rejects the binary at upload with **ITMS-90626: Invalid
+Siri Support — App Intent description '…' cannot contain 'siri'**. The first
+`QuickPollIntent.description` read "…Siri reads back a confirmation…" and was bounced
+on the `1.0` build (Apple Apple ID 6762459339, build 1780588944, 2026-06-04).
+Reworded to "…You'll hear a spoken confirmation…". This applies to the
+`IntentDescription` string and intent/parameter `title`s — NOT to code comments (not
+shipped as metadata) and NOT to the spoken `AppShortcut` phrases (those use
+`\(.applicationName)` and never embed "Siri"). When adding a new `AppIntent`, keep
+"Siri" out of every user/metadata-facing string; describe the behavior generically
+("spoken confirmation", "hands-free", "without opening the app").
+
 **WWDC re-check still owed (Phase 0).** This is the most keynote-sensitive phase; the
 in-process-vs-extension shape + the "headless in-app action" idiom should be
 re-validated against WWDC 2026 before this ships to **prod** (canary `latest` is fine
