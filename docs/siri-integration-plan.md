@@ -5,16 +5,22 @@
 > voice/Shortcuts/Spotlight surface. Written so a future session can pick it up
 > cold.
 >
-> **Status (June 2026): PLAN ONLY — nothing implemented yet.** Authored deliberately
-> a few days before WWDC 2026 (~June 8–12). The intent is to **gate the start of
-> implementation on the keynote** (see Phase 0) and revise this doc afterward. Do
-> not begin Phase 1 coding until Phase 0's decision gate is cleared.
+> **Status (June 2026): implementation underway. Phase 1 landed (pending real-device
+> verification).** Authored a few days before WWDC 2026 (~June 8–12).
+>
+> **Ordering decision (owner, 2026-06-04): the WWDC-watch gate (Phase 0) is moved to
+> the END.** The original plan gated all coding on the keynote, but the keynote hadn't
+> aired (today is June 4), and the owner chose to build the WWDC-resilient phases now
+> and re-validate against the keynote afterward ("we can just redo everything later").
+> So the working order is now **1 → 2 → 3 → 4 → 0**. Phases 1–2 are WWDC-resilient by
+> design (deep-link prefill + Keychain identity are reusable for URL schemes /
+> Shortcuts / widgets regardless of Siri's future); Phase 3 (headless creation) is the
+> most keynote-sensitive and should be re-checked against Phase 0's findings before it
+> ships to prod.
 >
 > **How to use this doc.** Each phase is independently shippable and ordered by
-> dependency + risk. Phases 0–1 are low-cost and WWDC-resilient; Phases 2–4 get
-> progressively more expensive and more sensitive to whatever Apple ships. Update
-> the "Status" line of each phase as work lands, and append a dated note under
-> "Post-keynote revisions" rather than rewriting history.
+> dependency + risk. Update the "Status" line of each phase as work lands, and append a
+> dated note under "Post-keynote revisions" rather than rewriting history.
 
 ---
 
@@ -97,7 +103,12 @@ These shape every decision below; re-read before changing the plan.
 
 ---
 
-## Phase 0 — WWDC watch + decision gate (NOW, before any coding)
+## Phase 0 — WWDC watch + decision gate (DEFERRED to the end — see ordering decision above)
+
+**Status: deferred. Run AFTER Phases 1–4, then re-validate the keynote-sensitive
+parts (esp. Phase 3) against the findings.** Originally a pre-coding gate; the owner
+moved it to the end on 2026-06-04 because the keynote hadn't aired and the early
+phases are WWDC-resilient.
 
 **Goal.** Convert "Apple might change everything" from an unknown into a decision.
 Spend the keynote week gathering free information, then revise this plan.
@@ -120,7 +131,42 @@ watch).**
 
 ## Phase 1 — Deep-link App Intent ("open the app with the create sheet prefilled")
 
-**Status: not started.**
+**Status: IMPLEMENTED (2026-06-04), pending real-device + TestFlight verification.**
+What shipped:
+- **Swift (`ios/App/App/AppDelegate.swift`, colocated — no pbxproj change):**
+  `CreatePollIntent` (an `AppIntent`, `openAppWhenRun = true`) with a required free-text
+  `prompt: String` parameter (`requestValueDialog: "What should the poll ask?"`). It
+  returns `OpensIntent(OpenURLIntent(...))` to a per-tier universal link
+  `https://<host>/g/?create=1&title=<spoken text>` (host mapped from
+  `Bundle.main.bundleIdentifier`: prod → `whoeverwants.com`, canary → `latest...`).
+  `WhoeverWantsShortcuts: AppShortcutsProvider` exposes the phrases "Create a poll in
+  WhoeverWants" / "Start a poll…" / "Ask a question…". Both types are
+  `@available(iOS 18.0, *)` — **not 16** — because `OpenURLIntent` (the loopback-correct
+  opener for the app's own universal link) is iOS 18+. App Intents themselves are 16+,
+  but the pre-18 alternatives are worse (`UIApplication.open` of your own universal link
+  from within the app opens Safari; a custom scheme adds Info.plist + CI + JS surface).
+  The shortcut is additive, so iOS 16–17 users just don't see it. (CI caught the original
+  iOS-16 gate: the archive failed with "'OpenURLIntent' is only available in iOS 18.0 or
+  newer".) If broader reach is wanted later, a custom URL scheme is the documented
+  follow-up. `import AppIntents` added.
+- **Web (`app/create-poll/page.tsx`):** reads `?title=` / `?category=` / `?create=`;
+  a new effect (mirroring `?duplicate=` / `?voteFromSuggestion=`) opens the create modal,
+  presets the spoken text as a user-authored title (`setIsAutoTitle(false)` so the
+  auto-title effect doesn't clobber it), seeds the category via the validated
+  `normalizePrefillCategory` (falls back to `custom`), and strips the params via
+  `history.replaceState` so refresh doesn't re-trigger. The `loadFormState` mount-restore
+  is gated off when a prefill is present so stale saved state can't overwrite it.
+- **Routing (`lib/universalLinks.ts`): verified, no change needed.** `appUrlOpen` →
+  `pathFromUniversalLinkUrl` already strips the origin and `router.push`es path + query
+  for the known hosts, so the new query params flow through untouched.
+
+**Real-device verification still owed (owner):** install the `latest` TestFlight build,
+confirm "Hey Siri, create a poll in WhoeverWants" asks the prompt, opens the app to the
+create modal, and the spoken text lands prefilled. The one platform risk to watch is the
+universal-link loopback — if `OpenURLIntent` of our own host opens Safari instead of the
+app, the fallback is a custom URL scheme (a cheap follow-up). See "Risks" below.
+
+Original scope/criteria retained for reference:
 
 **Goal.** "Hey Siri, create a poll in WhoeverWants" (and a parameterized "…asking
 *where should we eat*") opens the app, lands on the create flow with the spoken text
@@ -327,22 +373,37 @@ to be written after the keynote.
 
 ## Cost & sensitivity summary
 
-| Phase | What | Cost | WWDC sensitivity | Depends on |
-|-------|------|------|------------------|------------|
-| 0 | WWDC watch + decision gate | ~½ day | — | — |
-| 1 | Deep-link App Intent (open + prefill) | ~1–2 days | Low | 0 |
-| 2 | Native identity bridge (Keychain/App Group) | ~3–5 days | Low (scope: high) | — |
-| 3 | Headless poll creation App Intent | ~1 week (+extension) | Medium–High | 2 |
-| 4 | Expanded intents (vote/results/entities/AI) | Large / open | High (by design) | 1–3 |
+Working order **1 → 2 → 3 → 4 → 0** (Phase 0 moved to the end, 2026-06-04):
 
-**Recommended order:** 0 → 1 → 2 → 3 → 4. Phase 1 delivers a real "Hey Siri →
-create a poll" entry point at low cost/risk; Phase 2 is the reusable, security-gated
-prerequisite for anything hands-free; Phase 3 is the magical version; Phase 4 rides
-whatever WWDC makes worthwhile.
+| Phase | What | Cost | WWDC sensitivity | Depends on | Status |
+|-------|------|------|------------------|------------|--------|
+| 1 | Deep-link App Intent (open + prefill) | ~1–2 days | Low | — | **done (pending device verify)** |
+| 2 | Native identity bridge (Keychain/App Group) | ~3–5 days | Low (scope: high) | — | not started |
+| 3 | Headless poll creation App Intent | ~1 week (+extension) | Medium–High | 2, re-check 0 | not started |
+| 4 | Expanded intents (vote/results/entities/AI) | Large / open | High (by design) | 1–3, 0 | not started |
+| 0 | WWDC watch + decision gate (now last) | ~½ day | — | — | deferred |
+
+**Recommended order (revised 2026-06-04):** 1 → 2 → 3 → 4 → 0. Phase 1 (done) delivers a
+real "Hey Siri → create a poll" entry point at low cost/risk; Phase 2 is the reusable,
+security-gated prerequisite for anything hands-free; Phase 3 is the magical version but
+the most keynote-sensitive (re-check against Phase 0 before prod); Phase 4 rides whatever
+WWDC makes worthwhile. Phase 0 (the WWDC watch) now runs last and feeds a re-validation
+pass over Phases 3–4. (The original order was 0 → 1 → 2 → 3 → 4 with Phase 0 as a hard
+pre-coding gate; see the ordering decision at the top.)
 
 ---
 
-## Post-keynote revisions
+## Revisions log
 
-_(Append dated entries here after WWDC 2026 — do not rewrite the phases above; note
-what changed and why.)_
+_(Append dated entries; do not rewrite the phases above — note what changed and why.
+Post-keynote findings go here too, once Phase 0 runs.)_
+
+- **2026-06-04 — Reordered + shipped Phase 1.** Owner decided to move the WWDC-watch gate
+  (Phase 0) to the end rather than wait for the keynote (~June 8–12), since the early
+  phases are WWDC-resilient. Working order is now 1 → 2 → 3 → 4 → 0. Implemented Phase 1:
+  `CreatePollIntent` + `WhoeverWantsShortcuts` colocated in `AppDelegate.swift`, and the
+  `?title=` / `?category=` / `?create=` prefill + auto-open in `app/create-poll/page.tsx`.
+  `lib/universalLinks.ts` verified to pass the query params through unchanged. Pending:
+  real-device + TestFlight verification (owner) — esp. confirming the `OpenURLIntent`
+  universal-link loopback opens the app rather than Safari. Phase 3 must be re-validated
+  against Phase 0's eventual keynote findings before it ships to prod.

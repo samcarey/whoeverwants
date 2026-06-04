@@ -1,6 +1,7 @@
 import UIKit
 import Capacitor
 import UserNotifications
+import AppIntents
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -173,5 +174,99 @@ public class AppBadgePlugin: CAPPlugin, CAPBridgedPlugin {
             }
             call.resolve()
         }
+    }
+}
+
+// App Intents — expose "create a poll" to Siri / Shortcuts / Spotlight.
+//
+// Phase 1 of docs/siri-integration-plan.md: a deep-link intent that opens the
+// app to the existing create-poll flow with the spoken prompt prefilled as the
+// poll title. There is NO native poll logic and NO auth bridge here — the
+// WebView stays the source of truth; the user reviews + submits in the normal
+// create modal, and the server creates the poll exactly as for a manual one.
+//
+// Mechanism: `openAppWhenRun` foregrounds the app, then `OpenURLIntent` opens a
+// universal link to our own host. iOS routes it back into the (now-foreground)
+// app — the `applinks:` entitlement claims the host — Capacitor fires
+// `appUrlOpen`, and `lib/universalLinks.ts` router.pushes
+// `/g/?create=1&title=<spoken text>`, which `app/create-poll/page.tsx` consumes
+// to open + prefill the create modal. The web half is live the moment the
+// branch deploys to its tier host; only this Swift half needs a fresh iOS build.
+//
+// Per-tier host: the prod bundle (`com.whoeverwants.app`) loads
+// whoeverwants.com; the canary bundle (`com.whoeverwants.app.latest`) loads
+// latest.whoeverwants.com — mirroring capacitor.config.ts / CAP_ENV. The
+// universal-link routing only fires for the host the app actually loads, so the
+// per-bundle host selection is load-bearing.
+//
+// Colocated in AppDelegate.swift for the same reason the plugins are: a new
+// .swift file means hand-patching project.pbxproj in the headless CI build.
+// `AppShortcutsProvider` + `AppIntent` are auto-discovered by iOS at build/run
+// time (no Info.plist key, no portal capability, no pbxproj change).
+//
+// Availability: gated at iOS 18 because `OpenURLIntent` — the loopback-correct
+// way for an App Intent to open the app's OWN universal link — is iOS 18+. App
+// Intents themselves are iOS 16+, but the pre-18 alternatives are worse here
+// (`UIApplication.open` of your own universal link from within the app opens
+// Safari rather than looping back; a custom URL scheme would add Info.plist +
+// CI + JS-routing surface). The shortcut is purely additive, so iOS 16–17 users
+// simply don't see it. The deployment floor is iOS 15; the rest of the app
+// gates iOS-16-only behavior the same `@available` way (Clipboard/AppBadge).
+// If broader reach is wanted later, switch to a custom URL scheme (documented
+// follow-up in docs/siri-integration-plan.md).
+@available(iOS 18.0, *)
+struct CreatePollIntent: AppIntent {
+    static var title: LocalizedStringResource = "Create a poll"
+    // Foreground the app; creation happens in the WebView, not natively.
+    static var openAppWhenRun = true
+
+    // Required free-text parameter. When the user invokes the intent without
+    // speaking the question, App Intents asks `requestValueDialog` and accepts
+    // the dictated answer — that becomes the prefilled poll title.
+    @Parameter(
+        title: "Poll question",
+        description: "What the poll should ask",
+        requestValueDialog: "What should the poll ask?"
+    )
+    var prompt: String
+
+    @MainActor
+    func perform() async throws -> some IntentResult & OpensIntent {
+        return .result(opensIntent: OpenURLIntent(CreatePollIntent.createURL(prompt: prompt)))
+    }
+
+    static func createURL(prompt: String) -> URL {
+        // Map the bundle id to the tier host (mirrors capacitor.config.ts).
+        let host = Bundle.main.bundleIdentifier == "com.whoeverwants.app.latest"
+            ? "latest.whoeverwants.com"
+            : "whoeverwants.com"
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = host
+        components.path = "/g/"
+        var items = [URLQueryItem(name: "create", value: "1")]
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            items.append(URLQueryItem(name: "title", value: trimmed))
+        }
+        components.queryItems = items
+        // URLComponents always yields a valid URL for these fixed inputs.
+        return components.url ?? URL(string: "https://\(host)/g/?create=1")!
+    }
+}
+
+@available(iOS 18.0, *)
+struct WhoeverWantsShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: CreatePollIntent(),
+            phrases: [
+                "Create a poll in \(.applicationName)",
+                "Start a poll in \(.applicationName)",
+                "Ask a question in \(.applicationName)"
+            ],
+            shortTitle: "Create a poll",
+            systemImageName: "plus.bubble"
+        )
     }
 }
