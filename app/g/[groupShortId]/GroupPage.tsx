@@ -1540,6 +1540,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   }, [groupedGroupQuestions, votedQuestionIds, abstainedQuestionIds, pollViewsTick]);
   // Default tab tracks counts until the user taps one (To Do if any, else New).
   const effectiveTab: PollTab = selectedTab ?? (tabCounts.todo > 0 ? "todo" : "new");
+  useEffect(() => {
+    console.log(`[TABTAP] state selectedTab=${selectedTab} effectiveTab=${effectiveTab} todo=${tabCounts.todo} new=${tabCounts.new} old=${tabCounts.old}`);
+  }, [selectedTab, effectiveTab, tabCounts.todo, tabCounts.new, tabCounts.old]);
   const visibleGroupedQuestions = useMemo(() => {
     return groupedGroupQuestions.filter((g) => {
       const t = classifyEntry(g);
@@ -2089,9 +2092,11 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                     key={tab.id}
                     type="button"
                     onTouchStart={() => {
-                      console.log(`[TABTAP] touchstart ${tab.id}`);
                       tabTouchHandledRef.current = true;
-                      setSelectedTab(tab.id);
+                      setSelectedTab((prev) => {
+                        console.log(`[TABTAP] touchstart ${tab.id} setSel prev=${prev}`);
+                        return tab.id;
+                      });
                     }}
                     onTouchEnd={() => console.log(`[TABTAP] touchend ${tab.id}`)}
                     onTouchCancel={() => console.log(`[TABTAP] touchcancel ${tab.id}`)}
