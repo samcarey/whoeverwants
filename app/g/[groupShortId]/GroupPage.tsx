@@ -218,14 +218,10 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // Gap 1: the active follow/ignore tab. null = follow the default (To Do when
   // any, else New); a user tap pins it. Reset on group change (key remount).
   const [selectedTab, setSelectedTab] = useState<PollTab | null>(null);
-  // Tracks an in-progress touch on a tab so we can switch on `touchend` rather
-  // than waiting for a synthetic `click`. On iOS the first touch during a
-  // momentum scroll is consumed to STOP the scroll and never produces a click,
-  // so an onClick-only tab needed a second tap. `touchend` still fires on that
-  // first tap, so switching there makes one tap always switch. `tabTouchRef`
-  // holds the start point + a moved flag; a tap (no significant move) switches
-  // and suppresses the trailing synthetic click to avoid a double-fire.
-  const tabTouchRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  // True between a tab's `touchstart` (which switches the tab) and the trailing
+  // synthetic `click`, so the click handler skips re-firing setState. See the
+  // tab button handlers below for why switching happens on touchstart.
+  const tabTouchHandledRef = useRef(false);
 
   // Phase 5b: poll-level mutations (close/reopen/cutoff) update the
   // polls array; question mutations (forget) update the questions array.
@@ -2092,41 +2088,26 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                   <button
                     key={tab.id}
                     type="button"
-                    onTouchStart={(e) => {
-                      const t = e.touches[0];
-                      tabTouchRef.current = { x: t.clientX, y: t.clientY, moved: false };
+                    onTouchStart={() => {
+                      // Switch on the touch that LANDS, not the one that lifts.
+                      // On iOS the first tap during a momentum scroll is consumed
+                      // to STOP the scroll: it produces no `click`, and the
+                      // following touch event arrives as `touchcancel` (not
+                      // `touchend`) — so any lift-based handler left the first tap
+                      // only stopping the scroll. `touchstart` always fires on
+                      // contact, so switching here makes one tap always switch.
+                      // `tabTouchHandledRef` suppresses the trailing synthetic
+                      // click so it doesn't re-fire setState.
+                      tabTouchHandledRef.current = true;
+                      setSelectedTab(tab.id);
                     }}
-                    onTouchMove={(e) => {
-                      const start = tabTouchRef.current;
-                      if (!start) return;
-                      const t = e.touches[0];
-                      if (
-                        Math.abs(t.clientX - start.x) > 10 ||
-                        Math.abs(t.clientY - start.y) > 10
-                      ) {
-                        start.moved = true;
+                    onClick={() => {
+                      if (tabTouchHandledRef.current) {
+                        tabTouchHandledRef.current = false;
+                        return;
                       }
-                    }}
-                    onTouchEnd={(e) => {
-                      const start = tabTouchRef.current;
-                      tabTouchRef.current = null;
-                      if (!start || start.moved) return;
-                      // Tap (not a scroll/drag): switch now and suppress the
-                      // trailing synthetic click so it doesn't double-fire.
-                      e.preventDefault();
                       setSelectedTab(tab.id);
                     }}
-                    onTouchCancel={() => {
-                      // iOS fires `touchcancel` (NOT `touchend`) for the touch
-                      // that interrupts a momentum scroll — and never produces a
-                      // click. Without handling it here, that first tap only
-                      // stopped the scroll. Treat a non-dragged cancel as a tap.
-                      const start = tabTouchRef.current;
-                      tabTouchRef.current = null;
-                      if (!start || start.moved) return;
-                      setSelectedTab(tab.id);
-                    }}
-                    onClick={() => setSelectedTab(tab.id)}
                     aria-pressed={active}
                     className={`flex-1 rounded-full py-1.5 transition-colors ${
                       active
