@@ -1540,9 +1540,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   }, [groupedGroupQuestions, votedQuestionIds, abstainedQuestionIds, pollViewsTick]);
   // Default tab tracks counts until the user taps one (To Do if any, else New).
   const effectiveTab: PollTab = selectedTab ?? (tabCounts.todo > 0 ? "todo" : "new");
-  useEffect(() => {
-    console.log(`[TABTAP] state selectedTab=${selectedTab} effectiveTab=${effectiveTab} todo=${tabCounts.todo} new=${tabCounts.new} old=${tabCounts.old}`);
-  }, [selectedTab, effectiveTab, tabCounts.todo, tabCounts.new, tabCounts.old]);
   const visibleGroupedQuestions = useMemo(() => {
     return groupedGroupQuestions.filter((g) => {
       const t = classifyEntry(g);
@@ -2092,17 +2089,17 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                     key={tab.id}
                     type="button"
                     onTouchStart={() => {
+                      // Switch on the touch that LANDS, not the one that lifts.
+                      // On iOS the first tap during a momentum scroll is consumed
+                      // to STOP the scroll: it delivers pointerdown/touchstart/
+                      // touchend but NO `click`. Switching on touchstart (verified
+                      // to fire on that scroll-stopping tap) makes one tap always
+                      // switch. The ref suppresses the trailing synthetic click on
+                      // a normal tap so it doesn't redundantly re-fire setState.
                       tabTouchHandledRef.current = true;
-                      setSelectedTab((prev) => {
-                        console.log(`[TABTAP] touchstart ${tab.id} setSel prev=${prev}`);
-                        return tab.id;
-                      });
+                      setSelectedTab(tab.id);
                     }}
-                    onTouchEnd={() => console.log(`[TABTAP] touchend ${tab.id}`)}
-                    onTouchCancel={() => console.log(`[TABTAP] touchcancel ${tab.id}`)}
-                    onPointerDown={() => console.log(`[TABTAP] pointerdown ${tab.id}`)}
                     onClick={() => {
-                      console.log(`[TABTAP] click ${tab.id}`);
                       if (tabTouchHandledRef.current) {
                         tabTouchHandledRef.current = false;
                         return;
