@@ -8,6 +8,7 @@ import { HIDE_HOME_BACKDROP_EVENT, POLL_HYDRATED_EVENT } from "@/lib/eventChanne
 import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import { usePageReady } from "@/lib/usePageReady";
 import { HOME_SCROLL_KEY, getRememberedScroll, clearGroupScroll } from "@/lib/scrollMemory";
+import { clearGroupTabs } from "@/lib/groupTabMemory";
 import { getCachedSessionUser, SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
 import GroupList from "@/components/GroupList";
 import SignInModal from "@/components/SignInModal";
@@ -117,6 +118,9 @@ export default function Home() {
     // wherever the user last left it. Home's own scroll (restored above)
     // and poll-detail scroll are untouched.
     clearGroupScroll();
+    // Same lifecycle: returning to home resets every group's active tab
+    // (To Do · New · Old) so re-entry shows the default tab again.
+    clearGroupTabs();
   }, []);
 
   // Initialize and rotate phrases

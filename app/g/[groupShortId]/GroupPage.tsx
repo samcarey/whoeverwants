@@ -40,6 +40,7 @@ import { classifyPollTab, type PollTab } from "@/lib/followState";
 import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
+import { getRememberedGroupTab, rememberGroupTab } from "@/lib/groupTabMemory";
 import { isScrollRestoring, setScrollRestoring } from "@/lib/scrollRestoreState";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import FollowUpModal from "@/components/FollowUpModal";
@@ -216,8 +217,16 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // instant the user opens a poll).
   const { badgeSettings, pollViewsTick } = useUnreadReactivity();
   // Gap 1: the active follow/ignore tab. null = follow the default (To Do when
-  // any, else New); a user tap pins it. Reset on group change (key remount).
-  const [selectedTab, setSelectedTab] = useState<PollTab | null>(null);
+  // any, else New); a user tap pins it. Seeded from groupTabMemory so the
+  // choice survives poll-detail round-trips (GroupContent remounts on back);
+  // cleared when home mounts (see clearGroupTabs in app/page.tsx).
+  const [selectedTab, setSelectedTab] = useState<PollTab | null>(
+    () => getRememberedGroupTab(groupId) ?? null,
+  );
+  const selectTab = useRef((tab: PollTab) => {
+    setSelectedTab(tab);
+    rememberGroupTab(groupId, tab);
+  }).current;
 
   // Phase 5b: poll-level mutations (close/reopen/cutoff) update the
   // polls array; question mutations (forget) update the questions array.
@@ -2089,7 +2098,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setSelectedTab(tab.id)}
+                    onClick={() => selectTab(tab.id)}
                     aria-pressed={active}
                     className={`flex-1 rounded-full py-1.5 transition-colors ${
                       active
