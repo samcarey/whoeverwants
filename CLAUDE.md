@@ -63,7 +63,7 @@ The Supabase-to-Python migration and infrastructure improvements (Phases 1-10) a
 WhoeverWants runs on **two** DigitalOcean droplets that are software-identical (same `scripts/provision-droplet.sh`, same Docker stack, same migrations). Only the public hostnames and deploy trigger differ — see "Development Workflow" below for the gating.
 
 - **`whoeverwants` (prod)** — `142.93.60.29`, fronts `api.whoeverwants.com` + `hooks.api.whoeverwants.com`. Deploys when a GitHub Release is published, pinned to the release's tag.
-- **`latest` (pre-prod canary)** — `67.207.94.93`, fronts `api.latest.whoeverwants.com` + `hooks.api.latest.whoeverwants.com`. Deploys on every push to `main` so the latest code is exercised in its final configuration (release-mode build, droplet, Caddy, Postgres) before a production release.
+- **`latest` (pre-prod canary)** — `104.248.61.202`, fronts `api.latest.whoeverwants.com` + `hooks.api.latest.whoeverwants.com`. Deploys on every push to `main` so the latest code is exercised in its final configuration (release-mode build, droplet, Caddy, Postgres) before a production release.
 
 Behavior is driven by `/etc/droplet-label` on each droplet (`""` = prod, `"latest"` = canary). `scripts/dev-webhook.py` reads it at startup. `scripts/provision-droplet.sh` accepts `DROPLET_LABEL=latest` to provision a canary; default behavior is prod.
 
@@ -78,7 +78,7 @@ Behavior is driven by `/etc/droplet-label` on each droplet (`""` = prod, `"lates
 | Hostname | IP | Tier | Public hosts |
 |----------|----|----|--------------|
 | `whoeverwants` | `142.93.60.29` | prod | `api.whoeverwants.com`, `hooks.api.whoeverwants.com` |
-| `latest` | `67.207.94.93` | canary | `api.latest.whoeverwants.com`, `hooks.api.latest.whoeverwants.com` |
+| `latest` | `104.248.61.202` | canary | `api.latest.whoeverwants.com`, `hooks.api.latest.whoeverwants.com` |
 
 ### Remote Command Execution
 
@@ -108,7 +108,7 @@ The following environment variables must be available. In the Claude Code web en
 ```
 DROPLET_API_URL=https://142-93-60-29.sslip.io
 DROPLET_API_TOKEN=<bearer token>
-LATEST_DROPLET_API_URL=https://67-207-94-93.sslip.io
+LATEST_DROPLET_API_URL=https://104-248-61-202.sslip.io
 LATEST_DROPLET_API_TOKEN=<bearer token for latest droplet>
 DIGITAL_OCEAN_TOKEN=<DO API v2 token>
 VERCEL_API_TOKEN=<vercel api token>
@@ -1160,6 +1160,27 @@ linked browser for signed-in users), so the previous
 had to carve out signed-in users to avoid hiding server-side
 membership — is simply gone. In-flight coalescing
 (`myGroupsInFlight`) still prevents per-render fetch piling.
+
+**Home `fetchQuestions` retries on transient failures + offers "Try
+again" (`app/page.tsx`).** The iOS WebView cold-launch routinely
+fires the home fetch before the network path is up, and a single
+`getMyGroups()` attempt that throws a network `TypeError` would paint
+a permanent dead-end error card with no recovery (the only escape was
+force-quitting the app — a real TestFlight report). The fetch is now a
+`useCallback` that retries with backoff (`[500, 1000, 2000]ms` before
+attempts 2/3/4) before surfacing an error, and the error card carries
+a "Try again" button that re-runs it (`fetchQuestions({ isRetry: true })`).
+Diagnostic tell for this class: the in-app Logs tab showed `Unexpected
+error: {}` for EVERY `/api/*` call — an empty `{}` is a network
+`fetch` TypeError (an `ApiError` would serialize `{"status":...}`), so
+the requests never connected vs. came back 4xx/5xx. When debugging
+"main page error card" reports, check whether the error is `{}` (can't
+connect — transient/network) vs. carries a status (server-side). The
+callback's deps are the STABLE `useState`-initializer snapshots
+(`initialPolls`/`initialEmptyGroups`), so the callback identity is
+constant and the mount `useEffect([fetchQuestions])` runs once;
+`getMyGroups`'s `myGroupsInFlight` coalescing makes a retry that races
+an in-flight fetch join it rather than double-fire.
 
 **Pitfall: `cachedToken` in `lib/session.ts` is module-cached.**
 The first call to `getSessionToken()` reads localStorage and stores

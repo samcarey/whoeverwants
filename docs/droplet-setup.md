@@ -39,12 +39,12 @@ Note the IP address (e.g., `142.93.60.29`).
 | `*.api.whoeverwants.com` | A | `142.93.60.29` | Preview API environments + webhook handler (`hooks.api.whoeverwants.com`) |
 | `whoeverwants.com` | CNAME | `cname.vercel-dns.com` (or Vercel IP) | Production frontend |
 
-### Latest droplet (`latest`, 67.207.94.93)
+### Latest droplet (`latest`, 104.248.61.202)
 
 | Record | Type | Value | Purpose |
 |--------|------|-------|---------|
-| `api.latest.whoeverwants.com` | A | `67.207.94.93` | Latest-tier API |
-| `hooks.api.latest.whoeverwants.com` | A | `67.207.94.93` | Latest-tier GitHub webhook handler |
+| `api.latest.whoeverwants.com` | A | `104.248.61.202` | Latest-tier API |
+| `hooks.api.latest.whoeverwants.com` | A | `104.248.61.202` | Latest-tier GitHub webhook handler |
 | `latest.whoeverwants.com` | CNAME | `cname.vercel-dns.com` | Latest-tier frontend (Vercel alias) |
 
 ### Mac mini dev box

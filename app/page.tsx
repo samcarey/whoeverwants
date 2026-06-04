@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { GroupSummary, Poll } from "@/lib/types";
 import { getCachedEmptyGroups, getMyGroups } from "@/lib/simpleQuestionQueries";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
@@ -199,19 +199,28 @@ export default function Home() {
     }
   }, [fontSize, displayedPhrase]);
 
-  // Fetch questions
-  useEffect(() => {
-    async function fetchQuestions() {
-      try {
-        // Only show the spinner when there's no cached data to render —
-        // otherwise mounting home (e.g. after a swipe-back from a group)
-        // would flash the GroupList off-screen for one render cycle while
-        // the refetch round-trips, then flash it back when the same data
-        // returns from the cache-warmed endpoint.
-        const hasCached = initialPolls.length > 0 || initialEmptyGroups.length > 0;
-        if (!hasCached) setLoading(true);
-        setError(null);
+  // Fetch the caller's groups, retrying on transient failures. Cold-launch
+  // (esp. the iOS WebView) routinely fires this before the network path is
+  // fully up, so a single attempt would turn a sub-second blip into a
+  // permanent dead-end error card with no recovery. Back off a few times
+  // before surfacing an error, and expose `fetchQuestions` so the error
+  // card's "Try again" button can re-run it.
+  const fetchQuestions = useCallback(async (opts?: { isRetry?: boolean }) => {
+    // Only show the spinner when there's no cached data to render —
+    // otherwise mounting home (e.g. after a swipe-back from a group) would
+    // flash the GroupList off-screen for one render cycle while the refetch
+    // round-trips, then flash it back when the same data returns from the
+    // cache-warmed endpoint. A manual retry always shows feedback.
+    const hasCached = initialPolls.length > 0 || initialEmptyGroups.length > 0;
+    if (!hasCached || opts?.isRetry) setLoading(true);
+    setError(null);
 
+    // Delays before attempts 2/3/4 — attempt 1 fires immediately.
+    const retryDelaysMs = [500, 1000, 2000];
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+      try {
         // One round-trip pair — the server returns every group the caller
         // is a member of (populated + empty), with results inline.
         // Membership (`group_members`) is the single source of truth.
@@ -228,16 +237,24 @@ export default function Home() {
             ? prev
             : nextEmptyGroups,
         );
-      } catch (error) {
-        console.error("Unexpected error:", error);
-        setError("An unexpected error occurred");
-      } finally {
         setLoading(false);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < retryDelaysMs.length) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
+        }
       }
     }
 
+    console.error("Unexpected error:", lastError);
+    setError("Couldn't load your groups. Check your connection and try again.");
+    setLoading(false);
+  }, [initialPolls, initialEmptyGroups]);
+
+  useEffect(() => {
     fetchQuestions();
-  }, []);
+  }, [fetchQuestions]);
 
   // Live-refresh the polls list on poll creation. User submits from /g
   // (empty placeholder), router.replace lands them on /g/<short_id>, and
@@ -279,7 +296,14 @@ export default function Home() {
 
       {error && (
         <div className="p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-center">
-          {error}
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={() => fetchQuestions({ isRetry: true })}
+            className="mt-3 inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
+          >
+            Try again
+          </button>
         </div>
       )}
 
