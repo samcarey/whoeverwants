@@ -223,6 +223,26 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // tab button handlers below for why switching happens on touchstart.
   const tabTouchHandledRef = useRef(false);
 
+  // TEMP DIAGNOSTIC: distinguish a tap that lands DURING active momentum scroll
+  // from one after the scroll has stopped, and compare what a raw document
+  // capture listener sees vs the React synthetic handler. `sinceScrollMs` small
+  // (~<150ms) at touchstart ⇒ the tap landed mid-scroll.
+  useEffect(() => {
+    let lastScroll = 0;
+    const onScroll = () => { lastScroll = Date.now(); };
+    const onTouch = (e: TouchEvent) => {
+      const t = e.target as HTMLElement | null;
+      const tabId = t?.closest?.("[data-tabtap]")?.getAttribute("data-tabtap") ?? "none";
+      console.log(`[SCROLLTAP] doc-touchstart tab=${tabId} sinceScrollMs=${Date.now() - lastScroll} y=${Math.round(window.scrollY)}`);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
+    document.addEventListener("touchstart", onTouch, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll, { capture: true } as EventListenerOptions);
+      document.removeEventListener("touchstart", onTouch, { capture: true } as EventListenerOptions);
+    };
+  }, []);
+
   // Phase 5b: poll-level mutations (close/reopen/cutoff) update the
   // polls array; question mutations (forget) update the questions array.
   const patchGroupPolls = useRef(
@@ -2088,18 +2108,14 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                   <button
                     key={tab.id}
                     type="button"
+                    data-tabtap={tab.id}
                     onTouchStart={() => {
-                      // Switch on the touch that LANDS, not the one that lifts.
-                      // On iOS the first tap during a momentum scroll is consumed
-                      // to STOP the scroll: it delivers pointerdown/touchstart/
-                      // touchend but NO `click`. Switching on touchstart (verified
-                      // to fire on that scroll-stopping tap) makes one tap always
-                      // switch. The ref suppresses the trailing synthetic click on
-                      // a normal tap so it doesn't redundantly re-fire setState.
+                      console.log(`[SCROLLTAP] react-touchstart ${tab.id}`);
                       tabTouchHandledRef.current = true;
                       setSelectedTab(tab.id);
                     }}
                     onClick={() => {
+                      console.log(`[SCROLLTAP] react-click ${tab.id}`);
                       if (tabTouchHandledRef.current) {
                         tabTouchHandledRef.current = false;
                         return;
