@@ -1761,11 +1761,9 @@ export function CreateQuestionContent() {
   // their hint is rarely seen — but keep it accurate for the cleared-title
   // case.)
   const titlePreviewHint =
-    category === 'yes_no'
-      ? "Enter your yes/no question"
-      : category === 'limited_supply'
-        ? "Describe what's available"
-        : "Enter a Category, Context, and/or Options";
+    category === 'yes_no' || category === 'limited_supply'
+      ? "Enter a title"
+      : "Enter a Category, Context, and/or Options";
 
   const titleField = (
     <div className="flex items-center justify-between gap-3 h-12">
