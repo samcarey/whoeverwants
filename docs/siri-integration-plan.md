@@ -141,7 +141,14 @@ What shipped:
   `Bundle.main.bundleIdentifier`: prod → `whoeverwants.com`, canary → `latest...`).
   `WhoeverWantsShortcuts: AppShortcutsProvider` exposes the phrases "Create a poll in
   WhoeverWants" / "Start a poll…" / "Ask a question…". Both types are
-  `@available(iOS 16.0, *)` (deployment floor is iOS 15). `import AppIntents` added.
+  `@available(iOS 18.0, *)` — **not 16** — because `OpenURLIntent` (the loopback-correct
+  opener for the app's own universal link) is iOS 18+. App Intents themselves are 16+,
+  but the pre-18 alternatives are worse (`UIApplication.open` of your own universal link
+  from within the app opens Safari; a custom scheme adds Info.plist + CI + JS surface).
+  The shortcut is additive, so iOS 16–17 users just don't see it. (CI caught the original
+  iOS-16 gate: the archive failed with "'OpenURLIntent' is only available in iOS 18.0 or
+  newer".) If broader reach is wanted later, a custom URL scheme is the documented
+  follow-up. `import AppIntents` added.
 - **Web (`app/create-poll/page.tsx`):** reads `?title=` / `?category=` / `?create=`;
   a new effect (mirroring `?duplicate=` / `?voteFromSuggestion=`) opens the create modal,
   presets the spoken text as a user-authored title (`setIsAutoTitle(false)` so the

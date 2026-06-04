@@ -202,11 +202,19 @@ public class AppBadgePlugin: CAPPlugin, CAPBridgedPlugin {
 // Colocated in AppDelegate.swift for the same reason the plugins are: a new
 // .swift file means hand-patching project.pbxproj in the headless CI build.
 // `AppShortcutsProvider` + `AppIntent` are auto-discovered by iOS at build/run
-// time (no Info.plist key, no portal capability, no pbxproj change). App
-// Intents require iOS 16+, so both types are `@available`-gated; the existing
-// deployment floor is iOS 15, but the rest of the app already gates iOS-16-only
-// behavior the same way (ClipboardUrlPlugin / AppBadgePlugin).
-@available(iOS 16.0, *)
+// time (no Info.plist key, no portal capability, no pbxproj change).
+//
+// Availability: gated at iOS 18 because `OpenURLIntent` — the loopback-correct
+// way for an App Intent to open the app's OWN universal link — is iOS 18+. App
+// Intents themselves are iOS 16+, but the pre-18 alternatives are worse here
+// (`UIApplication.open` of your own universal link from within the app opens
+// Safari rather than looping back; a custom URL scheme would add Info.plist +
+// CI + JS-routing surface). The shortcut is purely additive, so iOS 16–17 users
+// simply don't see it. The deployment floor is iOS 15; the rest of the app
+// gates iOS-16-only behavior the same `@available` way (Clipboard/AppBadge).
+// If broader reach is wanted later, switch to a custom URL scheme (documented
+// follow-up in docs/siri-integration-plan.md).
+@available(iOS 18.0, *)
 struct CreatePollIntent: AppIntent {
     static var title: LocalizedStringResource = "Create a poll"
     // Foreground the app; creation happens in the WebView, not natively.
@@ -247,7 +255,7 @@ struct CreatePollIntent: AppIntent {
     }
 }
 
-@available(iOS 16.0, *)
+@available(iOS 18.0, *)
 struct WhoeverWantsShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
