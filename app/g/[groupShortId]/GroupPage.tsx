@@ -218,6 +218,14 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // Gap 1: the active follow/ignore tab. null = follow the default (To Do when
   // any, else New); a user tap pins it. Reset on group change (key remount).
   const [selectedTab, setSelectedTab] = useState<PollTab | null>(null);
+  // Tracks an in-progress touch on a tab so we can switch on `touchend` rather
+  // than waiting for a synthetic `click`. On iOS the first touch during a
+  // momentum scroll is consumed to STOP the scroll and never produces a click,
+  // so an onClick-only tab needed a second tap. `touchend` still fires on that
+  // first tap, so switching there makes one tap always switch. `tabTouchRef`
+  // holds the start point + a moved flag; a tap (no significant move) switches
+  // and suppresses the trailing synthetic click to avoid a double-fire.
+  const tabTouchRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
 
   // Phase 5b: poll-level mutations (close/reopen/cutoff) update the
   // polls array; question mutations (forget) update the questions array.
@@ -2084,6 +2092,30 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                   <button
                     key={tab.id}
                     type="button"
+                    onTouchStart={(e) => {
+                      const t = e.touches[0];
+                      tabTouchRef.current = { x: t.clientX, y: t.clientY, moved: false };
+                    }}
+                    onTouchMove={(e) => {
+                      const start = tabTouchRef.current;
+                      if (!start) return;
+                      const t = e.touches[0];
+                      if (
+                        Math.abs(t.clientX - start.x) > 10 ||
+                        Math.abs(t.clientY - start.y) > 10
+                      ) {
+                        start.moved = true;
+                      }
+                    }}
+                    onTouchEnd={(e) => {
+                      const start = tabTouchRef.current;
+                      tabTouchRef.current = null;
+                      if (!start || start.moved) return;
+                      // Tap (not a scroll/drag): switch now and suppress the
+                      // trailing synthetic click so it doesn't double-fire.
+                      e.preventDefault();
+                      setSelectedTab(tab.id);
+                    }}
                     onClick={() => setSelectedTab(tab.id)}
                     aria-pressed={active}
                     className={`flex-1 rounded-full py-1.5 transition-colors ${
