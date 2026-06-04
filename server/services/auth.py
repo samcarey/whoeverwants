@@ -1014,8 +1014,9 @@ class UserProfile:
     providers: list[str]  # distinct provider names linked to this user
     created_at: datetime
     display_name: str | None  # account-tied display name (None when unset)
-    # Account-synced app-icon badge preferences (migration 121).
-    badge_todo_mode: bool = False
+    # Account-synced app-icon badge preferences (migration 121; default flipped
+    # to the to-do model in migration 139).
+    badge_todo_mode: bool = True
     badge_on_voting_open: bool = True
     badge_on_results: bool = True
     # Migration 123: per-account "stop nagging me to add a recovery method"

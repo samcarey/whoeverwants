@@ -3198,9 +3198,9 @@ Real-device feedback after shipping surfaced four refinements. All four (1–4) 
 
 ### The two badge meanings + the three switches
 
-Settings exposes three `SliderSwitch`es (account-synced — see storage below) under the **"Unread polls"** header. Sensible defaults chosen so a casual user who never touches Settings gets the "opening marks read" behavior:
+Settings exposes three `SliderSwitch`es (account-synced — see storage below) under the **"Unread polls"** header. **As of migration 139 the default is the to-do model** (the badge counts open, votable, not-yet-responded polls) — flipped from the original unread default per the owner's "iOS badges should count to-dos, not New" directive. Migration 139 also `UPDATE`d existing accounts (which all held the old `FALSE`) to the to-do model so the change is observable for current users; a user can switch back via the headline switch below.
 
-1. **`badge_todo_mode`** (default **OFF**). The headline switch — UI label **"Stay unread until I respond"** (the user's framing: "does viewing mark it read, or must I respond?"). The wire/DB field name stays `badge_todo_mode` (no migration); only the label changed.
+1. **`badge_todo_mode`** (default **ON**, migration 139; was OFF in migration 121). The headline switch — UI label **"Stay unread until I respond"** (the user's framing: "does viewing mark it read, or must I respond?"). The wire/DB field name stays `badge_todo_mode`; only the default + label evolved.
    - **OFF = opening marks read** (casual default): a poll is unread when it has *activity you haven't looked at*. **Opening its detail page clears it.** This is the "open the app, the number goes away" behavior casual users expect.
    - **ON = stay unread until I respond** (power users): a poll is unread while it's *open, votable, and you haven't voted/abstained*. **Only voting or abstaining clears it** — merely seeing it never does. Forces an explicit abstain rather than look-and-ignore.
 2. **`badge_on_voting_open`** (default **ON**). UI label **"Mark unread when voting opens"** — a prephase→voting transition re-lights a poll. **Applies to the opening-marks-read model only**; inert (and rendered disabled/grayed) when `badge_todo_mode` is ON, where unread is purely the open + un-responded set.
@@ -3229,8 +3229,8 @@ New polls always contribute (no switch) — in unread they're a never-opened pol
 
 ### Storage (per account, synced)
 
-- Authoritative location: `users.badge_todo_mode` / `users.badge_on_voting_open` / `users.badge_on_results` (BOOLEAN, defaults false/true/true). Surfaced on `UserSummary` (rides every sign-in response + `/api/auth/me`) and `SessionUser` (FE). Written via `POST /api/auth/me/badge-settings` (signed-in only). On sign-in the account values are authoritative; mirrored to a localStorage cache for the client-side badge resync.
-- **Anonymous fallback**: anonymous users have no `users` row, so their preference lives in localStorage only and shapes the **client-side** badge (web/PWA `setAppBadge`). Their **server push** badge uses the defaults (unread, both re-light ON) — once they sign in, the account settings apply to pushes too. Documented limitation, mirrors the display-name local↔account pattern.
+- Authoritative location: `users.badge_todo_mode` / `users.badge_on_voting_open` / `users.badge_on_results` (BOOLEAN, defaults **true**/true/true as of migration 139 — was false/true/true under migration 121). Surfaced on `UserSummary` (rides every sign-in response + `/api/auth/me`) and `SessionUser` (FE). Written via `POST /api/auth/me/badge-settings` (signed-in only). On sign-in the account values are authoritative; mirrored to a localStorage cache for the client-side badge resync. The `DEFAULT_BADGE_SETTINGS.todoMode` (FE), the `_badge_settings_for_browser` anonymous fallback + `get_badge_count` query default + the two `badge_todo_mode` request-model/dataclass defaults (server) all carry the matching `true` — flip them together if the default ever changes again.
+- **Anonymous fallback**: anonymous users have no `users` row, so their preference lives in localStorage only and shapes the **client-side** badge (web/PWA `setAppBadge`). Their **server push** badge uses the defaults (to-do model; the re-light switches are unread-only so inert) — once they sign in, the account settings apply to pushes too. Documented limitation, mirrors the display-name local↔account pattern.
 
 ### Badge computation — where the number comes from
 

@@ -12,7 +12,7 @@
 import { getCachedSessionUser, getSessionToken } from "@/lib/session";
 
 export interface BadgeSettings {
-  /** OFF (default) = unread model; ON = to-do model. */
+  /** ON (default, migration 139) = to-do model; OFF = unread model. */
   todoMode: boolean;
   /** Unread-only: a prephase→voting transition re-lights the poll. */
   onVotingOpen: boolean;
@@ -21,7 +21,7 @@ export interface BadgeSettings {
 }
 
 export const DEFAULT_BADGE_SETTINGS: BadgeSettings = {
-  todoMode: false,
+  todoMode: true,
   onVotingOpen: true,
   onResults: true,
 };
@@ -62,7 +62,7 @@ function writeLocal(s: BadgeSettings): void {
 /**
  * The settings to act on right now. Account values win when signed in (they're
  * synced and authoritative); otherwise the localStorage copy; otherwise the
- * sensible defaults (unread, both re-lights on).
+ * sensible defaults (to-do model).
  */
 export function getEffectiveBadgeSettings(): BadgeSettings {
   const user = getCachedSessionUser();
