@@ -334,6 +334,15 @@ public class NativeIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
 // gates iOS-16-only behavior the same `@available` way (Clipboard/AppBadge).
 // If broader reach is wanted later, switch to a custom URL scheme (documented
 // follow-up in docs/siri-integration-plan.md).
+// Single source of truth for the per-tier bundle discriminator. The canary
+// build (`com.whoeverwants.app.latest`) loads/targets the `latest.` hosts; the
+// prod build (`com.whoeverwants.app`) the bare hosts. Mirrors CAP_ENV /
+// capacitor.config.ts. Used by both the Phase 1 deep-link host (FE) and the
+// Phase 3 headless API host.
+private func whoeverwantsIsCanaryBundle() -> Bool {
+    Bundle.main.bundleIdentifier == "com.whoeverwants.app.latest"
+}
+
 @available(iOS 18.0, *)
 struct CreatePollIntent: AppIntent {
     static var title: LocalizedStringResource = "Create a poll"
@@ -357,9 +366,7 @@ struct CreatePollIntent: AppIntent {
 
     static func createURL(prompt: String) -> URL {
         // Map the bundle id to the tier host (mirrors capacitor.config.ts).
-        let host = Bundle.main.bundleIdentifier == "com.whoeverwants.app.latest"
-            ? "latest.whoeverwants.com"
-            : "whoeverwants.com"
+        let host = whoeverwantsIsCanaryBundle() ? "latest.whoeverwants.com" : "whoeverwants.com"
         var components = URLComponents()
         components.scheme = "https"
         components.host = host
@@ -375,6 +382,162 @@ struct CreatePollIntent: AppIntent {
     }
 }
 
+// Phase 3 of docs/siri-integration-plan.md — HEADLESS poll creation.
+//
+// Unlike the Phase 1 deep-link intent (which foregrounds the app so the user
+// reviews + submits in the WebView), this intent creates the poll itself via a
+// native API call and the app NEVER opens. It reads the user's identity from the
+// Phase 2 Keychain bridge (`NativeIdentityKeychain`) and POSTs the same
+// cross-origin JSON request the WebView makes since the May 2026 CORS change —
+// byte-for-byte the same `POST /api/polls` with `Authorization: Bearer <token>`
+// + `X-Browser-Id`. Siri speaks a confirmation; the poll appears in the WebView
+// on the next foreground.
+//
+// Deliberately NO "open it?" affordance: the plan listed it as a "+", but the
+// hard acceptance criterion is "app un-launched", and the only way an App Intent
+// can open the app (`OpensIntent`) ALWAYS foregrounds it — which would defeat the
+// whole point. So this stays a pure ProvidesDialog result. If a tappable
+// (non-forced) open is wanted later, that's a snippet view, not OpensIntent.
+//
+// Gated at iOS 16 (App Intents' floor; no iOS-18 `OpenURLIntent` dependency here
+// since nothing opens). The iOS-18 AppShortcutsProvider below references it fine
+// (referencing a more-available type from a less-available context is allowed),
+// so the SPOKEN phrase surfaces on iOS 18+ while the intent itself is also
+// usable in the manual Shortcuts app on iOS 16–17.
+//
+// Colocated in AppDelegate.swift for the same reason everything else here is: a
+// new .swift file means hand-patching project.pbxproj in the headless CI build.
+// An App Intent is auto-discovered at build/run time — no pbxproj change, and
+// (since this is in-process, reading the plain Keychain) no App Group entitlement
+// / Apple Developer portal step. If a future revision moves headless creation to
+// a dedicated App Intents EXTENSION target, that DOES need pbxproj surgery + an
+// App-Group Keychain entitlement (see the NativeIdentityKeychain note above).
+
+// A graceful, Siri-speakable failure. Conforming to
+// CustomLocalizedStringResourceConvertible makes Siri read `message` aloud
+// instead of a generic "something went wrong", so signed-out / network / server
+// failures all surface a useful spoken sentence.
+@available(iOS 16.0, *)
+struct QuickPollError: Error, CustomLocalizedStringResourceConvertible {
+    let message: LocalizedStringResource
+    init(_ message: LocalizedStringResource) { self.message = message }
+    var localizedStringResource: LocalizedStringResource { message }
+}
+
+@available(iOS 16.0, *)
+enum QuickPollService {
+    struct Identity {
+        let token: String?      // bearer; optional (anonymous-but-named still works)
+        let browserId: String?  // X-Browser-Id; attributes to the auto-account
+        let name: String        // creator_name; the server REQUIRES this (non-blank)
+    }
+
+    // The display name is the ONLY hard server requirement: `POST /api/polls`
+    // runs `validate_user_name(creator_name)` and 400s on blank. The bearer token
+    // is optional — an anonymous-but-named user has a browser-keyed auto-minted
+    // account, exactly as when they create a poll in the app without signing in.
+    // So we gate on the NAME (mirroring the app: name-required, sign-in optional),
+    // not on the token. A fresh install with nothing bridged yet → nil → the
+    // intent speaks "set your name first".
+    static func loadIdentity() -> Identity? {
+        guard let name = NativeIdentityKeychain.get(NativeIdentityKeychain.nameAccount),
+              !name.isEmpty else { return nil }
+        let token = NativeIdentityKeychain.get(NativeIdentityKeychain.tokenAccount)
+        let browserId = NativeIdentityKeychain.get(NativeIdentityKeychain.browserIdAccount)
+        return Identity(token: token, browserId: browserId, name: name)
+    }
+
+    // Direct cross-origin API host (NOT the FE host the WebView loads), mirroring
+    // lib/api/_internal.ts: prod bundle → api.whoeverwants.com, canary bundle →
+    // api.latest.whoeverwants.com. FastAPI CORS is allow_origins=["*"],
+    // allow_credentials=False, so a native request (no Origin, X-Browser-Id as the
+    // identity header) is exactly the shape the browser sends.
+    static var apiBase: String {
+        whoeverwantsIsCanaryBundle()
+            ? "https://api.latest.whoeverwants.com"
+            : "https://api.whoeverwants.com"
+    }
+
+    // Returns the created poll's title (echoed back by the server, which may have
+    // normalized it). Throws a QuickPollError (spoken) on any failure.
+    static func createPoll(prompt: String, identity: Identity) async throws -> String {
+        guard let url = URL(string: apiBase + "/api/polls") else {
+            throw QuickPollError("I couldn't reach WhoeverWants. Try again in a moment.")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = identity.token, !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let browserId = identity.browserId, !browserId.isEmpty {
+            request.setValue(browserId, forHTTPHeaderField: "X-Browser-Id")
+        }
+
+        // Minimal single-question yes/no poll. The spoken prompt is BOTH the
+        // wrapper title and the question's `context` — mirroring exactly what the
+        // FE's `draftToQuestionParams` produces for a single yes_no draft (the
+        // typed prompt becomes the wrapper title, and rides as `context` too). No
+        // deadlines, no suggestion phase, no category: the deliberately minimal
+        // native slice the plan calls for (don't reimplement the whole request).
+        let body: [String: Any] = [
+            "creator_name": identity.name,
+            "title": prompt,
+            "questions": [["question_type": "yes_no", "context": prompt]],
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuickPollError("I couldn't reach WhoeverWants. Try again in a moment.")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            // A stale bearer normally degrades to an anonymous (browser-keyed)
+            // create rather than 401 — but handle 401 defensively. Everything else
+            // (incl. a 400 from a name the server rejects) → open-the-app advice.
+            if http.statusCode == 401 {
+                throw QuickPollError("Your sign-in expired. Open WhoeverWants to sign in again.")
+            }
+            throw QuickPollError("WhoeverWants couldn't create the poll. Open the app and try there.")
+        }
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let title = obj["title"] as? String, !title.isEmpty {
+            return title
+        }
+        return prompt
+    }
+}
+
+@available(iOS 16.0, *)
+struct QuickPollIntent: AppIntent {
+    static var title: LocalizedStringResource = "Quick poll"
+    static var description = IntentDescription(
+        "Create a yes/no poll without opening the app. Siri reads back a confirmation; open WhoeverWants to see and share it."
+    )
+    // NOT openAppWhenRun — this runs headless; the app stays closed.
+
+    @Parameter(
+        title: "Poll question",
+        description: "What the poll should ask",
+        requestValueDialog: "What should the poll ask?"
+    )
+    var prompt: String
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw QuickPollError("I didn't catch a question for the poll.")
+        }
+        guard let identity = QuickPollService.loadIdentity() else {
+            // No bridged name → either a fresh install or a user who hasn't set
+            // their name. The server requires creator_name, so guide them in.
+            throw QuickPollError("Open WhoeverWants and set your name first, then try again.")
+        }
+        let title = try await QuickPollService.createPoll(prompt: trimmed, identity: identity)
+        return .result(dialog: IntentDialog("Created your poll: \(title)"))
+    }
+}
+
 @available(iOS 18.0, *)
 struct WhoeverWantsShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
@@ -387,6 +550,16 @@ struct WhoeverWantsShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Create a poll",
             systemImageName: "plus.bubble"
+        )
+        AppShortcut(
+            intent: QuickPollIntent(),
+            phrases: [
+                "Quick poll in \(.applicationName)",
+                "Quickly create a poll in \(.applicationName)",
+                "Post a poll in \(.applicationName)"
+            ],
+            shortTitle: "Quick poll",
+            systemImageName: "bolt.fill"
         )
     }
 }
