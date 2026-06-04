@@ -490,6 +490,13 @@ enum QuickPollService {
             : "https://api.whoeverwants.com"
     }
 
+    // FE host (the WebView's origin) to open after a successful headless create,
+    // so the user sees the new poll. Mirrors capacitor.config.ts host mapping.
+    static func feHomeURL() -> URL {
+        let host = whoeverwantsIsCanaryBundle() ? "latest.whoeverwants.com" : "whoeverwants.com"
+        return URL(string: "https://\(host)/") ?? URL(string: "https://whoeverwants.com/")!
+    }
+
     // Returns the created poll's title (echoed back by the server, which may have
     // normalized it). Throws a QuickPollError (spoken) on any failure.
     static func createPoll(prompt: String, identity: Identity) async throws -> String {
@@ -540,13 +547,17 @@ enum QuickPollService {
     }
 }
 
-@available(iOS 16.0, *)
+// iOS 18+ (was 16): the never-dead-end fallback returns an OpenURLIntent, which
+// is iOS 18-only. The spoken phrase already requires iOS 18 (AppShortcuts), so
+// the only thing lost is manual Shortcuts-app use on iOS 16–17 — acceptable.
+@available(iOS 18.0, *)
 struct QuickPollIntent: AppIntent {
     static var title: LocalizedStringResource = "Quick poll"
     static var description = IntentDescription(
-        "Create a yes/no poll without opening the app. You'll hear a spoken confirmation; open WhoeverWants to see and share it."
+        "Create a poll by voice. WhoeverWants makes it in the background when it can; otherwise it opens prefilled so you can finish in a tap."
     )
-    // NOT openAppWhenRun — this runs headless; the app stays closed.
+    // NOT openAppWhenRun — the headless-success path stays closed. The fallback
+    // opens the app via the OpenURLIntent it returns, not via openAppWhenRun.
 
     @Parameter(
         title: "Poll question",
@@ -555,18 +566,30 @@ struct QuickPollIntent: AppIntent {
     )
     var prompt: String
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw QuickPollError("I didn't catch a question for the poll.")
         }
-        guard let identity = QuickPollService.loadIdentity() else {
-            // No bridged name → either a fresh install or a user who hasn't set
-            // their name. The server requires creator_name, so guide them in.
-            throw QuickPollError("Open WhoeverWants and set your name first, then try again.")
+        // Try headless creation. On ANY failure — the identity bridge isn't
+        // reliably readable from this intent's (separate) process, or network /
+        // server trouble — DON'T dead-end: fall back to the Phase 1 deep link,
+        // opening the app to the create form with the prompt prefilled, so the
+        // user always gets their poll. Swift's opaque return type requires every
+        // return to share one underlying type, so BOTH branches return an
+        // OpenURLIntent-based result (you cannot mix `.result(dialog:)` with
+        // `.result(opensIntent:dialog:)` under one `some` return).
+        if let identity = QuickPollService.loadIdentity(),
+           let title = try? await QuickPollService.createPoll(prompt: trimmed, identity: identity) {
+            return .result(
+                opensIntent: OpenURLIntent(QuickPollService.feHomeURL()),
+                dialog: IntentDialog("Created your poll: \(title). Opening WhoeverWants.")
+            )
         }
-        let title = try await QuickPollService.createPoll(prompt: trimmed, identity: identity)
-        return .result(dialog: IntentDialog("Created your poll: \(title)"))
+        return .result(
+            opensIntent: OpenURLIntent(CreatePollIntent.createURL(prompt: trimmed)),
+            dialog: IntentDialog("Let's finish your poll in WhoeverWants.")
+        )
     }
 }
 
