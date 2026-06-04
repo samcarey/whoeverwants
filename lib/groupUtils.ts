@@ -169,6 +169,14 @@ export interface Group {
   /** True iff the group has no polls yet — distinguishes the brand-new
    *  empty-group case from a normal group with `polls.length === 1`. */
   isEmpty: boolean;
+  /** True iff the group is `isEmpty` from the viewer's perspective (no
+   *  visible polls) BUT the group genuinely has polls on the server — every
+   *  one hidden by the closed-before-join filter (a late joiner to a group
+   *  whose polls all closed before they joined). Drives showing the
+   *  To Do/New/Old tabs + empty messages instead of a blank page or the
+   *  brand-new-group create flow. Always false for populated groups, and
+   *  false for genuinely-empty new groups. */
+  hasHiddenPolls: boolean;
   /** The latest question in the group (most recently created). Null for
    *  empty groups. */
   latestQuestion: Question | null;
@@ -410,6 +418,7 @@ function buildGroupFromPolls(
     unvotedDeadlineKind,
     latestActivityMs,
     isEmpty: false,
+    hasHiddenPolls: false,
     latestQuestion: questions[questions.length - 1],
     latestPoll,
     anonymousRespondentCount,
@@ -451,6 +460,7 @@ export function buildEmptyGroup(summary: GroupSummary): Group {
     unvotedDeadlineKind: undefined,
     latestActivityMs: createdMs,
     isEmpty: true,
+    hasHiddenPolls: summary.has_polls ?? false,
     latestQuestion: null,
     latestPoll: null,
     anonymousRespondentCount: 0,

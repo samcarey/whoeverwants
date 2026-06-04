@@ -199,6 +199,15 @@ export interface GroupSummary {
   // in — null for anonymous-created groups (which are always public).
   privacy?: string | null;
   creator_user_id?: string | null;
+  // True iff the group has any polls at all, regardless of the caller's
+  // visibility. The closed-before-join filter can hide every poll from a
+  // late joiner, so `/by-route-id` returns [] (and the FE treats the group
+  // as "empty") even though the group genuinely has history. This flag lets
+  // the group page distinguish a brand-new empty group (create-first-poll
+  // flow) from one whose polls are all hidden pre-join (show the tabs +
+  // empty messages). Only set by `/summary`; defaults false/undefined
+  // elsewhere.
+  has_polls?: boolean | null;
 }
 
 // Poll wrapper. Mirrors PollResponse in server/models.py.

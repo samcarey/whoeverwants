@@ -1949,6 +1949,13 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   const cardsTransformOffset =
     overlayCardsOffset ?? (overlayShouldBottomPin ? overlayBottomOffset : undefined);
 
+  // Show the To Do/New/Old follow tabs whenever the group has polls — either
+  // visible ones, or polls that are all hidden from this viewer pre-join
+  // (`hasHiddenPolls`), so a late joiner to an all-closed group sees the tabs
+  // + an empty message instead of a blank page. A genuinely-new empty group
+  // (no polls at all) keeps the create-first-poll flow with no tabs.
+  const showFollowTabs = groupedGroupQuestions.length > 0 || group.hasHiddenPolls;
+
   return (
     <>
       <GroupHeader
@@ -2055,8 +2062,12 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
             never in the steady-state real route. If that transform ever becomes
             persistent, this would stick to the transformed box instead of the
             viewport; hoist the control out of the transformed wrapper then (it's
-            page chrome, not card content). */}
-        {groupedGroupQuestions.length > 0 && (
+            page chrome, not card content).
+            Also shown when the group has polls that are all hidden from this
+            viewer by the closed-before-join filter (`hasHiddenPolls`) — so a
+            late joiner to an all-closed group sees the tabs + an empty message
+            instead of a blank page. */}
+        {showFollowTabs && (
           <div
             ref={filterSwitchRef}
             className="sticky z-[5] bg-[var(--background)] px-2 pt-1 pb-2"
@@ -2161,15 +2172,16 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
               />
             );
           })}
-        {/* Gap 1: empty-state when the active tab has no polls (the group has
-            polls, just none in this filter). */}
-        {groupedGroupQuestions.length > 0 && visibleGroupedQuestions.length === 0 && (
+        {/* Gap 1: short empty-state when the active tab has no polls — either
+            because the group's polls are all in other tabs, or because every
+            poll is hidden from this viewer pre-join (`hasHiddenPolls`). */}
+        {showFollowTabs && visibleGroupedQuestions.length === 0 && (
           <div className="px-4 py-10 text-center text-sm text-gray-400 dark:text-gray-500">
             {effectiveTab === "todo"
-              ? "Nothing needs you right now — you're all caught up."
+              ? "No to-dos"
               : effectiveTab === "old"
-              ? "No ignored polls. Tap the ✕ on a poll to file it here."
-              : "No followed polls."}
+              ? "Nothing ignored"
+              : "Nothing new"}
           </div>
         )}
       </div>

@@ -46,6 +46,7 @@ function toGroupSummary(data: any): GroupSummary {
     image_updated_at: data.image_updated_at ?? null,
     privacy: data.privacy ?? null,
     creator_user_id: data.creator_user_id ?? null,
+    has_polls: data.has_polls ?? false,
   };
 }
 
