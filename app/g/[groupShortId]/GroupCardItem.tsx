@@ -148,26 +148,10 @@ export interface GroupCardItemProps {
   onAbstain: (pollId: string, subQuestions: Question[]) => void;
 }
 
-/** Horizontal left→right arrow drawn in the gap between title and result on
- *  the one-line layout. */
-function HorizontalArrow({ className }: { className?: string }) {
-  return (
-    <svg
-      className={`text-gray-400 dark:text-gray-500 ${className ?? ""}`}
-      width="26"
-      height="14"
-      viewBox="0 0 26 14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M1 7 H23 M17 2 L23 7 L17 12" />
-    </svg>
-  );
-}
+/** Width reserved for the leader between title and result in the hidden
+ *  one-line fit probe (≈ the visible LeaderLine's gap: ~26px arrow + 16px
+ *  margins). The visible leader is a flex-1 LeaderLine, not this. */
+const ONE_LINE_LEADER_PROBE_WIDTH = 42;
 
 /** A self-measuring leader pointing at a result. The WHOLE arrow — the optional
  *  vertical drop (`bent`), the horizontal run, and the arrowhead — is a SINGLE
@@ -365,7 +349,7 @@ function TitleResultRow({
           >
             <span className="mr-1.5">{icon}</span>
             <span>{title}</span>
-            <HorizontalArrow className="mx-2" />
+            <span className="inline-block" style={{ width: ONE_LINE_LEADER_PROBE_WIDTH }} />
             <span className="font-semibold">{results[0].node}</span>
           </div>
           {/* Title wrapping at 90% with the SAME hang-indent flex layout as the
@@ -755,16 +739,21 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     return null;
   };
 
-  // One result entry per sub-question that has something to show. Single-
-  // question polls yield 0 or 1; multi-question polls can yield several.
-  const resultEntries: { id: string; node: React.ReactNode }[] = [];
+  // The plain result preview per sub-question that has something to show,
+  // computed ONCE here and consumed by both the single- and multi-question
+  // render branches (so plainResultForQuestion isn't evaluated twice).
+  const resultNodes = new Map<string, React.ReactNode>();
   if (!isPlaceholder) {
     for (const sp of group.subQuestions) {
       const node = plainResultForQuestion(sp);
-      if (node) resultEntries.push({ id: sp.id, node });
+      if (node) resultNodes.set(sp.id, node);
     }
   }
-  const hasResult = resultEntries.length > 0;
+  const hasResult = resultNodes.size > 0;
+  // Single-question polls feed their (0 or 1) result straight into one row.
+  const resultEntries = group.subQuestions
+    .filter((sp) => resultNodes.has(sp.id))
+    .map((sp) => ({ id: sp.id, node: resultNodes.get(sp.id) }));
 
   // Engagement counts. `views` (= viewed_total) shows in the bottom-LEFT after
   // author·date; `voted` + `suggestions` show in the bottom-RIGHT corner with
@@ -971,7 +960,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             </h3>
             <div className="mt-1.5 space-y-1.5 pl-[8.4px]">
               {group.subQuestions.map((sp) => {
-                const node = isPlaceholder ? null : plainResultForQuestion(sp);
+                const node = resultNodes.get(sp.id);
                 return (
                   <TitleResultRow
                     key={sp.id}
