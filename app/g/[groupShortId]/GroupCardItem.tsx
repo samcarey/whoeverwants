@@ -283,16 +283,16 @@ function TitleResultRow({
       )}
 
       {single && oneLine ? (
-        // One line: title left · arrow centered in the gap · result right.
+        // One line: title left, then the result pushed right with the
+        // horizontal arrow immediately before it.
         <div className="flex items-center min-w-0">
           <h3 className="flex items-center font-medium text-lg leading-tight text-gray-900 dark:text-white whitespace-nowrap">
             {titleInner}
           </h3>
-          <div className="flex-1 flex justify-center px-2">
+          <div className="flex-1 min-w-0" />
+          <div className="shrink-0 flex items-center gap-1.5 text-lg leading-tight whitespace-nowrap">
             <HorizontalArrow />
-          </div>
-          <div className="shrink-0 text-lg leading-tight whitespace-nowrap">
-            {results[0].node}
+            <span>{results[0].node}</span>
           </div>
         </div>
       ) : (
