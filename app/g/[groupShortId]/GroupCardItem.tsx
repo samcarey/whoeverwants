@@ -213,12 +213,12 @@ function LeaderLine({ className, bent = false }: { className?: string; bent?: bo
   return (
     <div
       ref={ref}
-      className={`text-gray-400 dark:text-gray-500 ${className ?? ""}`}
+      className={`min-w-0 text-gray-400 dark:text-gray-500 ${className ?? ""}`}
       style={{ height }}
       aria-hidden="true"
     >
       {w > 0 && (
-        <svg width={w} height={height} className="overflow-visible block">
+        <svg width="100%" height={height} className="overflow-visible block">
           <path
             d={d}
             fill="none"
