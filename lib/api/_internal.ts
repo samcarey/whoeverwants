@@ -260,6 +260,7 @@ export function toQuestionResults(data: any): Results {
     included_slots: data.included_slots ?? undefined,
     like_counts: data.like_counts ?? undefined,
     dislike_counts: data.dislike_counts ?? undefined,
+    attendance_counts: data.attendance_counts ?? undefined,
     time_event_cancelled: data.time_event_cancelled ?? undefined,
     supply_count: data.supply_count ?? undefined,
     secured_count: data.secured_count ?? undefined,

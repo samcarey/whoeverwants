@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { QuestionResults, OptionsMetadata } from "@/lib/types";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
+import ShowtimeBubbles, { ShowtimeSlot } from "./ShowtimeBubbles";
 import CollapsibleFadeSection from "./CollapsibleFadeSection";
 import OutcomeInfoButton from "./OutcomeInfoButton";
 import { outcomeExplainer } from "@/lib/outcomeExplainer";
@@ -59,6 +60,10 @@ export default function QuestionResultsDisplay({ results, isQuestionClosed, user
 
   if (results.question_type === 'time') {
     return <TimeResults results={results} isQuestionClosed={isQuestionClosed} />;
+  }
+
+  if (results.question_type === 'showtime') {
+    return <ShowtimeResults results={results} isQuestionClosed={isQuestionClosed} optionsMetadata={optionsMetadata} />;
   }
 
   // limited_supply has no QuestionResultsDisplay branch: the group card uses
@@ -482,6 +487,93 @@ function CollapsibleStartOptions({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Full results for a showtime question (closed): the winning showtime with
+ *  its rich metadata + attendance/want counts + a ticketing link, then the
+ *  full showtime grid (disabled) with each option's want/can't counts. */
+function ShowtimeResults({
+  results,
+  isQuestionClosed,
+  optionsMetadata,
+}: {
+  results: QuestionResults;
+  isQuestionClosed?: boolean;
+  optionsMetadata?: OptionsMetadata;
+}) {
+  const options = results.options ?? [];
+  const winner = results.winner;
+  const attendance = results.attendance_counts ?? {};
+  const likeCounts = results.like_counts ?? {};
+
+  const slots: ShowtimeSlot[] = useMemo(
+    () =>
+      options.map((key) => {
+        const m = (optionsMetadata?.[key] ?? {}) as Record<string, unknown>;
+        const { h, m: mm } = parseSlotStart(key);
+        return {
+          key,
+          time: `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,
+          cinema_name: (m.cinema_name as string) ?? null,
+          format: (m.format as string) ?? null,
+          seats_left: typeof m.seats_left === "number" ? (m.seats_left as number) : null,
+        };
+      }),
+    [options, optionsMetadata],
+  );
+
+  if (!isQuestionClosed || options.length === 0) return null;
+
+  const winnerMeta = winner ? ((optionsMetadata?.[winner] ?? {}) as Record<string, unknown>) : {};
+  const salesUrl = winnerMeta.sales_url as string | undefined;
+
+  return (
+    <div className="space-y-4">
+      {winner && (
+        <div className="text-center">
+          <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1 inline-flex items-center gap-1">
+            Winning Showtime
+            <OutcomeInfoButton text={outcomeShowtimeExplanation(results)} align="center" />
+          </p>
+          <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            {formatTimeSlot(winner)}
+          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            {[winnerMeta.cinema_name as string, winnerMeta.format as string].filter(Boolean).join(" · ")}
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            {attendance[winner] ?? 0} can attend · {likeCounts[winner] ?? 0} want
+          </p>
+          {salesUrl && (
+            <a
+              href={salesUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block rounded-full bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 active:scale-95"
+            >
+              Get tickets →
+            </a>
+          )}
+        </div>
+      )}
+      <ShowtimeBubbles
+        mode="vote"
+        slots={slots}
+        likedKeys={Object.entries(likeCounts).filter(([, c]) => c > 0).map(([k]) => k)}
+        dislikedKeys={[]}
+        onToggle={() => {}}
+        disabled
+      />
+    </div>
+  );
+}
+
+function outcomeShowtimeExplanation(results: QuestionResults): string {
+  const winner = results.winner;
+  if (!winner) return "No showtime got enough support.";
+  const attend = results.attendance_counts?.[winner] ?? 0;
+  const want = results.like_counts?.[winner] ?? 0;
+  return `This showtime wins because it has the fewest people who can't attend (${attend} can come), then the most who want it (${want} want).`;
+}
+
 // Compact single-line previews rendered in the lower-right of the group
 // card's compact header when collapsed. Empty states render below the card in
 // the respondents row, so these all return null when there's no content.
@@ -667,6 +759,45 @@ export function CompactSupplyPreview({
     <div className="flex items-center justify-end gap-2 min-w-0">
       <span className={`${PILL_CLASS} ${isQuestionClosed || isFull ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}>
         {label}
+      </span>
+    </div>
+  );
+}
+
+/** Compact group-card pill for a showtime question: the winning showtime
+ *  (compact time), green when closed / blue when open. Null until a winner
+ *  emerges. */
+export function CompactShowtimePreview({
+  results,
+  isQuestionClosed,
+  categoryIcon,
+  plain,
+}: {
+  results: QuestionResults;
+  isQuestionClosed?: boolean;
+  categoryIcon?: string;
+  plain?: boolean;
+}) {
+  const winner = results.winner;
+  if ((results.total_votes || 0) === 0 || !winner) return null;
+  if (plain) {
+    return (
+      <span
+        className={`${PLAIN_RESULT_CLASS} ${isQuestionClosed ? PLAIN_COLOR_CLOSED : PLAIN_COLOR_OPEN}`}
+        title={formatTimeSlot(winner)}
+      >
+        {formatSlotCompact(winner)}
+      </span>
+    );
+  }
+  return (
+    <div className="flex items-center justify-end gap-2 min-w-0">
+      {categoryIcon && <span className="text-xs shrink-0">{categoryIcon}</span>}
+      <span
+        className={`${PILL_CLASS} ${isQuestionClosed ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}
+        title={formatTimeSlot(winner)}
+      >
+        {formatSlotCompact(winner)}
       </span>
     </div>
   );

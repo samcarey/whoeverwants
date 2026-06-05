@@ -47,6 +47,9 @@ function apiRewriteRules(dest: string, host?: string) {
     ['/api/auth/', '/api/auth'],
     ['/api/auth/:path*', '/api/auth/:path*'],
     ['/api/search/:path*', '/api/search/:path*'],
+    ['/api/showtimes', '/api/showtimes'],
+    ['/api/showtimes/', '/api/showtimes'],
+    ['/api/showtimes/:path*', '/api/showtimes/:path*'],
     ['/api/client-logs', '/api/client-logs'],
     ['/api/client-logs/', '/api/client-logs'],
   ];
