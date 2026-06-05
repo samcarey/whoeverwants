@@ -11,8 +11,10 @@
  *
  * Tapping a row slides to the poll's detail page at
  * `/g/<group>/p/<pollShort>`; long-press still opens the FollowUpModal.
- * The swipe-to-abstain gesture and creator avatar were retired with the
- * card chrome — the avatar lives only on the poll detail page now.
+ * Swiping a row LEFT past a threshold toggles the viewer's follow state
+ * (New↔Old) — it replaced the inline ✕/+ button. The legacy
+ * swipe-to-abstain gesture and creator avatar were retired with the card
+ * chrome — the avatar lives only on the poll detail page now.
  *
  * See CLAUDE.md → "Group-Page Layout Stability" for the rationale and the
  * subscription pattern used for high-frequency state.
@@ -56,6 +58,14 @@ export type GroupCardGroup = {
  *  div, and the top-of-list sentinel divider in GroupPage. Keep all three
  *  in lockstep so adjacent dividers don't visually diverge. */
 export const ROW_DIVIDER_CLASS = "border-gray-300 dark:border-gray-600";
+
+/** Swipe-left-to-toggle-follow geometry. A leftward drag past
+ *  SWIPE_TOGGLE_THRESHOLD flips the poll between New and Old (replaces the
+ *  inline ✕/+ button). Clamped to SWIPE_MAX so the card can't be yanked off
+ *  the screen. Leftward only (dx ≤ 0) so it never collides with the page's
+ *  rightward swipe-back gesture (`useSwipeBackGesture` ignores dx ≤ 0). */
+const SWIPE_TOGGLE_THRESHOLD = 75;
+const SWIPE_MAX = 130;
 
 export interface GroupCardItemProps {
   // Identity / data ---------------------------------------------------------
@@ -137,6 +147,24 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   // filter, respondent empty-text, includeSelf gate).
   const inSuggestionPhase = isInSuggestionPhase(question, wrapperPrephaseDeadline);
 
+  // Swipe-left-to-toggle-follow state (replaces the inline ✕/+ button).
+  // `dragX` (≤ 0) is the live leftward offset of the row content; the action
+  // backdrop is revealed in the gap on the right. `dragXRef` mirrors it so
+  // handleTouchEnd reads the final offset without a stale closure. `axisRef`
+  // locks the gesture to horizontal vs vertical on first significant motion;
+  // `swipingRef` gates the commit + suppresses the tap-navigate in touchEnd;
+  // `crossedRef` fires the threshold haptic exactly once per crossing.
+  const [dragX, setDragX] = React.useState(0);
+  const [snapping, setSnapping] = React.useState(false);
+  const dragXRef = React.useRef(0);
+  const axisRef = React.useRef<null | "h" | "v">(null);
+  const swipingRef = React.useRef(false);
+  const crossedRef = React.useRef(false);
+  // True while currently followed (a left-swipe will Ignore → 'old'); false
+  // while in Old (a left-swipe will re-follow → 'new').
+  const swipeWillIgnore = followState !== "old";
+  const swipePastThreshold = dragX <= -SWIPE_TOGGLE_THRESHOLD;
+
   // Stable ref-callbacks. Without useCallback the inline arrows would have
   // fresh identity every time THIS card re-renders (e.g. on swipe-threshold
   // / pressed flips); React would call the previous callback with `null`
@@ -164,6 +192,10 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   const handleTouchStart = (e: React.TouchEvent) => {
     isLongPressRef.current = false;
     isScrollingRef.current = false;
+    axisRef.current = null;
+    swipingRef.current = false;
+    crossedRef.current = false;
+    setSnapping(false);
     setPressedQuestionId(question.id);
     touchStartPosRef.current = {
       x: e.touches[0].clientX,
@@ -190,7 +222,25 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-    if (!isScrollingRef.current && !isLongPressRef.current) {
+    if (swipingRef.current) {
+      // A horizontal swipe — never navigate. Commit the follow toggle if the
+      // drag crossed the threshold; either way snap the content back to 0
+      // (the toggle itself may filter this card into another tab / unmount).
+      const shouldToggle = dragXRef.current <= -SWIPE_TOGGLE_THRESHOLD;
+      if (shouldToggle && group.pollId) {
+        haptic.medium();
+        onToggleFollow(group.pollId, followState === "old" ? "new" : "old");
+      }
+      // Only animate a snap-back when there's a non-zero offset to return
+      // from; otherwise no transform transition fires and `snapping` would
+      // never get cleared by onTransitionEnd (it would stay a live layer).
+      if (dragXRef.current !== 0) {
+        setSnapping(true);
+        setDragX(0);
+        dragXRef.current = 0;
+      }
+      setPressedQuestionId(null);
+    } else if (!isScrollingRef.current && !isLongPressRef.current) {
       setPressedQuestionId(null);
       touchJustHandledRef.current = true;
       setTimeout(() => {
@@ -202,21 +252,39 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
     touchStartPosRef.current = null;
     isScrollingRef.current = false;
+    swipingRef.current = false;
+    axisRef.current = null;
+    crossedRef.current = false;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!touchStartPosRef.current) return;
     const dx = e.touches[0].clientX - touchStartPosRef.current.x;
     const dy = e.touches[0].clientY - touchStartPosRef.current.y;
-    // Cancel long-press / pressed-state on significant motion (the user is
-    // scrolling, not tapping).
-    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-      isScrollingRef.current = true;
-      setPressedQuestionId(null);
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
+    // Lock the gesture axis on first significant motion (>8px). Once locked,
+    // it's no longer a tap — cancel long-press + pressed state.
+    if (axisRef.current === null) {
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        axisRef.current = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+      } else {
+        return;
       }
+    }
+    isScrollingRef.current = true;
+    setPressedQuestionId(null);
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    // Horizontal, leftward only, on a real poll row → drive the swipe.
+    if (axisRef.current === "h" && !isPlaceholder && group.pollId) {
+      swipingRef.current = true;
+      const offset = Math.max(-SWIPE_MAX, Math.min(0, dx));
+      dragXRef.current = offset;
+      setDragX(offset);
+      const crossed = offset <= -SWIPE_TOGGLE_THRESHOLD;
+      if (crossed && !crossedRef.current) haptic.light();
+      crossedRef.current = crossed;
     }
   };
 
@@ -400,13 +468,48 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   return (
     <div
       ref={setCardEl}
-      className={`relative border-b-2 ${ROW_DIVIDER_CLASS} ${
+      className={`relative overflow-x-clip border-b-2 ${ROW_DIVIDER_CLASS} ${
         isPlaceholder ? "card-pending-enter" : ""
       }`}
     >
+      {/* Swipe-left action backdrop, revealed in the gap on the right as the
+          row content slides left. Right-aligned icon + label so it emerges
+          from the right edge. Saturates + flips to white once past the commit
+          threshold. z-0: sits behind the content (z-10) and the amber bar
+          (z-20). */}
+      {dragX < 0 && !isPlaceholder && group.pollId && (
+        <div
+          aria-hidden="true"
+          className={`absolute inset-0 z-0 flex items-center justify-end gap-1.5 pr-6 text-sm font-semibold transition-colors ${
+            swipeWillIgnore
+              ? swipePastThreshold
+                ? "bg-red-500 text-white"
+                : "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300"
+              : swipePastThreshold
+                ? "bg-green-600 text-white"
+                : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+          }`}
+        >
+          {swipeWillIgnore ? (
+            <>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              <span>Ignore</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Follow</span>
+            </>
+          )}
+        </div>
+      )}
       {isAwaiting && !isPlaceholder && (
         <span
-          className="absolute inset-y-0 left-0 w-1 bg-amber-400 dark:bg-amber-500"
+          className="absolute inset-y-0 left-0 z-20 w-1 bg-amber-400 dark:bg-amber-500"
           aria-hidden="true"
         />
       )}
@@ -415,53 +518,34 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchMove={handleTouchMove}
-        className={`pl-[0.9rem] pr-[0.65rem] pt-[7px] pb-1 cursor-pointer transition-colors select-none ${
+        // Clear `snapping` once the snap-back finishes so the row stops being a
+        // composited layer at rest (no transform applied when dragX===0 &&
+        // !snapping). Guard on propertyName so the bg `transition-colors`
+        // transitionend doesn't reset it mid-snap.
+        onTransitionEnd={(e) => {
+          if (e.propertyName === "transform") setSnapping(false);
+        }}
+        style={{
+          transform: dragX !== 0 || snapping ? `translateX(${dragX}px)` : undefined,
+          transition: snapping ? "transform 200ms ease-out" : undefined,
+          touchAction: "pan-y",
+        }}
+        className={`relative z-10 pl-[0.9rem] pr-[0.65rem] pt-[7px] pb-1 cursor-pointer transition-colors select-none ${
           isPressed
             ? "bg-blue-100 dark:bg-blue-900/40"
-            : "bg-transparent"
+            : "bg-background"
         } hover:bg-gray-100 dark:hover:bg-gray-900 active:bg-blue-100 dark:active:bg-blue-900/40`}
       >
-        {/* Top row: icon + title, plus the follow/ignore toggle on the right.
-            The status countdown + nav chevron moved to the bottom-right (see
-            the metadata row below). */}
+        {/* Top row: icon + title. The follow/ignore toggle is no longer an
+            inline button — swipe the row left past the threshold to flip
+            New↔Old (see the swipe handlers + action backdrop above). The
+            status countdown + nav chevron live in the bottom-right (see the
+            metadata row below). */}
         <div className="flex items-start min-w-0">
           <h3 className="flex-1 min-w-0 flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white">
             <span className="mr-1.5 shrink-0" aria-hidden="true">{categoryIcon}</span>
             <span className="min-w-0">{question.title}</span>
           </h3>
-          {!isPlaceholder && group.pollId && (
-            <button
-              type="button"
-              aria-label={followState === "old" ? "Follow this poll" : "Ignore this poll"}
-              // Stop the tap/long-press/scroll handlers on the row from firing
-              // so toggling follow never navigates or opens the action modal.
-              // All four touch/pointer events must be stopped: touchend bubbles
-              // to the row's handleTouchEnd which would otherwise navigate to
-              // the poll detail page even though touchstart was stopped.
-              onPointerDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-              onTouchMove={(e) => e.stopPropagation()}
-              onTouchEnd={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                haptic.light();
-                onToggleFollow(group.pollId!, followState === "old" ? "new" : "old");
-              }}
-              className="shrink-0 -mt-1 -mr-1 ml-1 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 active:scale-90 transition"
-            >
-              {followState === "old" ? (
-                // green + (re-follow) — canonical plus path (matches PlusOnesInput etc.)
-                <svg className="w-5 h-5 text-green-600 dark:text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                </svg>
-              ) : (
-                // red ✕ (ignore) — canonical X path (matches GroupList / SignInModal etc.)
-                <svg className="w-5 h-5 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              )}
-            </button>
-          )}
         </div>
 
         {/* Pill row: centered across the FULL rectangle width (not just
