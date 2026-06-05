@@ -351,19 +351,24 @@ function TitleResultRow({
           </div>
         </div>
       ) : single && mode === "lastline" ? (
-        // Result fits on the title's last wrapped line: title in the left
-        // column (wraps with a hanging indent so continuation lines align under
-        // the first line's text), result bottom-aligned to that last line at
-        // the right edge (right-justified) with the → arrow just in front.
-        <div className="flex items-end min-w-0">
-          <h3 className="flex-1 min-w-0 flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white">
+        // Result fits on the title's last wrapped line. Title wraps at the full
+        // 90% width (hanging indent so continuation lines align under the first
+        // line's text); the result is pinned bottom-right (right-justified, →
+        // arrow in front) on that last line. The fit measurement guarantees the
+        // last line's text + result stay within 90%, so the right-edge result
+        // can't overlap it.
+        <>
+          <h3
+            className="flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white"
+            style={{ maxWidth: "90%" }}
+          >
             {titleInner}
           </h3>
-          <div className="shrink-0 flex items-center gap-1.5 pl-2 text-lg leading-tight whitespace-nowrap font-semibold">
+          <div className="absolute right-0 bottom-0 flex items-center gap-1.5 pl-2 text-lg leading-tight whitespace-nowrap font-semibold">
             <HorizontalArrow />
             <span>{results[0].node}</span>
           </div>
-        </div>
+        </>
       ) : (
         // Below: title ≤90% wide; result(s) below, right-justified within the
         // right 80%, with a bent ↳ arrow before the first result line.
