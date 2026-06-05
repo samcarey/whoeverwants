@@ -29,6 +29,7 @@ import type {
 } from "@/lib/useGroupVoting";
 import {
   getCategoryIcon,
+  getQuestionSectionTitle,
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
   relativeTime,
@@ -428,6 +429,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   } = props;
 
   const question = group.anchor;
+  const isMultiGroup = group.subQuestions.length > 1;
   const wrapper = group.poll;
   // Gap 1: the viewer's follow/ignore state for this poll. 'old' = ✕'d
   // (filed in Old); anything else = followed.
@@ -892,18 +894,39 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                   : "bg-background"
             } ${swiping ? "" : "hover:bg-gray-100 dark:hover:bg-gray-900 active:bg-blue-100 dark:active:bg-blue-900/40"}`}
           >
-        {/* Title + result preview. When both fit on one line they share a
-            row (title left, result right) with a horizontal arrow between
-            them; otherwise the title wraps (≤80% wide) and the result drops
-            below it, right-justified (≤75% wide) behind a bent ↳ arrow. The
-            follow/ignore toggle is a left-swipe (see the swipe handlers +
-            action backdrop above); the status countdown + nav chevron live in
+        {/* Title + result preview. Single-question polls render one
+            TitleResultRow (icon + title + result) with the one-line /
+            last-line / below layout. Multi-question polls show the poll title
+            at the top with NO icon, then one TitleResultRow per sub-question
+            (its own category icon + section title + result). The follow/ignore
+            toggle is a left-swipe; the status countdown + nav chevron live in
             the bottom-right metadata row below. */}
-        <TitleResultRow
-          icon={categoryIcon}
-          title={question.title}
-          results={resultEntries}
-        />
+        {isMultiGroup ? (
+          <div>
+            <h3 className="font-medium text-lg leading-tight text-gray-900 dark:text-white">
+              {question.title}
+            </h3>
+            <div className="mt-1.5 space-y-1.5">
+              {group.subQuestions.map((sp) => {
+                const node = isPlaceholder ? null : plainResultForQuestion(sp);
+                return (
+                  <TitleResultRow
+                    key={sp.id}
+                    icon={getCategoryIcon(sp)}
+                    title={getQuestionSectionTitle(sp) ?? ""}
+                    results={node ? [{ id: sp.id, node }] : []}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <TitleResultRow
+            icon={categoryIcon}
+            title={question.title}
+            results={resultEntries}
+          />
+        )}
 
         {/* Bottom row: author · date (left) + the corner cluster (right)
             holding the voted/suggestions emoji counts + status countdown + nav
