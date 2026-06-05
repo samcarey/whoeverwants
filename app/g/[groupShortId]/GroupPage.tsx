@@ -1455,8 +1455,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // returns so the hook call order is stable.
   const groupQuestions = useMemo(() => {
     if (!group) return [] as Question[];
+    // Reverse-chronological: latest poll on top of the group list (all tabs).
     return [...group.questions].sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
   }, [group]);
 
