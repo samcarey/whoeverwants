@@ -51,9 +51,11 @@ def validate_vote(
             yes_no_choice, ranked_choices, ranked_choice_tiers, suggestions,
             is_abstain, is_ranking_abstain, has_suggestion_phase,
         )
-    elif question_type == "time":
+    elif question_type in ("time", "showtime"):
+        # Showtime reuses the time vote shape: liked/disliked slot sets, no
+        # yes_no_choice / ranked_choices / suggestions.
         if ranked_choice_tiers:
-            raise VoteValidationError("ranked_choice_tiers not allowed for time questions")
+            raise VoteValidationError(f"ranked_choice_tiers not allowed for {question_type} questions")
         _validate_time_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
     elif question_type == "limited_supply":
         if ranked_choice_tiers:

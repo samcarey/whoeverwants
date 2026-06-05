@@ -828,6 +828,29 @@ def _compute_results(
             ],
         )
 
+    if question_type == "showtime":
+        from algorithms.showtime import calculate_showtime_results
+
+        raw_options = question.get("options")
+        options: list[str] = []
+        if raw_options:
+            options = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
+
+        st = calculate_showtime_results(options, [dict(v) for v in votes])
+        return QuestionResultsResponse(
+            question_id=str(question["id"]),
+            title=question["title"],
+            question_type=question_type,
+            created_at=question["created_at"].isoformat() if isinstance(question["created_at"], datetime) else str(question["created_at"]),
+            response_deadline=question["response_deadline"].isoformat() if question.get("response_deadline") else None,
+            options=options,
+            total_votes=len(votes),
+            winner=st["winner"],
+            like_counts=st["like_counts"],
+            dislike_counts=st["dislike_counts"],
+            attendance_counts=st["attendance_counts"],
+        )
+
     if question_type == "time":
         from algorithms.time_question import calculate_time_question_results
 

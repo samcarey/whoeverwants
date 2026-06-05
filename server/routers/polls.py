@@ -308,7 +308,8 @@ def _insert_poll(
     allow_plus_ones = req.allow_plus_ones
     if allow_plus_ones is None:
         allow_plus_ones = any(
-            sp.question_type in (QuestionType.time, QuestionType.limited_supply)
+            sp.question_type
+            in (QuestionType.time, QuestionType.limited_supply, QuestionType.showtime)
             for sp in req.questions
         )
     row = conn.execute(
@@ -457,6 +458,8 @@ def _category_for_title(question_row: dict) -> str:
         return "time"
     if question_row.get("question_type") == "limited_supply":
         return "limited_supply"
+    if question_row.get("question_type") == "showtime":
+        return "showtime"
     return question_row.get("category") or question_row.get("question_type") or ""
 
 
@@ -500,12 +503,14 @@ _CATEGORY_ICONS = {
     "movie": "🎬",
     "video_game": "🎮",
     "limited_supply": "🎟️",
+    "showtime": "🎬",
 }
 _QUESTION_TYPE_SYMBOLS = {
     "yes_no": "👍",
     "ranked_choice": "🗳️",
     "time": "📅",
     "limited_supply": "🎟️",
+    "showtime": "🎬",
 }
 
 

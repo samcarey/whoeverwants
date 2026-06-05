@@ -11,6 +11,7 @@ class QuestionType(str, Enum):
     ranked_choice = "ranked_choice"
     time = "time"
     limited_supply = "limited_supply"
+    showtime = "showtime"
 
 
 class CloseReason(str, Enum):
@@ -299,6 +300,10 @@ class QuestionResultsResponse(BaseModel):
     # True when the availability cutoff passed but no slot met the
     # "Minimum Participants" gate → the event is off (no time works).
     time_event_cancelled: bool = False
+    # Showtime fields. attendance_counts[key] = total preference respondents
+    # (weighted) minus the weight that can't attend that showtime. None for
+    # non-showtime questions (the FE could also derive total − dislike).
+    attendance_counts: dict | None = None
     # Limited-supply fields. supply_count is the number of slots; the claims
     # roster is the first-come signup sheet (ordered, secured first). Counts
     # let the FE render "N of M claimed" / "Full · K waitlisted" without
