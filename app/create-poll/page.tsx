@@ -30,6 +30,7 @@ import MinMaxCounter from "@/components/MinMaxCounter";
 import DayTimeWindowsInput from "@/components/DayTimeWindowsInput";
 import DaysSelector from "@/components/DaysSelector";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
+import ShowtimeCreateFlow, { ShowtimeCurated } from "./ShowtimeCreateFlow";
 import type { DayTimeWindow } from "@/lib/types";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
@@ -414,6 +415,10 @@ export function CreateQuestionContent() {
       if (category === 'time') {
         return appendFor("Time?");
       }
+      // showtime: "Showtime for {Film}" — the film name is in forField.
+      if (category === 'showtime') {
+        return appendFor("Showtime?");
+      }
       const shorten = isLocationLikeCategory(category) ? shortenLocation : shortenOption;
       // Suggestion polls are titled by category, not by the typed options
       // (those are just the creator's initial suggestions), so ignore them.
@@ -764,6 +769,12 @@ export function CreateQuestionContent() {
         if (new Set(ctxs).size !== ctxs.length) {
           return "Questions of the same kind need a distinct “for X” context to tell them apart.";
         }
+      }
+    }
+    // Showtime polls need at least one curated showtime to vote on.
+    for (const d of effectiveDrafts) {
+      if (d.category === 'showtime' && d.options.filter(o => o.trim() !== '').length === 0) {
+        return "Pick a movie and select at least one showtime to vote on.";
       }
     }
     if (anyDraftUsesPrephase(effectiveDrafts)) {
@@ -1815,7 +1826,9 @@ export function CreateQuestionContent() {
   const titlePreviewHint =
     category === 'yes_no' || category === 'limited_supply'
       ? "Enter a title"
-      : "Enter a Category, Context, and/or Options";
+      : category === 'showtime'
+        ? "Pick a location, movie, and showtimes"
+        : "Enter a Category, Context, and/or Options";
 
   const titleField = (
     <div className="flex items-center justify-between gap-3 h-12">
@@ -2003,7 +2016,7 @@ export function CreateQuestionContent() {
   // Options card — rendered as a separate card below the bottom card,
   // with an external left-justified "Options" header. Only meaningful
   // for ranked-choice (non-yes_no, non-time) questions.
-  const showOptionsCard = questionType === 'question' && category !== 'yes_no' && category !== 'time' && category !== 'limited_supply';
+  const showOptionsCard = questionType === 'question' && category !== 'yes_no' && category !== 'time' && category !== 'limited_supply' && category !== 'showtime';
   const optionsCard = showOptionsCard ? (
     <div>
       <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
@@ -2200,7 +2213,7 @@ export function CreateQuestionContent() {
                           />
                         </div>
                       </label>
-                      {category !== 'yes_no' && category !== 'limited_supply' && (
+                      {category !== 'yes_no' && category !== 'limited_supply' && category !== 'showtime' && (
                         <div className="flex items-center justify-between gap-3 h-12">
                           <label htmlFor="forField" className="text-base font-normal shrink-0">
                             Context
@@ -2222,7 +2235,7 @@ export function CreateQuestionContent() {
                           />
                         </div>
                       )}
-                      {category !== 'yes_no' && category !== 'time' && category !== 'limited_supply' && (
+                      {category !== 'yes_no' && category !== 'time' && category !== 'limited_supply' && category !== 'showtime' && (
                         <div
                           className={`flex items-center justify-between gap-3 h-12 ${isLoading ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                           onClick={() => { if (!isLoading) setCollectSuggestions(!collectSuggestions); }}
@@ -2283,6 +2296,27 @@ export function CreateQuestionContent() {
                     </div>
                   )}
                   {questionFormBody}
+                  {category === 'showtime' && (
+                    <ShowtimeCreateFlow
+                      refLatitude={refLatitude}
+                      refLongitude={refLongitude}
+                      refLocationLabel={refLocationLabel}
+                      onLocationChange={(lat, lng, lbl) => {
+                        setRefLatitude(lat);
+                        setRefLongitude(lng);
+                        setRefLocationLabel(lbl);
+                      }}
+                      searchRadius={searchRadius}
+                      onSearchRadiusChange={setSearchRadius}
+                      selectedKeys={options.filter((o) => o.includes(' '))}
+                      onChange={(curated: ShowtimeCurated) => {
+                        setOptions(curated.options.length ? curated.options : ['']);
+                        setOptionsMetadata(curated.optionsMetadata);
+                        setForField(curated.filmName);
+                      }}
+                      isLoading={isLoading}
+                    />
+                  )}
                 </section>
 
                 {showTimeFields && (

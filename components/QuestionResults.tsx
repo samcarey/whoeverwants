@@ -63,7 +63,7 @@ export default function QuestionResultsDisplay({ results, isQuestionClosed, user
   }
 
   if (results.question_type === 'showtime') {
-    return <ShowtimeResults results={results} isQuestionClosed={isQuestionClosed} optionsMetadata={optionsMetadata} />;
+    return <ShowtimeResults results={results} isQuestionClosed={isQuestionClosed} optionsMetadata={optionsMetadata ?? undefined} />;
   }
 
   // limited_supply has no QuestionResultsDisplay branch: the group card uses

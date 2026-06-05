@@ -31,7 +31,7 @@ export interface ShowtimeBallotSectionProps {
 }
 
 /** Build the bubble slot list from the curated option keys + their metadata. */
-function buildSlots(options: string[] | undefined, meta: OptionsMetadata | undefined): ShowtimeSlot[] {
+function buildSlots(options: string[] | undefined, meta: OptionsMetadata | null | undefined): ShowtimeSlot[] {
   return (options ?? []).map((key) => {
     const m = (meta?.[key] ?? {}) as Record<string, unknown>;
     const { h, m: mm } = parseSlotStart(key);
