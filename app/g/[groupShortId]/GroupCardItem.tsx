@@ -169,51 +169,40 @@ function HorizontalArrow({ className }: { className?: string }) {
   );
 }
 
-/** A stretching left→right leader: a 1px shaft that fills the available width
- *  (flex-1) ending in a small arrowhead, so the line spans the whole gap from
- *  the title to the result. */
-function LeaderArrow({ className }: { className?: string }) {
+/** A stretching left→right leader pointing at a result. The shaft fills the
+ *  available width (flex-1) and ends in a small arrowhead drawn at the same
+ *  1.5px stroke as the shaft, with a short stub so the two connect seamlessly.
+ *  `bent` prepends a vertical drop + corner (used by the below layout) so the
+ *  same styling covers both the straight and bent variants. */
+function LeaderArrow({ className, bent = false }: { className?: string; bent?: boolean }) {
   return (
     <div
-      className={`flex items-center text-gray-400 dark:text-gray-500 ${className ?? ""}`}
+      className={`relative flex items-center text-gray-400 dark:text-gray-500 ${bent ? "h-[22px]" : ""} ${className ?? ""}`}
       aria-hidden="true"
     >
-      <div className="flex-1 border-t border-current" />
+      {/* Vertical drop + corner for the bent variant: from the top down to the
+          shaft's vertical center (h-1/2 of the 22px box = 11px), meeting the
+          shaft's left end. */}
+      {bent && (
+        <div className="absolute left-0 top-0 h-1/2 border-l-[1.5px] border-current" />
+      )}
+      <div className="flex-1 border-t-[1.5px] border-current" />
       <svg
-        className="-ml-px shrink-0"
-        width="6"
-        height="11"
-        viewBox="0 0 6 11"
+        className="-ml-[1.5px] shrink-0"
+        width="9"
+        height="10"
+        viewBox="0 0 9 10"
         fill="none"
         stroke="currentColor"
         strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        <path d="M1 1 L5 5.5 L1 10" />
+        {/* Stub (M0 5 H8) continues the shaft to the tip; barbs meet at the tip
+            so the head connects to and matches the shaft. */}
+        <path d="M0 5 H8 M4.5 1.5 L8 5 L4.5 8.5" />
       </svg>
     </div>
-  );
-}
-
-/** Bent ↳ arrow (down, then 90° turn to the right) drawn just left of the
- *  first result line on the wrapped layout. */
-function BentArrow({ className }: { className?: string }) {
-  return (
-    <svg
-      className={`text-gray-400 dark:text-gray-500 ${className ?? ""}`}
-      width="15"
-      height="19"
-      viewBox="0 0 15 19"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M3 1 V12 H12 M8 8 L12 12 L8 16" />
-    </svg>
   );
 }
 
@@ -434,8 +423,10 @@ function TitleResultRow({
           </div>
         </>
       ) : (
-        // Below: title ≤90% wide; result(s) below, right-justified within the
-        // right 80%, with a bent ↳ arrow before the first result line.
+        // Below: title ≤90% wide; result below it, right-justified within the
+        // right 80%. A bent leader drops down from just under the title text
+        // (an invisible icon spacer aligns it there) and runs horizontally all
+        // the way across to where the result text begins.
         <div>
           <h3
             className={`flex items-start ${titleFont} text-lg leading-tight text-gray-900 dark:text-white`}
@@ -443,15 +434,18 @@ function TitleResultRow({
           >
             {titleInner}
           </h3>
-          <div className="mt-1 flex justify-end">
-            <div className="flex flex-col items-end gap-0.5 text-right" style={{ maxWidth: "80%" }}>
-              {results.map((res, i) => (
-                <div
-                  key={res.id}
-                  className="flex items-start gap-1 max-w-full text-lg leading-tight text-right"
-                >
-                  {i === 0 && <BentArrow className="shrink-0 mt-px" />}
-                  <div className="min-w-0">{res.node}</div>
+          <div className="mt-1 flex items-start">
+            {/* Invisible icon spacer reserves the icon's width so the leader's
+                vertical drop lands under the title text start, not the icon. */}
+            <span className="mr-1.5 shrink-0 invisible" aria-hidden="true">{icon}</span>
+            <LeaderArrow bent className="ml-1.5 flex-1 self-start" />
+            <div
+              className="shrink-0 pl-1.5 flex flex-col items-end text-right"
+              style={{ maxWidth: "80%" }}
+            >
+              {results.map((res) => (
+                <div key={res.id} className="min-w-0 text-lg leading-tight">
+                  {res.node}
                 </div>
               ))}
             </div>
