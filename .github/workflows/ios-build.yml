@@ -223,25 +223,55 @@ jobs:
           # numeric Apple ID removes the ambiguity for both tiers. Look up a
           # new tier's Apple ID via the ASC API (`GET /v1/apps`) or the app's
           # ASC URL (`appstoreconnect.apple.com/apps/<APPLE_ID>/...`).
+          #
+          # SPOKEN_NAME is CFBundleSpokenName — the phonetic app name Siri +
+          # VoiceOver use for VOICE recognition (falls back to CFBundleDisplayName
+          # when unset). It's distinct from the on-screen label. The `latest`
+          # display name is "Whoever α", and the "α" glyph matches POORLY when you
+          # say "…in Whoever Wants" to Siri, so the App Shortcut phrases
+          # (`\(.applicationName)`) trigger unreliably on the canary build. Giving
+          # `latest` a clean spoken name "Whoever Wants" makes the spoken match
+          # dependable while keeping the visible "α" tier marker. Prod is left
+          # WITHOUT a spoken name on purpose: (a) its display name "Whoever" already
+          # voice-matches fine, and (b) keeping the two installed apps' spoken forms
+          # DISTINCT ("Whoever" vs "Whoever Wants") preserves Siri's ability to route
+          # a phrase to the right app when both are installed — a single shared
+          # spoken name would re-introduce the ambiguous-routing problem this fixes.
           if [[ "$CAP_ENV" == "prod" ]]; then
             BUNDLE_ID="com.whoeverwants.app"
             DISPLAY_NAME="Whoever"
+            SPOKEN_NAME=""
             APPLE_ID="6762459339"
           else
             BUNDLE_ID="com.whoeverwants.app.latest"
             DISPLAY_NAME="Whoever α"
+            SPOKEN_NAME="Whoever Wants"
             APPLE_ID="6769589158"
           fi
           echo "bundle_id=$BUNDLE_ID"    >> "$GITHUB_OUTPUT"
           echo "display_name=$DISPLAY_NAME" >> "$GITHUB_OUTPUT"
+          echo "spoken_name=$SPOKEN_NAME" >> "$GITHUB_OUTPUT"
           echo "apple_id=$APPLE_ID" >> "$GITHUB_OUTPUT"
-          echo "Building as $BUNDLE_ID / '$DISPLAY_NAME' (Apple ID $APPLE_ID)"
+          echo "Building as $BUNDLE_ID / '$DISPLAY_NAME' (spoken '$SPOKEN_NAME') (Apple ID $APPLE_ID)"
 
       - name: Stamp Info.plist display name
         run: |
           set -euo pipefail
           plutil -replace CFBundleDisplayName -string "${{ steps.bundle.outputs.display_name }}" ios/App/App/Info.plist
           plutil -extract CFBundleDisplayName raw ios/App/App/Info.plist
+          # CFBundleSpokenName: set for the canary tier (Siri voice-match fix),
+          # ensure ABSENT for prod (so it falls back to "Whoever"). The committed
+          # Info.plist carries no spoken name, so prod is clean by default; the
+          # remove is belt-and-suspenders. Top-level string key → plutil is safe
+          # here (the PlistBuddy-only caution applies to nested arrays/dicts).
+          SPOKEN_NAME="${{ steps.bundle.outputs.spoken_name }}"
+          if [[ -n "$SPOKEN_NAME" ]]; then
+            plutil -replace CFBundleSpokenName -string "$SPOKEN_NAME" ios/App/App/Info.plist
+            plutil -extract CFBundleSpokenName raw ios/App/App/Info.plist
+          else
+            plutil -remove CFBundleSpokenName ios/App/App/Info.plist 2>/dev/null || true
+          fi
+          plutil -lint ios/App/App/Info.plist
 
       - name: Stamp Info.plist with Google iOS URL scheme
         env:
