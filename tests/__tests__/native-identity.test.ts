@@ -88,4 +88,35 @@ describe("syncNativeIdentity", () => {
       name: "Alex",
     });
   });
+
+  it("logs the first setIdentity outcome once (resolve), without leaking secrets", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    localStorage.setItem("session_token", TOKEN);
+    localStorage.setItem("browser_id", REAL_UUID);
+    localStorage.setItem("whoeverwants_user_name", "Sam");
+    await syncNativeIdentity();
+    expect(warn).toHaveBeenCalledTimes(1);
+    const msg = warn.mock.calls[0][0] as string;
+    expect(msg).toContain("[native-identity] setIdentity resolved");
+    expect(msg).not.toContain(TOKEN); // presence flags only, never the value
+    // A later changed sync does NOT re-log (one-shot per session).
+    localStorage.setItem("whoeverwants_user_name", "Alex");
+    await syncNativeIdentity();
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it("logs a rejected setIdentity (the 'plugin not registered' diagnostic)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    h.setIdentity.mockRejectedValueOnce(
+      new Error('"NativeIdentity" plugin is not implemented on ios'),
+    );
+    localStorage.setItem("browser_id", REAL_UUID);
+    await syncNativeIdentity();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain(
+      "[native-identity] setIdentity rejected: ",
+    );
+    warn.mockRestore();
+  });
 });

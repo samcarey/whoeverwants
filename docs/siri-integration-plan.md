@@ -306,64 +306,70 @@ existing auth model (`docs/auth-access-model.md`).
 
 ## Phase 3 — Headless poll creation App Intent ("create without opening the app")
 
-> **⚠️ STATUS (2026-06-04, device-tested + FINALIZED on the fallback): "quick poll"
-> WORKS but is NOT app-stays-closed headless yet.** Extensive on-device testing
-> proved the headless identity read fails, so the shipped behavior is: "quick poll"
-> always tries headless, and on any failure **falls back to opening the app with the
-> prompt prefilled** (= Phase 1 deep link). The user always gets their poll; the app
-> just opens. True headless is PARKED with a concrete next-step plan (below).
+> **⚠️ STATUS (2026-06-05): ROOT CAUSE FOUND + FIX SHIPPED to branch
+> `claude/siri-integration-plan-XzuVk` — app-target Capacitor plugins were NEVER
+> REGISTERED.** The "quick poll" deep-link fallback already ships (always works; the
+> app opens prefilled). What blocked TRUE headless was that the foreground identity
+> WRITE never landed — and it never landed because the colocated `NativeIdentityPlugin`
+> was never registered with the Capacitor bridge. **App-target `CAPBridgedPlugin`
+> classes are NOT auto-discovered** — Capacitor's runtime discovery only covers
+> CocoaPods/SPM-packaged plugins; a class compiled into the app binary must be
+> registered by hand in `capacitorDidLoad()` (capacitorjs.com/docs/ios/custom-code).
+> The Swift comments + CLAUDE.md asserting "auto-discovers at runtime, no change beyond
+> compiling the class" were WRONG and silently broke ALL THREE colocated plugins
+> (`NativeIdentity` / `ClipboardUrl` / `AppBadge` — none was ever device-confirmed).
 >
-> **What we proved on device (in order):**
+> **The fix (this branch):**
+> 1. `MainViewController.capacitorDidLoad()` now calls
+>    `bridge?.registerPluginInstance(...)` for `ClipboardUrlPlugin`, `AppBadgePlugin`,
+>    and `NativeIdentityPlugin` — the documented Capacitor pattern for app-target
+>    plugins. (This also un-breaks the clipboard-link prompt + the app-icon badge
+>    resync, which were silently dead for the same reason.)
+> 2. A one-shot diagnostic in `syncNativeIdentity` (`lib/nativeIdentity.ts`):
+>    `console.warn`s the FIRST `setIdentity` outcome (resolve vs reject, **presence
+>    flags only — never the token/name value**), so the owner can confirm on canary
+>    via `/api/client-logs?search=native-identity` (or `docker compose logs api | grep
+>    '[client-log]'` for the cross-worker truth) that the plugin now resolves instead
+>    of rejecting with `"NativeIdentity" plugin is not implemented on ios`.
+>
+> **What we proved on device earlier (the trail that led here):**
 > 1. In-process keychain (plain) → intent spoke "set your name first". `loadIdentity()` nil.
 > 2. Dedicated `keychain-access-groups` shared group (`kSecAttrAccessGroup`) → still nil.
 > 3. Native spoken diagnostic → **`shared no, default no, group set`**: the intent's
->    process can read NEITHER keychain access group. iOS runs this no-`openAppWhenRun`
->    intent in a process **isolated from the app's Keychain** — keychain sharing can't
->    bridge it.
-> 4. Switched to a shared **App Group** container (`group.com.whoeverwants.siri`,
->    `com.apple.security.application-groups` entitlement — required a one-time manual
->    App Group registration in the Apple Developer portal on both App IDs; automatic
->    signing does NOT auto-create App Groups, unlike Keychain Sharing). Intent read
->    **`appgroup name no`** too.
+>    process can read NEITHER keychain access group (iOS isolates a no-`openAppWhenRun`
+>    intent from the app's Keychain — keychain sharing can't bridge it).
+> 4. Switched to a shared **App Group** (`group.com.whoeverwants.siri`,
+>    `com.apple.security.application-groups` entitlement — one-time manual App Group
+>    registration in the Apple Developer portal on both App IDs; automatic signing does
+>    NOT auto-create App Groups, unlike Keychain Sharing). Intent read **`appgroup name
+>    no`** too.
 > 5. Since App Groups ARE shared with intent processes by design, an empty App Group
->    means **the foreground WRITE never lands**, not a read problem. The prime suspect
->    is that the **colocated app-target Capacitor plugin (`NativeIdentityPlugin`) is
->    not being auto-registered**, so the JS `setIdentity` call rejects and
->    `syncNativeIdentity`'s `catch {}` swallows it → nothing is ever written to either
->    store. (The same colocated-plugin pattern is used by `ClipboardUrlPlugin` /
->    `AppBadgePlugin`, none of which are device-confirmed to register either.)
+>    means **the foreground WRITE never lands** — confirmed-by-inspection as the missing
+>    plugin registration (the JS `setIdentity` rejected; `syncNativeIdentity`'s
+>    best-effort `catch {}` swallowed it → nothing was ever written to either store).
 >
-> **NEXT STEPS to make true headless work (pick up here):**
-> 1. **Confirm the write-side hypothesis.** Add a one-shot log to `syncNativeIdentity`
->    (`lib/nativeIdentity.ts`) — `console.warn` the result of `setIdentity` (resolve vs
->    reject) — and read it on canary via the client-log forwarder
->    (`/api/client-logs?search=nativeidentity`, or `docker compose logs api | grep
->    '[client-log]'` for the cross-worker truth). A rejection like *"NativeIdentity
->    plugin is not implemented on ios"* confirms the plugin isn't registered. This
->    needs the log change on `main` (canary) since the Latest app loads canary JS.
-> 2. **If the plugin isn't registered:** the colocated `@objc(...)` + `CAPBridgedPlugin`
->    auto-discovery is failing for app-target plugins in Capacitor 8. Options, cheapest
->    first: (a) register the plugins explicitly (a small bridge/registration shim in
->    the AppDelegate / a `CAPBridgedPlugin` registration call if Capacitor 8 exposes
->    one); (b) move the identity bridge into a real local SPM plugin package (heavier
->    but the supported path). Verify on device that `getIdentity()` round-trips in the
->    FOREGROUND app first — that isolates "plugin registers" from "intent can read".
-> 3. **Once the foreground write lands in the App Group**, the headless read should
->    Just Work (App Groups are shared with the intent's process) and `QuickPollIntent`'s
->    success branch (`Created your poll: …`, app stays closed) takes over from the
->    fallback automatically — no further intent changes needed.
-> 4. **Independent of headless: Siri voice-trigger reliability.** With two installed
+> **OWNER VERIFICATION OWED (needs the fix on `main` + a fresh `latest` iOS build, then
+> a real device):**
+> 1. Confirm the client log on canary now reads `[native-identity] setIdentity resolved
+>    …` (was the silent reject). This proves the plugin registers. Verify foreground
+>    `getIdentity()` round-trips too if you want belt-and-suspenders.
+> 2. Then "Hey Siri, quick poll in WhoeverWants" → confirm it creates HEADLESSLY (app
+>    stays closed, "Created your poll: …") rather than the deep-link fallback. Once the
+>    App Group write lands, `QuickPollIntent`'s success branch takes over automatically
+>    — no further intent changes needed.
+> 3. **Independent of headless: Siri voice-trigger reliability.** With two installed
 >    apps named "Whoever" (prod) + "Whoever α" (latest), Siri's phrase routing is
 >    unreliable and the "α" glyph matches poorly. Give the latest bundle a
 >    Siri-friendly `CFBundleSpokenName` (e.g. "Whoever Wants") so voice matching is
 >    dependable; running the App Shortcut from the Shortcuts app / Spotlight already
 >    works as a voice-free path.
 >
-> **Foundation left in place for the pickup:** the App Group + keychain entitlements
-> (provisioned), `NativeIdentityAppGroup` (write in the plugin's `setIdentity`, read in
+> **Foundation already in place:** the App Group + keychain entitlements (provisioned),
+> `NativeIdentityAppGroup` (write in the plugin's `setIdentity`, read in
 > `QuickPollService.loadIdentity`), and the whole `QuickPollIntent` success/fallback
-> structure. The temporary on-device diagnostics (native launch markers, spoken
-> "Debug:" line, `getDefaultGroup`) were removed at finalization.
+> structure — only the plugin registration was missing. The temporary on-device
+> diagnostics (native launch markers, spoken "Debug:" line, `getDefaultGroup`) were
+> removed at finalization.
 
 **Status: IMPLEMENTED (2026-06-04), shipped on the deep-link fallback (true headless
 PARKED — see the status box above).** Built as an IN-PROCESS intent (no extension
@@ -564,6 +570,22 @@ pre-coding gate; see the ordering decision at the top.)
 _(Append dated entries; do not rewrite the phases above — note what changed and why.
 Post-keynote findings go here too, once Phase 0 runs.)_
 
+- **2026-06-05 — Phase 3 root cause found + fixed: app-target Capacitor plugins were
+  never registered.** The headless identity read failed because the App Group write
+  never landed, because the colocated `NativeIdentityPlugin` was never registered with
+  the Capacitor bridge — app-target `CAPBridgedPlugin` classes are NOT auto-discovered
+  (Capacitor only auto-discovers CocoaPods/SPM-packaged plugins). The long-standing
+  "auto-discovers at runtime, no change beyond compiling the class" claim in the Swift
+  comments + CLAUDE.md was wrong and had silently broken all three colocated plugins
+  (`NativeIdentity` / `ClipboardUrl` / `AppBadge`). Fix: `MainViewController.capacitorDidLoad()`
+  now `bridge?.registerPluginInstance(...)`s each (the documented pattern), plus a
+  one-shot resolve/reject diagnostic in `syncNativeIdentity` (`lib/nativeIdentity.ts`,
+  presence-flags only) readable on canary via `/api/client-logs?search=native-identity`.
+  JS unit tests pin the diagnostic + the no-secret-leak invariant; the registration +
+  headless path are device-only, so owner verification (on `main` + a fresh `latest`
+  iOS build) is owed before declaring true headless working. Corrected the wrong
+  auto-discovery claims in CLAUDE.md too. Next: owner device-verify, then the deferred
+  WWDC watch (Phase 0) + Phase 4.
 - **2026-06-04 — Shipped Phase 3 (headless poll creation, in-process intent).**
   Added `QuickPollIntent` (no `openAppWhenRun`), `QuickPollService` (identity load +
   direct-API POST), and `QuickPollError` (Siri-speakable failures), all colocated in
