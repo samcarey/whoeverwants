@@ -40,7 +40,6 @@ import { classifyPollTab, type PollTab } from "@/lib/followState";
 import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
-import { getRememberedGroupTab, rememberGroupTab } from "@/lib/groupTabMemory";
 import { isScrollRestoring, setScrollRestoring } from "@/lib/scrollRestoreState";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import FollowUpModal from "@/components/FollowUpModal";
@@ -65,19 +64,19 @@ import type { Group } from "@/lib/groupUtils";
 // don't shift the document layout.
 const ESTIMATED_GROUP_HEIGHT = 110;
 
+// The three follow/ignore lists, rendered inline in this order. Each gets a
+// labeled header with a divider line under it; empty lists are skipped.
+const SECTION_DEFS: { tab: PollTab; label: string }[] = [
+  { tab: "todo", label: "To Do" },
+  { tab: "new", label: "Relevant" },
+  { tab: "old", label: "Old" },
+];
+
 // Group key for `groupedGroupQuestions` — questions of the same poll share
 // poll_id; legacy (non-poll) questions get a unique `solo-` prefix so they
 // don't collide. Used in the .map() loop's key + virtualization mountedKeys.
 const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
   q.poll_id ?? `solo-${q.id}`;
-
-// Bottom-pin keeps `window.scrollY` at max for this many ms after initial
-// mount — the polls list keeps resizing as placeholders → real cards swap
-// in and async results load, so a one-shot scroll-to-bottom would leave
-// the bubble bar drifting off-screen. Capped + gated on user-interaction
-// (see `applyScrollAdjustmentRef`) to avoid the iOS feedback loop
-// documented in PR #375 that retired the unbounded version.
-const BOTTOM_PIN_DURATION_MS = 800;
 
 // Scroll-restore (back-nav) re-application window. Measured from the first
 // time the pin actually runs, not from when the layoutEffect arms it — the
@@ -179,11 +178,10 @@ interface GroupContentProps {
   overlayCardsOffset?: number;
   /** True when this instance is rendered inside the slide overlay (vs the
    *  real route). The overlay is position:fixed, so it can NOT use
-   *  `window.scrollTo` for positioning — all scroll positioning happens via
-   *  the cards-wrapper transform. When there's no saved scroll, the overlay
-   *  pre-positions to the bottom (the fresh-nav default) via that transform
-   *  so the slide doesn't show top-of-list followed by a snap to the bottom
-   *  once the real route's window.scrollTo bottom-pin fires post-unmount. */
+   *  `window.scrollTo` for positioning — scroll positioning happens via
+   *  the cards-wrapper transform (only for a saved-scroll restore). A
+   *  fresh-nav overlay uses no transform and shows the top, matching the
+   *  real route's fresh-visit scroll-to-top. */
   inOverlay?: boolean;
 }
 
@@ -219,17 +217,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // POLL_VIEWED_CHANGED_EVENT is enough to recompute (e.g. clear the bar the
   // instant the user opens a poll).
   const { badgeSettings, pollViewsTick } = useUnreadReactivity();
-  // Gap 1: the active follow/ignore tab. null = follow the default (To Do when
-  // any, else New); a user tap pins it. Seeded from groupTabMemory so the
-  // choice survives poll-detail round-trips (GroupContent remounts on back);
-  // cleared when home mounts (see clearGroupTabs in app/page.tsx).
-  const [selectedTab, setSelectedTab] = useState<PollTab | null>(
-    () => getRememberedGroupTab(groupId) ?? null,
-  );
-  const selectTab = useRef((tab: PollTab) => {
-    setSelectedTab(tab);
-    rememberGroupTab(groupId, tab);
-  }).current;
 
   // Phase 5b: poll-level mutations (close/reopen/cutoff) update the
   // polls array; question mutations (forget) update the questions array.
@@ -402,8 +389,8 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     }
     cardRefs.current.delete(anchorId);
   }, []);
-  // Both anchor modes (card-anchor and bottom-pin) keep their pin active
-  // until the user explicitly interacts (wheel, touch, keyboard). The earlier
+  // The saved-scroll restore pin stays active until the user explicitly
+  // interacts (wheel, touch, keyboard). The earlier
   // delta-based approach (track prev offsetTop, scrollBy diff) couldn't
   // distinguish a real user scroll from the browser's silent scrollY clamp
   // when the doc shrinks; gating on real input events sidesteps that.
@@ -425,10 +412,10 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       for (const q of initialGroup.questions) initial.add(groupKeyFor(q));
       return initial;
     }
-    // Seed with the last poll so the first paint already has the
-    // bottom-pin's nearest neighbor mounted (no placeholder→card swap right
-    // after mount). Progressive fill below mounts the rest in idle-time
-    // batches.
+    // Seed with the newest poll — the display sorts newest-first, so this is
+    // the card at the TOP of the list, which is what a fresh visit lands on
+    // (no placeholder→card swap at the top on first paint). The anchor effect
+    // + progressive fill mount the rest downward in idle-time batches.
     const target = initialGroup.questions[initialGroup.questions.length - 1] ?? null;
     if (target) initial.add(groupKeyFor(target));
     return initial;
@@ -844,12 +831,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // pre-effect state.
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group], 80);
 
-  // The sticky To Do · New · Old filter switch sits just under the fixed
-  // header. Measure it so the up scroll-helper arrow can float below it
-  // rather than under (and overlapping) it. 0 when no filter is shown
-  // (empty group), which is also when no awaiting card / up arrow exists.
-  const [filterSwitchRef, filterSwitchHeight] = useMeasuredHeight<HTMLDivElement>([group], 0);
-
   // Swipe-back gesture: dragging rightward on the content slides the page
   // off to the right with the home backdrop revealed underneath. While the
   // gesture is active, HomeBackdropHost (at layout level) mounts the cached
@@ -1028,37 +1009,24 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // ===================================================================
   // Group-page scroll strategy (single source of truth — keep cohesive)
   // ===================================================================
-  // The initial scroll always lands the viewer at the document bottom so
-  // the bubble bar (the create-poll launcher) is visible. Past
-  // iterations tried to anchor the viewer at the oldest "awaiting"
-  // poll, but that produced a visible jump on load when the chosen
-  // anchor and the bubble-bar end of the page differed. The
-  // scroll-helper arrows below still steer users toward awaiting cards
+  // On a fresh visit (and after going home then back — both have no saved
+  // scroll), the initial scroll lands the viewer at the TOP of the group.
+  // Top is a stable target: content grows downward as cards/results load,
+  // so scrollY=0 needs no pin and Next.js' own scroll-to-0 cooperates.
+  // Only a saved-scroll RESTORE (within-group back, group↔poll round-trip)
+  // needs the re-application pin (see the persistent restore-pin below).
+  // The scroll-helper arrows below still steer users toward awaiting cards
   // once they're scrolling.
   //
   // 1. INITIAL load (`useLayoutEffect` below, fires once per mount).
-  //    Scrolls to `document.scrollHeight - innerHeight`. Runs
-  //    synchronously before paint via a fire-once `useRef` guard so the
-  //    first painted frame is already at the destination — never an
-  //    "in-place then scroll" two-frame flicker. Cleanup intentionally
-  //    omitted; useRef persists across StrictMode
-  //    mount→cleanup→mount, and a cleanup that reset the ref would
-  //    re-fire on every dep-change (e.g. async accessible-polls
-  //    refresh) and re-scroll against a now-taller page.
-  //
-  // 1b. BOTTOM PIN (`applyScrollAdjustmentRef`, called from layout effect
-  //    AND ResizeObserver): until the user first interacts (wheel,
-  //    touchstart, keydown), each layout settling re-applies the
-  //    bottom-pin so async content (placeholders → real cards, results
-  //    loads, fonts) doesn't drift the bubble bar off-screen. Bounded
-  //    by `BOTTOM_PIN_DURATION_MS` to cap iOS's `visualViewport`
-  //    feedback loop from PR #375 (where unbounded re-pin against a
-  //    growing scrollHeight drove scrollY into a hundreds-of-pixels
-  //    oscillation, dragging the fixed header off the viewport).
-  //    Gating on user interaction (rather than scrollY deltas) avoids
-  //    fighting the browser's silent scrollY clamp when the doc
-  //    shrinks — that clamp fires a scroll event indistinguishable
-  //    from a user gesture, but no wheel/touch/keydown happens.
+  //    Fresh visit → `window.scrollTo(0, 0)`. Back-nav with a saved scroll
+  //    → restore that scrollY (and arm the restore-pin). Runs synchronously
+  //    before paint via a fire-once `useRef` guard so the first painted
+  //    frame is already at the destination — never an "in-place then
+  //    scroll" two-frame flicker. Cleanup intentionally omitted; useRef
+  //    persists across StrictMode mount→cleanup→mount, and a cleanup that
+  //    reset the ref would re-fire on every dep-change (e.g. async
+  //    accessible-polls refresh) and re-scroll against a now-taller page.
   //
   // 2. TAP-EXPAND (`useEffect` further below, fires after initial layout
   //    has settled): smoothly scrolls (rAF, ease-out cubic, 300ms —
@@ -1098,13 +1066,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   //    normally so they can hide or retarget mid-scroll.
   //
   // ===================================================================
-  // Initial-load scroll (path 1). Always lands the viewer at the
-  // document bottom so the bubble bar is visible.
+  // Initial-load scroll (path 1). Fresh visit → top; back-nav → restore.
   // ===================================================================
   const hasHandledInitialExpandRef = useRef(false);
-  // Wall-clock deadline (ms since epoch) for the bottom-pin. Set during
-  // the initial-load effect; the pin no-ops past it.
-  const bottomPinDeadlineRef = useRef(0);
   // Hard upper bound for the restore-scroll rAF loop. iOS Safari +
   // Next.js App Router reset scrollY ~30-40ms after our layoutEffect's
   // scrollTo, so we need a re-application window to outlast that.
@@ -1161,14 +1125,14 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     // loop fights it, and the visible polls/bubble bar at the
     // bottom flicker right after the overlay unmounts. Overlay
     // positioning is driven entirely by the cards-wrapper transform
-    // (saved-scroll restore via `overlayCardsOffset`, or the
-    // bottom-pin computed in the `overlayBottomOffset` effect below);
+    // (saved-scroll restore via `overlayCardsOffset`; a fresh-nav
+    // overlay uses no transform and shows the top);
     // document scroll is irrelevant for it.
     if (inOverlay) return;
 
     // Back-nav path: restore the scroll position saved when the user
-    // navigated away (tap on a poll card). Skip bottom-pin entirely so
-    // async content settling doesn't drag the viewport off-target.
+    // navigated away (tap on a poll card), re-applied via the restore pin
+    // so async content settling doesn't drag the viewport off-target.
     // `mountedGroupKeys` is initialized with every card up-front in
     // this case (see the useState initializer above), so scrollHeight
     // already reflects the full document and the requested scrollY
@@ -1202,9 +1166,10 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       return;
     }
 
-    bottomPinDeadlineRef.current = Date.now() + BOTTOM_PIN_DURATION_MS;
-    const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-    if (max > 0) window.scrollTo(0, max);
+    // Fresh visit (no saved scroll): land at the top. Top is stable as
+    // content grows downward, so there's no pin to fight Next.js'
+    // scroll-to-0 — they agree.
+    window.scrollTo(0, 0);
     setInitialScrollApplied(true);
     // No cleanup return: useRef persists across React StrictMode's
     // mount→cleanup→mount cycle, so the ref check above guarantees fire-once
@@ -1212,36 +1177,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group, loading, headerHeight]);
 
-  // Overlay bottom-pin. When this instance renders inside the slide overlay
-  // with no saved scroll, the destination should pre-position to the bottom —
-  // the same spot the real route's fresh-nav bottom-pin lands. Without this
-  // the overlay shows the top of the group during the slide and the page
-  // visibly jumps to the bottom the instant the real route's
-  // `window.scrollTo(scrollHeight - innerHeight)` runs after the overlay
-  // unmounts (the reported bug). The overlay can't use window.scrollTo (it's
-  // position:fixed), so we mirror the real route's target via the
-  // cards-wrapper transform: measure the wrapper's full layout height (which
-  // includes the header padding + the panel padding-bottom, exactly like
-  // documentElement.scrollHeight) and translate it up so its bottom edge sits
-  // at the viewport bottom. The ResizeObserver re-pins as cards fill in
-  // (progressive mount) so the bottom stays stable through the slide.
-  const overlayShouldBottomPin = inOverlay === true && overlayCardsOffset === undefined;
-  const [overlayBottomOffset, setOverlayBottomOffset] = useState(0);
-  useLayoutEffect(() => {
-    if (!overlayShouldBottomPin) return;
-    if (typeof window === 'undefined') return;
-    const el = swipeWrapperRef.current;
-    if (!el) return;
-    const measure = () => {
-      const max = Math.max(0, el.offsetHeight - window.innerHeight);
-      setOverlayBottomOffset((prev) => (Math.abs(prev - max) > 0.5 ? max : prev));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overlayShouldBottomPin, group, loading, headerHeight]);
+  // (The fresh-nav overlay shows the TOP of the group — no transform — to
+  // match the real route's fresh-visit scroll-to-top. Only a saved-scroll
+  // restore drives the cards-wrapper transform, via `overlayCardsOffset`.)
 
   // Persistent restore-pin. Re-applies the saved scroll target until it
   // sticks, defeating Next.js App Router's post-commit scroll-to-0 (it fires
@@ -1324,51 +1262,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Bottom-pin rAF loop (fresh-nav path). Mirrors the restore rAF loop:
-  // useLayoutEffect + ResizeObserver alone can leave gaps where Next.js
-  // App Router's scroll-to-top resets scrollY to 0 with no React update
-  // following for 100+ms — the user sees the bubble bar disappear (scroll
-  // back to 0 puts it below viewport) then reappear (next React update
-  // re-applies bottom-pin). Running a continuous rAF loop for the deadline
-  // window closes that gap. Also installs a synchronous `scroll` listener
-  // that snaps scrollY back BEFORE the next paint when the page is in
-  // bottom-pin mode — closes the 1-frame window where rAF lags behind a
-  // Next.js scrollTo(0,0) reset.
-  useEffect(() => {
-    if (!group || loading) return;
-    if (headerHeight === 0) return;
-    if (bottomPinDeadlineRef.current === 0) return;
-    if (restoreTargetRef.current !== null) return;
-    let rafId: number | null = null;
-    let reentryGuard = false;
-    const repin = () => {
-      if (userInteractedRef.current) return;
-      if (Date.now() >= bottomPinDeadlineRef.current) return;
-      if (restoreTargetRef.current !== null) return;
-      if (reentryGuard) return;
-      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      if (max > 0 && Math.abs(window.scrollY - max) > 0.5) {
-        reentryGuard = true;
-        window.scrollTo(0, max);
-        reentryGuard = false;
-      }
-    };
-    const tick = () => {
-      rafId = null;
-      if (userInteractedRef.current || Date.now() >= bottomPinDeadlineRef.current) return;
-      if (restoreTargetRef.current !== null) return;
-      repin();
-      rafId = requestAnimationFrame(tick);
-    };
-    const onScroll = () => repin();
-    rafId = requestAnimationFrame(tick);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      window.removeEventListener('scroll', onScroll);
-    };
-  }, [group, loading, headerHeight]);
 
   // Listen for question:updated events (fired when close/reopen happens from within
   // a card). Merge the updates into our local group state so downstream UI —
@@ -1538,10 +1431,11 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     return groups;
   }, [groupQuestions, pollWrapperMap]);
 
-  // === Gap 1: per-poll follow/ignore tabs (To Do · New · Old) ===
-  // Classify one card group into a tab. A resolved wrapper drives it via
-  // `classifyPollTab`; a not-yet-resolved wrapper (cache cold) is treated as
-  // followed — To Do when the anchor still wants input, else New.
+  // === Gap 1: per-poll follow/ignore lists (To Do · New · Old) ===
+  // Each poll classifies into exactly ONE of three lists, rendered inline in
+  // order (To Do, then New, then Old) — not behind tabs. A resolved wrapper
+  // drives it via `classifyPollTab`; a not-yet-resolved wrapper (cache cold)
+  // is treated as followed — To Do when the anchor still wants input, else New.
   const classifyEntry = (g: { poll: Poll | null; anchor: Question; subQuestions: Question[] }): PollTab => {
     if (g.poll) {
       return classifyPollTab(g.poll, votedQuestionIds, abstainedQuestionIds, now.getTime());
@@ -1551,43 +1445,33 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     );
     return isQuestionOpen(g.anchor) && !responded ? "todo" : "new";
   };
-  const tabCounts = useMemo(() => {
-    let todo = 0;
-    let newC = 0;
-    let old = 0;
+  // Split the polls into the three ordered lists. `sections` drops any empty
+  // list (so its header divider is skipped); `visibleGroupedQuestions` is the
+  // flat concatenation in section order, which the virtualization + anchor +
+  // scroll-helper machinery below operates on.
+  const { sections, visibleGroupedQuestions } = useMemo(() => {
+    const byTab: Record<PollTab, GroupCardGroup[]> = { todo: [], new: [], old: [] };
     for (const g of groupedGroupQuestions) {
-      const t = classifyEntry(g);
-      if (t === "old") old += 1;
-      else {
-        newC += 1; // every followed poll (To Do is a subset of New)
-        if (t === "todo") todo += 1;
-      }
+      byTab[classifyEntry(g)].push(g as GroupCardGroup);
     }
-    return { todo, new: newC, old };
+    const built = SECTION_DEFS
+      .map((d) => ({ ...d, groups: byTab[d.tab] }))
+      .filter((s) => s.groups.length > 0);
+    return { sections: built, visibleGroupedQuestions: built.flatMap((s) => s.groups) };
     // classifyEntry reads votedQuestionIds/abstainedQuestionIds + the polls'
     // follow state (carried on groupedGroupQuestions); pollViewsTick is a
     // re-render nudge after a vote/view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupedGroupQuestions, votedQuestionIds, abstainedQuestionIds, pollViewsTick]);
-  // Default tab tracks counts until the user taps one (To Do if any, else New).
-  const effectiveTab: PollTab = selectedTab ?? (tabCounts.todo > 0 ? "todo" : "new");
-  const visibleGroupedQuestions = useMemo(() => {
-    return groupedGroupQuestions.filter((g) => {
-      const t = classifyEntry(g);
-      if (effectiveTab === "old") return t === "old";
-      if (effectiveTab === "todo") return t === "todo";
-      return t !== "old"; // New tab shows every followed poll
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupedGroupQuestions, effectiveTab, votedQuestionIds, abstainedQuestionIds, pollViewsTick]);
 
   // === Virtualization helpers (anchor + observer wiring) ===
-  // Anchor = the last group, so the document stays pinned to the bottom
-  // while cards above mount via progressive fill (matches the initial-load
-  // bottom-pin target).
+  // Anchor = the first (top) group, since a fresh visit lands at the top.
+  // The top card mounts first and progressive fill mounts the rest downward.
+  // (A back-nav restore mounts every card up-front in the mountedGroupKeys
+  // initializer, so the anchor only shapes the fresh-visit fill order.)
   const anchorGroupKey = useMemo(() => {
     if (visibleGroupedQuestions.length === 0) return null;
-    return visibleGroupedQuestions[visibleGroupedQuestions.length - 1].key;
+    return visibleGroupedQuestions[0].key;
   }, [visibleGroupedQuestions]);
 
   // Drop mountedGroupKeys entries for groups that no longer exist (forget,
@@ -1672,16 +1556,8 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver((entries) => {
-      let layoutDirty = false;
       for (const entry of entries) {
         const el = entry.target as HTMLElement;
-        if (el === document.documentElement) {
-          // The doc itself resized — usually means content below the cards
-          // (draft poll portal filling in, async-loaded images/fonts) just
-          // landed. Trigger pin recheck regardless of card-height changes.
-          layoutDirty = true;
-          continue;
-        }
         const key = el.dataset.groupKey;
         if (!key) continue;
         // Use borderBoxSize to avoid the forced layout that el.offsetHeight
@@ -1693,64 +1569,19 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         if (h <= 0) continue;
         if (groupHeightById.current.get(key) === h) continue;
         groupHeightById.current.set(key, h);
-        layoutDirty = true;
-      }
-      // Re-apply scroll adjustment on layout-only changes (async content
-      // filling cards, bubble bar mounting, fonts/images settling). Without
-      // this, neither bottom-pin nor card-anchor compensation re-fires when
-      // doc size changes outside React's render cycle.
-      if (layoutDirty) {
-        applyScrollAdjustmentRef.current();
       }
     });
     groupSizeObserverRef.current = ro;
     cardRefs.current.forEach(el => {
       if (el.dataset.groupKey) ro.observe(el);
     });
-    // Also observe the document element so post-card growth (the bubble bar
-    // portal filling in, async-mounted images, fonts loading) triggers
-    // bottom-pin re-application even though those don't go through cards.
-    const docEl = document.documentElement;
-    if (docEl) ro.observe(docEl);
     return () => {
       ro.disconnect();
       groupSizeObserverRef.current = null;
     };
   }, []);
 
-  // ===================================================================
-  // Bottom-pin. One unified function called from both useLayoutEffect
-  // (every render) and the ResizeObserver (every layout change,
-  // including async growth that doesn't trigger a render).
-  //
-  // As the doc grows (placeholders → real cards, results loads, fonts),
-  // keep scrollY at max so the user lands on the bubble bar. Disables
-  // on first user interaction (or after BOTTOM_PIN_DURATION_MS).
-  // ===================================================================
-  const applyScrollAdjustmentRef = useRef<() => void>(() => {});
-  applyScrollAdjustmentRef.current = () => {
-    if (typeof window === 'undefined' || !group) return;
-    if (userInteractedRef.current) return;
-    if (headerHeight === 0) return;
-    // While a saved scroll is being restored, the rAF loop above owns
-    // re-application. Don't let the bottom-pin fight it.
-    if (restoreTargetRef.current !== null) return;
-    // Bounded bottom-pin. Re-fire while async content settles
-    // (placeholders → real cards, results loads grow scrollHeight) so
-    // the bubble bar stays at the bottom of the viewport. Deadline
-    // bound + userInteracted gate cap the iOS visualViewport feedback
-    // loop that the unbounded PR #375 version produced.
-    if (Date.now() > bottomPinDeadlineRef.current) return;
-    const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-    if (max > 0 && Math.abs(window.scrollY - max) > 0.5) {
-      window.scrollTo(0, max);
-    }
-  };
-  useLayoutEffect(() => {
-    applyScrollAdjustmentRef.current();
-  });
-
-  // Disable both pins on first user interaction. We listen to wheel /
+  // Disable the restore pin on first user interaction. We listen to wheel /
   // touchstart / keydown rather than scroll because programmatic scrolls
   // (our own scrollTo, browser clamp on doc shrink) also fire scroll events
   // and would falsely disable the pin during initial layout settling.
@@ -1978,11 +1809,10 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     return <GroupNotFoundFallback routeId={groupId} />;
   }
 
-  // Cards-wrapper transform offset for the slide overlay. Saved-scroll
-  // restore wins; otherwise the fresh-nav overlay pins to the measured
-  // bottom. Undefined in the real route (it positions via window scroll).
-  const cardsTransformOffset =
-    overlayCardsOffset ?? (overlayShouldBottomPin ? overlayBottomOffset : undefined);
+  // Cards-wrapper transform offset for the slide overlay's saved-scroll
+  // restore. Undefined for a fresh-nav overlay (shows the top, no transform)
+  // and in the real route (it positions via window scroll).
+  const cardsTransformOffset = overlayCardsOffset;
 
   // Show the To Do/New/Old follow tabs whenever the group has polls — either
   // visible ones, or polls that are all hidden from this viewer pre-join
@@ -2078,160 +1908,101 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           // Fallback covers a 3-row bubble bar + heading + safe-area
           // inset for the first paint before the ResizeObserver fires.
           paddingBottom: `var(${PANEL_HEIGHT_VAR}, 12rem)`,
-          // Saved-scroll restore uses `overlayCardsOffset`; the fresh-nav
-          // overlay (no saved scroll) pins to the bottom via the measured
-          // `overlayBottomOffset` so the slide lands where the real route
-          // will. A 0 offset (top, or a short group) means no transform.
+          // Saved-scroll restore uses `overlayCardsOffset`; a fresh-nav
+          // overlay has no offset (shows the top, matching the real route's
+          // fresh-visit scroll-to-top). Undefined means no transform.
           transform: cardsTransformOffset
             ? `translate3d(0, ${-cardsTransformOffset}px, 0)`
             : undefined,
           willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
-        {/* Gap 1: To Do · New · Old segmented filter. Sticky just under the
-            fixed header so it stays reachable as the document scrolls. Only
-            shown when the group has polls.
-            NOTE: `position: sticky` resolves against the document scroller ONLY
-            because the enclosing cards-wrapper transform (cardsTransformOffset)
-            is transient — set only during overlay slides / saved-scroll restore,
-            never in the steady-state real route. If that transform ever becomes
-            persistent, this would stick to the transformed box instead of the
-            viewport; hoist the control out of the transformed wrapper then (it's
-            page chrome, not card content).
-            Also shown when the group has polls that are all hidden from this
-            viewer by the closed-before-join filter (`hasHiddenPolls`) — so a
-            late joiner to an all-closed group sees the tabs + an empty message
-            instead of a blank page. */}
-        {showFollowTabs && (
-          <div
-            ref={filterSwitchRef}
-            className="sticky z-[5] bg-[var(--background)] px-2 pb-2"
-            // Overlap the fixed header by 1px (added back to pt) so a subpixel
-            // rounding gap — headerHeight is an integer offsetHeight, but the
-            // header's real bottom can land on a fractional pixel — can't show
-            // scrolling polls through a hairline seam. The header (z-20,
-            // opaque bg-background) covers the 1px overlap.
-            style={{ top: `${headerHeight - 1}px`, paddingTop: "calc(0.25rem + 1px)" }}
-          >
-            <div className="flex rounded-full bg-gray-100 dark:bg-gray-800 p-0.5 text-sm font-medium">
-              {([
-                { id: "todo" as PollTab, label: "To Do", count: tabCounts.todo },
-                { id: "new" as PollTab, label: "New", count: tabCounts.new },
-                { id: "old" as PollTab, label: "Old", count: tabCounts.old },
-              ]).map((tab) => {
-                const active = effectiveTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => selectTab(tab.id)}
-                    aria-pressed={active}
-                    className={`flex-1 rounded-full py-1.5 transition-colors ${
-                      active
-                        ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
-                        : "text-gray-500 dark:text-gray-400"
-                    }`}
-                  >
-                    {tab.label}
-                    {tab.count > 0 && (
-                      <span className={active ? "ml-1 text-blue-600 dark:text-blue-400" : "ml-1 opacity-70"}>
-                        {tab.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+        {/* Gap 1: the three follow/ignore lists (To Do · New · Old) rendered
+            inline in order, each headed by a label with a divider line under
+            it. Empty lists are skipped (no header) since `sections` already
+            drops them. Sections after the first get top spacing (`mt-6`) so
+            there's a gap under each section before the next header. Cards keep
+            their own `border-b-2`. */}
+        {sections.map((section, sectionIdx) => (
+          <React.Fragment key={section.tab}>
+            <div
+              className={`${sectionIdx > 0 ? "mt-6" : ""} border-b-2 ${ROW_DIVIDER_CLASS} pl-[0.9rem] pr-[0.65rem] pt-3 pb-1 text-[19.2px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
+            >
+              {section.label}
             </div>
-          </div>
-        )}
-        {/* Top divider above the first poll — pairs with each card's
-            `border-b-2` so the rectangles are bracketed top + bottom.
-            Rendered only when there's at least one poll so empty groups
-            don't show a stray line above the bubble bar. */}
-        {visibleGroupedQuestions.length > 0 && (
-          <div
-            className={`border-t-2 ${ROW_DIVIDER_CLASS}`}
-            aria-hidden="true"
-          />
-        )}
-        {visibleGroupedQuestions.map((group) => {
-            // Virtualized window: groups outside ±2 viewport heights of the
-            // visible region render as a measured-height placeholder div. The
-            // anchor (URL-targeted card or last group when suppressExpand) is
-            // always in mountedGroupKeys so its compact-form measurements feed
-            // the layout-shift compensation effect from the very first paint.
-            if (!mountedGroupKeys.has(group.key)) {
-              const measured = groupHeightById.current.get(group.key);
-              const placeholderHeight = measured ?? ESTIMATED_GROUP_HEIGHT;
-              const anchorId = group.anchor.id;
+            {section.groups.map((group) => {
+              // Virtualized window: groups outside ±2 viewport heights of the
+              // visible region render as a measured-height placeholder div. The
+              // anchor (URL-targeted card or last group when suppressExpand) is
+              // always in mountedGroupKeys so its compact-form measurements feed
+              // the layout-shift compensation effect from the very first paint.
+              if (!mountedGroupKeys.has(group.key)) {
+                const measured = groupHeightById.current.get(group.key);
+                const placeholderHeight = measured ?? ESTIMATED_GROUP_HEIGHT;
+                const anchorId = group.anchor.id;
+                return (
+                  <div
+                    key={`placeholder-${group.key}`}
+                    ref={(el) => { el ? attachCardEl(el, anchorId, group.key) : detachCardEl(anchorId); }}
+                    className={`border-b-2 ${ROW_DIVIDER_CLASS}`}
+                    style={{ height: placeholderHeight }}
+                    aria-hidden="true"
+                  />
+                );
+              }
+              const question = group.anchor;
+              const isClosed = !isQuestionOpen(question);
+              const isAwaiting = isCardUnread(question);
+              const isPressed = pressedQuestionId === question.id;
+              // A freshly-submitted placeholder card while it fade-in-animates
+              // into its slot. Once POLL_HYDRATED_EVENT swaps the placeholder
+              // for the real Poll, this flag clears and the card paints
+              // normally.
+              const isPlaceholder = pendingPollFirstQuestionId === question.id
+                || isPendingPollId(question.poll_id);
+              const isTooltipActive = tooltipQuestionId === question.id;
               return (
-                <div
-                  key={`placeholder-${group.key}`}
-                  ref={(el) => { el ? attachCardEl(el, anchorId, group.key) : detachCardEl(anchorId); }}
-                  className={`border-b-2 ${ROW_DIVIDER_CLASS}`}
-                  style={{ height: placeholderHeight }}
-                  aria-hidden="true"
+                <GroupCardItem
+                  key={question.id}
+                  group={group as GroupCardGroup}
+                  groupRouteId={groupId}
+                  isPressed={isPressed}
+                  isPlaceholder={isPlaceholder}
+                  isAwaiting={isAwaiting}
+                  isClosed={isClosed}
+                  isTooltipActive={isTooltipActive}
+                  // To Do = followed + still needs the viewer's input. Drives
+                  // the swipe action: To Do → abstain (gold), other followed →
+                  // ignore (red), Old → re-follow (green). Within a section
+                  // every card classifies to `section.tab`.
+                  isTodo={section.tab === "todo"}
+                  effectiveTab={section.tab}
+                  nameReady={nameReady}
+                  questionResultsMap={questionResultsMap}
+                  userVoteMap={userVoteMap}
+                  longPressTimerRef={longPressTimer}
+                  isLongPressRef={isLongPress}
+                  touchStartPosRef={touchStartPos}
+                  isScrollingRef={isScrolling}
+                  touchJustHandledRef={touchJustHandled}
+                  attachCardEl={attachCardEl}
+                  detachCardEl={detachCardEl}
+                  setPressedQuestionId={setPressedQuestionId}
+                  setTooltipQuestionId={setTooltipQuestionId}
+                  setModalQuestion={setModalQuestion}
+                  setShowModal={setShowModal}
+                  onToggleFollow={handleToggleFollow}
+                  onAbstain={handleSwipeAbstain}
                 />
               );
-            }
-            const question = group.anchor;
-            const isClosed = !isQuestionOpen(question);
-            const isAwaiting = isCardUnread(question);
-            const isPressed = pressedQuestionId === question.id;
-            // A freshly-submitted placeholder card while it fade-in-animates
-            // into its slot. Once POLL_HYDRATED_EVENT swaps the placeholder
-            // for the real Poll, this flag clears and the card paints
-            // normally.
-            const isPlaceholder = pendingPollFirstQuestionId === question.id
-              || isPendingPollId(question.poll_id);
-            const isTooltipActive = tooltipQuestionId === question.id;
-            // To Do = followed + still needs the viewer's input. Drives the
-            // swipe action: To Do → abstain (gold), other followed → ignore
-            // (red), Old → re-follow (green).
-            const isTodo = group.poll
-              ? classifyPollTab(group.poll, votedQuestionIds, abstainedQuestionIds, now.getTime()) === "todo"
-              : false;
-            return (
-              <GroupCardItem
-                key={question.id}
-                group={group as GroupCardGroup}
-                groupRouteId={groupId}
-                isPressed={isPressed}
-                isPlaceholder={isPlaceholder}
-                isAwaiting={isAwaiting}
-                isClosed={isClosed}
-                isTooltipActive={isTooltipActive}
-                isTodo={isTodo}
-                effectiveTab={effectiveTab}
-                nameReady={nameReady}
-                questionResultsMap={questionResultsMap}
-                userVoteMap={userVoteMap}
-                longPressTimerRef={longPressTimer}
-                isLongPressRef={isLongPress}
-                touchStartPosRef={touchStartPos}
-                isScrollingRef={isScrolling}
-                touchJustHandledRef={touchJustHandled}
-                attachCardEl={attachCardEl}
-                detachCardEl={detachCardEl}
-                setPressedQuestionId={setPressedQuestionId}
-                setTooltipQuestionId={setTooltipQuestionId}
-                setModalQuestion={setModalQuestion}
-                setShowModal={setShowModal}
-                onToggleFollow={handleToggleFollow}
-                onAbstain={handleSwipeAbstain}
-              />
-            );
-          })}
-        {/* Gap 1: short empty-state when the active tab has no polls — either
-            because the group's polls are all in other tabs, or because every
-            poll is hidden from this viewer pre-join (`hasHiddenPolls`). */}
+            })}
+          </React.Fragment>
+        ))}
+        {/* Short empty-state when the group has polls but none are visible to
+            this viewer — every poll is hidden pre-join (`hasHiddenPolls`). */}
         {showFollowTabs && visibleGroupedQuestions.length === 0 && (
           <div className="px-4 py-10 text-center text-sm text-gray-400 dark:text-gray-500">
-            {effectiveTab === "todo"
-              ? "No to-dos"
-              : effectiveTab === "old"
-              ? "Nothing ignored"
-              : "Nothing new"}
+            Nothing to show
           </div>
         )}
       </div>
@@ -2441,9 +2212,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
               onClick={() => scrollAwaitingToHeader(scrollHelpers.upTargetId)}
               aria-label="Scroll to next poll awaiting your response"
               elevated={elevateArrowsForOverlay}
-              // Float below the fixed header AND the sticky To Do · New · Old
-              // filter switch so the arrow never overlaps the tabs.
-              style={{ top: `calc(${headerHeight + filterSwitchHeight}px + 0.5rem)` }}
+              // Float just below the fixed header. (The section header dividers
+              // scroll inline, so there's no sticky chrome to clear.)
+              style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
             />
           )}
           {scrollHelpers.showDown && (
