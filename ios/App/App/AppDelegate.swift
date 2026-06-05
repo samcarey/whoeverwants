@@ -16,14 +16,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Use `.systemBackground` so the leak adapts to light/dark, matching
         // the page's `prefers-color-scheme`-aware background.
         window?.backgroundColor = .systemBackground
-        // TEMP DIAGNOSTIC: write a NATIVE marker (no JS, no Capacitor plugin) into
-        // both the App Group and the Keychain on every launch. The headless
-        // QuickPollIntent reports whether it can read these back — isolating
-        // "does a shared channel work at all" (marker readable) from "does the
-        // JS→plugin setIdentity write run" (real identity readable). On device the
-        // intent read NOTHING from either store, which points at the write side.
-        NativeIdentityAppGroup.writeNativeMarker()
-        NativeIdentityKeychain.set("native_marker", "1")
         return true
     }
 
@@ -287,26 +279,6 @@ private enum NativeIdentityKeychain {
     static func delete(_ account: String) {
         SecItemDelete(baseQuery(account) as CFDictionary)
     }
-
-    // Diagnostics only: read from the app's DEFAULT access group (NO explicit
-    // kSecAttrAccessGroup), so a readout can compare "what's in the .siri group"
-    // against "what's in the default group" and pin where writes actually land.
-    static func getDefaultGroup(_ account: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data,
-              let str = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        return str
-    }
 }
 
 // Shared App Group store — the channel iOS ACTUALLY shares with the headless
@@ -334,12 +306,6 @@ private enum NativeIdentityAppGroup {
 
     static func name() -> String? { defaults?.string(forKey: nameKey) }
     static func browserId() -> String? { defaults?.string(forKey: browserIdKey) }
-
-    // TEMP DIAGNOSTIC: a native-written marker (see AppDelegate launch). If the
-    // intent reads markerSet()==true, the App Group IS shared with the intent's
-    // process and the missing identity is a WRITE-side (JS→plugin) failure.
-    static func writeNativeMarker() { defaults?.set("1", forKey: "native_marker") }
-    static func markerSet() -> Bool { defaults?.string(forKey: "native_marker") != nil }
 }
 
 // Custom Capacitor plugin: write/read the WebView's identity to/from the
@@ -569,25 +535,6 @@ enum QuickPollService {
         return URL(string: "https://\(host)/") ?? URL(string: "https://whoeverwants.com/")!
     }
 
-    // TEMP DIAGNOSTIC (remove once headless is confirmed). Spoken in the fallback
-    // dialog: what THIS intent's process can read from the shared App Group.
-    // "appgroup name <y/n>" is the decisive bit — if the App Group is shared with
-    // the intent (as designed) it should be "yes" once the app has synced, in
-    // which case loadIdentity succeeds and we never reach the fallback. If it's
-    // "no" here, either the App Group entitlement didn't provision or the
-    // foreground write never lands (App Group reads can't fail if the write did,
-    // so "no" ⇒ the write side). "kc" is the old Keychain read (expected no).
-    static func keychainDebug() -> String {
-        let agName = NativeIdentityAppGroup.name() != nil
-        let agMarker = NativeIdentityAppGroup.markerSet()
-        let kcMarker = NativeIdentityKeychain.get("native_marker") != nil
-        // "id" = real bridged identity (JS write). "ag marker" / "kc marker" =
-        // native-written launch markers (channel-works test). If a marker reads
-        // yes but id reads no → the shared channel works and the JS bridge write
-        // is the bug. If markers read no → the channel itself isn't shared.
-        return "id \(agName ? "yes" : "no"), ag marker \(agMarker ? "yes" : "no"), kc marker \(kcMarker ? "yes" : "no")"
-    }
-
     // Returns the created poll's title (echoed back by the server, which may have
     // normalized it). Throws a QuickPollError (spoken) on any failure.
     static func createPoll(prompt: String, identity: Identity) async throws -> String {
@@ -677,13 +624,13 @@ struct QuickPollIntent: AppIntent {
                 dialog: IntentDialog("Created your poll: \(title). Opening WhoeverWants.")
             )
         }
-        // TEMP DIAGNOSTIC in the spoken fallback (remove once headless is fixed):
-        // reports what this intent's process can read from the Keychain, so we can
-        // pin whether the bridge is even reachable cross-process. Ships in this
-        // branch's `latest` IPA directly (no canary FE / merge needed).
+        // Headless identity unavailable on this device (see the App Group note on
+        // loadIdentity — the bridge write isn't landing yet). Fall back to the
+        // Phase 1 deep link, opening the app to the create form with the prompt
+        // prefilled, so the user always gets their poll.
         return .result(
             opensIntent: OpenURLIntent(CreatePollIntent.createURL(prompt: trimmed)),
-            dialog: IntentDialog("Opening WhoeverWants to finish your poll. Debug: \(QuickPollService.keychainDebug()).")
+            dialog: IntentDialog("Opening WhoeverWants to finish your poll.")
         )
     }
 }

@@ -36,10 +36,10 @@
 	     the intent reads them here. NOT the bearer token — name + browser id are
 	     enough for an attributed create (X-Browser-Id resolves to the account),
 	     and App Group storage is less hardened than the Keychain. Both bundles
-	     (prod + latest) carry the same group; needs the "App Groups" capability
-	     on each App ID (registered + enabled on com.whoeverwants.app and
-	     com.whoeverwants.app.latest in the Apple Developer portal on 2026-06-04 (group assignment reconfirmed);
-	     automatic signing did NOT auto-create it, unlike Keychain Sharing). -->
+	     (prod + latest) carry the same group; the "App Groups" capability is
+	     registered + enabled on com.whoeverwants.app and com.whoeverwants.app.latest
+	     in the Apple Developer portal (a one-time manual step — automatic signing
+	     does NOT auto-create App Groups, unlike Keychain Sharing). -->
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.com.whoeverwants.siri</string>
