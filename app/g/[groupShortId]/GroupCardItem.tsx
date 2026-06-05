@@ -169,6 +169,33 @@ function HorizontalArrow({ className }: { className?: string }) {
   );
 }
 
+/** A stretching left→right leader: a 1px shaft that fills the available width
+ *  (flex-1) ending in a small arrowhead, so the line spans the whole gap from
+ *  the title to the result. */
+function LeaderArrow({ className }: { className?: string }) {
+  return (
+    <div
+      className={`flex items-center text-gray-400 dark:text-gray-500 ${className ?? ""}`}
+      aria-hidden="true"
+    >
+      <div className="flex-1 border-t border-current" />
+      <svg
+        className="-ml-px shrink-0"
+        width="6"
+        height="11"
+        viewBox="0 0 6 11"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M1 1 L5 5.5 L1 10" />
+      </svg>
+    </div>
+  );
+}
+
 /** Bent ↳ arrow (down, then 90° turn to the right) drawn just left of the
  *  first result line on the wrapped layout. */
 function BentArrow({ className }: { className?: string }) {
@@ -227,10 +254,16 @@ function TitleResultRow({
   const fitRef = React.useRef<HTMLDivElement>(null); // nowrap one-line probe
   const titleMeasRef = React.useRef<HTMLDivElement>(null); // title only, wraps
   const inlineMeasRef = React.useRef<HTMLDivElement>(null); // title+→+result, wraps
+  const lastLineRef = React.useRef<HTMLSpanElement>(null); // visible last-line title text
   const [mode, setMode] = React.useState<ResultRowMode>("below");
+  // x (relative to the container's left) where the title's last line ends, so
+  // the last-line leader can start right after the title text.
+  const [lastLineEndX, setLastLineEndX] = React.useState<number | null>(null);
   // Only a single result is ever an inline candidate; multiple results always
   // wrap below the title.
   const single = results.length === 1;
+  const modeRef = React.useRef(mode);
+  modeRef.current = mode;
 
   const evaluate = React.useCallback(() => {
     if (!single) {
@@ -253,20 +286,41 @@ function TitleResultRow({
     }
   }, [single]);
 
+  // Where does the title's last wrapped line end? Measured from the visible
+  // title text node via a Range (per-line client rects). Drives the last-line
+  // leader's left start. Only relevant in lastline mode.
+  const measureLastLine = React.useCallback(() => {
+    if (modeRef.current !== "lastline") return;
+    const c = containerRef.current;
+    const s = lastLineRef.current;
+    if (!c || !s) return;
+    const range = document.createRange();
+    range.selectNodeContents(s);
+    const rects = range.getClientRects();
+    if (!rects.length) return;
+    const last = rects[rects.length - 1];
+    const x = last.right - c.getBoundingClientRect().left;
+    setLastLineEndX((prev) => (prev !== null && Math.abs(prev - x) < 0.5 ? prev : x));
+  }, []);
+
   // Measure before paint on every render (content can change the natural
   // widths/heights). Cheap: a few layout reads + a guarded setState.
   React.useLayoutEffect(() => {
     evaluate();
+    measureLastLine();
   });
 
   // Re-measure on width changes.
   React.useEffect(() => {
     const c = containerRef.current;
     if (!c) return;
-    const ro = new ResizeObserver(() => evaluate());
+    const ro = new ResizeObserver(() => {
+      evaluate();
+      measureLastLine();
+    });
     ro.observe(c);
     return () => ro.disconnect();
-  }, [evaluate]);
+  }, [evaluate, measureLastLine]);
 
   const titleInner = (
     <>
@@ -343,35 +397,40 @@ function TitleResultRow({
       )}
 
       {single && mode === "oneline" ? (
-        // One line: title left, then the result pushed right with the
-        // horizontal arrow immediately before it.
+        // One line: title left, result right, with a leader line filling the
+        // entire gap between the title's end and the result's start.
         <div className="flex items-center min-w-0">
           <h3 className={`flex items-center ${titleFont} text-lg leading-tight text-gray-900 dark:text-white whitespace-nowrap`}>
             {titleInner}
           </h3>
-          <div className="flex-1 min-w-0" />
-          <div className="shrink-0 flex items-center gap-1.5 text-lg leading-tight whitespace-nowrap font-semibold">
-            <HorizontalArrow />
-            <span>{results[0].node}</span>
+          <LeaderArrow className="flex-1 mx-2" />
+          <div className="shrink-0 text-lg leading-tight whitespace-nowrap font-semibold">
+            {results[0].node}
           </div>
         </div>
       ) : single && mode === "lastline" ? (
         // Result fits on the title's last wrapped line. Title wraps at the full
         // 90% width (hanging indent so continuation lines align under the first
-        // line's text); the result is pinned bottom-right (right-justified, →
-        // arrow in front) on that last line. The fit measurement guarantees the
-        // last line's text + result stay within 90%, so the right-edge result
-        // can't overlap it.
+        // line's text); the result is pinned bottom-right on that last line,
+        // with a leader line spanning the gap from the end of the title text to
+        // the result. The fit measurement guarantees the last line's text +
+        // result stay within 90%, so they can't overlap.
         <>
           <h3
             className={`flex items-start ${titleFont} text-lg leading-tight text-gray-900 dark:text-white`}
             style={{ maxWidth: "90%" }}
           >
-            {titleInner}
+            <span className="mr-1.5 shrink-0" aria-hidden="true">{icon}</span>
+            <span ref={lastLineRef} className="min-w-0">{title}</span>
           </h3>
-          <div className="absolute right-0 bottom-0 flex items-center gap-1.5 pl-2 text-lg leading-tight whitespace-nowrap font-semibold">
-            <HorizontalArrow />
-            <span>{results[0].node}</span>
+          <div
+            className="absolute bottom-0 flex items-center"
+            style={{ left: `${(lastLineEndX ?? 0) + 8}px`, right: 0 }}
+          >
+            <LeaderArrow className="flex-1" />
+            <div className="shrink-0 pl-1.5 text-lg leading-tight whitespace-nowrap font-semibold">
+              {results[0].node}
+            </div>
           </div>
         </>
       ) : (
@@ -907,10 +966,10 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             the bottom-right metadata row below. */}
         {isMultiGroup ? (
           <div>
-            <h3 className="font-semibold text-lg leading-tight text-gray-900 dark:text-white">
+            <h3 className="font-medium underline underline-offset-[3px] text-lg leading-tight text-gray-900 dark:text-white">
               {question.title}
             </h3>
-            <div className="mt-1.5 space-y-1.5 pl-3">
+            <div className="mt-1.5 space-y-1.5 pl-[8.4px]">
               {group.subQuestions.map((sp) => {
                 const node = isPlaceholder ? null : plainResultForQuestion(sp);
                 return (
