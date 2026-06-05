@@ -169,39 +169,40 @@ function HorizontalArrow({ className }: { className?: string }) {
   );
 }
 
+/** The shared arrowhead. A short stub (M0 5 H8) continues the shaft to the
+ *  tip at x=8 and the barbs meet there, so the head connects seamlessly and
+ *  matches the 1.5px shaft. Used by BOTH the straight leader and the bent one
+ *  so the two variants are styled identically. */
+function ArrowHead({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg
+      className={`shrink-0 ${className ?? ""}`}
+      style={style}
+      width="9"
+      height="10"
+      viewBox="0 0 9 10"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M0 5 H8 M4.5 1.5 L8 5 L4.5 8.5" />
+    </svg>
+  );
+}
+
 /** A stretching left→right leader pointing at a result. The shaft fills the
- *  available width (flex-1) and ends in a small arrowhead drawn at the same
- *  1.5px stroke as the shaft, with a short stub so the two connect seamlessly.
- *  `bent` prepends a vertical drop + corner (used by the below layout) so the
- *  same styling covers both the straight and bent variants. */
-function LeaderArrow({ className, bent = false }: { className?: string; bent?: boolean }) {
+ *  available width (flex-1) and ends in the shared arrowhead (same 1.5px
+ *  stroke), so the line spans the whole gap from the title to the result. */
+function LeaderArrow({ className }: { className?: string }) {
   return (
     <div
-      className={`relative flex items-center text-gray-400 dark:text-gray-500 ${bent ? "h-[22px]" : ""} ${className ?? ""}`}
+      className={`flex items-center text-gray-400 dark:text-gray-500 ${className ?? ""}`}
       aria-hidden="true"
     >
-      {/* Vertical drop + corner for the bent variant: from the top down to the
-          shaft's vertical center (h-1/2 of the 22px box = 11px), meeting the
-          shaft's left end. */}
-      {bent && (
-        <div className="absolute left-0 top-0 h-1/2 border-l-[1.5px] border-current" />
-      )}
       <div className="flex-1 border-t-[1.5px] border-current" />
-      <svg
-        className="-ml-[1.5px] shrink-0"
-        width="9"
-        height="10"
-        viewBox="0 0 9 10"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        {/* Stub (M0 5 H8) continues the shaft to the tip; barbs meet at the tip
-            so the head connects to and matches the shaft. */}
-        <path d="M0 5 H8 M4.5 1.5 L8 5 L4.5 8.5" />
-      </svg>
+      <ArrowHead className="-ml-[1.5px]" />
     </div>
   );
 }
@@ -244,10 +245,23 @@ function TitleResultRow({
   const titleMeasRef = React.useRef<HTMLDivElement>(null); // title only, wraps
   const inlineMeasRef = React.useRef<HTMLDivElement>(null); // title+→+result, wraps
   const lastLineRef = React.useRef<HTMLSpanElement>(null); // visible last-line title text
+  // Below-mode geometry refs: the title text start (drives the leader's
+  // indent), the result block (its first line is where the leader points), all
+  // measured relative to the below row.
+  const belowRowRef = React.useRef<HTMLDivElement>(null);
+  const belowTitleRef = React.useRef<HTMLSpanElement>(null);
+  const belowResultRef = React.useRef<HTMLDivElement>(null);
   const [mode, setMode] = React.useState<ResultRowMode>("below");
   // x (relative to the container's left) where the title's last line ends, so
   // the last-line leader can start right after the title text.
   const [lastLineEndX, setLastLineEndX] = React.useState<number | null>(null);
+  // Below-mode bent leader geometry (all relative to the below row): where the
+  // vertical drop sits (indentX, a bit right of the title text start), where
+  // the result's first line begins (resultLeftX), and that line's center y
+  // (lineY) where the horizontal runs.
+  const [belowGeom, setBelowGeom] = React.useState<
+    { indentX: number; resultLeftX: number; lineY: number } | null
+  >(null);
   // Only a single result is ever an inline candidate; multiple results always
   // wrap below the title.
   const single = results.length === 1;
@@ -292,11 +306,45 @@ function TitleResultRow({
     setLastLineEndX((prev) => (prev !== null && Math.abs(prev - x) < 0.5 ? prev : x));
   }, []);
 
+  // Below mode: measure the indent (slightly right of the title text start) +
+  // the result's first-line left edge + its center y, so the bent leader drops
+  // from under the title and runs across exactly to where the result begins.
+  const measureBelow = React.useCallback(() => {
+    if (modeRef.current !== "below") return;
+    const row = belowRowRef.current;
+    const tt = belowTitleRef.current;
+    const rb = belowResultRef.current;
+    if (!row || !tt || !rb) return;
+    const rowLeft = row.getBoundingClientRect().left;
+    const rowTop = row.getBoundingClientRect().top;
+    const ttRange = document.createRange();
+    ttRange.selectNodeContents(tt);
+    const ttFirst = ttRange.getClientRects()[0];
+    const rbRange = document.createRange();
+    rbRange.selectNodeContents(rb);
+    const rbRects = rbRange.getClientRects();
+    const rbFirst = rbRects[0];
+    if (!ttFirst || !rbFirst) return;
+    // Indent the vertical ~6px right of the title text start.
+    const indentX = ttFirst.left - rowLeft + 6;
+    const resultLeftX = rbFirst.left - rowLeft;
+    const lineY = rbFirst.top - rowTop + rbFirst.height / 2;
+    setBelowGeom((prev) =>
+      prev &&
+      Math.abs(prev.indentX - indentX) < 0.5 &&
+      Math.abs(prev.resultLeftX - resultLeftX) < 0.5 &&
+      Math.abs(prev.lineY - lineY) < 0.5
+        ? prev
+        : { indentX, resultLeftX, lineY },
+    );
+  }, []);
+
   // Measure before paint on every render (content can change the natural
   // widths/heights). Cheap: a few layout reads + a guarded setState.
   React.useLayoutEffect(() => {
     evaluate();
     measureLastLine();
+    measureBelow();
   });
 
   // Re-measure on width changes.
@@ -306,10 +354,11 @@ function TitleResultRow({
     const ro = new ResizeObserver(() => {
       evaluate();
       measureLastLine();
+      measureBelow();
     });
     ro.observe(c);
     return () => ro.disconnect();
-  }, [evaluate, measureLastLine]);
+  }, [evaluate, measureLastLine, measureBelow]);
 
   const titleInner = (
     <>
@@ -424,23 +473,21 @@ function TitleResultRow({
         </>
       ) : (
         // Below: title ≤90% wide; result below it, right-justified within the
-        // right 80%. A bent leader drops down from just under the title text
-        // (an invisible icon spacer aligns it there) and runs horizontally all
-        // the way across to where the result text begins.
+        // right 80%. A bent leader drops down from just right of the title text
+        // start and runs horizontally all the way across to where the result's
+        // first line begins (both measured), ending in the shared arrowhead.
         <div>
           <h3
             className={`flex items-start ${titleFont} text-lg leading-tight text-gray-900 dark:text-white`}
             style={{ maxWidth: "90%" }}
           >
-            {titleInner}
+            <span className="mr-1.5 shrink-0" aria-hidden="true">{icon}</span>
+            <span ref={belowTitleRef} className="min-w-0">{title}</span>
           </h3>
-          <div className="mt-1 flex items-start">
-            {/* Invisible icon spacer reserves the icon's width so the leader's
-                vertical drop lands under the title text start, not the icon. */}
-            <span className="mr-1.5 shrink-0 invisible" aria-hidden="true">{icon}</span>
-            <LeaderArrow bent className="ml-1.5 flex-1 self-start" />
+          <div ref={belowRowRef} className="relative mt-1">
             <div
-              className="shrink-0 pl-1.5 flex flex-col items-end text-right"
+              ref={belowResultRef}
+              className="ml-auto flex flex-col items-end text-right"
               style={{ maxWidth: "80%" }}
             >
               {results.map((res) => (
@@ -449,6 +496,28 @@ function TitleResultRow({
                 </div>
               ))}
             </div>
+            {belowGeom && (
+              <div className="pointer-events-none absolute inset-0 text-gray-400 dark:text-gray-500" aria-hidden="true">
+                {/* Vertical drop from the row top to the result's first line. */}
+                <div
+                  className="absolute border-l-[1.5px] border-current"
+                  style={{ left: belowGeom.indentX, top: 0, height: belowGeom.lineY }}
+                />
+                {/* Horizontal run from the drop across to the result. */}
+                <div
+                  className="absolute border-t-[1.5px] border-current"
+                  style={{
+                    left: belowGeom.indentX,
+                    top: belowGeom.lineY,
+                    width: Math.max(0, belowGeom.resultLeftX - belowGeom.indentX - 6),
+                  }}
+                />
+                <ArrowHead
+                  className="absolute"
+                  style={{ left: belowGeom.resultLeftX - 8, top: belowGeom.lineY - 5 }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
