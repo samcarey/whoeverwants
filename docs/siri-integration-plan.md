@@ -306,6 +306,27 @@ existing auth model (`docs/auth-access-model.md`).
 
 ## Phase 3 — Headless poll creation App Intent ("create without opening the app")
 
+> **✅ STATUS (2026-06-05, later same day): HEADLESS CREATION DEVICE-VERIFIED on
+> canary `latest`.** With the plugin-registration fix (#611) + spoken-name fix (#615)
+> on a fresh `latest` TestFlight build, the foreground `setIdentity` write landed
+> (canary stdout `[client-log] … [native-identity] setIdentity resolved`), the App
+> Group cross-process read succeeded, and the intent's native `URLSession` `POST
+> /api/polls` returned `201 Created` with the app un-launched. Invoked via **Spotlight**
+> ("Quick poll" → typed prompt), not voice. The 5-cycle headless blocker is CLOSED.
+> Two follow-ups from the device test: (a) a **web-only diagnostic fix**
+> (`lib/nativeIdentity.ts`) — the one-shot log latched on the empty app-launch sync and
+> hid the populated write (the write itself was always correct, which is why headless
+> worked); now it logs the first NON-EMPTY resolve. (b) a **native success-path UX fix
+> (this branch)** — the success branch now opens straight to the new poll's detail page
+> (`/g/<groupShort>/p/<pollShort>`, parsed from the response's `group_short_id` +
+> `short_id`) instead of bare home, because opening `/` when the WebView was already on
+> `/` was a no-op push that left the new poll invisible until a remount. Needs a fresh
+> `latest` build to verify the UX fix. **Voice trigger is still flaky** (poll→pull
+> speech-to-text miss; `CFBundleSpokenName` + iOS re-index lag) — a SEPARATE layer from
+> the now-proven headless logic; Spotlight is the dependable voice-free trigger. WWDC
+> re-check (Phase 0) still owed before PROD. The original root-cause writeup follows for
+> the record.
+>
 > **⚠️ STATUS (2026-06-05): ROOT CAUSE FOUND + FIX SHIPPED to branch
 > `claude/siri-integration-plan-XzuVk` — app-target Capacitor plugins were NEVER
 > REGISTERED.** The "quick poll" deep-link fallback already ships (always works; the
