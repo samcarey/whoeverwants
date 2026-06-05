@@ -117,14 +117,15 @@ describe("syncNativeIdentity", () => {
       name: null,
     });
     expect(warn).not.toHaveBeenCalled();
-    // Identity becomes available (browser id + name); the next, populated write
-    // is the one we log.
-    localStorage.setItem("browser_id", REAL_UUID);
+    // A name becomes available; the next, populated write is the one we log.
+    // (token + browser id read through module-level caches that latched null on
+    // the empty launch read, so they stay false here — mirroring the real device
+    // launch sequence, where the name is the first thing set.)
     localStorage.setItem("whoeverwants_user_name", "Sam");
     await syncNativeIdentity();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toContain(
-      "[native-identity] setIdentity resolved (hasToken=false hasName=true hasBrowserId=true)",
+      "[native-identity] setIdentity resolved (hasToken=false hasName=true hasBrowserId=false)",
     );
     warn.mockRestore();
   });
