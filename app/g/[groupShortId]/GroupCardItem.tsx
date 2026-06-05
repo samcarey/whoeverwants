@@ -203,11 +203,13 @@ function LeaderLine({ className, bent = false }: { className?: string; bent?: bo
 
   const height = bent ? LEADER_LINE_Y + LEADER_HEAD + 2 : 10;
   const lineY = bent ? LEADER_LINE_Y : 5;
-  const tipX = Math.max(0, w - 0.75); // keep the 1.5px tip inside the box
+  // Leave a little more breathing room before the result on the bent variant.
+  const tipX = Math.max(0, w - (bent ? 7 : 0.75));
   const back = tipX - LEADER_HEAD;
+  // Bent: one continuous L — vertical down from the top, then horizontal — so
+  // the horizontal starts exactly at the vertical's x (no leftward overhang).
   const d =
-    (bent ? `M0.75 0 V${lineY} ` : "") +
-    `M0 ${lineY} H${tipX} ` +
+    (bent ? `M0.75 0 V${lineY} H${tipX} ` : `M0 ${lineY} H${tipX} `) +
     `M${back} ${lineY - LEADER_HEAD * 0.7} L${tipX} ${lineY} L${back} ${lineY + LEADER_HEAD * 0.7}`;
 
   return (
