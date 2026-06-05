@@ -92,6 +92,31 @@ class MainViewController: CAPBridgeViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
     }
+
+    // EXPLICITLY register every colocated app-target plugin. This is the
+    // load-bearing fix for the "the bridge write never lands" symptom that
+    // stalled Phase 3 of docs/siri-integration-plan.md (the headless QuickPoll
+    // App Group came up empty because `NativeIdentity.setIdentity` rejected with
+    // "plugin is not implemented on ios").
+    //
+    // Root cause: Capacitor does NOT auto-discover `CAPBridgedPlugin` conformers
+    // that are compiled directly into the APP TARGET. Runtime auto-discovery only
+    // covers plugins shipped in CocoaPods / Swift Package Manager packages
+    // (registered via their package's plugin list). A plugin class colocated in
+    // the app binary — as all of ours are, to avoid project.pbxproj surgery in the
+    // headless CI build — must be registered by hand here. This is the documented
+    // Capacitor pattern (capacitorjs.com/docs/ios/custom-code: override
+    // `capacitorDidLoad()` + `bridge?.registerPluginInstance(...)`).
+    //
+    // Before this, ClipboardUrl / AppBadge / NativeIdentity all silently failed to
+    // register — none was ever device-confirmed — and every JS call to them
+    // rejected (swallowed by best-effort `catch {}`s on the JS side). MainViewController
+    // is the storyboard's root VC (Main.storyboard customClass), so this override runs.
+    override open func capacitorDidLoad() {
+        bridge?.registerPluginInstance(ClipboardUrlPlugin())
+        bridge?.registerPluginInstance(AppBadgePlugin())
+        bridge?.registerPluginInstance(NativeIdentityPlugin())
+    }
 }
 
 // Custom Capacitor plugin: peek at a copied web URL WITHOUT triggering iOS's
@@ -105,8 +130,9 @@ class MainViewController: CAPBridgeViewController {
 //
 // Colocated in AppDelegate.swift for the same reason MainViewController is:
 // a new .swift file means hand-patching project.pbxproj in the headless CI
-// build. Capacitor auto-discovers CAPBridgedPlugin conformers at runtime, so
-// no project.pbxproj or cap-config change is needed beyond compiling this class.
+// build. App-target plugins are NOT auto-discovered (only CocoaPods/SPM-packaged
+// plugins are), so this class is registered by hand in
+// MainViewController.capacitorDidLoad().
 @objc(ClipboardUrlPlugin)
 public class ClipboardUrlPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "ClipboardUrlPlugin"
@@ -150,9 +176,9 @@ public class ClipboardUrlPlugin: CAPPlugin, CAPBridgedPlugin {
 //
 // Colocated in AppDelegate.swift for the same reason MainViewController /
 // ClipboardUrlPlugin are: a new .swift file means hand-patching project.pbxproj
-// in the headless CI build. Capacitor auto-discovers CAPBridgedPlugin conformers
-// at runtime, so no project.pbxproj or cap-config change is needed beyond
-// compiling this class.
+// in the headless CI build. App-target plugins are NOT auto-discovered (only
+// CocoaPods/SPM-packaged plugins are), so this class is registered by hand in
+// MainViewController.capacitorDidLoad().
 @objc(AppBadgePlugin)
 public class AppBadgePlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "AppBadgePlugin"
@@ -317,11 +343,13 @@ private enum NativeIdentityAppGroup {
 //
 // Colocated in AppDelegate.swift for the same reason MainViewController /
 // ClipboardUrlPlugin / AppBadgePlugin are: a new .swift file means hand-patching
-// project.pbxproj in the headless CI build. Capacitor auto-discovers
-// CAPBridgedPlugin conformers at runtime — no project.pbxproj or cap-config
-// change is needed beyond compiling this class. Keychain APIs need no
-// `@available` gate (available on every supported iOS), unlike the iOS-18
-// OpenURLIntent below.
+// project.pbxproj in the headless CI build. App-target plugins are NOT
+// auto-discovered (only CocoaPods/SPM-packaged plugins are), so this class is
+// registered by hand in MainViewController.capacitorDidLoad() — that explicit
+// registration is what makes `setIdentity` actually reachable from JS (without
+// it the App Group write never landed and Phase 3 headless creation stalled).
+// Keychain APIs need no `@available` gate (available on every supported iOS),
+// unlike the iOS-18 OpenURLIntent below.
 @objc(NativeIdentityPlugin)
 public class NativeIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativeIdentityPlugin"

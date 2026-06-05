@@ -55,6 +55,17 @@ function getPlugin(): NativeIdentityPlugin {
 // duplicate event harmless. Left unset on a failed write so the next call retries.
 let lastSynced: string | null = null;
 
+// One-shot diagnostic: log the FIRST setIdentity outcome (resolve vs reject) so
+// we can confirm on canary — via the client-log forwarder — whether the native
+// `NativeIdentity` plugin is actually registered now. Before the explicit
+// `capacitorDidLoad()` registration (ios/App/App/AppDelegate.swift) the call
+// rejected with "plugin is not implemented on ios", which the best-effort
+// `catch {}` swallowed silently — leaving the App Group write to never land and
+// Phase 3 headless creation stalled (docs/siri-integration-plan.md NEXT STEP 1).
+// Read it on the matching tier: GET /api/client-logs?search=native-identity.
+// The flag keeps it to ONE log line per app session (the ring buffer is small).
+let loggedOutcome = false;
+
 /**
  * Push the current token / browser id / display name into the Keychain.
  * No-op on web / PWA, and a no-op when the triple is unchanged since the last
@@ -74,8 +85,21 @@ export async function syncNativeIdentity(): Promise<void> {
   try {
     await getPlugin().setIdentity(payload);
     lastSynced = key;
-  } catch {
+    if (!loggedOutcome) {
+      loggedOutcome = true;
+      // No secrets — just presence flags so the line is safe in the log buffer.
+      console.warn(
+        `[native-identity] setIdentity resolved (hasToken=${!!payload.token} hasName=${!!payload.name} hasBrowserId=${!!payload.browserId})`,
+      );
+    }
+  } catch (err) {
     // best-effort — leave lastSynced unset so the next call retries.
+    if (!loggedOutcome) {
+      loggedOutcome = true;
+      console.warn(
+        `[native-identity] setIdentity rejected: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }
 
@@ -107,4 +131,5 @@ export function installNativeIdentitySync(): void {
 export function _resetNativeIdentityForTests(): void {
   installed = false;
   lastSynced = null;
+  loggedOutcome = false;
 }
