@@ -1182,6 +1182,36 @@ constant and the mount `useEffect([fetchQuestions])` runs once;
 `getMyGroups`'s `myGroupsInFlight` coalescing makes a retry that races
 an in-flight fetch join it rather than double-fire.
 
+**Home re-fetches groups on `SESSION_CHANGED_EVENT`, not just on
+mount (`app/page.tsx`).** Signing in from the home empty-state's
+"Sign In" modal completes IN PLACE (no remount) — `persistSignIn` →
+`saveSession` fires `SESSION_CHANGED_EVENT`. The home page's original
+session listener only used that event to swap away the "Sign In"
+button (toggling `session` state), so the membership-driven group list
+stayed empty until the user navigated away and back (e.g. to settings),
+which remounted home and re-ran the mount fetch. Symptom (real iOS
+report): "after signing in from the main page, groups don't appear
+until I go to settings and come back." Fix: a SECOND effect listens to
+`SESSION_CHANGED_EVENT` and re-runs `fetchQuestions()` — kept separate
+from the button-state effect (which has `[]` deps) so it can carry
+`[fetchQuestions]` deps cleanly; mirrors the adjacent `POLL_HYDRATED_EVENT`
+listener. The new bearer is already in `lib/session`'s `cachedToken`
+module cache by the time the event fires (saveSession sets it
+synchronously before dispatching), so the refetch's `getMyGroups()`
+carries it. General rule: any surface that renders identity-dependent
+data AND can have a sign-in/out complete WITHOUT a remount (a modal,
+not a nav) must listen to `SESSION_CHANGED_EVENT` and re-fetch — don't
+assume a remount will pick up the new session. Verifying this needs a
+real in-place sign-in: a passkey ceremony via the CDP virtual
+authenticator (register account → seed a group as it → simulate a
+fresh signed-out device by LOCALLY clearing `session_token`/
+`session_user`/`browser_id` in localStorage, NOT a server sign-out
+which `unlink_browser`s the account's member browser → reload → sign in
+with the resident passkey on the home modal → assert the empty-state
+detaches with `page.url()` unchanged). A server sign-out can't be used
+for the "fresh device" setup because it unlinks the only browser
+holding the seeded group's membership.
+
 **Pitfall: `cachedToken` in `lib/session.ts` is module-cached.**
 The first call to `getSessionToken()` reads localStorage and stores
 the result; subsequent calls return the cached value without
