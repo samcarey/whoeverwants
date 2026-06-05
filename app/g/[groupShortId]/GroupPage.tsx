@@ -68,7 +68,7 @@ const ESTIMATED_GROUP_HEIGHT = 110;
 // labeled header with a divider line under it; empty lists are skipped.
 const SECTION_DEFS: { tab: PollTab; label: string }[] = [
   { tab: "todo", label: "To Do" },
-  { tab: "new", label: "New" },
+  { tab: "new", label: "Relevant" },
   { tab: "old", label: "Old" },
 ];
 
