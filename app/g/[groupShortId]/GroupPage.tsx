@@ -64,12 +64,12 @@ import type { Group } from "@/lib/groupUtils";
 // don't shift the document layout.
 const ESTIMATED_GROUP_HEIGHT = 110;
 
-// The three follow/ignore lists, rendered inline in this order. Each gets an
-// edge-to-edge solid-color header divider; empty lists are skipped entirely.
-const SECTION_DEFS: { tab: PollTab; label: string; headerClass: string }[] = [
-  { tab: "todo", label: "To Do", headerClass: "bg-green-600 dark:bg-green-700" },
-  { tab: "new", label: "New", headerClass: "bg-blue-600 dark:bg-blue-700" },
-  { tab: "old", label: "Old", headerClass: "bg-gray-500 dark:bg-gray-600" },
+// The three follow/ignore lists, rendered inline in this order. Each gets a
+// labeled header with a divider line under it; empty lists are skipped.
+const SECTION_DEFS: { tab: PollTab; label: string }[] = [
+  { tab: "todo", label: "To Do" },
+  { tab: "new", label: "New" },
+  { tab: "old", label: "Old" },
 ];
 
 // Group key for `groupedGroupQuestions` — questions of the same poll share
@@ -2069,15 +2069,15 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         }}
       >
         {/* Gap 1: the three follow/ignore lists (To Do · New · Old) rendered
-            inline in order, each preceded by an edge-to-edge solid-color header
-            divider (green/blue/grey). Empty lists are skipped (no header
-            divider) since `sections` already drops them. The colored bar also
-            brackets the first card top (replacing the old standalone top
-            divider); each card keeps its own `border-b-2`. */}
-        {sections.map((section) => (
+            inline in order, each headed by a label with a divider line under
+            it. Empty lists are skipped (no header) since `sections` already
+            drops them. Sections after the first get top spacing (`mt-6`) so
+            there's a gap under each section before the next header. Cards keep
+            their own `border-b-2`. */}
+        {sections.map((section, sectionIdx) => (
           <React.Fragment key={section.tab}>
             <div
-              className={`${section.headerClass} pl-[0.9rem] pr-[0.65rem] py-1.5 text-xs font-semibold uppercase tracking-wide text-white`}
+              className={`${sectionIdx > 0 ? "mt-6" : ""} border-b-2 ${ROW_DIVIDER_CLASS} pl-[0.9rem] pr-[0.65rem] pt-3 pb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
             >
               {section.label}
             </div>
