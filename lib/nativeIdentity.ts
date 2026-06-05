@@ -82,10 +82,18 @@ export async function syncNativeIdentity(): Promise<void> {
   };
   const key = JSON.stringify(payload);
   if (key === lastSynced) return;
+  // The launch-time sync fires before localStorage identity is established (a
+  // fresh install has no browser id / name yet), so an all-empty payload here
+  // proves the plugin RESOLVES but tells us nothing about the populated write.
+  // Only treat a non-empty resolve as the logged outcome, so the verification
+  // line reflects a real write (hasName / hasBrowserId true) instead of latching
+  // on the empty launch sync. A rejection still logs immediately regardless of
+  // payload — that's the "plugin not registered" failure the diagnostic exists for.
+  const hasAny = !!payload.token || !!payload.name || !!payload.browserId;
   try {
     await getPlugin().setIdentity(payload);
     lastSynced = key;
-    if (!loggedOutcome) {
+    if (!loggedOutcome && hasAny) {
       loggedOutcome = true;
       // No secrets — just presence flags so the line is safe in the log buffer.
       console.warn(

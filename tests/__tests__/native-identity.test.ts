@@ -106,6 +106,29 @@ describe("syncNativeIdentity", () => {
     warn.mockRestore();
   });
 
+  it("does not log the empty launch sync, then logs the first populated resolve", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // First sync at launch before any identity is in localStorage: resolves
+    // (plugin registered) but the payload is all-null — must NOT latch the log.
+    await syncNativeIdentity();
+    expect(h.setIdentity).toHaveBeenCalledWith({
+      token: null,
+      browserId: null,
+      name: null,
+    });
+    expect(warn).not.toHaveBeenCalled();
+    // Identity becomes available (browser id + name); the next, populated write
+    // is the one we log.
+    localStorage.setItem("browser_id", REAL_UUID);
+    localStorage.setItem("whoeverwants_user_name", "Sam");
+    await syncNativeIdentity();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain(
+      "[native-identity] setIdentity resolved (hasToken=false hasName=true hasBrowserId=true)",
+    );
+    warn.mockRestore();
+  });
+
   it("logs a rejected setIdentity (the 'plugin not registered' diagnostic)", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     h.setIdentity.mockRejectedValueOnce(
