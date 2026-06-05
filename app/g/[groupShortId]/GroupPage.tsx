@@ -40,7 +40,6 @@ import { classifyPollTab, type PollTab } from "@/lib/followState";
 import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
-import { getRememberedGroupTab, rememberGroupTab } from "@/lib/groupTabMemory";
 import { isScrollRestoring, setScrollRestoring } from "@/lib/scrollRestoreState";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import FollowUpModal from "@/components/FollowUpModal";
@@ -64,6 +63,14 @@ import type { Group } from "@/lib/groupUtils";
 // once. Subsequent unmounts use the measured height, so unmount→remount cycles
 // don't shift the document layout.
 const ESTIMATED_GROUP_HEIGHT = 110;
+
+// The three follow/ignore lists, rendered inline in this order. Each gets an
+// edge-to-edge header divider; empty lists are skipped entirely.
+const SECTION_DEFS: { tab: PollTab; label: string }[] = [
+  { tab: "todo", label: "To Do" },
+  { tab: "new", label: "New" },
+  { tab: "old", label: "Old" },
+];
 
 // Group key for `groupedGroupQuestions` — questions of the same poll share
 // poll_id; legacy (non-poll) questions get a unique `solo-` prefix so they
@@ -219,17 +226,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // POLL_VIEWED_CHANGED_EVENT is enough to recompute (e.g. clear the bar the
   // instant the user opens a poll).
   const { badgeSettings, pollViewsTick } = useUnreadReactivity();
-  // Gap 1: the active follow/ignore tab. null = follow the default (To Do when
-  // any, else New); a user tap pins it. Seeded from groupTabMemory so the
-  // choice survives poll-detail round-trips (GroupContent remounts on back);
-  // cleared when home mounts (see clearGroupTabs in app/page.tsx).
-  const [selectedTab, setSelectedTab] = useState<PollTab | null>(
-    () => getRememberedGroupTab(groupId) ?? null,
-  );
-  const selectTab = useRef((tab: PollTab) => {
-    setSelectedTab(tab);
-    rememberGroupTab(groupId, tab);
-  }).current;
 
   // Phase 5b: poll-level mutations (close/reopen/cutoff) update the
   // polls array; question mutations (forget) update the questions array.
@@ -843,12 +839,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // initial commit, but on iOS Firefox the first paint can run with the
   // pre-effect state.
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([group], 80);
-
-  // The sticky To Do · New · Old filter switch sits just under the fixed
-  // header. Measure it so the up scroll-helper arrow can float below it
-  // rather than under (and overlapping) it. 0 when no filter is shown
-  // (empty group), which is also when no awaiting card / up arrow exists.
-  const [filterSwitchRef, filterSwitchHeight] = useMeasuredHeight<HTMLDivElement>([group], 0);
 
   // Swipe-back gesture: dragging rightward on the content slides the page
   // off to the right with the home backdrop revealed underneath. While the
@@ -1538,10 +1528,11 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     return groups;
   }, [groupQuestions, pollWrapperMap]);
 
-  // === Gap 1: per-poll follow/ignore tabs (To Do · New · Old) ===
-  // Classify one card group into a tab. A resolved wrapper drives it via
-  // `classifyPollTab`; a not-yet-resolved wrapper (cache cold) is treated as
-  // followed — To Do when the anchor still wants input, else New.
+  // === Gap 1: per-poll follow/ignore lists (To Do · New · Old) ===
+  // Each poll classifies into exactly ONE of three lists, rendered inline in
+  // order (To Do, then New, then Old) — not behind tabs. A resolved wrapper
+  // drives it via `classifyPollTab`; a not-yet-resolved wrapper (cache cold)
+  // is treated as followed — To Do when the anchor still wants input, else New.
   const classifyEntry = (g: { poll: Poll | null; anchor: Question; subQuestions: Question[] }): PollTab => {
     if (g.poll) {
       return classifyPollTab(g.poll, votedQuestionIds, abstainedQuestionIds, now.getTime());
@@ -1551,35 +1542,24 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     );
     return isQuestionOpen(g.anchor) && !responded ? "todo" : "new";
   };
-  const tabCounts = useMemo(() => {
-    let todo = 0;
-    let newC = 0;
-    let old = 0;
+  // Split the polls into the three ordered lists. `sections` drops any empty
+  // list (so its header divider is skipped); `visibleGroupedQuestions` is the
+  // flat concatenation in section order, which the virtualization + anchor +
+  // scroll-helper machinery below operates on.
+  const { sections, visibleGroupedQuestions } = useMemo(() => {
+    const byTab: Record<PollTab, GroupCardGroup[]> = { todo: [], new: [], old: [] };
     for (const g of groupedGroupQuestions) {
-      const t = classifyEntry(g);
-      if (t === "old") old += 1;
-      else {
-        newC += 1; // every followed poll (To Do is a subset of New)
-        if (t === "todo") todo += 1;
-      }
+      byTab[classifyEntry(g)].push(g as GroupCardGroup);
     }
-    return { todo, new: newC, old };
+    const built = SECTION_DEFS
+      .map((d) => ({ ...d, groups: byTab[d.tab] }))
+      .filter((s) => s.groups.length > 0);
+    return { sections: built, visibleGroupedQuestions: built.flatMap((s) => s.groups) };
     // classifyEntry reads votedQuestionIds/abstainedQuestionIds + the polls'
     // follow state (carried on groupedGroupQuestions); pollViewsTick is a
     // re-render nudge after a vote/view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupedGroupQuestions, votedQuestionIds, abstainedQuestionIds, pollViewsTick]);
-  // Default tab tracks counts until the user taps one (To Do if any, else New).
-  const effectiveTab: PollTab = selectedTab ?? (tabCounts.todo > 0 ? "todo" : "new");
-  const visibleGroupedQuestions = useMemo(() => {
-    return groupedGroupQuestions.filter((g) => {
-      const t = classifyEntry(g);
-      if (effectiveTab === "old") return t === "old";
-      if (effectiveTab === "todo") return t === "todo";
-      return t !== "old"; // New tab shows every followed poll
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupedGroupQuestions, effectiveTab, votedQuestionIds, abstainedQuestionIds, pollViewsTick]);
 
   // === Virtualization helpers (anchor + observer wiring) ===
   // Anchor = the last group, so the document stays pinned to the bottom
@@ -2088,150 +2068,92 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
-        {/* Gap 1: To Do · New · Old segmented filter. Sticky just under the
-            fixed header so it stays reachable as the document scrolls. Only
-            shown when the group has polls.
-            NOTE: `position: sticky` resolves against the document scroller ONLY
-            because the enclosing cards-wrapper transform (cardsTransformOffset)
-            is transient — set only during overlay slides / saved-scroll restore,
-            never in the steady-state real route. If that transform ever becomes
-            persistent, this would stick to the transformed box instead of the
-            viewport; hoist the control out of the transformed wrapper then (it's
-            page chrome, not card content).
-            Also shown when the group has polls that are all hidden from this
-            viewer by the closed-before-join filter (`hasHiddenPolls`) — so a
-            late joiner to an all-closed group sees the tabs + an empty message
-            instead of a blank page. */}
-        {showFollowTabs && (
-          <div
-            ref={filterSwitchRef}
-            className="sticky z-[5] bg-[var(--background)] px-2 pb-2"
-            // Overlap the fixed header by 1px (added back to pt) so a subpixel
-            // rounding gap — headerHeight is an integer offsetHeight, but the
-            // header's real bottom can land on a fractional pixel — can't show
-            // scrolling polls through a hairline seam. The header (z-20,
-            // opaque bg-background) covers the 1px overlap.
-            style={{ top: `${headerHeight - 1}px`, paddingTop: "calc(0.25rem + 1px)" }}
-          >
-            <div className="flex rounded-full bg-gray-100 dark:bg-gray-800 p-0.5 text-sm font-medium">
-              {([
-                { id: "todo" as PollTab, label: "To Do", count: tabCounts.todo },
-                { id: "new" as PollTab, label: "New", count: tabCounts.new },
-                { id: "old" as PollTab, label: "Old", count: tabCounts.old },
-              ]).map((tab) => {
-                const active = effectiveTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => selectTab(tab.id)}
-                    aria-pressed={active}
-                    className={`flex-1 rounded-full py-1.5 transition-colors ${
-                      active
-                        ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
-                        : "text-gray-500 dark:text-gray-400"
-                    }`}
-                  >
-                    {tab.label}
-                    {tab.count > 0 && (
-                      <span className={active ? "ml-1 text-blue-600 dark:text-blue-400" : "ml-1 opacity-70"}>
-                        {tab.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+        {/* Gap 1: the three follow/ignore lists (To Do · New · Old) rendered
+            inline in order, each preceded by an edge-to-edge header divider.
+            Empty lists are skipped (no header divider) since `sections` already
+            drops them. The header's `border-t-2` also brackets the first card
+            top (replacing the old standalone top divider); each card keeps its
+            own `border-b-2`. */}
+        {sections.map((section) => (
+          <React.Fragment key={section.tab}>
+            <div
+              className={`border-t-2 ${ROW_DIVIDER_CLASS} bg-[var(--background)] pl-[0.9rem] pr-[0.65rem] py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
+            >
+              {section.label}
             </div>
-          </div>
-        )}
-        {/* Top divider above the first poll — pairs with each card's
-            `border-b-2` so the rectangles are bracketed top + bottom.
-            Rendered only when there's at least one poll so empty groups
-            don't show a stray line above the bubble bar. */}
-        {visibleGroupedQuestions.length > 0 && (
-          <div
-            className={`border-t-2 ${ROW_DIVIDER_CLASS}`}
-            aria-hidden="true"
-          />
-        )}
-        {visibleGroupedQuestions.map((group) => {
-            // Virtualized window: groups outside ±2 viewport heights of the
-            // visible region render as a measured-height placeholder div. The
-            // anchor (URL-targeted card or last group when suppressExpand) is
-            // always in mountedGroupKeys so its compact-form measurements feed
-            // the layout-shift compensation effect from the very first paint.
-            if (!mountedGroupKeys.has(group.key)) {
-              const measured = groupHeightById.current.get(group.key);
-              const placeholderHeight = measured ?? ESTIMATED_GROUP_HEIGHT;
-              const anchorId = group.anchor.id;
+            {section.groups.map((group) => {
+              // Virtualized window: groups outside ±2 viewport heights of the
+              // visible region render as a measured-height placeholder div. The
+              // anchor (URL-targeted card or last group when suppressExpand) is
+              // always in mountedGroupKeys so its compact-form measurements feed
+              // the layout-shift compensation effect from the very first paint.
+              if (!mountedGroupKeys.has(group.key)) {
+                const measured = groupHeightById.current.get(group.key);
+                const placeholderHeight = measured ?? ESTIMATED_GROUP_HEIGHT;
+                const anchorId = group.anchor.id;
+                return (
+                  <div
+                    key={`placeholder-${group.key}`}
+                    ref={(el) => { el ? attachCardEl(el, anchorId, group.key) : detachCardEl(anchorId); }}
+                    className={`border-b-2 ${ROW_DIVIDER_CLASS}`}
+                    style={{ height: placeholderHeight }}
+                    aria-hidden="true"
+                  />
+                );
+              }
+              const question = group.anchor;
+              const isClosed = !isQuestionOpen(question);
+              const isAwaiting = isCardUnread(question);
+              const isPressed = pressedQuestionId === question.id;
+              // A freshly-submitted placeholder card while it fade-in-animates
+              // into its slot. Once POLL_HYDRATED_EVENT swaps the placeholder
+              // for the real Poll, this flag clears and the card paints
+              // normally.
+              const isPlaceholder = pendingPollFirstQuestionId === question.id
+                || isPendingPollId(question.poll_id);
+              const isTooltipActive = tooltipQuestionId === question.id;
               return (
-                <div
-                  key={`placeholder-${group.key}`}
-                  ref={(el) => { el ? attachCardEl(el, anchorId, group.key) : detachCardEl(anchorId); }}
-                  className={`border-b-2 ${ROW_DIVIDER_CLASS}`}
-                  style={{ height: placeholderHeight }}
-                  aria-hidden="true"
+                <GroupCardItem
+                  key={question.id}
+                  group={group as GroupCardGroup}
+                  groupRouteId={groupId}
+                  isPressed={isPressed}
+                  isPlaceholder={isPlaceholder}
+                  isAwaiting={isAwaiting}
+                  isClosed={isClosed}
+                  isTooltipActive={isTooltipActive}
+                  // To Do = followed + still needs the viewer's input. Drives
+                  // the swipe action: To Do → abstain (gold), other followed →
+                  // ignore (red), Old → re-follow (green). Within a section
+                  // every card classifies to `section.tab`.
+                  isTodo={section.tab === "todo"}
+                  effectiveTab={section.tab}
+                  nameReady={nameReady}
+                  questionResultsMap={questionResultsMap}
+                  userVoteMap={userVoteMap}
+                  longPressTimerRef={longPressTimer}
+                  isLongPressRef={isLongPress}
+                  touchStartPosRef={touchStartPos}
+                  isScrollingRef={isScrolling}
+                  touchJustHandledRef={touchJustHandled}
+                  attachCardEl={attachCardEl}
+                  detachCardEl={detachCardEl}
+                  setPressedQuestionId={setPressedQuestionId}
+                  setTooltipQuestionId={setTooltipQuestionId}
+                  setModalQuestion={setModalQuestion}
+                  setShowModal={setShowModal}
+                  onToggleFollow={handleToggleFollow}
+                  onAbstain={handleSwipeAbstain}
                 />
               );
-            }
-            const question = group.anchor;
-            const isClosed = !isQuestionOpen(question);
-            const isAwaiting = isCardUnread(question);
-            const isPressed = pressedQuestionId === question.id;
-            // A freshly-submitted placeholder card while it fade-in-animates
-            // into its slot. Once POLL_HYDRATED_EVENT swaps the placeholder
-            // for the real Poll, this flag clears and the card paints
-            // normally.
-            const isPlaceholder = pendingPollFirstQuestionId === question.id
-              || isPendingPollId(question.poll_id);
-            const isTooltipActive = tooltipQuestionId === question.id;
-            // To Do = followed + still needs the viewer's input. Drives the
-            // swipe action: To Do → abstain (gold), other followed → ignore
-            // (red), Old → re-follow (green).
-            const isTodo = group.poll
-              ? classifyPollTab(group.poll, votedQuestionIds, abstainedQuestionIds, now.getTime()) === "todo"
-              : false;
-            return (
-              <GroupCardItem
-                key={question.id}
-                group={group as GroupCardGroup}
-                groupRouteId={groupId}
-                isPressed={isPressed}
-                isPlaceholder={isPlaceholder}
-                isAwaiting={isAwaiting}
-                isClosed={isClosed}
-                isTooltipActive={isTooltipActive}
-                isTodo={isTodo}
-                effectiveTab={effectiveTab}
-                nameReady={nameReady}
-                questionResultsMap={questionResultsMap}
-                userVoteMap={userVoteMap}
-                longPressTimerRef={longPressTimer}
-                isLongPressRef={isLongPress}
-                touchStartPosRef={touchStartPos}
-                isScrollingRef={isScrolling}
-                touchJustHandledRef={touchJustHandled}
-                attachCardEl={attachCardEl}
-                detachCardEl={detachCardEl}
-                setPressedQuestionId={setPressedQuestionId}
-                setTooltipQuestionId={setTooltipQuestionId}
-                setModalQuestion={setModalQuestion}
-                setShowModal={setShowModal}
-                onToggleFollow={handleToggleFollow}
-                onAbstain={handleSwipeAbstain}
-              />
-            );
-          })}
-        {/* Gap 1: short empty-state when the active tab has no polls — either
-            because the group's polls are all in other tabs, or because every
-            poll is hidden from this viewer pre-join (`hasHiddenPolls`). */}
+            })}
+          </React.Fragment>
+        ))}
+        {/* Short empty-state when the group has polls but none are visible to
+            this viewer — every poll is hidden pre-join (`hasHiddenPolls`). */}
         {showFollowTabs && visibleGroupedQuestions.length === 0 && (
           <div className="px-4 py-10 text-center text-sm text-gray-400 dark:text-gray-500">
-            {effectiveTab === "todo"
-              ? "No to-dos"
-              : effectiveTab === "old"
-              ? "Nothing ignored"
-              : "Nothing new"}
+            Nothing to show
           </div>
         )}
       </div>
@@ -2441,9 +2363,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
               onClick={() => scrollAwaitingToHeader(scrollHelpers.upTargetId)}
               aria-label="Scroll to next poll awaiting your response"
               elevated={elevateArrowsForOverlay}
-              // Float below the fixed header AND the sticky To Do · New · Old
-              // filter switch so the arrow never overlaps the tabs.
-              style={{ top: `calc(${headerHeight + filterSwitchHeight}px + 0.5rem)` }}
+              // Float just below the fixed header. (The section header dividers
+              // scroll inline, so there's no sticky chrome to clear.)
+              style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
             />
           )}
           {scrollHelpers.showDown && (
