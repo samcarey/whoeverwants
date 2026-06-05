@@ -16,6 +16,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Use `.systemBackground` so the leak adapts to light/dark, matching
         // the page's `prefers-color-scheme`-aware background.
         window?.backgroundColor = .systemBackground
+        // TEMP DIAGNOSTIC: write a NATIVE marker (no JS, no Capacitor plugin) into
+        // both the App Group and the Keychain on every launch. The headless
+        // QuickPollIntent reports whether it can read these back — isolating
+        // "does a shared channel work at all" (marker readable) from "does the
+        // JS→plugin setIdentity write run" (real identity readable). On device the
+        // intent read NOTHING from either store, which points at the write side.
+        NativeIdentityAppGroup.writeNativeMarker()
+        NativeIdentityKeychain.set("native_marker", "1")
         return true
     }
 
@@ -326,6 +334,12 @@ private enum NativeIdentityAppGroup {
 
     static func name() -> String? { defaults?.string(forKey: nameKey) }
     static func browserId() -> String? { defaults?.string(forKey: browserIdKey) }
+
+    // TEMP DIAGNOSTIC: a native-written marker (see AppDelegate launch). If the
+    // intent reads markerSet()==true, the App Group IS shared with the intent's
+    // process and the missing identity is a WRITE-side (JS→plugin) failure.
+    static func writeNativeMarker() { defaults?.set("1", forKey: "native_marker") }
+    static func markerSet() -> Bool { defaults?.string(forKey: "native_marker") != nil }
 }
 
 // Custom Capacitor plugin: write/read the WebView's identity to/from the
@@ -565,9 +579,13 @@ enum QuickPollService {
     // so "no" ⇒ the write side). "kc" is the old Keychain read (expected no).
     static func keychainDebug() -> String {
         let agName = NativeIdentityAppGroup.name() != nil
-        let agBrowser = NativeIdentityAppGroup.browserId() != nil
-        let kc = NativeIdentityKeychain.get(NativeIdentityKeychain.nameAccount) != nil
-        return "appgroup name \(agName ? "yes" : "no"), browser \(agBrowser ? "yes" : "no"), kc \(kc ? "yes" : "no")"
+        let agMarker = NativeIdentityAppGroup.markerSet()
+        let kcMarker = NativeIdentityKeychain.get("native_marker") != nil
+        // "id" = real bridged identity (JS write). "ag marker" / "kc marker" =
+        // native-written launch markers (channel-works test). If a marker reads
+        // yes but id reads no → the shared channel works and the JS bridge write
+        // is the bug. If markers read no → the channel itself isn't shared.
+        return "id \(agName ? "yes" : "no"), ag marker \(agMarker ? "yes" : "no"), kc marker \(kcMarker ? "yes" : "no")"
     }
 
     // Returns the created poll's title (echoed back by the server, which may have
