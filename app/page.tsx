@@ -256,6 +256,21 @@ export default function Home() {
     fetchQuestions();
   }, [fetchQuestions]);
 
+  // Re-fetch groups when the session changes (sign-in / sign-out). Signing
+  // in from the home empty-state's "Sign In" button fires
+  // SESSION_CHANGED_EVENT but doesn't remount this page, so without an
+  // explicit refetch the membership-driven group list stays empty until the
+  // user navigates away and back (e.g. to settings). The new bearer token is
+  // already in lib/session's module cache by the time the event fires, so
+  // getMyGroups() carries it and the server returns the account's groups.
+  useEffect(() => {
+    const refetch = () => {
+      void fetchQuestions();
+    };
+    window.addEventListener(SESSION_CHANGED_EVENT, refetch);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, refetch);
+  }, [fetchQuestions]);
+
   // Live-refresh the polls list on poll creation. User submits from /g
   // (empty placeholder), router.replace lands them on /g/<short_id>, and
   // when they navigate home the list would otherwise be stale until refresh.
