@@ -209,12 +209,39 @@ private enum NativeIdentityKeychain {
     static let browserIdAccount = "browser_id"
     static let nameAccount = "display_name"
 
+    // Dedicated keychain access group shared between the foreground app process
+    // (the NativeIdentity plugin WRITES the identity) and the headless
+    // QuickPollIntent (which READS it). MUST match the `.siri`-suffixed entry in
+    // the keychain-access-groups entitlement (App.entitlements).
+    //
+    // Why this exists: iOS can run a no-`openAppWhenRun` App Intent in a process
+    // separate from the app. Without an explicit shared group, a Keychain write
+    // lands in the WRITER's default access group and the intent's read (in its
+    // own default group) returns errSecItemNotFound — so loadIdentity() was nil
+    // and the intent spoke "set your name first" even with the name set. The
+    // Phase 2/3 "in-process, no entitlement needed" assumption was wrong;
+    // foregrounding the app (which DID write the keychain) never fixed it
+    // because the intent still read a different partition. Targeting one named
+    // group both contexts list makes them agree regardless of process.
+    //
+    // The prefix is the team / app-id prefix (mirrors the AASA appIDs
+    // `479DZ4AZT5.<bundle>`); the entitlement uses the $(AppIdentifierPrefix)
+    // macro, which can't be read at runtime, so it's hardcoded here. If it's
+    // ever wrong the queries fail closed (no other code reads this keychain),
+    // degrading to the pre-fix behavior rather than breaking anything else.
+    static let accessGroup: String? = {
+        guard let bundle = Bundle.main.bundleIdentifier else { return nil }
+        return "479DZ4AZT5.\(bundle).siri"
+    }()
+
     private static func baseQuery(_ account: String) -> [String: Any] {
-        [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        if let group = accessGroup { query[kSecAttrAccessGroup as String] = group }
+        return query
     }
 
     // Upsert when a non-empty value is provided; a nil / empty value DELETES the
@@ -254,11 +281,39 @@ private enum NativeIdentityKeychain {
     }
 }
 
+// Shared App Group store — the channel iOS ACTUALLY shares with the headless
+// QuickPollIntent's separate process (the Keychain isn't, proven on device:
+// "shared no, default no"). The NativeIdentity plugin mirrors the display name
+// + browser id here on every session change; QuickPollService.loadIdentity reads
+// them here. Deliberately NOT the bearer token (App Group UserDefaults is less
+// hardened than the Keychain, and name + browser id are enough for an attributed
+// create — X-Browser-Id resolves to the account). MUST match the
+// com.apple.security.application-groups entitlement.
+private enum NativeIdentityAppGroup {
+    static let suiteName = "group.com.whoeverwants.siri"
+    static let nameKey = "display_name"
+    static let browserIdKey = "browser_id"
+
+    private static var defaults: UserDefaults? { UserDefaults(suiteName: suiteName) }
+
+    // Upsert non-empty values; nil / "" clears (mirrors the Keychain set semantics
+    // so sign-out — null name — removes the headless identity too).
+    static func set(name: String?, browserId: String?) {
+        guard let d = defaults else { return }
+        if let n = name, !n.isEmpty { d.set(n, forKey: nameKey) } else { d.removeObject(forKey: nameKey) }
+        if let b = browserId, !b.isEmpty { d.set(b, forKey: browserIdKey) } else { d.removeObject(forKey: browserIdKey) }
+    }
+
+    static func name() -> String? { defaults?.string(forKey: nameKey) }
+    static func browserId() -> String? { defaults?.string(forKey: browserIdKey) }
+}
+
 // Custom Capacitor plugin: write/read the WebView's identity to/from the
-// Keychain (see NativeIdentityKeychain above). `setIdentity` is driven by
-// `lib/nativeIdentity.ts` on every session change (sign-out passes a null
-// token + null name, so it doubles as the clear path); `getIdentity` lets
-// native code (and an on-device round-trip check) read it back.
+// Keychain (see NativeIdentityKeychain above) AND mirror name + browser id into
+// the shared App Group (NativeIdentityAppGroup) for the headless intent.
+// `setIdentity` is driven by `lib/nativeIdentity.ts` on every session change
+// (sign-out passes a null token + null name, so it doubles as the clear path);
+// `getIdentity` lets native code (and an on-device round-trip check) read it back.
 //
 // Colocated in AppDelegate.swift for the same reason MainViewController /
 // ClipboardUrlPlugin / AppBadgePlugin are: a new .swift file means hand-patching
@@ -282,9 +337,15 @@ public class NativeIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
     // nil for both an absent key and an explicit JSON null; `set` treats nil /
     // "" as a delete.
     @objc func setIdentity(_ call: CAPPluginCall) {
-        NativeIdentityKeychain.set(NativeIdentityKeychain.tokenAccount, call.getString("token"))
-        NativeIdentityKeychain.set(NativeIdentityKeychain.browserIdAccount, call.getString("browserId"))
-        NativeIdentityKeychain.set(NativeIdentityKeychain.nameAccount, call.getString("name"))
+        let token = call.getString("token")
+        let browserId = call.getString("browserId")
+        let name = call.getString("name")
+        NativeIdentityKeychain.set(NativeIdentityKeychain.tokenAccount, token)
+        NativeIdentityKeychain.set(NativeIdentityKeychain.browserIdAccount, browserId)
+        NativeIdentityKeychain.set(NativeIdentityKeychain.nameAccount, name)
+        // Mirror name + browser id into the shared App Group so the headless
+        // QuickPollIntent (separate process, can't read the Keychain) can read them.
+        NativeIdentityAppGroup.set(name: name, browserId: browserId)
         call.resolve()
     }
 
@@ -407,11 +468,16 @@ struct CreatePollIntent: AppIntent {
 //
 // Colocated in AppDelegate.swift for the same reason everything else here is: a
 // new .swift file means hand-patching project.pbxproj in the headless CI build.
-// An App Intent is auto-discovered at build/run time — no pbxproj change, and
-// (since this is in-process, reading the plain Keychain) no App Group entitlement
-// / Apple Developer portal step. If a future revision moves headless creation to
-// a dedicated App Intents EXTENSION target, that DOES need pbxproj surgery + an
-// App-Group Keychain entitlement (see the NativeIdentityKeychain note above).
+// An App Intent is auto-discovered at build/run time — no pbxproj change.
+//
+// CORRECTION (the original "in-process, plain Keychain, no entitlement" claim
+// was WRONG): iOS runs this no-`openAppWhenRun` intent in a process separate
+// from the app, so it CANNOT read the app's default-group Keychain. The fix is
+// the `keychain-access-groups` entitlement + the dedicated `.siri` access group
+// both contexts target (see NativeIdentityKeychain above). That entitlement
+// needs the "Keychain Sharing" capability on each App ID; automatic signing
+// (`-allowProvisioningUpdates` + the Admin API key) auto-provisions it the same
+// way it does aps-environment / applesignin / associated-domains.
 
 // A graceful, Siri-speakable failure. Conforming to
 // CustomLocalizedStringResourceConvertible makes Siri read `message` aloud
@@ -436,15 +502,19 @@ enum QuickPollService {
     // runs `validate_user_name(creator_name)` and 400s on blank. The bearer token
     // is optional — an anonymous-but-named user has a browser-keyed auto-minted
     // account, exactly as when they create a poll in the app without signing in.
-    // So we gate on the NAME (mirroring the app: name-required, sign-in optional),
-    // not on the token. A fresh install with nothing bridged yet → nil → the
-    // intent speaks "set your name first".
+    // So we gate on the NAME (mirroring the app: name-required, sign-in optional).
+    //
+    // Reads from the shared App GROUP, NOT the Keychain: on-device diagnostics
+    // proved this intent's process can't read the app's Keychain in any access
+    // group. The App Group is the channel iOS shares with the intent's process.
+    // The token isn't mirrored there (browser id → account attribution suffices),
+    // so headless creates resolve to the user's account via X-Browser-Id. A fresh
+    // install with nothing bridged yet → nil → the intent falls back to opening
+    // the prefilled form.
     static func loadIdentity() -> Identity? {
-        guard let name = NativeIdentityKeychain.get(NativeIdentityKeychain.nameAccount),
-              !name.isEmpty else { return nil }
-        let token = NativeIdentityKeychain.get(NativeIdentityKeychain.tokenAccount)
-        let browserId = NativeIdentityKeychain.get(NativeIdentityKeychain.browserIdAccount)
-        return Identity(token: token, browserId: browserId, name: name)
+        guard let name = NativeIdentityAppGroup.name(), !name.isEmpty else { return nil }
+        let browserId = NativeIdentityAppGroup.browserId()
+        return Identity(token: nil, browserId: browserId, name: name)
     }
 
     // Direct cross-origin API host (NOT the FE host the WebView loads), mirroring
@@ -456,6 +526,13 @@ enum QuickPollService {
         whoeverwantsIsCanaryBundle()
             ? "https://api.latest.whoeverwants.com"
             : "https://api.whoeverwants.com"
+    }
+
+    // FE host (the WebView's origin) to open after a successful headless create,
+    // so the user sees the new poll. Mirrors capacitor.config.ts host mapping.
+    static func feHomeURL() -> URL {
+        let host = whoeverwantsIsCanaryBundle() ? "latest.whoeverwants.com" : "whoeverwants.com"
+        return URL(string: "https://\(host)/") ?? URL(string: "https://whoeverwants.com/")!
     }
 
     // Returns the created poll's title (echoed back by the server, which may have
@@ -508,13 +585,17 @@ enum QuickPollService {
     }
 }
 
-@available(iOS 16.0, *)
+// iOS 18+ (was 16): the never-dead-end fallback returns an OpenURLIntent, which
+// is iOS 18-only. The spoken phrase already requires iOS 18 (AppShortcuts), so
+// the only thing lost is manual Shortcuts-app use on iOS 16–17 — acceptable.
+@available(iOS 18.0, *)
 struct QuickPollIntent: AppIntent {
     static var title: LocalizedStringResource = "Quick poll"
     static var description = IntentDescription(
-        "Create a yes/no poll without opening the app. You'll hear a spoken confirmation; open WhoeverWants to see and share it."
+        "Create a poll by voice. WhoeverWants makes it in the background when it can; otherwise it opens prefilled so you can finish in a tap."
     )
-    // NOT openAppWhenRun — this runs headless; the app stays closed.
+    // NOT openAppWhenRun — the headless-success path stays closed. The fallback
+    // opens the app via the OpenURLIntent it returns, not via openAppWhenRun.
 
     @Parameter(
         title: "Poll question",
@@ -523,18 +604,34 @@ struct QuickPollIntent: AppIntent {
     )
     var prompt: String
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw QuickPollError("I didn't catch a question for the poll.")
         }
-        guard let identity = QuickPollService.loadIdentity() else {
-            // No bridged name → either a fresh install or a user who hasn't set
-            // their name. The server requires creator_name, so guide them in.
-            throw QuickPollError("Open WhoeverWants and set your name first, then try again.")
+        // Try headless creation. On ANY failure — the identity bridge isn't
+        // reliably readable from this intent's (separate) process, or network /
+        // server trouble — DON'T dead-end: fall back to the Phase 1 deep link,
+        // opening the app to the create form with the prompt prefilled, so the
+        // user always gets their poll. Swift's opaque return type requires every
+        // return to share one underlying type, so BOTH branches return an
+        // OpenURLIntent-based result (you cannot mix `.result(dialog:)` with
+        // `.result(opensIntent:dialog:)` under one `some` return).
+        if let identity = QuickPollService.loadIdentity(),
+           let title = try? await QuickPollService.createPoll(prompt: trimmed, identity: identity) {
+            return .result(
+                opensIntent: OpenURLIntent(QuickPollService.feHomeURL()),
+                dialog: IntentDialog("Created your poll: \(title). Opening WhoeverWants.")
+            )
         }
-        let title = try await QuickPollService.createPoll(prompt: trimmed, identity: identity)
-        return .result(dialog: IntentDialog("Created your poll: \(title)"))
+        // Headless identity unavailable on this device (see the App Group note on
+        // loadIdentity — the bridge write isn't landing yet). Fall back to the
+        // Phase 1 deep link, opening the app to the create form with the prompt
+        // prefilled, so the user always gets their poll.
+        return .result(
+            opensIntent: OpenURLIntent(CreatePollIntent.createURL(prompt: trimmed)),
+            dialog: IntentDialog("Opening WhoeverWants to finish your poll.")
+        )
     }
 }
 

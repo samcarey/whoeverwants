@@ -306,10 +306,69 @@ existing auth model (`docs/auth-access-model.md`).
 
 ## Phase 3 — Headless poll creation App Intent ("create without opening the app")
 
-**Status: IMPLEMENTED (2026-06-04), pending real-device + TestFlight verification.
-Built as an IN-PROCESS intent (no extension target, no pbxproj surgery), per the
-plan's "start in-process" decision.** What shipped (all colocated in
-`ios/App/App/AppDelegate.swift`):
+> **⚠️ STATUS (2026-06-04, device-tested + FINALIZED on the fallback): "quick poll"
+> WORKS but is NOT app-stays-closed headless yet.** Extensive on-device testing
+> proved the headless identity read fails, so the shipped behavior is: "quick poll"
+> always tries headless, and on any failure **falls back to opening the app with the
+> prompt prefilled** (= Phase 1 deep link). The user always gets their poll; the app
+> just opens. True headless is PARKED with a concrete next-step plan (below).
+>
+> **What we proved on device (in order):**
+> 1. In-process keychain (plain) → intent spoke "set your name first". `loadIdentity()` nil.
+> 2. Dedicated `keychain-access-groups` shared group (`kSecAttrAccessGroup`) → still nil.
+> 3. Native spoken diagnostic → **`shared no, default no, group set`**: the intent's
+>    process can read NEITHER keychain access group. iOS runs this no-`openAppWhenRun`
+>    intent in a process **isolated from the app's Keychain** — keychain sharing can't
+>    bridge it.
+> 4. Switched to a shared **App Group** container (`group.com.whoeverwants.siri`,
+>    `com.apple.security.application-groups` entitlement — required a one-time manual
+>    App Group registration in the Apple Developer portal on both App IDs; automatic
+>    signing does NOT auto-create App Groups, unlike Keychain Sharing). Intent read
+>    **`appgroup name no`** too.
+> 5. Since App Groups ARE shared with intent processes by design, an empty App Group
+>    means **the foreground WRITE never lands**, not a read problem. The prime suspect
+>    is that the **colocated app-target Capacitor plugin (`NativeIdentityPlugin`) is
+>    not being auto-registered**, so the JS `setIdentity` call rejects and
+>    `syncNativeIdentity`'s `catch {}` swallows it → nothing is ever written to either
+>    store. (The same colocated-plugin pattern is used by `ClipboardUrlPlugin` /
+>    `AppBadgePlugin`, none of which are device-confirmed to register either.)
+>
+> **NEXT STEPS to make true headless work (pick up here):**
+> 1. **Confirm the write-side hypothesis.** Add a one-shot log to `syncNativeIdentity`
+>    (`lib/nativeIdentity.ts`) — `console.warn` the result of `setIdentity` (resolve vs
+>    reject) — and read it on canary via the client-log forwarder
+>    (`/api/client-logs?search=nativeidentity`, or `docker compose logs api | grep
+>    '[client-log]'` for the cross-worker truth). A rejection like *"NativeIdentity
+>    plugin is not implemented on ios"* confirms the plugin isn't registered. This
+>    needs the log change on `main` (canary) since the Latest app loads canary JS.
+> 2. **If the plugin isn't registered:** the colocated `@objc(...)` + `CAPBridgedPlugin`
+>    auto-discovery is failing for app-target plugins in Capacitor 8. Options, cheapest
+>    first: (a) register the plugins explicitly (a small bridge/registration shim in
+>    the AppDelegate / a `CAPBridgedPlugin` registration call if Capacitor 8 exposes
+>    one); (b) move the identity bridge into a real local SPM plugin package (heavier
+>    but the supported path). Verify on device that `getIdentity()` round-trips in the
+>    FOREGROUND app first — that isolates "plugin registers" from "intent can read".
+> 3. **Once the foreground write lands in the App Group**, the headless read should
+>    Just Work (App Groups are shared with the intent's process) and `QuickPollIntent`'s
+>    success branch (`Created your poll: …`, app stays closed) takes over from the
+>    fallback automatically — no further intent changes needed.
+> 4. **Independent of headless: Siri voice-trigger reliability.** With two installed
+>    apps named "Whoever" (prod) + "Whoever α" (latest), Siri's phrase routing is
+>    unreliable and the "α" glyph matches poorly. Give the latest bundle a
+>    Siri-friendly `CFBundleSpokenName` (e.g. "Whoever Wants") so voice matching is
+>    dependable; running the App Shortcut from the Shortcuts app / Spotlight already
+>    works as a voice-free path.
+>
+> **Foundation left in place for the pickup:** the App Group + keychain entitlements
+> (provisioned), `NativeIdentityAppGroup` (write in the plugin's `setIdentity`, read in
+> `QuickPollService.loadIdentity`), and the whole `QuickPollIntent` success/fallback
+> structure. The temporary on-device diagnostics (native launch markers, spoken
+> "Debug:" line, `getDefaultGroup`) were removed at finalization.
+
+**Status: IMPLEMENTED (2026-06-04), shipped on the deep-link fallback (true headless
+PARKED — see the status box above).** Built as an IN-PROCESS intent (no extension
+target, no pbxproj surgery), per the plan's "start in-process" decision. What shipped
+(all colocated in `ios/App/App/AppDelegate.swift`):
 - **`QuickPollIntent` (`AppIntent`, NOT `openAppWhenRun`)** — a free-text `prompt`
   parameter (`requestValueDialog: "What should the poll ask?"`, same shape as Phase 1).
   `perform()` reads the Phase 2 identity, creates the poll via the API, and returns

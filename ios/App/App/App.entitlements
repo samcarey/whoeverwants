@@ -15,5 +15,34 @@
 		<string>webcredentials:whoeverwants.com</string>
 		<string>webcredentials:latest.whoeverwants.com</string>
 	</array>
+	<!-- Keychain Sharing. Entry 0 is the app's existing DEFAULT group (kept
+	     first so any unscoped keychain user keeps its current default). Entry 1
+	     is a DEDICATED group that the foreground app (NativeIdentity plugin,
+	     writer) and the headless QuickPollIntent (reader) BOTH target
+	     explicitly, so the Siri intent can read the bridged identity even when
+	     iOS runs it in a separate process from the app — which it does (an
+	     in-process assumption was the Phase 2/3 bug). See NativeIdentityKeychain
+	     in AppDelegate.swift. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)$(CFBundleIdentifier)</string>
+		<string>$(AppIdentifierPrefix)$(CFBundleIdentifier).siri</string>
+	</array>
+	<!-- App Group: the canonical channel iOS DOES share with the headless
+	     QuickPollIntent's (separate) process. On-device diagnostics proved the
+	     intent can't read the Keychain in any access group (shared no, default
+	     no), so the bridge mirrors the display name + browser id into this App
+	     Group's UserDefaults suite (NativeIdentityAppGroup in AppDelegate.swift);
+	     the intent reads them here. NOT the bearer token — name + browser id are
+	     enough for an attributed create (X-Browser-Id resolves to the account),
+	     and App Group storage is less hardened than the Keychain. Both bundles
+	     (prod + latest) carry the same group; the "App Groups" capability is
+	     registered + enabled on com.whoeverwants.app and com.whoeverwants.app.latest
+	     in the Apple Developer portal (a one-time manual step — automatic signing
+	     does NOT auto-create App Groups, unlike Keychain Sharing). -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.whoeverwants.siri</string>
+	</array>
 </dict>
 </plist>
