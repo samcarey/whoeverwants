@@ -301,7 +301,7 @@ function TitleResultRow({
         <div>
           <h3
             className="flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white"
-            style={{ maxWidth: "80%" }}
+            style={{ maxWidth: "90%" }}
           >
             {titleInner}
           </h3>
