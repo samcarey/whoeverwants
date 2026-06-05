@@ -487,7 +487,7 @@ function TitleResultRow({
           <div ref={belowRowRef} className="relative mt-1">
             <div
               ref={belowResultRef}
-              className="ml-auto flex flex-col items-end text-right"
+              className="ml-auto flex flex-col items-start text-left"
               style={{ maxWidth: "80%" }}
             >
               {results.map((res) => (
@@ -1041,7 +1041,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                     icon={getCategoryIcon(sp)}
                     title={getQuestionSectionTitle(sp) ?? ""}
                     results={node ? [{ id: sp.id, node }] : []}
-                    titleFont="font-normal"
                   />
                 );
               })}
