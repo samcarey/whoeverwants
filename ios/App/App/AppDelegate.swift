@@ -701,6 +701,163 @@ struct QuickPollIntent: AppIntent {
     }
 }
 
+// Phase 4 FOUNDATION of docs/siri-integration-plan.md — App Entities.
+//
+// `PollEntity` lets Siri / Shortcuts / Spotlight reference the user's polls BY
+// NAME. The thin consumer here is `OpenPollIntent` ("open the dinner poll");
+// later Phase 4 intents (vote-by-voice, query-results) reuse the SAME entity +
+// query to disambiguate WHICH poll. This is the reusable substrate the plan calls
+// the lowest-regret Phase 4 investment — independent of whatever WWDC does to Siri.
+//
+// The query fetches the user's visible polls from the same `POST /api/groups/mine`
+// the WebView home page uses, authenticated with the bridged X-Browser-Id (Phase 2
+// App Group). Visibility is therefore BROWSER-SCOPED: the App Group bridges name +
+// browser id (NOT the bearer token), so the fetch carries X-Browser-Id only and
+// `load_user_visibility` resolves the groups THIS browser is a member of. That
+// covers every poll the user created or joined on this device — the common case
+// for "reference my poll by name". Cross-device-only polls (joined on another
+// device, never opened here) won't surface; that's the same limitation Phase 3's
+// headless create has and is acceptable for the foundation.
+//
+// Colocated in AppDelegate.swift for the same reason everything else here is (no
+// pbxproj surgery). `AppEntity` / `EntityQuery` / `EntityStringQuery` are iOS 16+
+// (App Intents' floor) with NO iOS-18 dependency, so the entity + query compile
+// and resolve on iOS 16–17 too — only `OpenPollIntent` (and thus the spoken
+// phrase) needs iOS 18, because it opens via `OpenURLIntent` (iOS 18+) exactly
+// like the Phase 1/3 intents. A future headless Phase-4 intent that doesn't open
+// the app (e.g. spoken "who's winning …") can be iOS 16 and reuse this entity.
+
+@available(iOS 16.0, *)
+struct PollEntity: AppEntity {
+    // The poll's short_id — the canonical addressable id (the `<short>` in
+    // `/g/<group>/p/<short>`). Stable across refreshes; what every Phase-4 op keys on.
+    let id: String
+    let title: String
+    let groupShortId: String?
+    let groupName: String?
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Poll"
+
+    var displayRepresentation: DisplayRepresentation {
+        if let group = groupName, !group.isEmpty {
+            return DisplayRepresentation(title: "\(title)", subtitle: "\(group)")
+        }
+        return DisplayRepresentation(title: "\(title)")
+    }
+
+    static var defaultQuery = PollEntityQuery()
+
+    // Fetch the user's visible polls from POST /api/groups/mine, authenticated with
+    // the bridged browser id (Phase 2 App Group). Returns [] — never throws — when no
+    // identity is bridged yet (fresh install) or on any network/parse failure, so a
+    // query referencing this entity degrades to "no polls to pick" rather than erroring.
+    // Sorted newest-first and capped so voice matching + the Shortcuts picker stay
+    // bounded on a busy account.
+    static func fetchAll() async -> [PollEntity] {
+        guard let identity = QuickPollService.loadIdentity(),
+              let browserId = identity.browserId, !browserId.isEmpty,
+              let url = URL(string: QuickPollService.apiBase + "/api/groups/mine") else {
+            return []
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(browserId, forHTTPHeaderField: "X-Browser-Id")
+        if let token = identity.token, !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["include_results": false])
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return []
+        }
+        // Treat empty strings as absent — the API can return "" for an unset
+        // override, which should never surface as a title / id / group.
+        func nonEmpty(_ s: String?) -> String? { s.flatMap { $0.isEmpty ? nil : $0 } }
+        let polls: [(entity: PollEntity, createdAt: String)] = arr.compactMap { obj in
+            guard let shortId = nonEmpty(obj["short_id"] as? String) else { return nil }
+            // Prefer the poll's OWN subject (questions[0].title) over the display
+            // `title`, which collapses to the group-name override when one is set —
+            // the same rule the detail-page header uses. Fall back to the display
+            // title, then a generic label.
+            let questions = obj["questions"] as? [[String: Any]]
+            let title = nonEmpty(questions?.first?["title"] as? String)
+                ?? nonEmpty(obj["title"] as? String) ?? "Poll"
+            let groupShort = nonEmpty(obj["group_short_id"] as? String)
+            // group_title is the group-NAME override (NULL when unset) — used only as a
+            // disambiguating subtitle, never as the poll's title.
+            let groupName = nonEmpty(obj["group_title"] as? String)
+            let createdAt = (obj["created_at"] as? String) ?? ""
+            let entity = PollEntity(id: shortId, title: title, groupShortId: groupShort, groupName: groupName)
+            return (entity: entity, createdAt: createdAt)
+        }
+        // created_at is ISO-8601, so a lexicographic descending sort is chronological.
+        return polls.sorted { $0.createdAt > $1.createdAt }.prefix(50).map { $0.entity }
+    }
+}
+
+// EntityStringQuery refines EntityQuery, so it provides both the id-resolve
+// (`entities(for:)`) and string-match surfaces. iOS calls exactly ONE of these
+// methods per resolution (id-resolve from the picker, string-match from speech,
+// or suggestedEntities for indexing), so the per-call `fetchAll()` round-trip is
+// normal and correct — no shared cache (which would only risk staleness).
+@available(iOS 16.0, *)
+struct PollEntityQuery: EntityStringQuery {
+    // Resolve specific entities by id — Siri/Shortcuts hands back a chosen entity's id.
+    func entities(for identifiers: [String]) async throws -> [PollEntity] {
+        let wanted = Set(identifiers)
+        return await PollEntity.fetchAll().filter { wanted.contains($0.id) }
+    }
+
+    // Free-text voice match ("the dinner poll") — case-insensitive substring over the
+    // poll title and its group name.
+    func entities(matching string: String) async throws -> [PollEntity] {
+        let needle = string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let all = await PollEntity.fetchAll()
+        guard !needle.isEmpty else { return all }
+        return all.filter {
+            $0.title.lowercased().contains(needle)
+                || ($0.groupName?.lowercased().contains(needle) ?? false)
+        }
+    }
+
+    // Surface the user's polls into Spotlight + the Shortcuts entity picker.
+    func suggestedEntities() async throws -> [PollEntity] {
+        await PollEntity.fetchAll()
+    }
+}
+
+// Thin consumer of PollEntity: open one of your polls by name. Proves the entity +
+// query end-to-end (resolution, displayRepresentation, Spotlight surfacing) and is
+// independently useful. Opens the poll's detail page via the same OpenURLIntent
+// loopback the Phase 1/3 intents use (hence iOS 18). NO native poll logic — the
+// WebView renders the poll as usual. The entity's id is the poll short_id; combined
+// with its groupShortId it yields the canonical `/g/<group>/p/<short>` path.
+@available(iOS 18.0, *)
+struct OpenPollIntent: AppIntent {
+    static var title: LocalizedStringResource = "Open a poll"
+    static var description = IntentDescription("Open one of your polls by name.")
+    static var openAppWhenRun = true
+
+    @Parameter(title: "Poll")
+    var poll: PollEntity
+
+    @MainActor
+    func perform() async throws -> some IntentResult & OpensIntent {
+        let path: String
+        if let group = poll.groupShortId, !group.isEmpty {
+            path = "/g/\(group)/p/\(poll.id)"
+        } else {
+            // No group short id (shouldn't happen for a real poll) — fall back to the
+            // legacy /p/<short> redirect stub, which resolves to the canonical URL.
+            path = "/p/\(poll.id)"
+        }
+        return .result(opensIntent: OpenURLIntent(QuickPollService.feURL(path: path)))
+    }
+}
+
 @available(iOS 18.0, *)
 struct WhoeverWantsShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
@@ -723,6 +880,19 @@ struct WhoeverWantsShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Quick poll",
             systemImageName: "bolt.fill"
+        )
+        // Phase 4 foundation consumer: open a poll by name. `\(\.$poll)` lets the
+        // spoken phrase carry the poll, resolved via PollEntityQuery; the bare
+        // phrase falls back to App Intents' entity picker.
+        AppShortcut(
+            intent: OpenPollIntent(),
+            phrases: [
+                "Open \(\.$poll) in \(.applicationName)",
+                "Show \(\.$poll) in \(.applicationName)",
+                "Open a poll in \(.applicationName)"
+            ],
+            shortTitle: "Open a poll",
+            systemImageName: "list.bullet.rectangle"
         )
     }
 }
