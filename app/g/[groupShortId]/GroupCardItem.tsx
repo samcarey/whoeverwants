@@ -68,6 +68,33 @@ export const ROW_DIVIDER_CLASS = "border-gray-300 dark:border-gray-600";
 const SWIPE_TOGGLE_THRESHOLD = 75;
 const SWIPE_MAX = 130;
 
+/** Per-swipe-action backdrop chrome (red Ignore / green Follow / gold Abstain).
+ *  Static lookup hoisted to module scope so it isn't re-allocated per render of
+ *  every poll row. `active` = past the commit threshold; `idle` = below it. */
+const SWIPE_ACTION_UI: Record<
+  "ignore" | "refollow" | "abstain",
+  { active: string; idle: string; label: string; path: string }
+> = {
+  ignore: {
+    active: "bg-red-500 text-white",
+    idle: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300",
+    label: "Ignore",
+    path: "M6 18L18 6M6 6l12 12",
+  },
+  refollow: {
+    active: "bg-green-600 text-white",
+    idle: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+    label: "Follow",
+    path: "M12 4v16m8-8H4",
+  },
+  abstain: {
+    active: "bg-amber-500 text-white",
+    idle: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+    label: "Abstain",
+    path: "M20 12H4",
+  },
+};
+
 export interface GroupCardItemProps {
   // Identity / data ---------------------------------------------------------
   group: GroupCardGroup;
@@ -537,29 +564,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   // / pressed tint) so ONLY the exposed action strip lights up — not the whole
   // row.
   const swiping = dragX !== 0 || exiting;
-
-  // Per-action backdrop chrome: red Ignore / green Follow / gold Abstain.
-  const swipeActionUI =
-    swipeAction === "ignore"
-      ? {
-          active: "bg-red-500 text-white",
-          idle: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300",
-          label: "Ignore",
-          path: "M6 18L18 6M6 6l12 12",
-        }
-      : swipeAction === "refollow"
-        ? {
-            active: "bg-green-600 text-white",
-            idle: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-            label: "Follow",
-            path: "M12 4v16m8-8H4",
-          }
-        : {
-            active: "bg-amber-500 text-white",
-            idle: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-            label: "Abstain",
-            path: "M20 12H4",
-          };
+  const swipeActionUI = SWIPE_ACTION_UI[swipeAction];
 
   // Edge-to-edge rectangle with a full-bleed `border-b` divider between rows.
   // The awaiting state surfaces as a left-edge amber bar. On commit the whole
@@ -573,6 +578,12 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       className="grid"
       style={{
         gridTemplateRows: exiting ? "0fr" : "1fr",
+        // Always-on (NOT conditional): a conditional transition that's added in
+        // the same commit as the 1fr→0fr change can fail to start, snapping the
+        // collapse instantly instead of animating the rows below up. Keeping it
+        // declared is cheap — grid-template-rows isn't a composited property, so
+        // a stationary row pays nothing for the idle transition. Verified: with
+        // this form the collapse animates; the conditional form snapped.
         transition: "grid-template-rows 240ms ease",
       }}
     >
