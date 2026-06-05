@@ -357,12 +357,18 @@ existing auth model (`docs/auth-access-model.md`).
 >    stays closed, "Created your poll: …") rather than the deep-link fallback. Once the
 >    App Group write lands, `QuickPollIntent`'s success branch takes over automatically
 >    — no further intent changes needed.
-> 3. **Independent of headless: Siri voice-trigger reliability.** With two installed
->    apps named "Whoever" (prod) + "Whoever α" (latest), Siri's phrase routing is
->    unreliable and the "α" glyph matches poorly. Give the latest bundle a
->    Siri-friendly `CFBundleSpokenName` (e.g. "Whoever Wants") so voice matching is
->    dependable; running the App Shortcut from the Shortcuts app / Spotlight already
->    works as a voice-free path.
+> 3. **Independent of headless: Siri voice-trigger reliability — SHIPPED
+>    (`CFBundleSpokenName`).** With two installed apps named "Whoever" (prod) +
+>    "Whoever α" (latest), Siri's phrase routing was unreliable and the "α" glyph
+>    matched poorly. Fixed in `.github/workflows/ios-build.yml`: the display-name
+>    stamp step now sets `CFBundleSpokenName="Whoever Wants"` for the **latest** tier
+>    ONLY (the phonetic name Siri/VoiceOver use for voice matching, distinct from the
+>    on-screen `CFBundleDisplayName="Whoever α"`); **prod is left WITHOUT a spoken
+>    name** so it falls back to "Whoever", keeping the two installed apps' spoken
+>    forms distinct so Siri can still route to the right app when both are installed.
+>    Needs a fresh `latest` iOS build + reinstall (iOS caches the Siri shortcut
+>    index). After that, "…in Whoever Wants" should match dependably. Running the App
+>    Shortcut from the Shortcuts app / Spotlight is a voice-free path regardless.
 >
 > **Foundation already in place:** the App Group + keychain entitlements (provisioned),
 > `NativeIdentityAppGroup` (write in the plugin's `setIdentity`, read in
@@ -570,6 +576,18 @@ pre-coding gate; see the ordering decision at the top.)
 _(Append dated entries; do not rewrite the phases above — note what changed and why.
 Post-keynote findings go here too, once Phase 0 runs.)_
 
+- **2026-06-05 — Siri voice-trigger reliability fix shipped (`CFBundleSpokenName`).**
+  Independent of the headless work: the canary app's on-screen name "Whoever α" matched
+  poorly when speaking the App Shortcut phrase, and two installed apps routed ambiguously.
+  `.github/workflows/ios-build.yml`'s display-name stamp step now also sets
+  `CFBundleSpokenName="Whoever Wants"` for the **latest** tier only (phonetic name used by
+  Siri/VoiceOver for voice matching, distinct from the visible `CFBundleDisplayName`); prod
+  is intentionally left without a spoken name (falls back to "Whoever") so the two installed
+  apps stay distinguishable by voice. No committed `Info.plist` default (the spoken name
+  falls back to the display name when unset). Takes effect on a fresh `latest` iOS build +
+  reinstall. Owner verification owed: on a fresh `latest` TestFlight build, "…in Whoever
+  Wants" should trigger reliably regardless of the "α" label. Next: owner device-verify the
+  #611 headless fix + this voice fix, then the deferred WWDC watch (Phase 0) + Phase 4.
 - **2026-06-05 — Phase 3 root cause found + fixed: app-target Capacitor plugins were
   never registered.** The headless identity read failed because the App Group write
   never landed, because the colocated `NativeIdentityPlugin` was never registered with
