@@ -35,6 +35,7 @@ import {
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { slideToPollDetail } from "@/lib/slideOverlay";
+import type { PollTab } from "@/lib/followState";
 import { groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
 import ClientOnly from "@/components/ClientOnly";
 import QuestionResultsDisplay, {
@@ -80,6 +81,17 @@ export interface GroupCardItemProps {
   isAwaiting: boolean;
   isClosed: boolean;
   isTooltipActive: boolean;
+  /** Followed + still needs the viewer's input → swipe abstains (gold)
+   *  instead of ignoring (red). */
+  isTodo: boolean;
+  /** The currently-selected tab. Used to decide whether a swipe-commit
+   *  removes this card from view (→ slide-out exit animation) or leaves it
+   *  in place (→ snap back). */
+  effectiveTab: PollTab;
+  /** Whether the viewer has a usable name. A swipe-to-abstain on a nameless
+   *  viewer opens the account gate instead of voting, so the card must NOT
+   *  play the exit animation in that case. */
+  nameReady: boolean;
 
   // State Maps. Pass directly + custom equality slices per-row. ------------
   questionResultsMap: Map<string, QuestionResults>;
@@ -99,10 +111,13 @@ export interface GroupCardItemProps {
   setTooltipQuestionId: Dispatch<SetStateAction<string | null>>;
   setModalQuestion: Dispatch<SetStateAction<Question | null>>;
   setShowModal: Dispatch<SetStateAction<boolean>>;
-  /** Gap 1 follow/ignore toggle. `next` is the state to write: 'old' (the ✕,
-   *  ignore) or 'new' (the +, re-follow). Stable identity — not compared in
-   *  arePropsEqual. The current state is read off `group.poll.viewer_follow_state`. */
+  /** Gap 1 follow/ignore toggle. `next` is the state to write: 'old' (ignore)
+   *  or 'new' (re-follow). Stable identity — not compared in arePropsEqual.
+   *  The current state is read off `group.poll.viewer_follow_state`. */
   onToggleFollow: (pollId: string, next: "new" | "old") => void;
+  /** Swipe-to-abstain a To Do poll (abstains every still-unanswered
+   *  sub-question). Stable identity. Name-gates internally. */
+  onAbstain: (pollId: string, subQuestions: Question[]) => void;
 }
 
 function GroupCardItemImpl(props: GroupCardItemProps) {
@@ -114,6 +129,9 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     isAwaiting,
     isClosed,
     isTooltipActive,
+    isTodo,
+    effectiveTab,
+    nameReady,
     questionResultsMap,
     userVoteMap,
     longPressTimerRef,
@@ -128,6 +146,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     setModalQuestion,
     setShowModal,
     onToggleFollow,
+    onAbstain,
   } = props;
 
   const question = group.anchor;
@@ -156,14 +175,63 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   // `crossedRef` fires the threshold haptic exactly once per crossing.
   const [dragX, setDragX] = React.useState(0);
   const [snapping, setSnapping] = React.useState(false);
+  // Commit exit: slide the row fully left + collapse its height to 0 so the
+  // cards below animate up to fill the gap; the actual mutation fires on the
+  // collapse's transitionEnd, after which the card unmounts (already at 0
+  // height / off-screen, so no visible pop).
+  const [exiting, setExiting] = React.useState(false);
   const dragXRef = React.useRef(0);
   const axisRef = React.useRef<null | "h" | "v">(null);
   const swipingRef = React.useRef(false);
   const crossedRef = React.useRef(false);
-  // True while currently followed (a left-swipe will Ignore → 'old'); false
-  // while in Old (a left-swipe will re-follow → 'new').
-  const swipeWillIgnore = followState !== "old";
   const swipePastThreshold = dragX <= -SWIPE_TOGGLE_THRESHOLD;
+
+  // What a left-swipe does, by the row's current state:
+  //   Old           → re-follow (green "Follow")
+  //   To Do         → abstain   (gold "Abstain")
+  //   New, non-todo → ignore    (red "Ignore")
+  const swipeAction: "refollow" | "abstain" | "ignore" =
+    followState === "old" ? "refollow" : isTodo ? "abstain" : "ignore";
+  // Does committing remove this card from the CURRENT tab (→ play the slide-out
+  // exit)? Ignore/re-follow always cross New↔Old (always a tab change from the
+  // current todo/new/old view). Abstain only leaves the To Do tab — on the New
+  // tab the card stays (still followed, just now responded), so no exit there.
+  const swipeWillExit = swipeAction === "abstain" ? effectiveTab !== "new" : true;
+  // The slide-out only plays when the commit will actually proceed. A nameless
+  // abstain opens the account gate instead, so the card snaps back rather than
+  // collapsing into nothing while the modal is up.
+  const swipeCanExit = swipeWillExit && (swipeAction !== "abstain" || nameReady);
+
+  // Fire the committed swipe action (used both for the no-exit path and from
+  // the exit-collapse transitionEnd).
+  const commitSwipe = () => {
+    if (!group.pollId) return;
+    if (swipeAction === "abstain") {
+      onAbstain(group.pollId, group.subQuestions);
+    } else {
+      onToggleFollow(group.pollId, swipeAction === "refollow" ? "new" : "old");
+    }
+  };
+
+  // Animate the content back to rest. Only animate when there's an offset to
+  // return from; otherwise no transform transition fires and `snapping` would
+  // never be cleared by onTransitionEnd (it would strand a live layer).
+  const snapBack = () => {
+    if (dragXRef.current !== 0) {
+      setSnapping(true);
+      setDragX(0);
+      dragXRef.current = 0;
+    }
+  };
+
+  // The slide-out collapse finished (grid-template-rows hit 0fr) → run the
+  // mutation. The card then leaves the current tab and unmounts (it's already
+  // collapsed + off-screen, so no pop). Guard on the property so the content's
+  // own transform transitionEnd (which bubbles here) doesn't double-fire.
+  const handleExitEnd = (e: React.TransitionEvent) => {
+    if (e.propertyName !== "grid-template-rows") return;
+    commitSwipe();
+  };
 
   // Stable ref-callbacks. Without useCallback the inline arrows would have
   // fresh identity every time THIS card re-renders (e.g. on swipe-threshold
@@ -190,6 +258,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (exiting) return; // already committing — ignore further touches
     isLongPressRef.current = false;
     isScrollingRef.current = false;
     axisRef.current = null;
@@ -223,21 +292,23 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       longPressTimerRef.current = null;
     }
     if (swipingRef.current) {
-      // A horizontal swipe — never navigate. Commit the follow toggle if the
-      // drag crossed the threshold; either way snap the content back to 0
-      // (the toggle itself may filter this card into another tab / unmount).
-      const shouldToggle = dragXRef.current <= -SWIPE_TOGGLE_THRESHOLD;
-      if (shouldToggle && group.pollId) {
+      // A horizontal swipe — never navigate. Commit when the drag crossed the
+      // threshold.
+      const shouldCommit = dragXRef.current <= -SWIPE_TOGGLE_THRESHOLD;
+      if (shouldCommit && group.pollId) {
         haptic.medium();
-        onToggleFollow(group.pollId, followState === "old" ? "new" : "old");
-      }
-      // Only animate a snap-back when there's a non-zero offset to return
-      // from; otherwise no transform transition fires and `snapping` would
-      // never get cleared by onTransitionEnd (it would stay a live layer).
-      if (dragXRef.current !== 0) {
-        setSnapping(true);
-        setDragX(0);
-        dragXRef.current = 0;
+        if (swipeCanExit) {
+          // Slide-out + height-collapse; commitSwipe fires on transitionEnd.
+          setExiting(true);
+        } else {
+          // No exit (abstain on the New tab, or nameless → gate). Fire now and
+          // snap the content back.
+          commitSwipe();
+          snapBack();
+        }
+      } else {
+        // Didn't cross the threshold — snap back, no commit.
+        snapBack();
       }
       setPressedQuestionId(null);
     } else if (!isScrollingRef.current && !isLongPressRef.current) {
@@ -461,81 +532,118 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     </div>
   );
 
-  // Edge-to-edge rectangle with a full-bleed `border-b` divider between
-  // rows. The awaiting state surfaces as a left-edge amber bar (the old
-  // rounded-card amber border doesn't translate to a row layout) so users
-  // still see "this poll wants your input" at a glance.
+  // Whether the row is actively sliding (drag in progress OR committing exit).
+  // While sliding, the content background is forced neutral (no hover / active
+  // / pressed tint) so ONLY the exposed action strip lights up — not the whole
+  // row.
+  const swiping = dragX !== 0 || exiting;
+
+  // Per-action backdrop chrome: red Ignore / green Follow / gold Abstain.
+  const swipeActionUI =
+    swipeAction === "ignore"
+      ? {
+          active: "bg-red-500 text-white",
+          idle: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300",
+          label: "Ignore",
+          path: "M6 18L18 6M6 6l12 12",
+        }
+      : swipeAction === "refollow"
+        ? {
+            active: "bg-green-600 text-white",
+            idle: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+            label: "Follow",
+            path: "M12 4v16m8-8H4",
+          }
+        : {
+            active: "bg-amber-500 text-white",
+            idle: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+            label: "Abstain",
+            path: "M20 12H4",
+          };
+
+  // Edge-to-edge rectangle with a full-bleed `border-b` divider between rows.
+  // The awaiting state surfaces as a left-edge amber bar. On commit the whole
+  // card collapses its height to 0 (outer grid `1fr → 0fr`) so the rows below
+  // animate up to fill the gap; the visual rectangle lives one level in so its
+  // border collapses with it.
   return (
     <div
       ref={setCardEl}
-      className={`relative overflow-x-clip border-b-2 ${ROW_DIVIDER_CLASS} ${
-        isPlaceholder ? "card-pending-enter" : ""
-      }`}
+      onTransitionEnd={handleExitEnd}
+      className="grid"
+      style={{
+        gridTemplateRows: exiting ? "0fr" : "1fr",
+        transition: "grid-template-rows 240ms ease",
+      }}
     >
-      {/* Swipe-left action backdrop, revealed in the gap on the right as the
-          row content slides left. Right-aligned icon + label so it emerges
-          from the right edge. Saturates + flips to white once past the commit
-          threshold. z-0: sits behind the content (z-10) and the amber bar
-          (z-20). */}
-      {dragX < 0 && !isPlaceholder && group.pollId && (
+      {/* Collapsing inner track. `min-h-0` lets the grid row shrink below the
+          content's min-content; `overflow-hidden` (ONLY while exiting) clips
+          the over-tall content during the collapse — left off at rest so the
+          date tooltip (which overflows above the row) isn't clipped. */}
+      <div className={`min-h-0 ${exiting ? "overflow-hidden" : ""}`}>
         <div
-          aria-hidden="true"
-          className={`absolute inset-0 z-0 flex items-center justify-end gap-1.5 pr-6 text-sm font-semibold transition-colors ${
-            swipeWillIgnore
-              ? swipePastThreshold
-                ? "bg-red-500 text-white"
-                : "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300"
-              : swipePastThreshold
-                ? "bg-green-600 text-white"
-                : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+          className={`relative overflow-x-clip border-b-2 ${ROW_DIVIDER_CLASS} ${
+            isPlaceholder ? "card-pending-enter" : ""
           }`}
         >
-          {swipeWillIgnore ? (
-            <>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+          {/* Swipe-left action backdrop. Its width tracks the EXPOSED strip
+              exactly (`width = -dragX`, right-anchored) so only the revealed
+              area lights up; on commit it fills the row as the content slides
+              off. Right-aligned icon + label emerge from the right edge.
+              Saturates + flips to white once past the commit threshold. z-0:
+              behind the content (z-10) and the amber bar (z-20). */}
+          {(dragX < 0 || exiting) && !isPlaceholder && group.pollId && (
+            <div
+              aria-hidden="true"
+              style={{ width: exiting ? "100%" : `${Math.min(-dragX, SWIPE_MAX)}px` }}
+              className={`absolute inset-y-0 right-0 z-0 flex items-center justify-end gap-1.5 pr-6 text-sm font-semibold transition-colors ${
+                swipePastThreshold || exiting ? swipeActionUI.active : swipeActionUI.idle
+              }`}
+            >
+              <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d={swipeActionUI.path} />
               </svg>
-              <span>Ignore</span>
-            </>
-          ) : (
-            <>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-              </svg>
-              <span>Follow</span>
-            </>
+              <span>{swipeActionUI.label}</span>
+            </div>
           )}
-        </div>
-      )}
-      {isAwaiting && !isPlaceholder && (
-        <span
-          className="absolute inset-y-0 left-0 z-20 w-1 bg-amber-400 dark:bg-amber-500"
-          aria-hidden="true"
-        />
-      )}
-      <div
-        onClick={handleClick}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onTouchMove={handleTouchMove}
-        // Clear `snapping` once the snap-back finishes so the row stops being a
-        // composited layer at rest (no transform applied when dragX===0 &&
-        // !snapping). Guard on propertyName so the bg `transition-colors`
-        // transitionend doesn't reset it mid-snap.
-        onTransitionEnd={(e) => {
-          if (e.propertyName === "transform") setSnapping(false);
-        }}
-        style={{
-          transform: dragX !== 0 || snapping ? `translateX(${dragX}px)` : undefined,
-          transition: snapping ? "transform 200ms ease-out" : undefined,
-          touchAction: "pan-y",
-        }}
-        className={`relative z-10 pl-[0.9rem] pr-[0.65rem] pt-[7px] pb-1 cursor-pointer transition-colors select-none ${
-          isPressed
-            ? "bg-blue-100 dark:bg-blue-900/40"
-            : "bg-background"
-        } hover:bg-gray-100 dark:hover:bg-gray-900 active:bg-blue-100 dark:active:bg-blue-900/40`}
-      >
+          {isAwaiting && !isPlaceholder && (
+            <span
+              className="absolute inset-y-0 left-0 z-20 w-1 bg-amber-400 dark:bg-amber-500"
+              aria-hidden="true"
+            />
+          )}
+          <div
+            onClick={handleClick}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            onTouchMove={handleTouchMove}
+            // Clear `snapping` once the snap-back finishes so the row stops being
+            // a composited layer at rest. Guard on propertyName so the bg
+            // `transition-colors` transitionend doesn't reset it mid-snap.
+            onTransitionEnd={(e) => {
+              if (e.propertyName === "transform") setSnapping(false);
+            }}
+            style={{
+              transform: exiting
+                ? "translateX(-100%)"
+                : dragX !== 0 || snapping
+                  ? `translateX(${dragX}px)`
+                  : undefined,
+              transition: exiting
+                ? "transform 240ms ease"
+                : snapping
+                  ? "transform 200ms ease-out"
+                  : undefined,
+              touchAction: "pan-y",
+            }}
+            className={`relative z-10 pl-[0.9rem] pr-[0.65rem] pt-[7px] pb-1 cursor-pointer transition-colors select-none ${
+              swiping
+                ? "bg-background"
+                : isPressed
+                  ? "bg-blue-100 dark:bg-blue-900/40"
+                  : "bg-background"
+            } ${swiping ? "" : "hover:bg-gray-100 dark:hover:bg-gray-900 active:bg-blue-100 dark:active:bg-blue-900/40"}`}
+          >
         {/* Top row: icon + title. The follow/ignore toggle is no longer an
             inline button — swipe the row left past the threshold to flip
             New↔Old (see the swipe handlers + action backdrop above). The
@@ -622,6 +730,8 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             {cornerCluster}
           </div>
         )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -652,6 +762,9 @@ function arePropsEqual(
     prev.isAwaiting !== next.isAwaiting ||
     prev.isClosed !== next.isClosed ||
     prev.isTooltipActive !== next.isTooltipActive ||
+    prev.isTodo !== next.isTodo ||
+    prev.effectiveTab !== next.effectiveTab ||
+    prev.nameReady !== next.nameReady ||
     prev.groupRouteId !== next.groupRouteId
   ) {
     return false;
