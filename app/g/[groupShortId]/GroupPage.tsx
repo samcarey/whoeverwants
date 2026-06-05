@@ -89,8 +89,8 @@ const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
 const RESTORE_PIN_DURATION_MS = 2500;
 
 // Debounce window for "scroll has stopped." Below this iOS momentum
-// scrolling can briefly pause and reads as idle; above it the arrows
-// feel laggy to appear after a true stop.
+// scrolling can briefly pause and reads as idle; above it the arrow
+// feels laggy to appear after a true stop.
 const SCROLL_STOPPED_DEBOUNCE_MS = 150;
 
 const SCROLL_HELPER_BUTTON_CLASS_BASE =
@@ -99,21 +99,19 @@ const SCROLL_HELPER_BUTTON_CLASS_BASE =
 const ScrollHelperButton = React.forwardRef<
   HTMLButtonElement,
   {
-    direction: 'up' | 'down';
     onClick: () => void;
     style: React.CSSProperties;
     /** When true, render above the slide overlay (z-70) instead of at the
-     *  default z-40 so the arrows aren't hidden by the overlay's opaque
+     *  default z-40 so the arrow isn't hidden by the overlay's opaque
      *  background during a group-kind slide. */
     elevated?: boolean;
   } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'style' | 'type' | 'className'>
->(({ direction, onClick, style, elevated, ...rest }, ref) => {
-  const path = direction === 'up' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7';
+>(({ onClick, style, elevated, ...rest }, ref) => {
   const className = `${SCROLL_HELPER_BUTTON_CLASS_BASE} ${elevated ? 'z-[70]' : 'z-40'}`;
   return (
     <button ref={ref} type="button" onClick={onClick} className={className} style={style} {...rest}>
       <svg className="w-[1.35rem] h-[1.35rem]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-        <path strokeLinecap="round" strokeLinejoin="round" d={path} />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
       </svg>
     </button>
   );
@@ -2104,27 +2102,24 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         onCancel={() => setPendingNameRetry(null)}
       />
 
-      {/* Scroll-helper buttons — rendered via the floating-fab-portal so
+      {/* Scroll-to-top button — rendered via the floating-fab-portal so
           `position: fixed` is relative to the real viewport (outside the
           responsive-scaling container's transform on desktop). The
-          buttons elevate above the slide overlay (z-70) while a
-          group-kind overlay is mounted, so they don't get hidden by the
+          button elevates above the slide overlay (z-70) while a
+          group-kind overlay is mounted, so it doesn't get hidden by the
           overlay's opaque background during the slide. */}
       {!inOverlay && scrollHelperPortal && createPortal(
-        <>
-          {scrollHelpers.showUp && (
-            <ScrollHelperButton
-              ref={upArrowRef}
-              direction="up"
-              onClick={scrollToTop}
-              aria-label="Scroll to top"
-              elevated={elevateArrowsForOverlay}
-              // Float just below the fixed header. (The section header dividers
-              // scroll inline, so there's no sticky chrome to clear.)
-              style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
-            />
-          )}
-        </>,
+        scrollHelpers.showUp ? (
+          <ScrollHelperButton
+            ref={upArrowRef}
+            onClick={scrollToTop}
+            aria-label="Scroll to top"
+            elevated={elevateArrowsForOverlay}
+            // Float just below the fixed header. (The section header dividers
+            // scroll inline, so there's no sticky chrome to clear.)
+            style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
+          />
+        ) : null,
         scrollHelperPortal,
       )}
     </>
