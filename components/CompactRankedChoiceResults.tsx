@@ -463,7 +463,7 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
                   </div>
 
                   {/* Candidate row */}
-                  <div className={`flex-1 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 transition-all ${
+                  <div className={`flex-1 min-w-0 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 transition-all ${
                     isTiedCandidate
                       ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600'
                       : candidate.isEliminated && !isTiedCandidate
@@ -599,7 +599,7 @@ function ConsensusResults({
                 </div>
               </div>
               <div
-                className={`flex-1 border rounded-lg px-3 py-2 ${
+                className={`flex-1 min-w-0 border rounded-lg px-3 py-2 ${
                   isWinner
                     ? "bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600"
                     : "bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600"
