@@ -441,6 +441,28 @@ private func whoeverwantsFEHost() -> String {
     whoeverwantsIsCanaryBundle() ? "latest.whoeverwants.com" : "whoeverwants.com"
 }
 
+// Build a deep link that opens the WebView create form prefilled: `https://<feHost>
+// <path>?create=1[&title=<prompt>]`. `path` is "/g/" (empty placeholder → fresh
+// group) or "/g/<groupShort>" (attach to that group via <body data-group-id>).
+// Shared by CreatePollIntent.createURL (Phase 1) and GroupEntity.fallbackCreateURL
+// (Phase 4) so the create-deep-link format lives in one place. Trims the prompt
+// internally (callers may pass raw or pre-trimmed — both are fine).
+private func whoeverwantsCreatePollURL(path: String, prompt: String) -> URL {
+    let host = whoeverwantsFEHost()
+    var components = URLComponents()
+    components.scheme = "https"
+    components.host = host
+    components.path = path
+    var items = [URLQueryItem(name: "create", value: "1")]
+    let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmed.isEmpty {
+        items.append(URLQueryItem(name: "title", value: trimmed))
+    }
+    components.queryItems = items
+    // URLComponents always yields a valid URL for these fixed inputs.
+    return components.url ?? URL(string: "https://\(host)\(path)?create=1")!
+}
+
 @available(iOS 18.0, *)
 struct CreatePollIntent: AppIntent {
     static var title: LocalizedStringResource = "Create a poll"
@@ -463,19 +485,8 @@ struct CreatePollIntent: AppIntent {
     }
 
     static func createURL(prompt: String) -> URL {
-        let host = whoeverwantsFEHost()
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = host
-        components.path = "/g/"
-        var items = [URLQueryItem(name: "create", value: "1")]
-        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            items.append(URLQueryItem(name: "title", value: trimmed))
-        }
-        components.queryItems = items
-        // URLComponents always yields a valid URL for these fixed inputs.
-        return components.url ?? URL(string: "https://\(host)/g/?create=1")!
+        // Empty placeholder route → the WebView mints a fresh group on submit.
+        whoeverwantsCreatePollURL(path: "/g/", prompt: prompt)
     }
 }
 
@@ -590,8 +601,10 @@ enum QuickPollService {
 
     // Returns the created poll's title (echoed back by the server, which may have
     // normalized it) + the FE path to open. Throws a QuickPollError (spoken) on
-    // any failure.
-    static func createPoll(prompt: String, identity: Identity) async throws -> CreatedPoll {
+    // any failure. `groupUuid` (the `groups.id` UUID, NOT the short_id) attaches
+    // the new poll to an existing group via `CreatePollRequest.group_id`; nil →
+    // the server mints a fresh group, exactly like an in-app create with no parent.
+    static func createPoll(prompt: String, identity: Identity, groupUuid: String? = nil) async throws -> CreatedPoll {
         guard let url = URL(string: apiBase + "/api/polls") else {
             throw QuickPollError("I couldn't reach WhoeverWants. Try again in a moment.")
         }
@@ -611,11 +624,17 @@ enum QuickPollService {
         // typed prompt becomes the wrapper title, and rides as `context` too). No
         // deadlines, no suggestion phase, no category: the deliberately minimal
         // native slice the plan calls for (don't reimplement the whole request).
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "creator_name": identity.name,
             "title": prompt,
             "questions": [["question_type": "yes_no", "context": prompt]],
         ]
+        // Attach to an existing group when targeting one. The server treats an
+        // unknown group_id as "mint a fresh group" (no 404), so a stale uuid
+        // degrades gracefully rather than failing the create.
+        if let groupUuid = groupUuid, !groupUuid.isEmpty {
+            body["group_id"] = groupUuid
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -647,6 +666,52 @@ enum QuickPollService {
     }
 }
 
+// Shared create-or-fall-back flow behind BOTH QuickPollIntent (no group) and
+// QuickPollInGroupIntent (group-targeted). Returns the opensIntent + spoken
+// dialog; each intent's perform() wraps it in `.result(opensIntent:dialog:)`.
+// iOS 18 because it builds OpenURLIntent (createPoll/loadIdentity are iOS 16).
+@available(iOS 18.0, *)
+extension QuickPollService {
+    static func quickPollOutcome(
+        prompt: String, group: GroupEntity?
+    ) async throws -> (open: OpenURLIntent, dialog: IntentDialog) {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw QuickPollError("I didn't catch a question for the poll.")
+        }
+        // Try headless creation (App Group identity + direct API POST). On ANY
+        // failure — identity not readable from this process, network, or server —
+        // DON'T dead-end: fall back to the Phase 1 deep link so the user always
+        // gets their poll. Swift's opaque `some` return forces both intents'
+        // branches to share one underlying type, which is why both the headless
+        // and fallback paths return an OpenURLIntent-based result.
+        if let identity = loadIdentity(),
+           let created = try? await createPoll(
+               prompt: trimmed, identity: identity, groupUuid: group?.groupUuid
+           ) {
+            // Open straight to the new poll's detail page (not bare home): the user
+            // lands on their freshly-created poll — that IS the confirmation — and
+            // it's a real navigation, so it shows even when the WebView was already
+            // mounted on `/` (where opening home is a no-op push).
+            let inGroup = group.map { " in \($0.title)" } ?? ""
+            return (
+                OpenURLIntent(feURL(path: created.path)),
+                IntentDialog("Created your poll\(inGroup): \(created.title). Opening WhoeverWants.")
+            )
+        }
+        // Headless unavailable — open the create form prefilled. When a group is
+        // targeted, route to that group's page (`/g/<short>?create=1&title=…`) so
+        // the create form attaches the new poll to it via `<body data-group-id>`;
+        // otherwise the empty placeholder mints a fresh group on submit.
+        let fallbackURL = group?.fallbackCreateURL(prompt: trimmed)
+            ?? CreatePollIntent.createURL(prompt: trimmed)
+        return (
+            OpenURLIntent(fallbackURL),
+            IntentDialog("Opening WhoeverWants to finish your poll.")
+        )
+    }
+}
+
 // iOS 18+ (was 16): the never-dead-end fallback returns an OpenURLIntent, which
 // is iOS 18-only. The spoken phrase already requires iOS 18 (AppShortcuts), so
 // the only thing lost is manual Shortcuts-app use on iOS 16–17 — acceptable.
@@ -667,37 +732,48 @@ struct QuickPollIntent: AppIntent {
     var prompt: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
-        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            throw QuickPollError("I didn't catch a question for the poll.")
-        }
-        // Try headless creation. On ANY failure — the identity bridge isn't
-        // reliably readable from this intent's (separate) process, or network /
-        // server trouble — DON'T dead-end: fall back to the Phase 1 deep link,
-        // opening the app to the create form with the prompt prefilled, so the
-        // user always gets their poll. Swift's opaque return type requires every
-        // return to share one underlying type, so BOTH branches return an
-        // OpenURLIntent-based result (you cannot mix `.result(dialog:)` with
-        // `.result(opensIntent:dialog:)` under one `some` return).
-        if let identity = QuickPollService.loadIdentity(),
-           let created = try? await QuickPollService.createPoll(prompt: trimmed, identity: identity) {
-            // Open straight to the new poll's detail page (not bare home): the user
-            // lands on their freshly-created poll — that IS the confirmation — and
-            // it's a real navigation, so it shows immediately even when the WebView
-            // was already mounted on `/` (where opening home is a no-op push).
-            return .result(
-                opensIntent: OpenURLIntent(QuickPollService.feURL(path: created.path)),
-                dialog: IntentDialog("Created your poll: \(created.title). Opening WhoeverWants.")
-            )
-        }
-        // Headless identity unavailable on this device (see the App Group note on
-        // loadIdentity — the bridge write isn't landing yet). Fall back to the
-        // Phase 1 deep link, opening the app to the create form with the prompt
-        // prefilled, so the user always gets their poll.
-        return .result(
-            opensIntent: OpenURLIntent(CreatePollIntent.createURL(prompt: trimmed)),
-            dialog: IntentDialog("Opening WhoeverWants to finish your poll.")
-        )
+        let outcome = try await QuickPollService.quickPollOutcome(prompt: prompt, group: nil)
+        return .result(opensIntent: outcome.open, dialog: outcome.dialog)
+    }
+}
+
+// Phase 4 of docs/siri-integration-plan.md — group-targeted creation.
+//
+// Same headless-or-fall-back flow as QuickPollIntent, but the poll is attached to
+// a specific group the user names by voice ("Add a poll to the trip group …").
+// The `group` parameter is resolved via GroupEntityQuery (below); its UUID rides
+// the create request's `group_id`, and the deep-link fallback routes to the
+// group's page so the WebView create form attaches there too. Kept a SEPARATE
+// intent (not an optional param on QuickPollIntent) to (a) keep the
+// device-verified no-group path untouched and (b) avoid mixing
+// parameter-bound and bare phrases in one AppShortcut. Both share
+// `QuickPollService.quickPollOutcome`, so there's no duplicated create logic.
+@available(iOS 18.0, *)
+struct QuickPollInGroupIntent: AppIntent {
+    static var title: LocalizedStringResource = "Quick poll in a group"
+    static var description = IntentDescription(
+        "Create a poll in one of your groups by voice. WhoeverWants makes it in the background when it can; otherwise it opens prefilled so you can finish in a tap."
+    )
+    // NOT openAppWhenRun — headless success stays closed; the fallback opens via
+    // the OpenURLIntent it returns.
+
+    @Parameter(
+        title: "Poll question",
+        description: "What the poll should ask",
+        requestValueDialog: "What should the poll ask?"
+    )
+    var prompt: String
+
+    @Parameter(
+        title: "Group",
+        description: "Which group to add the poll to",
+        requestValueDialog: "Which group?"
+    )
+    var group: GroupEntity
+
+    func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
+        let outcome = try await QuickPollService.quickPollOutcome(prompt: prompt, group: group)
+        return .result(opensIntent: outcome.open, dialog: outcome.dialog)
     }
 }
 
@@ -858,6 +934,180 @@ struct OpenPollIntent: AppIntent {
     }
 }
 
+// Phase 4 of docs/siri-integration-plan.md — group-level App Entity.
+//
+// GroupEntity is the group-level analog of PollEntity: it lets Siri / Shortcuts /
+// Spotlight reference the user's GROUPS by name so a create can target one
+// ("Add a poll to the trip group"). `id` is the group SHORT id (the addressable
+// `/g/<id>`); `groupUuid` is the `groups.id` UUID that `POST /api/polls`'s
+// `group_id` wants — carried separately because the addressable id and the
+// create key differ for groups (they coincide for polls). Visibility is
+// BROWSER-SCOPED via the bridged X-Browser-Id (Phase 2 App Group) — same
+// limitation + rationale as PollEntity. iOS 16 (no OpenURLIntent dependency),
+// reusable by a future iOS-16 group-scoped headless intent.
+@available(iOS 16.0, *)
+struct GroupEntity: AppEntity {
+    let id: String          // group short_id — canonical addressable id (/g/<id>)
+    let title: String       // group name: override → participant names → "Group"
+    let groupUuid: String   // groups.id UUID — what POST /api/polls `group_id` wants
+    let pollCount: Int      // 0 for membership-only (empty) groups
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Group"
+
+    var displayRepresentation: DisplayRepresentation {
+        let subtitle = pollCount == 0
+            ? "No polls yet"
+            : (pollCount == 1 ? "1 poll" : "\(pollCount) polls")
+        return DisplayRepresentation(title: "\(title)", subtitle: "\(subtitle)")
+    }
+
+    static var defaultQuery = GroupEntityQuery()
+
+    // Deep-link fallback target when headless create is unavailable: the group's
+    // OWN page, so the WebView create form attaches the new poll here (via
+    // `<body data-group-id>`) rather than minting a fresh group. `id` is the
+    // short_id; the group page reads `?create=1&title=…` exactly like the Phase 1
+    // empty-placeholder deep link, but on a real group route so attribution lands.
+    func fallbackCreateURL(prompt: String) -> URL {
+        // The group's own route → the WebView attaches the new poll here via
+        // `<body data-group-id>` (the group page sets it on mount).
+        whoeverwantsCreatePollURL(path: "/g/\(id)", prompt: prompt)
+    }
+
+    // Fetch the user's visible groups, browser-scoped via the bridged identity.
+    // Populated groups come from POST /api/groups/mine (PollResponse[], collapsed
+    // by group_id); membership-only empty groups from POST /api/groups/empty
+    // (GroupSummary[]). NEVER throws — returns [] on no-identity / network / parse
+    // failure, so a consumer degrades to "no groups to pick". Sorted newest-first,
+    // capped at 50.
+    static func fetchAll() async -> [GroupEntity] {
+        guard let identity = QuickPollService.loadIdentity(),
+              let browserId = identity.browserId, !browserId.isEmpty else {
+            return []
+        }
+        func nonEmpty(_ s: String?) -> String? { s.flatMap { $0.isEmpty ? nil : $0 } }
+
+        // Shared request for the two POST endpoints; [] on any failure.
+        func post(_ path: String, body: [String: Any]?) async -> [[String: Any]] {
+            guard let url = URL(string: QuickPollService.apiBase + path) else { return [] }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(browserId, forHTTPHeaderField: "X-Browser-Id")
+            if let token = identity.token, !token.isEmpty {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            if let body = body {
+                request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            }
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+                  let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                return []
+            }
+            return arr
+        }
+
+        async let mineRaw = post("/api/groups/mine", body: ["include_results": false])
+        async let emptyRaw = post("/api/groups/empty", body: nil)
+
+        // Populated groups: collapse the poll list by group_id (uuid), tracking the
+        // short_id, title override, a deduped participant-name list, poll count, and
+        // the latest created_at.
+        struct Agg {
+            var shortId: String?
+            let uuid: String
+            var override: String?
+            var names: [String] = []   // insertion-ordered, case-insensitively deduped
+            var seen: Set<String> = []
+            var count: Int = 0
+            var latest: String = ""
+        }
+        var byUuid: [String: Agg] = [:]
+        let selfName = identity.name.trimmingCharacters(in: .whitespaces).lowercased()
+
+        for obj in await mineRaw {
+            guard let uuid = nonEmpty(obj["group_id"] as? String) else { continue }
+            var agg = byUuid[uuid] ?? Agg(shortId: nil, uuid: uuid, override: nil)
+            if agg.shortId == nil { agg.shortId = nonEmpty(obj["group_short_id"] as? String) }
+            if agg.override == nil { agg.override = nonEmpty(obj["group_title"] as? String) }
+            agg.count += 1
+            let createdAt = (obj["created_at"] as? String) ?? ""
+            if createdAt > agg.latest { agg.latest = createdAt }
+            // Participant names (creator + voters), skipping the current user and
+            // de-duplicating case-insensitively — mirrors the FE buildGroups
+            // default-title rule so the spoken name matches what the user sees.
+            var candidates: [String] = []
+            if let c = nonEmpty(obj["creator_name"] as? String) { candidates.append(c) }
+            if let voters = obj["voter_names"] as? [String] { candidates.append(contentsOf: voters) }
+            for raw in candidates {
+                let name = raw.trimmingCharacters(in: .whitespaces)
+                let key = name.lowercased()
+                guard !name.isEmpty, key != selfName, !agg.seen.contains(key) else { continue }
+                agg.seen.insert(key)
+                agg.names.append(name)
+            }
+            byUuid[uuid] = agg
+        }
+
+        func displayName(override: String?, names: [String]) -> String {
+            if let o = override { return o }
+            guard !names.isEmpty else { return "Group" }
+            let shown = names.prefix(3).joined(separator: ", ")
+            return names.count > 3 ? "\(shown), …" : shown
+        }
+
+        var groups: [(entity: GroupEntity, createdAt: String)] = []
+        for agg in byUuid.values {
+            guard let short = agg.shortId else { continue }  // unaddressable; skip
+            let name = displayName(override: agg.override, names: agg.names)
+            groups.append((
+                entity: GroupEntity(id: short, title: name, groupUuid: agg.uuid, pollCount: agg.count),
+                createdAt: agg.latest
+            ))
+        }
+
+        // Membership-only empty groups (no polls → no participant names; the title
+        // override, if any, is the only available name).
+        for obj in await emptyRaw {
+            guard let uuid = nonEmpty(obj["id"] as? String),
+                  let short = nonEmpty(obj["short_id"] as? String) else { continue }
+            let name = nonEmpty(obj["title"] as? String) ?? "New group"
+            let createdAt = (obj["created_at"] as? String) ?? ""
+            groups.append((
+                entity: GroupEntity(id: short, title: name, groupUuid: uuid, pollCount: 0),
+                createdAt: createdAt
+            ))
+        }
+
+        // created_at is ISO-8601 → lexicographic descending == chronological.
+        return groups.sorted { $0.createdAt > $1.createdAt }.prefix(50).map { $0.entity }
+    }
+}
+
+// EntityStringQuery refines EntityQuery — provides id-resolve, free-text voice
+// match, and Spotlight/Shortcuts-picker suggestions. iOS calls exactly one per
+// resolution, so the per-call fetchAll() round-trip is normal (no shared cache,
+// which would only risk staleness).
+@available(iOS 16.0, *)
+struct GroupEntityQuery: EntityStringQuery {
+    func entities(for identifiers: [String]) async throws -> [GroupEntity] {
+        let wanted = Set(identifiers)
+        return await GroupEntity.fetchAll().filter { wanted.contains($0.id) }
+    }
+
+    func entities(matching string: String) async throws -> [GroupEntity] {
+        let needle = string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let all = await GroupEntity.fetchAll()
+        guard !needle.isEmpty else { return all }
+        return all.filter { $0.title.lowercased().contains(needle) }
+    }
+
+    func suggestedEntities() async throws -> [GroupEntity] {
+        await GroupEntity.fetchAll()
+    }
+}
+
 @available(iOS 18.0, *)
 struct WhoeverWantsShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
@@ -880,6 +1130,20 @@ struct WhoeverWantsShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Quick poll",
             systemImageName: "bolt.fill"
+        )
+        // Phase 4: create a poll in a named group. `\(\.$group)` carries the
+        // spoken group, resolved via GroupEntityQuery; the bare phrase falls back
+        // to App Intents' group picker. Phrasings use "to"/"for" before the group
+        // so the app-name "in" suffix doesn't read as a double "in … in …".
+        AppShortcut(
+            intent: QuickPollInGroupIntent(),
+            phrases: [
+                "Add a poll to \(\.$group) in \(.applicationName)",
+                "Create a poll for \(\.$group) in \(.applicationName)",
+                "New poll for \(\.$group) in \(.applicationName)"
+            ],
+            shortTitle: "Poll a group",
+            systemImageName: "person.3.fill"
         )
         // Phase 4 foundation consumer: open a poll by name. `\(\.$poll)` lets the
         // spoken phrase carry the poll, resolved via PollEntityQuery; the bare
