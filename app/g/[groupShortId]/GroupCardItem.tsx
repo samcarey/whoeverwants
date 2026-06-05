@@ -147,6 +147,183 @@ export interface GroupCardItemProps {
   onAbstain: (pollId: string, subQuestions: Question[]) => void;
 }
 
+/** Horizontal left→right arrow drawn in the gap between title and result on
+ *  the one-line layout. */
+function HorizontalArrow({ className }: { className?: string }) {
+  return (
+    <svg
+      className={`text-gray-400 dark:text-gray-500 ${className ?? ""}`}
+      width="26"
+      height="14"
+      viewBox="0 0 26 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M1 7 H23 M17 2 L23 7 L17 12" />
+    </svg>
+  );
+}
+
+/** Bent ↳ arrow (down, then 90° turn to the right) drawn just left of the
+ *  first result line on the wrapped layout. */
+function BentArrow({ className }: { className?: string }) {
+  return (
+    <svg
+      className={`text-gray-400 dark:text-gray-500 ${className ?? ""}`}
+      width="15"
+      height="19"
+      viewBox="0 0 15 19"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 1 V12 H12 M8 8 L12 12 L8 16" />
+    </svg>
+  );
+}
+
+/**
+ * Title + result-preview layout for a poll row.
+ *
+ *  - No result          → plain title at full width.
+ *  - 1 result that fits  → title (left) · → · result (right) on one line, the
+ *                          horizontal arrow centered in the gap between them.
+ *  - 1 result that doesn't fit, OR multiple results → title wraps at ≤80% card
+ *                          width; result(s) drop below it, right-justified at
+ *                          ≤75% width, with a bent ↳ arrow before the first.
+ *
+ * The single-result fit decision is measured against a hidden one-line clone
+ * in a useLayoutEffect (flush-before-paint, so no flash) + a ResizeObserver
+ * for width changes.
+ */
+function TitleResultRow({
+  icon,
+  title,
+  results,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  results: { id: string; node: React.ReactNode }[];
+}) {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const measureRef = React.useRef<HTMLDivElement>(null);
+  const [oneLine, setOneLine] = React.useState(false);
+  // Only a single result is ever a one-line candidate; multiple results always
+  // wrap below the title.
+  const single = results.length === 1;
+
+  const evaluate = React.useCallback(() => {
+    if (!single) {
+      setOneLine(false);
+      return;
+    }
+    const c = containerRef.current;
+    const m = measureRef.current;
+    if (!c || !m) return;
+    // 1px slack absorbs sub-pixel rounding so a just-fitting line isn't
+    // bounced to wrapped.
+    setOneLine(m.scrollWidth <= c.clientWidth + 1);
+  }, [single]);
+
+  // Measure before paint on every render (content can change the natural
+  // one-line width). Cheap: two layout reads + a guarded setState.
+  React.useLayoutEffect(() => {
+    evaluate();
+  });
+
+  // Re-measure on width changes.
+  React.useEffect(() => {
+    const c = containerRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => evaluate());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [evaluate]);
+
+  const titleInner = (
+    <>
+      <span className="mr-1.5 shrink-0" aria-hidden="true">{icon}</span>
+      <span className="min-w-0">{title}</span>
+    </>
+  );
+
+  if (results.length === 0) {
+    return (
+      <div ref={containerRef} className="min-w-0">
+        <h3 className="flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white">
+          {titleInner}
+        </h3>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={containerRef} className="relative min-w-0">
+      {/* Hidden one-line measurer (single result only). scrollWidth gives the
+          natural one-line width even when it overflows the container. */}
+      {single && (
+        <div
+          ref={measureRef}
+          aria-hidden="true"
+          className="invisible absolute left-0 top-0 flex items-center whitespace-nowrap font-medium text-lg leading-tight"
+          style={{ pointerEvents: "none" }}
+        >
+          <span className="mr-1.5">{icon}</span>
+          <span>{title}</span>
+          <HorizontalArrow className="mx-2" />
+          <span className="font-semibold">{results[0].node}</span>
+        </div>
+      )}
+
+      {single && oneLine ? (
+        // One line: title left · arrow centered in the gap · result right.
+        <div className="flex items-center min-w-0">
+          <h3 className="flex items-center font-medium text-lg leading-tight text-gray-900 dark:text-white whitespace-nowrap">
+            {titleInner}
+          </h3>
+          <div className="flex-1 flex justify-center px-2">
+            <HorizontalArrow />
+          </div>
+          <div className="shrink-0 text-lg leading-tight whitespace-nowrap">
+            {results[0].node}
+          </div>
+        </div>
+      ) : (
+        // Wrapped: title ≤80% wide, results below right-justified ≤75% wide,
+        // bent arrow before the first result line.
+        <div>
+          <h3
+            className="flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white"
+            style={{ maxWidth: "80%" }}
+          >
+            {titleInner}
+          </h3>
+          <div className="mt-1 flex justify-end">
+            <div className="flex flex-col items-end gap-0.5" style={{ maxWidth: "75%" }}>
+              {results.map((res, i) => (
+                <div
+                  key={res.id}
+                  className="flex items-start gap-1 max-w-full text-lg leading-tight text-right"
+                >
+                  {i === 0 && <BentArrow className="shrink-0 mt-px" />}
+                  <div className="min-w-0">{res.node}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GroupCardItemImpl(props: GroupCardItemProps) {
   const {
     group,
@@ -177,7 +354,6 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
   } = props;
 
   const question = group.anchor;
-  const isMultiGroup = group.subQuestions.length > 1;
   const wrapper = group.poll;
   // Gap 1: the viewer's follow/ignore state for this poll. 'old' = ✕'d
   // (filed in Old); anything else = followed.
@@ -386,11 +562,12 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
   };
 
-  // Returns the type-specific compact pill JSX for one question, or null
-  // when there's nothing to show yet. Cards are navigation-only now —
-  // pill taps fall through to the card click handler that slides to the
-  // detail page.
-  const pillForQuestion = (sp: Question): React.ReactNode => {
+  // Returns the type-specific "result preview" as BUBBLE-LESS text (no pill
+  // chrome) at the inherited title font size, or null when there's nothing to
+  // show yet. The card lays title + result out on one line (or wrapped) with a
+  // connecting arrow — see TitleResultRow. Cards are navigation-only; taps fall
+  // through to the card click handler that slides to the detail page.
+  const plainResultForQuestion = (sp: Question): React.ReactNode => {
     const r = questionResultsMap.get(sp.id);
     const inSuggestions = isInSuggestionPhase(sp, wrapperPrephaseDeadline);
     const inTimeAvailability = isInTimeAvailabilityPhase(sp);
@@ -403,6 +580,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           results={r!}
           isQuestionClosed={isClosed}
           hideLoser={true}
+          plain={true}
           userVoteChoice={userVote?.choice ?? null}
         />
       );
@@ -412,18 +590,16 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
         ? (r.suggestion_counts || []).length > 0
         : (r.total_votes || 0) > 0 && !!r.winner && r.winner !== "tie";
       if (!hasPreview) return null;
-      // The row's title already shows the category icon; don't re-render
-      // it inside the compact pill.
       return inSuggestions ? (
-        <CompactSuggestionPreview results={r} />
+        <CompactSuggestionPreview results={r} plain />
       ) : (
-        <CompactRankedChoicePreview results={r} isQuestionClosed={isClosed} />
+        <CompactRankedChoicePreview results={r} isQuestionClosed={isClosed} plain />
       );
     }
     if (sp.question_type === "time" && r && !inTimeAvailability) {
       const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
       if (!hasPreview) return null;
-      return <CompactTimePreview results={r} isQuestionClosed={isClosed} />;
+      return <CompactTimePreview results={r} isQuestionClosed={isClosed} plain />;
     }
     if (sp.question_type === "limited_supply") {
       // Always show "N/M claimed" — falls back to the question's own
@@ -433,36 +609,23 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           results={r}
           supplyFallback={sp.supply_count}
           isQuestionClosed={isClosed}
+          plain
         />
       );
     }
     return null;
   };
 
-  let pillEl: React.ReactNode = null;
-  if (!isMultiGroup) {
-    pillEl = pillForQuestion(question);
-  } else {
-    // Multi-question: stack one pill per question. Sub-questions without
-    // any data yet drop their row so the column stays compact. `w-full
-    // min-w-0` on each row + `items-stretch` on the column lets the inner
-    // pill's `justify-end` right-align within the available track instead
-    // of pinning to max-content (which would overflow the status label).
-    const subPills = group.subQuestions
-      .map((sp) => {
-        const node = pillForQuestion(sp);
-        if (!node) return null;
-        return <div key={sp.id} className="w-full min-w-0">{node}</div>;
-      })
-      .filter((n): n is React.ReactElement => n !== null);
-    if (subPills.length > 0) {
-      pillEl = (
-        <div className="flex flex-col items-stretch gap-1 w-full min-w-0">
-          {subPills}
-        </div>
-      );
+  // One result entry per sub-question that has something to show. Single-
+  // question polls yield 0 or 1; multi-question polls can yield several.
+  const resultEntries: { id: string; node: React.ReactNode }[] = [];
+  if (!isPlaceholder) {
+    for (const sp of group.subQuestions) {
+      const node = plainResultForQuestion(sp);
+      if (node) resultEntries.push({ id: sp.id, node });
     }
   }
+  const hasResult = resultEntries.length > 0;
 
   // Engagement counts. `views` (= viewed_total) shows in the bottom-LEFT after
   // author·date; `voted` + `suggestions` show in the bottom-RIGHT corner with
@@ -655,42 +818,18 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                   : "bg-background"
             } ${swiping ? "" : "hover:bg-gray-100 dark:hover:bg-gray-900 active:bg-blue-100 dark:active:bg-blue-900/40"}`}
           >
-        {/* Top row: icon + title. The follow/ignore toggle is no longer an
-            inline button — swipe the row left past the threshold to flip
-            New↔Old (see the swipe handlers + action backdrop above). The
-            status countdown + nav chevron live in the bottom-right (see the
-            metadata row below). */}
-        <div className="flex items-start min-w-0">
-          <h3 className="flex-1 min-w-0 flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white">
-            <span className="mr-1.5 shrink-0" aria-hidden="true">{categoryIcon}</span>
-            <span className="min-w-0">{question.title}</span>
-          </h3>
-        </div>
-
-        {/* Pill row: centered across the FULL rectangle width (not just
-            the right column). Renders only when there's a non-empty
-            pill so empty groups don't leave a stray gap.
-            `transform: scale(1.4)` enlarges the pill (font, padding,
-            badges) proportionally by 40%. We tried CSS `zoom` first but
-            it didn't render in WebKit even on a fresh browser load —
-            switched to `transform` which is universally supported with
-            no quirks. The downside is `transform` doesn't reflow, so we
-            absorb the ~20% visual overflow with explicit `py-2` on the
-            outer flex container — that gives the pill ~8px on top and
-            ~8px below to expand into without colliding with the title
-            row above or the author/respondents row below. */}
-        {!isPlaceholder && pillEl && (
-          <div className="mt-1 mb-2 py-2 flex justify-center min-w-0">
-            <div
-              style={{
-                transform: "scale(1.4)",
-                transformOrigin: "center",
-              }}
-            >
-              {pillEl}
-            </div>
-          </div>
-        )}
+        {/* Title + result preview. When both fit on one line they share a
+            row (title left, result right) with a horizontal arrow between
+            them; otherwise the title wraps (≤80% wide) and the result drops
+            below it, right-justified (≤75% wide) behind a bent ↳ arrow. The
+            follow/ignore toggle is a left-swipe (see the swipe handlers +
+            action backdrop above); the status countdown + nav chevron live in
+            the bottom-right metadata row below. */}
+        <TitleResultRow
+          icon={categoryIcon}
+          title={question.title}
+          results={resultEntries}
+        />
 
         {/* Bottom row: author · date (left) + the corner cluster (right)
             holding the voted/suggestions emoji counts + status countdown + nav
@@ -700,7 +839,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             bubbles live only on the poll detail page now. Skipped during the
             placeholder/FLIP phase. */}
         {!isPlaceholder && (
-          <div className={`${pillEl ? "" : "mt-2 "}flex items-center justify-between gap-2 min-w-0`}>
+          <div className={`${hasResult ? "mt-1.5 " : "mt-2 "}flex items-center justify-between gap-2 min-w-0`}>
             <ClientOnly fallback={null}>
               <div className="flex items-baseline min-w-0 text-xs text-gray-400 dark:text-gray-500">
                 {wrapper?.creator_name && (
