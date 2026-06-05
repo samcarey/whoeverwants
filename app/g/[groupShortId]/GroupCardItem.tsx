@@ -275,7 +275,10 @@ function TitleResultRow({
   // result are kept together as one inline-block unit so they wrap onto the
   // last line as a whole rather than splitting.
   const inlineTitleResult = (
-    <h3 className="font-medium text-lg leading-tight text-gray-900 dark:text-white">
+    <h3
+      className="font-medium text-lg leading-tight text-gray-900 dark:text-white"
+      style={{ maxWidth: "90%" }}
+    >
       <span className="mr-1.5" aria-hidden="true">{icon}</span>
       {title}
       <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-semibold align-middle">
@@ -312,17 +315,17 @@ function TitleResultRow({
             <HorizontalArrow className="mx-2" />
             <span className="font-semibold">{results[0].node}</span>
           </div>
-          {/* Title-only, wrapping at full container width. */}
+          {/* Title-only, wrapping at the 90% title width. */}
           <div
             ref={titleMeasRef}
             aria-hidden="true"
-            className="invisible absolute left-0 top-0 w-full font-medium text-lg leading-tight"
-            style={{ pointerEvents: "none" }}
+            className="invisible absolute left-0 top-0 font-medium text-lg leading-tight"
+            style={{ pointerEvents: "none", maxWidth: "90%" }}
           >
             <span className="mr-1.5">{icon}</span>
             {title}
           </div>
-          {/* Title + → + result inline, wrapping at full container width. */}
+          {/* Title + → + result inline (h3 caps at 90%), wrapping. */}
           <div
             ref={inlineMeasRef}
             aria-hidden="true"
