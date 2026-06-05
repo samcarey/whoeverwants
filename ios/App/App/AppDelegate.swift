@@ -432,6 +432,15 @@ private func whoeverwantsIsCanaryBundle() -> Bool {
     Bundle.main.bundleIdentifier == "com.whoeverwants.app.latest"
 }
 
+// The FE host the WebView loads for this bundle (canary → latest.whoeverwants.com,
+// prod → whoeverwants.com), mirroring capacitor.config.ts. Single source of truth
+// for the per-tier FE host used by the Phase 1 deep-link URL AND the Phase 3
+// success-open URL. (The API host — api.latest… / api… — is a separate mapping in
+// QuickPollService.apiBase.)
+private func whoeverwantsFEHost() -> String {
+    whoeverwantsIsCanaryBundle() ? "latest.whoeverwants.com" : "whoeverwants.com"
+}
+
 @available(iOS 18.0, *)
 struct CreatePollIntent: AppIntent {
     static var title: LocalizedStringResource = "Create a poll"
@@ -454,8 +463,7 @@ struct CreatePollIntent: AppIntent {
     }
 
     static func createURL(prompt: String) -> URL {
-        // Map the bundle id to the tier host (mirrors capacitor.config.ts).
-        let host = whoeverwantsIsCanaryBundle() ? "latest.whoeverwants.com" : "whoeverwants.com"
+        let host = whoeverwantsFEHost()
         var components = URLComponents()
         components.scheme = "https"
         components.host = host
@@ -526,6 +534,14 @@ enum QuickPollService {
         let name: String        // creator_name; the server REQUIRES this (non-blank)
     }
 
+    // The created poll's title (the server may have normalized it) + the FE path
+    // to open so the success path lands directly on the new poll
+    // ("/g/<groupShort>/p/<pollShort>", or "/" when the response lacked short ids).
+    struct CreatedPoll {
+        let title: String
+        let path: String
+    }
+
     // The display name is the ONLY hard server requirement: `POST /api/polls`
     // runs `validate_user_name(creator_name)` and 400s on blank. The bearer token
     // is optional — an anonymous-but-named user has a browser-keyed auto-minted
@@ -556,16 +572,26 @@ enum QuickPollService {
             : "https://api.whoeverwants.com"
     }
 
-    // FE host (the WebView's origin) to open after a successful headless create,
-    // so the user sees the new poll. Mirrors capacitor.config.ts host mapping.
+    // Build an FE URL for a relative path on the WebView's origin (mirrors
+    // capacitor.config.ts host mapping). Used to open straight to the created
+    // poll's detail page on success, so the user lands ON the new poll (visual
+    // confirmation + immediate visibility) rather than bare home — which, when
+    // the WebView is already mounted on `/`, is a no-op router.push that never
+    // re-fetches, so the poll wouldn't appear until a remount.
+    static func feURL(path: String) -> URL {
+        URL(string: "https://\(whoeverwantsFEHost())\(path)") ?? feHomeURL()
+    }
+
+    // FE home — the safe, non-recursive fallback when no poll path is available
+    // (feURL falls back here on a malformed path, so this must NOT route through feURL).
     static func feHomeURL() -> URL {
-        let host = whoeverwantsIsCanaryBundle() ? "latest.whoeverwants.com" : "whoeverwants.com"
-        return URL(string: "https://\(host)/") ?? URL(string: "https://whoeverwants.com/")!
+        URL(string: "https://\(whoeverwantsFEHost())/") ?? URL(string: "https://whoeverwants.com/")!
     }
 
     // Returns the created poll's title (echoed back by the server, which may have
-    // normalized it). Throws a QuickPollError (spoken) on any failure.
-    static func createPoll(prompt: String, identity: Identity) async throws -> String {
+    // normalized it) + the FE path to open. Throws a QuickPollError (spoken) on
+    // any failure.
+    static func createPoll(prompt: String, identity: Identity) async throws -> CreatedPoll {
         guard let url = URL(string: apiBase + "/api/polls") else {
             throw QuickPollError("I couldn't reach WhoeverWants. Try again in a moment.")
         }
@@ -605,11 +631,19 @@ enum QuickPollService {
             }
             throw QuickPollError("WhoeverWants couldn't create the poll. Open the app and try there.")
         }
-        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let title = obj["title"] as? String, !title.isEmpty {
-            return title
+        // Parse the title (server may normalize it) + the poll's path so the
+        // success open lands directly on the new poll. `group_short_id` + `short_id`
+        // are both NOT NULL on a fresh PollResponse (migrations 100/101); fall back
+        // to home if either is somehow absent.
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let title = (obj["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? prompt
+            if let groupShort = obj["group_short_id"] as? String, !groupShort.isEmpty,
+               let pollShort = obj["short_id"] as? String, !pollShort.isEmpty {
+                return CreatedPoll(title: title, path: "/g/\(groupShort)/p/\(pollShort)")
+            }
+            return CreatedPoll(title: title, path: "/")
         }
-        return prompt
+        return CreatedPoll(title: prompt, path: "/")
     }
 }
 
@@ -646,10 +680,14 @@ struct QuickPollIntent: AppIntent {
         // OpenURLIntent-based result (you cannot mix `.result(dialog:)` with
         // `.result(opensIntent:dialog:)` under one `some` return).
         if let identity = QuickPollService.loadIdentity(),
-           let title = try? await QuickPollService.createPoll(prompt: trimmed, identity: identity) {
+           let created = try? await QuickPollService.createPoll(prompt: trimmed, identity: identity) {
+            // Open straight to the new poll's detail page (not bare home): the user
+            // lands on their freshly-created poll — that IS the confirmation — and
+            // it's a real navigation, so it shows immediately even when the WebView
+            // was already mounted on `/` (where opening home is a no-op push).
             return .result(
-                opensIntent: OpenURLIntent(QuickPollService.feHomeURL()),
-                dialog: IntentDialog("Created your poll: \(title). Opening WhoeverWants.")
+                opensIntent: OpenURLIntent(QuickPollService.feURL(path: created.path)),
+                dialog: IntentDialog("Created your poll: \(created.title). Opening WhoeverWants.")
             )
         }
         // Headless identity unavailable on this device (see the App Group note on
