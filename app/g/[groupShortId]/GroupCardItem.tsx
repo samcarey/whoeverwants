@@ -268,18 +268,15 @@ function TitleResultRow({
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const fitRef = React.useRef<HTMLDivElement>(null); // nowrap one-line probe
-  const titleMeasRef = React.useRef<HTMLDivElement>(null); // title only, wraps
-  const inlineMeasRef = React.useRef<HTMLDivElement>(null); // title+→+result, wraps
-  const lastLineRef = React.useRef<HTMLSpanElement>(null); // visible last-line title text
+  const titleMeasTextRef = React.useRef<HTMLSpanElement>(null); // title text @90% hang-indent
+  const resultMeasRef = React.useRef<HTMLSpanElement>(null); // nowrap result width
   const [mode, setMode] = React.useState<ResultRowMode>("below");
   // x (relative to the container's left) where the title's last line ends, so
-  // the last-line leader can start right after the title text.
+  // the last-line leader/result can sit right after the title text.
   const [lastLineEndX, setLastLineEndX] = React.useState<number | null>(null);
   // Only a single result is ever an inline candidate; multiple results always
   // wrap below the title.
   const single = results.length === 1;
-  const modeRef = React.useRef(mode);
-  modeRef.current = mode;
 
   const evaluate = React.useCallback(() => {
     if (!single) {
@@ -288,79 +285,58 @@ function TitleResultRow({
     }
     const c = containerRef.current;
     const fit = fitRef.current;
-    const tm = titleMeasRef.current;
-    const im = inlineMeasRef.current;
-    if (!c || !fit || !tm || !im) return;
+    const tt = titleMeasTextRef.current;
+    const rm = resultMeasRef.current;
+    if (!c || !fit || !tt || !rm) return;
+    const cw = c.clientWidth;
     // 1px slack absorbs sub-pixel rounding.
-    if (fit.scrollWidth <= c.clientWidth + 1) {
+    if (fit.scrollWidth <= cw + 1) {
       setMode("oneline");
-    } else if (im.offsetHeight <= tm.offsetHeight + 1) {
-      // The result didn't add a line → it fits on the title's last line.
+      return;
+    }
+    // The title-measurer matches the visible wrapped title (90%, hang-indent),
+    // so its last line is exactly the visible one. Pick lastline ONLY when the
+    // result genuinely fits after that last line (else it overflows offscreen).
+    const range = document.createRange();
+    range.selectNodeContents(tt);
+    const rects = range.getClientRects();
+    const last = rects[rects.length - 1];
+    if (!last) {
+      setMode("below");
+      return;
+    }
+    const endX = last.right - c.getBoundingClientRect().left;
+    const resultW = rm.scrollWidth;
+    // Reserve room for a visible leader (~24px) + the result; if it doesn't
+    // fit, drop to below so the result never gets pushed offscreen.
+    if (endX + 24 + resultW <= cw) {
       setMode("lastline");
+      setLastLineEndX((prev) => (prev !== null && Math.abs(prev - endX) < 0.5 ? prev : endX));
     } else {
       setMode("below");
     }
   }, [single]);
 
-  // Where does the title's last wrapped line end? Measured from the visible
-  // title text node via a Range (per-line client rects). Drives the last-line
-  // leader's left start. Only relevant in lastline mode.
-  const measureLastLine = React.useCallback(() => {
-    if (modeRef.current !== "lastline") return;
-    const c = containerRef.current;
-    const s = lastLineRef.current;
-    if (!c || !s) return;
-    const range = document.createRange();
-    range.selectNodeContents(s);
-    const rects = range.getClientRects();
-    if (!rects.length) return;
-    const last = rects[rects.length - 1];
-    const x = last.right - c.getBoundingClientRect().left;
-    setLastLineEndX((prev) => (prev !== null && Math.abs(prev - x) < 0.5 ? prev : x));
-  }, []);
-
   // Measure before paint on every render (content can change the natural
   // widths/heights). Cheap: a few layout reads + a guarded setState.
   React.useLayoutEffect(() => {
     evaluate();
-    measureLastLine();
   });
 
   // Re-measure on width changes.
   React.useEffect(() => {
     const c = containerRef.current;
     if (!c) return;
-    const ro = new ResizeObserver(() => {
-      evaluate();
-      measureLastLine();
-    });
+    const ro = new ResizeObserver(() => evaluate());
     ro.observe(c);
     return () => ro.disconnect();
-  }, [evaluate, measureLastLine]);
+  }, [evaluate]);
 
   const titleInner = (
     <>
       <span className="mr-1.5 shrink-0" aria-hidden="true">{icon}</span>
       <span className="min-w-0">{title}</span>
     </>
-  );
-
-  // The title + → + result rendered as a single inline flow (used for both the
-  // hidden full-width measurer and the visible "lastline" layout). The arrow +
-  // result are kept together as one inline-block unit so they wrap onto the
-  // last line as a whole rather than splitting.
-  const inlineTitleResult = (
-    <h3
-      className={`${titleFont} text-lg leading-tight text-gray-900 dark:text-white`}
-      style={{ maxWidth: "90%" }}
-    >
-      <span className="mr-1.5" aria-hidden="true">{icon}</span>
-      {title}
-      <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-semibold align-middle">
-        <HorizontalArrow className="ml-1.5 inline-block align-middle" />
-        {results[0]?.node}
-      </span>
-    </h3>
   );
 
   if (results.length === 0) {
@@ -390,25 +366,25 @@ function TitleResultRow({
             <HorizontalArrow className="mx-2" />
             <span className="font-semibold">{results[0].node}</span>
           </div>
-          {/* Title-only, wrapping at the 90% title width. */}
+          {/* Title wrapping at 90% with the SAME hang-indent flex layout as the
+              visible wrapped title, so its last line matches exactly. */}
           <div
-            ref={titleMeasRef}
             aria-hidden="true"
-            className={`invisible absolute left-0 top-0 ${titleFont} text-lg leading-tight`}
+            className={`invisible absolute left-0 top-0 flex items-start ${titleFont} text-lg leading-tight`}
             style={{ pointerEvents: "none", maxWidth: "90%" }}
           >
-            <span className="mr-1.5">{icon}</span>
-            {title}
+            <span className="mr-1.5 shrink-0">{icon}</span>
+            <span ref={titleMeasTextRef} className="min-w-0">{title}</span>
           </div>
-          {/* Title + → + result inline (h3 caps at 90%), wrapping. */}
-          <div
-            ref={inlineMeasRef}
+          {/* Result on one line: scrollWidth = its natural width. */}
+          <span
+            ref={resultMeasRef}
             aria-hidden="true"
-            className="invisible absolute left-0 top-0 w-full"
+            className="invisible absolute left-0 top-0 whitespace-nowrap text-lg leading-tight font-semibold"
             style={{ pointerEvents: "none" }}
           >
-            {inlineTitleResult}
-          </div>
+            {results[0].node}
+          </span>
         </>
       )}
 
@@ -436,8 +412,7 @@ function TitleResultRow({
             className={`flex items-start ${titleFont} text-lg leading-tight text-gray-900 dark:text-white`}
             style={{ maxWidth: "90%" }}
           >
-            <span className="mr-1.5 shrink-0" aria-hidden="true">{icon}</span>
-            <span ref={lastLineRef} className="min-w-0">{title}</span>
+            {titleInner}
           </h3>
           <div
             className="absolute bottom-0 flex items-center"
