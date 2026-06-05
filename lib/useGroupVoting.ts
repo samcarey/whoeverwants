@@ -8,6 +8,7 @@ import {
   QUESTION_VOTES_CHANGED_EVENT,
   type ApiVote,
   type PollVoteItem,
+  type QuestionType,
 } from "@/lib/api";
 import { buildPollVoteItem } from "@/components/QuestionBallot/voteDataBuilders";
 import { getUserName, saveUserName } from "@/lib/userProfile";
@@ -336,6 +337,59 @@ export function useGroupVoting({
     await submitYesNoChoice(pendingVoteChange.questionId, pendingVoteChange.newChoice);
   };
 
+  // Quick-abstain a whole poll from the group card's swipe gesture. Abstains
+  // ONLY the sub-questions the viewer hasn't already responded to — never
+  // overwrites an existing vote on an answered sub-question (a multi-question
+  // poll counts as To Do while ANY sub-question is unanswered, so the viewer
+  // may have already voted on some of them). Optimistic: the local voted/
+  // abstained sets flip BEFORE the network call so the card leaves the To Do
+  // tab immediately (the swipe's exit animation fires the commit), then reverts
+  // on failure. Caller is responsible for the name gate.
+  const submitPollAbstain = async (pollId: string, subQuestions: Question[]) => {
+    const voter_name = (getUserName() ?? "").trim() || null;
+    if (!voter_name) return;
+    const before = loadVotedQuestions();
+    const targets = subQuestions.filter(
+      (sp) =>
+        !before.votedQuestionIds.has(sp.id) &&
+        !before.abstainedQuestionIds.has(sp.id),
+    );
+    if (targets.length === 0) return;
+    haptic.success();
+    // Optimistic local flip.
+    for (const sp of targets) setVotedQuestionFlag(sp.id, "abstained");
+    const optimistic = loadVotedQuestions();
+    setVotedQuestionIds(optimistic.votedQuestionIds);
+    setAbstainedQuestionIds(optimistic.abstainedQuestionIds);
+    try {
+      const items: PollVoteItem[] = targets.map((sp) =>
+        buildPollVoteItem(
+          { vote_type: sp.question_type, is_abstain: true },
+          sp.id,
+          null,
+          {
+            questionType: sp.question_type as QuestionType,
+            canSubmitSuggestions: false,
+            isEditing: false,
+          },
+        ),
+      );
+      const returned = await apiSubmitPollVotes(pollId, {
+        voter_name,
+        ...plusOnesParams(),
+        items,
+      });
+      syncStateAfterPollVotes(returned, voter_name);
+    } catch (err) {
+      console.error("Poll abstain failed:", err);
+      // Revert the optimistic flip — only the targets we set above.
+      for (const sp of targets) setVotedQuestionFlag(sp.id, null);
+      const reverted = loadVotedQuestions();
+      setVotedQuestionIds(reverted.votedQuestionIds);
+      setAbstainedQuestionIds(reverted.abstainedQuestionIds);
+    }
+  };
+
   return {
     userVoteMap,
     setUserVoteMap,
@@ -353,5 +407,6 @@ export function useGroupVoting({
     confirmPollSubmit,
     confirmVoteChange,
     submitYesNoChoice,
+    submitPollAbstain,
   };
 }

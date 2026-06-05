@@ -45,6 +45,9 @@ import { isScrollRestoring, setScrollRestoring } from "@/lib/scrollRestoreState"
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import AccountGateModal from "@/components/AccountGateModal";
+import { getUserName } from "@/lib/userProfile";
+import { isValidUserName } from "@/lib/nameValidation";
 import GroupHeader from "@/components/GroupHeader";
 import { forgetQuestion } from "@/lib/forgetQuestion";
 import { haptic } from "@/lib/haptics";
@@ -340,7 +343,29 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   const {
     userVoteMap,
     setUserVoteMap,
+    submitPollAbstain,
   } = useGroupVoting({ group, setVotedQuestionIds, setAbstainedQuestionIds });
+
+  // Swipe-to-abstain (To Do cards) needs a name like any vote. Stash the
+  // abstain as a retry thunk + open the account gate when the viewer is
+  // nameless; replay it on save. `nameReady` is read by each card so it only
+  // plays the slide-out exit animation when the abstain will actually proceed
+  // (no name → gate modal instead, card snaps back).
+  const [pendingNameRetry, setPendingNameRetry] = useState<(() => void) | null>(null);
+  const nameReady = isValidUserName(getUserName());
+  // Stable identity (cards don't compare handlers) but always calls the latest
+  // closure — submitPollAbstain is recreated each render.
+  const swipeAbstainImplRef = useRef<(pollId: string, subs: Question[]) => void>(() => {});
+  swipeAbstainImplRef.current = (pollId: string, subQuestions: Question[]) => {
+    if (!isValidUserName(getUserName())) {
+      setPendingNameRetry(() => () => void submitPollAbstain(pollId, subQuestions));
+      return;
+    }
+    void submitPollAbstain(pollId, subQuestions);
+  };
+  const handleSwipeAbstain = useRef(
+    (pollId: string, subQuestions: Question[]) => swipeAbstainImplRef.current(pollId, subQuestions),
+  ).current;
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
   const touchJustHandled = useRef(false);
   // Refs for each card wrapper so we can scroll the expanded card into view
@@ -2160,6 +2185,12 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
             const isPlaceholder = pendingPollFirstQuestionId === question.id
               || isPendingPollId(question.poll_id);
             const isTooltipActive = tooltipQuestionId === question.id;
+            // To Do = followed + still needs the viewer's input. Drives the
+            // swipe action: To Do → abstain (gold), other followed → ignore
+            // (red), Old → re-follow (green).
+            const isTodo = group.poll
+              ? classifyPollTab(group.poll, votedQuestionIds, abstainedQuestionIds, now.getTime()) === "todo"
+              : false;
             return (
               <GroupCardItem
                 key={question.id}
@@ -2170,6 +2201,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                 isAwaiting={isAwaiting}
                 isClosed={isClosed}
                 isTooltipActive={isTooltipActive}
+                isTodo={isTodo}
+                effectiveTab={effectiveTab}
+                nameReady={nameReady}
                 questionResultsMap={questionResultsMap}
                 userVoteMap={userVoteMap}
                 longPressTimerRef={longPressTimer}
@@ -2184,6 +2218,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                 setModalQuestion={setModalQuestion}
                 setShowModal={setShowModal}
                 onToggleFollow={handleToggleFollow}
+                onAbstain={handleSwipeAbstain}
               />
             );
           })}
@@ -2378,6 +2413,18 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         onCancel={() => setPendingAction(null)}
       />
       )}
+
+      {/* Name gate for swipe-to-abstain (abstaining is a vote → needs a name). */}
+      <AccountGateModal
+        isOpen={!!pendingNameRetry}
+        message="to abstain"
+        onSubmit={() => {
+          const retry = pendingNameRetry;
+          setPendingNameRetry(null);
+          if (retry) retry();
+        }}
+        onCancel={() => setPendingNameRetry(null)}
+      />
 
       {/* Scroll-helper buttons — rendered via the floating-fab-portal so
           `position: fixed` is relative to the real viewport (outside the
