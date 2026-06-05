@@ -506,9 +506,55 @@ open); per-tier host mistakes (test on `latest` first).
 
 ## Phase 4 — Expanded intent surface (later, scope post-keynote)
 
-**Status: in progress. The App Entities FOUNDATION landed (2026-06-05); the
-remaining candidates below are still backlog — prioritize after the WWDC watch
-(Phase 0).**
+**Status: in progress. The App Entities FOUNDATION + `GroupEntity` /
+create-in-group landed (2026-06-05); the remaining candidates below
+(vote-by-voice, query-results) are still backlog — prioritize after the WWDC
+watch (Phase 0).**
+
+**✅ `GroupEntity` + group-targeted creation — IMPLEMENTED (2026-06-05), pending
+real-device + TestFlight verification.** The group-level analog of `PollEntity`,
+plus a create intent that targets a named group. All colocated in
+`ios/App/App/AppDelegate.swift` (no pbxproj/entitlement/backend/JS change):
+- **`GroupEntity` (`AppEntity`, iOS 16) + `GroupEntityQuery` (`EntityStringQuery`,
+  iOS 16)** — `id` = group **short_id** (the addressable `/g/<id>`), `title` = group
+  name (override → participant-names → "Group", mirroring the FE `buildGroups`
+  default-title rule incl. dropping the current user), `groupUuid` = the `groups.id`
+  UUID, `pollCount` for the subtitle. Note `id` ≠ create key for groups (short_id vs
+  uuid), unlike polls where they coincide — so the UUID is carried separately for
+  the create body. `fetchAll()` runs `POST /api/groups/mine` (collapsed by
+  `group_id`) **concurrently** (`async let`) with `POST /api/groups/empty`
+  (membership-only groups), browser-scoped via the bridged `X-Browser-Id` (Phase 2
+  App Group); never throws (`[]` on no-identity/network/parse), newest-first, cap 50.
+  Same browser-scoped-visibility limitation as `PollEntity`. The query does
+  id-resolve + case-insensitive name match + `suggestedEntities()` for Spotlight.
+- **`QuickPollInGroupIntent` (`AppIntent`, iOS 18)** — a required `prompt` (spoken)
+  + a required `group: GroupEntity` (resolved via `GroupEntityQuery`). Same
+  headless-or-fall-back flow as `QuickPollIntent`, factored into the shared
+  `QuickPollService.quickPollOutcome(prompt:group:)` (so the device-verified no-group
+  path is byte-identical; only the success dialog gains "… in <group>"). **Headless:**
+  the group's UUID rides the create POST's `group_id` (server attaches; unknown id →
+  mint fresh, no 404). **Fallback:** the deep link routes to `/g/<short>?create=1&title=…`
+  (NOT the empty `/g/` placeholder), so the WebView create form attaches the new poll
+  to the group via the existing `<body data-group-id>` flow — group targeting survives
+  the fallback. Kept a SEPARATE intent (not an optional param on `QuickPollIntent`) to
+  (a) leave the device-verified no-group path untouched and (b) avoid mixing
+  parameter-bound + bare phrases in one `AppShortcut`. Added to `WhoeverWantsShortcuts`
+  with `\(\.$group)`-bound phrases ("Add a poll to \(\.$group) in …" / "Create a poll
+  for \(\.$group) in …"), using "to"/"for" so the app-name "in" suffix doesn't read as
+  "in … in …".
+- **No backend or JS changes** — `/api/groups/mine` + `/api/groups/empty` + the
+  `group_id` create field + the `?create=1&title=` deep-link prefill + the
+  `data-group-id` attribution all already exist. The native fetch + entity resolution
+  are device-only (not unit-testable in the JS suite or demoable on the dev server,
+  like Phases 2/3/4-foundation). The descriptions keep "siri" out per ITMS-90626.
+
+**Owner device-verify owed (fresh `latest` build):** "Add a poll to the trip group
+in Whoever Wants" → Siri resolves the group, asks the prompt, creates it IN that
+group (headless when the bridge is readable; else opens `/g/<short>` prefilled), and
+opens to the new poll. Also confirm the group surfaces in the Shortcuts app's "Poll a
+group" picker.
+
+
 
 **✅ App Entities foundation — IMPLEMENTED (2026-06-05), pending real-device +
 TestFlight verification.** This is the WWDC-resilient substrate the rest of Phase 4
@@ -555,8 +601,10 @@ colocated in `ios/App/App/AppDelegate.swift` (no pbxproj change). What shipped:
 - **Query results** — "Who's winning the dinner poll?" (read-only GET; speak the
   current leader; ties into the outcome-explainer text). A natural iOS-16 headless
   intent that reuses `PollEntity`.
-- **`GroupEntity`** — the group-level analog of `PollEntity`, if group-scoped ops
-  (e.g. "create a poll in the trip group") prove worth it.
+- ~~**`GroupEntity`** — the group-level analog of `PollEntity`, if group-scoped ops
+  (e.g. "create a poll in the trip group") prove worth it.~~ **DONE (2026-06-05) —
+  `GroupEntity` + `GroupEntityQuery` + `QuickPollInGroupIntent` (group-targeted
+  create). See the "GroupEntity + group-targeted creation" block above.**
 - **Richer creation** — multi-question, category/deadline parameters, conversational
   follow-ups.
 - **Apple Intelligence / on-screen-Siri hooks** — only as far as WWDC makes them
@@ -620,7 +668,7 @@ Working order **1 → 2 → 3 → 4 → 0** (Phase 0 moved to the end, 2026-06-0
 | 1 | Deep-link App Intent (open + prefill) | ~1–2 days | Low | — | **done (pending device verify)** |
 | 2 | Native identity bridge (Keychain/App Group) | ~3–5 days | Low (scope: high) | — | **done (plain Keychain; pending device verify)** |
 | 3 | Headless poll creation App Intent | ~1 week (+extension) | Medium–High | 2, re-check 0 | **done (in-process; pending device verify + WWDC re-check before prod)** |
-| 4 | Expanded intents (vote/results/entities/AI) | Large / open | High (by design) | 1–3, 0 | **App Entities foundation done (pending device verify); rest backlog** |
+| 4 | Expanded intents (vote/results/entities/AI) | Large / open | High (by design) | 1–3, 0 | **App Entities foundation + GroupEntity/create-in-group done (pending device verify); vote/results backlog** |
 | 0 | WWDC watch + decision gate (now last) | ~½ day | — | — | deferred |
 
 **Recommended order (revised 2026-06-04):** 1 → 2 → 3 → 4 → 0. Phase 1 (done) delivers a
@@ -638,6 +686,25 @@ pre-coding gate; see the ordering decision at the top.)
 _(Append dated entries; do not rewrite the phases above — note what changed and why.
 Post-keynote findings go here too, once Phase 0 runs.)_
 
+- **2026-06-05 — Phase 4: `GroupEntity` + group-targeted creation shipped.** Built
+  the group-level analog of `PollEntity`: `GroupEntity` (`AppEntity`, iOS 16) carries
+  the group short_id (addressable id) + name (override → participant-names → "Group")
+  + the `groups.id` UUID (the create key) + poll count; `GroupEntityQuery`
+  (`EntityStringQuery`) fetches `/api/groups/mine` (collapsed by group_id) concurrently
+  with `/api/groups/empty`, browser-scoped via the bridged X-Browser-Id, never throws,
+  newest-first, cap 50. `QuickPollInGroupIntent` (`AppIntent`, iOS 18) takes a spoken
+  prompt + a resolved `GroupEntity` and runs the same headless-or-fall-back flow as
+  `QuickPollIntent`, factored into the shared `QuickPollService.quickPollOutcome` (the
+  device-verified no-group path is byte-identical; success dialog gains "… in <group>").
+  Headless passes the group UUID as the POST's `group_id`; the deep-link fallback routes
+  to `/g/<short>?create=1&title=…` so the WebView attaches via `<body data-group-id>`,
+  keeping group targeting through the fallback. Kept a separate intent (not an optional
+  param) to leave the verified path untouched + avoid mixing param/bare phrases in one
+  AppShortcut; added to `WhoeverWantsShortcuts` with `\(\.$group)`-bound phrases ("Add a
+  poll to <group> in …"). All colocated in `AppDelegate.swift`; no pbxproj / entitlement /
+  backend / JS change (every contract already existed). Native-only → not
+  unit-testable/demoable; owner device-verify owed on a fresh `latest` build. Next: the
+  deferred WWDC watch (Phase 0), then vote-by-voice / query-results on top of the entities.
 - **2026-06-05 — Phase 4 App Entities foundation shipped (`PollEntity` +
   `PollEntityQuery` + `OpenPollIntent`).** Built the WWDC-resilient substrate for the
   rest of Phase 4 (the owner picked it over vote-by-voice / query-results, which now
