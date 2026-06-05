@@ -1,0 +1,55 @@
+{
+  "_comment": "Static Alamo Drafthouse cinema directory (the geo 'map' artifact). Neither upstream feed carries coordinates, so this is what makes the radius query possible AND enumerates the markets to fetch. Built once for v1 (Austin / market 0000); add rows to extend coverage. cinema_id / slug / name / timezone come from the legacy sessions feed; lat/lng are approximate building coordinates. This is the natural seam for adding other chains later (a second ShowtimeSource).",
+  "cinemas": [
+    {
+      "cinema_id": "0004",
+      "slug": "south-lamar",
+      "name": "Alamo South Lamar",
+      "market_id": "0000",
+      "market_slug": "austin",
+      "lat": 30.2516,
+      "lng": -97.7686,
+      "timezone": "America/Chicago"
+    },
+    {
+      "cinema_id": "0003",
+      "slug": "village",
+      "name": "Alamo Village",
+      "market_id": "0000",
+      "market_slug": "austin",
+      "lat": 30.3637,
+      "lng": -97.7385,
+      "timezone": "America/Chicago"
+    },
+    {
+      "cinema_id": "0006",
+      "slug": "slaughter-lane",
+      "name": "Alamo Slaughter Lane",
+      "market_id": "0000",
+      "market_slug": "austin",
+      "lat": 30.1842,
+      "lng": -97.8527,
+      "timezone": "America/Chicago"
+    },
+    {
+      "cinema_id": "0007",
+      "slug": "lakeline",
+      "name": "Alamo Lakeline",
+      "market_id": "0000",
+      "market_slug": "austin",
+      "lat": 30.4660,
+      "lng": -97.7965,
+      "timezone": "America/Chicago"
+    },
+    {
+      "cinema_id": "0008",
+      "slug": "mueller",
+      "name": "Alamo Mueller",
+      "market_id": "0000",
+      "market_slug": "austin",
+      "lat": 30.2988,
+      "lng": -97.7050,
+      "timezone": "America/Chicago"
+    }
+  ]
+}

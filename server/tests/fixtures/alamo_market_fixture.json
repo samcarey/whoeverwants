@@ -1,0 +1,570 @@
+{
+ "sessions": {
+  "Market": {
+   "MarketId": "0000",
+   "MarketName": "Austin, TX",
+   "MarketSlug": "austin",
+   "Dates": [
+    {
+     "DateId": "20260605",
+     "Date": "Friday, June 5, 2026",
+     "Cinemas": [
+      {
+       "CinemaId": "0007",
+       "CinemaName": "Lakeline",
+       "CinemaSlug": "lakeline",
+       "CinemaTimeZoneATE": "America/Chicago",
+       "MarketName": "Austin, TX",
+       "MarketSlug": "austin",
+       "Films": [
+        {
+         "FilmId": "A000035993",
+         "FilmName": "BACKROOMS",
+         "FilmYear": "2026",
+         "FilmRating": "R",
+         "FilmRuntime": "125",
+         "FilmSlug": "backrooms",
+         "Series": [
+          {
+           "SeriesId": "",
+           "SeriesName": "",
+           "Formats": [
+            {
+             "FormatId": "0000000001",
+             "FormatName": "Digital",
+             "Sessions": [
+              {
+               "SessionId": "224428",
+               "SessionTime": "7:30p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-05T19:30:00",
+               "SeatsLeft": "18",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              },
+              {
+               "SessionId": "224481",
+               "SessionTime": "8:20p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-05T20:20:00",
+               "SeatsLeft": "67",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              },
+              {
+               "SessionId": "224480",
+               "SessionTime": "9:15p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-05T21:15:00",
+               "SeatsLeft": "18",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "FilmId": "A000036221",
+         "FilmName": "HDR by Barco: MASTERS OF THE UNIVERSE (2026)",
+         "FilmYear": "2026",
+         "FilmRating": "PG13",
+         "FilmRuntime": "155",
+         "FilmSlug": "masters-of-the-universe-2026-hdr-by-barco",
+         "Series": [
+          {
+           "SeriesId": "",
+           "SeriesName": "",
+           "Formats": [
+            {
+             "FormatId": "0000000012",
+             "FormatName": "HDR",
+             "Sessions": [
+              {
+               "SessionId": "223023",
+               "SessionTime": "6:05p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-05T18:05:00",
+               "SeatsLeft": "39",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                },
+                {
+                 "AttributeId": "Atmos",
+                 "AttributeName": "Dolby Atmos",
+                 "AttributeDescription": "Dolby Atmos delivers audiences a more natural and realistic sound field, transporting them into the story with a lifelike sensory experience."
+                },
+                {
+                 "AttributeId": "HDR",
+                 "AttributeName": "HDR",
+                 "AttributeDescription": ""
+                }
+               ]
+              },
+              {
+               "SessionId": "223022",
+               "SessionTime": "9:45p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-05T21:45:00",
+               "SeatsLeft": "87",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                },
+                {
+                 "AttributeId": "Atmos",
+                 "AttributeName": "Dolby Atmos",
+                 "AttributeDescription": "Dolby Atmos delivers audiences a more natural and realistic sound field, transporting them into the story with a lifelike sensory experience."
+                },
+                {
+                 "AttributeId": "HDR",
+                 "AttributeName": "HDR",
+                 "AttributeDescription": ""
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "CinemaId": "0004",
+       "CinemaName": "South Lamar",
+       "CinemaSlug": "south-lamar",
+       "CinemaTimeZoneATE": "America/Chicago",
+       "MarketName": "Austin, TX",
+       "MarketSlug": "austin",
+       "Films": [
+        {
+         "FilmId": "A000035993",
+         "FilmName": "BACKROOMS",
+         "FilmYear": "2026",
+         "FilmRating": "R",
+         "FilmRuntime": "125",
+         "FilmSlug": "backrooms",
+         "Series": [
+          {
+           "SeriesId": "",
+           "SeriesName": "",
+           "Formats": [
+            {
+             "FormatId": "0000000001",
+             "FormatName": "Digital",
+             "Sessions": [
+              {
+               "SessionId": "247596",
+               "SessionTime": "6:15p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-05T18:15:00",
+               "SeatsLeft": "16",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              },
+              {
+               "SessionId": "247605",
+               "SessionTime": "7:45p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-05T19:45:00",
+               "SeatsLeft": "9",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              },
+              {
+               "SessionId": "247604",
+               "SessionTime": "9:15p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-05T21:15:00",
+               "SeatsLeft": "15",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "FilmId": "A000036268",
+         "FilmName": "FIND YOUR FRIENDS",
+         "FilmYear": "2026",
+         "FilmRating": "NR",
+         "FilmRuntime": "108",
+         "FilmSlug": "find-your-friends",
+         "Series": [
+          {
+           "SeriesId": "",
+           "SeriesName": "",
+           "Formats": [
+            {
+             "FormatId": "0000000001",
+             "FormatName": "Digital",
+             "Sessions": [
+              {
+               "SessionId": "247060",
+               "SessionTime": "7:00p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-05T19:00:00",
+               "SeatsLeft": "10",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "DateId": "20260606",
+     "Date": "Saturday, June 6, 2026",
+     "Cinemas": [
+      {
+       "CinemaId": "0007",
+       "CinemaName": "Lakeline",
+       "CinemaSlug": "lakeline",
+       "CinemaTimeZoneATE": "America/Chicago",
+       "MarketName": "Austin, TX",
+       "MarketSlug": "austin",
+       "Films": [
+        {
+         "FilmId": "A000035993",
+         "FilmName": "BACKROOMS",
+         "FilmYear": "2026",
+         "FilmRating": "R",
+         "FilmRuntime": "125",
+         "FilmSlug": "backrooms",
+         "Series": [
+          {
+           "SeriesId": "",
+           "SeriesName": "",
+           "Formats": [
+            {
+             "FormatId": "0000000001",
+             "FormatName": "Digital",
+             "Sessions": [
+              {
+               "SessionId": "224554",
+               "SessionTime": "10:45a",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-06T10:45:00",
+               "SeatsLeft": "119",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              },
+              {
+               "SessionId": "224648",
+               "SessionTime": "1:00p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-06T13:00:00",
+               "SeatsLeft": "16",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              },
+              {
+               "SessionId": "224553",
+               "SessionTime": "1:45p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-06T13:45:00",
+               "SeatsLeft": "100",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "FilmId": "A000036227",
+         "FilmName": "Cereal Party: MASTERS OF THE UNIVERSE (2026)",
+         "FilmYear": "2026",
+         "FilmRating": "PG13",
+         "FilmRuntime": "155",
+         "FilmSlug": "masters-of-the-universe-2026-cereal-party",
+         "Series": [
+          {
+           "SeriesId": "",
+           "SeriesName": "",
+           "Formats": [
+            {
+             "FormatId": "0000000001",
+             "FormatName": "Digital",
+             "Sessions": [
+              {
+               "SessionId": "223040",
+               "SessionTime": "11:00a",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-06T11:00:00",
+               "SeatsLeft": "77",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                },
+                {
+                 "AttributeId": "Atmos",
+                 "AttributeName": "Dolby Atmos",
+                 "AttributeDescription": "Dolby Atmos delivers audiences a more natural and realistic sound field, transporting them into the story with a lifelike sensory experience."
+                },
+                {
+                 "AttributeId": "KF",
+                 "AttributeName": "Kid Friendly",
+                 "AttributeDescription": "Grab the fam and let the fun begin! Our Kid Friendly screenings include pre-show activity sheets and crayons, a relaxed noise policy, and kids menus. Ages 3+ welcome with a parent or guardian."
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "CinemaId": "0004",
+       "CinemaName": "South Lamar",
+       "CinemaSlug": "south-lamar",
+       "CinemaTimeZoneATE": "America/Chicago",
+       "MarketName": "Austin, TX",
+       "MarketSlug": "austin",
+       "Films": [
+        {
+         "FilmId": "A000035993",
+         "FilmName": "BACKROOMS",
+         "FilmYear": "2026",
+         "FilmRating": "R",
+         "FilmRuntime": "125",
+         "FilmSlug": "backrooms",
+         "Series": [
+          {
+           "SeriesId": "",
+           "SeriesName": "",
+           "Formats": [
+            {
+             "FormatId": "0000000001",
+             "FormatName": "Digital",
+             "Sessions": [
+              {
+               "SessionId": "247579",
+               "SessionTime": "11:30a",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-06T11:30:00",
+               "SeatsLeft": "40",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              },
+              {
+               "SessionId": "247580",
+               "SessionTime": "1:30p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-06T13:30:00",
+               "SeatsLeft": "29",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              },
+              {
+               "SessionId": "247568",
+               "SessionTime": "3:00p",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-06T15:00:00",
+               "SeatsLeft": "55",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "FilmId": "A000036227",
+         "FilmName": "Cereal Party: MASTERS OF THE UNIVERSE (2026)",
+         "FilmYear": "2026",
+         "FilmRating": "PG13",
+         "FilmRuntime": "155",
+         "FilmSlug": "masters-of-the-universe-2026-cereal-party",
+         "Series": [
+          {
+           "SeriesId": "",
+           "SeriesName": "",
+           "Formats": [
+            {
+             "FormatId": "0000000001",
+             "FormatName": "Digital",
+             "Sessions": [
+              {
+               "SessionId": "246276",
+               "SessionTime": "Noon",
+               "SessionStatus": "onsale",
+               "SessionSalesURL": "",
+               "SessionDateTime": "2026-06-06T12:00:00",
+               "SeatsLeft": "262",
+               "Attributes": [
+                {
+                 "AttributeId": "Digital",
+                 "AttributeName": "Digital",
+                 "AttributeDescription": ""
+                },
+                {
+                 "AttributeId": "Atmos",
+                 "AttributeName": "Dolby Atmos",
+                 "AttributeDescription": "Dolby Atmos delivers audiences a more natural and realistic sound field, transporting them into the story with a lifelike sensory experience."
+                },
+                {
+                 "AttributeId": "HDR",
+                 "AttributeName": "HDR",
+                 "AttributeDescription": ""
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "catalog": {
+  "data": {
+   "presentations": [
+    {
+     "slug": "backrooms",
+     "legacySlug": null,
+     "show": {
+      "slug": "backrooms",
+      "title": "Backrooms",
+      "certification": "R",
+      "posterImages": [
+       {
+        "uri": "https://img-assets.drafthouse.com/images/shows/backrooms/BACKROOMS_sp-poster-updated.jpg?auto=compress&fit=clip&h=1620&q=80&w=1080",
+        "altText": "BACKROOMS"
+       }
+      ]
+     }
+    },
+    {
+     "slug": "find-your-friends",
+     "legacySlug": null,
+     "show": {
+      "slug": "find-your-friends",
+      "title": "Find Your Friends",
+      "certification": "NR",
+      "posterImages": [
+       {
+        "uri": "https://img-assets.drafthouse.com/images/shows/find-your-friends/FIND-YOUR-FRIENDS_sp-poster-copy.jpg?auto=compress&fit=clip&h=1620&q=80&w=1080",
+        "altText": "FIND YOUR FRIENDS"
+       }
+      ]
+     }
+    }
+   ]
+  }
+ }
+}
