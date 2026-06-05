@@ -193,16 +193,22 @@ function BentArrow({ className }: { className?: string }) {
  * Title + result-preview layout for a poll row.
  *
  *  - No result          → plain title at full width.
- *  - 1 result that fits  → title (left) · → · result (right) on one line, the
- *                          horizontal arrow centered in the gap between them.
- *  - 1 result that doesn't fit, OR multiple results → title wraps at ≤80% card
- *                          width; result(s) drop below it, right-justified at
- *                          ≤75% width, with a bent ↳ arrow before the first.
+ *  - 1 result that fits the whole row → ONE LINE: title left, result pushed
+ *    right with a horizontal → arrow immediately before it.
+ *  - 1 result that fits on the LAST wrapped line of the title → inline on that
+ *    line, trailing the title with a horizontal → arrow.
+ *  - 1 result that doesn't fit on the last line, OR multiple results → BELOW:
+ *    title wraps at ≤90% card width; result(s) drop below it, right-justified
+ *    within the right 80%, with a bent ↳ arrow before the first.
  *
- * The single-result fit decision is measured against a hidden one-line clone
- * in a useLayoutEffect (flush-before-paint, so no flash) + a ResizeObserver
- * for width changes.
+ * The mode is measured against hidden clones in a useLayoutEffect (flush-
+ * before-paint, so no flash) + a ResizeObserver for width changes:
+ *   - a nowrap clone → does it all fit on ONE line? (oneline)
+ *   - title-only vs title+arrow+result, both wrapping at full width → does the
+ *     result add a line? if not, it fit on the last line (lastline) else below.
  */
+type ResultRowMode = "oneline" | "lastline" | "below";
+
 function TitleResultRow({
   icon,
   title,
@@ -213,27 +219,37 @@ function TitleResultRow({
   results: { id: string; node: React.ReactNode }[];
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const measureRef = React.useRef<HTMLDivElement>(null);
-  const [oneLine, setOneLine] = React.useState(false);
-  // Only a single result is ever a one-line candidate; multiple results always
+  const fitRef = React.useRef<HTMLDivElement>(null); // nowrap one-line probe
+  const titleMeasRef = React.useRef<HTMLDivElement>(null); // title only, wraps
+  const inlineMeasRef = React.useRef<HTMLDivElement>(null); // title+→+result, wraps
+  const [mode, setMode] = React.useState<ResultRowMode>("below");
+  // Only a single result is ever an inline candidate; multiple results always
   // wrap below the title.
   const single = results.length === 1;
 
   const evaluate = React.useCallback(() => {
     if (!single) {
-      setOneLine(false);
+      setMode("below");
       return;
     }
     const c = containerRef.current;
-    const m = measureRef.current;
-    if (!c || !m) return;
-    // 1px slack absorbs sub-pixel rounding so a just-fitting line isn't
-    // bounced to wrapped.
-    setOneLine(m.scrollWidth <= c.clientWidth + 1);
+    const fit = fitRef.current;
+    const tm = titleMeasRef.current;
+    const im = inlineMeasRef.current;
+    if (!c || !fit || !tm || !im) return;
+    // 1px slack absorbs sub-pixel rounding.
+    if (fit.scrollWidth <= c.clientWidth + 1) {
+      setMode("oneline");
+    } else if (im.offsetHeight <= tm.offsetHeight + 1) {
+      // The result didn't add a line → it fits on the title's last line.
+      setMode("lastline");
+    } else {
+      setMode("below");
+    }
   }, [single]);
 
   // Measure before paint on every render (content can change the natural
-  // one-line width). Cheap: two layout reads + a guarded setState.
+  // widths/heights). Cheap: a few layout reads + a guarded setState.
   React.useLayoutEffect(() => {
     evaluate();
   });
@@ -254,6 +270,21 @@ function TitleResultRow({
     </>
   );
 
+  // The title + → + result rendered as a single inline flow (used for both the
+  // hidden full-width measurer and the visible "lastline" layout). The arrow +
+  // result are kept together as one inline-block unit so they wrap onto the
+  // last line as a whole rather than splitting.
+  const inlineTitleResult = (
+    <h3 className="font-medium text-lg leading-tight text-gray-900 dark:text-white">
+      <span className="mr-1.5" aria-hidden="true">{icon}</span>
+      {title}
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-semibold align-middle">
+        <HorizontalArrow className="ml-1.5 inline-block align-middle" />
+        {results[0]?.node}
+      </span>
+    </h3>
+  );
+
   if (results.length === 0) {
     return (
       <div ref={containerRef} className="min-w-0">
@@ -266,23 +297,44 @@ function TitleResultRow({
 
   return (
     <div ref={containerRef} className="relative min-w-0">
-      {/* Hidden one-line measurer (single result only). scrollWidth gives the
-          natural one-line width even when it overflows the container. */}
+      {/* Hidden measurers (single result only). */}
       {single && (
-        <div
-          ref={measureRef}
-          aria-hidden="true"
-          className="invisible absolute left-0 top-0 flex items-center whitespace-nowrap font-medium text-lg leading-tight"
-          style={{ pointerEvents: "none" }}
-        >
-          <span className="mr-1.5">{icon}</span>
-          <span>{title}</span>
-          <HorizontalArrow className="mx-2" />
-          <span className="font-semibold">{results[0].node}</span>
-        </div>
+        <>
+          {/* Nowrap one-line probe: scrollWidth = natural single-line width. */}
+          <div
+            ref={fitRef}
+            aria-hidden="true"
+            className="invisible absolute left-0 top-0 flex items-center whitespace-nowrap font-medium text-lg leading-tight"
+            style={{ pointerEvents: "none" }}
+          >
+            <span className="mr-1.5">{icon}</span>
+            <span>{title}</span>
+            <HorizontalArrow className="mx-2" />
+            <span className="font-semibold">{results[0].node}</span>
+          </div>
+          {/* Title-only, wrapping at full container width. */}
+          <div
+            ref={titleMeasRef}
+            aria-hidden="true"
+            className="invisible absolute left-0 top-0 w-full font-medium text-lg leading-tight"
+            style={{ pointerEvents: "none" }}
+          >
+            <span className="mr-1.5">{icon}</span>
+            {title}
+          </div>
+          {/* Title + → + result inline, wrapping at full container width. */}
+          <div
+            ref={inlineMeasRef}
+            aria-hidden="true"
+            className="invisible absolute left-0 top-0 w-full"
+            style={{ pointerEvents: "none" }}
+          >
+            {inlineTitleResult}
+          </div>
+        </>
       )}
 
-      {single && oneLine ? (
+      {single && mode === "oneline" ? (
         // One line: title left, then the result pushed right with the
         // horizontal arrow immediately before it.
         <div className="flex items-center min-w-0">
@@ -290,14 +342,17 @@ function TitleResultRow({
             {titleInner}
           </h3>
           <div className="flex-1 min-w-0" />
-          <div className="shrink-0 flex items-center gap-1.5 text-lg leading-tight whitespace-nowrap">
+          <div className="shrink-0 flex items-center gap-1.5 text-lg leading-tight whitespace-nowrap font-semibold">
             <HorizontalArrow />
             <span>{results[0].node}</span>
           </div>
         </div>
+      ) : single && mode === "lastline" ? (
+        // Result fits on the title's last wrapped line → inline trailing it.
+        inlineTitleResult
       ) : (
-        // Wrapped: title ≤80% wide, results below right-justified ≤75% wide,
-        // bent arrow before the first result line.
+        // Below: title ≤90% wide; result(s) below, right-justified within the
+        // right 80%, with a bent ↳ arrow before the first result line.
         <div>
           <h3
             className="flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white"
@@ -305,9 +360,6 @@ function TitleResultRow({
           >
             {titleInner}
           </h3>
-          {/* Wrapped: title ≤90% wide; result(s) below, RIGHT-justified within
-              the right 80% of the card, with the bent ↳ arrow immediately
-              before the first result line. */}
           <div className="mt-1 flex justify-end">
             <div className="flex flex-col items-end gap-0.5 text-right" style={{ maxWidth: "80%" }}>
               {results.map((res, i) => (
