@@ -52,7 +52,7 @@ import { forgetQuestion } from "@/lib/forgetQuestion";
 import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
 import { GroupCardItem, ROW_DIVIDER_CLASS, type GroupCardGroup } from "./GroupCardItem";
-import { PANEL_HEIGHT_VAR, PANEL_OFFSET_VAR } from "@/components/BubbleBarPanel";
+import { PANEL_HEIGHT_VAR } from "@/components/BubbleBarPanel";
 import { GroupNotFound as GroupNotFoundFallback } from "@/components/GroupLoadState";
 
 import type { Group } from "@/lib/groupUtils";
@@ -89,8 +89,8 @@ const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
 const RESTORE_PIN_DURATION_MS = 2500;
 
 // Debounce window for "scroll has stopped." Below this iOS momentum
-// scrolling can briefly pause and reads as idle; above it the arrows
-// feel laggy to appear after a true stop.
+// scrolling can briefly pause and reads as idle; above it the arrow
+// feels laggy to appear after a true stop.
 const SCROLL_STOPPED_DEBOUNCE_MS = 150;
 
 const SCROLL_HELPER_BUTTON_CLASS_BASE =
@@ -99,21 +99,19 @@ const SCROLL_HELPER_BUTTON_CLASS_BASE =
 const ScrollHelperButton = React.forwardRef<
   HTMLButtonElement,
   {
-    direction: 'up' | 'down';
     onClick: () => void;
     style: React.CSSProperties;
     /** When true, render above the slide overlay (z-70) instead of at the
-     *  default z-40 so the arrows aren't hidden by the overlay's opaque
+     *  default z-40 so the arrow isn't hidden by the overlay's opaque
      *  background during a group-kind slide. */
     elevated?: boolean;
   } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'style' | 'type' | 'className'>
->(({ direction, onClick, style, elevated, ...rest }, ref) => {
-  const path = direction === 'up' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7';
+>(({ onClick, style, elevated, ...rest }, ref) => {
   const className = `${SCROLL_HELPER_BUTTON_CLASS_BASE} ${elevated ? 'z-[70]' : 'z-40'}`;
   return (
     <button ref={ref} type="button" onClick={onClick} className={className} style={style} {...rest}>
       <svg className="w-[1.35rem] h-[1.35rem]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-        <path strokeLinecap="round" strokeLinejoin="round" d={path} />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
       </svg>
     </button>
   );
@@ -368,8 +366,8 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   const groupHeightById = useRef<Map<string, number>>(new Map());
   const groupSizeObserverRef = useRef<ResizeObserver | null>(null);
   // Shared ref-callback wiring for both placeholder and real card divs:
-  // both register in cardRefs (so the existing scroll-helper logic that
-  // iterates cardRefs works regardless of mount state) and observe via the
+  // both register in cardRefs (so the tap-expand + restore-pin scroll logic
+  // that iterates cardRefs works regardless of mount state) and observe via the
   // visibleQuestionIds + groupSize observers. useCallback with empty deps —
   // identity must be stable across renders since these are passed into the
   // React.memo'd GroupCardItem; a fresh closure per render would force every
@@ -842,7 +840,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // made it visually collide with the (statically positioned) settings
   // gear at the viewport's left edge.
   const upArrowRef = useRef<HTMLButtonElement | null>(null);
-  const downArrowRef = useRef<HTMLButtonElement | null>(null);
   // The bubble bar now lives at the layout level (components/BubbleBarHost),
   // a single persistent instance, so it's no longer a swipe extra-target
   // here. During the group→home swipe-back BubbleBarHost hides itself (it
@@ -850,7 +847,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // over the revealed home page.
   const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
     headerRef,
-    extraTargets: [upArrowRef, downArrowRef],
+    extraTargets: [upArrowRef],
     showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
     hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
     // No scroll save here: returning home intentionally resets every group's
@@ -1015,8 +1012,8 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // so scrollY=0 needs no pin and Next.js' own scroll-to-0 cooperates.
   // Only a saved-scroll RESTORE (within-group back, group↔poll round-trip)
   // needs the re-application pin (see the persistent restore-pin below).
-  // The scroll-helper arrows below still steer users toward awaiting cards
-  // once they're scrolling.
+  // The scroll-to-top arrow below lets users jump back up once they've
+  // scrolled down.
   //
   // 1. INITIAL load (`useLayoutEffect` below, fires once per mount).
   //    Fresh visit → `window.scrollTo(0, 0)`. Back-nav with a saved scroll
@@ -1035,35 +1032,15 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   //    above, or trim the bottom overshoot otherwise (capped by
   //    available slack so the top never disappears behind the header).
   //
-  // 3. SCROLL-HELPER ARROWS (independent; both can show simultaneously):
-  //    Two fixed buttons portaled into `#floating-fab-portal`.
+  // 3. SCROLL-TO-TOP ARROW: a single fixed button (just below the header)
+  //    portaled into `#floating-fab-portal`. Shows whenever the page is
+  //    scrolled down from the very top (scrollY > 1); tapping it smooth-
+  //    scrolls back to the top. The visibility evaluator is wired to
+  //    scroll/resize; reads are rAF-coalesced.
   //
-  //      - UP (just below header) shows when at least one awaiting poll
-  //        is not completely in view above the viewport — i.e. wholly
-  //        above (r.bottom <= viewportTop) OR top-clipped
-  //        (r.top < viewportTop && r.bottom > viewportTop). Targets the
-  //        OLDEST such poll (first in DOM order, since awaiting cards
-  //        sort by created_at ASC at the bottom of the group list) and
-  //        aligns its top flush with the bottom of the fixed header.
-  //
-  //      - DOWN (above the bottom safe-area inset) shows whenever the
-  //        document can scroll further down (scrollY < maxScroll).
-  //        Targets the FIRST awaiting poll that is wholly below or
-  //        bottom-clipped (aligning its top flush with the header); if
-  //        none, scrolls to the document bottom.
-  //
-  //    The visibility evaluator is wired to scroll/resize AND a
-  //    body-subtree MutationObserver because vote-driven re-renders flip
-  //    a card's awaiting state without firing scroll, and CSS expand
-  //    transitions move card rects without firing resize. All reads are
-  //    rAF-coalesced so a mutation burst doesn't trigger N forced
-  //    layouts via getBoundingClientRect().
-  //
-  //    OFF→ON transitions are suppressed while the user is actively
-  //    scrolling: if an arrow isn't visible when scrolling starts, it
-  //    stays hidden until scroll has completely stopped (150ms debounce
-  //    on the scroll listener). Already-visible arrows keep updating
-  //    normally so they can hide or retarget mid-scroll.
+  //    OFF→ON is suppressed while the user is actively scrolling: the
+  //    arrow only surfaces once scroll has completely stopped (150ms
+  //    debounce). ON→OFF (reaching the top) is never suppressed.
   //
   // ===================================================================
   // Initial-load scroll (path 1). Fresh visit → top; back-nav → restore.
@@ -1632,97 +1609,41 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   }, [group, patchGroupPolls]);
 
   // ===================================================================
-  // Scroll-helper arrow visibility (path 3 — see strategy block above).
+  // Scroll-to-top arrow visibility (path 3 — see strategy block above).
   // ===================================================================
-  const [scrollHelpers, setScrollHelpers] = useState<{
-    showUp: boolean;
-    showDown: boolean;
-    upTargetId: string | null;
-    downTargetId: string | null;
-  }>({ showUp: false, showDown: false, upTargetId: null, downTargetId: null });
+  const [scrollHelpers, setScrollHelpers] = useState<{ showUp: boolean }>({
+    showUp: false,
+  });
 
   useEffect(() => {
     if (!group || typeof window === 'undefined') return;
     let rafId: number | null = null;
     let isScrolling = false;
     let scrollStoppedTimer: number | null = null;
-    // Mirror of the React state, kept in sync inside the setter below so
-    // `evaluate` can short-circuit before doing the DOM scan when both
-    // arrows are hidden during a scroll (off→on is suppressed anyway).
-    let currentShowUp = false;
-    let currentShowDown = false;
     const evaluate = () => {
       rafId = null;
-      if (isScrolling && !currentShowUp && !currentShowDown) return;
-      const viewportTop = headerHeight;
-      const viewportBottom = window.innerHeight;
-      let upTargetId: string | null = null;
-      let downTargetId: string | null = null;
-      // groupQuestions is in strict chronological order (created_at ASC),
-      // so iterating in order: the FIRST not-fully-in-view-above match is
-      // the oldest such awaiting card, and the FIRST below-the-fold match
-      // is the closest one beneath the viewport.
-      for (const group of visibleGroupedQuestions) {
-        const question = group.anchor;
-        if (!isCardUnread(question)) continue;
-        const card = cardRefs.current.get(question.id);
-        if (!card) continue;
-        const r = card.getBoundingClientRect();
-        if (r.top < viewportTop && upTargetId === null) {
-          upTargetId = question.id;
-        }
-        if (r.bottom > viewportBottom && r.top >= viewportTop && downTargetId === null) {
-          downTargetId = question.id;
-        }
-        if (upTargetId !== null && downTargetId !== null) break;
-      }
-      const showUp = upTargetId !== null;
-      // Down arrow shows whenever the page can scroll further down,
-      // independent of awaiting polls. 1px epsilon for sub-pixel scrollY
-      // values on iOS.
-      const maxScroll = Math.max(
-        0,
-        document.documentElement.scrollHeight - window.innerHeight,
-      );
-      const showDown = window.scrollY < maxScroll - 1;
+      // The up arrow (scroll-to-top) shows whenever the page is scrolled
+      // down from the very top. 1px epsilon for sub-pixel scrollY on iOS.
+      const showUp = window.scrollY > 1;
       setScrollHelpers((prev) => {
         // Suppress OFF→ON while the user is mid-scroll OR a back-nav scroll
-        // restore is replaying programmatic jumps. Without the restore guard,
-        // the transient pre-restore position (e.g. scrollY=0 with full content
-        // below) computes showDown=true and the down arrow flashes ON for the
-        // duration of the slide, then OFF once the restore lands at the bottom
-        // — the "down arrow appears then disappears" artifact. Keeping arrows
-        // in their current (initially OFF) state until the restore settles
-        // means a bottom-landing never shows the arrow at all; a mid-list
-        // landing surfaces it on the next settle re-eval.
+        // restore is replaying programmatic jumps, so the arrow only surfaces
+        // once the scroll has settled. ON→OFF (reaching the top) is never
+        // suppressed.
         const suppressOn = isScrolling || isScrollRestoring();
         const nextShowUp = suppressOn && !prev.showUp ? false : showUp;
-        const nextShowDown = suppressOn && !prev.showDown ? false : showDown;
-        currentShowUp = nextShowUp;
-        currentShowDown = nextShowDown;
-        return (
-          prev.showUp === nextShowUp &&
-          prev.showDown === nextShowDown &&
-          prev.upTargetId === upTargetId &&
-          prev.downTargetId === downTargetId
-            ? prev
-            : { showUp: nextShowUp, showDown: nextShowDown, upTargetId, downTargetId }
-        );
+        return prev.showUp === nextShowUp ? prev : { showUp: nextShowUp };
       });
     };
-    // rAF-coalesce: a body-subtree MutationObserver fires on every DOM
-    // mutation (vote-driven re-renders, expand/collapse animations,
-    // countdown text updates). Without coalescing each burst would force a
-    // layout via getBoundingClientRect on every awaiting card.
     const schedule = () => {
       if (rafId !== null) return;
       rafId = requestAnimationFrame(evaluate);
     };
     const onScroll = () => {
       // A back-nav scroll restore fires programmatic scroll events; don't let
-      // them trip the mid-scroll suppression (which would flicker the arrows
-      // off then on once the restore settles). Still re-evaluate so the arrows
-      // reflect the restored position.
+      // them trip the mid-scroll suppression (which would flicker the arrow
+      // off then on once the restore settles). Still re-evaluate so it
+      // reflects the restored position.
       if (isScrollRestoring()) {
         schedule();
         return;
@@ -1739,33 +1660,17 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     evaluate();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', schedule, { passive: true });
-    // Body subtree catches vote-driven DOM changes that flip a card's
-    // awaiting state plus expand/collapse height transitions that move
-    // card rects without firing scroll/resize.
-    const observer = new MutationObserver(schedule);
-    observer.observe(document.body, { childList: true, subtree: true });
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       if (scrollStoppedTimer !== null) window.clearTimeout(scrollStoppedTimer);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', schedule);
-      observer.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group, visibleGroupedQuestions, headerHeight, votedQuestionIds, abstainedQuestionIds, badgeSettings, pollViewsTick]);
+  }, [group]);
 
-  // When an awaiting card is targeted: align its top flush with the
-  // bottom of the fixed header. For wholly-above / wholly-below cards
-  // this brings them just below the header; for bottom-clipped
-  // partial-below cards this scrolls down by the exact amount needed to
-  // reveal the rest (which lands the bottom at viewport bottom when the
-  // card fits in the viewport).
-  const scrollAwaitingToHeader = (id: string | null) => {
-    if (!id) return;
-    const card = cardRefs.current.get(id);
-    if (!card) return;
-    const targetY = window.scrollY + card.getBoundingClientRect().top - headerHeight;
-    window.scrollTo({ top: targetY, behavior: 'smooth' });
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Portal target for the scroll-helper buttons. Resolved after mount to
@@ -2197,59 +2102,24 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         onCancel={() => setPendingNameRetry(null)}
       />
 
-      {/* Scroll-helper buttons — rendered via the floating-fab-portal so
+      {/* Scroll-to-top button — rendered via the floating-fab-portal so
           `position: fixed` is relative to the real viewport (outside the
           responsive-scaling container's transform on desktop). The
-          buttons elevate above the slide overlay (z-70) while a
-          group-kind overlay is mounted, so they don't get hidden by the
+          button elevates above the slide overlay (z-70) while a
+          group-kind overlay is mounted, so it doesn't get hidden by the
           overlay's opaque background during the slide. */}
       {!inOverlay && scrollHelperPortal && createPortal(
-        <>
-          {scrollHelpers.showUp && (
-            <ScrollHelperButton
-              ref={upArrowRef}
-              direction="up"
-              onClick={() => scrollAwaitingToHeader(scrollHelpers.upTargetId)}
-              aria-label="Scroll to next poll awaiting your response"
-              elevated={elevateArrowsForOverlay}
-              // Float just below the fixed header. (The section header dividers
-              // scroll inline, so there's no sticky chrome to clear.)
-              style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
-            />
-          )}
-          {scrollHelpers.showDown && (
-            <ScrollHelperButton
-              ref={downArrowRef}
-              direction="down"
-              onClick={() => {
-                if (scrollHelpers.downTargetId) {
-                  scrollAwaitingToHeader(scrollHelpers.downTargetId);
-                } else {
-                  const max = Math.max(
-                    0,
-                    document.documentElement.scrollHeight - window.innerHeight,
-                  );
-                  window.scrollTo({ top: max, behavior: 'smooth' });
-                }
-              }}
-              aria-label={
-                scrollHelpers.downTargetId
-                  ? 'Scroll to next poll awaiting your response'
-                  : 'Scroll to bottom'
-              }
-              elevated={elevateArrowsForOverlay}
-              // Float above the BubbleBarPanel while it's visible (offset
-              // var is the panel's measured height when shown, 0 when
-              // hidden), with the safe-area inset as the floor so the
-              // arrow still clears the home indicator on iPhone when the
-              // panel is auto-hidden.
-              style={{
-                bottom: `calc(max(0.5rem, env(safe-area-inset-bottom, 0px)) + var(${PANEL_OFFSET_VAR}, 0px))`,
-                transition: 'bottom 200ms ease-out',
-              }}
-            />
-          )}
-        </>,
+        scrollHelpers.showUp ? (
+          <ScrollHelperButton
+            ref={upArrowRef}
+            onClick={scrollToTop}
+            aria-label="Scroll to top"
+            elevated={elevateArrowsForOverlay}
+            // Float just below the fixed header. (The section header dividers
+            // scroll inline, so there's no sticky chrome to clear.)
+            style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
+          />
+        ) : null,
         scrollHelperPortal,
       )}
     </>
