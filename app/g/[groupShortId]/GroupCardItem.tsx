@@ -386,11 +386,12 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     }
   };
 
-  // Returns the type-specific compact pill JSX for one question, or null
-  // when there's nothing to show yet. Cards are navigation-only now —
-  // pill taps fall through to the card click handler that slides to the
-  // detail page.
-  const pillForQuestion = (sp: Question): React.ReactNode => {
+  // Returns the type-specific "winning result" for one question as bubble-less
+  // colored text (the `plain` variant), or null when there's nothing to show
+  // yet. Rendered in the card's top-right column at the title's font size.
+  // Cards are navigation-only — taps fall through to the card click handler
+  // that slides to the detail page.
+  const resultForQuestion = (sp: Question): React.ReactNode => {
     const r = questionResultsMap.get(sp.id);
     const inSuggestions = isInSuggestionPhase(sp, wrapperPrephaseDeadline);
     const inTimeAvailability = isInTimeAvailabilityPhase(sp);
@@ -403,6 +404,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           results={r!}
           isQuestionClosed={isClosed}
           hideLoser={true}
+          plain={true}
           userVoteChoice={userVote?.choice ?? null}
         />
       );
@@ -412,18 +414,16 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
         ? (r.suggestion_counts || []).length > 0
         : (r.total_votes || 0) > 0 && !!r.winner && r.winner !== "tie";
       if (!hasPreview) return null;
-      // The row's title already shows the category icon; don't re-render
-      // it inside the compact pill.
       return inSuggestions ? (
-        <CompactSuggestionPreview results={r} />
+        <CompactSuggestionPreview results={r} plain={true} />
       ) : (
-        <CompactRankedChoicePreview results={r} isQuestionClosed={isClosed} />
+        <CompactRankedChoicePreview results={r} isQuestionClosed={isClosed} plain={true} />
       );
     }
     if (sp.question_type === "time" && r && !inTimeAvailability) {
       const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
       if (!hasPreview) return null;
-      return <CompactTimePreview results={r} isQuestionClosed={isClosed} />;
+      return <CompactTimePreview results={r} isQuestionClosed={isClosed} plain={true} />;
     }
     if (sp.question_type === "limited_supply") {
       // Always show "N/M claimed" — falls back to the question's own
@@ -433,33 +433,29 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           results={r}
           supplyFallback={sp.supply_count}
           isQuestionClosed={isClosed}
+          plain={true}
         />
       );
     }
     return null;
   };
 
-  let pillEl: React.ReactNode = null;
+  let resultEl: React.ReactNode = null;
   if (!isMultiGroup) {
-    pillEl = pillForQuestion(question);
+    resultEl = resultForQuestion(question);
   } else {
-    // Multi-question: stack one pill per question. Sub-questions without
-    // any data yet drop their row so the column stays compact. `w-full
-    // min-w-0` on each row + `items-stretch` on the column lets the inner
-    // pill's `justify-end` right-align within the available track instead
-    // of pinning to max-content (which would overflow the status label).
-    const subPills = group.subQuestions
+    // Multi-question: stack one result per question. Sub-questions without
+    // any data yet drop their row so the column stays compact.
+    const subResults = group.subQuestions
       .map((sp) => {
-        const node = pillForQuestion(sp);
+        const node = resultForQuestion(sp);
         if (!node) return null;
-        return <div key={sp.id} className="w-full min-w-0">{node}</div>;
+        return <div key={sp.id} className="min-w-0">{node}</div>;
       })
       .filter((n): n is React.ReactElement => n !== null);
-    if (subPills.length > 0) {
-      pillEl = (
-        <div className="flex flex-col items-stretch gap-1 w-full min-w-0">
-          {subPills}
-        </div>
+    if (subResults.length > 0) {
+      resultEl = (
+        <div className="flex flex-col gap-0.5 min-w-0">{subResults}</div>
       );
     }
   }
@@ -655,52 +651,31 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                   : "bg-background"
             } ${swiping ? "" : "hover:bg-gray-100 dark:hover:bg-gray-900 active:bg-blue-100 dark:active:bg-blue-900/40"}`}
           >
-        {/* Top row: icon + title. The follow/ignore toggle is no longer an
-            inline button — swipe the row left past the threshold to flip
-            New↔Old (see the swipe handlers + action backdrop above). The
-            status countdown + nav chevron live in the bottom-right (see the
-            metadata row below). */}
-        <div className="flex items-start min-w-0">
+        {/* Top row: icon + title (left, wraps once it reaches ~2/3 across the
+            card) and the winning result (right ~1/3, bubble-less, same font
+            size as the title, wraps). The follow/ignore toggle is a swipe
+            (see the handlers + action backdrop above); the status countdown +
+            nav chevron live in the bottom-right metadata row below. */}
+        <div className="flex items-start gap-2 min-w-0">
           <h3 className="flex-1 min-w-0 flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white">
             <span className="mr-1.5 shrink-0" aria-hidden="true">{categoryIcon}</span>
-            <span className="min-w-0">{question.title}</span>
+            <span className="min-w-0 break-words">{question.title}</span>
           </h3>
+          {!isPlaceholder && resultEl && (
+            <div className="w-1/3 shrink-0 min-w-0 text-right font-medium text-lg leading-tight">
+              {resultEl}
+            </div>
+          )}
         </div>
 
-        {/* Pill row: centered across the FULL rectangle width (not just
-            the right column). Renders only when there's a non-empty
-            pill so empty groups don't leave a stray gap.
-            `transform: scale(1.4)` enlarges the pill (font, padding,
-            badges) proportionally by 40%. We tried CSS `zoom` first but
-            it didn't render in WebKit even on a fresh browser load —
-            switched to `transform` which is universally supported with
-            no quirks. The downside is `transform` doesn't reflow, so we
-            absorb the ~20% visual overflow with explicit `py-2` on the
-            outer flex container — that gives the pill ~8px on top and
-            ~8px below to expand into without colliding with the title
-            row above or the author/respondents row below. */}
-        {!isPlaceholder && pillEl && (
-          <div className="mt-1 mb-2 py-2 flex justify-center min-w-0">
-            <div
-              style={{
-                transform: "scale(1.4)",
-                transformOrigin: "center",
-              }}
-            >
-              {pillEl}
-            </div>
-          </div>
-        )}
-
         {/* Bottom row: author · date (left) + the corner cluster (right)
-            holding the voted/suggestions emoji counts + status countdown + nav
-            chevron. TEMP: 3 corner arrangements via ?variant=a|b|c (see
-            cornerCluster above). The author name is the only truncating part;
-            the date keeps its hover/tap tooltip. The "seen" stat + respondent
-            bubbles live only on the poll detail page now. Skipped during the
+            holding the voted/suggestions counts + status countdown + nav
+            chevron. The author name is the only truncating part; the date
+            keeps its hover/tap tooltip. The "seen" stat + respondent bubbles
+            live only on the poll detail page now. Skipped during the
             placeholder/FLIP phase. */}
         {!isPlaceholder && (
-          <div className={`${pillEl ? "" : "mt-2 "}flex items-center justify-between gap-2 min-w-0`}>
+          <div className="mt-2 flex items-center justify-between gap-2 min-w-0">
             <ClientOnly fallback={null}>
               <div className="flex items-baseline min-w-0 text-xs text-gray-400 dark:text-gray-500">
                 {wrapper?.creator_name && (

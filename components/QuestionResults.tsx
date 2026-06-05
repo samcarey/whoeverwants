@@ -41,11 +41,16 @@ interface QuestionResultsProps {
   // (multi-question polls batching choices through a wrapper Submit). The
   // abstain label flips to "Abstaining" so it doesn't imply a committed vote.
   isStagedChoice?: boolean;
+  // Group-card "winning result" variant: renders the winner as bubble-less
+  // colored text (the parent supplies the font size / weight / alignment) so
+  // it can sit in the top-right column of a poll card and wrap. Only honored
+  // alongside hideLoser for yes/no.
+  plain?: boolean;
 }
 
-export default function QuestionResultsDisplay({ results, isQuestionClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser, userVoteChoice, onVoteChange, isStagedChoice }: QuestionResultsProps) {
+export default function QuestionResultsDisplay({ results, isQuestionClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser, userVoteChoice, onVoteChange, isStagedChoice, plain }: QuestionResultsProps) {
   if (results.question_type === 'yes_no') {
-    return <YesNoResults results={results} isQuestionClosed={isQuestionClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} userVoteChoice={userVoteChoice} onVoteChange={onVoteChange} isStagedChoice={isStagedChoice} />;
+    return <YesNoResults results={results} isQuestionClosed={isQuestionClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} userVoteChoice={userVoteChoice} onVoteChange={onVoteChange} isStagedChoice={isStagedChoice} plain={plain} />;
   }
 
   if (results.question_type === 'ranked_choice') {
@@ -64,7 +69,7 @@ export default function QuestionResultsDisplay({ results, isQuestionClosed, user
   return null;
 }
 
-function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick, hideLoser = false, userVoteChoice, onVoteChange, isStagedChoice }: { results: QuestionResults, isQuestionClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean, userVoteChoice?: 'yes' | 'no' | 'abstain' | null, onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void, isStagedChoice?: boolean }) {
+function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick, hideLoser = false, userVoteChoice, onVoteChange, isStagedChoice, plain = false }: { results: QuestionResults, isQuestionClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean, userVoteChoice?: 'yes' | 'no' | 'abstain' | null, onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void, isStagedChoice?: boolean, plain?: boolean }) {
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
   const yesPercentage = results.yes_percentage || 0;
@@ -97,6 +102,27 @@ function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick
   const isTie = winner === 'tie';
 
   const hasStats = totalVotes > 0;
+
+  // Group-card "winning result" variant: bubble-less colored text (the parent
+  // poll card supplies the font size / weight / right-alignment). Renders
+  // nothing until there are votes.
+  if (plain) {
+    if (!hasStats) return null;
+    const winnerSide: 'yes' | 'no' = noIsWinner ? 'no' : 'yes';
+    const winnerLabel = winnerSide === 'yes' ? 'Yes' : 'No';
+    const winnerPct = winnerSide === 'yes' ? yesPercentage : noPercentage;
+    const plainColor = yesIsWinner
+      ? 'text-green-700 dark:text-green-300'
+      : noIsWinner
+        ? 'text-red-700 dark:text-red-300'
+        : 'text-yellow-700 dark:text-yellow-300';
+    return (
+      <span className={`break-words ${plainColor}`}>
+        {isTie ? 'Tie' : `${winnerLabel} `}
+        {!isTie && <span className="tabular-nums">{winnerPct}%</span>}
+      </span>
+    );
+  }
 
   // Colors per side. When there are no votes yet, treat both sides as
   // neutral (nobody's winning). Winner gets a colored surface; the loser
@@ -470,6 +496,11 @@ const PILL_CLASS = "inline-block min-w-0 px-2 py-px rounded-full border text-sm 
 const PILL_COLORS_CLOSED = "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100";
 const PILL_COLORS_OPEN = "bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100";
 
+// Bubble-less "winning result" text colors for the poll-card top-right column
+// (`plain` variant). The parent supplies font size / weight / alignment.
+const PLAIN_TEXT_OPEN = "text-blue-700 dark:text-blue-300";
+const PLAIN_TEXT_CLOSED = "text-green-700 dark:text-green-300";
+
 // Short "Day 1 PM" / "Day 2:15 AM" label for the compact pill.
 function formatSlotCompact(slot: string): string {
   try {
@@ -487,6 +518,7 @@ export function CompactRankedChoicePreview({
   results,
   isQuestionClosed,
   categoryIcon,
+  plain = false,
 }: {
   results: QuestionResults;
   isQuestionClosed?: boolean;
@@ -494,11 +526,23 @@ export function CompactRankedChoicePreview({
   // location, etc.), pass it here. Omit for `custom` / no-category — we
   // intentionally don't fall back to a generic trophy.
   categoryIcon?: string;
+  // Bubble-less colored text for the poll-card top-right result column.
+  plain?: boolean;
 }) {
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
   if (totalVotes === 0 || !winner || winner === "tie") {
     return null;
+  }
+  if (plain) {
+    return (
+      <span
+        className={`break-words ${isQuestionClosed ? PLAIN_TEXT_CLOSED : PLAIN_TEXT_OPEN}`}
+        title={winner}
+      >
+        {winner}
+      </span>
+    );
   }
   return (
     <div className="flex items-center justify-end gap-2 min-w-0">
@@ -517,18 +561,22 @@ export function CompactRankedChoicePreview({
 
 export function CompactSuggestionPreview({
   results,
+  plain = false,
 }: {
   results: QuestionResults;
+  plain?: boolean;
 }) {
   const suggestionCount = (results.suggestion_counts || []).length;
   if (suggestionCount === 0) {
     return null;
   }
+  const label = `${suggestionCount} ${suggestionCount === 1 ? "suggestion" : "suggestions"}`;
+  if (plain) {
+    return <span className={`break-words ${PLAIN_TEXT_OPEN}`}>{label}</span>;
+  }
   return (
     <div className="flex items-center justify-end gap-2">
-      <span className={`${PILL_CLASS} ${PILL_COLORS_OPEN}`}>
-        {suggestionCount} {suggestionCount === 1 ? "suggestion" : "suggestions"}
-      </span>
+      <span className={`${PILL_CLASS} ${PILL_COLORS_OPEN}`}>{label}</span>
     </div>
   );
 }
@@ -537,15 +585,20 @@ export function CompactTimePreview({
   results,
   isQuestionClosed,
   categoryIcon,
+  plain = false,
 }: {
   results: QuestionResults;
   isQuestionClosed?: boolean;
   categoryIcon?: string;
+  plain?: boolean;
 }) {
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
   // No slot met the "Minimum Participants" gate → the event is off.
   if (results.time_event_cancelled) {
+    if (plain) {
+      return <span className={`break-words ${PLAIN_TEXT_CLOSED}`}>Event&apos;s off</span>;
+    }
     return (
       <div className="flex items-center justify-end gap-2 min-w-0">
         {categoryIcon && (
@@ -559,6 +612,16 @@ export function CompactTimePreview({
   }
   if (totalVotes === 0 || !winner) {
     return null;
+  }
+  if (plain) {
+    return (
+      <span
+        className={`break-words ${isQuestionClosed ? PLAIN_TEXT_CLOSED : PLAIN_TEXT_OPEN}`}
+        title={formatTimeSlot(winner)}
+      >
+        {formatSlotCompact(winner)}
+      </span>
+    );
   }
   return (
     <div className="flex items-center justify-end gap-2 min-w-0">
@@ -583,19 +646,29 @@ export function CompactSupplyPreview({
   results,
   supplyFallback,
   isQuestionClosed,
+  plain = false,
 }: {
   results?: QuestionResults | null;
   supplyFallback?: number | null;
   isQuestionClosed?: boolean;
+  plain?: boolean;
 }) {
   const supply = results?.supply_count ?? supplyFallback ?? 0;
   if (!supply) return null;
   const secured = results?.secured_count ?? 0;
   const isFull = secured >= supply;
+  const label = isFull ? "Full" : `${secured}/${supply} claimed`;
+  if (plain) {
+    return (
+      <span className={`break-words ${isQuestionClosed || isFull ? PLAIN_TEXT_CLOSED : PLAIN_TEXT_OPEN}`}>
+        {label}
+      </span>
+    );
+  }
   return (
     <div className="flex items-center justify-end gap-2 min-w-0">
       <span className={`${PILL_CLASS} ${isQuestionClosed || isFull ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}>
-        {isFull ? "Full" : `${secured}/${supply} claimed`}
+        {label}
       </span>
     </div>
   );
