@@ -305,16 +305,15 @@ function TitleResultRow({
           >
             {titleInner}
           </h3>
-          {/* Wrapped: title ≤80% wide; result(s) below in a fixed 80%-wide
-              column pinned to the right (so the text starts 20% from the left
-              edge — 5% further left than the old 75% region), LEFT-justified so
-              each line begins right after the bent ↳ arrow. */}
+          {/* Wrapped: title ≤90% wide; result(s) below, RIGHT-justified within
+              the right 80% of the card, with the bent ↳ arrow immediately
+              before the first result line. */}
           <div className="mt-1 flex justify-end">
-            <div className="flex flex-col items-start gap-0.5 text-left" style={{ width: "80%" }}>
+            <div className="flex flex-col items-end gap-0.5 text-right" style={{ maxWidth: "80%" }}>
               {results.map((res, i) => (
                 <div
                   key={res.id}
-                  className="flex items-start gap-1 max-w-full text-lg leading-tight text-left"
+                  className="flex items-start gap-1 max-w-full text-lg leading-tight text-right"
                 >
                   {i === 0 && <BentArrow className="shrink-0 mt-px" />}
                   <div className="min-w-0">{res.node}</div>
