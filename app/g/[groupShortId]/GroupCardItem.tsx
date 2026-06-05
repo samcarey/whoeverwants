@@ -214,10 +214,14 @@ function TitleResultRow({
   icon,
   title,
   results,
+  titleFont = "font-medium",
 }: {
   icon: React.ReactNode;
   title: string;
   results: { id: string; node: React.ReactNode }[];
+  /** Font-weight class for the title text. Multi-question sub-rows pass a
+   *  lighter weight so they read as subordinate to the bolder poll title. */
+  titleFont?: string;
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const fitRef = React.useRef<HTMLDivElement>(null); // nowrap one-line probe
@@ -277,7 +281,7 @@ function TitleResultRow({
   // last line as a whole rather than splitting.
   const inlineTitleResult = (
     <h3
-      className="font-medium text-lg leading-tight text-gray-900 dark:text-white"
+      className={`${titleFont} text-lg leading-tight text-gray-900 dark:text-white`}
       style={{ maxWidth: "90%" }}
     >
       <span className="mr-1.5" aria-hidden="true">{icon}</span>
@@ -292,7 +296,7 @@ function TitleResultRow({
   if (results.length === 0) {
     return (
       <div ref={containerRef} className="min-w-0">
-        <h3 className="flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white">
+        <h3 className={`flex items-start ${titleFont} text-lg leading-tight text-gray-900 dark:text-white`}>
           {titleInner}
         </h3>
       </div>
@@ -308,7 +312,7 @@ function TitleResultRow({
           <div
             ref={fitRef}
             aria-hidden="true"
-            className="invisible absolute left-0 top-0 flex items-center whitespace-nowrap font-medium text-lg leading-tight"
+            className={`invisible absolute left-0 top-0 flex items-center whitespace-nowrap ${titleFont} text-lg leading-tight`}
             style={{ pointerEvents: "none" }}
           >
             <span className="mr-1.5">{icon}</span>
@@ -320,7 +324,7 @@ function TitleResultRow({
           <div
             ref={titleMeasRef}
             aria-hidden="true"
-            className="invisible absolute left-0 top-0 font-medium text-lg leading-tight"
+            className={`invisible absolute left-0 top-0 ${titleFont} text-lg leading-tight`}
             style={{ pointerEvents: "none", maxWidth: "90%" }}
           >
             <span className="mr-1.5">{icon}</span>
@@ -342,7 +346,7 @@ function TitleResultRow({
         // One line: title left, then the result pushed right with the
         // horizontal arrow immediately before it.
         <div className="flex items-center min-w-0">
-          <h3 className="flex items-center font-medium text-lg leading-tight text-gray-900 dark:text-white whitespace-nowrap">
+          <h3 className={`flex items-center ${titleFont} text-lg leading-tight text-gray-900 dark:text-white whitespace-nowrap`}>
             {titleInner}
           </h3>
           <div className="flex-1 min-w-0" />
@@ -360,7 +364,7 @@ function TitleResultRow({
         // can't overlap it.
         <>
           <h3
-            className="flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white"
+            className={`flex items-start ${titleFont} text-lg leading-tight text-gray-900 dark:text-white`}
             style={{ maxWidth: "90%" }}
           >
             {titleInner}
@@ -375,7 +379,7 @@ function TitleResultRow({
         // right 80%, with a bent ↳ arrow before the first result line.
         <div>
           <h3
-            className="flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white"
+            className={`flex items-start ${titleFont} text-lg leading-tight text-gray-900 dark:text-white`}
             style={{ maxWidth: "90%" }}
           >
             {titleInner}
@@ -903,10 +907,10 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             the bottom-right metadata row below. */}
         {isMultiGroup ? (
           <div>
-            <h3 className="font-medium text-lg leading-tight text-gray-900 dark:text-white">
+            <h3 className="font-semibold text-lg leading-tight text-gray-900 dark:text-white">
               {question.title}
             </h3>
-            <div className="mt-1.5 space-y-1.5">
+            <div className="mt-1.5 space-y-1.5 pl-3">
               {group.subQuestions.map((sp) => {
                 const node = isPlaceholder ? null : plainResultForQuestion(sp);
                 return (
@@ -915,6 +919,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                     icon={getCategoryIcon(sp)}
                     title={getQuestionSectionTitle(sp) ?? ""}
                     results={node ? [{ id: sp.id, node }] : []}
+                    titleFont="font-normal"
                   />
                 );
               })}
