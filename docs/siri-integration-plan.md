@@ -506,16 +506,57 @@ open); per-tier host mistakes (test on `latest` first).
 
 ## Phase 4 — Expanded intent surface (later, scope post-keynote)
 
-**Status: not started. Backlog — prioritize after Phases 1–3 land + post-keynote.**
+**Status: in progress. The App Entities FOUNDATION landed (2026-06-05); the
+remaining candidates below are still backlog — prioritize after the WWDC watch
+(Phase 0).**
 
-Candidate intents, each building on Phases 1–3's foundations (identity bridge +
-deep-link + native API client):
+**✅ App Entities foundation — IMPLEMENTED (2026-06-05), pending real-device +
+TestFlight verification.** This is the WWDC-resilient substrate the rest of Phase 4
+builds on: a native `AppEntity` so Siri / Shortcuts / Spotlight can reference the
+user's polls BY NAME, plus one thin consumer intent to exercise it end-to-end. All
+colocated in `ios/App/App/AppDelegate.swift` (no pbxproj change). What shipped:
+- **`PollEntity` (`AppEntity`, `@available(iOS 16.0, *)`)** — `id` = poll short_id
+  (the canonical addressable id, the `<short>` in `/g/<group>/p/<short>`), plus
+  `title`, `groupShortId`, `groupName`. `displayRepresentation` shows the poll title
+  with the group name as a subtitle when a group-name override exists.
+  `PollEntity.fetchAll()` POSTs `/api/groups/mine` (`{include_results: false}`) with
+  the bridged `X-Browser-Id` (Phase 2 App Group; bearer added when present), parses
+  each `PollResponse`, prefers `questions[0].title` over the display `title` (same
+  rule the detail-page header uses, to avoid the group-name-override collapse),
+  sorts newest-first by `created_at` (ISO-8601 lexicographic), and caps at 50. It
+  NEVER throws — returns `[]` on no-bridged-identity / network / parse failure, so a
+  consumer degrades to "no polls to pick".
+- **`PollEntityQuery` (`EntityQuery, EntityStringQuery`, iOS 16+)** —
+  `entities(for:)` resolves by id, `entities(matching:)` does case-insensitive
+  substring voice match over title + group name, `suggestedEntities()` surfaces the
+  list into Spotlight + the Shortcuts entity picker. All three delegate to
+  `PollEntity.fetchAll()`.
+- **`OpenPollIntent` (`AppIntent`, `openAppWhenRun`, iOS 18+)** — the thin consumer:
+  `@Parameter var poll: PollEntity` → opens `/g/<group>/p/<short>` (legacy `/p/<short>`
+  fallback) via the same `OpenURLIntent` loopback the Phase 1/3 intents use. NO native
+  poll logic — the WebView renders the poll. Gated iOS 18 only because `OpenURLIntent`
+  is iOS 18 (the entity + query are iOS 16, reusable by a future headless iOS-16
+  intent like spoken "who's winning…"). Added to `WhoeverWantsShortcuts` with phrases
+  `Open \(\.$poll) in …` / `Show \(\.$poll) in …` / bare `Open a poll in …`.
+- **Visibility is BROWSER-SCOPED** (documented limitation): the App Group bridges
+  name + browser id, not the bearer, so the fetch resolves the groups THIS browser is
+  a member of — every poll created/joined on this device, the common "reference my
+  poll by name" case. Same limitation as Phase 3 headless create. Cross-device-only
+  polls won't surface until opened on this device.
+- **No backend or JS changes** — `/api/groups/mine` already returns exactly the
+  needed shape. The native fetch + entity resolution are device-only (can't be
+  unit-tested in the JS suite or demoed on the dev server, like Phases 2/3). The
+  description string keeps "siri" out per ITMS-90626.
+
+**Remaining candidates (backlog, post-keynote)**, each now able to reuse the
+`PollEntity` / `PollEntityQuery` foundation for poll disambiguation:
 - **Vote by voice** — "Hey Siri, vote yes on …" (needs `POST /api/polls/{id}/votes`
-  + a way to disambiguate *which* poll → Siri parameter / entity query).
+  + the `PollEntity` parameter to pick *which* poll).
 - **Query results** — "Who's winning the dinner poll?" (read-only GET; speak the
-  current leader; ties into the outcome-explainer text).
-- **App Entities + `EntityQuery`** so Siri/Spotlight can reference the user's groups
-  & polls by name (surfaces the user's data into Spotlight search + Shortcuts).
+  current leader; ties into the outcome-explainer text). A natural iOS-16 headless
+  intent that reuses `PollEntity`.
+- **`GroupEntity`** — the group-level analog of `PollEntity`, if group-scoped ops
+  (e.g. "create a poll in the trip group") prove worth it.
 - **Richer creation** — multi-question, category/deadline parameters, conversational
   follow-ups.
 - **Apple Intelligence / on-screen-Siri hooks** — only as far as WWDC makes them
@@ -579,7 +620,7 @@ Working order **1 → 2 → 3 → 4 → 0** (Phase 0 moved to the end, 2026-06-0
 | 1 | Deep-link App Intent (open + prefill) | ~1–2 days | Low | — | **done (pending device verify)** |
 | 2 | Native identity bridge (Keychain/App Group) | ~3–5 days | Low (scope: high) | — | **done (plain Keychain; pending device verify)** |
 | 3 | Headless poll creation App Intent | ~1 week (+extension) | Medium–High | 2, re-check 0 | **done (in-process; pending device verify + WWDC re-check before prod)** |
-| 4 | Expanded intents (vote/results/entities/AI) | Large / open | High (by design) | 1–3, 0 | not started |
+| 4 | Expanded intents (vote/results/entities/AI) | Large / open | High (by design) | 1–3, 0 | **App Entities foundation done (pending device verify); rest backlog** |
 | 0 | WWDC watch + decision gate (now last) | ~½ day | — | — | deferred |
 
 **Recommended order (revised 2026-06-04):** 1 → 2 → 3 → 4 → 0. Phase 1 (done) delivers a
@@ -597,6 +638,24 @@ pre-coding gate; see the ordering decision at the top.)
 _(Append dated entries; do not rewrite the phases above — note what changed and why.
 Post-keynote findings go here too, once Phase 0 runs.)_
 
+- **2026-06-05 — Phase 4 App Entities foundation shipped (`PollEntity` +
+  `PollEntityQuery` + `OpenPollIntent`).** Built the WWDC-resilient substrate for the
+  rest of Phase 4 (the owner picked it over vote-by-voice / query-results, which now
+  reuse it). `PollEntity` (`AppEntity`, iOS 16) carries the poll short_id + title +
+  group short_id/name; `PollEntity.fetchAll()` POSTs `/api/groups/mine` with the
+  bridged `X-Browser-Id` (Phase 2 App Group), prefers `questions[0].title`, sorts
+  newest-first, caps 50, returns `[]` on any failure. `PollEntityQuery`
+  (`EntityStringQuery`) does id-resolve + substring voice-match + `suggestedEntities()`
+  for Spotlight. `OpenPollIntent` (iOS 18, `openAppWhenRun`) is the thin consumer —
+  opens the poll's `/g/<group>/p/<short>` page via the existing `OpenURLIntent`
+  loopback — added to `WhoeverWantsShortcuts` ("Open \(\.$poll) in …"). All colocated
+  in `AppDelegate.swift`, no pbxproj/entitlement/backend/JS change. Visibility is
+  browser-scoped (the App Group bridges browser id, not the bearer) — the documented
+  Phase 3 limitation. Native-only, so not unit-testable/demoable; owner device-verify
+  owed on a fresh `latest` build (confirm "Open <poll> in Whoever Wants" resolves +
+  opens the poll; the entity also surfaces in the Shortcuts app's "Open a poll" picker).
+  Next: the deferred WWDC watch (Phase 0), then the remaining Phase 4 intents
+  (vote-by-voice, query-results) on top of this entity.
 - **2026-06-05 — Siri voice-trigger reliability fix shipped (`CFBundleSpokenName`).**
   Independent of the headless work: the canary app's on-screen name "Whoever α" matched
   poorly when speaking the App Shortcut phrase, and two installed apps routed ambiguously.
