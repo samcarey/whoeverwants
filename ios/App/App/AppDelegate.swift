@@ -3,6 +3,8 @@ import Capacitor
 import UserNotifications
 import AppIntents
 import Security
+import WebKit
+import ObjectiveC
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -116,6 +118,87 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(ClipboardUrlPlugin())
         bridge?.registerPluginInstance(AppBadgePlugin())
         bridge?.registerPluginInstance(NativeIdentityPlugin())
+    }
+
+    // Strip iOS's keyboard "input accessory bar" — the prev/next chevrons +
+    // Done (✓) row WebKit floats between a focused text field and the keyboard.
+    // It reads as "this field is one of many in a form", but the app's inputs
+    // are single fields / single-field modals where prev/next navigation is
+    // meaningless, so the bar is pure noise (reported on the create-poll search
+    // box). The accessory view is owned by WebKit's private content view, not by
+    // WKWebView — see `removeInputAccessoryBar()` below. Applied here (well
+    // before any input is tapped, so the first focus already has nil) and
+    // re-applied on every keyboard-show as belt-and-suspenders for the case
+    // where the content view wasn't attached yet at first appearance.
+    //
+    // NOTE: WKWebView-only — this is the WebKit *form assistant*, which has no
+    // web or native removal API in plain mobile Safari / PWA. This fix changes
+    // only the installed Capacitor app; the bar still appears on the web.
+    override open func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        webView?.removeInputAccessoryBar()
+        if !accessoryBarObserverInstalled {
+            accessoryBarObserverInstalled = true
+            NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardWillShowNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.webView?.removeInputAccessoryBar()
+            }
+        }
+    }
+
+    private var accessoryBarObserverInstalled = false
+}
+
+// Helper whose `inputAccessoryView` getter returns nil; its implementation is
+// grafted onto a dynamic subclass of WebKit's private content view (see below).
+private final class _NoInputAccessoryView: NSObject {
+    @objc var inputAccessoryView: UIView? { return nil }
+}
+
+extension WKWebView {
+    // Remove the keyboard input accessory bar. The bar is provided by
+    // `inputAccessoryView` on WebKit's private content view (class name starts
+    // with "WKContent", a subview of the scroll view) — NOT on WKWebView itself,
+    // so overriding it on WKWebView does nothing. We can't name the private class
+    // at compile time, so we dynamically create a one-off subclass of the live
+    // instance's class whose `inputAccessoryView` returns nil and reassign the
+    // instance to it. Idempotent: once reclassed, the named subclass already
+    // exists and re-reassigning to the current class is a no-op.
+    func removeInputAccessoryBar() {
+        guard let contentView = scrollView.subviews.first(where: {
+            String(describing: type(of: $0)).hasPrefix("WKContent")
+        }) else { return }
+
+        let baseClass: AnyClass = type(of: contentView)
+        let newClassName = "\(baseClass)_NoInputAccessory"
+
+        if let existing = NSClassFromString(newClassName) {
+            object_setClass(contentView, existing)
+            return
+        }
+
+        guard let cName = newClassName.cString(using: .ascii),
+              let newClass = objc_allocateClassPair(baseClass, cName, 0) else { return }
+
+        guard let getter = class_getInstanceMethod(
+            _NoInputAccessoryView.self,
+            #selector(getter: _NoInputAccessoryView.inputAccessoryView)
+        ) else {
+            objc_disposeClassPair(newClass)
+            return
+        }
+
+        class_addMethod(
+            newClass,
+            #selector(getter: UIResponder.inputAccessoryView),
+            method_getImplementation(getter),
+            method_getTypeEncoding(getter)
+        )
+        objc_registerClassPair(newClass)
+        object_setClass(contentView, newClass)
     }
 }
 
