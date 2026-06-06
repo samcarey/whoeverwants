@@ -62,6 +62,13 @@ function apiRewriteRules(dest: string, host?: string) {
 
 const nextConfig: NextConfig = {
   trailingSlash: true,
+  // Move the Next.js dev indicator (the "N" build-status logo) to the
+  // bottom-right corner. Next.js defaults it to bottom-left, which on dev
+  // servers overlaps the home-page settings gear / back-arrow chrome.
+  // Dev-only — has no effect in the Vercel production build.
+  devIndicators: {
+    position: "bottom-right",
+  },
   // Prevent trailingSlash from issuing 308 redirects on API routes.
   // Rewrites handle the proxy; the redirect breaks POST request bodies.
   skipTrailingSlashRedirect: true,
