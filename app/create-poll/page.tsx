@@ -50,7 +50,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
-import { PANEL_HEIGHT_VAR, PANEL_OFFSET_VAR } from "@/components/BubbleBarPanel";
+import { PANEL_HEIGHT_VAR } from "@/components/BubbleBarPanel";
 import {
   pollLookup,
   shortenOption,
@@ -1062,9 +1062,12 @@ export function CreateQuestionContent() {
   }, [isModalOpen, closeKeepState]);
 
   // Track the visual viewport so the focused picker fills the area above the
-  // keyboard. Only meaningful while the search bar is focused, but the
-  // listener is cheap and the value is read into the picker's inline style.
+  // keyboard. `searchVv` is only read while focused, so attach the listeners
+  // ONLY while focused — otherwise this layout-persistent component would
+  // setState (and re-render) on every scroll/resize on every page where the
+  // bar isn't even open.
   useEffect(() => {
+    if (!searchFocused) return;
     const vp = window.visualViewport;
     if (!vp) return;
     const update = () => setSearchVv({ height: vp.height, offsetTop: vp.offsetTop });
@@ -1075,7 +1078,7 @@ export function CreateQuestionContent() {
       vp.removeEventListener('resize', update);
       vp.removeEventListener('scroll', update);
     };
-  }, []);
+  }, [searchFocused]);
 
   // Portal targets for the in-progress draft poll card. Rendered in the
   // page body by the group / empty-group routes (one per route instance).
@@ -1157,9 +1160,7 @@ export function CreateQuestionContent() {
       const h = Math.round(el.offsetHeight);
       if (h <= 0 || h === lastBarHeightRef.current) return;
       lastBarHeightRef.current = h;
-      const root = document.documentElement.style;
-      root.setProperty(PANEL_HEIGHT_VAR, `${h}px`);
-      root.setProperty(PANEL_OFFSET_VAR, `${h}px`);
+      document.documentElement.style.setProperty(PANEL_HEIGHT_VAR, `${h}px`);
     };
     write();
     const ro = new ResizeObserver(write);

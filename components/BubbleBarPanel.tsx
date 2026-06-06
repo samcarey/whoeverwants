@@ -13,12 +13,6 @@ import { DRAFT_POLL_PORTAL_ID } from "@/lib/groupDomMarkers";
 export const PANEL_HEIGHT_VAR = "--bubble-bar-panel-height";
 
 /**
- * Mirror of PANEL_HEIGHT_VAR used by floating chrome (e.g. the group page's
- * scroll-helper arrow) to stay above the bar.
- */
-export const PANEL_OFFSET_VAR = "--bubble-bar-panel-offset";
-
-/**
  * Route-gated mount point for the create-poll search bar.
  *
  * The bar's JSX — an always-visible pill text box that expands into a
