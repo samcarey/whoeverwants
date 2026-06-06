@@ -1832,7 +1832,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         {sections.map((section, sectionIdx) => (
           <React.Fragment key={section.tab}>
             <div
-              className={`${sectionIdx > 0 ? "mt-6" : ""} border-b-2 ${ROW_DIVIDER_CLASS} pl-[0.9rem] pr-[0.65rem] pt-3 pb-1 text-[19.2px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
+              className={`${sectionIdx > 0 ? "mt-[0.9rem]" : ""} border-b-2 ${ROW_DIVIDER_CLASS} pl-[0.9rem] pr-[0.65rem] pt-3 pb-1 text-[19.2px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
             >
               {section.label}
             </div>
