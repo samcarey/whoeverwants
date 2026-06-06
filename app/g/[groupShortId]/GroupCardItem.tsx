@@ -172,6 +172,15 @@ const ONE_LINE_LEADER_PROBE_WIDTH = 42;
  *  of a multi-line block. */
 const LEADER_LINE_Y = 11; // first-line center for the bent variant (text-lg/leading-tight)
 const LEADER_HEAD = 6; // arrowhead length / half-height
+// Shared stroke props for the shaft + arrowhead paths so they read as one
+// continuous uniform stroke (only the shaft adds strokeDasharray when open).
+const LEADER_STROKE_PROPS = {
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.5,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+} as const;
 function LeaderLine({ className, bent = false, open = false }: { className?: string; bent?: boolean; open?: boolean }) {
   const ref = React.useRef<HTMLDivElement>(null);
   const [w, setW] = React.useState(0);
@@ -212,24 +221,9 @@ function LeaderLine({ className, bent = false, open = false }: { className?: str
       {w > 0 && (
         <svg width="100%" height={height} className="overflow-visible block">
           {/* Shaft — dashed while the poll is open (preliminary result). */}
-          <path
-            d={shaft}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray={open ? "3 3" : undefined}
-          />
+          <path d={shaft} {...LEADER_STROKE_PROPS} strokeDasharray={open ? "3 3" : undefined} />
           {/* Arrowhead — always solid. */}
-          <path
-            d={head}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          <path d={head} {...LEADER_STROKE_PROPS} />
         </svg>
       )}
     </div>
