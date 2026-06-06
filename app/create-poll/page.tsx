@@ -1077,17 +1077,6 @@ export function CreateQuestionContent() {
     };
   }, []);
 
-  // Keep the best match (the bottom of the bottom-anchored list) in view.
-  // Re-pins to the bottom on focus, as the suggestion set changes while
-  // typing, and as the keyboard animates in (visual-viewport height shifts
-  // the overflow). Once stable the user can scroll up freely to browse.
-  useEffect(() => {
-    if (!searchFocused) return;
-    const el = searchListRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [searchFocused, searchSuggestions, searchVv]);
-
   // Portal targets for the in-progress draft poll card. Rendered in the
   // page body by the group / empty-group routes (one per route instance).
   // Re-queried via a MutationObserver that stays armed for the full
@@ -1310,6 +1299,17 @@ export function CreateQuestionContent() {
     list.reverse();
     return list;
   }, [searchQuery, orderedBubbleEntries]);
+
+  // Keep the best match (the bottom of the bottom-anchored list) in view.
+  // Re-pins to the bottom on focus, as the suggestion set changes while
+  // typing, and as the keyboard animates in (visual-viewport height shifts
+  // the overflow). Once stable the user can scroll up freely to browse.
+  useEffect(() => {
+    if (!searchFocused) return;
+    const el = searchListRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [searchFocused, searchSuggestions, searchVv]);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {
