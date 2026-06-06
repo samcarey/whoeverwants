@@ -193,8 +193,11 @@ function LeaderLine({ className, bent = false }: { className?: string; bent?: bo
   const back = tipX - LEADER_HEAD;
   // Bent: one continuous L — vertical down from the top, then horizontal — so
   // the horizontal starts exactly at the vertical's x (no leftward overhang).
+  // Indent the vertical's left start by ~half a character width so it doesn't
+  // sit flush under the title text's first glyph.
+  const bentStartX = 5;
   const d =
-    (bent ? `M0.75 0 V${lineY} H${tipX} ` : `M0 ${lineY} H${tipX} `) +
+    (bent ? `M${bentStartX} 0 V${lineY} H${tipX} ` : `M0 ${lineY} H${tipX} `) +
     `M${back} ${lineY - LEADER_HEAD * 0.7} L${tipX} ${lineY} L${back} ${lineY + LEADER_HEAD * 0.7}`;
 
   return (
