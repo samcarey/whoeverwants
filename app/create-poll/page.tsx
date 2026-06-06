@@ -1216,20 +1216,19 @@ export function CreateQuestionContent() {
   );
 
   // Build the focused picker's rows from the typed text. The list is
-  // bottom-anchored (it stacks UP from just above the search bar), so the
-  // BEST match sits at the BOTTOM — nearest the input + thumb. We build in
-  // priority order and reverse before returning, giving this bottom→top
-  // order (priority high → low):
-  //   1. Yes/No (bottom) — frames the whole typed text as a yes/no question
+  // bottom-anchored (it stacks UP from just above the search bar). Order,
+  // top→bottom:
+  //   1. Yes/No (top) — frames the whole typed text as a yes/no question
   //      (only when there's text to frame).
-  //   2. Options — when the text parses into ≥2 comma/"or"-delimited options,
-  //      offer a fixed-options poll of them.
-  //   3. Categories — the built-in category bubbles, filtered so every typed
-  //      token (after stripping any "for …" context) prefix-matches a word in
-  //      the category label ("vid ga" → "Video Game", "res" → "Restaurant"),
-  //      most-recent nearest the bottom.
-  //   4. Custom (top) — a custom-category poll named after the typed text
-  //      (or "New Poll" when empty), flagged with a "custom" tag.
+  //   2. Filtered categories — the built-in category bubbles, filtered so
+  //      every typed token (after stripping any "for …" context) prefix-
+  //      matches a word in the category label ("vid ga" → "Video Game"),
+  //      REVERSED so the best (most-recent / most-relevant) match sits at
+  //      the bottom of the group, nearest the bar.
+  //   3. Options — when the text parses into ≥2 comma/"or"-delimited options,
+  //      a fixed-options poll of them (a strong match, so just above Custom).
+  //   4. Custom (bottom, next to the bar) — a custom-category poll named after
+  //      the typed text (or "New Poll" when empty), flagged with a "custom" tag.
   // A trailing "for …" clause sets `context`, prefilled into every suggestion
   // (and shown as a muted "for …" suffix). The yes/no row keeps the literal
   // text as its prompt, so it doesn't split off the context.
@@ -1246,6 +1245,7 @@ export function CreateQuestionContent() {
     const ctx = context || undefined;
     const list: Array<{ key: string; icon: string; primary: string; context?: string; tag?: string; overrides: Partial<QuestionDraft> }> = [];
 
+    // Yes/No (top).
     if (raw) {
       list.push({
         key: 'yesno',
@@ -1256,6 +1256,25 @@ export function CreateQuestionContent() {
       });
     }
 
+    // Filtered categories, reversed so the best match is at the bottom.
+    const tokens = subject.toLowerCase().split(/[\s,]+/).filter(Boolean);
+    const cats = tokens.length === 0
+      ? orderedBubbleEntries
+      : orderedBubbleEntries.filter((e) => {
+          const words = e.label.toLowerCase().split(/\s+/);
+          return tokens.every((t) => words.some((w) => w.startsWith(t)));
+        });
+    for (const e of [...cats].reverse()) {
+      list.push({
+        key: `cat:${e.value}`,
+        icon: e.icon ?? '🗳️',
+        primary: e.label,
+        context: ctx,
+        overrides: { category: e.value, forField: context },
+      });
+    }
+
+    // Options — strong contextual match, sits just above Custom.
     const opts = parseOptionsFromText(subject);
     if (opts.length >= 2) {
       list.push({
@@ -1268,23 +1287,7 @@ export function CreateQuestionContent() {
       });
     }
 
-    const tokens = subject.toLowerCase().split(/[\s,]+/).filter(Boolean);
-    const cats = tokens.length === 0
-      ? orderedBubbleEntries
-      : orderedBubbleEntries.filter((e) => {
-          const words = e.label.toLowerCase().split(/\s+/);
-          return tokens.every((t) => words.some((w) => w.startsWith(t)));
-        });
-    for (const e of cats) {
-      list.push({
-        key: `cat:${e.value}`,
-        icon: e.icon ?? '🗳️',
-        primary: e.label,
-        context: ctx,
-        overrides: { category: e.value, forField: context },
-      });
-    }
-
+    // Custom (bottom, next to the search bar).
     list.push({
       key: 'custom',
       icon: '✏️',
@@ -1294,16 +1297,14 @@ export function CreateQuestionContent() {
       overrides: { category: subject || 'custom', forField: context },
     });
 
-    // Reverse so the highest-priority (best) match lands at the BOTTOM,
-    // nearest the search bar (the list is bottom-anchored, see below).
-    list.reverse();
     return list;
   }, [searchQuery, orderedBubbleEntries]);
 
-  // Keep the best match (the bottom of the bottom-anchored list) in view.
-  // Re-pins to the bottom on focus, as the suggestion set changes while
-  // typing, and as the keyboard animates in (visual-viewport height shifts
-  // the overflow). Once stable the user can scroll up freely to browse.
+  // Keep the bottom of the bottom-anchored list (Custom + the best-matching
+  // results, nearest the bar) in view. Re-pins to the bottom on focus, as the
+  // suggestion set changes while typing, and as the keyboard animates in
+  // (visual-viewport height shifts the overflow). Once stable the user can
+  // scroll up freely to browse (e.g. to the Yes/No row on top).
   useEffect(() => {
     if (!searchFocused) return;
     const el = searchListRef.current;
