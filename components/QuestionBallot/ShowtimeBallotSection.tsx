@@ -2,9 +2,8 @@
 
 import { ReactNode, useMemo } from "react";
 import AbstainLink from "@/components/AbstainLink";
-import ShowtimeBubbles, { ShowtimeSlot } from "@/components/ShowtimeBubbles";
-import { parseSlotStart } from "@/lib/timeUtils";
-import type { Question, OptionsMetadata } from "@/lib/types";
+import ShowtimeBubbles, { slotsFromOptions } from "@/components/ShowtimeBubbles";
+import type { Question } from "@/lib/types";
 
 export interface ShowtimeBallotSectionProps {
   question: Question;
@@ -30,21 +29,6 @@ export interface ShowtimeBallotSectionProps {
   handleVoteClick: () => void;
 }
 
-/** Build the bubble slot list from the curated option keys + their metadata. */
-function buildSlots(options: string[] | undefined, meta: OptionsMetadata | null | undefined): ShowtimeSlot[] {
-  return (options ?? []).map((key) => {
-    const m = (meta?.[key] ?? {}) as Record<string, unknown>;
-    const { h, m: mm } = parseSlotStart(key);
-    return {
-      key,
-      time: `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,
-      cinema_name: (m.cinema_name as string) ?? null,
-      format: (m.format as string) ?? null,
-      seats_left: typeof m.seats_left === "number" ? (m.seats_left as number) : null,
-    };
-  });
-}
-
 export default function ShowtimeBallotSection({
   question,
   isQuestionClosed,
@@ -65,7 +49,7 @@ export default function ShowtimeBallotSection({
   handleVoteClick,
 }: ShowtimeBallotSectionProps) {
   const slots = useMemo(
-    () => buildSlots(question.options, question.options_metadata),
+    () => slotsFromOptions(question.options, question.options_metadata),
     [question.options, question.options_metadata],
   );
 

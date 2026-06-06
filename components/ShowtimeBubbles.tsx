@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { formatDayLabel, groupSlotsByDay } from "@/lib/timeUtils";
+import { formatDayLabel, groupSlotsByDay, parseSlotStart } from "@/lib/timeUtils";
+import type { OptionsMetadata } from "@/lib/types";
 
 /**
  * Per-day flex-wrap of concrete movie showtimes. Deliberately NOT routed
@@ -25,6 +26,27 @@ export interface ShowtimeSlot {
   cinema_name?: string | null;
   format?: string | null;
   seats_left?: number | null;
+}
+
+/** Build the bubble slot list from a poll's option keys + their metadata.
+ *  Shared by the ballot section and the results view (both render bubbles from
+ *  question.options + question.options_metadata). The create flow builds slots
+ *  from raw catalog sessions instead, so it doesn't use this. */
+export function slotsFromOptions(
+  options: string[] | undefined,
+  meta: OptionsMetadata | null | undefined,
+): ShowtimeSlot[] {
+  return (options ?? []).map((key) => {
+    const m = (meta?.[key] ?? {}) as Record<string, unknown>;
+    const { h, m: mm } = parseSlotStart(key);
+    return {
+      key,
+      time: `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,
+      cinema_name: (m.cinema_name as string) ?? null,
+      format: (m.format as string) ?? null,
+      seats_left: typeof m.seats_left === "number" ? (m.seats_left as number) : null,
+    };
+  });
 }
 
 interface CurateProps {

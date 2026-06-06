@@ -9,9 +9,10 @@ than under ``/api/search``. Identity-free (no ``X-Browser-Id``) like ``/preview`
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from routers.search import _haversine_miles
 from services.showtimes.alamo import (
@@ -57,14 +58,21 @@ async def nearby(
 
     in_radius_ids = {c.cinema_id for c in in_radius}
     # Distinct (market_id, market_slug) covering the in-radius cinemas.
-    markets = {(c.market_id, c.market_slug) for c in in_radius}
+    markets = sorted({(c.market_id, c.market_slug) for c in in_radius})
 
+    # Fetch every covered market concurrently (each is cached per day, so this
+    # is usually a no-op disk read; on a cold day a multi-market radius pays one
+    # round-trip total instead of N sequential ones).
+    results = await asyncio.gather(
+        *(get_market_showtimes(_source, mid, mslug) for mid, mslug in markets),
+        return_exceptions=True,
+    )
     all_showtimes = []
-    for market_id, market_slug in sorted(markets):
-        try:
-            all_showtimes.extend(await get_market_showtimes(_source, market_id, market_slug))
-        except Exception as e:  # noqa: BLE001 — one bad market shouldn't 500 the whole call
-            logger.warning("showtimes: market %s fetch failed: %s", market_id, e)
+    for (market_id, _), res in zip(markets, results):
+        if isinstance(res, Exception):
+            logger.warning("showtimes: market %s fetch failed: %s", market_id, res)
+        else:
+            all_showtimes.extend(res)
 
     visible = [s for s in all_showtimes if s.cinema_id in in_radius_ids]
     visible = filter_sessions_by_horizon(visible, horizon)

@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { QuestionResults, OptionsMetadata } from "@/lib/types";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
-import ShowtimeBubbles, { ShowtimeSlot } from "./ShowtimeBubbles";
+import ShowtimeBubbles, { ShowtimeSlot, slotsFromOptions } from "./ShowtimeBubbles";
 import CollapsibleFadeSection from "./CollapsibleFadeSection";
 import OutcomeInfoButton from "./OutcomeInfoButton";
 import { outcomeExplainer } from "@/lib/outcomeExplainer";
@@ -505,18 +505,7 @@ function ShowtimeResults({
   const likeCounts = results.like_counts ?? {};
 
   const slots: ShowtimeSlot[] = useMemo(
-    () =>
-      options.map((key) => {
-        const m = (optionsMetadata?.[key] ?? {}) as Record<string, unknown>;
-        const { h, m: mm } = parseSlotStart(key);
-        return {
-          key,
-          time: `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,
-          cinema_name: (m.cinema_name as string) ?? null,
-          format: (m.format as string) ?? null,
-          seats_left: typeof m.seats_left === "number" ? (m.seats_left as number) : null,
-        };
-      }),
+    () => slotsFromOptions(options, optionsMetadata),
     [options, optionsMetadata],
   );
 
