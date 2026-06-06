@@ -4360,7 +4360,7 @@ When reviewing each screenshot, check:
 - No overflow, clipping, or unexpected wrapping?
 - No regressions in adjacent UI elements?
 
-**Dev-only artifact: the bottom-left "N" circle is the Next.js dev-server indicator** (the floating Next.js logo / build-status button `next dev` injects). It appears on EVERY dev-server screenshot (`*.dev.whoeverwants.com`), is NOT part of the app, and does NOT exist in production (Vercel build). Don't chase it as a layout bug or reposition app chrome to avoid it — if a fixed bottom-left element overlaps it in a screenshot, that overlap is invisible to real users.
+**Dev-only artifact: the bottom-right "N" circle is the Next.js dev-server indicator** (the floating Next.js logo / build-status button `next dev` injects). It appears on EVERY dev-server screenshot (`*.dev.whoeverwants.com`), is NOT part of the app, and does NOT exist in production (Vercel build). Don't chase it as a layout bug or reposition app chrome to avoid it — if a fixed element (e.g. the bottom-right "+ Group" button) overlaps it in a screenshot, that overlap is invisible to real users. Position is set to `bottom-right` via `devIndicators.position` in `next.config.ts` (default is `bottom-left`); the setting is dev-only.
 
 #### Measure DOM Spacing Programmatically
 
