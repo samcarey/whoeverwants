@@ -2228,7 +2228,12 @@ export function CreateQuestionContent() {
       }
     >
       {searchFocused && (
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-background">
+        <div
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-background"
+          // Clear the notch / status bar in standalone PWA (viewport-fit=cover),
+          // where the visible viewport top sits under it. 0px elsewhere.
+          style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+        >
           {/* onMouseDown preventDefault keeps the input focused through the
               tap so the click lands reliably (and the keyboard doesn't
               flicker) before chooseSuggestion blurs it. */}
