@@ -357,6 +357,7 @@ export function CreateQuestionContent() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchListRef = useRef<HTMLDivElement | null>(null);
   // Visible-viewport geometry, tracked so the focused picker fills exactly
   // the area above the on-screen keyboard. iOS keeps the layout viewport at
   // full height when the keyboard opens (a `position: fixed; bottom: 0`
@@ -1076,6 +1077,17 @@ export function CreateQuestionContent() {
     };
   }, []);
 
+  // Keep the best match (the bottom of the bottom-anchored list) in view.
+  // Re-pins to the bottom on focus, as the suggestion set changes while
+  // typing, and as the keyboard animates in (visual-viewport height shifts
+  // the overflow). Once stable the user can scroll up freely to browse.
+  useEffect(() => {
+    if (!searchFocused) return;
+    const el = searchListRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [searchFocused, searchSuggestions, searchVv]);
+
   // Portal targets for the in-progress draft poll card. Rendered in the
   // page body by the group / empty-group routes (one per route instance).
   // Re-queried via a MutationObserver that stays armed for the full
@@ -1214,16 +1226,21 @@ export function CreateQuestionContent() {
     [bubbleRecency],
   );
 
-  // Build the focused picker's rows from the typed text. Order, top→bottom:
-  //   1. Yes/No — frames the whole typed text as a yes/no question (only
-  //      when there's text to frame).
+  // Build the focused picker's rows from the typed text. The list is
+  // bottom-anchored (it stacks UP from just above the search bar), so the
+  // BEST match sits at the BOTTOM — nearest the input + thumb. We build in
+  // priority order and reverse before returning, giving this bottom→top
+  // order (priority high → low):
+  //   1. Yes/No (bottom) — frames the whole typed text as a yes/no question
+  //      (only when there's text to frame).
   //   2. Options — when the text parses into ≥2 comma/"or"-delimited options,
   //      offer a fixed-options poll of them.
   //   3. Categories — the built-in category bubbles, filtered so every typed
   //      token (after stripping any "for …" context) prefix-matches a word in
-  //      the category label ("vid ga" → "Video Game", "res" → "Restaurant").
-  //   4. Custom (always last) — a custom-category poll named after the typed
-  //      text (or "New Poll" when empty), flagged with a "custom" tag.
+  //      the category label ("vid ga" → "Video Game", "res" → "Restaurant"),
+  //      most-recent nearest the bottom.
+  //   4. Custom (top) — a custom-category poll named after the typed text
+  //      (or "New Poll" when empty), flagged with a "custom" tag.
   // A trailing "for …" clause sets `context`, prefilled into every suggestion
   // (and shown as a muted "for …" suffix). The yes/no row keeps the literal
   // text as its prompt, so it doesn't split off the context.
@@ -1288,6 +1305,9 @@ export function CreateQuestionContent() {
       overrides: { category: subject || 'custom', forField: context },
     });
 
+    // Reverse so the highest-priority (best) match lands at the BOTTOM,
+    // nearest the search bar (the list is bottom-anchored, see below).
+    list.reverse();
     return list;
   }, [searchQuery, orderedBubbleEntries]);
 
@@ -2229,14 +2249,19 @@ export function CreateQuestionContent() {
     >
       {searchFocused && (
         <div
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-background"
+          ref={searchListRef}
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-background flex flex-col"
           // Clear the notch / status bar in standalone PWA (viewport-fit=cover),
           // where the visible viewport top sits under it. 0px elsewhere.
           style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
         >
-          {/* onMouseDown preventDefault keeps the input focused through the
-              tap so the click lands reliably (and the keyboard doesn't
-              flicker) before chooseSuggestion blurs it. */}
+          {/* `mt-auto` bottom-anchors the rows: with spare room they stack up
+              from just above the bar (best match at the bottom); once they
+              overflow it collapses to 0 so the top stays scrollable. The
+              auto-scroll effect keeps the bottom (best match) in view.
+              onMouseDown preventDefault keeps the input focused through the
+              tap so the click lands reliably before chooseSuggestion blurs it. */}
+          <div className="mt-auto">
           {searchSuggestions.map((s) => (
             <button
               key={s.key}
@@ -2263,6 +2288,7 @@ export function CreateQuestionContent() {
               )}
             </button>
           ))}
+          </div>
         </div>
       )}
       <div
