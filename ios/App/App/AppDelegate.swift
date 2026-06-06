@@ -93,6 +93,17 @@ class MainViewController: CAPBridgeViewController {
     override open func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        // Re-strip the keyboard accessory bar on every keyboard-show, in case
+        // the WebKit content view wasn't attached yet at first appearance.
+        // Registered here (runs exactly once) rather than in viewDidAppear
+        // (fires repeatedly) so no de-dupe flag is needed.
+        NotificationCenter.default.addObserver(
+            forName: UIResponder.keyboardWillShowNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.webView?.removeInputAccessoryBar()
+        }
     }
 
     // EXPLICITLY register every colocated app-target plugin. This is the
@@ -127,9 +138,9 @@ class MainViewController: CAPBridgeViewController {
     // meaningless, so the bar is pure noise (reported on the create-poll search
     // box). The accessory view is owned by WebKit's private content view, not by
     // WKWebView — see `removeInputAccessoryBar()` below. Applied here (well
-    // before any input is tapped, so the first focus already has nil) and
-    // re-applied on every keyboard-show as belt-and-suspenders for the case
-    // where the content view wasn't attached yet at first appearance.
+    // before any input is tapped, so the first focus already has nil); the
+    // keyboard-show observer registered in viewDidLoad re-applies it as
+    // belt-and-suspenders if the content view wasn't attached yet here.
     //
     // NOTE: WKWebView-only — this is the WebKit *form assistant*, which has no
     // web or native removal API in plain mobile Safari / PWA. This fix changes
@@ -137,19 +148,7 @@ class MainViewController: CAPBridgeViewController {
     override open func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         webView?.removeInputAccessoryBar()
-        if !accessoryBarObserverInstalled {
-            accessoryBarObserverInstalled = true
-            NotificationCenter.default.addObserver(
-                forName: UIResponder.keyboardWillShowNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.webView?.removeInputAccessoryBar()
-            }
-        }
     }
-
-    private var accessoryBarObserverInstalled = false
 }
 
 // Helper whose `inputAccessoryView` getter returns nil; its implementation is
