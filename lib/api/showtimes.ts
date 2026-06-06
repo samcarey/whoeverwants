@@ -26,9 +26,18 @@ export interface ShowtimeFilm {
   sessions: ShowtimeSession[];
 }
 
+export interface ShowtimeCinema {
+  cinema_id: string;
+  name: string;
+  slug: string;
+  distance_miles: number;
+  has_sessions: boolean;
+}
+
 export interface ShowtimesNearbyResponse {
   reference: { lat: number; lng: number; radius_miles: number; label: string | null };
   horizon_days: number;
+  cinemas: ShowtimeCinema[];
   films: ShowtimeFilm[];
 }
 

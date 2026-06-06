@@ -40,7 +40,7 @@ export type { ApiVote, PollVoteItem, PlusOneCandidate } from "./votes";
 export { apiGetQuestionResults } from "./results";
 
 export { apiShowtimesNearby } from "./showtimes";
-export type { ShowtimeSession, ShowtimeFilm, ShowtimesNearbyResponse } from "./showtimes";
+export type { ShowtimeSession, ShowtimeFilm, ShowtimeCinema, ShowtimesNearbyResponse } from "./showtimes";
 
 export {
   apiGetMyGroups,

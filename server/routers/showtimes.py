@@ -70,8 +70,26 @@ async def nearby(
     visible = filter_sessions_by_horizon(visible, horizon)
     films = group_by_film(visible)
 
+    # In-radius theaters, sorted by distance — the FE shows these for the
+    # creator to pick which to search before listing movies.
+    cinemas_with_sessions = {s["cinema_id"] for f in films for s in f["sessions"]}
+    cinemas = sorted(
+        (
+            {
+                "cinema_id": c.cinema_id,
+                "name": c.name,
+                "slug": c.slug,
+                "distance_miles": round(_haversine_miles(lat, lng, c.lat, c.lng), 1),
+                "has_sessions": c.cinema_id in cinemas_with_sessions,
+            }
+            for c in in_radius
+        ),
+        key=lambda c: c["distance_miles"],
+    )
+
     return {
         "reference": {"lat": lat, "lng": lng, "radius_miles": radius, "label": label},
         "horizon_days": horizon,
+        "cinemas": cinemas,
         "films": films,
     }
