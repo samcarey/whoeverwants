@@ -14,7 +14,7 @@ import { setStoredVoteId, setVotedQuestionFlag } from "@/lib/votedQuestionsStora
 // a 1-question poll renders identically to today's single question. See
 // docs/poll-phasing.md.
 
-export type QuestionType = 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply';
+export type QuestionType = 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply' | 'showtime';
 
 export interface CreateQuestionParams {
   question_type?: QuestionType;

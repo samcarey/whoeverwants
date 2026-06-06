@@ -9,6 +9,7 @@ from routers.auth import router as auth_router
 from routers.polls import router as polls_router
 from routers.questions import router as questions_router
 from routers.search import router as search_router
+from routers.showtimes import router as showtimes_router
 from routers.client_logs import router as client_logs_router
 from routers.groups import router as groups_router
 from routers.users import router as users_router
@@ -56,6 +57,7 @@ app.include_router(users_router)
 app.include_router(notifications_router)
 app.include_router(internal_router)
 app.include_router(search_router)
+app.include_router(showtimes_router)
 app.include_router(client_logs_router)
 
 

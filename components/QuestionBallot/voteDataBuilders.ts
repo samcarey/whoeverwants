@@ -229,6 +229,24 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
     };
   }
 
+  if (state.questionType === 'showtime') {
+    // Single-phase tri-state over the curated showtimes: liked_slots = "want",
+    // disliked_slots = "can't attend". Reuses the time vote shape; no
+    // availability / duration fields (options arrive pre-finalized).
+    return {
+      ok: true,
+      effectiveIsAbstaining,
+      voteData: {
+        question_id: state.questionId,
+        vote_type: 'showtime' as const,
+        liked_slots: effectiveIsAbstaining ? null : (state.likedSlots ?? []),
+        disliked_slots: effectiveIsAbstaining ? null : (state.dislikedSlots ?? []),
+        is_abstain: effectiveIsAbstaining,
+        voter_name: state.voterName.trim() || null,
+      },
+    };
+  }
+
   return { ok: true, effectiveIsAbstaining, voteData: {} };
 }
 

@@ -71,6 +71,12 @@ export interface QuestionDraft {
    *  slots derived from the creator's time windows (no availability phase).
    *  Seeded from the user's remembered preference on open. */
   collectAvailability: boolean;
+  /** Showtime: the picked film's id, persisted so the create flow can restore
+   *  the selection after a modal reopen (the catalog itself is re-fetched, not
+   *  persisted — too big for localStorage). The film NAME lives in `forField`
+   *  (→ the "Showtime for {Film}" title); the curated showtime keys live in
+   *  `options` + `optionsMetadata` like any other option-based question. */
+  showtimeFilmId?: string;
 }
 
 /** Default empty draft, optionally preselected by the bubble that opened
@@ -118,6 +124,7 @@ export function emptyDraft(
     collectSuggestions: opts.collectSuggestions ?? true,
     winnerMethod: 'consensus',
     collectAvailability: opts.collectAvailability ?? true,
+    showtimeFilmId: undefined,
   };
 }
 
@@ -125,10 +132,11 @@ export function emptyDraft(
  * Resolve effective DB question_type for a draft. Mirrors the legacy
  * getQuestionType() in page.tsx so server-side validation rules stay aligned.
  */
-export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply' {
+export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply' | 'showtime' {
   if (d.questionType === 'time' || d.category === 'time') return 'time';
   if (d.category === 'yes_no') return 'yes_no';
   if (d.category === 'limited_supply') return 'limited_supply';
+  if (d.category === 'showtime') return 'showtime';
   return 'ranked_choice';
 }
 
@@ -247,6 +255,15 @@ export function draftToQuestionParams(
   if (dbType === 'ranked_choice') {
     params.winner_method = d.winnerMethod;
   }
+  // Showtime: the curated showtime keys ARE the ballot options; the film name
+  // is the context (→ "Showtime for {Film}" auto-title). No time-window /
+  // duration / availability machinery — options arrive pre-finalized.
+  if (dbType === 'showtime') {
+    params.category = 'showtime';
+    if (filledOptions.length > 0) {
+      params.options = filledOptions;
+    }
+  }
   const icon = effectiveCategoryIcon(d);
   if (icon) {
     params.category_icon = icon;
@@ -316,6 +333,10 @@ export function deriveDraftTitle(d: QuestionDraft): string {
   // time questions: fixed "Time?" + optional " for X" suffix.
   if (d.questionType === 'time' || d.category === 'time') {
     return appendForSuffix('Time?', d.forField);
+  }
+  // showtime: "Showtime for {Film}" (the film name lives in forField).
+  if (d.category === 'showtime') {
+    return appendForSuffix('Showtime?', d.forField);
   }
 
   // ranked_choice: build from options if any, else fall back to the
@@ -410,7 +431,7 @@ export function synthesizePlaceholderPoll(
       options: showOptions ? filledOptions : undefined,
       created_at: now,
       updated_at: now,
-      category: dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : null,
+      category: dbType === 'showtime' ? 'showtime' : (dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : null),
       category_icon: effectiveCategoryIcon(d),
       supply_count: dbType === 'limited_supply' ? normalizeSupplyCount(d.supplyCount) : null,
       reveal_claimant_names: dbType === 'limited_supply' ? d.revealClaimantNames : null,

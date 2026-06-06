@@ -30,6 +30,7 @@ import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { hasVotedOnQuestion, getStoredVoteId, setStoredVoteId, setVotedQuestionFlag } from "@/lib/votedQuestionsStorage";
 import { buildVoteData, buildPollVoteItem, type BallotInputs } from "./QuestionBallot/voteDataBuilders";
 import TimeBallotSection from "./QuestionBallot/TimeBallotSection";
+import ShowtimeBallotSection from "./QuestionBallot/ShowtimeBallotSection";
 import LimitedSupplyBallot from "./QuestionBallot/LimitedSupplyBallot";
 import { haptic } from "@/lib/haptics";
 
@@ -644,6 +645,15 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
               if (voteData.disliked_slots !== null && voteData.disliked_slots !== undefined) {
                 setDislikedSlots(voteData.disliked_slots);
               }
+            } else if (question.question_type === 'showtime') {
+              // Restore the committed want / can't-attend reactions so editing
+              // starts from the existing ballot.
+              if (voteData.liked_slots !== null && voteData.liked_slots !== undefined) {
+                setLikedSlots(voteData.liked_slots);
+              }
+              if (voteData.disliked_slots !== null && voteData.disliked_slots !== undefined) {
+                setDislikedSlots(voteData.disliked_slots);
+              }
             }
           } else {
           }
@@ -681,7 +691,8 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
 
     // Limited-supply: always fetch so the "N of M claimed" roster + the
     // viewer's own secured/waitlist status render (open or closed).
-    if (isClosed || shouldFetchForTimeQuestion || question.question_type === 'limited_supply') {
+    if (isClosed || shouldFetchForTimeQuestion || question.question_type === 'limited_supply'
+        || question.question_type === 'showtime') {
       fetchQuestionResults();
     }
   }, [questionClosed, poll.response_deadline, question.question_type, fetchQuestionResults, inAvailabilityPhase, poll.allow_pre_ranking, hasVoted]);
@@ -997,7 +1008,8 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     // Time questions (availability + preferences phases) and limited_supply
     // (the staged "Claim N spots" wrapper Submit) commit immediately — the
     // explicit Submit IS the confirmation, so skip the modal.
-    if (question.question_type === 'time' || question.question_type === 'limited_supply') {
+    if (question.question_type === 'time' || question.question_type === 'limited_supply'
+        || question.question_type === 'showtime') {
       void submitVote();
       return;
     }
@@ -1517,6 +1529,32 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
           stagedDecline={isAbstaining}
           isEditing={isEditingVote}
           onEdit={() => setIsEditingVote(true)}
+        />
+      </div>
+    );
+  }
+
+  if (question.question_type === 'showtime') {
+    return (
+      <div className="question-content">
+        <ShowtimeBallotSection
+          question={question}
+          isQuestionClosed={!!isQuestionClosed}
+          userVoteData={userVoteData}
+          isLoadingVoteData={isLoadingVoteData}
+          hasVoted={hasVoted}
+          isEditingVote={isEditingVote}
+          editVoteButton={editVoteButton}
+          isSubmitting={isSubmitting}
+          voteError={voteError}
+          isAbstaining={isAbstaining}
+          handleAbstain={handleAbstain}
+          likedSlots={likedSlots}
+          setLikedSlots={setLikedSlotsTouched}
+          dislikedSlots={dislikedSlots}
+          setDislikedSlots={setDislikedSlotsTouched}
+          wrapperHandlesSubmit={!!wrapperHandlesSubmit}
+          handleVoteClick={handleVoteClick}
         />
       </div>
     );

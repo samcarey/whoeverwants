@@ -6,6 +6,7 @@ export const QUESTION_TYPE_SYMBOLS: Record<string, string> = {
   ranked_choice: '🗳️',
   time: '📅',
   limited_supply: '🎟️',
+  showtime: '🎬',
 };
 
 /** The symbol for a question type. It must NEVER depend on poll state
@@ -50,6 +51,9 @@ export function getBuiltInCategoryIcon(category: string | null | undefined): str
  *  prompt verbatim — no "Yes/No for" prefix. */
 function getQuestionLabel(question: Question): string | null {
   if (question.question_type === 'time') return 'Time';
+  // showtime stores question_type=showtime but category=showtime; the film
+  // name is the per-question context, so "Showtime for {Film}" reads right.
+  if (question.question_type === 'showtime') return 'Showtime';
   if (question.question_type === 'yes_no') return null;
   // limited_supply: the typed title (the item) is surfaced verbatim via
   // `details`, like yes_no — no "Limited Supply for X" prefix.

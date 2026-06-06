@@ -44,6 +44,7 @@ import QuestionResultsDisplay, {
   CompactSuggestionPreview,
   CompactTimePreview,
   CompactSupplyPreview,
+  CompactShowtimePreview,
 } from "@/components/QuestionResults";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { haptic } from "@/lib/haptics";
@@ -723,6 +724,11 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
       const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
       if (!hasPreview) return null;
       return <CompactTimePreview results={r} isQuestionClosed={isClosed} plain />;
+    }
+    if (sp.question_type === "showtime" && r) {
+      const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
+      if (!hasPreview) return null;
+      return <CompactShowtimePreview results={r} isQuestionClosed={isClosed} plain />;
     }
     if (sp.question_type === "limited_supply") {
       // Always show "N/M claimed" — falls back to the question's own

@@ -22,7 +22,7 @@ export type OptionsMetadata = Record<string, OptionMetadataEntry>;
 export interface Question {
   id: string;
   title: string;
-  question_type: 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply';
+  question_type: 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply' | 'showtime';
   options?: string[];
   created_at: string;
   updated_at: string;
@@ -110,7 +110,7 @@ export interface SupplyClaim {
 export interface QuestionResults {
   question_id: string;
   title: string;
-  question_type: 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply';
+  question_type: 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply' | 'showtime';
   created_at: string;
   response_deadline?: string;
   options?: string[];
@@ -136,6 +136,9 @@ export interface QuestionResults {
   included_slots?: string[];
   like_counts?: Record<string, number>;
   dislike_counts?: Record<string, number>;
+  // Showtime: attendance_counts[key] = preference respondents (weighted) minus
+  // those who can't attend that showtime. Undefined for non-showtime questions.
+  attendance_counts?: Record<string, number>;
   // True when the availability cutoff passed but no slot met the
   // "Minimum Participants" gate → the event is off (no time works).
   time_event_cancelled?: boolean;
