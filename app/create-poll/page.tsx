@@ -1270,16 +1270,13 @@ export function CreateQuestionContent() {
   const searchSuggestions = useMemo<Array<{
     key: string;
     icon: string;
-    primary: string;
-    context?: string;
     tag?: string;
     segments: SuggestionSegment[];
     overrides: Partial<QuestionDraft>;
   }>>(() => {
     const raw = searchQuery.trim();
     const { subject, context } = parseForContext(raw);
-    const ctx = context || undefined;
-    const list: Array<{ key: string; icon: string; primary: string; context?: string; tag?: string; segments: SuggestionSegment[]; overrides: Partial<QuestionDraft> }> = [];
+    const list: Array<{ key: string; icon: string; tag?: string; segments: SuggestionSegment[]; overrides: Partial<QuestionDraft> }> = [];
 
     // Yes/No (top). The whole text becomes the title (the question prompt),
     // not a category/context/option, so it carries no labels.
@@ -1287,7 +1284,6 @@ export function CreateQuestionContent() {
       list.push({
         key: 'yesno',
         icon: '👍',
-        primary: raw,
         tag: 'yes / no',
         segments: [{ text: raw }],
         overrides: { category: 'yes_no', title: raw, isAutoTitle: false },
@@ -1306,8 +1302,6 @@ export function CreateQuestionContent() {
       list.push({
         key: `cat:${e.value}`,
         icon: e.icon ?? '🗳️',
-        primary: e.label,
-        context: ctx,
         segments: [{ text: e.label, ...SEG_CATEGORY }, ...contextSegments(context)],
         overrides: { category: e.value, forField: context },
       });
@@ -1324,8 +1318,6 @@ export function CreateQuestionContent() {
       list.push({
         key: 'options',
         icon: '🗳️',
-        primary: opts.join(' · '),
-        context: ctx,
         tag: 'options',
         segments: [...optSegments, ...contextSegments(context)],
         overrides: { category: 'custom', options: opts, collectSuggestions: false, forField: context },
@@ -1337,8 +1329,6 @@ export function CreateQuestionContent() {
     list.push({
       key: 'custom',
       icon: '✏️',
-      primary: subject || 'New Poll',
-      context: subject ? ctx : undefined,
       tag: 'custom',
       segments: subject
         ? [{ text: subject, ...SEG_CATEGORY }, ...contextSegments(context)]
@@ -2320,7 +2310,7 @@ export function CreateQuestionContent() {
               onClick={() => chooseSuggestion(s.overrides)}
               disabled={isLoading}
               className={SEARCH_ROW_CLASS}
-              aria-label={`Create poll: ${s.primary}`}
+              aria-label={`Create poll: ${s.segments.map((seg) => seg.text).join('')}`}
             >
               <span className="w-7 text-center text-2xl leading-none shrink-0" aria-hidden>
                 {s.icon}
