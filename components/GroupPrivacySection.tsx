@@ -184,7 +184,15 @@ export default function GroupPrivacySection({
       });
   };
 
-  const stateLabel = isPrivate ? "Private" : "Public";
+  // Label rules:
+  //   * Creator (switch shown): a FIXED label "Private group" that
+  //     describes what the ON position means. The switch position alone
+  //     conveys the state — a label that changed with the toggle (the old
+  //     "Private"/"Public" readout) made it impossible to tell what the
+  //     switch *does* versus what it currently *is*.
+  //   * Non-creator (no switch): the read-only current state, since there
+  //     is no switch to convey it.
+  const rowLabel = isCreator ? "Private group" : isPrivate ? "Private" : "Public";
   // Base description by state; creator gets the invite-link nudge as a
   // suffix when private (Phase F/G will deliver the actual invite UI).
   const helpText =
@@ -218,17 +226,13 @@ export default function GroupPrivacySection({
                 if (isCreator && !saving) onToggle(!isPrivate);
               }}
             >
-              <span className="text-base font-normal">{stateLabel}</span>
+              <span className="text-base font-normal">{rowLabel}</span>
               {isCreator ? (
                 <SliderSwitch
                   checked={isPrivate}
                   onChange={onToggle}
                   disabled={saving}
-                  aria-label={
-                    isPrivate
-                      ? "Make this group public"
-                      : "Make this group private"
-                  }
+                  aria-label="Private group"
                 />
               ) : null}
             </div>
