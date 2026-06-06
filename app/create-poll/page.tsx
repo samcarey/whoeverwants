@@ -2331,11 +2331,15 @@ export function CreateQuestionContent() {
             placeholder="Create a poll…"
             aria-label="Create a poll"
             enterKeyHint="search"
-            // leading-none tightens the line box to the font size so the
-            // blinking caret doesn't extend below the (cap-height) placeholder
-            // / text into the line-height's descender padding. The row's
-            // items-center keeps the now-16px input vertically centered.
-            className="flex-1 min-w-0 bg-transparent outline-none text-base leading-none text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+            // `line-height: normal` (the font's natural metrics) — NOT
+            // Tailwind's `text-base` 1.5rem line-height nor `leading-none`.
+            // iOS Safari draws the caret on the font's natural ascent/descent;
+            // forcing a custom line-height makes the caret and the text use
+            // different metrics, so the caret sat below the placeholder. With
+            // `normal` they share metrics and align (default-input behavior).
+            // The row's items-center keeps the input vertically centered.
+            style={{ lineHeight: 'normal' }}
+            className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
           />
         </div>
       </div>
