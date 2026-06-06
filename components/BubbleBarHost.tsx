@@ -35,8 +35,9 @@
 import { usePathname } from "next/navigation";
 import BubbleBarPanel from "./BubbleBarPanel";
 import { useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
-import { isGroupRootView } from "@/lib/questionId";
+import { isGroupRootView, extractGroupRouteId } from "@/lib/questionId";
 import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
+import { useGroupAccessGranted } from "@/lib/groupAccessState";
 
 export default function BubbleBarHost(): React.ReactElement | null {
   const pathname = usePathname();
@@ -46,6 +47,15 @@ export default function BubbleBarHost(): React.ReactElement | null {
   // would keep the bar on — floating it over the revealed home page. Track
   // the backdrop and hide the bar for the duration of that gesture.
   const homeBackdrop = useHomeBackdropActive();
+
+  // A specific group page is `/g/<routeId>`; the empty-group placeholder is
+  // bare `/g` or `/g/` (no id, → null). Gate a real group's bar on the viewer
+  // actually having access (a non-member must not be shown the create-poll bar
+  // over the "Private Group / no access" wall). The placeholder (null) is
+  // always allowed — that's where you start a new group.
+  const rawRouteId = extractGroupRouteId(pathname || "");
+  const pathRouteId = rawRouteId ? decodeURIComponent(rawRouteId) : null;
+  const accessGranted = useGroupAccessGranted(pathRouteId);
 
   // Withhold the bar entirely while a group-arrival slide is in flight, then
   // mount it once the slide overlay has unmounted (slideActive flips false on
@@ -59,7 +69,10 @@ export default function BubbleBarHost(): React.ReactElement | null {
   // the bar mounts and slides up immediately — matching "every time we load
   // the group page, animate the bar sliding up".
   const onGroupRoute = isGroupRootView(pathname || "");
-  const show = onGroupRoute && !slideActive && !homeBackdrop;
+  // For a specific group (`/g/<id>`) require confirmed access; the bare
+  // placeholder (pathRouteId === null) is always allowed.
+  const accessOk = pathRouteId === null || accessGranted;
+  const show = onGroupRoute && accessOk && !slideActive && !homeBackdrop;
   if (!show) return null;
   return <BubbleBarPanel />;
 }

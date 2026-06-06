@@ -28,6 +28,7 @@ import {
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
 import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
+import { setGroupAccessGranted } from "@/lib/groupAccessState";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { useDeadlineTick } from "@/lib/useDeadlineTick";
@@ -270,6 +271,18 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       document.body.setAttribute(GROUP_ID_ATTR, group.groupId);
     }
   }, [group?.groupId]);
+
+  // Tell BubbleBarHost the viewer HAS access to this group so it shows the
+  // floating create-poll bar. Only fires once the group has loaded without
+  // error — the no-access wall (error || !group, rendered below) never
+  // reaches a granted state, so the bar stays hidden there. Keyed on the
+  // route id (groupId) so a different group's stale grant can't show the
+  // bar on this one.
+  useEffect(() => {
+    if (!loading && !error && group) {
+      setGroupAccessGranted(groupId);
+    }
+  }, [loading, error, group, groupId]);
 
   // Signal to the view transition helper that this page's content is
   // rendered AND its initial scroll position has been applied. Without the

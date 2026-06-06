@@ -50,6 +50,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
+import { PANEL_HEIGHT_VAR } from "@/components/BubbleBarPanel";
 import {
   pollLookup,
   shortenOption,
@@ -140,51 +141,42 @@ function orderBubbleEntries(
   return ordered;
 }
 
-// Each bubble is a rounded rectangle: icon pinned to the top, title
-// word-wrapped below and vertically centered in the leftover space.
-// `width: min-content` shrinks the rectangle to the longest word in
-// its label (multi-word labels like "Yes / No" / "Video Game" wrap
-// by spaces, never breaking a word mid-character); `minWidth` floors
-// it at 1.75× the icon size so short labels still feel like buttons.
-// Fixed `height` keeps every rectangle the same vertical size — the
-// title wrapper takes `flex-1` and centers its child vertically, so
-// a 1-line label floats in the middle of the area below the icon
-// while a 3-line label fills it. Height math: py-3 (12+12) + 32px
-// icon + 3 × ~17.5px (text-sm leading-tight) = ~109px content;
-// 112px = ~3px buffer for the line-clamp box's internal padding.
-const BUBBLE_ICON_PX = 32;
-const BUBBLE_MIN_WIDTH_PX = Math.round(BUBBLE_ICON_PX * 1.75);
-const BUBBLE_HEIGHT_PX = 112;
-// `pt-3` only (no `pb-*`): the title wrapper takes `flex-1` and
-// extends all the way to the bottom border, so its `items-center`
-// places equal vertical slack between (icon-bottom → title-top)
-// and (title-bottom → rectangle-bottom). Adding bottom padding
-// would tilt that balance toward the bottom.
-const BUBBLE_BUTTON_CLASS =
-  "shrink-0 flex flex-col items-center px-2 pt-3 rounded-2xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium select-none";
-const BUBBLE_BUTTON_STYLE: React.CSSProperties = {
-  width: "min-content",
-  minWidth: `${BUBBLE_MIN_WIDTH_PX}px`,
-  height: `${BUBBLE_HEIGHT_PX}px`,
-};
-const BUBBLE_ICON_STYLE: React.CSSProperties = {
-  fontSize: `${BUBBLE_ICON_PX}px`,
-  lineHeight: 1,
-};
-// `-webkit-line-clamp: 3` (with the matching `display: -webkit-box`
-// + `WebkitBoxOrient: vertical`) caps the title at 3 lines and
-// truncates with an ellipsis past that. `wordBreak: normal` +
-// `overflowWrap: normal` keeps words intact so they wrap by spaces;
-// `min-content` sizing on the parent guarantees the longest word
-// always fits on its own line.
-const BUBBLE_TITLE_STYLE: React.CSSProperties = {
-  display: "-webkit-box",
-  WebkitLineClamp: 3,
-  WebkitBoxOrient: "vertical",
-  overflow: "hidden",
-  wordBreak: "normal",
-  overflowWrap: "normal",
-};
+// --- Search-bar text parsing -------------------------------------------
+// Split the typed text on a standalone "for": everything after the first
+// " for " becomes the poll's context (prefilled into `forField` on every
+// suggestion), everything before is the subject used for the category
+// filter / options / custom-category name. "for" only counts as a whole
+// word, so "comfortable" / "fortnite" don't trip it.
+function parseForContext(raw: string): { subject: string; context: string } {
+  const m = raw.match(/\bfor\b/i);
+  if (!m || m.index === undefined) return { subject: raw.trim(), context: "" };
+  return {
+    subject: raw.slice(0, m.index).trim(),
+    context: raw.slice(m.index + m[0].length).trim(),
+  };
+}
+
+// Parse free text into poll options by splitting on commas and the word
+// "or" (so "pizza, tacos or sushi" → ["pizza", "tacos", "sushi"]). The
+// oxford "a, b, or c" form is handled by collapsing " or " to a comma
+// first. Trims, drops blanks, and de-dupes case-insensitively (keeping the
+// first spelling). Returns the list; callers gate on length >= 2.
+function parseOptionsFromText(text: string): string[] {
+  const parts = text
+    .replace(/\s+or\s+/gi, ",")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of parts) {
+    const k = p.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+  }
+  return out;
+}
 
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
@@ -350,10 +342,34 @@ export function CreateQuestionContent() {
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
-  // When the user taps a category bubble but hasn't saved a name, stash
-  // the chosen category and open the AccountGateModal. On save, retry
-  // `openModalFor` so the form lands with the right category.
-  const [pendingBubbleCategory, setPendingBubbleCategory] = useState<string | null>(null);
+  // When the user taps a poll suggestion but hasn't saved a name, stash a
+  // retry thunk and open the AccountGateModal. On save, the thunk replays
+  // the exact suggestion (`openModalWithDraft(overrides)`) so the form lands
+  // prefilled. A thunk (vs. a category string) is needed because suggestions
+  // now carry a full draft prefill (title / options / context), not just a
+  // category.
+  const [pendingSearchAction, setPendingSearchAction] = useState<(() => void) | null>(null);
+
+  // --- Poll-creation search bar (the always-visible bottom pill) ---------
+  // `searchFocused` flips when the bottom text box gains/loses focus. When
+  // focused the pill expands into a full-screen, keyboard-aware category
+  // picker (see `pollSearchBar`). `searchQuery` filters the category rows.
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchListRef = useRef<HTMLDivElement | null>(null);
+  // Visible-viewport geometry, tracked so the focused picker fills exactly
+  // the area above the on-screen keyboard. iOS keeps the layout viewport at
+  // full height when the keyboard opens (a `position: fixed; bottom: 0`
+  // element would sit BEHIND the keyboard), so we pin the picker container
+  // to `top: vv.offsetTop; height: vv.height` — its bottom edge then lands
+  // flush on the keyboard's top edge and the input bar (the container's last
+  // child) sits just above it.
+  const [searchVv, setSearchVv] = useState<{ height: number; offsetTop: number }>({
+    height: 0,
+    offsetTop: 0,
+  });
+  const searchBarRef = useRef<HTMLDivElement | null>(null);
 
   // A ranked_choice question is a "suggestion poll" when the creator left the
   // "Collect Suggestions before Vote" toggle on — regardless of whether they
@@ -963,36 +979,61 @@ export function CreateQuestionContent() {
     }
   }, [inlineFormHasContent, drafts.length, closeKeepState]);
 
-  const openModalFor = useCallback((cat: string) => {
+  // Open the new-poll form prefilled from a partial draft. `overrides` carry
+  // whatever a suggestion specifies — category, title, options, forField
+  // (context), etc. — layered over a fresh `emptyDraft`. Also collapses the
+  // search bar so the modal opens over a clean group view.
+  const openModalWithDraft = useCallback((overrides: Partial<QuestionDraft>) => {
     // When the poll already has staged drafts AND they share a context,
     // inherit it as the new question's forField so the auto-title can
     // collapse to "Cat1, Cat2 for SharedContext" without the user retyping.
-    // Still editable — they can clear or change it freely.
     const inheritedForField = sharedDraftContext(drafts) ?? '';
-    applyDraftToState(emptyDraft({
-      category: cat,
-      forField: inheritedForField,
+    const base = emptyDraft({
+      category: overrides.category,
+      forField: overrides.forField ?? inheritedForField,
       collectSuggestions: getUserCollectSuggestions() ?? true,
       collectAvailability: getUserCollectAvailability() ?? true,
-    }));
+    });
+    const draft: QuestionDraft = { ...base, ...overrides };
+    applyDraftToState(draft);
     setCreatorName(getUserName() ?? "");
     setError(null);
-    // For yes/no the title IS the question prompt, so focus it once the input
-    // mounts (see setTitleInputRef). Other categories auto-generate the title.
-    // Prime the iOS keyboard synchronously here (still inside the tap) so it
+    // For yes/no the title IS the question prompt; focus it once the input
+    // mounts (see setTitleInputRef) ONLY when no prompt was prefilled. Prime
+    // the iOS keyboard synchronously here (still inside the tap) so it
     // survives the async mount of the real input.
-    shouldFocusTitleRef.current = cat === 'yes_no';
-    if (cat === 'yes_no') primeKeyboard();
+    const focusTitle = draft.category === 'yes_no' && !draft.title.trim();
+    shouldFocusTitleRef.current = focusTitle;
+    if (focusTitle) primeKeyboard();
+    // Collapse the search bar (and dismiss its keyboard) so the modal opens
+    // over a clean group view and we're back to the unfocused pill when it
+    // closes. Clearing the query keeps the next picker open fresh.
+    searchInputRef.current?.blur();
+    setSearchFocused(false);
+    setSearchQuery("");
     setIsModalOpen(true);
   }, [applyDraftToState, drafts, primeKeyboard]);
 
-  const handleBubbleClick = useCallback((cat: string) => {
+  // Collapse the focused picker back to the bottom pill ("normal group
+  // view") without opening anything — wired to the bar's ✕ button.
+  const dismissSearch = useCallback(() => {
+    searchInputRef.current?.blur();
+    setSearchFocused(false);
+    setSearchQuery("");
+  }, []);
+
+  // Pick a poll suggestion from the focused picker. Collapses the picker,
+  // then either opens the form (valid name) or stashes a retry thunk and
+  // opens the AccountGateModal (name required to create a poll).
+  const chooseSuggestion = useCallback((overrides: Partial<QuestionDraft>) => {
+    searchInputRef.current?.blur();
+    setSearchFocused(false);
     if (!isValidUserName(getUserName())) {
-      setPendingBubbleCategory(cat);
+      setPendingSearchAction(() => () => openModalWithDraft(overrides));
       return;
     }
-    openModalFor(cat);
-  }, [openModalFor]);
+    openModalWithDraft(overrides);
+  }, [openModalWithDraft]);
 
   // Read showDiscardConfirm via a ref inside the Escape handler so toggling
   // the inner confirm dialog doesn't tear down + rebuild the body-position
@@ -1019,6 +1060,25 @@ export function CreateQuestionContent() {
       document.removeEventListener('keydown', handleEsc);
     };
   }, [isModalOpen, closeKeepState]);
+
+  // Track the visual viewport so the focused picker fills the area above the
+  // keyboard. `searchVv` is only read while focused, so attach the listeners
+  // ONLY while focused — otherwise this layout-persistent component would
+  // setState (and re-render) on every scroll/resize on every page where the
+  // bar isn't even open.
+  useEffect(() => {
+    if (!searchFocused) return;
+    const vp = window.visualViewport;
+    if (!vp) return;
+    const update = () => setSearchVv({ height: vp.height, offsetTop: vp.offsetTop });
+    update();
+    vp.addEventListener('resize', update);
+    vp.addEventListener('scroll', update);
+    return () => {
+      vp.removeEventListener('resize', update);
+      vp.removeEventListener('scroll', update);
+    };
+  }, [searchFocused]);
 
   // Portal targets for the in-progress draft poll card. Rendered in the
   // page body by the group / empty-group routes (one per route instance).
@@ -1086,6 +1146,28 @@ export function CreateQuestionContent() {
     return () => observer.disconnect();
   }, []);
 
+  // Mirror the unfocused bar's height into the CSS vars the group page reads
+  // for its bottom padding, so the last poll card clears the floating pill.
+  // Only the unfocused height matters (the focused picker covers the page),
+  // so skip writes while focused. `draftPollPortals` is in the deps so the
+  // observer re-attaches when the bar (re)mounts into a portal target.
+  const lastBarHeightRef = useRef(-1);
+  useEffect(() => {
+    if (searchFocused) return;
+    const el = searchBarRef.current;
+    if (!el) return;
+    const write = () => {
+      const h = Math.round(el.offsetHeight);
+      if (h <= 0 || h === lastBarHeightRef.current) return;
+      lastBarHeightRef.current = h;
+      document.documentElement.style.setProperty(PANEL_HEIGHT_VAR, `${h}px`);
+    };
+    write();
+    const ro = new ResizeObserver(write);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [searchFocused, draftPollPortals]);
+
   // Track the current group (the group page sets `<body data-group-id>`)
   // so the category bubble bar can fetch + apply that group's recency
   // ordering. CreateQuestionContent is persistent across navigation, so
@@ -1133,6 +1215,103 @@ export function CreateQuestionContent() {
     () => orderBubbleEntries(BUBBLE_ENTRIES, bubbleRecency.group, bubbleRecency.general),
     [bubbleRecency],
   );
+
+  // Build the focused picker's rows from the typed text. The list is
+  // bottom-anchored (it stacks UP from just above the search bar). Order,
+  // top→bottom:
+  //   1. Yes/No (top) — frames the whole typed text as a yes/no question
+  //      (only when there's text to frame).
+  //   2. Filtered categories — the built-in category bubbles, filtered so
+  //      every typed token (after stripping any "for …" context) prefix-
+  //      matches a word in the category label ("vid ga" → "Video Game"),
+  //      REVERSED so the best (most-recent / most-relevant) match sits at
+  //      the bottom of the group, nearest the bar.
+  //   3. Options — when the text parses into ≥2 comma/"or"-delimited options,
+  //      a fixed-options poll of them (a strong match, so just above Custom).
+  //   4. Custom (bottom, next to the bar) — a custom-category poll named after
+  //      the typed text (or "New Poll" when empty), flagged with a "custom" tag.
+  // A trailing "for …" clause sets `context`, prefilled into every suggestion
+  // (and shown as a muted "for …" suffix). The yes/no row keeps the literal
+  // text as its prompt, so it doesn't split off the context.
+  const searchSuggestions = useMemo<Array<{
+    key: string;
+    icon: string;
+    primary: string;
+    context?: string;
+    tag?: string;
+    overrides: Partial<QuestionDraft>;
+  }>>(() => {
+    const raw = searchQuery.trim();
+    const { subject, context } = parseForContext(raw);
+    const ctx = context || undefined;
+    const list: Array<{ key: string; icon: string; primary: string; context?: string; tag?: string; overrides: Partial<QuestionDraft> }> = [];
+
+    // Yes/No (top).
+    if (raw) {
+      list.push({
+        key: 'yesno',
+        icon: '👍',
+        primary: raw,
+        tag: 'yes / no',
+        overrides: { category: 'yes_no', title: raw, isAutoTitle: false },
+      });
+    }
+
+    // Filtered categories, reversed so the best match is at the bottom.
+    const tokens = subject.toLowerCase().split(/[\s,]+/).filter(Boolean);
+    const cats = tokens.length === 0
+      ? orderedBubbleEntries
+      : orderedBubbleEntries.filter((e) => {
+          const words = e.label.toLowerCase().split(/\s+/);
+          return tokens.every((t) => words.some((w) => w.startsWith(t)));
+        });
+    for (const e of [...cats].reverse()) {
+      list.push({
+        key: `cat:${e.value}`,
+        icon: e.icon ?? '🗳️',
+        primary: e.label,
+        context: ctx,
+        overrides: { category: e.value, forField: context },
+      });
+    }
+
+    // Options — strong contextual match, sits just above Custom.
+    const opts = parseOptionsFromText(subject);
+    if (opts.length >= 2) {
+      list.push({
+        key: 'options',
+        icon: '🗳️',
+        primary: opts.join(' · '),
+        context: ctx,
+        tag: 'options',
+        overrides: { category: 'custom', options: opts, collectSuggestions: false, forField: context },
+      });
+    }
+
+    // Custom (bottom, next to the search bar).
+    list.push({
+      key: 'custom',
+      icon: '✏️',
+      primary: subject || 'New Poll',
+      context: subject ? ctx : undefined,
+      tag: 'custom',
+      overrides: { category: subject || 'custom', forField: context },
+    });
+
+    return list;
+  }, [searchQuery, orderedBubbleEntries]);
+
+  // Keep the bottom of the bottom-anchored list (Custom + the best-matching
+  // results, nearest the bar) in view. Re-pins to the bottom on focus, as the
+  // suggestion set changes while typing, and as the keyboard animates in
+  // (visual-viewport height shifts the overflow). Once stable the user can
+  // scroll up freely to browse (e.g. to the Yes/No row on top).
+  useEffect(() => {
+    if (!searchFocused) return;
+    const el = searchListRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [searchFocused, searchSuggestions, searchVv]);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {
@@ -2042,72 +2221,135 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
-  // py-2 = symmetric 8px gap above/below the bubble row. iOS PWA / iPhone
-  // home-indicator clearance is handled separately by the panel's own
-  // `paddingBottom: env(safe-area-inset-bottom)` (see BubbleBarPanel.tsx),
-  // so we don't need to bake extra bottom padding into the bubble row.
+  // The poll-creation search bar. A pill-shaped text box pinned to the
+  // bottom of the group view at ALL times (no hide-on-scroll). Tapping it
+  // raises the keyboard and expands a full-screen, keyboard-aware list of
+  // poll categories — one per row, filtered live as you type. Selecting a
+  // row opens the existing new-poll form prefilled with that category; the
+  // ✕ on the left of the bar collapses back to the bottom pill.
   //
-  // Layout: ONE horizontally scrollable row. The leading "New" button is
-  // the catch-all (opens the modal with the default `custom` category) —
-  // it took over the role of the retired "Other" trailing entry, and is
-  // always pinned at the start of the row. It shares `BUBBLE_BUTTON_CLASS`
-  // with the category buttons that follow it, plus `font-bold` so it
-  // reads as the primary "create a new poll" affordance.
-  const bubbleBar = (
-    <div className="py-2">
-      <div className="flex items-stretch gap-2 overflow-x-auto scrollbar-hide px-3">
-        <button
-          type="button"
-          onClick={() => handleBubbleClick('custom')}
-          disabled={isLoading}
-          className={`${BUBBLE_BUTTON_CLASS} font-bold`}
-          style={BUBBLE_BUTTON_STYLE}
-          aria-label="Create a new poll"
+  // Structure is a single `position: fixed` flex-column container so the
+  // ONE `<input>` (the last child) never reparents across the focus toggle
+  // (which would drop focus + dismiss the keyboard). Unfocused → container
+  // is bottom-anchored auto-height (just the bar). Focused → container is
+  // pinned to the visual viewport (`top: vv.offsetTop; height: vv.height`)
+  // so its bottom edge lands flush on the keyboard and the list fills above
+  // the bar. The bar's NO-transform fixed ancestor (the panel from
+  // BubbleBarHost) keeps this `fixed` viewport-relative.
+  const SEARCH_ROW_CLASS =
+    "w-full flex items-center gap-4 px-5 py-3.5 text-left min-h-[3.5rem] border-b border-gray-100 dark:border-gray-800 active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
+  const pollSearchBar = (
+    <div
+      className="fixed left-0 right-0 z-40 flex flex-col"
+      style={
+        searchFocused
+          ? searchVv.height > 0
+            ? { top: searchVv.offsetTop, height: searchVv.height }
+            : { top: 0, bottom: 0 }
+          : { bottom: 0 }
+      }
+    >
+      {searchFocused && (
+        <div
+          ref={searchListRef}
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-background flex flex-col"
+          // Clear the notch / status bar in standalone PWA (viewport-fit=cover),
+          // where the visible viewport top sits under it. 0px elsewhere.
+          style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
         >
-          {/* SVG plus sized to match the emoji footprint (~32px tall,
-              wider than a text "+" glyph which only occupies ~18px of
-              its em-box). strokeWidth chosen to roughly match the
-              visual weight of the emoji glyphs. */}
-          <svg
-            aria-hidden
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={3}
-            strokeLinecap="round"
-            style={{ width: `${BUBBLE_ICON_PX}px`, height: `${BUBBLE_ICON_PX}px` }}
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          <span className="flex-1 w-full flex items-center justify-center min-h-0">
-            <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>New Poll</span>
-          </span>
-        </button>
-        {orderedBubbleEntries.map((entry) => (
-          <button
-            key={entry.value}
-            type="button"
-            onClick={() => handleBubbleClick(entry.value)}
-            disabled={isLoading}
-            className={BUBBLE_BUTTON_CLASS}
-            style={BUBBLE_BUTTON_STYLE}
-            aria-label={`Add ${entry.label} question`}
-          >
-            {entry.icon && (
-              <span style={BUBBLE_ICON_STYLE} aria-hidden>{entry.icon}</span>
-            )}
-            <span className="flex-1 w-full flex items-center justify-center min-h-0">
-              <span className="text-center leading-tight" style={BUBBLE_TITLE_STYLE}>{entry.label}</span>
+          {/* `mt-auto` bottom-anchors the rows: with spare room they stack up
+              from just above the bar (best match at the bottom); once they
+              overflow it collapses to 0 so the top stays scrollable. The
+              auto-scroll effect keeps the bottom (best match) in view.
+              onMouseDown preventDefault keeps the input focused through the
+              tap so the click lands reliably before chooseSuggestion blurs it. */}
+          <div className="mt-auto">
+          {searchSuggestions.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => chooseSuggestion(s.overrides)}
+              disabled={isLoading}
+              className={SEARCH_ROW_CLASS}
+              aria-label={`Create poll: ${s.primary}`}
+            >
+              <span className="w-7 text-center text-2xl leading-none shrink-0" aria-hidden>
+                {s.icon}
+              </span>
+              <span className="flex-1 min-w-0 truncate text-base">
+                {s.primary}
+                {s.context && (
+                  <span className="text-gray-400 dark:text-gray-500"> for {s.context}</span>
+                )}
+              </span>
+              {s.tag && (
+                <span className="shrink-0 text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-full px-2 py-0.5">
+                  {s.tag}
+                </span>
+              )}
+            </button>
+          ))}
+          </div>
+        </div>
+      )}
+      <div
+        ref={searchBarRef}
+        className={`shrink-0 px-3 pt-2 ${searchFocused ? 'bg-background' : ''}`}
+        style={
+          searchFocused
+            ? { paddingBottom: '0.5rem' }
+            : { paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)' }
+        }
+      >
+        <div className="flex items-center gap-1 h-12 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-1 pr-2 shadow-lg">
+          {searchFocused ? (
+            <button
+              type="button"
+              onClick={dismissSearch}
+              aria-label="Cancel"
+              className="w-10 h-10 shrink-0 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 active:bg-gray-200 dark:active:bg-gray-700"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          ) : (
+            <span className="w-10 h-10 shrink-0 flex items-center justify-center text-gray-400 dark:text-gray-500" aria-hidden>
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" d="M12 5v14M5 12h14" />
+              </svg>
             </span>
-          </button>
-        ))}
+          )}
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            disabled={isLoading}
+            placeholder="Create a poll…"
+            aria-label="Create a poll"
+            enterKeyHint="search"
+            // `line-height: normal` (the font's natural metrics) — NOT
+            // Tailwind's `text-base` 1.5rem line-height nor `leading-none`.
+            // iOS Safari draws the caret on the font's natural ascent/descent;
+            // forcing a custom line-height makes the caret and the text use
+            // different metrics, so the caret sat below the placeholder. With
+            // `normal` they share metrics and align (default-input behavior).
+            // The row's items-center keeps the input vertically centered.
+            style={{ lineHeight: 'normal' }}
+            className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+          />
+        </div>
       </div>
     </div>
   );
 
   return (
     <div className="question-content">
-      {draftPollPortals.map(({ key, target }) => createPortal(bubbleBar, target, key))}
+      {draftPollPortals.map(({ key, target }) => createPortal(pollSearchBar, target, key))}
 
       {/* New-poll bottom sheet — slides up from the bottom edge. Top half
           holds the question form; bottom half holds poll-level settings
@@ -2636,14 +2878,14 @@ export function CreateQuestionContent() {
       />
 
       <AccountGateModal
-        isOpen={!!pendingBubbleCategory}
+        isOpen={!!pendingSearchAction}
         message="to start a new poll"
         onSubmit={() => {
-          const cat = pendingBubbleCategory;
-          setPendingBubbleCategory(null);
-          if (cat) openModalFor(cat);
+          const retry = pendingSearchAction;
+          setPendingSearchAction(null);
+          retry?.();
         }}
-        onCancel={() => setPendingBubbleCategory(null)}
+        onCancel={() => setPendingSearchAction(null)}
       />
     </div>
   );
