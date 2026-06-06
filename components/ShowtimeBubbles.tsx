@@ -105,13 +105,16 @@ export default function ShowtimeBubbles(props: Props) {
             {formatDayLabel(date)}
           </div>
           <div className="flex flex-1 flex-wrap gap-2">
-            {keys.map((key) => {
+            {keys.map((key, idx) => {
               const slot = byKey.get(key);
               if (!slot) return null;
               const state = bubbleState(key);
               return (
                 <button
-                  key={key}
+                  // Defense-in-depth: the server guarantees unique keys per
+                  // film, but include the index so a stray duplicate (stale
+                  // cached catalog, future data source) can't hard-crash React.
+                  key={`${key}#${idx}`}
                   type="button"
                   disabled={disabled}
                   onClick={() => handleTap(key)}

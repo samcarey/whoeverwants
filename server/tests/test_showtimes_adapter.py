@@ -190,6 +190,34 @@ def test_group_by_film_collapses_and_sorts(payloads, directory):
         assert keys == sorted(keys)
 
 
+def test_keys_are_unique_per_film_across_cinemas(directory):
+    # Two different cinemas, same film, same start time + runtime → the raw key
+    # collides. group_by_film must disambiguate so every session key is unique
+    # (it's the React render key AND the options_metadata / vote reference key).
+    def cinema_block(cid, name, slug):
+        return {
+            "CinemaId": cid, "CinemaName": name, "CinemaSlug": slug,
+            "Films": [{
+                "FilmId": "F1", "FilmName": "Dune", "FilmRuntime": "160", "FilmSlug": "dune",
+                "Series": [{"Formats": [{"FormatName": "Digital", "Sessions": [{
+                    "SessionId": f"s-{cid}", "SessionStatus": "onsale",
+                    "SessionDateTime": "2026-06-12T12:00:00", "SeatsLeft": "10",
+                }]}]}],
+            }],
+        }
+    sessions = {"Market": {"Dates": [{"Cinemas": [
+        cinema_block("0004", "South Lamar", "south-lamar"),
+        cinema_block("0003", "Village", "village"),
+    ]}]}}
+    films = group_by_film(normalize(sessions, {}, directory))
+    assert len(films) == 1
+    keys = [s["key"] for s in films[0]["sessions"]]
+    assert len(keys) == 2
+    assert len(set(keys)) == 2, f"keys must be unique, got {keys}"
+    # Start times stay exact (drive the chronological sort + displayed time).
+    assert all(k.split(" ")[1].split("-")[0] == "12:00" for k in keys)
+
+
 def test_horizon_filter():
     today = date.today()
     def mk(d):

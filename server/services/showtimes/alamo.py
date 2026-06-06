@@ -252,8 +252,38 @@ def group_by_film(showtimes: list[Showtime]) -> list[dict]:
     result = list(films.values())
     for film in result:
         film["sessions"].sort(key=lambda x: (x["date"], x["time"], x["cinema_name"]))
+        _disambiguate_keys(film["sessions"])
     result.sort(key=lambda f: (-len(f["sessions"]), f["name"].lower()))
     return result
+
+
+def _disambiguate_keys(sessions: list[dict]) -> None:
+    """Ensure every session in a film has a unique option key, in place.
+
+    The key format ("YYYY-MM-DD HH:MM-HH:MM") deliberately omits cinema/format
+    so the shared time-slot parsers work — but that means two distinct sessions
+    (same movie, same start time, same runtime, DIFFERENT cinemas) collide. The
+    key is the React render key AND the `options_metadata` map key AND the vote
+    liked/disliked reference, so it MUST be unique. On collision we nudge the
+    END minute (+1m, mod 24h) until unique: the START time + date — which drive
+    the chronological winner sort and the displayed time — stay exact; only the
+    rarely-shown end/runtime label shifts by a minute or two.
+    """
+    seen: set[str] = set()
+    for sess in sessions:
+        key = sess["key"]
+        while key in seen:
+            try:
+                date_part, time_range = key.split(" ")
+                start_str, end_str = time_range.split("-")
+                end_min = (_minutes(end_str) + 1) % 1440
+                key = f"{date_part} {start_str}-{_fmt_hhmm(end_min)}"
+            except (ValueError, IndexError):
+                # Malformed key — fall back to a guaranteed-unique suffix-free
+                # nudge isn't possible, so break to avoid an infinite loop.
+                break
+        sess["key"] = key
+        seen.add(key)
 
 
 class ShowtimeSource(Protocol):
