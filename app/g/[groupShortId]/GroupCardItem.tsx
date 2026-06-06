@@ -154,12 +154,15 @@ export interface GroupCardItemProps {
  *  margins). The visible leader is a flex-1 LeaderLine, not this. */
 const ONE_LINE_LEADER_PROBE_WIDTH = 42;
 
-/** A self-measuring leader pointing at a result. The WHOLE arrow — the optional
- *  vertical drop (`bent`), the horizontal run, and the arrowhead — is a SINGLE
- *  SVG path, so it's one continuous stroke of uniform thickness with no
- *  shaft/head join. The component measures its own width (it sits in a flex-1
- *  slot whose right edge is exactly where the result begins) and draws the path
- *  in CSS pixels (no viewBox), so the tip lands precisely at the result.
+/** A self-measuring leader pointing at a result. The arrow — the optional
+ *  vertical drop (`bent`), the horizontal run, and the arrowhead — is drawn as
+ *  TWO SVG paths (shaft + arrowhead) sharing identical stroke props, so it
+ *  still reads as one continuous stroke of uniform thickness. They're split so
+ *  the shaft can be DASHED (when `open`) while the arrowhead stays solid — an
+ *  open poll's result is preliminary, signalled by the dashed line. The
+ *  component measures its own width (it sits in a flex-1 slot whose right edge
+ *  is exactly where the result begins) and draws the path in CSS pixels (no
+ *  viewBox), so the tip lands precisely at the result.
  *
  *  Straight (`bent=false`): a 10px-tall box, line centered (y=5) — used in the
  *  flex `items-center` rows so it lines up with the single-line result.
@@ -169,7 +172,7 @@ const ONE_LINE_LEADER_PROBE_WIDTH = 42;
  *  of a multi-line block. */
 const LEADER_LINE_Y = 11; // first-line center for the bent variant (text-lg/leading-tight)
 const LEADER_HEAD = 6; // arrowhead length / half-height
-function LeaderLine({ className, bent = false }: { className?: string; bent?: boolean }) {
+function LeaderLine({ className, bent = false, open = false }: { className?: string; bent?: boolean; open?: boolean }) {
   const ref = React.useRef<HTMLDivElement>(null);
   const [w, setW] = React.useState(0);
   React.useLayoutEffect(() => {
@@ -196,9 +199,8 @@ function LeaderLine({ className, bent = false }: { className?: string; bent?: bo
   // Indent the vertical's left start by ~half a character width so it doesn't
   // sit flush under the title text's first glyph.
   const bentStartX = 5;
-  const d =
-    (bent ? `M${bentStartX} 0 V${lineY} H${tipX} ` : `M0 ${lineY} H${tipX} `) +
-    `M${back} ${lineY - LEADER_HEAD * 0.7} L${tipX} ${lineY} L${back} ${lineY + LEADER_HEAD * 0.7}`;
+  const shaft = bent ? `M${bentStartX} 0 V${lineY} H${tipX}` : `M0 ${lineY} H${tipX}`;
+  const head = `M${back} ${lineY - LEADER_HEAD * 0.7} L${tipX} ${lineY} L${back} ${lineY + LEADER_HEAD * 0.7}`;
 
   return (
     <div
@@ -209,8 +211,19 @@ function LeaderLine({ className, bent = false }: { className?: string; bent?: bo
     >
       {w > 0 && (
         <svg width="100%" height={height} className="overflow-visible block">
+          {/* Shaft — dashed while the poll is open (preliminary result). */}
           <path
-            d={d}
+            d={shaft}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray={open ? "3 3" : undefined}
+          />
+          {/* Arrowhead — always solid. */}
+          <path
+            d={head}
             fill="none"
             stroke="currentColor"
             strokeWidth={1.5}
@@ -248,6 +261,7 @@ function TitleResultRow({
   title,
   results,
   titleFont = "font-medium",
+  open = false,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -255,6 +269,8 @@ function TitleResultRow({
   /** Font-weight class for the title text. Multi-question sub-rows pass a
    *  lighter weight so they read as subordinate to the bolder poll title. */
   titleFont?: string;
+  /** Poll still open → the result is preliminary, so dash the leader's shaft. */
+  open?: boolean;
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const fitRef = React.useRef<HTMLDivElement>(null); // nowrap one-line probe
@@ -385,7 +401,7 @@ function TitleResultRow({
           <h3 className={`flex items-center ${titleFont} text-lg leading-tight text-gray-900 dark:text-white whitespace-nowrap`}>
             {titleInner}
           </h3>
-          <LeaderLine className="flex-1 mx-2" />
+          <LeaderLine className="flex-1 mx-2" open={open} />
           <div className="shrink-0 text-lg leading-tight whitespace-nowrap font-semibold">
             {results[0].node}
           </div>
@@ -408,7 +424,7 @@ function TitleResultRow({
             className="absolute bottom-0 flex items-center"
             style={{ left: `${(lastLineEndX ?? 0) + 8}px`, right: 0 }}
           >
-            <LeaderLine className="flex-1" />
+            <LeaderLine className="flex-1" open={open} />
             <div className="shrink-0 pl-1.5 text-lg leading-tight whitespace-nowrap font-semibold">
               {results[0].node}
             </div>
@@ -432,7 +448,7 @@ function TitleResultRow({
             {/* Invisible icon spacer aligns the leader's drop under the title
                 text start (not the icon). */}
             <span className="mr-1.5 shrink-0 invisible" aria-hidden="true">{icon}</span>
-            <LeaderLine bent className="ml-1.5 flex-1" />
+            <LeaderLine bent className="ml-1.5 flex-1" open={open} />
             <div
               className="shrink-0 flex flex-col items-start text-left"
               style={{ maxWidth: "80%" }}
@@ -976,6 +992,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                     icon={getCategoryIcon(sp)}
                     title={getQuestionSectionTitle(sp) ?? ""}
                     results={node ? [{ id: sp.id, node }] : []}
+                    open={!isClosed}
                   />
                 );
               })}
@@ -986,6 +1003,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
             icon={categoryIcon}
             title={question.title}
             results={resultEntries}
+            open={!isClosed}
           />
         )}
 
