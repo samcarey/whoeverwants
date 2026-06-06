@@ -194,15 +194,15 @@ type SuggestionSegment = {
 // Fixed palette: green for category, purple for context, and a cycling set
 // (red, blue, gold, …) for options. Literal class strings so Tailwind's JIT
 // keeps them.
-const SEG_CATEGORY = { label: 'Category', colorText: 'text-green-600 dark:text-green-400', colorBorder: 'border-green-500' };
-const SEG_CONTEXT = { label: 'Context', colorText: 'text-purple-600 dark:text-purple-400', colorBorder: 'border-purple-500' };
+const SEG_CATEGORY = { label: 'Category', colorText: 'text-green-500/80 dark:text-green-400/80', colorBorder: 'border-green-400/50' };
+const SEG_CONTEXT = { label: 'Context', colorText: 'text-purple-500/80 dark:text-purple-400/80', colorBorder: 'border-purple-400/50' };
 const OPTION_SEG_COLORS = [
-  { colorText: 'text-red-600 dark:text-red-400', colorBorder: 'border-red-500' },
-  { colorText: 'text-blue-600 dark:text-blue-400', colorBorder: 'border-blue-500' },
-  { colorText: 'text-amber-600 dark:text-amber-400', colorBorder: 'border-amber-500' },
-  { colorText: 'text-pink-600 dark:text-pink-400', colorBorder: 'border-pink-500' },
-  { colorText: 'text-teal-600 dark:text-teal-400', colorBorder: 'border-teal-500' },
-  { colorText: 'text-orange-600 dark:text-orange-400', colorBorder: 'border-orange-500' },
+  { colorText: 'text-red-500/80 dark:text-red-400/80', colorBorder: 'border-red-400/50' },
+  { colorText: 'text-blue-500/80 dark:text-blue-400/80', colorBorder: 'border-blue-400/50' },
+  { colorText: 'text-amber-500/80 dark:text-amber-400/80', colorBorder: 'border-amber-400/50' },
+  { colorText: 'text-pink-500/80 dark:text-pink-400/80', colorBorder: 'border-pink-400/50' },
+  { colorText: 'text-teal-500/80 dark:text-teal-400/80', colorBorder: 'border-teal-400/50' },
+  { colorText: 'text-orange-500/80 dark:text-orange-400/80', colorBorder: 'border-orange-400/50' },
 ];
 
 // The trailing " for <context>" segments shared by category / options / custom
