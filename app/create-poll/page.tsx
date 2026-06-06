@@ -358,7 +358,7 @@ export function CreateQuestionContent() {
   // A ranked_choice question is a "suggestion poll" when the creator left the
   // "Collect Suggestions before Vote" toggle on — regardless of whether they
   // typed any initial options. Drives the poll-level prephase fields.
-  const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && category !== 'limited_supply' && collectSuggestions;
+  const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && category !== 'limited_supply' && category !== 'showtime' && collectSuggestions;
 
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
@@ -703,11 +703,12 @@ export function CreateQuestionContent() {
   // will actually persist.
   const inlineFormIsTime = questionType === 'time' || category === 'time';
   const inlineFormIsLimitedSupply = category === 'limited_supply';
+  const inlineFormIsShowtime = category === 'showtime';
   const pollHasPlusOneDefaultType =
-    (isModalOpen && (inlineFormIsTime || inlineFormIsLimitedSupply)) ||
+    (isModalOpen && (inlineFormIsTime || inlineFormIsLimitedSupply || inlineFormIsShowtime)) ||
     drafts.some((d) => {
       const t = draftDbQuestionType(d);
-      return t === 'time' || t === 'limited_supply';
+      return t === 'time' || t === 'limited_supply' || t === 'showtime';
     });
   const effectiveAllowPlusOnes = allowPlusOnes ?? pollHasPlusOneDefaultType;
 
@@ -727,7 +728,8 @@ export function CreateQuestionContent() {
     && questionType === 'question'
     && category !== 'yes_no'
     && category !== 'time'
-    && category !== 'limited_supply';
+    && category !== 'limited_supply'
+    && category !== 'showtime';
   const pollHasRankedChoice = anyDraftIsRankedChoice(drafts) || inlineFormIsRankedChoice;
 
   // Validates the whole poll at submit time: drafts exist + poll-level
