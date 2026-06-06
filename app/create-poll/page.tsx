@@ -178,6 +178,40 @@ function parseOptionsFromText(text: string): string[] {
   return out;
 }
 
+// --- Suggestion segment labelling --------------------------------------
+// A suggestion row's primary text is broken into segments so the parts that
+// get prefilled into the new poll can be labelled (a tiny coloured word over
+// the left edge of the segment + a matching coloured underline). Plain
+// connective text ("for", " · ") carries no label.
+type SuggestionSegment = {
+  text: string;
+  label?: string; // "Category" | "Context" | "Option"
+  colorText?: string; // tailwind text colour for the label
+  colorBorder?: string; // tailwind border colour for the underline
+  muted?: boolean; // grey connective text (no label)
+};
+
+// Fixed palette: green for category, purple for context, and a cycling set
+// (red, blue, gold, …) for options. Literal class strings so Tailwind's JIT
+// keeps them.
+const SEG_CATEGORY = { label: 'Category', colorText: 'text-green-500/80 dark:text-green-400/80', colorBorder: 'border-green-400/50' };
+const SEG_CONTEXT = { label: 'Context', colorText: 'text-purple-500/80 dark:text-purple-400/80', colorBorder: 'border-purple-400/50' };
+const OPTION_SEG_COLORS = [
+  { colorText: 'text-red-500/80 dark:text-red-400/80', colorBorder: 'border-red-400/50' },
+  { colorText: 'text-blue-500/80 dark:text-blue-400/80', colorBorder: 'border-blue-400/50' },
+  { colorText: 'text-amber-500/80 dark:text-amber-400/80', colorBorder: 'border-amber-400/50' },
+  { colorText: 'text-pink-500/80 dark:text-pink-400/80', colorBorder: 'border-pink-400/50' },
+  { colorText: 'text-teal-500/80 dark:text-teal-400/80', colorBorder: 'border-teal-400/50' },
+  { colorText: 'text-orange-500/80 dark:text-orange-400/80', colorBorder: 'border-orange-400/50' },
+];
+
+// The trailing " for <context>" segments shared by category / options / custom
+// suggestions (empty when there's no context).
+function contextSegments(context: string): SuggestionSegment[] {
+  if (!context) return [];
+  return [{ text: ' for ', muted: true }, { text: context, ...SEG_CONTEXT }];
+}
+
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
@@ -1236,23 +1270,22 @@ export function CreateQuestionContent() {
   const searchSuggestions = useMemo<Array<{
     key: string;
     icon: string;
-    primary: string;
-    context?: string;
     tag?: string;
+    segments: SuggestionSegment[];
     overrides: Partial<QuestionDraft>;
   }>>(() => {
     const raw = searchQuery.trim();
     const { subject, context } = parseForContext(raw);
-    const ctx = context || undefined;
-    const list: Array<{ key: string; icon: string; primary: string; context?: string; tag?: string; overrides: Partial<QuestionDraft> }> = [];
+    const list: Array<{ key: string; icon: string; tag?: string; segments: SuggestionSegment[]; overrides: Partial<QuestionDraft> }> = [];
 
-    // Yes/No (top).
+    // Yes/No (top). The whole text becomes the title (the question prompt),
+    // not a category/context/option, so it carries no labels.
     if (raw) {
       list.push({
         key: 'yesno',
         icon: '👍',
-        primary: raw,
         tag: 'yes / no',
+        segments: [{ text: raw }],
         overrides: { category: 'yes_no', title: raw, isAutoTitle: false },
       });
     }
@@ -1269,8 +1302,7 @@ export function CreateQuestionContent() {
       list.push({
         key: `cat:${e.value}`,
         icon: e.icon ?? '🗳️',
-        primary: e.label,
-        context: ctx,
+        segments: [{ text: e.label, ...SEG_CATEGORY }, ...contextSegments(context)],
         overrides: { category: e.value, forField: context },
       });
     }
@@ -1278,23 +1310,29 @@ export function CreateQuestionContent() {
     // Options — strong contextual match, sits just above Custom.
     const opts = parseOptionsFromText(subject);
     if (opts.length >= 2) {
+      const optSegments: SuggestionSegment[] = [];
+      opts.forEach((o, i) => {
+        if (i > 0) optSegments.push({ text: ' · ', muted: true });
+        optSegments.push({ text: o, label: 'Option', ...OPTION_SEG_COLORS[i % OPTION_SEG_COLORS.length] });
+      });
       list.push({
         key: 'options',
         icon: '🗳️',
-        primary: opts.join(' · '),
-        context: ctx,
         tag: 'options',
+        segments: [...optSegments, ...contextSegments(context)],
         overrides: { category: 'custom', options: opts, collectSuggestions: false, forField: context },
       });
     }
 
-    // Custom (bottom, next to the search bar).
+    // Custom (bottom, next to the search bar). The typed subject becomes a
+    // custom category name; a bare "New Poll" placeholder carries no label.
     list.push({
       key: 'custom',
       icon: '✏️',
-      primary: subject || 'New Poll',
-      context: subject ? ctx : undefined,
       tag: 'custom',
+      segments: subject
+        ? [{ text: subject, ...SEG_CATEGORY }, ...contextSegments(context)]
+        : [{ text: 'New Poll' }],
       overrides: { category: subject || 'custom', forField: context },
     });
 
@@ -2272,15 +2310,39 @@ export function CreateQuestionContent() {
               onClick={() => chooseSuggestion(s.overrides)}
               disabled={isLoading}
               className={SEARCH_ROW_CLASS}
-              aria-label={`Create poll: ${s.primary}`}
+              aria-label={`Create poll: ${s.segments.map((seg) => seg.text).join('')}`}
             >
               <span className="w-7 text-center text-2xl leading-none shrink-0" aria-hidden>
                 {s.icon}
               </span>
-              <span className="flex-1 min-w-0 truncate text-base">
-                {s.primary}
-                {s.context && (
-                  <span className="text-gray-400 dark:text-gray-500"> for {s.context}</span>
+              <span
+                className={`relative flex-1 min-w-0 overflow-hidden whitespace-nowrap text-base ${
+                  s.segments.some((seg) => seg.label) ? 'pt-3' : ''
+                }`}
+              >
+                {s.segments.map((seg, i) =>
+                  seg.label ? (
+                    // `pt-3` on the wrapper reserves room above the text for the
+                    // label; `bottom-full` keeps the label inside that zone so
+                    // the wrapper's overflow-hidden (which clips long text on
+                    // the right) doesn't also clip it.
+                    <span key={i} className="relative inline-block align-baseline">
+                      <span
+                        className={`absolute left-0 bottom-full text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
+                        aria-hidden
+                      >
+                        {seg.label}
+                      </span>
+                      <span className={`border-b-2 ${seg.colorBorder}`}>{seg.text}</span>
+                    </span>
+                  ) : (
+                    <span
+                      key={i}
+                      className={seg.muted ? 'text-gray-400 dark:text-gray-500' : undefined}
+                    >
+                      {seg.text}
+                    </span>
+                  )
                 )}
               </span>
               {s.tag && (
