@@ -1827,11 +1827,12 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
             it. Empty lists are skipped (no header) since `sections` already
             drops them. Sections after the first get top spacing (`mt-6`) so
             there's a gap under each section before the next header. Cards keep
-            their own `border-b-2`. */}
+            their own `border-b` (half-thickness vs the `border-b-2` section
+            header underline). */}
         {sections.map((section, sectionIdx) => (
           <React.Fragment key={section.tab}>
             <div
-              className={`${sectionIdx > 0 ? "mt-6" : ""} border-b-2 ${ROW_DIVIDER_CLASS} pl-[0.9rem] pr-[0.65rem] pt-3 pb-1 text-[19.2px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
+              className={`${sectionIdx > 0 ? "mt-[0.9rem]" : ""} border-b-2 ${ROW_DIVIDER_CLASS} pl-[0.9rem] pr-[0.65rem] pt-3 pb-1 text-[19.2px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
             >
               {section.label}
             </div>
@@ -1849,7 +1850,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                   <div
                     key={`placeholder-${group.key}`}
                     ref={(el) => { el ? attachCardEl(el, anchorId, group.key) : detachCardEl(anchorId); }}
-                    className={`border-b-2 ${ROW_DIVIDER_CLASS}`}
+                    className={`border-b ${ROW_DIVIDER_CLASS}`}
                     style={{ height: placeholderHeight }}
                     aria-hidden="true"
                   />
