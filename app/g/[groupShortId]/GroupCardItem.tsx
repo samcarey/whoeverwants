@@ -893,7 +893,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
           date tooltip (which overflows above the row) isn't clipped. */}
       <div className={`min-h-0 ${exiting ? "overflow-hidden" : ""}`}>
         <div
-          className={`relative overflow-x-clip border-b-2 ${ROW_DIVIDER_CLASS} ${
+          className={`relative overflow-x-clip border-b ${ROW_DIVIDER_CLASS} ${
             isPlaceholder ? "card-pending-enter" : ""
           }`}
         >
