@@ -50,6 +50,56 @@
       "lat": 30.2988,
       "lng": -97.7050,
       "timezone": "America/Chicago"
+    },
+    {
+      "cinema_id": "0701",
+      "slug": "richardson",
+      "name": "Alamo Richardson",
+      "market_id": "0700",
+      "market_slug": "dfw",
+      "lat": 32.9483,
+      "lng": -96.7299,
+      "timezone": "America/Chicago"
+    },
+    {
+      "cinema_id": "0702",
+      "slug": "cedars",
+      "name": "Alamo Cedars",
+      "market_id": "0700",
+      "market_slug": "dfw",
+      "lat": 32.7757,
+      "lng": -96.7920,
+      "timezone": "America/Chicago"
+    },
+    {
+      "cinema_id": "0703",
+      "slug": "las-colinas",
+      "name": "Alamo Las Colinas",
+      "market_id": "0700",
+      "market_slug": "dfw",
+      "lat": 32.8709,
+      "lng": -96.9447,
+      "timezone": "America/Chicago"
+    },
+    {
+      "cinema_id": "0706",
+      "slug": "lake-highlands",
+      "name": "Alamo Lake Highlands",
+      "market_id": "0700",
+      "market_slug": "dfw",
+      "lat": 32.8717,
+      "lng": -96.7166,
+      "timezone": "America/Chicago"
+    },
+    {
+      "cinema_id": "0707",
+      "slug": "denton",
+      "name": "Alamo Denton",
+      "market_id": "0700",
+      "market_slug": "dfw",
+      "lat": 33.1899,
+      "lng": -97.0997,
+      "timezone": "America/Chicago"
     }
   ]
 }

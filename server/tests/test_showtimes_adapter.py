@@ -213,9 +213,11 @@ def test_horizon_filter():
 
 
 def test_radius_filter_against_directory():
-    # Downtown Austin → all 5 cinemas within 25mi; a far point → none.
+    # Downtown Austin → the 5 Austin (market 0000) cinemas within 25mi; the
+    # DFW cinemas (~180mi away) are excluded; a far point → none.
     directory = load_directory()
     austin = [c for c in directory if _haversine_miles(30.2672, -97.7431, c.lat, c.lng) <= 25]
-    assert len(austin) == len(directory)
+    assert {c.market_id for c in austin} == {"0000"}
+    assert len(austin) == sum(1 for c in directory if c.market_id == "0000")
     far = [c for c in directory if _haversine_miles(40.7128, -74.0060, c.lat, c.lng) <= 25]
     assert far == []
