@@ -1404,6 +1404,14 @@ export function CreateQuestionContent() {
       if (matchesTokens(e.titleText)) row(e.key, e.icon, e.overrides);
     }
 
+    // Context interpretation ("Options for Birthday"): treat the typed text as
+    // the poll's context rather than its category. Only when no "for" was typed
+    // yet — once the user writes "X for Y" they've already named a context.
+    // Sits just ABOVE the custom-category row (which is nearest the bar).
+    if (subject && !/\bfor\b/i.test(raw)) {
+      row('context', '🗳️', { category: 'custom', forField: subject });
+    }
+
     // A custom-category poll named after the typed subject. No empty "New
     // Poll" row — the + button opens a blank poll instead.
     if (subject) row('custom', '✏️', { category: subject, forField: context });
