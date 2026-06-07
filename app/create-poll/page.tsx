@@ -2423,7 +2423,7 @@ export function CreateQuestionContent() {
                     <span key={i} className="relative inline-block align-baseline">
                       {seg.label && (
                         <span
-                          className={`absolute left-0 bottom-full translate-y-[1.08px] text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
+                          className={`absolute left-0 bottom-full translate-y-[1.368px] text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
                           aria-hidden
                         >
                           {seg.label}
