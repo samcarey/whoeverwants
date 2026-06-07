@@ -85,16 +85,6 @@ export default function EmojiPickerModal({
           <div className="flex items-center justify-between gap-3 mb-3">
             <h2 className="text-base font-semibold">Choose an emoji</h2>
             <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={value}
-                onChange={(e) => handleInput(e.target.value)}
-                maxLength={20}
-                aria-label="Category emoji"
-                aria-invalid={error}
-                placeholder={placeholder}
-                className="w-12 text-xl text-center bg-transparent border-b border-gray-300 dark:border-gray-600 focus:outline-none focus:border-blue-500 placeholder:opacity-40"
-              />
               {trimmed && (
                 <button
                   type="button"
@@ -108,6 +98,16 @@ export default function EmojiPickerModal({
                   ✕
                 </button>
               )}
+              <input
+                type="text"
+                value={value}
+                onChange={(e) => handleInput(e.target.value)}
+                maxLength={20}
+                aria-label="Category emoji"
+                aria-invalid={error}
+                placeholder={placeholder}
+                className="w-12 text-xl text-center bg-transparent border-b border-gray-300 dark:border-gray-600 focus:outline-none focus:border-blue-500 placeholder:opacity-40"
+              />
             </div>
           </div>
           {error && (
