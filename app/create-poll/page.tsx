@@ -2395,7 +2395,12 @@ export function CreateQuestionContent() {
               onMouseDown preventDefault keeps the input focused through the
               tap so the click lands reliably before chooseSuggestion blurs it. */}
           <div className="mt-auto">
-          {searchSuggestions.map((s) => (
+          {searchSuggestions.map((s) => {
+            // Rows with an annotation label reserve `pt-3` above BOTH the icon
+            // and the text so the label has room AND the two stay vertically
+            // centered against each other (matched box heights).
+            const hasLabel = s.segments.some((seg) => seg.label);
+            return (
             <button
               key={s.key}
               type="button"
@@ -2407,7 +2412,7 @@ export function CreateQuestionContent() {
             >
               <span
                 className={`w-7 text-center text-2xl leading-none shrink-0 ${
-                  s.segments.some((seg) => seg.label) ? 'pt-3' : ''
+                  hasLabel ? 'pt-3' : ''
                 }`}
                 aria-hidden
               >
@@ -2415,7 +2420,7 @@ export function CreateQuestionContent() {
               </span>
               <span
                 className={`relative flex-1 min-w-0 overflow-hidden whitespace-nowrap text-base ${
-                  s.segments.some((seg) => seg.label) ? 'pt-3' : ''
+                  hasLabel ? 'pt-3' : ''
                 }`}
               >
                 {s.segments.map((seg, i) =>
@@ -2447,7 +2452,8 @@ export function CreateQuestionContent() {
                 )}
               </span>
             </button>
-          ))}
+            );
+          })}
           </div>
         </div>
       )}
