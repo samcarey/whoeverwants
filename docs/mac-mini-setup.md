@@ -28,6 +28,7 @@ Mac mini host
   ├─ macOS Application Firewall (Caddy in allowlist)
   ├─ Caddy (Homebrew, system LaunchDaemon)
   ├─ Caddy watchdog (system LaunchDaemon, 60-sec interval, kickstarts Caddy if down)
+  ├─ Colima VM watchdog (system LaunchDaemon, 60-sec interval, restarts the devbox VM if down/wedged)
   │     • Listens on 0.0.0.0:80 + 0.0.0.0:443
   │     • Per-hostname Let's Encrypt certs (HTTP-01)
   │     • Reverse-proxies to Mac localhost ports (where Colima publishes container ports)
@@ -258,6 +259,56 @@ sudo launchctl kickstart -k system/com.whoeverwants.caddy-watchdog
 sudo launchctl print system/com.whoeverwants.caddy-watchdog | grep -E '^\s*(state|last exit)'
 ```
 
+### 9b3. Colima VM watchdog (system LaunchDaemon)
+
+The caddy watchdog (9b2) keeps the *host* Caddy up, but Caddy's upstream is the
+**Colima `devbox` VM** — if the VM crashes, Caddy stays up and 502s every
+`*.dev.whoeverwants.com` host until someone SSHes in and restarts colima by
+hand. (Seen 2026-06: the VM exited, then a plain `colima start` failed with
+`failed to attach disk "colima-devbox", in use by instance "colima-devbox"`
+because a zombie lima/vz process from the unclean exit still held the disk-image
+lock — recovery needed `colima stop -f` + `pkill -f colima-devbox` + `colima
+start`.) This watchdog automates that recovery.
+
+`colima-watchdog.sh` probes the devbox Docker daemon over its UNIX socket
+(`docker ps` — the true "dev infra usable?" signal, like caddy-watchdog probing
+:443) every 60s; on failure it force-stops, kills the zombie holding the disk
+lock, and restarts the VM (the compose services + per-branch containers
+auto-restart on boot). It runs **as the devbox owner** (`UserName=sccarey` in
+the plist) so `colima`/`docker` see the per-user VM state under
+`/Users/sccarey/.colima`. Logs only on recovery to
+`~/Library/Logs/colima-watchdog.log`.
+
+```bash
+sudo cp scripts/mac-mini/colima-watchdog.sh /usr/local/bin/colima-watchdog.sh
+sudo chmod 755 /usr/local/bin/colima-watchdog.sh
+sudo cp scripts/mac-mini/com.whoeverwants.colima-watchdog.plist /Library/LaunchDaemons/
+sudo chown root:wheel /Library/LaunchDaemons/com.whoeverwants.colima-watchdog.plist
+sudo chmod 644       /Library/LaunchDaemons/com.whoeverwants.colima-watchdog.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.whoeverwants.colima-watchdog.plist
+sudo launchctl kickstart -k system/com.whoeverwants.colima-watchdog
+sudo launchctl print system/com.whoeverwants.colima-watchdog | grep -E '^\s*(state|last exit)'
+```
+
+If Virtualization.framework refuses to boot the VM headless under the
+LaunchDaemon, install instead as a per-user LaunchAgent in
+`~/Library/LaunchAgents/` (drop the `<UserName>` key; `launchctl bootstrap
+gui/$(id -u)`) so it runs inside the owner's login session.
+
+**Reduce the crash frequency too — give the VM swap.** The contributing cause
+was the `devbox` VM running with **zero swap** (`free -h` → `Swap: 0`): a
+memory spike (a push triggering `npm ci` + `next dev` compiles while other
+servers compile) has no headroom, so the macOS host can jetsam the `vz`
+process — an unclean kill that strands the disk lock above. Add swap when next
+resizing the VM (host action — the VM restarts; per-branch containers
+auto-restart on boot):
+
+```bash
+colima stop -p devbox && colima start -p devbox --memory 24 --cpu 6 --disk 80
+# (colima exposes memory/cpu/disk; if your colima build lacks a --swap flag,
+#  set vm.swap in ~/.colima/devbox/colima.yaml and restart.)
+```
+
 ### 9c. Wildcard DNS record
 
 DDNS now manages a wildcard `*.dev.whoeverwants.com` A record so any
@@ -413,6 +464,9 @@ Output should be JSON with `exit_code: 0` and the cmd-api container's hostname/u
 | Caddy watchdog script | `/usr/local/bin/caddy-watchdog.sh` (source: `scripts/mac-mini/caddy-watchdog.sh`) |
 | Caddy watchdog LaunchDaemon | `/Library/LaunchDaemons/com.whoeverwants.caddy-watchdog.plist` |
 | Caddy watchdog log | `/var/log/caddy-watchdog.log` (lines only on restart events) |
+| Colima VM watchdog script | `/usr/local/bin/colima-watchdog.sh` (source: `scripts/mac-mini/colima-watchdog.sh`) |
+| Colima VM watchdog LaunchDaemon | `/Library/LaunchDaemons/com.whoeverwants.colima-watchdog.plist` |
+| Colima VM watchdog log | `~/Library/Logs/colima-watchdog.log` (lines only on recovery events) |
 | DDNS script | `~/devbox/ddns.sh` |
 | DDNS LaunchAgent | `~/Library/LaunchAgents/com.devbox.ddns.plist` |
 | DDNS logs | `~/Library/Logs/ddns.log` |
