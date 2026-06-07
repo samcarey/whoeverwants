@@ -1346,8 +1346,12 @@ export function CreateQuestionContent() {
     const row = (key: string, icon: string, overrides: Partial<QuestionDraft>) =>
       list.push({ key, icon, segments: overridesToSegments(overrides), overrides });
 
-    // Yes/No (top): frame the whole typed text as the prompt.
-    if (raw) row('yesno', '👍', { category: 'yes_no', title: raw, isAutoTitle: false });
+    // Yes/No + Limited Supply (top): frame the whole typed text as the
+    // prompt / item name.
+    if (raw) {
+      row('yesno', '👍', { category: 'yes_no', title: raw, isAutoTitle: false });
+      row('limited', '🎟️', { category: 'limited_supply', title: raw, isAutoTitle: false });
+    }
 
     // Filtered categories, reversed so the best match is at the bottom.
     const tokens = subject.toLowerCase().split(/[\s,]+/).filter(Boolean);

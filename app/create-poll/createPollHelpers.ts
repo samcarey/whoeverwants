@@ -366,18 +366,20 @@ export function yesNoTitleText(prompt: string): string {
 }
 
 export function draftTitleSegments(d: TitleDraft): TitleSegment[] {
-  // yes_no: the user-typed text IS the title, with a trailing "?" appended
-  // (greyed, like the other categories' auto-title "?") when one's missing.
+  // yes_no: the user-typed text IS the title — annotate the whole thing as the
+  // category (green, like the custom-category row) + a trailing "?" (greyed,
+  // like the other categories' auto-title "?") when one's missing.
   if (d.category === 'yes_no') {
     const t = d.title.trim();
-    if (!t) return [{ text: 'Yes/No?', kind: 'plain' }];
-    const segs: TitleSegment[] = [{ text: t, kind: 'plain' }];
+    if (!t) return [{ text: 'Yes/No?', kind: 'category' }];
+    const segs: TitleSegment[] = [{ text: t, kind: 'category' }];
     if (yesNoNeedsQuestionMark(t)) segs.push({ text: '?', kind: 'plain', muted: true });
     return segs;
   }
-  // limited_supply: the user-typed item name IS the title — no "?".
+  // limited_supply: the user-typed item name IS the title — annotate the whole
+  // thing as the category (no "?").
   if (d.category === 'limited_supply') {
-    return [{ text: d.title.trim() || 'Limited Supply', kind: 'plain' }];
+    return [{ text: d.title.trim() || 'Limited Supply', kind: 'category' }];
   }
   // time / showtime: fixed category word + optional " for X" suffix.
   if (d.questionType === 'time' || d.category === 'time') {
