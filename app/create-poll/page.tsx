@@ -2405,7 +2405,12 @@ export function CreateQuestionContent() {
               className={SEARCH_ROW_CLASS}
               aria-label={`Create poll: ${s.segments.map((seg) => seg.text).join('')}`}
             >
-              <span className="w-7 text-center text-2xl leading-none shrink-0" aria-hidden>
+              <span
+                className={`w-7 text-center text-2xl leading-none shrink-0 ${
+                  s.segments.some((seg) => seg.label) ? 'pt-3' : ''
+                }`}
+                aria-hidden
+              >
                 {s.icon}
               </span>
               <span
