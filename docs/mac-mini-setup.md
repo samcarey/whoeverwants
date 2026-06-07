@@ -299,15 +299,26 @@ gui/$(id -u)`) so it runs inside the owner's login session.
 was the `devbox` VM running with **zero swap** (`free -h` → `Swap: 0`): a
 memory spike (a push triggering `npm ci` + `next dev` compiles while other
 servers compile) has no headroom, so the macOS host can jetsam the `vz`
-process — an unclean kill that strands the disk lock above. Add swap when next
-resizing the VM (host action — the VM restarts; per-branch containers
-auto-restart on boot):
+process — an unclean kill that strands the disk lock above. **colima has no swap
+knob** (`colima start` exposes only `--memory`/`--cpu`/`--disk`, and there is no
+`vm.swap` field in `~/.colima/devbox/colima.yaml`). Add swap as a **guest
+swapfile** on the VM's persistent disk — it survives `colima stop`/`start`
+because the fstab line re-enables it on boot (verified 2026-06; `free -h` then
+shows `Swap: 8.0Gi`):
+
+```bash
+colima ssh -p devbox -- sudo sh -c 'fallocate -l 8G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=8192; chmod 600 /swapfile; mkswap /swapfile; swapon /swapfile; grep -q "^/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab; free -h'
+```
+
+To also bump the VM's RAM while you're at it (separate, host-side; restarts the
+VM — per-branch containers auto-restart on boot):
 
 ```bash
 colima stop -p devbox && colima start -p devbox --memory 24 --cpu 6 --disk 80
-# (colima exposes memory/cpu/disk; if your colima build lacks a --swap flag,
-#  set vm.swap in ~/.colima/devbox/colima.yaml and restart.)
 ```
+
+(A `colima delete` wipes the disk, so re-run the swapfile command after one.)
+
 
 ### 9c. Wildcard DNS record
 
