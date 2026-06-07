@@ -1,9 +1,20 @@
 // Curated emoji set with keyword tags, used by the poll-category emoji
-// picker (components/EmojiPickerModal.tsx). Self-contained — no dependency.
-// `rankEmojiOptions(query)` floats emojis whose keywords match the typed
-// category word(s) to the front, so picking "Board Game" surfaces 🎲 / 🎮
-// first. Ordered roughly by general usefulness so the no-query default still
-// reads well. Keep keywords lowercase.
+// picker (components/EmojiPickerModal.tsx). The curated list defines the
+// picker grid's default (no-query) order — emojis are arranged roughly by
+// general usefulness — AND gives a small set of hand-tuned, high-priority
+// keywords. Keep keywords lowercase.
+//
+// MATCHING is backed by BOTH this curated list AND a comprehensive,
+// auto-generated keyword index (lib/emojiKeywords.generated.ts, sourced from
+// the Unicode CLDR annotations — the same data iOS emoji search uses). So
+// typing "pie" surfaces 🥧 even though 🥧 isn't curated. The curated list owns
+// its emojis (intentional keywords + hand-tuned tie-break order); the
+// comprehensive index only fills emojis the curated list lacks — it is NOT
+// merged onto curated entries (that would shift the curated ordering). See
+// `rankEmojiOptions` / `bestEmojiMatch`. Regenerate the index with
+// `node scripts/gen-emoji-keywords.mjs`.
+
+import { EMOJI_KEYWORD_INDEX } from './emojiKeywords.generated';
 
 export interface EmojiOption {
   emoji: string;
@@ -208,43 +219,85 @@ function scoreEmojiOption(tokens: string[], opt: EmojiOption): number {
   return score;
 }
 
-/** Float emojis whose keywords match the query word(s) to the front; keep
- *  the curated order for non-matches (stable). Returns the full list always
- *  (sorted, not filtered) so the picker still shows every option. */
+// A match candidate, pooled from the curated list + the comprehensive index.
+// `curated` + `order` drive the tiebreak: curated emojis rank ahead of
+// comprehensive-only ones on equal scores, then by their position within each
+// pool (so curated keeps its hand-tuned ordering and comprehensive keeps CLDR
+// order). Built once, lazily.
+interface MatchCandidate extends EmojiOption {
+  curated: boolean;
+  order: number;
+}
+
+// Strip variation selectors so 🏖️ (curated, +FE0F) and a bare 🏖 collapse to
+// one key — the generator already FE0F-qualifies, this is belt-and-suspenders.
+const stripVariationSelectors = (e: string): string => e.replace(/[\uFE0E\uFE0F]/g, '');
+
+let _candidates: MatchCandidate[] | null = null;
+function matchCandidates(): MatchCandidate[] {
+  if (_candidates) return _candidates;
+  // The curated list owns its emojis entirely — its keywords are intentional
+  // and its tie-break order is hand-tuned, so we DON'T merge comprehensive
+  // keywords onto curated entries (that would shift the curated ordering, e.g.
+  // 📷 stealing "trip" from 🏖️). The comprehensive index only adds emojis the
+  // curated list doesn't already have, extending COVERAGE without disturbing
+  // the curated behavior.
+  const curatedKeys = new Set<string>();
+  const list: MatchCandidate[] = [];
+  EMOJI_OPTIONS.forEach((opt, idx) => {
+    curatedKeys.add(stripVariationSelectors(opt.emoji));
+    list.push({ emoji: opt.emoji, keywords: opt.keywords, curated: true, order: idx });
+  });
+  EMOJI_KEYWORD_INDEX.forEach(([emoji, kw], idx) => {
+    if (curatedKeys.has(stripVariationSelectors(emoji))) return; // curated owns it
+    list.push({ emoji, keywords: kw.split(' '), curated: false, order: idx });
+  });
+  _candidates = list;
+  return list;
+}
+
+// Score every candidate against the tokens, drop non-matches, and sort by
+// score then the curated-first / in-pool-order tiebreak. Single source of the
+// match ordering so `rankEmojiOptions` and `bestEmojiMatch` can't drift.
+function rankedMatches(tokens: string[]): { cand: MatchCandidate; score: number }[] {
+  return matchCandidates()
+    .map((cand) => ({ cand, score: scoreEmojiOption(tokens, cand) }))
+    .filter((s) => s.score > 0)
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        (a.cand.curated === b.cand.curated ? 0 : a.cand.curated ? -1 : 1) ||
+        a.cand.order - b.cand.order,
+    );
+}
+
+/** Rank emojis for the picker grid. With a query, matching emojis (across the
+ *  curated list AND the comprehensive index) lead, best first; then the
+ *  curated remainder follows in its default order so the grid stays a
+ *  browseable set. With no query, returns the curated list unchanged (the
+ *  hand-ordered default grid). */
 export function rankEmojiOptions(query: string): EmojiOption[] {
   const tokens = tokenizeEmojiQuery(query);
   if (tokens.length === 0) return EMOJI_OPTIONS;
 
-  const scored = EMOJI_OPTIONS.map((opt, idx) => ({
-    opt,
-    score: scoreEmojiOption(tokens, opt),
-    idx,
+  const matches = rankedMatches(tokens).map((s) => ({
+    emoji: s.cand.emoji,
+    keywords: s.cand.keywords,
   }));
-  scored.sort((a, b) => b.score - a.score || a.idx - b.idx);
-  return scored.map((s) => s.opt);
+  const matched = new Set(matches.map((m) => m.emoji));
+  const rest = EMOJI_OPTIONS.filter((o) => !matched.has(o.emoji));
+  return [...matches, ...rest];
 }
 
 /** The single best-matching emoji for a free-text query, or null when no
- *  keyword actually matched. Same scoring + curated-order tiebreak as
- *  `rankEmojiOptions` (so the auto-picked icon agrees with the custom-category
- *  picker's top suggestion), but returns nothing instead of a default when the
- *  text doesn't describe anything in the set. */
+ *  keyword matched anywhere. Always equals `rankEmojiOptions(query)[0]` when a
+ *  match exists (shared ordering), so the auto-picked icon agrees with the
+ *  custom-category picker's top suggestion. */
 export function bestEmojiMatch(query: string): string | null {
   const tokens = tokenizeEmojiQuery(query);
   if (tokens.length === 0) return null;
-
-  let bestEmoji: string | null = null;
-  let bestScore = 0;
-  for (const opt of EMOJI_OPTIONS) {
-    const score = scoreEmojiOption(tokens, opt);
-    // Strict `>` keeps the earliest (curated-order) option on ties — matching
-    // rankEmojiOptions' `a.idx - b.idx` tiebreak.
-    if (score > bestScore) {
-      bestScore = score;
-      bestEmoji = opt.emoji;
-    }
-  }
-  return bestScore > 0 ? bestEmoji : null;
+  const ranked = rankedMatches(tokens);
+  return ranked.length > 0 ? ranked[0].cand.emoji : null;
 }
 
 // Whole string must consist only of emoji-related code points: pictographs,
