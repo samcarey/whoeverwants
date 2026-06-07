@@ -1370,13 +1370,24 @@ export function CreateQuestionContent() {
     }
 
     // Filtered categories, reversed so the best match is at the bottom.
+    // Categories whose title MUST be user-typed (yes_no, limited_supply) are
+    // excluded here — a default category row would render the category NAME
+    // ("Yes/No" / "Limited Supply") as the title, which is exactly what the
+    // title is supposed to override. They're still creatable via the dedicated
+    // top rows above (which frame the typed text as the title), and their
+    // recent polls still surface below (those carry real titles).
     const tokens = subject.toLowerCase().split(/[\s,]+/).filter(Boolean);
     const matchesTokens = (text: string) => {
       if (!tokens.length) return true;
       const words = text.toLowerCase().split(/[\s,]+/).filter(Boolean);
       return tokens.every((t) => words.some((w) => w.startsWith(t)));
     };
-    const cats = orderedBubbleEntries.filter((e) => matchesTokens(e.label));
+    const cats = orderedBubbleEntries.filter(
+      (e) =>
+        e.value !== 'yes_no' &&
+        e.value !== 'limited_supply' &&
+        matchesTokens(e.label),
+    );
     for (const e of [...cats].reverse()) {
       row(`cat:${e.value}`, e.icon ?? '🗳️', { category: e.value, forField: context });
     }
