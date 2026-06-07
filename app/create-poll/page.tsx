@@ -2630,11 +2630,11 @@ export function CreateQuestionContent() {
                       onClick={() => { if (!isLoading) setEmojiModalOpen(true); }}
                       disabled={isLoading}
                       aria-label="Choose an emoji"
-                      className={`text-xl leading-7 shrink-0 disabled:cursor-not-allowed ${
-                        categoryEmoji.trim() ? '' : 'opacity-40'
-                      }`}
+                      className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-lg leading-none active:scale-95 disabled:cursor-not-allowed"
                     >
-                      {categoryEmoji.trim() || getBuiltInType(category)?.icon || '🗳️'}
+                      <span className={categoryEmoji.trim() ? '' : 'opacity-40'}>
+                        {categoryEmoji.trim() || getBuiltInType(category)?.icon || '🗳️'}
+                      </span>
                     </button>
                   )}
                   {title.trim() ? (

@@ -79,7 +79,7 @@ export default function EmojiPickerModal({
       >
         <div className="absolute inset-0 bg-black/50" />
         <div
-          className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-4"
+          className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-fit max-w-[calc(100vw-2rem)] p-4"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between gap-3 mb-3">
@@ -115,7 +115,7 @@ export default function EmojiPickerModal({
               Enter a single emoji
             </p>
           )}
-          <div className="flex flex-wrap gap-1 max-h-64 overflow-y-auto">
+          <div className="grid grid-cols-[repeat(7,2.25rem)] gap-1 max-h-64 overflow-y-auto">
             {emojis.map((emoji) => {
               const selected = trimmed === emoji;
               return (
