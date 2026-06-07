@@ -67,6 +67,7 @@ import {
   emptyDraft,
   draftDbQuestionType,
   draftToQuestionParams,
+  yesNoTitleText,
   anyDraftUsesPrephase,
   anyDraftUsesAvailabilityPhase,
   anyDraftHasSuggestion,
@@ -1894,7 +1895,13 @@ export function CreateQuestionContent() {
       // The standalone wrapper-title input was removed when the form moved
       // inline; users can override the title later via /g/<id>/edit-title.
       const onlyDraft = effectiveDrafts.length === 1 ? effectiveDrafts[0] : null;
-      const wrapperTitle = onlyDraft && !onlyDraft.isAutoTitle ? onlyDraft.title.trim() : null;
+      // yes_no prompts get a trailing "?" (so the title reads as a question,
+      // matching the suggestion-row display); limited_supply item names don't.
+      const wrapperTitle = onlyDraft && !onlyDraft.isAutoTitle
+        ? (draftDbQuestionType(onlyDraft) === 'yes_no'
+            ? yesNoTitleText(onlyDraft.title)
+            : onlyDraft.title.trim())
+        : null;
 
       const questionsForRequest: CreateQuestionParams[] =
         effectiveDrafts.map(d => draftToQuestionParams(d, prephaseMinutes));

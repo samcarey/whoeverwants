@@ -351,11 +351,31 @@ function ctxTail(forField: string): TitleSegment[] {
  * state) so suggestion rows + draft list rows can show the same title the
  * question would land on if submitted now.
  */
+// A yes/no prompt reads as a question, so its auto-title ends with "?" like
+// every other category's title — unless the user already typed terminal
+// punctuation (avoids "bowling.?" / a doubled "??").
+export function yesNoNeedsQuestionMark(prompt: string): boolean {
+  const t = prompt.trim();
+  return t.length > 0 && !/[?!.]$/.test(t);
+}
+
+export function yesNoTitleText(prompt: string): string {
+  const t = prompt.trim();
+  if (!t) return 'Yes/No?';
+  return yesNoNeedsQuestionMark(t) ? `${t}?` : t;
+}
+
 export function draftTitleSegments(d: TitleDraft): TitleSegment[] {
-  // yes_no / limited_supply: the user-typed text IS the title — no annotation.
+  // yes_no: the user-typed text IS the title, with a trailing "?" appended
+  // (greyed, like the other categories' auto-title "?") when one's missing.
   if (d.category === 'yes_no') {
-    return [{ text: d.title.trim() || 'Yes/No?', kind: 'plain' }];
+    const t = d.title.trim();
+    if (!t) return [{ text: 'Yes/No?', kind: 'plain' }];
+    const segs: TitleSegment[] = [{ text: t, kind: 'plain' }];
+    if (yesNoNeedsQuestionMark(t)) segs.push({ text: '?', kind: 'plain', muted: true });
+    return segs;
   }
+  // limited_supply: the user-typed item name IS the title — no "?".
   if (d.category === 'limited_supply') {
     return [{ text: d.title.trim() || 'Limited Supply', kind: 'plain' }];
   }
@@ -678,8 +698,10 @@ export function draftPollPreview(
   if (drafts.length === 1 && !drafts[0].isAutoTitle && drafts[0].title.trim()) {
     // Wrapper title: when exactly 1 draft AND the user typed an explicit
     // title (yes_no with !isAutoTitle), use it — that's what the server
-    // will use too.
-    title = drafts[0].title.trim();
+    // will use too. yes_no gets a trailing "?" so it reads as a question.
+    title = _draftCategory(drafts[0]) === 'yes_no'
+      ? yesNoTitleText(drafts[0].title)
+      : drafts[0].title.trim();
   } else if (visibleDrafts.length === 0) {
     // Every draft is yes_no with no user-typed title. Fall back to the
     // poll-level context or a generic placeholder.
