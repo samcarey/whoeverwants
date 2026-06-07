@@ -18,6 +18,7 @@ import { useAppPrefetch } from "@/lib/prefetch";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses, getUserCollectSuggestions, saveUserCollectSuggestions, getUserCollectAvailability, saveUserCollectAvailability } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import { getCategoryIcon } from "@/lib/questionListUtils";
+import { bestEmojiMatch } from "@/lib/emojiData";
 import OptionsInput from "@/components/OptionsInput";
 import CategoryEmojiField from "@/components/CategoryEmojiField";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
@@ -1363,10 +1364,13 @@ export function CreateQuestionContent() {
       list.push({ key, icon, segments: overridesToSegments(overrides), overrides });
 
     // Yes/No + Limited Supply (top): frame the whole typed text as the
-    // prompt / item name.
+    // prompt / item name. When the typed text matches an emoji description,
+    // surface that emoji (same ranking the custom-category picker uses)
+    // instead of the generic 👍 / 🎟️ fallback.
     if (raw) {
-      row('yesno', '👍', { category: 'yes_no', title: raw, isAutoTitle: false });
-      row('limited', '🎟️', { category: 'limited_supply', title: raw, isAutoTitle: false });
+      const titleEmoji = bestEmojiMatch(raw);
+      row('yesno', titleEmoji ?? '👍', { category: 'yes_no', title: raw, isAutoTitle: false });
+      row('limited', titleEmoji ?? '🎟️', { category: 'limited_supply', title: raw, isAutoTitle: false });
     }
 
     // Filtered categories, reversed so the best match is at the bottom.
@@ -1413,8 +1417,14 @@ export function CreateQuestionContent() {
     }
 
     // A custom-category poll named after the typed subject. No empty "New
-    // Poll" row — the + button opens a blank poll instead.
-    if (subject) row('custom', '✏️', { category: subject, forField: context });
+    // Poll" row — the + button opens a blank poll instead. When the custom
+    // category (or its context) matches an emoji description, show that emoji
+    // instead of the generic ✏️ fallback (same ranking the custom-category
+    // emoji picker uses).
+    if (subject) {
+      const customEmoji = bestEmojiMatch(`${subject} ${context}`);
+      row('custom', customEmoji ?? '✏️', { category: subject, forField: context });
+    }
 
     return list;
   }, [searchQuery, orderedBubbleEntries, recentEntries]);

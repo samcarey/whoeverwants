@@ -180,34 +180,71 @@ export const EMOJI_OPTIONS: EmojiOption[] = [
   { emoji: '🐝', keywords: ['bee', 'spelling'] },
 ];
 
+// Lowercase the query and split into ≥2-char tokens, dropping the noise word
+// "custom" (the create-poll draft category for un-typed customs).
+function tokenizeEmojiQuery(query: string): string[] {
+  return (query || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 2 && t !== 'custom');
+}
+
+// Keyword-match score for one emoji against the tokenized query
+// (exact > prefix > length-4 substring). 0 = no keyword matched.
+function scoreEmojiOption(tokens: string[], opt: EmojiOption): number {
+  let score = 0;
+  for (const token of tokens) {
+    let best = 0;
+    for (const kw of opt.keywords) {
+      if (kw === token) best = Math.max(best, 3);
+      else if (kw.startsWith(token) || token.startsWith(kw)) best = Math.max(best, 2);
+      // Substring matches use a length-4 floor so a short keyword like "pet"
+      // doesn't surface pet emojis for "competition" (and vice versa).
+      else if (token.length >= 4 && kw.includes(token)) best = Math.max(best, 1);
+      else if (kw.length >= 4 && token.includes(kw)) best = Math.max(best, 1);
+    }
+    score += best;
+  }
+  return score;
+}
+
 /** Float emojis whose keywords match the query word(s) to the front; keep
  *  the curated order for non-matches (stable). Returns the full list always
  *  (sorted, not filtered) so the picker still shows every option. */
 export function rankEmojiOptions(query: string): EmojiOption[] {
-  const tokens = (query || '')
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length >= 2 && t !== 'custom');
+  const tokens = tokenizeEmojiQuery(query);
   if (tokens.length === 0) return EMOJI_OPTIONS;
 
-  const scored = EMOJI_OPTIONS.map((opt, idx) => {
-    let score = 0;
-    for (const token of tokens) {
-      let best = 0;
-      for (const kw of opt.keywords) {
-        if (kw === token) best = Math.max(best, 3);
-        else if (kw.startsWith(token) || token.startsWith(kw)) best = Math.max(best, 2);
-        // Substring matches use a length-4 floor so a short keyword like "pet"
-        // doesn't surface pet emojis for "competition" (and vice versa).
-        else if (token.length >= 4 && kw.includes(token)) best = Math.max(best, 1);
-        else if (kw.length >= 4 && token.includes(kw)) best = Math.max(best, 1);
-      }
-      score += best;
-    }
-    return { opt, score, idx };
-  });
+  const scored = EMOJI_OPTIONS.map((opt, idx) => ({
+    opt,
+    score: scoreEmojiOption(tokens, opt),
+    idx,
+  }));
   scored.sort((a, b) => b.score - a.score || a.idx - b.idx);
   return scored.map((s) => s.opt);
+}
+
+/** The single best-matching emoji for a free-text query, or null when no
+ *  keyword actually matched. Same scoring + curated-order tiebreak as
+ *  `rankEmojiOptions` (so the auto-picked icon agrees with the custom-category
+ *  picker's top suggestion), but returns nothing instead of a default when the
+ *  text doesn't describe anything in the set. */
+export function bestEmojiMatch(query: string): string | null {
+  const tokens = tokenizeEmojiQuery(query);
+  if (tokens.length === 0) return null;
+
+  let bestEmoji: string | null = null;
+  let bestScore = 0;
+  for (const opt of EMOJI_OPTIONS) {
+    const score = scoreEmojiOption(tokens, opt);
+    // Strict `>` keeps the earliest (curated-order) option on ties — matching
+    // rankEmojiOptions' `a.idx - b.idx` tiebreak.
+    if (score > bestScore) {
+      bestScore = score;
+      bestEmoji = opt.emoji;
+    }
+  }
+  return bestScore > 0 ? bestEmoji : null;
 }
 
 // Whole string must consist only of emoji-related code points: pictographs,
