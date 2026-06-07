@@ -194,19 +194,11 @@ type SuggestionSegment = {
   muted?: boolean; // grey connective text (no label)
 };
 
-// Fixed palette: green for category, purple for context, and a cycling set
-// (red, blue, gold, …) for options. Literal class strings so Tailwind's JIT
-// keeps them.
+// Fixed palette: green for category, purple for context, and blue for every
+// option. Literal class strings so Tailwind's JIT keeps them.
 const SEG_CATEGORY = { label: 'Category', colorText: 'text-green-500/80 dark:text-green-400/80', colorBorder: 'border-green-400/50' };
 const SEG_CONTEXT = { label: 'Context', colorText: 'text-purple-500/80 dark:text-purple-400/80', colorBorder: 'border-purple-400/50' };
-const OPTION_SEG_COLORS = [
-  { colorText: 'text-red-500/80 dark:text-red-400/80', colorBorder: 'border-red-400/50' },
-  { colorText: 'text-blue-500/80 dark:text-blue-400/80', colorBorder: 'border-blue-400/50' },
-  { colorText: 'text-amber-500/80 dark:text-amber-400/80', colorBorder: 'border-amber-400/50' },
-  { colorText: 'text-pink-500/80 dark:text-pink-400/80', colorBorder: 'border-pink-400/50' },
-  { colorText: 'text-teal-500/80 dark:text-teal-400/80', colorBorder: 'border-teal-400/50' },
-  { colorText: 'text-orange-500/80 dark:text-orange-400/80', colorBorder: 'border-orange-400/50' },
-];
+const SEG_OPTION = { colorText: 'text-blue-500/80 dark:text-blue-400/80', colorBorder: 'border-blue-400/50' };
 
 // Map the title's labelled segments (from `draftTitleSegments`) onto the
 // coloured suggestion-row spans. Category / context / option words get their
@@ -217,7 +209,7 @@ function annotateSegments(segs: TitleSegment[]): SuggestionSegment[] {
     if (s.kind === 'category') return { text: s.text, ...SEG_CATEGORY };
     if (s.kind === 'context') return { text: s.text, ...SEG_CONTEXT };
     if (s.kind === 'option') {
-      return { text: s.text, label: 'Option', ...OPTION_SEG_COLORS[(s.optionIndex ?? 0) % OPTION_SEG_COLORS.length] };
+      return { text: s.text, label: 'Option', ...SEG_OPTION };
     }
     return { text: s.text, muted: s.muted };
   });
