@@ -315,34 +315,62 @@ export function draftToQuestionParams(
   return params;
 }
 
+// A draft title broken into labelled spans so the poll-search suggestions can
+// annotate the parts that get prefilled (category / context / option words)
+// with a coloured underline + tiny label. The connective glue ("for", commas,
+// "or", "?") carries `muted` so the UI greys it out; the un-annotated yes/no
+// prompt is a single plain span. `deriveDraftTitle` is literally the spans'
+// text joined, so the displayed suggestion text can never drift from the
+// title the poll actually lands on.
+export type TitleSegmentKind = 'plain' | 'category' | 'context' | 'option';
+export interface TitleSegment {
+  text: string;
+  kind: TitleSegmentKind;
+  /** Index into the option list (for cycling per-option colours). */
+  optionIndex?: number;
+  /** Greyed-out connective glue (commas, "or", "for", "?"). */
+  muted?: boolean;
+}
+
+type TitleDraft = Pick<
+  QuestionDraft,
+  'questionType' | 'title' | 'category' | 'forField' | 'options' | 'collectSuggestions'
+>;
+
+// " for <context>" tail shared by category / option / showtime titles.
+function ctxTail(forField: string): TitleSegment[] {
+  const ctx = forField.trim();
+  return ctx
+    ? [{ text: ' for ', kind: 'plain', muted: true }, { text: ctx, kind: 'context' }]
+    : [];
+}
+
 /**
- * Derive the question's auto-title from a draft snapshot. Mirrors
+ * Derive the question's auto-title as labelled segments. Mirrors
  * `generateTitle()` in page.tsx but operates on a draft (not live form
- * state) so the draft list rows can show the same title the question
- * would land on if submitted now. Returns text only — no leading icon.
+ * state) so suggestion rows + draft list rows can show the same title the
+ * question would land on if submitted now.
  */
-export function deriveDraftTitle(d: QuestionDraft): string {
-  // yes_no: the user-typed question text IS the title.
+export function draftTitleSegments(d: TitleDraft): TitleSegment[] {
+  // yes_no / limited_supply: the user-typed text IS the title — no annotation.
   if (d.category === 'yes_no') {
-    return d.title.trim() || 'Yes/No?';
+    return [{ text: d.title.trim() || 'Yes/No?', kind: 'plain' }];
   }
-  // limited_supply: the typed title is the item being handed out.
   if (d.category === 'limited_supply') {
-    return d.title.trim() || 'Limited Supply';
+    return [{ text: d.title.trim() || 'Limited Supply', kind: 'plain' }];
   }
-  // time questions: fixed "Time?" + optional " for X" suffix.
+  // time / showtime: fixed category word + optional " for X" suffix.
   if (d.questionType === 'time' || d.category === 'time') {
-    return appendForSuffix('Time?', d.forField);
+    return [{ text: 'Time', kind: 'category' }, ...ctxTail(d.forField), { text: '?', kind: 'plain', muted: true }];
   }
-  // showtime: "Showtime for {Film}" (the film name lives in forField).
   if (d.category === 'showtime') {
-    return appendForSuffix('Showtime?', d.forField);
+    return [{ text: 'Showtime', kind: 'category' }, ...ctxTail(d.forField), { text: '?', kind: 'plain', muted: true }];
   }
 
   // ranked_choice: build from options if any, else fall back to the
-  // category label as a placeholder. Suggestion polls (collectSuggestions)
-  // are titled by category regardless of typed options — those are just the
-  // creator's initial suggestions, not the final ballot.
+  // category label. Suggestion polls (collectSuggestions) are titled by
+  // category regardless of typed options — those are just the creator's
+  // initial suggestions, not the final ballot.
   const builtIn = getBuiltInType(d.category);
   const shorten = isLocationLikeCategory(d.category) ? shortenLocation : shortenOption;
   const filled = d.collectSuggestions ? [] : d.options.filter(o => o.trim()).map(shorten);
@@ -350,20 +378,35 @@ export function deriveDraftTitle(d: QuestionDraft): string {
   if (filled.length === 0) {
     const prefix = d.category === 'location' ? 'Place'
       : builtIn?.label || (d.category && d.category !== 'custom' ? d.category : '');
-    if (prefix) return appendForSuffix(`${prefix}?`, d.forField);
+    if (prefix) {
+      return [{ text: prefix, kind: 'category' }, ...ctxTail(d.forField), { text: '?', kind: 'plain', muted: true }];
+    }
     const trimmedFor = d.forField.trim();
-    if (trimmedFor) return `Options for ${trimmedFor}?`;
-    return 'Suggestions';
+    if (trimmedFor) {
+      return [{ text: 'Options for ', kind: 'plain' }, { text: trimmedFor, kind: 'context' }, { text: '?', kind: 'plain', muted: true }];
+    }
+    return [{ text: 'Suggestions', kind: 'plain' }];
   }
 
-  if (filled.length === 1) return appendForSuffix(filled[0], d.forField);
+  // Single option carries no trailing "?" (matches the legacy title).
+  if (filled.length === 1) {
+    return [{ text: filled[0], kind: 'option', optionIndex: 0 }, ...ctxTail(d.forField)];
+  }
 
-  return appendForSuffix(buildOrList(filled), d.forField);
+  return [...orListSegments(filled), ...ctxTail(d.forField), { text: '?', kind: 'plain', muted: true }];
 }
 
-// "Fits on one line" cap for both question-level (`buildOrList`) and
-// poll-level titles. Mirrors `_TITLE_CHAR_LIMIT` in
-// server/algorithms/poll_title.py — keep in lockstep.
+/**
+ * Derive the question's auto-title from a draft snapshot. Returns text only
+ * — no leading icon. Defined as the joined text of `draftTitleSegments` so
+ * the annotated suggestion rows can never disagree with the real title.
+ */
+export function deriveDraftTitle(d: QuestionDraft): string {
+  return draftTitleSegments(d).map(s => s.text).join('');
+}
+
+// "Fits on one line" cap for the option or-list. Mirrors `_TITLE_CHAR_LIMIT`
+// in server/algorithms/poll_title.py — keep in lockstep.
 const TITLE_LIMIT = 40;
 
 function joinWithOr(items: string[]): string {
@@ -371,7 +414,12 @@ function joinWithOr(items: string[]): string {
   return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}?`;
 }
 
-function buildOrList(items: string[]): string {
+// Build the multi-option "A, B, or C" body as segments (no trailing "?", which
+// the caller appends after any context). Mirrors the old string `buildOrList`:
+// include options until the rendered title would exceed TITLE_LIMIT, then
+// truncate with ", or ...". Each kept option is its own `option` span so the
+// UI can colour them; the commas / "or" glue is muted.
+function orListSegments(items: string[]): TitleSegment[] {
   const included = [items[0]];
   for (let i = 1; i < items.length; i++) {
     const isLast = i === items.length - 1;
@@ -381,16 +429,26 @@ function buildOrList(items: string[]): string {
     if (candidate.length > TITLE_LIMIT && included.length >= 2) break;
     included.push(items[i]);
   }
-  return included.length === items.length
-    ? joinWithOr(included)
-    : `${included.join(', ')}, or ...?`;
-}
-
-function appendForSuffix(base: string, forField: string): string {
-  const trimmed = forField.trim();
-  if (!trimmed || !base) return base;
-  if (base.endsWith('?')) return `${base.slice(0, -1)} for ${trimmed}?`;
-  return `${base} for ${trimmed}`;
+  const truncated = included.length !== items.length;
+  const segs: TitleSegment[] = [];
+  if (truncated) {
+    included.forEach((it, k) => {
+      if (k > 0) segs.push({ text: ', ', kind: 'plain', muted: true });
+      segs.push({ text: it, kind: 'option', optionIndex: k });
+    });
+    segs.push({ text: ', or ...', kind: 'plain', muted: true });
+  } else if (included.length === 2) {
+    segs.push({ text: included[0], kind: 'option', optionIndex: 0 });
+    segs.push({ text: ' or ', kind: 'plain', muted: true });
+    segs.push({ text: included[1], kind: 'option', optionIndex: 1 });
+  } else {
+    included.forEach((it, k) => {
+      const last = k === included.length - 1;
+      if (k > 0) segs.push({ text: last ? ', or ' : ', ', kind: 'plain', muted: true });
+      segs.push({ text: it, kind: 'option', optionIndex: k });
+    });
+  }
+  return segs;
 }
 
 /**
