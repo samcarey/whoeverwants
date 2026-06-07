@@ -2368,7 +2368,7 @@ export function CreateQuestionContent() {
   // the bar. The bar's NO-transform fixed ancestor (the panel from
   // BubbleBarHost) keeps this `fixed` viewport-relative.
   const SEARCH_ROW_CLASS =
-    "w-full flex items-center gap-4 px-5 py-[7px] text-left min-h-[1.75rem] active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
+    "w-full flex items-center gap-4 px-5 py-[5.25px] text-left min-h-[1.3125rem] active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
   const pollSearchBar = (
     <div
       className="fixed left-0 right-0 z-40 flex flex-col"
