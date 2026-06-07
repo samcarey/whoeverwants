@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+/Library/LaunchDaemons/com.whoeverwants.colima-watchdog.plist on the Mac mini.
+
+System LaunchDaemon that runs colima-watchdog.sh every 60s AS the devbox owner
+(UserName=sccarey) so `colima`/`docker` resolve the user's VM state (which lives
+under /Users/sccarey/.colima). Runs from boot regardless of GUI login. The
+VM-level analog of com.whoeverwants.caddy-watchdog.plist — caddy-watchdog keeps
+the host Caddy up, this keeps the devbox VM (Caddy's upstream) up.
+
+Install (ONE-TIME, on the Mac host itself — colima is a host process and is NOT
+reachable via the in-VM cmd-api, so this cannot be deployed from the sandbox /
+remote-mac.sh):
+  sudo cp scripts/mac-mini/colima-watchdog.sh /usr/local/bin/colima-watchdog.sh
+  sudo chmod 755 /usr/local/bin/colima-watchdog.sh
+  sudo cp scripts/mac-mini/com.whoeverwants.colima-watchdog.plist /Library/LaunchDaemons/
+  sudo chown root:wheel /Library/LaunchDaemons/com.whoeverwants.colima-watchdog.plist
+  sudo chmod 644       /Library/LaunchDaemons/com.whoeverwants.colima-watchdog.plist
+  sudo launchctl bootstrap system /Library/LaunchDaemons/com.whoeverwants.colima-watchdog.plist
+  sudo launchctl kickstart -k system/com.whoeverwants.colima-watchdog
+
+If Virtualization.framework ever refuses to boot the VM headless under a
+LaunchDaemon, install instead as a per-user LaunchAgent in
+~/Library/LaunchAgents/ (drop the <UserName> key, `launchctl bootstrap
+gui/$(id -u)`) so it runs inside the owner's login session.
+
+The DOCTYPE line is intentionally omitted — modern macOS accepts a plist with
+just the XML preamble + <plist version="1.0">, and the DOCTYPE URL gets mangled
+by chat-client autolink wrapping when pasted through a heredoc.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.whoeverwants.colima-watchdog</string>
+
+    <key>UserName</key>
+    <string>sccarey</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/sccarey</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/colima-watchdog.sh</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/sccarey/Library/Logs/colima-watchdog.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/sccarey/Library/Logs/colima-watchdog.err.log</string>
+</dict>
+</plist>
