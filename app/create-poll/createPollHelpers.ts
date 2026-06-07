@@ -330,6 +330,8 @@ export interface TitleSegment {
   optionIndex?: number;
   /** Greyed-out connective glue (commas, "or", "for", "?"). */
   muted?: boolean;
+  /** Overrides the kind's default annotation label (e.g. "Yes/No"). */
+  label?: string;
 }
 
 type TitleDraft = Pick<
@@ -366,20 +368,20 @@ export function yesNoTitleText(prompt: string): string {
 }
 
 export function draftTitleSegments(d: TitleDraft): TitleSegment[] {
-  // yes_no: the user-typed text IS the title — annotate the whole thing as the
-  // category (green, like the custom-category row) + a trailing "?" (greyed,
-  // like the other categories' auto-title "?") when one's missing.
+  // yes_no: the user-typed text IS the title — annotate the whole thing with
+  // the "Yes/No" category label + a trailing "?" (greyed, like the other
+  // categories' auto-title "?") when one's missing.
   if (d.category === 'yes_no') {
     const t = d.title.trim();
-    if (!t) return [{ text: 'Yes/No?', kind: 'category' }];
-    const segs: TitleSegment[] = [{ text: t, kind: 'category' }];
+    if (!t) return [{ text: 'Yes/No?', kind: 'category', label: 'Yes/No' }];
+    const segs: TitleSegment[] = [{ text: t, kind: 'category', label: 'Yes/No' }];
     if (yesNoNeedsQuestionMark(t)) segs.push({ text: '?', kind: 'plain', muted: true });
     return segs;
   }
   // limited_supply: the user-typed item name IS the title — annotate the whole
-  // thing as the category (no "?").
+  // thing with the "Limited Supply" category label (no "?").
   if (d.category === 'limited_supply') {
-    return [{ text: d.title.trim() || 'Limited Supply', kind: 'category' }];
+    return [{ text: d.title.trim() || 'Limited Supply', kind: 'category', label: 'Limited Supply' }];
   }
   // time / showtime: fixed category word + optional " for X" suffix.
   if (d.questionType === 'time' || d.category === 'time') {
