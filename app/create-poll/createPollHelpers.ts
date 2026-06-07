@@ -326,8 +326,6 @@ export type TitleSegmentKind = 'plain' | 'category' | 'context' | 'option';
 export interface TitleSegment {
   text: string;
   kind: TitleSegmentKind;
-  /** Index into the option list (for cycling per-option colours). */
-  optionIndex?: number;
   /** Greyed-out connective glue (commas, "or", "for", "?"). */
   muted?: boolean;
   /** Overrides the kind's default annotation label (e.g. "Yes/No"). */
@@ -361,9 +359,13 @@ export function yesNoNeedsQuestionMark(prompt: string): boolean {
   return t.length > 0 && !/[?!.]$/.test(t);
 }
 
+// The final yes/no title text (with the trailing "?"). Apply this in EVERY
+// yes/no title-generation path — `draftTitleSegments` (suggestion rows),
+// `draftPollPreview` (live preview), and the submit handler's wrapper title —
+// so the displayed suggestion can never drift from the title the poll lands on.
 export function yesNoTitleText(prompt: string): string {
   const t = prompt.trim();
-  if (!t) return 'Yes/No?';
+  if (!t) return `${labelForCategory('yes_no')}?`;
   return yesNoNeedsQuestionMark(t) ? `${t}?` : t;
 }
 
@@ -372,16 +374,18 @@ export function draftTitleSegments(d: TitleDraft): TitleSegment[] {
   // the "Yes/No" category label + a trailing "?" (greyed, like the other
   // categories' auto-title "?") when one's missing.
   if (d.category === 'yes_no') {
+    const label = labelForCategory('yes_no');
     const t = d.title.trim();
-    if (!t) return [{ text: 'Yes/No?', kind: 'category', label: 'Yes/No' }];
-    const segs: TitleSegment[] = [{ text: t, kind: 'category', label: 'Yes/No' }];
+    if (!t) return [{ text: `${label}?`, kind: 'category', label }];
+    const segs: TitleSegment[] = [{ text: t, kind: 'category', label }];
     if (yesNoNeedsQuestionMark(t)) segs.push({ text: '?', kind: 'plain', muted: true });
     return segs;
   }
   // limited_supply: the user-typed item name IS the title — annotate the whole
   // thing with the "Limited Supply" category label (no "?").
   if (d.category === 'limited_supply') {
-    return [{ text: d.title.trim() || 'Limited Supply', kind: 'category', label: 'Limited Supply' }];
+    const label = labelForCategory('limited_supply');
+    return [{ text: d.title.trim() || label, kind: 'category', label }];
   }
   // time / showtime: fixed category word + optional " for X" suffix.
   if (d.questionType === 'time' || d.category === 'time') {
@@ -414,7 +418,7 @@ export function draftTitleSegments(d: TitleDraft): TitleSegment[] {
 
   // Single option carries no trailing "?" (matches the legacy title).
   if (filled.length === 1) {
-    return [{ text: filled[0], kind: 'option', optionIndex: 0 }, ...ctxTail(d.forField)];
+    return [{ text: filled[0], kind: 'option' }, ...ctxTail(d.forField)];
   }
 
   return [...orListSegments(filled), ...ctxTail(d.forField), { text: '?', kind: 'plain', muted: true }];
@@ -464,7 +468,7 @@ function orListSegments(items: string[]): TitleSegment[] {
       const sep = lastGap ? (included.length === 2 ? ' or ' : ', or ') : ', ';
       segs.push({ text: sep, kind: 'plain', muted: true });
     }
-    segs.push({ text: it, kind: 'option', optionIndex: k });
+    segs.push({ text: it, kind: 'option' });
   });
   if (truncated) segs.push({ text: ', or ...', kind: 'plain', muted: true });
   return segs;

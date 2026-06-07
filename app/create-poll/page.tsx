@@ -207,7 +207,7 @@ const SEG_OPTION = { colorText: 'text-blue-500/80 dark:text-blue-400/80', colorB
 // "?") greys out; an un-annotated prompt renders as plain text.
 function annotateSegments(segs: TitleSegment[]): SuggestionSegment[] {
   return segs.map((s) => {
-    if (s.kind === 'category') return { text: s.text, ...SEG_CATEGORY, ...(s.label ? { label: s.label } : {}) };
+    if (s.kind === 'category') return { text: s.text, ...SEG_CATEGORY, label: s.label ?? SEG_CATEGORY.label };
     if (s.kind === 'context') return { text: s.text, ...SEG_CONTEXT };
     if (s.kind === 'option') {
       return { text: s.text, label: 'Option', ...SEG_OPTION };
