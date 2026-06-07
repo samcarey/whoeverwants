@@ -200,6 +200,9 @@ type SuggestionSegment = {
 const SEG_CATEGORY = { label: 'Category', colorText: 'text-green-500/80 dark:text-green-400/80', colorBorder: 'border-green-400/50' };
 const SEG_CONTEXT = { label: 'Context', colorText: 'text-purple-500/80 dark:text-purple-400/80', colorBorder: 'border-purple-400/50' };
 const SEG_OPTION = { colorText: 'text-blue-500/80 dark:text-blue-400/80', colorBorder: 'border-blue-400/50' };
+// Whole-title category annotations (yes/no, limited_supply — where the typed
+// text IS the whole title) are NOT colored, just slightly faded grey.
+const SEG_WHOLE_TITLE = { colorText: 'text-gray-400/80 dark:text-gray-500/80', colorBorder: 'border-gray-300/60 dark:border-gray-600/60' };
 
 // Map the title's labelled segments (from `draftTitleSegments`) onto the
 // coloured suggestion-row spans. Category / context / option words get their
@@ -211,7 +214,14 @@ function annotateSegments(segs: TitleSegment[]): SuggestionSegment[] {
   // label — see the render branch in `searchSuggestions`).
   let optionLabelled = false;
   return segs.map((s) => {
-    if (s.kind === 'category') return { text: s.text, ...SEG_CATEGORY, label: s.label ?? SEG_CATEGORY.label };
+    if (s.kind === 'category') {
+      // A per-segment `label` override means the whole typed title is labelled
+      // with a specific CATEGORY NAME (yes/no, limited_supply) — render that
+      // faded grey, not colored. Generic category words (Place, Movie,
+      // Restaurant, ...) keep the green CATEGORY label.
+      if (s.label) return { text: s.text, ...SEG_WHOLE_TITLE, label: s.label };
+      return { text: s.text, ...SEG_CATEGORY, label: SEG_CATEGORY.label };
+    }
     if (s.kind === 'context') return { text: s.text, ...SEG_CONTEXT };
     if (s.kind === 'option') {
       if (optionLabelled) return { text: s.text, ...SEG_OPTION };
