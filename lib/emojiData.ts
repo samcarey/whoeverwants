@@ -1,5 +1,5 @@
-// Curated emoji set with keyword tags, used by the custom-category emoji
-// picker (components/CategoryEmojiField.tsx). Self-contained — no dependency.
+// Curated emoji set with keyword tags, used by the poll-category emoji
+// picker (components/EmojiPickerModal.tsx). Self-contained — no dependency.
 // `rankEmojiOptions(query)` floats emojis whose keywords match the typed
 // category word(s) to the front, so picking "Board Game" surfaces 🎲 / 🎮
 // first. Ordered roughly by general usefulness so the no-query default still
