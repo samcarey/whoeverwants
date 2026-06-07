@@ -1141,7 +1141,16 @@ export function CreateQuestionContent() {
 
   // `position: fixed` on body (vs. `overflow: hidden`) is required to
   // block iOS pull-to-refresh from bypassing the lock.
-  useBodyScrollLock(isModalOpen, false);
+  //
+  // Also lock while the bottom search bar is focused: focusing the input
+  // raises the soft keyboard / shrinks the visual viewport, which scrolls
+  // the underlying group page even though the picker is `position: fixed`.
+  // The lock snapshots `scrollY` on engage and restores it on release, so
+  // opening + cancelling the picker leaves the group's scroll untouched.
+  // `locked` stays true across the focus → modal-open transition
+  // (searchFocused flips false as isModalOpen flips true in the same
+  // batch), so the snapshot carries through without a teardown/flicker.
+  useBodyScrollLock(isModalOpen || searchFocused, false);
 
   // Escape closes the sheet (preserving state). Skip when the inner
   // ConfirmationModal is open — its own document-level Escape handler runs
