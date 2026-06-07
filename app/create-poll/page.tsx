@@ -17,6 +17,7 @@ import AccountGateModal from "@/components/AccountGateModal";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses, getUserCollectSuggestions, saveUserCollectSuggestions, getUserCollectAvailability, saveUserCollectAvailability } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
+import { getCategoryIcon } from "@/lib/questionListUtils";
 import OptionsInput from "@/components/OptionsInput";
 import CategoryEmojiField from "@/components/CategoryEmojiField";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
@@ -40,7 +41,7 @@ import { enterAdvancesFocus } from "@/lib/formNavigation";
 import { haptic } from "@/lib/haptics";
 import { isValidUserName, validateUserName } from "@/lib/nameValidation";
 import * as questionBackTarget from "@/lib/questionBackTarget";
-import { cachePoll, getCachedGroupIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
+import { cachePoll, getCachedAccessiblePolls, getCachedGroupIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
@@ -61,6 +62,8 @@ import {
   ABSOLUTE_CUTOFF_OPTIONS,
   DEV_DEADLINE_OPTIONS,
   type QuestionDraft,
+  type TitleSegment,
+  draftTitleSegments,
   emptyDraft,
   draftDbQuestionType,
   draftToQuestionParams,
@@ -205,11 +208,66 @@ const OPTION_SEG_COLORS = [
   { colorText: 'text-orange-500/80 dark:text-orange-400/80', colorBorder: 'border-orange-400/50' },
 ];
 
-// The trailing " for <context>" segments shared by category / options / custom
-// suggestions (empty when there's no context).
-function contextSegments(context: string): SuggestionSegment[] {
-  if (!context) return [];
-  return [{ text: ' for ', muted: true }, { text: context, ...SEG_CONTEXT }];
+// Map the title's labelled segments (from `draftTitleSegments`) onto the
+// coloured suggestion-row spans. Category / context / option words get their
+// label + underline colour; the muted connective glue ("for", commas, "or",
+// "?") greys out; an un-annotated prompt renders as plain text.
+function annotateSegments(segs: TitleSegment[]): SuggestionSegment[] {
+  return segs.map((s) => {
+    if (s.kind === 'category') return { text: s.text, ...SEG_CATEGORY };
+    if (s.kind === 'context') return { text: s.text, ...SEG_CONTEXT };
+    if (s.kind === 'option') {
+      return { text: s.text, label: 'Option', ...OPTION_SEG_COLORS[(s.optionIndex ?? 0) % OPTION_SEG_COLORS.length] };
+    }
+    return { text: s.text, muted: s.muted };
+  });
+}
+
+// A suggestion is defined by the draft `overrides` it prefills; its displayed
+// text is derived from those same overrides so the row can never show a title
+// different from the poll it creates. Defaults cover the fields
+// `draftTitleSegments` reads (a no-options, non-suggestion custom draft).
+function overridesToSegments(overrides: Partial<QuestionDraft>): SuggestionSegment[] {
+  return annotateSegments(draftTitleSegments({
+    questionType: overrides.questionType ?? 'question',
+    title: overrides.title ?? '',
+    category: overrides.category ?? 'custom',
+    forField: overrides.forField ?? '',
+    options: overrides.options ?? [''],
+    collectSuggestions: overrides.collectSuggestions ?? false,
+  }));
+}
+
+// Number of recently-posted poll titles surfaced as reuse suggestions.
+const RECENT_SUGGESTION_LIMIT = 6;
+
+type RecentEntry = { key: string; icon: string; overrides: Partial<QuestionDraft>; titleText: string };
+
+// Reconstruct a draft (and its annotated title) from a recently-posted poll
+// so it can be offered as a quick "create one like this" suggestion. Only
+// single-question polls are surfaced (multi-question titles can't be cleanly
+// annotated from one section). Returns null to skip a poll.
+function pollToRecentEntry(poll: Poll): RecentEntry | null {
+  const qs = poll.questions ?? [];
+  if (qs.length !== 1) return null;
+  const q = qs[0];
+  let overrides: Partial<QuestionDraft>;
+  if (q.question_type === 'yes_no') {
+    if (!q.title?.trim()) return null;
+    overrides = { category: 'yes_no', title: q.title, isAutoTitle: false };
+  } else {
+    const category = q.category || 'custom';
+    const forField = (q.details ?? '').trim();
+    const opts = (q.options ?? []).filter((o) => o && o.trim());
+    overrides = opts.length >= 2
+      ? { category, options: opts, collectSuggestions: false, forField }
+      : { category, forField, collectSuggestions: true };
+  }
+  const titleText = overridesToSegments(overrides).map((s) => s.text).join('');
+  if (!titleText.trim()) return null;
+  // getCategoryIcon already does the category_icon → built-in → type-symbol
+  // fallback, keyed off the real question (not the reconstructed draft).
+  return { key: `recent:${poll.id}`, icon: getCategoryIcon(q), overrides, titleText };
 }
 
 export function CreateQuestionContent() {
@@ -390,6 +448,10 @@ export function CreateQuestionContent() {
   // picker (see `pollSearchBar`). `searchQuery` filters the category rows.
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // Recently-posted poll titles, snapshotted from the in-memory accessible
+  // cache when the search picker opens, offered as "create one like this"
+  // suggestions at the bottom of the list.
+  const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchListRef = useRef<HTMLDivElement | null>(null);
   // Visible-viewport geometry, tracked so the focused picker fills exactly
@@ -1270,74 +1332,77 @@ export function CreateQuestionContent() {
   const searchSuggestions = useMemo<Array<{
     key: string;
     icon: string;
-    tag?: string;
     segments: SuggestionSegment[];
     overrides: Partial<QuestionDraft>;
   }>>(() => {
     const raw = searchQuery.trim();
     const { subject, context } = parseForContext(raw);
-    const list: Array<{ key: string; icon: string; tag?: string; segments: SuggestionSegment[]; overrides: Partial<QuestionDraft> }> = [];
+    const list: Array<{ key: string; icon: string; segments: SuggestionSegment[]; overrides: Partial<QuestionDraft> }> = [];
 
-    // Yes/No (top). The whole text becomes the title (the question prompt),
-    // not a category/context/option, so it carries no labels.
-    if (raw) {
-      list.push({
-        key: 'yesno',
-        icon: '👍',
-        tag: 'yes / no',
-        segments: [{ text: raw }],
-        overrides: { category: 'yes_no', title: raw, isAutoTitle: false },
-      });
-    }
+    // Each row's displayed text is derived from the same overrides it
+    // prefills, so the suggestion always reads as the title the poll lands on.
+    const row = (key: string, icon: string, overrides: Partial<QuestionDraft>) =>
+      list.push({ key, icon, segments: overridesToSegments(overrides), overrides });
+
+    // Yes/No (top): frame the whole typed text as the prompt.
+    if (raw) row('yesno', '👍', { category: 'yes_no', title: raw, isAutoTitle: false });
 
     // Filtered categories, reversed so the best match is at the bottom.
     const tokens = subject.toLowerCase().split(/[\s,]+/).filter(Boolean);
-    const cats = tokens.length === 0
-      ? orderedBubbleEntries
-      : orderedBubbleEntries.filter((e) => {
-          const words = e.label.toLowerCase().split(/\s+/);
-          return tokens.every((t) => words.some((w) => w.startsWith(t)));
-        });
+    const matchesTokens = (text: string) => {
+      if (!tokens.length) return true;
+      const words = text.toLowerCase().split(/[\s,]+/).filter(Boolean);
+      return tokens.every((t) => words.some((w) => w.startsWith(t)));
+    };
+    const cats = orderedBubbleEntries.filter((e) => matchesTokens(e.label));
     for (const e of [...cats].reverse()) {
-      list.push({
-        key: `cat:${e.value}`,
-        icon: e.icon ?? '🗳️',
-        segments: [{ text: e.label, ...SEG_CATEGORY }, ...contextSegments(context)],
-        overrides: { category: e.value, forField: context },
-      });
+      row(`cat:${e.value}`, e.icon ?? '🗳️', { category: e.value, forField: context });
     }
 
-    // Options — strong contextual match, sits just above Custom.
+    // Options — a fixed-options poll from comma / "or" text.
     const opts = parseOptionsFromText(subject);
     if (opts.length >= 2) {
-      const optSegments: SuggestionSegment[] = [];
-      opts.forEach((o, i) => {
-        if (i > 0) optSegments.push({ text: ' · ', muted: true });
-        optSegments.push({ text: o, label: 'Option', ...OPTION_SEG_COLORS[i % OPTION_SEG_COLORS.length] });
-      });
-      list.push({
-        key: 'options',
-        icon: '🗳️',
-        tag: 'options',
-        segments: [...optSegments, ...contextSegments(context)],
-        overrides: { category: 'custom', options: opts, collectSuggestions: false, forField: context },
-      });
+      row('options', '🗳️', { category: 'custom', options: opts, collectSuggestions: false, forField: context });
     }
 
-    // Custom (bottom, next to the search bar). The typed subject becomes a
-    // custom category name; a bare "New Poll" placeholder carries no label.
-    list.push({
-      key: 'custom',
-      icon: '✏️',
-      tag: 'custom',
-      segments: subject
-        ? [{ text: subject, ...SEG_CATEGORY }, ...contextSegments(context)]
-        : [{ text: 'New Poll' }],
-      overrides: { category: subject || 'custom', forField: context },
-    });
+    // Recently-posted poll titles (annotated), just above the bar — filtered
+    // by the same typed tokens, newest nearest the bar.
+    for (const e of recentEntries) {
+      if (matchesTokens(e.titleText)) row(e.key, e.icon, e.overrides);
+    }
+
+    // A custom-category poll named after the typed subject. No empty "New
+    // Poll" row — the + button opens a blank poll instead.
+    if (subject) row('custom', '✏️', { category: subject, forField: context });
 
     return list;
-  }, [searchQuery, orderedBubbleEntries]);
+  }, [searchQuery, orderedBubbleEntries, recentEntries]);
+
+  // Snapshot recently-posted poll titles whenever the picker opens (and clear
+  // them when it closes so a re-open re-reads the cache, e.g. after creating a
+  // poll). Sorted newest-last so the most recent sits nearest the bar.
+  useEffect(() => {
+    if (!searchFocused) {
+      setRecentEntries((prev) => (prev.length ? [] : prev));
+      return;
+    }
+    const polls = [...(getCachedAccessiblePolls() ?? [])].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+    const seen = new Set<string>();
+    const entries: RecentEntry[] = [];
+    for (const p of polls) {
+      const e = pollToRecentEntry(p);
+      if (!e) continue;
+      const k = e.titleText.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      entries.push(e);
+      if (entries.length >= RECENT_SUGGESTION_LIMIT) break;
+    }
+    entries.reverse();
+    setRecentEntries(entries);
+  }, [searchFocused]);
 
   // Keep the bottom of the bottom-anchored list (Custom + the best-matching
   // results, nearest the bar) in view. Re-pins to the bottom on focus, as the
@@ -2275,7 +2340,7 @@ export function CreateQuestionContent() {
   // the bar. The bar's NO-transform fixed ancestor (the panel from
   // BubbleBarHost) keeps this `fixed` viewport-relative.
   const SEARCH_ROW_CLASS =
-    "w-full flex items-center gap-4 px-5 py-3.5 text-left min-h-[3.5rem] border-b border-gray-100 dark:border-gray-800 active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
+    "w-full flex items-center gap-4 px-5 py-[7px] text-left min-h-[1.75rem] active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
   const pollSearchBar = (
     <div
       className="fixed left-0 right-0 z-40 flex flex-col"
@@ -2345,11 +2410,6 @@ export function CreateQuestionContent() {
                   )
                 )}
               </span>
-              {s.tag && (
-                <span className="shrink-0 text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-full px-2 py-0.5">
-                  {s.tag}
-                </span>
-              )}
             </button>
           ))}
           </div>
@@ -2364,25 +2424,34 @@ export function CreateQuestionContent() {
             : { paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)' }
         }
       >
-        <div className="flex items-center gap-1 h-12 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-1 pr-2 shadow-lg">
-          {searchFocused ? (
-            <button
-              type="button"
-              onClick={dismissSearch}
-              aria-label="Cancel"
-              className="w-10 h-10 shrink-0 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 active:bg-gray-200 dark:active:bg-gray-700"
-            >
+        <div className="flex items-center gap-2">
+          {/* Standalone circular button: + opens a blank new poll directly;
+              while the text box is focused it becomes ✕ to cancel the picker.
+              Tapping the text box (not this button) is what raises the
+              suggestion list. */}
+          <button
+            type="button"
+            // preventDefault keeps the input's focus state stable through the
+            // tap: without it, mousedown blurs the input → searchFocused flips
+            // false before click, so the ✕ tap would run the + branch.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={searchFocused ? dismissSearch : () => chooseSuggestion({ category: 'custom' })}
+            aria-label={searchFocused ? 'Cancel' : 'New poll'}
+            disabled={isLoading}
+            className="w-12 h-12 shrink-0 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 shadow-lg text-gray-500 dark:text-gray-400 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"
+          >
+            {searchFocused ? (
               <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
-            </button>
-          ) : (
-            <span className="w-10 h-10 shrink-0 flex items-center justify-center text-gray-400 dark:text-gray-500" aria-hidden>
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+            ) : (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" d="M12 5v14M5 12h14" />
               </svg>
-            </span>
-          )}
+            )}
+          </button>
+          {/* Text box — to the right of the button, no inner + symbol. */}
+          <div className="flex-1 min-w-0 flex items-center h-12 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-4 shadow-lg">
           <input
             ref={searchInputRef}
             type="text"
@@ -2404,6 +2473,7 @@ export function CreateQuestionContent() {
             style={{ lineHeight: 'normal' }}
             className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
           />
+          </div>
         </div>
       </div>
     </div>
