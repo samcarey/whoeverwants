@@ -2699,7 +2699,7 @@ export function CreateQuestionContent() {
                       {(category === 'yes_no' || category === 'limited_supply') && titleField}
                       {category === 'limited_supply' && (
                         <CompactNumberRow
-                          label="Available spots"
+                          label="Number Available"
                           value={supplyCount}
                           min={1}
                           setValue={setSupplyCount}
