@@ -1357,8 +1357,7 @@ export function CreateQuestionContent() {
     // If the typed text leads with an emoji, peel it off: it becomes the icon
     // for every suggestion (and the prefilled category emoji when one is
     // picked), and the REST is what we parse for category / options / context.
-    const { emoji: leadingIcon, rest } = splitLeadingEmoji(searchQuery.trim());
-    const raw = rest;
+    const { emoji: leadingIcon, rest: raw } = splitLeadingEmoji(searchQuery.trim());
     const { subject, context } = parseForContext(raw);
     const list: Array<{ key: string; icon: string; segments: SuggestionSegment[]; overrides: Partial<QuestionDraft> }> = [];
 
