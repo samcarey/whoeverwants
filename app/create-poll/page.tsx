@@ -189,7 +189,7 @@ function parseOptionsFromText(text: string): string[] {
 // connective text ("for", " · ") carries no label.
 type SuggestionSegment = {
   text: string;
-  label?: string; // "Category" | "Context" | "Option"
+  label?: string; // "Category" | "Context" | "Options"
   colorText?: string; // tailwind text colour for the label
   colorBorder?: string; // tailwind border colour for the underline
   muted?: boolean; // grey connective text (no label)
@@ -206,11 +206,17 @@ const SEG_OPTION = { colorText: 'text-blue-500/80 dark:text-blue-400/80', colorB
 // label + underline colour; the muted connective glue ("for", commas, "or",
 // "?") greys out; an un-annotated prompt renders as plain text.
 function annotateSegments(segs: TitleSegment[]): SuggestionSegment[] {
+  // Only the first option carries the "Options" label; every option is still
+  // underlined individually (the underline is driven by `colorBorder`, not the
+  // label — see the render branch in `searchSuggestions`).
+  let optionLabelled = false;
   return segs.map((s) => {
     if (s.kind === 'category') return { text: s.text, ...SEG_CATEGORY, label: s.label ?? SEG_CATEGORY.label };
     if (s.kind === 'context') return { text: s.text, ...SEG_CONTEXT };
     if (s.kind === 'option') {
-      return { text: s.text, label: 'Option', ...SEG_OPTION };
+      if (optionLabelled) return { text: s.text, ...SEG_OPTION };
+      optionLabelled = true;
+      return { text: s.text, label: 'Options', ...SEG_OPTION };
     }
     return { text: s.text, muted: s.muted };
   });
@@ -2398,18 +2404,21 @@ export function CreateQuestionContent() {
                 }`}
               >
                 {s.segments.map((seg, i) =>
-                  seg.label ? (
+                  seg.colorBorder ? (
                     // `pt-3` on the wrapper reserves room above the text for the
                     // label; `bottom-full` keeps the label inside that zone so
                     // the wrapper's overflow-hidden (which clips long text on
-                    // the right) doesn't also clip it.
+                    // the right) doesn't also clip it. The label is optional —
+                    // unlabelled-but-underlined segments (2nd+ options) skip it.
                     <span key={i} className="relative inline-block align-baseline">
-                      <span
-                        className={`absolute left-0 bottom-full text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
-                        aria-hidden
-                      >
-                        {seg.label}
-                      </span>
+                      {seg.label && (
+                        <span
+                          className={`absolute left-0 bottom-full text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
+                          aria-hidden
+                        >
+                          {seg.label}
+                        </span>
+                      )}
                       <span className={`border-b-2 ${seg.colorBorder}`}>{seg.text}</span>
                     </span>
                   ) : (
