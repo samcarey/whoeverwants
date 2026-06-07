@@ -20,7 +20,7 @@ import { debugLog } from "@/lib/debugLogger";
 import { getCategoryIcon } from "@/lib/questionListUtils";
 import { bestEmojiMatch, splitLeadingEmoji } from "@/lib/emojiData";
 import OptionsInput from "@/components/OptionsInput";
-import CategoryEmojiField from "@/components/CategoryEmojiField";
+import EmojiPickerModal from "@/components/EmojiPickerModal";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import ScoringAlgorithmField from "@/components/ScoringAlgorithmField";
 import SliderSwitch from "@/components/SliderSwitch";
@@ -415,8 +415,10 @@ export function CreateQuestionContent() {
   const [details, setDetails] = useState("");
   const detailsRef = useRef<HTMLTextAreaElement>(null);
   const [category, setCategory] = useState<string>('custom');
-  // Emoji for a custom category (empty = use the default fallback glyph).
+  // Emoji for the poll category (empty = use the default fallback glyph,
+  // rendered faded in front of the title preview).
   const [categoryEmoji, setCategoryEmoji] = useState<string>("");
+  const [emojiModalOpen, setEmojiModalOpen] = useState(false);
   const [forField, setForField] = useState("");
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Reference location for proximity-based search
@@ -2628,7 +2630,20 @@ export function CreateQuestionContent() {
                   bottom edge so the last form field doesn't sit flush with
                   the rounded corner when scrolled to bottom. */}
               <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
-                <div className="text-center px-2 pt-1 break-words h-7 flex items-center justify-center">
+                <div className="text-center px-2 pt-1 break-words h-8 flex items-center justify-center gap-2">
+                  {category !== 'yes_no' && (
+                    <button
+                      type="button"
+                      onClick={() => { if (!isLoading) setEmojiModalOpen(true); }}
+                      disabled={isLoading}
+                      aria-label="Choose an emoji"
+                      className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-lg leading-none active:scale-95 disabled:cursor-not-allowed"
+                    >
+                      <span className={categoryEmoji.trim() ? '' : 'opacity-40'}>
+                        {categoryEmoji.trim() || getBuiltInType(category)?.icon || '🗳️'}
+                      </span>
+                    </button>
+                  )}
                   {title.trim() ? (
                     <span
                       className="text-xl font-bold leading-7 text-blue-600 dark:text-blue-400"
@@ -3014,21 +3029,6 @@ export function CreateQuestionContent() {
                       );
                     })()}
 
-                    {/* Emoji field — always visible, last row of the poll
-                        settings card. Defaults (as the faded placeholder) to
-                        the current category's icon; the creator can pick an
-                        emoji to override it for any category. Shown for
-                        limited supply too (placeholder = the 🎟️ default). */}
-                    {category !== 'yes_no' && (
-                      <CategoryEmojiField
-                        value={categoryEmoji}
-                        onChange={setCategoryEmoji}
-                        categoryWord={category}
-                        disabled={isLoading}
-                        placeholder={getBuiltInType(category)?.icon}
-                      />
-                    )}
-
                   </form>
                 </section>
 
@@ -3096,6 +3096,15 @@ export function CreateQuestionContent() {
           retry?.();
         }}
         onCancel={() => setPendingSearchAction(null)}
+      />
+
+      <EmojiPickerModal
+        open={emojiModalOpen}
+        value={categoryEmoji}
+        onChange={setCategoryEmoji}
+        onClose={() => setEmojiModalOpen(false)}
+        categoryWord={category}
+        placeholder={getBuiltInType(category)?.icon}
       />
     </div>
   );
