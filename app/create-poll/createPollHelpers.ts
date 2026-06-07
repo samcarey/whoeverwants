@@ -431,23 +431,18 @@ function orListSegments(items: string[]): TitleSegment[] {
   }
   const truncated = included.length !== items.length;
   const segs: TitleSegment[] = [];
-  if (truncated) {
-    included.forEach((it, k) => {
-      if (k > 0) segs.push({ text: ', ', kind: 'plain', muted: true });
-      segs.push({ text: it, kind: 'option', optionIndex: k });
-    });
-    segs.push({ text: ', or ...', kind: 'plain', muted: true });
-  } else if (included.length === 2) {
-    segs.push({ text: included[0], kind: 'option', optionIndex: 0 });
-    segs.push({ text: ' or ', kind: 'plain', muted: true });
-    segs.push({ text: included[1], kind: 'option', optionIndex: 1 });
-  } else {
-    included.forEach((it, k) => {
-      const last = k === included.length - 1;
-      if (k > 0) segs.push({ text: last ? ', or ' : ', ', kind: 'plain', muted: true });
-      segs.push({ text: it, kind: 'option', optionIndex: k });
-    });
-  }
+  included.forEach((it, k) => {
+    if (k > 0) {
+      // The final gap reads " or " for a two-item list, ", or " for three+.
+      // A truncated list never ends on its last item, so every gap is a plain
+      // comma and the ", or ..." tail is appended below.
+      const lastGap = !truncated && k === included.length - 1;
+      const sep = lastGap ? (included.length === 2 ? ' or ' : ', or ') : ', ';
+      segs.push({ text: sep, kind: 'plain', muted: true });
+    }
+    segs.push({ text: it, kind: 'option', optionIndex: k });
+  });
+  if (truncated) segs.push({ text: ', or ...', kind: 'plain', muted: true });
   return segs;
 }
 

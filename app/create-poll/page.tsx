@@ -17,6 +17,7 @@ import AccountGateModal from "@/components/AccountGateModal";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses, getUserCollectSuggestions, saveUserCollectSuggestions, getUserCollectAvailability, saveUserCollectAvailability } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
+import { getCategoryIcon } from "@/lib/questionListUtils";
 import OptionsInput from "@/components/OptionsInput";
 import CategoryEmojiField from "@/components/CategoryEmojiField";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
@@ -264,8 +265,9 @@ function pollToRecentEntry(poll: Poll): RecentEntry | null {
   }
   const titleText = overridesToSegments(overrides).map((s) => s.text).join('');
   if (!titleText.trim()) return null;
-  const icon = q.category_icon || getBuiltInType(overrides.category ?? 'custom')?.icon || '🗳️';
-  return { key: `recent:${poll.id}`, icon, overrides, titleText };
+  // getCategoryIcon already does the category_icon → built-in → type-symbol
+  // fallback, keyed off the real question (not the reconstructed draft).
+  return { key: `recent:${poll.id}`, icon: getCategoryIcon(q), overrides, titleText };
 }
 
 export function CreateQuestionContent() {
