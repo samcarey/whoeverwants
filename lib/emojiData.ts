@@ -275,6 +275,21 @@ function graphemeSegmenter(): Intl.Segmenter | null {
   return _segmenter;
 }
 
+/** If `s` begins with a single emoji grapheme, return that emoji plus the
+ *  remaining text (leading whitespace trimmed); otherwise `{ emoji: null, rest: s }`.
+ *  Uses the grapheme segmenter so multi-codepoint emoji (ZWJ sequences, flags,
+ *  skin tones, keycaps) are split off as one unit. Degrades to "no emoji" when
+ *  the segmenter is unavailable (very old engine). */
+export function splitLeadingEmoji(s: string): { emoji: string | null; rest: string } {
+  const seg = graphemeSegmenter();
+  if (!seg) return { emoji: null, rest: s };
+  for (const { segment } of seg.segment(s)) {
+    if (!isEmoji(segment)) return { emoji: null, rest: s };
+    return { emoji: segment, rest: s.slice(segment.length).trimStart() };
+  }
+  return { emoji: null, rest: s };
+}
+
 /** True when `s` is a single emoji (incl. ZWJ sequences, skin-tone modifiers,
  *  flags, keycaps). Rejects letters, words, and multi-emoji strings. */
 export function isEmoji(s: string): boolean {
