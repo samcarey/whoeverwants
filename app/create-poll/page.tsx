@@ -18,7 +18,7 @@ import { useAppPrefetch } from "@/lib/prefetch";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses, getUserCollectSuggestions, saveUserCollectSuggestions, getUserCollectAvailability, saveUserCollectAvailability } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import { getCategoryIcon } from "@/lib/questionListUtils";
-import { bestEmojiMatch } from "@/lib/emojiData";
+import { bestEmojiMatch, splitLeadingEmoji } from "@/lib/emojiData";
 import OptionsInput from "@/components/OptionsInput";
 import CategoryEmojiField from "@/components/CategoryEmojiField";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
@@ -1354,14 +1354,21 @@ export function CreateQuestionContent() {
     segments: SuggestionSegment[];
     overrides: Partial<QuestionDraft>;
   }>>(() => {
-    const raw = searchQuery.trim();
+    // If the typed text leads with an emoji, peel it off: it becomes the icon
+    // for every suggestion (and the prefilled category emoji when one is
+    // picked), and the REST is what we parse for category / options / context.
+    const { emoji: leadingIcon, rest: raw } = splitLeadingEmoji(searchQuery.trim());
     const { subject, context } = parseForContext(raw);
     const list: Array<{ key: string; icon: string; segments: SuggestionSegment[]; overrides: Partial<QuestionDraft> }> = [];
 
     // Each row's displayed text is derived from the same overrides it
     // prefills, so the suggestion always reads as the title the poll lands on.
-    const row = (key: string, icon: string, overrides: Partial<QuestionDraft>) =>
-      list.push({ key, icon, segments: overridesToSegments(overrides), overrides });
+    // A leading emoji overrides the per-row icon and rides along as the draft's
+    // category emoji so picking the row prefills it onto the form.
+    const row = (key: string, icon: string, overrides: Partial<QuestionDraft>) => {
+      const o = leadingIcon ? { ...overrides, categoryIcon: leadingIcon } : overrides;
+      list.push({ key, icon: leadingIcon ?? icon, segments: overridesToSegments(o), overrides: o });
+    };
 
     // Yes/No + Limited Supply (top): frame the whole typed text as the
     // prompt / item name. When the typed text matches an emoji description,
