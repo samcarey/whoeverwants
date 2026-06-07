@@ -2368,7 +2368,7 @@ export function CreateQuestionContent() {
   // the bar. The bar's NO-transform fixed ancestor (the panel from
   // BubbleBarHost) keeps this `fixed` viewport-relative.
   const SEARCH_ROW_CLASS =
-    "w-full flex items-center gap-4 px-5 py-[7px] text-left min-h-[1.75rem] active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
+    "w-full flex items-center gap-[11.2px] pl-[14px] pr-5 py-[1.75px] text-left min-h-[0.4375rem] active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
   const pollSearchBar = (
     <div
       className="fixed left-0 right-0 z-40 flex flex-col"
@@ -2395,7 +2395,12 @@ export function CreateQuestionContent() {
               onMouseDown preventDefault keeps the input focused through the
               tap so the click lands reliably before chooseSuggestion blurs it. */}
           <div className="mt-auto">
-          {searchSuggestions.map((s) => (
+          {searchSuggestions.map((s) => {
+            // Rows with an annotation label reserve `pt-3` above BOTH the icon
+            // and the text so the label has room AND the two stay vertically
+            // centered against each other (matched box heights).
+            const hasLabel = s.segments.some((seg) => seg.label);
+            return (
             <button
               key={s.key}
               type="button"
@@ -2405,12 +2410,17 @@ export function CreateQuestionContent() {
               className={SEARCH_ROW_CLASS}
               aria-label={`Create poll: ${s.segments.map((seg) => seg.text).join('')}`}
             >
-              <span className="w-7 text-center text-2xl leading-none shrink-0" aria-hidden>
+              <span
+                className={`w-7 text-center text-2xl leading-none shrink-0 ${
+                  hasLabel ? 'pt-3' : ''
+                }`}
+                aria-hidden
+              >
                 {s.icon}
               </span>
               <span
                 className={`relative flex-1 min-w-0 overflow-hidden whitespace-nowrap text-base ${
-                  s.segments.some((seg) => seg.label) ? 'pt-3' : ''
+                  hasLabel ? 'pt-3' : ''
                 }`}
               >
                 {s.segments.map((seg, i) =>
@@ -2423,7 +2433,7 @@ export function CreateQuestionContent() {
                     <span key={i} className="relative inline-block align-baseline">
                       {seg.label && (
                         <span
-                          className={`absolute left-0 bottom-full text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
+                          className={`absolute left-0 bottom-full translate-y-[1.368px] text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
                           aria-hidden
                         >
                           {seg.label}
@@ -2442,7 +2452,8 @@ export function CreateQuestionContent() {
                 )}
               </span>
             </button>
-          ))}
+            );
+          })}
           </div>
         </div>
       )}
