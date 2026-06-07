@@ -209,17 +209,21 @@ const SEG_WHOLE_TITLE = { colorText: 'text-gray-400/80 dark:text-gray-500/80', c
 // label + underline colour; the muted connective glue ("for", commas, "or",
 // "?") greys out; an un-annotated prompt renders as plain text.
 function annotateSegments(segs: TitleSegment[]): SuggestionSegment[] {
+  // When the category annotation spans the ENTIRE title line — i.e. there's no
+  // context/option segment beside it to distinguish via color (yes/no,
+  // limited_supply, a bare custom/built-in category with no "for X") — render
+  // it faded grey instead of green. Green is kept only when the category is one
+  // colored part of a multi-part title ("Restaurant for dinner") where the
+  // color-coding actually distinguishes category from context/option.
+  const wholeLineCategory = !segs.some((s) => s.kind === 'context' || s.kind === 'option');
   // Only the first option carries the "Options" label; every option is still
   // underlined individually (the underline is driven by `colorBorder`, not the
   // label — see the render branch in `searchSuggestions`).
   let optionLabelled = false;
   return segs.map((s) => {
     if (s.kind === 'category') {
-      // A per-segment `label` override means the category spans the ENTIRE
-      // title line (yes/no, limited_supply) — render it faded grey, not colored.
-      // A bare category word (Restaurant, Time, ...) keeps the green label.
-      if (s.label) return { text: s.text, ...SEG_WHOLE_TITLE, label: s.label };
-      return { text: s.text, ...SEG_CATEGORY, label: SEG_CATEGORY.label };
+      const style = wholeLineCategory ? SEG_WHOLE_TITLE : SEG_CATEGORY;
+      return { text: s.text, ...style, label: s.label ?? SEG_CATEGORY.label };
     }
     if (s.kind === 'context') return { text: s.text, ...SEG_CONTEXT };
     if (s.kind === 'option') {
