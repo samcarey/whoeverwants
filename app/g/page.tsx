@@ -7,7 +7,7 @@ import { getGroupHrefForPoll } from "@/lib/groupUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupHeader from "@/components/GroupHeader";
-import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
+import { GROUP_ID_ATTR, DRAFT_POLL_PORTAL_ID } from "@/lib/groupDomMarkers";
 
 export const dynamic = 'force-dynamic';
 
@@ -84,9 +84,13 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
     <>
       <GroupHeader {...headerProps} />
       <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }} />
-      {/* Bubble bar is mounted once at the layout level
-          (components/BubbleBarHost), which shows it on group-root views
-          (including this empty `/g` placeholder) — no per-route copy. */}
+      {/* Create-poll search bar portal target. Rendered here (inside the
+          placeholder content) so it rides the new-group slide overlay — the
+          bar slides in WITH the placeholder rather than popping in after.
+          `relative z-40` keeps the bar's stacking consistent with the group
+          page (see GroupContent's portal target for the full rationale).
+          CreateQuestionContent (root layout) portals the bar into it. */}
+      <div id={DRAFT_POLL_PORTAL_ID} className="relative z-40" />
     </>
   );
 }

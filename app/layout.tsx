@@ -11,7 +11,6 @@ import GroupBackdropHost from "@/components/GroupBackdropHost";
 import CreateGroupButtonHost from "@/components/CreateGroupButtonHost";
 import RecoveryReminderHost from "@/components/RecoveryReminderHost";
 import { PersistentCreatePollHost } from "@/components/PersistentCreatePollHost";
-import BubbleBarHost from "@/components/BubbleBarHost";
 import { UniversalLinksHandler } from "@/components/UniversalLinksHandler";
 import { ClipboardLinkPrompt } from "@/components/ClipboardLinkPrompt";
 import { PushAutoRegister } from "@/components/PushAutoRegister";
@@ -153,21 +152,16 @@ export default function RootLayout({
             account gains a recovery identity, or when dismissed. */}
         <RecoveryReminderHost />
 
-        {/* CreateQuestionContent (category bubble bar + create-poll modal).
+        {/* CreateQuestionContent (create-poll search bar + create-poll modal).
             Lives in the root layout — NOT template — so it persists across
             route changes. template.tsx re-instantiates on every navigation
             in App Router, which would unmount + remount this component and
-            cause the bubble bar's portal target to be briefly cleared
-            (visible as "buttons blink after slide"). */}
+            cause the bar's portal target to be briefly cleared (visible as
+            "bar blinks after slide"). The bar's `#draft-poll-portal` target
+            itself is rendered by the group page content (GroupContent /
+            EmptyPlaceholder) so the bar rides the page's slide/swipe motion;
+            this host just keeps the portaled bar JSX mounted across routes. */}
         <PersistentCreatePollHost />
-
-        {/* Bubble bar chrome + #draft-poll-portal target. Mounted at layout
-            level (single instance) so it appears the instant a group-kind
-            slide starts — independent of the heavy GroupContent commit,
-            which can take 1–3.5s on the dev server — and can never be
-            rendered twice (the doubling that caused the slide-seam flicker).
-            See components/BubbleBarHost.tsx. */}
-        <BubbleBarHost />
 
         {/* iOS Universal Links — converts an `appUrlOpen` event from the
             Capacitor shell into a Next.js client-side navigation. Inert
