@@ -1401,37 +1401,15 @@ export function CreateQuestionContent() {
       row('custom', '✏️', customOverrides, customCategorySegments(customOverrides));
     }
 
-    // Filtered categories, reversed so the best match is at the bottom.
-    // Categories whose title MUST be user-typed (yes_no, limited_supply) are
-    // excluded here — a default category row would render the category NAME
-    // ("Yes/No" / "Limited Supply") as the title, which is exactly what the
-    // title is supposed to override. They're still creatable via the dedicated
-    // top rows above (which frame the typed text as the title), and their
-    // recent polls still surface below (those carry real titles).
+    // Shared token matcher for the typed subject — used by the recent-poll
+    // rows and by the category section (pushed LAST, so green category matches
+    // sit nearest the bar, below the "Options"/context interpretations).
     const tokens = subject.toLowerCase().split(/[\s,]+/).filter(Boolean);
     const matchesTokens = (text: string) => {
       if (!tokens.length) return true;
       const words = text.toLowerCase().split(/[\s,]+/).filter(Boolean);
       return tokens.every((t) => words.some((w) => w.startsWith(t)));
     };
-    // Category matching considers each built-in's curated alias keywords (in
-    // TypeFieldInput's BUILT_IN_TYPES), so "Movie" also surfaces "Showtime".
-    // Exact-label matches rank nearest the bar; alias-only matches sit just
-    // above. Recency order (from orderedBubbleEntries) is preserved within each
-    // group. cats[0] ends nearest the bar (the list is reversed before push).
-    const matchedCats = orderedBubbleEntries.filter(
-      (e) =>
-        e.value !== 'yes_no' &&
-        e.value !== 'limited_supply' &&
-        categoryMatchesQuery(getBuiltInType(e.value), tokens),
-    );
-    const cats = [
-      ...matchedCats.filter((e) => categoryLabelMatchesQuery(getBuiltInType(e.value), tokens)),
-      ...matchedCats.filter((e) => !categoryLabelMatchesQuery(getBuiltInType(e.value), tokens)),
-    ];
-    for (const e of [...cats].reverse()) {
-      row(`cat:${e.value}`, e.icon ?? '🗳️', { category: e.value, forField: context });
-    }
 
     // Options — a fixed-options poll from comma / "or" text.
     const opts = parseOptionsFromText(subject);
@@ -1450,6 +1428,32 @@ export function CreateQuestionContent() {
     // yet — once the user writes "X for Y" they've already named a context.
     if (subject && !/\bfor\b/i.test(raw)) {
       row('context', '🗳️', { category: 'custom', forField: subject });
+    }
+
+    // Filtered categories LAST, so they sit nearest the bar (below the Options /
+    // context rows) — a category match is the strongest read of a typed term.
+    // Categories whose title MUST be user-typed (yes_no, limited_supply) are
+    // excluded — a default category row would render the category NAME as the
+    // title, which is exactly what the title is supposed to override. They're
+    // still creatable via the dedicated top rows (which frame the typed text as
+    // the title), and their recent polls still surface via recentEntries.
+    // Matching considers each built-in's curated alias keywords (in
+    // TypeFieldInput's BUILT_IN_TYPES), so "Movie" also surfaces "Showtime".
+    // Exact-label matches rank nearest the bar; alias-only matches sit just
+    // above. Recency order (from orderedBubbleEntries) is preserved within each
+    // group. cats[0] ends nearest the bar (the list is reversed before push).
+    const matchedCats = orderedBubbleEntries.filter(
+      (e) =>
+        e.value !== 'yes_no' &&
+        e.value !== 'limited_supply' &&
+        categoryMatchesQuery(getBuiltInType(e.value), tokens),
+    );
+    const cats = [
+      ...matchedCats.filter((e) => categoryLabelMatchesQuery(getBuiltInType(e.value), tokens)),
+      ...matchedCats.filter((e) => !categoryLabelMatchesQuery(getBuiltInType(e.value), tokens)),
+    ];
+    for (const e of [...cats].reverse()) {
+      row(`cat:${e.value}`, e.icon ?? '🗳️', { category: e.value, forField: context });
     }
 
     return list;
