@@ -241,12 +241,12 @@ export default function ShowtimeCreateFlow({
                   }`}
                 >
                   <div className="whitespace-nowrap text-base font-medium">{c.name}</div>
-                  <div className="flex items-baseline gap-1.5 truncate text-xs">
+                  <div className="flex w-0 min-w-full items-baseline gap-1.5 text-xs">
                     <span className="shrink-0 font-medium text-blue-600 dark:text-blue-400">
                       {c.distance_miles} mi
                     </span>
                     {c.address && (
-                      <span className="truncate text-gray-500 dark:text-gray-400">
+                      <span className="min-w-0 truncate text-gray-500 dark:text-gray-400">
                         {c.address}
                       </span>
                     )}
