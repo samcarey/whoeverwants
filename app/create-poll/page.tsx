@@ -204,6 +204,10 @@ const SEG_OPTION = { colorText: 'text-blue-500/80 dark:text-blue-400/80', colorB
 // Whole-title category annotations (yes/no, limited_supply — where the typed
 // text IS the whole title) are NOT colored, just slightly faded grey.
 const SEG_WHOLE_TITLE = { colorText: 'text-gray-400/80 dark:text-gray-500/80', colorBorder: 'border-gray-300/60 dark:border-gray-600/60' };
+// The custom-category row (a free-text category the user typed) gets a distinct
+// GOLD "Custom Category" annotation so it reads as clearly different from a
+// matched built-in category (green "Category").
+const SEG_CUSTOM_CATEGORY = { label: 'Custom Category', colorText: 'text-amber-500/80 dark:text-amber-400/80', colorBorder: 'border-amber-400/50' };
 
 // Map the title's labelled segments (from `draftTitleSegments`) onto the
 // coloured suggestion-row spans. Category / context / option words get their
@@ -246,6 +250,15 @@ function overridesToSegments(overrides: Partial<QuestionDraft>): SuggestionSegme
     options: overrides.options ?? [''],
     collectSuggestions: overrides.collectSuggestions ?? false,
   }));
+}
+
+// Same as overridesToSegments, but recolours the green "Category" segment to
+// the gold "Custom Category" annotation — used for the free-text custom-category
+// row so it's visually distinct from a matched built-in category.
+function customCategorySegments(overrides: Partial<QuestionDraft>): SuggestionSegment[] {
+  return overridesToSegments(overrides).map((s) =>
+    s.label === SEG_CATEGORY.label ? { ...s, ...SEG_CUSTOM_CATEGORY } : s,
+  );
 }
 
 // Number of recently-posted poll titles surfaced as reuse suggestions.
@@ -1376,9 +1389,9 @@ export function CreateQuestionContent() {
     // bestEmojiMatch), else the `icon` fallback. Whatever emoji the row shows is
     // what lands on the form's chip — picking a suggestion can't surface a
     // different emoji than the one the user tapped.
-    const row = (key: string, icon: string, overrides: Partial<QuestionDraft>) => {
+    const row = (key: string, icon: string, overrides: Partial<QuestionDraft>, segmentsOverride?: SuggestionSegment[]) => {
       const o = leadingIcon ? { ...overrides, categoryIcon: leadingIcon } : overrides;
-      list.push({ key, icon: leadingIcon ?? o.categoryIcon ?? icon, segments: overridesToSegments(o), overrides: o });
+      list.push({ key, icon: leadingIcon ?? o.categoryIcon ?? icon, segments: segmentsOverride ?? overridesToSegments(o), overrides: o });
     };
 
     // Yes/No + Limited Supply (top): frame the whole typed text as the
@@ -1389,6 +1402,18 @@ export function CreateQuestionContent() {
       const titleEmoji = bestEmojiMatch(raw);
       row('yesno', '👍', { category: 'yes_no', title: raw, isAutoTitle: false, categoryIcon: titleEmoji ?? undefined });
       row('limited', '🎟️', { category: 'limited_supply', title: raw, isAutoTitle: false, categoryIcon: titleEmoji ?? undefined });
+    }
+
+    // A custom-category poll named after the typed subject — shown ABOVE the
+    // matched built-in category rows, with a distinct gold "Custom Category"
+    // annotation. No empty "New Poll" row — the + button opens a blank poll
+    // instead. When the custom category (or its context) matches an emoji
+    // description, show that emoji instead of the generic ✏️ fallback (same
+    // ranking the custom-category emoji picker uses).
+    if (subject) {
+      const customEmoji = bestEmojiMatch(`${subject} ${context}`);
+      const customOverrides = { category: subject, forField: context, categoryIcon: customEmoji ?? undefined };
+      row('custom', '✏️', customOverrides, customCategorySegments(customOverrides));
     }
 
     // Filtered categories, reversed so the best match is at the bottom.
@@ -1429,19 +1454,8 @@ export function CreateQuestionContent() {
     // Context interpretation ("Options for Birthday"): treat the typed text as
     // the poll's context rather than its category. Only when no "for" was typed
     // yet — once the user writes "X for Y" they've already named a context.
-    // Sits just ABOVE the custom-category row (which is nearest the bar).
     if (subject && !/\bfor\b/i.test(raw)) {
       row('context', '🗳️', { category: 'custom', forField: subject });
-    }
-
-    // A custom-category poll named after the typed subject. No empty "New
-    // Poll" row — the + button opens a blank poll instead. When the custom
-    // category (or its context) matches an emoji description, show that emoji
-    // instead of the generic ✏️ fallback (same ranking the custom-category
-    // emoji picker uses).
-    if (subject) {
-      const customEmoji = bestEmojiMatch(`${subject} ${context}`);
-      row('custom', '✏️', { category: subject, forField: context, categoryIcon: customEmoji ?? undefined });
     }
 
     return list;
