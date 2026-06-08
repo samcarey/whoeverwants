@@ -10,7 +10,7 @@ import {
   CreateQuestionParams,
 } from "@/lib/api";
 import type { Poll, OptionsMetadata, Question } from "@/lib/types";
-import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
+import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isLocationLikeCategory, categoryMatchesQuery, categoryLabelMatchesQuery } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import AccountGateModal from "@/components/AccountGateModal";
@@ -1414,12 +1414,21 @@ export function CreateQuestionContent() {
       const words = text.toLowerCase().split(/[\s,]+/).filter(Boolean);
       return tokens.every((t) => words.some((w) => w.startsWith(t)));
     };
-    const cats = orderedBubbleEntries.filter(
+    // Category matching considers each built-in's curated alias keywords (in
+    // TypeFieldInput's BUILT_IN_TYPES), so "Movie" also surfaces "Showtime".
+    // Exact-label matches rank nearest the bar; alias-only matches sit just
+    // above. Recency order (from orderedBubbleEntries) is preserved within each
+    // group. cats[0] ends nearest the bar (the list is reversed before push).
+    const matchedCats = orderedBubbleEntries.filter(
       (e) =>
         e.value !== 'yes_no' &&
         e.value !== 'limited_supply' &&
-        matchesTokens(e.label),
+        categoryMatchesQuery(getBuiltInType(e.value), tokens),
     );
+    const cats = [
+      ...matchedCats.filter((e) => categoryLabelMatchesQuery(getBuiltInType(e.value), tokens)),
+      ...matchedCats.filter((e) => !categoryLabelMatchesQuery(getBuiltInType(e.value), tokens)),
+    ];
     for (const e of [...cats].reverse()) {
       row(`cat:${e.value}`, e.icon ?? '🗳️', { category: e.value, forField: context });
     }
