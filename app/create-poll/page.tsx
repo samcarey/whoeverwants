@@ -257,9 +257,7 @@ function overridesToSegments(overrides: Partial<QuestionDraft>): SuggestionSegme
 // row so it's visually distinct from a matched built-in category.
 function customCategorySegments(overrides: Partial<QuestionDraft>): SuggestionSegment[] {
   return overridesToSegments(overrides).map((s) =>
-    s.label === SEG_CATEGORY.label
-      ? { ...s, label: SEG_CUSTOM_CATEGORY.label, colorText: SEG_CUSTOM_CATEGORY.colorText, colorBorder: SEG_CUSTOM_CATEGORY.colorBorder }
-      : s,
+    s.label === SEG_CATEGORY.label ? { ...s, ...SEG_CUSTOM_CATEGORY } : s,
   );
 }
 
