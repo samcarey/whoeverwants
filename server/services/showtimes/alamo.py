@@ -49,6 +49,78 @@ _HTTP_HEADERS = {
     "Accept": "application/json",
 }
 
+# Alamo merchandises the SAME film under branded "presentations" — premium
+# auditoriums ("The Big Show", "Crafthouse"), themed/repertory events ("Kids
+# Camp", "Movie Party", "Guest Selects", ...). Each gets its own FilmId +
+# FilmName with the brand baked in as a `"<Brand>: <MOVIE>"` prefix (the
+# feed's structured `Series` field is empty in practice). Left unhandled, one
+# movie fragments into several picker rows ("DISCLOSURE DAY" vs "The Big Show:
+# DISCLOSURE DAY"), which defeats searching + apples-to-apples comparison.
+#
+# We strip a KNOWN brand prefix to recover the canonical title (so branded +
+# plain variants merge into one film), and fold the brand into the per-session
+# format label so it stays visible on every showtime bubble when curating /
+# voting. The allowlist is load-bearing: a generic "split on the first colon"
+# would mangle real titles like "JACKASS: BEST AND LAST" or "STAR WARS: THE
+# MANDALORIAN AND GROGU". Match is case-insensitive on the text before ": ".
+_BRAND_PREFIXES: frozenset[str] = frozenset(
+    p.casefold()
+    for p in (
+        "The Big Show",
+        "Crafthouse",
+        "Kids Camp",
+        "Movie Party",
+        "Family Party",
+        "Guest Selects",
+        "Sad Girl Cinema Club",
+        "Queer Film Theory 101",
+        "Terror Tuesday",
+        "Weird Wednesday",
+        "Champagne Cinema",
+        "Afternoon Tea",
+        "Video Vortex",
+        "Time Capsule",
+        "Alamo Time Capsule",
+        "Tough Guy Cinema",
+        "Cinema Cocktails",
+    )
+)
+
+# Projection formats that carry no extra signal beside a brand, so the brand
+# alone is shown; anything else (e.g. "70mm") is appended after the brand.
+_GENERIC_FORMATS: frozenset[str] = frozenset({"", "digital", "standard", "2d"})
+
+
+def _split_brand(film_name: str) -> tuple[str, str | None]:
+    """``("The Big Show: DISCLOSURE DAY",) -> ("DISCLOSURE DAY", "The Big Show")``.
+
+    Returns ``(canonical_name, brand)``. Only strips when the text before the
+    first ``": "`` is a known Alamo brand (see ``_BRAND_PREFIXES``); otherwise
+    returns the name unchanged with ``brand=None`` (so real colon titles like
+    "JACKASS: BEST AND LAST" survive).
+    """
+    prefix, sep, rest = film_name.partition(": ")
+    if sep and rest.strip() and prefix.strip().casefold() in _BRAND_PREFIXES:
+        return rest.strip(), prefix.strip()
+    return film_name, None
+
+
+def _display_format(brand: str | None, fmt_name: str | None) -> str:
+    """Per-session format label, brand-first so it's visible on every bubble."""
+    fmt = (fmt_name or "").strip()
+    if brand:
+        # Alamo often repeats the brand AS the FormatName ("The Big Show");
+        # only append a format that adds real signal (e.g. "70mm").
+        if fmt and fmt.casefold() not in _GENERIC_FORMATS and fmt.casefold() != brand.casefold():
+            return f"{brand} · {fmt}"
+        return brand
+    return fmt or "Digital"
+
+
+def _group_key(canonical_name: str) -> str:
+    """Merge key: brand-stripped title, case/whitespace-insensitive."""
+    return " ".join(canonical_name.split()).casefold()
+
 
 @dataclass
 class Showtime:
@@ -56,7 +128,7 @@ class Showtime:
 
     session_id: str
     film_id: str
-    film_name: str
+    film_name: str  # canonical (brand prefix stripped)
     film_year: str | None
     film_rating: str | None
     runtime: int | None
@@ -64,7 +136,9 @@ class Showtime:
     cinema_id: str
     cinema_name: str
     cinema_slug: str
-    fmt: str  # "Digital", "70mm", ...
+    fmt: str  # brand-first label: "The Big Show", "The Big Show · 70mm", "Digital", ...
+    brand: str | None  # "The Big Show", "Kids Camp", ... or None
+    group_key: str  # canonical-name merge key (see _group_key)
     seats_left: int | None
     sales_url: str | None
     datetime_local: str  # "2026-06-20T19:10:00" (cinema-local, naive)
@@ -174,6 +248,8 @@ def normalize(
                 except (TypeError, ValueError):
                     runtime = None
                 poster = poster_by_slug.get(film_slug)
+                canonical_name, brand = _split_brand(film.get("FilmName") or "")
+                grp_key = _group_key(canonical_name)
                 for series in film.get("Series") or []:
                     for fmt in series.get("Formats") or []:
                         fmt_name = fmt.get("FormatName") or "Digital"
@@ -208,7 +284,7 @@ def normalize(
                                 Showtime(
                                     session_id=session_id,
                                     film_id=str(film.get("FilmId") or ""),
-                                    film_name=film.get("FilmName") or "",
+                                    film_name=canonical_name,
                                     film_year=film.get("FilmYear") or None,
                                     film_rating=film.get("FilmRating") or None,
                                     runtime=runtime,
@@ -216,7 +292,9 @@ def normalize(
                                     cinema_id=cinema_id,
                                     cinema_name=dir_cinema.name,
                                     cinema_slug=dir_cinema.slug,
-                                    fmt=fmt_name,
+                                    fmt=_display_format(brand, fmt_name),
+                                    brand=brand,
+                                    group_key=grp_key,
                                     seats_left=seats,
                                     sales_url=sales_url,
                                     datetime_local=dt,
@@ -229,10 +307,19 @@ def normalize(
 
 
 def group_by_film(showtimes: list[Showtime]) -> list[dict]:
-    """Collapse a flat showtime list into ``[{film…, sessions:[…]}]`` for the API."""
+    """Collapse a flat showtime list into ``[{film…, sessions:[…]}]`` for the API.
+
+    Films merge on ``group_key`` (the brand-stripped canonical title), so
+    "DISCLOSURE DAY" and "The Big Show: DISCLOSURE DAY" become ONE entry. The
+    representative ``film_id`` / ``name`` / ``poster_url`` prefer an UNBRANDED
+    variant when one exists (the plain film carries the canonical name + the
+    catalog poster); otherwise the first branded variant seeds them, already
+    showing its cleaned canonical name. The brand stays visible per session via
+    the ``format`` label (see ``_display_format``).
+    """
     films: dict[str, dict] = {}
     for s in showtimes:
-        film = films.get(s.film_id)
+        film = films.get(s.group_key)
         if film is None:
             film = {
                 "film_id": s.film_id,
@@ -242,8 +329,16 @@ def group_by_film(showtimes: list[Showtime]) -> list[dict]:
                 "runtime": s.runtime,
                 "poster_url": s.poster_url,
                 "sessions": [],
+                "_unbranded": s.brand is None,
             }
-            films[s.film_id] = film
+            films[s.group_key] = film
+        elif s.brand is None and not film["_unbranded"]:
+            # An unbranded variant outranks a branded seed for the identity
+            # fields (canonical name, base FilmId, base poster slug).
+            film["film_id"] = s.film_id
+            film["name"] = s.film_name
+            film["poster_url"] = s.poster_url
+            film["_unbranded"] = True
         # First non-null poster/runtime wins (some sessions lack one).
         if film["poster_url"] is None and s.poster_url:
             film["poster_url"] = s.poster_url
@@ -253,6 +348,7 @@ def group_by_film(showtimes: list[Showtime]) -> list[dict]:
 
     result = list(films.values())
     for film in result:
+        film.pop("_unbranded", None)
         film["sessions"].sort(key=lambda x: (x["date"], x["time"], x["cinema_name"]))
         _disambiguate_keys(film["sessions"])
     result.sort(key=lambda f: (-len(f["sessions"]), f["name"].lower()))

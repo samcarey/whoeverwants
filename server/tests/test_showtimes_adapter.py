@@ -15,6 +15,8 @@ import pytest
 
 from services.showtimes.alamo import (
     Showtime,
+    _display_format,
+    _split_brand,
     filter_sessions_by_horizon,
     group_by_film,
     load_directory,
@@ -225,7 +227,8 @@ def test_horizon_filter():
         return Showtime(
             session_id="x", film_id="f", film_name="n", film_year=None, film_rating=None,
             runtime=90, poster_url=None, cinema_id="0004", cinema_name="South Lamar",
-            cinema_slug="south-lamar", fmt="Digital", seats_left=None, sales_url=None,
+            cinema_slug="south-lamar", fmt="Digital", brand=None, group_key="n",
+            seats_left=None, sales_url=None,
             datetime_local=f"{ds}T19:00:00", date=ds, start_time="19:00",
             key=f"{ds} 19:00-20:30",
         )
@@ -238,6 +241,79 @@ def test_horizon_filter():
     kept = filter_sessions_by_horizon(shows, 21)
     assert len(kept) == 2
     assert {s.date for s in kept} == {today.isoformat(), (today + timedelta(days=10)).isoformat()}
+
+
+@pytest.mark.parametrize(
+    "name,canonical,brand",
+    [
+        ("The Big Show: DISCLOSURE DAY", "DISCLOSURE DAY", "The Big Show"),
+        ("Kids Camp: MATILDA", "MATILDA", "Kids Camp"),
+        ("Guest Selects: THE GRADUATE", "THE GRADUATE", "Guest Selects"),
+        # Real titles with a colon must survive untouched (allowlist gate).
+        ("JACKASS: BEST AND LAST", "JACKASS: BEST AND LAST", None),
+        ("STAR WARS: THE MANDALORIAN AND GROGU", "STAR WARS: THE MANDALORIAN AND GROGU", None),
+        # No colon at all.
+        ("BACKROOMS", "BACKROOMS", None),
+    ],
+)
+def test_split_brand(name, canonical, brand):
+    assert _split_brand(name) == (canonical, brand)
+
+
+def test_display_format_dedupes_and_appends():
+    # Brand repeated as the FormatName collapses to a single label.
+    assert _display_format("The Big Show", "The Big Show") == "The Big Show"
+    # Generic projection format → brand alone.
+    assert _display_format("Kids Camp", "Digital") == "Kids Camp"
+    # Distinctive format → appended after the brand.
+    assert _display_format("The Big Show", "70mm") == "The Big Show · 70mm"
+    # No brand → format passes through (empty → Digital).
+    assert _display_format(None, "70mm") == "70mm"
+    assert _display_format(None, "") == "Digital"
+
+
+def _sessions_payload(films):
+    """films: list of (FilmId, FilmName, FilmSlug, FormatName, [datetime])."""
+    by_film = {}
+    for fid, fname, slug, fmt, times in films:
+        sess = [{"SessionId": f"{fid}-{i}", "SessionDateTime": t, "SessionStatus": "onsale"}
+                for i, t in enumerate(times)]
+        by_film.setdefault((fid, fname, slug), []).append({"FormatName": fmt, "Sessions": sess})
+    return {"Market": {"Dates": [{"Cinemas": [{"CinemaId": "0004", "CinemaName": "South Lamar",
+        "Films": [{"FilmId": fid, "FilmName": fname, "FilmSlug": slug, "FilmRuntime": "120",
+                   "Series": [{"Formats": fmts}]} for (fid, fname, slug), fmts in by_film.items()]}]}]}}
+
+
+def test_brand_variants_merge_into_one_film():
+    directory = [c for c in load_directory() if c.cinema_id == "0004"]
+    payload = _sessions_payload([
+        ("F1", "MASTERS OF THE UNIVERSE (2026)", "motu", "Digital", ["2099-01-01T19:00:00"]),
+        ("F2", "The Big Show: MASTERS OF THE UNIVERSE (2026)", "big-show-motu", "The Big Show", ["2099-01-01T21:00:00"]),
+        ("F3", "JACKASS: BEST AND LAST", "jackass", "Digital", ["2099-01-01T20:00:00"]),
+    ])
+    films = group_by_film(normalize(payload, {}, directory))
+    names = {f["name"]: f for f in films}
+    # The two MOTU variants collapse into ONE film…
+    assert "MASTERS OF THE UNIVERSE (2026)" in names
+    assert "The Big Show: MASTERS OF THE UNIVERSE (2026)" not in names
+    motu = names["MASTERS OF THE UNIVERSE (2026)"]
+    assert len(motu["sessions"]) == 2
+    # …with the brand visible per-session via the format label.
+    assert sorted(s["format"] for s in motu["sessions"]) == ["Digital", "The Big Show"]
+    # The real-colon title is its own untouched film.
+    assert "JACKASS: BEST AND LAST" in names
+
+
+def test_brand_only_film_shows_clean_name():
+    # Only the branded variant is in range → still displays the canonical name,
+    # with the brand on its sessions.
+    directory = [c for c in load_directory() if c.cinema_id == "0004"]
+    payload = _sessions_payload([
+        ("F1", "The Big Show: DISCLOSURE DAY", "big-show-disclosure", "The Big Show", ["2099-01-01T19:00:00"]),
+    ])
+    films = group_by_film(normalize(payload, {}, directory))
+    assert [f["name"] for f in films] == ["DISCLOSURE DAY"]
+    assert films[0]["sessions"][0]["format"] == "The Big Show"
 
 
 def test_radius_filter_against_directory():
