@@ -18,8 +18,7 @@ import {
   apiClosePoll,
   apiCutoffPollAvailability,
   apiCutoffPollSuggestions,
-  apiGetPollById,
-  apiGetPollByShortId,
+  apiGetGroupPoll,
   apiReopenPoll,
 } from "@/lib/api";
 import type { Poll, Question } from "@/lib/types";
@@ -30,7 +29,6 @@ import {
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
 } from "@/lib/questionListUtils";
-import { isUuidLike } from "@/lib/questionId";
 import GroupHeader from "@/components/GroupHeader";
 import InitialBubble from "@/components/InitialBubble";
 import { namedVoterCount } from "@/components/VoterList";
@@ -68,11 +66,19 @@ export function PollInfoView({ groupId, pollShortId }: PollInfoViewProps) {
     let cancelled = false;
     (async () => {
       try {
-        const fetched = isUuidLike(pollShortId)
-          ? await apiGetPollById(pollShortId)
-          : await apiGetPollByShortId(pollShortId);
+        // Visibility-aware read that also returns the poll's voter aggregates
+        // (voter_names / anonymous_count / viewed_*), which the roster + view
+        // detail below need. The visibility-blind apiGetPollById omits those,
+        // so a direct-URL landing here would show "Viewed (0)". A
+        // closed-before-join poll returns a marker (no contents) — treat it as
+        // not-found rather than leaking its roster.
+        const result = await apiGetGroupPoll(groupId, pollShortId);
         if (cancelled) return;
-        setPoll(fetched);
+        if (result.status === "visible") {
+          setPoll(result.poll);
+        } else {
+          setError(true);
+        }
       } catch (err) {
         if (cancelled) return;
         if (!(err instanceof ApiError && err.status === 404)) {
@@ -84,7 +90,7 @@ export function PollInfoView({ groupId, pollShortId }: PollInfoViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [poll, pollShortId]);
+  }, [poll, pollShortId, groupId]);
 
   const goBack = useCallback(() => {
     slideToPollDetail({
