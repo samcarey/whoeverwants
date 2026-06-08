@@ -12,6 +12,7 @@ flat showtime list for that whole market (the radius filter happens on read).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -29,6 +30,7 @@ _CACHE_PATH = os.environ.get(
 )
 _CACHE_DIR = os.path.dirname(os.path.abspath(_CACHE_PATH))
 _CACHE_MAX_DAYS = 3  # keep at most this many distinct fetch-dates per market
+_RETRY_DELAY_SECONDS = 3.0  # pause before the single retry of an empty fetch
 
 
 def _load() -> dict[str, list[dict]]:
@@ -91,26 +93,34 @@ async def get_market_showtimes(
     if cached is not None:
         return [Showtime(**d) for d in cached]
 
+    showtimes = await _fetch_normalized(source, market_id, market_slug)
+    if not showtimes:
+        # The fetch failed/timed-out (``fetch_market`` returns ``({}, {})`` on
+        # error) or the feed momentarily returned no sessions. Retry once after
+        # a short pause before giving up — a single transient blip shouldn't
+        # surface "No Alamo showtimes found near here".
+        await asyncio.sleep(_RETRY_DELAY_SECONDS)
+        showtimes = await _fetch_normalized(source, market_id, market_slug)
+
+    # Only cache a non-empty result. An empty list (failed/timed-out fetch, or
+    # a momentarily session-less feed) would otherwise poison the whole market
+    # for the rest of the day (``cached is not None`` serves ``[]`` until the
+    # fetch-date rolls over). Alamo markets always carry upcoming showtimes, so
+    # a genuinely-empty market is indistinguishable from a transient failure;
+    # skip the write and let the next request retry upstream.
+    if showtimes:
+        _cache[cache_key] = [asdict(s) for s in showtimes]
+        _prune_old_dates(market_id, fetch_date)
+        _save()
+    return showtimes
+
+
+async def _fetch_normalized(
+    source: ShowtimeSource, market_id: str, market_slug: str
+) -> list[Showtime]:
     sessions_payload, catalog_payload = await source.fetch_market(market_id, market_slug)
     market_cinemas = [c for c in source.directory() if c.market_id == market_id]
-    showtimes = normalize(sessions_payload, catalog_payload, market_cinemas)
-
-    # Never cache an empty result. An empty list means the upstream fetch
-    # failed/timed-out (``fetch_market`` returns ``({}, {})`` on error) or the
-    # feed momentarily returned no sessions — caching it would poison the whole
-    # market for the rest of the day (``cached is not None`` serves ``[]`` until
-    # the fetch-date rolls over), surfacing as "No Alamo showtimes found near
-    # here" even though the feed is healthy on the next request. Alamo markets
-    # always carry upcoming showtimes, so a genuinely-empty market is
-    # indistinguishable from a transient failure; skip the write and let the
-    # next request retry upstream.
-    if not showtimes:
-        return showtimes
-
-    _cache[cache_key] = [asdict(s) for s in showtimes]
-    _prune_old_dates(market_id, fetch_date)
-    _save()
-    return showtimes
+    return normalize(sessions_payload, catalog_payload, market_cinemas)
 
 
 def clear_cache() -> None:

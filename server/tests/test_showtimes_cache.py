@@ -1,10 +1,12 @@
 """Cache-behavior tests for the showtime data layer (no live network).
 
-The key invariant: an EMPTY normalized result is never cached, so a transient
-upstream failure (``fetch_market`` returns ``({}, {})`` on error → ``normalize``
-returns ``[]``) doesn't poison the whole market for the rest of the day. A
-non-empty result IS cached, and a second call for the same (market, day) reuses
-it instead of re-fetching upstream.
+Invariants:
+* An EMPTY normalized result is never cached, so a transient upstream failure
+  (``fetch_market`` returns ``({}, {})`` on error → ``normalize`` returns ``[]``)
+  doesn't poison the whole market for the rest of the day.
+* An empty first fetch is RETRIED once (after a short pause) before giving up,
+  so a single blip recovers within the same request.
+* A non-empty result IS cached and reused without re-fetching.
 """
 
 import pytest
@@ -24,10 +26,15 @@ def _showtime(cinema_id: str = "0701") -> Showtime:
 
 
 class _FakeSource:
-    """Counts upstream fetches and returns a scripted normalized list."""
+    """Counts upstream fetches and returns scripted normalized lists.
 
-    def __init__(self, showtimes):
-        self._showtimes = showtimes
+    Pass ``showtimes`` for a fixed result on every fetch, or ``sequence`` for a
+    per-fetch script (e.g. ``[[], [show]]`` = empty then success).
+    """
+
+    def __init__(self, showtimes=None, sequence=None):
+        self._showtimes = showtimes if showtimes is not None else []
+        self._sequence = list(sequence) if sequence is not None else None
         self.fetch_calls = 0
 
     def directory(self):
@@ -41,18 +48,19 @@ class _FakeSource:
 
     async def fetch_market(self, market_id, market_slug):
         self.fetch_calls += 1
-        # The cache calls normalize() on what we return; return a payload whose
-        # normalization yields exactly self._showtimes. Easiest: monkeypatch
-        # normalize separately — done in the fixture below via the patched fn.
-        return {"_showtimes": self._showtimes}, {}
+        if self._sequence is not None:
+            shows = self._sequence.pop(0) if self._sequence else []
+        else:
+            shows = self._showtimes
+        # cache.normalize is monkeypatched to pass this straight through.
+        return {"_showtimes": shows}, {}
 
 
 @pytest.fixture(autouse=True)
 def _isolate_cache(monkeypatch):
     cache_mod.clear_cache()
     monkeypatch.setattr(cache_mod, "_save", lambda: None)  # don't touch disk
-    # normalize() is exercised by the adapter tests; here we just pass the
-    # fake source's scripted list straight through.
+    monkeypatch.setattr(cache_mod, "_RETRY_DELAY_SECONDS", 0)  # no real wait
     monkeypatch.setattr(
         cache_mod, "normalize",
         lambda sessions, catalog, cinemas: sessions.get("_showtimes", []),
@@ -62,36 +70,32 @@ def _isolate_cache(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_empty_result_is_not_cached():
-    src = _FakeSource([])
-    first = await cache_mod.get_market_showtimes(src, "0700", "dfw", fetch_date="2026-06-08")
-    assert first == []
+async def test_empty_result_retries_once_and_is_not_cached():
+    src = _FakeSource([])  # empty on every fetch
+    result = await cache_mod.get_market_showtimes(src, "0700", "dfw", fetch_date="2026-06-08")
+    assert result == []
+    assert src.fetch_calls == 2  # initial + one retry
     assert "0700:2026-06-08" not in cache_mod._cache  # not poisoned
-    # A second call re-fetches upstream (no poisoned empty entry served).
-    second = await cache_mod.get_market_showtimes(src, "0700", "dfw", fetch_date="2026-06-08")
-    assert second == []
-    assert src.fetch_calls == 2
 
 
 @pytest.mark.asyncio
-async def test_nonempty_result_is_cached_and_reused():
+async def test_retry_recovers_within_one_request():
+    # First fetch empty, retry succeeds — recovers without a poisoned entry.
+    src = _FakeSource(sequence=[[], [_showtime()]])
+    result = await cache_mod.get_market_showtimes(src, "0700", "dfw", fetch_date="2026-06-08")
+    assert len(result) == 1
+    assert src.fetch_calls == 2
+    assert "0700:2026-06-08" in cache_mod._cache  # success was cached
+
+
+@pytest.mark.asyncio
+async def test_nonempty_first_fetch_does_not_retry_and_is_cached():
     src = _FakeSource([_showtime()])
     first = await cache_mod.get_market_showtimes(src, "0700", "dfw", fetch_date="2026-06-08")
     assert len(first) == 1
+    assert src.fetch_calls == 1  # no retry needed
     assert "0700:2026-06-08" in cache_mod._cache
     # Second call is served from cache — no extra upstream fetch.
     second = await cache_mod.get_market_showtimes(src, "0700", "dfw", fetch_date="2026-06-08")
     assert len(second) == 1
     assert src.fetch_calls == 1
-
-
-@pytest.mark.asyncio
-async def test_recovers_after_transient_empty_fetch():
-    # First fetch fails (empty), second succeeds — the failure must not have
-    # been cached, so the success lands.
-    src = _FakeSource([])
-    assert await cache_mod.get_market_showtimes(src, "0700", "dfw", fetch_date="2026-06-08") == []
-    src._showtimes = [_showtime()]
-    recovered = await cache_mod.get_market_showtimes(src, "0700", "dfw", fetch_date="2026-06-08")
-    assert len(recovered) == 1
-    assert src.fetch_calls == 2
