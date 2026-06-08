@@ -7,7 +7,8 @@
  * Each bubble cycles through: neutral → liked (green) → disliked (red) → neutral.
  *
  * Dragging across multiple bubbles selects a contiguous (chronological) range of
- * them; a floating toolbar then offers Like / Dislike / Neutral, which apply the
+ * them WITHIN the day the drag started in (the lasso never crosses day rows);
+ * a floating toolbar then offers Like / Dislike / Neutral, which apply the
  * chosen preference to every selected slot and dismiss the selection. The toolbar
  * is portaled out and fixed to the viewport so it never shifts the page layout.
  *
@@ -22,6 +23,7 @@ import {
   formatStackedDayLabel,
   getBubbleLabel,
   groupSlotsByDay,
+  parseSlotDate,
   periodColorClass,
   slotExcludedCount,
   type SlotCell,
@@ -149,10 +151,16 @@ export default function TimeSlotBubbles({
     (a: string, b: string): string[] => {
       const ia = optionIndex.get(a);
       const ib = optionIndex.get(b);
-      if (ia == null || ib == null) return ia != null ? [a] : [];
+      if (ia == null) return [];
+      // Constrain the lasso to the day the drag STARTED in. The chronological
+      // slice between anchor and current would otherwise spill into the tail of
+      // the day above and the head of the day below (their bubbles line up in
+      // the same columns), selecting slots the user never dragged over.
+      const anchorDate = parseSlotDate(a);
+      if (ib == null) return [a];
       const lo = Math.min(ia, ib);
       const hi = Math.max(ia, ib);
-      return options.slice(lo, hi + 1);
+      return options.slice(lo, hi + 1).filter((s) => parseSlotDate(s) === anchorDate);
     },
     [optionIndex, options],
   );
