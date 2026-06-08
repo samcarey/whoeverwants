@@ -87,6 +87,7 @@ async def nearby(
                 "cinema_id": c.cinema_id,
                 "name": c.name,
                 "slug": c.slug,
+                "address": c.address,
                 "distance_miles": round(_haversine_miles(lat, lng, c.lat, c.lng), 1),
                 "has_sessions": c.cinema_id in cinemas_with_sessions,
             }
