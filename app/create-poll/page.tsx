@@ -2595,11 +2595,11 @@ export function CreateQuestionContent() {
             className="w-[42.24px] h-[42.24px] shrink-0 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 shadow-lg text-gray-500 dark:text-gray-400 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"
           >
             {searchFocused ? (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-5 h-5 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             ) : (
-              <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" d="M12 5v14M5 12h14" />
               </svg>
             )}
