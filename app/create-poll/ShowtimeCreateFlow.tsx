@@ -225,7 +225,7 @@ export default function ShowtimeCreateFlow({
           <p className="px-1 text-[15px] font-medium text-gray-500 dark:text-gray-400">
             Theaters to include
           </p>
-          <div className="divide-y divide-gray-100 dark:divide-gray-700 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="flex flex-wrap justify-center gap-[6.4px]">
             {theaters.map((c) => {
               const checked = selectedCinemas.has(c.cinema_id);
               return (
@@ -234,25 +234,25 @@ export default function ShowtimeCreateFlow({
                   type="button"
                   onClick={() => toggleCinema(c.cinema_id)}
                   disabled={isLoading}
-                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left active:scale-[0.99]"
+                  className={`max-w-full rounded-[20.4px] border px-[7.2px] py-0.5 text-left active:scale-[0.98] ${
+                    checked
+                      ? "border-blue-600 bg-blue-50 dark:border-blue-500 dark:bg-blue-900/30"
+                      : "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800"
+                  }`}
                 >
-                  <span
-                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
-                      checked
-                        ? "border-blue-600 bg-blue-600 dark:border-blue-500 dark:bg-blue-500"
-                        : "border-gray-300 dark:border-gray-600"
-                    }`}
-                  >
-                    {checked && (
-                      <svg className="h-3.5 w-3.5 text-white" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0L3.3 9.7a1 1 0 011.4-1.4l3.3 3.3 6.8-6.8a1 1 0 011.4 0z" clipRule="evenodd" />
-                      </svg>
+                  <div className="whitespace-nowrap text-[12.8px] font-medium leading-tight">
+                    {c.name}
+                  </div>
+                  <div className="mt-px flex w-0 min-w-full items-baseline gap-1.5 text-xs leading-tight">
+                    <span className="shrink-0 font-medium text-blue-600 dark:text-blue-400">
+                      {c.distance_miles} mi
+                    </span>
+                    {c.address && (
+                      <span className="min-w-0 truncate text-gray-500 dark:text-gray-400">
+                        {c.address}
+                      </span>
                     )}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-base">{c.name}</span>
-                  <span className="shrink-0 text-sm font-medium text-blue-600 dark:text-blue-400">
-                    {c.distance_miles} mi
-                  </span>
+                  </div>
                 </button>
               );
             })}

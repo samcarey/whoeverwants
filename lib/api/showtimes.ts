@@ -30,6 +30,7 @@ export interface ShowtimeCinema {
   cinema_id: string;
   name: string;
   slug: string;
+  address: string | null;
   distance_miles: number;
   has_sessions: boolean;
 }

@@ -93,6 +93,7 @@ class _DirectoryCinema:
     cinema_id: str
     slug: str
     name: str
+    address: str | None
     market_id: str
     market_slug: str
     lat: float
@@ -109,6 +110,7 @@ def load_directory() -> list[_DirectoryCinema]:
             cinema_id=str(c["cinema_id"]),
             slug=c["slug"],
             name=c["name"],
+            address=c.get("address"),
             market_id=str(c["market_id"]),
             market_slug=c["market_slug"],
             lat=float(c["lat"]),
