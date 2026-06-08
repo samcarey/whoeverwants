@@ -138,11 +138,12 @@ export default function ShowtimeBubbles(props: Props) {
               if (!slot) return null;
               const state = bubbleState(key);
               const { hm, period } = fmt12Parts(slot.time);
-              const tag = [slot.format, slot.cinema_name?.replace(/^Alamo /, "")]
-                .filter(Boolean)
-                .join(" · ");
-              const hasSeats =
-                typeof slot.seats_left === "number" && slot.seats_left >= 0;
+              const cinema = slot.cinema_name?.replace(/^Alamo /, "") || null;
+              const seats =
+                typeof slot.seats_left === "number" && slot.seats_left >= 0
+                  ? `${slot.seats_left} left`
+                  : null;
+              const sub = [cinema, seats].filter(Boolean).join(" · ");
               return (
                 <button
                   // Defense-in-depth: the server guarantees unique keys per
@@ -152,16 +153,19 @@ export default function ShowtimeBubbles(props: Props) {
                   type="button"
                   disabled={disabled}
                   onClick={() => handleTap(key)}
-                  className={`max-w-full rounded-[20.4px] border px-[7.2px] py-0.5 text-left transition-colors ${classFor(state)} ${disabled ? "cursor-default" : "active:scale-[0.98]"}`}
+                  className={`max-w-full rounded-[20.4px] border px-[10.8px] py-0.5 text-left transition-colors ${classFor(state)} ${disabled ? "cursor-default" : "active:scale-[0.98]"}`}
                 >
                   <div className="whitespace-nowrap text-[12.8px] font-semibold leading-tight tabular-nums text-gray-900 dark:text-gray-100">
                     {hm} <span className={periodColorClass(period)}>{period}</span>
+                    {slot.format && (
+                      <span className="ml-1 text-[11px] font-normal text-gray-500 dark:text-gray-400">
+                        {slot.format}
+                      </span>
+                    )}
                   </div>
-                  {(tag || hasSeats) && (
+                  {sub && (
                     <div className="mt-px whitespace-nowrap text-[11px] leading-tight text-gray-500 dark:text-gray-400">
-                      {[tag || null, hasSeats ? `${slot.seats_left} left` : null]
-                        .filter(Boolean)
-                        .join(" · ")}
+                      {sub}
                     </div>
                   )}
                 </button>
