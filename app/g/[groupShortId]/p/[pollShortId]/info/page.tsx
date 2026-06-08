@@ -18,8 +18,7 @@ import {
   apiClosePoll,
   apiCutoffPollAvailability,
   apiCutoffPollSuggestions,
-  apiGetPollById,
-  apiGetPollByShortId,
+  apiGetGroupPoll,
   apiReopenPoll,
 } from "@/lib/api";
 import type { Poll, Question } from "@/lib/types";
@@ -30,9 +29,9 @@ import {
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
 } from "@/lib/questionListUtils";
-import { isUuidLike } from "@/lib/questionId";
 import GroupHeader from "@/components/GroupHeader";
 import InitialBubble from "@/components/InitialBubble";
+import { namedVoterCount } from "@/components/VoterList";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import PollActionButton, { CutoffIcon } from "@/components/PollActionButton";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
@@ -67,11 +66,19 @@ export function PollInfoView({ groupId, pollShortId }: PollInfoViewProps) {
     let cancelled = false;
     (async () => {
       try {
-        const fetched = isUuidLike(pollShortId)
-          ? await apiGetPollById(pollShortId)
-          : await apiGetPollByShortId(pollShortId);
+        // Visibility-aware read that also returns the poll's voter aggregates
+        // (voter_names / anonymous_count / viewed_*), which the roster + view
+        // detail below need. The visibility-blind apiGetPollById omits those,
+        // so a direct-URL landing here would show "Viewed (0)". A
+        // closed-before-join poll returns a marker (no contents) — treat it as
+        // not-found rather than leaking its roster.
+        const result = await apiGetGroupPoll(groupId, pollShortId);
         if (cancelled) return;
-        setPoll(fetched);
+        if (result.status === "visible") {
+          setPoll(result.poll);
+        } else {
+          setError(true);
+        }
       } catch (err) {
         if (cancelled) return;
         if (!(err instanceof ApiError && err.status === 404)) {
@@ -83,7 +90,7 @@ export function PollInfoView({ groupId, pollShortId }: PollInfoViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [poll, pollShortId]);
+  }, [poll, pollShortId, groupId]);
 
   const goBack = useCallback(() => {
     slideToPollDetail({
@@ -203,7 +210,15 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
 
   const namedVoters = poll.voter_names ?? [];
   const anonymousCount = poll.anonymous_count ?? 0;
-  const totalCount = namedVoters.length + anonymousCount;
+  // Viewed-but-no-response viewers (opened >5 min ago, never voted/abstained).
+  const ignoredCount = poll.viewed_ignored_count ?? 0;
+  // Sum the multiplicity map so two people sharing a name ("Alex" ×2) count as
+  // 2 responders — matches the turnout semantics used elsewhere.
+  const respondedCount =
+    namedVoterCount(namedVoters, poll.voter_name_counts) + anonymousCount;
+  // Total distinct viewers = everyone who opened the poll = responders +
+  // viewed-but-no-response.
+  const totalViewed = respondedCount + ignoredCount;
   const currentUserName = useMemo(
     () => getUserName()?.trim().toLowerCase() ?? null,
     [],
@@ -358,13 +373,21 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
         </section>
 
         <section>
-          <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
-            {totalCount} {totalCount === 1 ? "Respondent" : "Respondents"}
+          <h2 className="px-1 mb-1 text-sm font-semibold text-gray-500 dark:text-gray-400">
+            Viewed ({totalViewed})
           </h2>
+          <p className="px-1 mb-3 text-xs text-gray-400 dark:text-gray-500">
+            {respondedCount} responded
+            {ignoredCount > 0 &&
+              ` · ${ignoredCount} viewed without responding`}
+          </p>
 
-          {totalCount === 0 ? (
+          <h3 className="px-1 mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            {respondedCount} {respondedCount === 1 ? "Respondent" : "Respondents"}
+          </h3>
+          {respondedCount === 0 ? (
             <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-              No respondents yet
+              No responses yet
             </div>
           ) : (
             <ul className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden divide-y divide-gray-200 dark:divide-gray-800">
