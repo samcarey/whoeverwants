@@ -186,17 +186,28 @@ interface ParsedWindow { min: string; max: string; }
 // it still contributes a window. Pure time-of-day words ("evening", "tonight")
 // are stripped out to the inline parsed-range annotation.
 const BAND_LEXICON: ReadonlyArray<readonly [RegExp, string, string, boolean]> = [
+  // Multi-word / qualified phrases FIRST so they win over their single-word
+  // constituents (the band loop blanks matched spans as it goes).
   [/\blate night\b/i, "21:00", "23:30", false],
   [/\bhappy hour\b/i, "16:00", "18:00", false],
   [/\bafter work\b/i, "17:00", "21:00", false],
   [/\bafter school\b/i, "15:00", "18:00", false],
+  [/\bafter dinner\b/i, "20:00", "22:00", false],
+  [/\bafter lunch\b/i, "13:00", "15:00", false],
+  [/\bfirst thing\b/i, "06:00", "09:00", false],
   [/\bearly morning\b/i, "06:00", "09:00", false],
+  [/\blate morning\b/i, "10:00", "12:00", false],
+  [/\bearly afternoon\b/i, "12:00", "14:00", false],
   [/\blate afternoon\b/i, "15:00", "18:00", false],
+  [/\bearly evening\b/i, "17:00", "19:00", false],
+  [/\b(?:any\s?time|whenever)\b/i, "09:00", "21:00", false],
   [/\ball day\b/i, "09:00", "21:00", false],
+  // Meal nouns (isMeal = true → kept as the subject by stripTemporal).
   [/\bbreakfast\b/i, "07:00", "09:00", true],
   [/\bbrunch\b/i, "10:00", "13:00", true],
   [/\b(?:lunch|lunchtime)\b/i, "11:30", "13:30", true],
   [/\b(?:dinner|dinnertime|supper)\b/i, "18:00", "20:00", true],
+  // Single time-of-day words last.
   [/\bmorning\b/i, "08:00", "12:00", false],
   [/\bafternoon\b/i, "12:00", "17:00", false],
   [/\b(?:evening|eve)\b/i, "17:00", "21:00", false],
@@ -324,6 +335,13 @@ function parseClockWindows(raw: string): ParsedWindow[] {
     if (t !== null) { const w = clamp(t, t + DEFAULT_POINT_SPAN_MIN); if (w) out.push(w); }
   }
 
+  // Fuzzy point: "7ish", "7-ish" → a point at that hour (bare-hour rule).
+  const ishRe = /\b(\d{1,2})\s*-?\s*ish\b/gi;
+  while ((m = ishRe.exec(raw)) !== null) {
+    const t = clockToMinutes(parseInt(m[1], 10), 0, null);
+    if (t !== null) { const w = clamp(t, t + DEFAULT_POINT_SPAN_MIN); if (w) out.push(w); }
+  }
+
   return out;
 }
 
@@ -350,11 +368,30 @@ function parseDays(raw: string, base: Date): Set<string> {
     days.add(weekdayDate(base, 0, false));
   }
 
-  // "in N days" / "N days from now".
+  // Week. "this week" = today through the upcoming Sunday (rest of the week,
+  // incl. the weekend); "next week" = the following Mon–Sun. `\bweek\b` can't
+  // match "weekend"/"weekday" (no word boundary after "week" there).
+  const daysToSunday = (7 - base.getDay()) % 7; // 0 when today is Sunday
+  if (/\bnext\s+week\b/.test(lower)) {
+    const start = daysToSunday + 1; // the Monday after this Sunday
+    for (let i = 0; i < 7; i++) days.add(isoFromBase(base, start + i));
+  } else if (/\b(?:this\s+)?week\b/.test(lower)) {
+    for (let i = 0; i <= daysToSunday; i++) days.add(isoFromBase(base, i));
+  }
+
+  // "in N days" / "N days from now"; "in N weeks" / "N weeks from now".
   let m = /\bin\s+(\d{1,2})\s+days?\b/.exec(lower);
   if (m) days.add(isoFromBase(base, parseInt(m[1], 10)));
   m = /\b(\d{1,2})\s+days?\s+from\s+now\b/.exec(lower);
   if (m) days.add(isoFromBase(base, parseInt(m[1], 10)));
+  m = /\bin\s+(\d{1,2})\s+weeks?\b/.exec(lower);
+  if (m) days.add(isoFromBase(base, 7 * parseInt(m[1], 10)));
+  m = /\b(\d{1,2})\s+weeks?\s+from\s+now\b/.exec(lower);
+  if (m) days.add(isoFromBase(base, 7 * parseInt(m[1], 10)));
+
+  // Vague counts: "in a couple (of) days" → +2, "in a few days" → +3.
+  if (/\b(?:in\s+)?(?:a\s+)?couple\s+(?:of\s+)?days?\b/.test(lower)) days.add(isoFromBase(base, 2));
+  if (/\b(?:in\s+)?(?:a\s+)?few\s+days?\b/.test(lower)) days.add(isoFromBase(base, 3));
 
   // Weekdays, honoring a preceding "this"/"next" qualifier. A list like
   // "friday or saturday" adds both.
@@ -448,12 +485,18 @@ const STRIP_RE: RegExp = (() => {
     "\\bday after tomorrow\\b",
     "\\b(?:this|next)\\s+weekend\\b",
     "\\bweekend\\b",
+    "\\b(?:this|next)\\s+week\\b",
+    "\\bweek\\b",
     `\\b(?:this|next|on)\\s+(?:${WD})\\b`,
     `\\b(?:${WD})\\b`,
     "\\b(?:today|tonight|tomorrow|tmrw|tmw|tmro)\\b",
     "\\bthis\\s+(?:morning|afternoon|evening|night|eve)\\b",
     "\\bin\\s+\\d{1,2}\\s+days?\\b",
     "\\b\\d{1,2}\\s+days?\\s+from\\s+now\\b",
+    "\\bin\\s+\\d{1,2}\\s+weeks?\\b",
+    "\\b\\d{1,2}\\s+weeks?\\s+from\\s+now\\b",
+    "\\b(?:in\\s+)?(?:a\\s+)?couple\\s+(?:of\\s+)?days?\\b",
+    "\\b(?:in\\s+)?(?:a\\s+)?few\\s+days?\\b",
     // Time-of-day bands (non-meal only) + noon/midday.
     ...nonMealBands,
     "\\b(?:noon|midday|mid-?day)\\b",
@@ -463,6 +506,7 @@ const STRIP_RE: RegExp = (() => {
     `\\b(?:after|before|at|by|around)\\s+${HHMM}`,
     `@\\s*${HHMM}`,
     `\\b\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)\\b`,
+    "\\b\\d{1,2}\\s*-?\\s*ish\\b",
   ];
   return new RegExp(parts.join("|"), "gi");
 })();

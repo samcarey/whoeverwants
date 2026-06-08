@@ -107,6 +107,55 @@ describe("parseTemporal — window prefill (deterministic on a fixed today)", ()
     ]);
   });
 
+  it("'this week' → rest of the week incl weekend, with the band", () => {
+    const r = parseTemporal("dinner this week", TODAY);
+    expect(r.map((d) => d.day)).toEqual([
+      "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11",
+      "2026-06-12", "2026-06-13", "2026-06-14",
+    ]);
+    expect(r.every((d) => d.windows.length === 1 && d.windows[0].min === "18:00" && d.windows[0].max === "20:00")).toBe(true);
+  });
+
+  it("'next week' → the following Mon–Sun", () => {
+    expect(parseTemporal("lunch next week", TODAY).map((d) => d.day)).toEqual([
+      "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18",
+      "2026-06-19", "2026-06-20", "2026-06-21",
+    ]);
+  });
+
+  it("'in 2 weeks' → +14 days", () => {
+    expect(parseTemporal("offsite in 2 weeks", TODAY)).toEqual([
+      { day: "2026-06-22", windows: [w("17:00", "21:00")] },
+    ]);
+  });
+
+  it("'in a couple days' → +2, 'in a few days' → +3", () => {
+    expect(parseTemporal("call in a couple days", TODAY)).toEqual([
+      { day: "2026-06-10", windows: [w("17:00", "21:00")] },
+    ]);
+    expect(parseTemporal("call in a few days", TODAY)).toEqual([
+      { day: "2026-06-11", windows: [w("17:00", "21:00")] },
+    ]);
+  });
+
+  it("fuzzy clock '7ish' → 7pm + 2h", () => {
+    expect(parseTemporal("trivia 7ish", TODAY)).toEqual([
+      { day: "2026-06-08", windows: [w("19:00", "21:00")] },
+    ]);
+  });
+
+  it("'after dinner tomorrow' → 8–10 PM (not the dinner band)", () => {
+    expect(parseTemporal("drinks after dinner tomorrow", TODAY)).toEqual([
+      { day: "2026-06-09", windows: [w("20:00", "22:00")] },
+    ]);
+  });
+
+  it("'anytime saturday' → all-day band", () => {
+    expect(parseTemporal("hangout anytime saturday", TODAY)).toEqual([
+      { day: "2026-06-13", windows: [w("09:00", "21:00")] },
+    ]);
+  });
+
   // --- Negative / robustness cases (no temporal prefill) ---
 
   it("bare number is not a clock: '7 wonders' → []", () => {
@@ -170,5 +219,20 @@ describe("stripTemporal — lift day/time text out, keep meal nouns", () => {
   it("'next friday' and 'in 3 days' fully strip", () => {
     expect(stripTemporal("hangout next friday")).toBe("hangout");
     expect(stripTemporal("trip in 3 days")).toBe("trip");
+  });
+
+  it("strips 'this week' / 'next week' but keeps the meal noun", () => {
+    expect(stripTemporal("book club this week")).toBe("book club");
+    expect(stripTemporal("standup next week")).toBe("standup");
+    expect(stripTemporal("dinner this week")).toBe("dinner");
+  });
+
+  it("strips 'after dinner' wholesale (it's a time, not the meal)", () => {
+    expect(stripTemporal("drinks after dinner")).toBe("drinks");
+  });
+
+  it("strips fuzzy clock + all-day words", () => {
+    expect(stripTemporal("trivia 7ish")).toBe("trivia");
+    expect(stripTemporal("whenever this weekend")).toBe("");
   });
 });
