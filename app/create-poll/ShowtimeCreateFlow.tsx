@@ -234,23 +234,23 @@ export default function ShowtimeCreateFlow({
                   type="button"
                   onClick={() => toggleCinema(c.cinema_id)}
                   disabled={isLoading}
-                  className={`max-w-full rounded-xl border px-3 py-2 text-left active:scale-[0.98] ${
+                  className={`max-w-full rounded-xl border px-1.5 py-1 text-left active:scale-[0.98] ${
                     checked
                       ? "border-blue-600 bg-blue-50 dark:border-blue-500 dark:bg-blue-900/30"
                       : "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800"
                   }`}
                 >
-                  <div className="flex items-baseline gap-2 whitespace-nowrap">
-                    <span className="text-base font-medium">{c.name}</span>
-                    <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                  <div className="whitespace-nowrap text-base font-medium">{c.name}</div>
+                  <div className="flex items-baseline gap-1.5 truncate text-xs">
+                    <span className="shrink-0 font-medium text-blue-600 dark:text-blue-400">
                       {c.distance_miles} mi
                     </span>
+                    {c.address && (
+                      <span className="truncate text-gray-500 dark:text-gray-400">
+                        {c.address}
+                      </span>
+                    )}
                   </div>
-                  {c.address && (
-                    <div className="truncate text-xs text-gray-500 dark:text-gray-400">
-                      {c.address}
-                    </div>
-                  )}
                 </button>
               );
             })}
