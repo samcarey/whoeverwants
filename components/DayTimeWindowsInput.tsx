@@ -86,7 +86,7 @@ function getRelativeDay(dateStr: string): string {
 // the surfaces this renders on (the voter availability card is bg-gray-100/900,
 // the create-poll card is white/gray-800), so pills stay legible on both
 // without per-day card backing.
-const PILL_BASE = 'w-[154px] py-1.5 rounded-full text-sm font-medium border transition-colors text-center disabled:cursor-not-allowed';
+const PILL_BASE = 'w-[154px] py-1.5 rounded-full text-sm font-medium border transition-colors text-center select-none [-webkit-touch-callout:none] disabled:cursor-not-allowed';
 const PILL_STATE_CLASSES = {
   disabled: 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-default opacity-50',
   tooShort: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50',
@@ -496,7 +496,7 @@ export default function DayTimeWindowsInput({
           Geist Sans (date line ~81 px; abbreviated relative ~50 px).
           Long-press (in 'none' mode) opens the copy context menu. */}
       <div
-        className={`w-[88px] self-start${dayLongPress ? ' select-none' : ''}`}
+        className={`w-[88px] self-start${dayLongPress ? ' select-none [-webkit-touch-callout:none]' : ''}`}
         {...dayLongPressHandlers}
       >
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">

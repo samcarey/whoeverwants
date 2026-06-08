@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ModalPortal from './ModalPortal';
 import TimeGridModal from './TimeGridModal';
 import DayTimeWindowsInput from './DayTimeWindowsInput';
 import { haptic } from '@/lib/haptics';
+import { fitWindowsToBounds } from '@/lib/timeUtils';
 import type { DayTimeWindow, TimeWindow } from '@/lib/types';
 
 // Coordinator for a multi-day list of DayTimeWindowsInput rows. Owns the
@@ -45,6 +46,22 @@ export default function DayTimeWindowsList({
   const [targetDays, setTargetDays] = useState<Set<string>>(() => new Set());
   const [menu, setMenu] = useState<{ day: string; x: number; y: number } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  // Transient "we auto-adjusted your slots" toast shown after a bulk edit /
+  // paste clamps windows into the allowed bounds (so the voter never lands on
+  // the "outside allowed times / overlap" submit-blocker).
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<number | null>(null);
+  const flashNotice = (msg: string) => {
+    if (noticeTimer.current !== null) clearTimeout(noticeTimer.current);
+    setNotice(msg);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 3000);
+  };
+  useEffect(() => () => { if (noticeTimer.current !== null) clearTimeout(noticeTimer.current); }, []);
+
+  // Allowed (creator) windows for a day, used by the autofix clamp. Empty on
+  // the creator form (no constraints) so fit degenerates to sort + de-overlap.
+  const questionWindowsForDay = (day: string): TimeWindow[] =>
+    questionDayTimeWindows?.find((p) => p.day === day)?.windows ?? [];
 
   // Signature of the day set so we can drop any in-flight selection if the days
   // change underneath us (e.g. the calendar adds/removes a day mid-gesture) —
@@ -108,12 +125,15 @@ export default function DayTimeWindowsList({
   };
   const applyBulkEdit = (min: string | null, max: string | null) => {
     if (!min || !max) return;
+    let adjusted = false;
     const next = dayTimeWindows.map((d) => {
+      const touched = d.windows.some((_, i) => selectedWindows.has(winKey(d.day, i)));
+      if (!touched) return d;
       const edited = d.windows.map((w, i) =>
         selectedWindows.has(winKey(d.day, i)) ? { ...w, min, max } : w,
       );
       // Collapsing multiple slots in one day to identical times shouldn't leave
-      // exact duplicates; dedupe by min-max, then re-sort by start.
+      // exact duplicates; dedupe by min-max first.
       const seen = new Set<string>();
       const deduped = edited.filter((w) => {
         const k = `${w.min}-${w.max}`;
@@ -121,12 +141,17 @@ export default function DayTimeWindowsList({
         seen.add(k);
         return true;
       });
-      return { ...d, windows: [...deduped].sort((a, b) => a.min.localeCompare(b.min)) };
+      // Autofix: clamp into the allowed windows + merge overlaps so the result
+      // never trips the "outside allowed times / overlap" submit-blocker.
+      const fit = fitWindowsToBounds(deduped, questionWindowsForDay(d.day));
+      if (fit.changed) adjusted = true;
+      return { ...d, windows: fit.windows };
     });
     haptic.medium();
     onChange(next);
     setEditOpen(false);
     exitSelection();
+    if (adjusted) flashNotice('Adjusted slots to fit the allowed times');
   };
 
   // ── copy mode ─────────────────────────────────────────────────────────────
@@ -151,15 +176,22 @@ export default function DayTimeWindowsList({
     if (!copySource || targetDays.size === 0) return;
     const src = dayTimeWindows.find((d) => d.day === copySource);
     if (!src) { exitSelection(); return; }
+    let adjusted = false;
+    const next = dayTimeWindows.map((d) => {
+      if (!targetDays.has(d.day) || d.day === copySource) return d;
+      // Autofix: the source day's allowed windows may differ from the target's,
+      // so clamp the pasted slots into the target's bounds + merge overlaps.
+      const fit = fitWindowsToBounds(
+        src.windows.map((w) => ({ ...w })),
+        questionWindowsForDay(d.day),
+      );
+      if (fit.changed) adjusted = true;
+      return { ...d, windows: fit.windows };
+    });
     haptic.medium();
-    onChange(
-      dayTimeWindows.map((d) =>
-        targetDays.has(d.day) && d.day !== copySource
-          ? { ...d, windows: src.windows.map((w) => ({ ...w })) }
-          : d,
-      ),
-    );
+    onChange(next);
     exitSelection();
+    if (adjusted) flashNotice('Adjusted slots to fit the allowed times');
   };
 
   const selectionEnabled = !disabled && dayTimeWindows.length > 0;
@@ -261,6 +293,20 @@ export default function DayTimeWindowsList({
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+
+      {/* Transient autofix toast. */}
+      {notice && (
+        <ModalPortal>
+          <div
+            className="fixed left-1/2 -translate-x-1/2 z-[66] animate-slide-up pointer-events-none"
+            style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
+          >
+            <div className="rounded-full bg-gray-900/90 dark:bg-gray-700 text-white text-sm font-medium px-4 py-2 shadow-xl">
+              {notice}
             </div>
           </div>
         </ModalPortal>
