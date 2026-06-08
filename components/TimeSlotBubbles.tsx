@@ -104,6 +104,39 @@ export default function TimeSlotBubbles({
     if (disabled) clearSelection();
   }, [disabled, clearSelection]);
 
+  // Tapping outside the bubbles (and the toolbar) deselects; dragging outside
+  // does NOT (so the page can still scroll/swipe with a selection active). A
+  // "tap" is a pointerdown→up with sub-threshold travel that landed outside any
+  // selectable bubble and outside the floating toolbar. Capture phase so a
+  // bubble's own stopPropagation can't hide the event from us. A new drag begun
+  // ON a bubble starts inside, so this never fights handleBubblePointerDown.
+  useEffect(() => {
+    if (disabled || effectiveSelection.length === 0) return;
+    let start: { x: number; y: number; outside: boolean } | null = null;
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      const inside = !!target?.closest?.(
+        '[data-slot-available="true"],[data-slot-toolbar="true"]',
+      );
+      start = { x: e.clientX, y: e.clientY, outside: !inside };
+    };
+    const onUp = (e: PointerEvent) => {
+      if (
+        start?.outside &&
+        Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_THRESHOLD
+      ) {
+        clearSelection();
+      }
+      start = null;
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+    };
+  }, [disabled, effectiveSelection.length, clearSelection]);
+
   // How many voters a slot excludes, ABSOLUTE: everyone who submitted
   // availability minus the slot's own count — so even the best-attended slot
   // shows the people it leaves out. Falls back to the relative (max − count)
@@ -366,6 +399,7 @@ export default function TimeSlotBubbles({
       {!disabled && effectiveSelection.length > 0 && (
         <ModalPortal>
           <div
+            data-slot-toolbar="true"
             className="fixed left-1/2 -translate-x-1/2 z-50 animate-slide-up"
             style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
           >
