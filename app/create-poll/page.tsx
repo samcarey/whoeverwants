@@ -174,9 +174,9 @@ const SEG_OPTION = { colorText: 'text-blue-500/80 dark:text-blue-400/80', colorB
 // text IS the whole title) are NOT colored, just slightly faded grey.
 const SEG_WHOLE_TITLE = { colorText: 'text-gray-400/80 dark:text-gray-500/80', colorBorder: 'border-gray-300/60 dark:border-gray-600/60' };
 // The custom-category row (a free-text category the user typed) gets a distinct
-// GOLD "Custom Category" annotation so it reads as clearly different from a
+// GOLD "Custom" annotation so it reads as clearly different from a
 // matched built-in category (green "Category").
-const SEG_CUSTOM_CATEGORY = { label: 'Custom Category', colorText: 'text-amber-500/80 dark:text-amber-400/80', colorBorder: 'border-amber-400/50' };
+const SEG_CUSTOM_CATEGORY = { label: 'Custom', colorText: 'text-amber-500/80 dark:text-amber-400/80', colorBorder: 'border-amber-400/50' };
 
 // Map the title's labelled segments (from `draftTitleSegments`) onto the
 // coloured suggestion-row spans. Category / context / option words get their
@@ -222,7 +222,7 @@ function overridesToSegments(overrides: Partial<QuestionDraft>): SuggestionSegme
 }
 
 // Same as overridesToSegments, but recolours the green "Category" segment to
-// the gold "Custom Category" annotation — used for the free-text custom-category
+// the gold "Custom" annotation — used for the free-text custom-category
 // row so it's visually distinct from a matched built-in category.
 function customCategorySegments(overrides: Partial<QuestionDraft>): SuggestionSegment[] {
   return overridesToSegments(overrides).map((s) =>
@@ -1390,7 +1390,7 @@ export function CreateQuestionContent() {
     }
 
     // A custom-category poll named after the typed subject — shown ABOVE the
-    // matched built-in category rows, with a distinct gold "Custom Category"
+    // matched built-in category rows, with a distinct gold "Custom"
     // annotation. No empty "New Poll" row — the + button opens a blank poll
     // instead. When the custom category (or its context) matches an emoji
     // description, show that emoji instead of the generic ✏️ fallback (same
