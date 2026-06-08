@@ -426,19 +426,6 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
               )}
             </ul>
           )}
-
-          {ignoredCount > 0 && (
-            <>
-              <h3 className="px-1 mt-4 mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                Viewed, No Response
-              </h3>
-              <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-3 text-sm italic text-gray-500 dark:text-gray-400">
-                {ignoredCount === 1
-                  ? "1 person viewed this poll without responding yet."
-                  : `${ignoredCount} people viewed this poll without responding yet.`}
-              </div>
-            </>
-          )}
         </section>
       </div>
 
