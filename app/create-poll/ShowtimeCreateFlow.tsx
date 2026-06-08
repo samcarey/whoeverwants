@@ -225,7 +225,7 @@ export default function ShowtimeCreateFlow({
           <p className="px-1 text-[15px] font-medium text-gray-500 dark:text-gray-400">
             Theaters to include
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap justify-center gap-2">
             {theaters.map((c) => {
               const checked = selectedCinemas.has(c.cinema_id);
               return (
@@ -234,14 +234,16 @@ export default function ShowtimeCreateFlow({
                   type="button"
                   onClick={() => toggleCinema(c.cinema_id)}
                   disabled={isLoading}
-                  className={`max-w-full rounded-xl border px-1.5 py-1 text-left active:scale-[0.98] ${
+                  className={`max-w-full rounded-[20.4px] border px-1.5 py-0.5 text-left active:scale-[0.98] ${
                     checked
                       ? "border-blue-600 bg-blue-50 dark:border-blue-500 dark:bg-blue-900/30"
                       : "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800"
                   }`}
                 >
-                  <div className="whitespace-nowrap text-base font-medium">{c.name}</div>
-                  <div className="flex w-0 min-w-full items-baseline gap-1.5 text-xs">
+                  <div className="whitespace-nowrap text-[12.8px] font-medium leading-tight">
+                    {c.name}
+                  </div>
+                  <div className="mt-px flex w-0 min-w-full items-baseline gap-1.5 text-xs leading-tight">
                     <span className="shrink-0 font-medium text-blue-600 dark:text-blue-400">
                       {c.distance_miles} mi
                     </span>
