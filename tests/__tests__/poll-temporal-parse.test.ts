@@ -156,6 +156,85 @@ describe("parseTemporal — window prefill (deterministic on a fixed today)", ()
     ]);
   });
 
+  // --- Combos (weekday/band × scope) ---
+
+  it("combo: 'thursdays this month' → every Thursday left this month", () => {
+    expect(parseTemporal("thursdays this month", TODAY)).toEqual([
+      { day: "2026-06-11", windows: [w("17:00", "21:00")] },
+      { day: "2026-06-18", windows: [w("17:00", "21:00")] },
+      { day: "2026-06-25", windows: [w("17:00", "21:00")] },
+    ]);
+  });
+
+  it("combo: 'nights this weekend' → Sat & Sun, night band", () => {
+    expect(parseTemporal("nights this weekend", TODAY)).toEqual([
+      { day: "2026-06-13", windows: [w("18:00", "23:00")] },
+      { day: "2026-06-14", windows: [w("18:00", "23:00")] },
+    ]);
+  });
+
+  it("combo: 'weeknights next week' → next Mon–Thu, evening band", () => {
+    expect(parseTemporal("weeknights next week", TODAY)).toEqual([
+      { day: "2026-06-15", windows: [w("17:00", "21:00")] },
+      { day: "2026-06-16", windows: [w("17:00", "21:00")] },
+      { day: "2026-06-17", windows: [w("17:00", "21:00")] },
+      { day: "2026-06-18", windows: [w("17:00", "21:00")] },
+    ]);
+  });
+
+  it("'weekdays this week' → Mon–Fri of this week", () => {
+    expect(parseTemporal("weekdays this week", TODAY).map((d) => d.day)).toEqual([
+      "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12",
+    ]);
+  });
+
+  // --- Tier 1 ---
+
+  it("'midweek' → Wednesday", () => {
+    expect(parseTemporal("midweek", TODAY)).toEqual([
+      { day: "2026-06-10", windows: [w("17:00", "21:00")] },
+    ]);
+  });
+
+  it("'early next week' → next Mon+Tue; 'late next week' → next Thu+Fri", () => {
+    expect(parseTemporal("early next week", TODAY).map((d) => d.day)).toEqual(["2026-06-15", "2026-06-16"]);
+    expect(parseTemporal("late next week", TODAY).map((d) => d.day)).toEqual(["2026-06-18", "2026-06-19"]);
+  });
+
+  it("'end of the week' → this Thu+Fri", () => {
+    expect(parseTemporal("end of the week", TODAY).map((d) => d.day)).toEqual(["2026-06-11", "2026-06-12"]);
+  });
+
+  it("workday range '9-5 friday' → 9 AM–5 PM", () => {
+    expect(parseTemporal("9-5 friday", TODAY)).toEqual([
+      { day: "2026-06-12", windows: [w("09:00", "17:00")] },
+    ]);
+  });
+
+  it("'business hours tomorrow' → 9–5", () => {
+    expect(parseTemporal("business hours tomorrow", TODAY)).toEqual([
+      { day: "2026-06-09", windows: [w("09:00", "17:00")] },
+    ]);
+  });
+
+  it("'at noon tomorrow' → midday window", () => {
+    expect(parseTemporal("at noon tomorrow", TODAY)).toEqual([
+      { day: "2026-06-09", windows: [w("12:00", "14:00")] },
+    ]);
+  });
+
+  it("'midnight friday' → late", () => {
+    expect(parseTemporal("midnight friday", TODAY)).toEqual([
+      { day: "2026-06-12", windows: [w("21:30", "23:30")] },
+    ]);
+  });
+
+  it("'mid-afternoon saturday' band", () => {
+    expect(parseTemporal("mid-afternoon saturday", TODAY)).toEqual([
+      { day: "2026-06-13", windows: [w("14:00", "16:00")] },
+    ]);
+  });
+
   // --- Negative / robustness cases (no temporal prefill) ---
 
   it("bare number is not a clock: '7 wonders' → []", () => {
@@ -234,5 +313,15 @@ describe("stripTemporal — lift day/time text out, keep meal nouns", () => {
   it("strips fuzzy clock + all-day words", () => {
     expect(stripTemporal("trivia 7ish")).toBe("trivia");
     expect(stripTemporal("whenever this weekend")).toBe("");
+  });
+
+  it("strips Tier 1 / combo phrases", () => {
+    expect(stripTemporal("standup weekdays")).toBe("standup");
+    expect(stripTemporal("dinner thursdays this month")).toBe("dinner");
+    expect(stripTemporal("drinks at noon")).toBe("drinks");
+    expect(stripTemporal("party midweek")).toBe("party");
+    expect(stripTemporal("sync 9-5 friday")).toBe("sync");
+    expect(stripTemporal("call early next week")).toBe("call");
+    expect(stripTemporal("game night this weekend")).toBe("game"); // "night" + "this weekend" stripped, "game" kept
   });
 });

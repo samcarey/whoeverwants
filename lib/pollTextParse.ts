@@ -187,19 +187,25 @@ interface ParsedWindow { min: string; max: string; }
 // are stripped out to the inline parsed-range annotation.
 const BAND_LEXICON: ReadonlyArray<readonly [RegExp, string, string, boolean]> = [
   // Multi-word / qualified phrases FIRST so they win over their single-word
-  // constituents (the band loop blanks matched spans as it goes).
-  [/\blate night\b/i, "21:00", "23:30", false],
+  // constituents (the band loop blanks matched spans as it goes). Plural forms
+  // (`s?`) so combos like "nights this weekend" / "evenings next week" match.
+  [/\blate nights?\b/i, "21:00", "23:30", false],
   [/\bhappy hour\b/i, "16:00", "18:00", false],
+  [/\ball weekend\b/i, "09:00", "21:00", false],
+  [/\bbusiness hours\b/i, "09:00", "17:00", false],
   [/\bafter work\b/i, "17:00", "21:00", false],
   [/\bafter school\b/i, "15:00", "18:00", false],
   [/\bafter dinner\b/i, "20:00", "22:00", false],
   [/\bafter lunch\b/i, "13:00", "15:00", false],
+  [/\bweeknights?\b/i, "17:00", "21:00", false],
   [/\bfirst thing\b/i, "06:00", "09:00", false],
-  [/\bearly morning\b/i, "06:00", "09:00", false],
-  [/\blate morning\b/i, "10:00", "12:00", false],
-  [/\bearly afternoon\b/i, "12:00", "14:00", false],
-  [/\blate afternoon\b/i, "15:00", "18:00", false],
-  [/\bearly evening\b/i, "17:00", "19:00", false],
+  [/\bearly mornings?\b/i, "06:00", "09:00", false],
+  [/\bmid-?mornings?\b/i, "10:00", "11:30", false],
+  [/\blate mornings?\b/i, "10:00", "12:00", false],
+  [/\bearly afternoons?\b/i, "12:00", "14:00", false],
+  [/\bmid-?afternoons?\b/i, "14:00", "16:00", false],
+  [/\blate afternoons?\b/i, "15:00", "18:00", false],
+  [/\bearly evenings?\b/i, "17:00", "19:00", false],
   [/\b(?:any\s?time|whenever)\b/i, "09:00", "21:00", false],
   [/\ball day\b/i, "09:00", "21:00", false],
   // Meal nouns (isMeal = true → kept as the subject by stripTemporal).
@@ -207,11 +213,11 @@ const BAND_LEXICON: ReadonlyArray<readonly [RegExp, string, string, boolean]> = 
   [/\bbrunch\b/i, "10:00", "13:00", true],
   [/\b(?:lunch|lunchtime)\b/i, "11:30", "13:30", true],
   [/\b(?:dinner|dinnertime|supper)\b/i, "18:00", "20:00", true],
-  // Single time-of-day words last.
-  [/\bmorning\b/i, "08:00", "12:00", false],
-  [/\bafternoon\b/i, "12:00", "17:00", false],
-  [/\b(?:evening|eve)\b/i, "17:00", "21:00", false],
-  [/\b(?:tonight|nighttime|night)\b/i, "18:00", "23:00", false],
+  // Single time-of-day words last (plural forms for "mornings this week" etc.).
+  [/\bmornings?\b/i, "08:00", "12:00", false],
+  [/\bafternoons?\b/i, "12:00", "17:00", false],
+  [/\b(?:evenings?|eve)\b/i, "17:00", "21:00", false],
+  [/\b(?:tonight|nighttime|nights?)\b/i, "18:00", "23:00", false],
 ];
 
 // Bare day with no band word → a narrow evening suggestion (the most common
@@ -297,14 +303,21 @@ function parseClockWindows(raw: string): ParsedWindow[] {
     // "7-9pm": the trailing meridiem applies to both ends; and vice-versa.
     if (!ap1 && ap2) ap1 = ap2;
     if (!ap2 && ap1) ap2 = ap1;
-    // Neither end marked ("between 6 and 8") → infer ONE shared meridiem from
-    // the first hour (1–7 → PM, 8–11 → AM, 12 → PM/noon) and apply to both, so
-    // the two ends don't disambiguate in opposite directions.
+    // Neither end marked. A morning→afternoon span ("9-5", "10-2", "11-3":
+    // first hour 8–12 AND descending to an afternoon hour 1–7) is the workday
+    // pattern → AM then PM. Otherwise infer ONE shared meridiem from the first
+    // hour (1–7 → PM, 8–11 → AM, 12 → noon) and apply to both ends.
     if (!ap1 && !ap2) {
       const h1 = parseInt(m[1], 10);
-      const shared = h1 >= 1 && h1 <= 7 ? "pm" : h1 === 12 ? "pm" : "am";
-      ap1 = shared;
-      ap2 = shared;
+      const h2 = parseInt(m[4], 10);
+      if (h1 >= 8 && h1 <= 12 && h2 >= 1 && h2 <= 7 && h1 > h2) {
+        ap1 = h1 === 12 ? "pm" : "am";
+        ap2 = "pm";
+      } else {
+        const shared = h1 >= 1 && h1 <= 7 ? "pm" : h1 === 12 ? "pm" : "am";
+        ap1 = shared;
+        ap2 = shared;
+      }
     }
     const a = clockToMinutes(parseInt(m[1], 10), m[2] ? parseInt(m[2], 10) : 0, ap1);
     const b = clockToMinutes(parseInt(m[4], 10), m[5] ? parseInt(m[5], 10) : 0, ap2);
@@ -342,6 +355,14 @@ function parseClockWindows(raw: string): ParsedWindow[] {
     if (t !== null) { const w = clamp(t, t + DEFAULT_POINT_SPAN_MIN); if (w) out.push(w); }
   }
 
+  // Word anchors: "noon" → midday window (unless it's a "before/after noon"
+  // open range, handled above/below); "midnight" → late.
+  if (/\bnoon\b/i.test(raw) && !/\b(?:before|after)\s+noon\b/i.test(raw)) {
+    const w = clamp(12 * 60, 12 * 60 + DEFAULT_POINT_SPAN_MIN); if (w) out.push(w);
+  }
+  if (/\bafter\s+noon\b/i.test(raw)) { const w = clamp(12 * 60, DAY_END_MIN); if (w) out.push(w); }
+  if (/\bmidnight\b/i.test(raw)) { const w = clamp(DAY_END_MIN - DEFAULT_POINT_SPAN_MIN, DAY_END_MIN); if (w) out.push(w); }
+
   return out;
 }
 
@@ -359,27 +380,47 @@ function parseDays(raw: string, base: Date): Set<string> {
   if (/\bthis\s+(?:morning|afternoon|evening|night|eve)\b/.test(lower)) days.add(isoFromBase(base, 0));
   // "tomorrow morning/night/..." already added tomorrow above (band handled in T).
 
-  // Weekend.
+  // Weekend (incl. "all weekend" — the all-day band rides separately).
   if (/\bnext\s+weekend\b/.test(lower)) {
     days.add(weekdayDate(base, 6, true));
     days.add(weekdayDate(base, 0, true));
-  } else if (/\b(?:this\s+)?weekend\b/.test(lower)) {
+  } else if (/\b(?:this\s+|all\s+)?weekend\b/.test(lower)) {
     days.add(weekdayDate(base, 6, false));
     days.add(weekdayDate(base, 0, false));
   }
 
-  // Week. "this week" = today through the upcoming Sunday (rest of the week,
-  // incl. the weekend); "next week" = the following Mon–Sun. `\bweek\b` can't
-  // match "weekend"/"weekday" (no word boundary after "week" there).
   const daysToSunday = (7 - base.getDay()) % 7; // 0 when today is Sunday
-  if (/\bnext\s+week\b/.test(lower)) {
-    const start = daysToSunday + 1; // the Monday after this Sunday
-    for (let i = 0; i < 7; i++) days.add(isoFromBase(base, start + i));
-  } else if (/\b(?:this\s+)?week\b/.test(lower)) {
-    for (let i = 0; i <= daysToSunday; i++) days.add(isoFromBase(base, i));
+  const at = (off: number) => new Date(base.getFullYear(), base.getMonth(), base.getDate() + off);
+
+  // Specific sub-week phrases — handled directly (and they SUPPRESS the broad
+  // week scope below, since "early next week" etc. contain "week").
+  let subWeekHandled = false;
+  if (/\bmidweek\b/.test(lower)) days.add(weekdayDate(base, 3, false)); // Wed (independent of week scope)
+  if (/\bearly\s+next\s+week\b/.test(lower)) { days.add(weekdayDate(base, 1, true)); days.add(weekdayDate(base, 2, true)); subWeekHandled = true; }
+  if (/\blate\s+next\s+week\b/.test(lower)) { days.add(weekdayDate(base, 4, true)); days.add(weekdayDate(base, 5, true)); subWeekHandled = true; }
+  if (/\b(?:start|beginning)\s+of\s+(?:the\s+|this\s+)?week\b/.test(lower)) { days.add(weekdayDate(base, 1, false)); days.add(weekdayDate(base, 2, false)); subWeekHandled = true; }
+  if (/\b(?:end\s+of\s+(?:the\s+|this\s+)?week|eow)\b/.test(lower)) { days.add(weekdayDate(base, 4, false)); days.add(weekdayDate(base, 5, false)); subWeekHandled = true; }
+
+  // Broad scope range [start, end] in day-offsets for week / month, or null.
+  // "this month"/"next month" are only ever expanded via a weekday filter
+  // (a bare month would explode to ~30 days); a bare week DOES expand.
+  let scope: [number, number] | null = null;
+  let scopeIsWeek = false;
+  if (!subWeekHandled) {
+    if (/\bnext\s+week\b/.test(lower)) { scope = [daysToSunday + 1, daysToSunday + 7]; scopeIsWeek = true; }
+    else if (/\b(?:this\s+)?week\b/.test(lower)) { scope = [0, daysToSunday]; scopeIsWeek = true; }
+    else if (/\bnext\s+month\b/.test(lower)) {
+      const daysInMonth = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+      const firstNext = daysInMonth - base.getDate() + 1;
+      const daysInNext = new Date(base.getFullYear(), base.getMonth() + 2, 0).getDate();
+      scope = [firstNext, firstNext + daysInNext - 1];
+    } else if (/\b(?:this\s+)?month\b/.test(lower)) {
+      const daysInMonth = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+      scope = [0, daysInMonth - base.getDate()];
+    }
   }
 
-  // "in N days" / "N days from now"; "in N weeks" / "N weeks from now".
+  // "in N days/weeks", "N days/weeks from now", vague counts.
   let m = /\bin\s+(\d{1,2})\s+days?\b/.exec(lower);
   if (m) days.add(isoFromBase(base, parseInt(m[1], 10)));
   m = /\b(\d{1,2})\s+days?\s+from\s+now\b/.exec(lower);
@@ -388,18 +429,49 @@ function parseDays(raw: string, base: Date): Set<string> {
   if (m) days.add(isoFromBase(base, 7 * parseInt(m[1], 10)));
   m = /\b(\d{1,2})\s+weeks?\s+from\s+now\b/.exec(lower);
   if (m) days.add(isoFromBase(base, 7 * parseInt(m[1], 10)));
-
-  // Vague counts: "in a couple (of) days" → +2, "in a few days" → +3.
   if (/\b(?:in\s+)?(?:a\s+)?couple\s+(?:of\s+)?days?\b/.test(lower)) days.add(isoFromBase(base, 2));
   if (/\b(?:in\s+)?(?:a\s+)?few\s+days?\b/.test(lower)) days.add(isoFromBase(base, 3));
 
-  // Weekdays, honoring a preceding "this"/"next" qualifier. A list like
-  // "friday or saturday" adds both.
+  // Weekday matches (singular or plural), honoring "this"/"next". A plural
+  // ("thursdays") or a "weekday(s)"/"weeknight(s)" word means "every matching
+  // day" rather than a single occurrence.
+  const filterSet = new Set<number>();
+  const singles: Array<{ wd: number; next: boolean }> = [];
+  let plural = false;
   for (let i = 0; i < tokens.length; i++) {
-    const wd = WEEKDAYS.get(tokens[i]);
+    const t = tokens[i];
+    let wd = WEEKDAYS.get(t);
+    let isPlural = false;
+    if (wd === undefined && t.endsWith("s")) {
+      const s = WEEKDAYS.get(t.slice(0, -1));
+      if (s !== undefined) { wd = s; isPlural = true; }
+    }
     if (wd === undefined) continue;
-    const prev = tokens[i - 1];
-    days.add(weekdayDate(base, wd, prev === "next"));
+    filterSet.add(wd);
+    if (isPlural) plural = true;
+    else singles.push({ wd, next: tokens[i - 1] === "next" });
+  }
+  if (/\bweekdays?\b/.test(lower)) { [1, 2, 3, 4, 5].forEach((d) => filterSet.add(d)); plural = true; }
+  if (/\bweeknights?\b/.test(lower)) { [1, 2, 3, 4].forEach((d) => filterSet.add(d)); plural = true; }
+
+  if (scope && filterSet.size) {
+    // Combo: "thursdays this month", "weeknights next week" → matching weekdays
+    // within the scope.
+    for (let off = scope[0]; off <= scope[1]; off++) {
+      if (filterSet.has(at(off).getDay())) days.add(isoFromBase(base, off));
+    }
+  } else if (scope && scopeIsWeek) {
+    // Bare week → every day of the week.
+    for (let off = scope[0]; off <= scope[1]; off++) days.add(isoFromBase(base, off));
+  } else if (filterSet.size) {
+    // No scope. Singular weekday → next occurrence (honoring this/next); a
+    // plural / "weekday(s)" / "weeknight(s)" → every match in the next 2 weeks.
+    for (const { wd, next } of singles) days.add(weekdayDate(base, wd, next));
+    if (plural) {
+      for (let off = 0; off < 14; off++) {
+        if (filterSet.has(at(off).getDay())) days.add(isoFromBase(base, off));
+      }
+    }
   }
 
   return days;
@@ -478,17 +550,26 @@ function toMin(hhmm: string): number {
 // shown instead as the inline parsed-range annotation in the suggestion row.
 const STRIP_RE: RegExp = (() => {
   const HHMM = "\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?";
-  const WD = [...WEEKDAYS.keys()].sort((a, b) => b.length - a.length).join("|");
+  // Weekday alternation allows a trailing plural "s" ("thursdays").
+  const WD = `(?:${[...WEEKDAYS.keys()].sort((a, b) => b.length - a.length).join("|")})s?`;
   const nonMealBands = BAND_LEXICON.filter(([, , , meal]) => !meal).map(([re]) => re.source);
   const parts = [
     // Day phrases (longest / multi-word first).
     "\\bday after tomorrow\\b",
-    "\\b(?:this|next)\\s+weekend\\b",
+    "\\b(?:early|late)\\s+next\\s+week\\b",
+    "\\b(?:start|beginning)\\s+of\\s+(?:the\\s+|this\\s+)?week\\b",
+    "\\bend\\s+of\\s+(?:the\\s+|this\\s+)?week\\b",
+    "\\beow\\b",
+    "\\bmidweek\\b",
+    "\\b(?:this|next|all)\\s+weekend\\b",
     "\\bweekend\\b",
     "\\b(?:this|next)\\s+week\\b",
     "\\bweek\\b",
-    `\\b(?:this|next|on)\\s+(?:${WD})\\b`,
-    `\\b(?:${WD})\\b`,
+    "\\b(?:this|next)\\s+month\\b",
+    "\\bmonth\\b",
+    "\\bweekdays?\\b",
+    `\\b(?:this|next|on)\\s+${WD}\\b`,
+    `\\b${WD}\\b`,
     "\\b(?:today|tonight|tomorrow|tmrw|tmw|tmro)\\b",
     "\\bthis\\s+(?:morning|afternoon|evening|night|eve)\\b",
     "\\bin\\s+\\d{1,2}\\s+days?\\b",
@@ -497,11 +578,12 @@ const STRIP_RE: RegExp = (() => {
     "\\b\\d{1,2}\\s+weeks?\\s+from\\s+now\\b",
     "\\b(?:in\\s+)?(?:a\\s+)?couple\\s+(?:of\\s+)?days?\\b",
     "\\b(?:in\\s+)?(?:a\\s+)?few\\s+days?\\b",
-    // Time-of-day bands (non-meal only) + noon/midday.
+    // Time-of-day bands (non-meal only) + noon/midnight/midday.
     ...nonMealBands,
-    "\\b(?:noon|midday|mid-?day)\\b",
+    "\\b(?:noon|midnight|midday|mid-?day)\\b",
     // Clock phrases.
     "\\bbefore\\s+noon\\b",
+    "\\bafter\\s+noon\\b",
     `(?:between\\s+)?${HHMM}\\s*(?:-|–|—|to|until|till|and)\\s*${HHMM}`,
     `\\b(?:after|before|at|by|around)\\s+${HHMM}`,
     `@\\s*${HHMM}`,
