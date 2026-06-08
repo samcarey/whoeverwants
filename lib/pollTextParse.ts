@@ -22,6 +22,7 @@
 
 import type { DayTimeWindow } from "./types";
 import { formatLocalDateISO, minutesToTime, timeToMinutes } from "./timeUtils";
+import { topCategory } from "./categoryMatch";
 
 export type ParsedPollKind = "options" | "category" | "yes_no";
 
@@ -99,29 +100,20 @@ const YESNO_STEMS = new Set<string>([
   "must",
 ]);
 
-// Built-in categories a spoken phrase can imply, with the exact subject words
-// that trigger each. ORDER IS PRECEDENCE — the first category with a matching
-// subject word wins, so "where should we eat" → restaurant ("eat" beats the
-// location "where"). Matching is exact whole-word membership (incl. common
-// plurals) to avoid the false positives a substring match would create.
-const CATEGORY_TRIGGERS: ReadonlyArray<readonly [string, ReadonlySet<string>]> = [
-  ["restaurant", new Set(["eat", "eats", "food", "restaurant", "restaurants", "dine", "takeout"])],
-  ["movie", new Set(["movie", "movies", "film", "films", "watch"])],
-  ["video_game", new Set(["game", "games", "videogame"])],
-  ["time", new Set(["when", "time", "schedule", "meet"])],
-  ["location", new Set(["where", "place", "places", "spot", "venue", "location"])],
-  ["showtime", new Set(["showtime", "showtimes"])],
-];
+/** True when the phrase opens with a yes/no question stem ("should we…",
+ *  "are we…"). Checked on the FIRST word so a mid-sentence stem doesn't trip it.
+ *  Box-only helper (not part of the Swift contract); the box uses it to keep a
+ *  stem-led question defaulting to Yes/No even when a category word follows. */
+export function startsWithYesNoStem(raw: string): boolean {
+  const firstWord = raw.toLowerCase().split(/[\s,]+/).filter(Boolean)[0] ?? "";
+  return YESNO_STEMS.has(firstWord);
+}
 
-// The built-in category implied by a subject, or null when none. Mirrors the
-// search box's category token-matching, narrowed to a high-precision trigger
-// set so voice phrasing maps cleanly.
+// The built-in category implied by a subject, or null when none. Delegates to
+// the shared ranked matcher in lib/categoryMatch.ts (the single source of truth
+// shared with the search box). The top of that ranking is the implied category.
 export function detectCategory(subject: string): string | null {
-  const words = subject.toLowerCase().split(/[\s,]+/).filter(Boolean);
-  for (const [category, triggers] of CATEGORY_TRIGGERS) {
-    if (words.some((w) => triggers.has(w))) return category;
-  }
-  return null;
+  return topCategory(subject);
 }
 
 // Decide the SINGLE best poll to create from a phrase. Precedence:
