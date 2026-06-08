@@ -85,6 +85,18 @@ export default function ShowtimeCreateFlow({
     }
   };
 
+  // Auto-search once a reference location + radius are set (and whenever either
+  // changes). Debounced so a location+radius landing together fires one request.
+  useEffect(() => {
+    if (!hasLocation) return;
+    const t = setTimeout(() => {
+      loadShowtimes();
+    }, 400);
+    return () => clearTimeout(t);
+    // loadShowtimes reads the latest lat/lng/radius from its closure; re-run on input changes only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refLatitude, refLongitude, searchRadius]);
+
   // Theaters with showtimes in the horizon, nearest first.
   const theaters = useMemo(
     () => (catalog?.cinemas ?? []).filter((c) => c.has_sessions),
@@ -199,15 +211,10 @@ export default function ShowtimeCreateFlow({
         )}
       </div>
 
-      {hasLocation && !catalog && (
-        <button
-          type="button"
-          onClick={loadShowtimes}
-          disabled={loading || isLoading}
-          className="w-full rounded-lg bg-blue-600 py-2.5 text-base font-medium text-white hover:bg-blue-700 active:scale-95 disabled:opacity-50"
-        >
-          {loading ? `Finding theaters near ${refLocationLabel || "you"}…` : "Find theaters"}
-        </button>
+      {hasLocation && loading && (
+        <p className="text-center text-sm text-gray-500 dark:text-gray-400">
+          Finding theaters near {refLocationLabel || "you"}…
+        </p>
       )}
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
