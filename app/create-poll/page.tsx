@@ -19,7 +19,7 @@ import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses, g
 import { debugLog } from "@/lib/debugLogger";
 import { getCategoryIcon } from "@/lib/questionListUtils";
 import { bestEmojiMatch, splitLeadingEmoji } from "@/lib/emojiData";
-import { parseForContext, parseOptionsFromText, parseTemporal } from "@/lib/pollTextParse";
+import { parseForContext, parseOptionsFromText, parseTemporal, stripTemporal } from "@/lib/pollTextParse";
 import OptionsInput from "@/components/OptionsInput";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
@@ -228,6 +228,50 @@ function customCategorySegments(overrides: Partial<QuestionDraft>): SuggestionSe
   return overridesToSegments(overrides).map((s) =>
     s.label === SEG_CATEGORY.label ? { ...s, ...SEG_CUSTOM_CATEGORY } : s,
   );
+}
+
+// The parsed-range annotation that trails a Time suggestion row after the "?"
+// — a colored, label-less, NON-underlined metadata segment (it's not editable
+// title text, it's "here's what I parsed the time as"). The render's else
+// branch honors `colorText` on a segment with no `colorBorder`/`label`.
+const SEG_TIME_RANGE = 'text-blue-600 dark:text-blue-400';
+
+// Format a 24h "HH:MM" as a compact 12h piece, e.g. "6", "6:30", "12".
+function to12h(hhmm: string): { label: string; ap: 'AM' | 'PM' } {
+  const [hs, ms] = hhmm.split(':');
+  const h = parseInt(hs, 10);
+  const m = parseInt(ms, 10);
+  const ap: 'AM' | 'PM' = h < 12 ? 'AM' : 'PM';
+  let h12 = h % 12;
+  if (h12 === 0) h12 = 12;
+  return { label: m === 0 ? `${h12}` : `${h12}:${String(m).padStart(2, '0')}`, ap };
+}
+
+// "18:00"–"20:00" → "6–8 PM"; "08:00"–"12:00" → "8 AM–12 PM".
+function formatClockRange(min: string, max: string): string {
+  const a = to12h(min);
+  const b = to12h(max);
+  return a.ap === b.ap ? `${a.label}–${b.label} ${b.ap}` : `${a.label} ${a.ap}–${b.label} ${b.ap}`;
+}
+
+// Compact human label for a parsed time prefill, e.g. "Fri Jun 12, 6–8 PM" or
+// "Sat Jun 13, Sun Jun 14, 6–11 PM". All days share the same windows (the
+// parser builds D × T), so the time part is taken from the first day.
+function formatTemporalLabel(windows: DayTimeWindow[]): string {
+  if (!windows.length) return '';
+  const dayLabels = windows.map((w) =>
+    new Date(w.day + 'T00:00:00')
+      .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+      .replace(',', ''),
+  );
+  const days = dayLabels.length <= 2
+    ? dayLabels.join(', ')
+    : `${dayLabels.slice(0, 2).join(', ')} +${dayLabels.length - 2}`;
+  const wins = windows[0]?.windows ?? [];
+  if (!wins.length) return days;
+  let time = formatClockRange(wins[0].min, wins[0].max);
+  if (wins.length > 1) time += ` +${wins.length - 1}`;
+  return `${days}, ${time}`;
 }
 
 // Number of recently-posted poll titles surfaced as reuse suggestions.
@@ -1432,11 +1476,19 @@ export function CreateQuestionContent() {
 
     // Temporal hints ("this Friday", "tonight", "7-9pm") → prefill windows for
     // a time poll. NEVER reclassifies the category (that stays keyword-driven);
-    // it only fills the window field. When no time keyword surfaced a Time
-    // category row below, an ADDITIVE Time row is offered with the full typed
-    // phrase as its context ("Time for dinner this Friday") and the parsed range
-    // pre-narrowed in the form. The window is just a refinable starting point.
+    // it only fills the window field. The day/time text is LIFTED OUT of the
+    // title/context (`stripTemporal` keeps meal nouns like "dinner" but drops
+    // "this friday") and shown instead as the inline parsed-range annotation
+    // after the "?" — so the title reads "Time for dinner?" and the row trails
+    // "· Fri Jun 12, 6–8 PM". The window is a refinable starting point.
     const temporalWindows = parseTemporal(raw, new Date());
+    const temporalLabel = formatTemporalLabel(temporalWindows);
+    // Build a Time row's segments: the normal "Time for <subject>?" title plus
+    // the trailing parsed-range annotation.
+    const timeRowSegments = (ov: Partial<QuestionDraft>): SuggestionSegment[] => [
+      ...overridesToSegments(ov),
+      { text: ` · ${temporalLabel}`, colorText: SEG_TIME_RANGE },
+    ];
 
     // Filtered categories LAST, so they sit nearest the bar (below the Options /
     // context rows) — a category match is the strongest read of a typed term.
@@ -1468,15 +1520,24 @@ export function CreateQuestionContent() {
     // stays the strongest (nearest-the-bar) pick and the Time row sits above it.
     if (temporalWindows.length && !catsHasTime) {
       const timeIcon = getBuiltInType('time')?.icon ?? '📅';
-      row('time', timeIcon, { category: 'time', forField: subject, dayTimeWindows: temporalWindows });
+      const ov: Partial<QuestionDraft> = {
+        category: 'time',
+        forField: stripTemporal(subject),
+        dayTimeWindows: temporalWindows,
+      };
+      row('time', timeIcon, ov, timeRowSegments(ov));
     }
 
     for (const e of [...cats].reverse()) {
-      const ov: Partial<QuestionDraft> = { category: e.value, forField: context };
+      const isTimeRow = e.value === 'time' && temporalWindows.length > 0;
       // A typed time keyword ("time"/"when"/"meet"/...) surfaced this Time row;
-      // attach the parsed windows so it prefills the form too.
-      if (e.value === 'time' && temporalWindows.length) ov.dayTimeWindows = temporalWindows;
-      row(`cat:${e.value}`, e.icon ?? '🗳️', ov);
+      // strip the day/time text out of the context + attach the parsed windows.
+      const ov: Partial<QuestionDraft> = {
+        category: e.value,
+        forField: isTimeRow ? stripTemporal(context) : context,
+      };
+      if (isTimeRow) ov.dayTimeWindows = temporalWindows;
+      row(`cat:${e.value}`, e.icon ?? '🗳️', ov, isTimeRow ? timeRowSegments(ov) : undefined);
     }
 
     return list;
@@ -2543,7 +2604,7 @@ export function CreateQuestionContent() {
                   ) : (
                     <span
                       key={i}
-                      className={seg.muted ? 'text-gray-400 dark:text-gray-500' : undefined}
+                      className={seg.muted ? 'text-gray-400 dark:text-gray-500' : (seg.colorText || undefined)}
                     >
                       {seg.text}
                     </span>

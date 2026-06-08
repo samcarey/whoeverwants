@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseTemporal } from "@/lib/pollTextParse";
+import { parseTemporal, stripTemporal } from "@/lib/pollTextParse";
 
 // Anchor every case to a fixed "today" so the relative-date math is
 // deterministic. 2026-06-08 is a MONDAY (verified: 2026-01-01 is a Thursday;
@@ -131,5 +131,44 @@ describe("parseTemporal — window prefill (deterministic on a fixed today)", ()
     expect(parseTemporal("should we get pizza tonight", TODAY)).toEqual([
       { day: "2026-06-08", windows: [w("18:00", "23:00")] },
     ]);
+  });
+});
+
+describe("stripTemporal — lift day/time text out, keep meal nouns", () => {
+  it("keeps the meal noun, drops the day: 'dinner this friday' → 'dinner'", () => {
+    expect(stripTemporal("dinner this friday")).toBe("dinner");
+  });
+
+  it("drops a pure time-of-day word: 'games tonight' → 'games'", () => {
+    expect(stripTemporal("games tonight")).toBe("games");
+  });
+
+  it("drops the day, keeps the meal: 'lunch tomorrow or wednesday' → 'lunch'", () => {
+    expect(stripTemporal("lunch tomorrow or wednesday")).toBe("lunch");
+  });
+
+  it("drops an explicit clock: 'coffee at 9' → 'coffee'", () => {
+    expect(stripTemporal("coffee at 9")).toBe("coffee");
+  });
+
+  it("drops a clock range: 'meet saturday 7-9pm' → 'meet'", () => {
+    expect(stripTemporal("meet saturday 7-9pm")).toBe("meet");
+  });
+
+  it("drops 'this weekend' and the band, keeps the subject: 'movie night this weekend' → 'movie'", () => {
+    expect(stripTemporal("movie night this weekend")).toBe("movie");
+  });
+
+  it("a bare day strips to empty: 'friday' → ''", () => {
+    expect(stripTemporal("friday")).toBe("");
+  });
+
+  it("leaves non-temporal text untouched: 'best taco spot' → unchanged", () => {
+    expect(stripTemporal("best taco spot")).toBe("best taco spot");
+  });
+
+  it("'next friday' and 'in 3 days' fully strip", () => {
+    expect(stripTemporal("hangout next friday")).toBe("hangout");
+    expect(stripTemporal("trip in 3 days")).toBe("trip");
   });
 });

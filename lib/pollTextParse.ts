@@ -180,22 +180,27 @@ interface ParsedWindow { min: string; max: string; }
 // Colloquial time-of-day bands. ORDER MATTERS — multi-word phrases first so
 // "late night" doesn't first match "night". Whole-word anchored. The window is
 // a pre-narrowed *suggestion*, not a claim about when the event happens.
-const BAND_LEXICON: ReadonlyArray<readonly [RegExp, string, string]> = [
-  [/\blate night\b/i, "21:00", "23:30"],
-  [/\bhappy hour\b/i, "16:00", "18:00"],
-  [/\bafter work\b/i, "17:00", "21:00"],
-  [/\bafter school\b/i, "15:00", "18:00"],
-  [/\bearly morning\b/i, "06:00", "09:00"],
-  [/\blate afternoon\b/i, "15:00", "18:00"],
-  [/\ball day\b/i, "09:00", "21:00"],
-  [/\bbreakfast\b/i, "07:00", "09:00"],
-  [/\bbrunch\b/i, "10:00", "13:00"],
-  [/\b(?:lunch|lunchtime)\b/i, "11:30", "13:30"],
-  [/\b(?:dinner|dinnertime|supper)\b/i, "18:00", "20:00"],
-  [/\bmorning\b/i, "08:00", "12:00"],
-  [/\bafternoon\b/i, "12:00", "17:00"],
-  [/\b(?:evening|eve)\b/i, "17:00", "21:00"],
-  [/\b(?:tonight|nighttime|night)\b/i, "18:00", "23:00"],
+//
+// The 4th element is `isMeal`: a meal NOUN ("dinner", "lunch") is usually the
+// poll's SUBJECT, so `stripTemporal` keeps it in the title/context even though
+// it still contributes a window. Pure time-of-day words ("evening", "tonight")
+// are stripped out to the inline parsed-range annotation.
+const BAND_LEXICON: ReadonlyArray<readonly [RegExp, string, string, boolean]> = [
+  [/\blate night\b/i, "21:00", "23:30", false],
+  [/\bhappy hour\b/i, "16:00", "18:00", false],
+  [/\bafter work\b/i, "17:00", "21:00", false],
+  [/\bafter school\b/i, "15:00", "18:00", false],
+  [/\bearly morning\b/i, "06:00", "09:00", false],
+  [/\blate afternoon\b/i, "15:00", "18:00", false],
+  [/\ball day\b/i, "09:00", "21:00", false],
+  [/\bbreakfast\b/i, "07:00", "09:00", true],
+  [/\bbrunch\b/i, "10:00", "13:00", true],
+  [/\b(?:lunch|lunchtime)\b/i, "11:30", "13:30", true],
+  [/\b(?:dinner|dinnertime|supper)\b/i, "18:00", "20:00", true],
+  [/\bmorning\b/i, "08:00", "12:00", false],
+  [/\bafternoon\b/i, "12:00", "17:00", false],
+  [/\b(?:evening|eve)\b/i, "17:00", "21:00", false],
+  [/\b(?:tonight|nighttime|night)\b/i, "18:00", "23:00", false],
 ];
 
 // Bare day with no band word → a narrow evening suggestion (the most common
@@ -427,4 +432,56 @@ export function parseTemporal(raw: string, today: Date = new Date()): DayTimeWin
 function toMin(hhmm: string): number {
   const [h, m] = hhmm.split(":").map((n) => parseInt(n, 10));
   return h * 60 + m;
+}
+
+// One regex matching every temporal phrase `parseTemporal` recognises, EXCEPT
+// meal nouns (kept as the subject). Built once from the same WEEKDAYS keys +
+// BAND_LEXICON sources so it can't drift from the parser. Used by
+// `stripTemporal` to lift the day/time text out of the title/context — it's
+// shown instead as the inline parsed-range annotation in the suggestion row.
+const STRIP_RE: RegExp = (() => {
+  const HHMM = "\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?";
+  const WD = [...WEEKDAYS.keys()].sort((a, b) => b.length - a.length).join("|");
+  const nonMealBands = BAND_LEXICON.filter(([, , , meal]) => !meal).map(([re]) => re.source);
+  const parts = [
+    // Day phrases (longest / multi-word first).
+    "\\bday after tomorrow\\b",
+    "\\b(?:this|next)\\s+weekend\\b",
+    "\\bweekend\\b",
+    `\\b(?:this|next|on)\\s+(?:${WD})\\b`,
+    `\\b(?:${WD})\\b`,
+    "\\b(?:today|tonight|tomorrow|tmrw|tmw|tmro)\\b",
+    "\\bthis\\s+(?:morning|afternoon|evening|night|eve)\\b",
+    "\\bin\\s+\\d{1,2}\\s+days?\\b",
+    "\\b\\d{1,2}\\s+days?\\s+from\\s+now\\b",
+    // Time-of-day bands (non-meal only) + noon/midday.
+    ...nonMealBands,
+    "\\b(?:noon|midday|mid-?day)\\b",
+    // Clock phrases.
+    "\\bbefore\\s+noon\\b",
+    `(?:between\\s+)?${HHMM}\\s*(?:-|–|—|to|until|till|and)\\s*${HHMM}`,
+    `\\b(?:after|before|at|by|around)\\s+${HHMM}`,
+    `@\\s*${HHMM}`,
+    `\\b\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)\\b`,
+  ];
+  return new RegExp(parts.join("|"), "gi");
+})();
+
+/**
+ * Remove the day/time-of-day text that `parseTemporal` consumed from a subject
+ * or context string, leaving the meaningful remainder (meal nouns are kept).
+ * e.g. "dinner this friday" → "dinner", "games tonight" → "games". The lifted
+ * range is surfaced separately as the suggestion row's parsed-range annotation.
+ * Pure + `today`-independent.
+ */
+export function stripTemporal(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(STRIP_RE, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+    // Tidy connectives left dangling where a phrase was removed.
+    .replace(/^(?:or|and|,|on|at|by|around|between|from|in|the|this|next)\s+/i, "")
+    .replace(/\s+(?:or|and|,|on|at|by|around|between|from|in|the|this|next)$/i, "")
+    .trim();
 }
