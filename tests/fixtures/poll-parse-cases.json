@@ -1,0 +1,27 @@
+{
+  "_comment": "SHARED alignment fixture for the natural-language poll parser. Consumed by tests/__tests__/poll-text-parse.test.ts (JS, lib/pollTextParse.ts: decidePoll) AND mirrored in ios/App/App/AppDelegate.swift (PollTextParser.decide). When changing a parse rule, update lib/pollTextParse.ts, this fixture, AND the Swift port together. Each case asserts the decided kind + the fields relevant to that kind (options/category/context).",
+  "cases": [
+    { "text": "pizza, tacos or sushi", "expect": { "kind": "options", "options": ["pizza", "tacos", "sushi"], "context": "" } },
+    { "text": "pizza, tacos, or sushi for dinner", "expect": { "kind": "options", "options": ["pizza", "tacos", "sushi"], "context": "dinner" } },
+    { "text": "Thai or Italian", "expect": { "kind": "options", "options": ["Thai", "Italian"], "context": "" } },
+    { "text": "should we get sushi or pizza", "expect": { "kind": "options", "options": ["should we get sushi", "pizza"], "context": "" } },
+    { "text": "coffee, coffee, tea", "expect": { "kind": "options", "options": ["coffee", "tea"], "context": "" } },
+
+    { "text": "should we get a dog", "expect": { "kind": "yes_no", "context": "" } },
+    { "text": "should we meet for lunch", "expect": { "kind": "yes_no", "context": "lunch" } },
+    { "text": "are we still on for friday", "expect": { "kind": "yes_no", "context": "friday" } },
+    { "text": "is the meeting cancelled", "expect": { "kind": "yes_no", "context": "" } },
+    { "text": "do we need snacks", "expect": { "kind": "yes_no", "context": "" } },
+
+    { "text": "where should we eat", "expect": { "kind": "category", "category": "restaurant", "context": "" } },
+    { "text": "restaurant for saturday", "expect": { "kind": "category", "category": "restaurant", "context": "saturday" } },
+    { "text": "what movie should we watch", "expect": { "kind": "category", "category": "movie", "context": "" } },
+    { "text": "movie for friday night", "expect": { "kind": "category", "category": "movie", "context": "friday night" } },
+    { "text": "what game should we play", "expect": { "kind": "category", "category": "video_game", "context": "" } },
+    { "text": "when should we meet", "expect": { "kind": "category", "category": "time", "context": "" } },
+    { "text": "where should we go", "expect": { "kind": "category", "category": "location", "context": "" } },
+
+    { "text": "best superhero", "expect": { "kind": "yes_no", "context": "" } },
+    { "text": "team name for the league", "expect": { "kind": "yes_no", "context": "the league" } }
+  ]
+}

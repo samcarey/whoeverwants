@@ -686,6 +686,50 @@ pre-coding gate; see the ordering decision at the top.)
 _(Append dated entries; do not rewrite the phases above — note what changed and why.
 Post-keynote findings go here too, once Phase 0 runs.)_
 
+- **2026-06-08 — Type-aware headless creation: shared NL parser (JS ⇄ Swift, no
+  network).** Phases 3/4 headless creation previously hardcoded a single yes/no
+  poll regardless of the spoken phrase — so "pizza, tacos, or sushi for dinner"
+  became a yes/no titled with the whole phrase. Now the spoken text is parsed
+  LOCALLY (on-device, no network round-trip) into the right poll shape, the same
+  decision the in-app search box's top suggestion would make. Architecture
+  (owner's call: keep parsing client-side in BOTH surfaces, align via tests — NOT
+  a server endpoint, to avoid added latency):
+  - **`lib/pollTextParse.ts`** is the single source of truth: `parseForContext`
+    ("X for Y" split) + `parseOptionsFromText` (comma/"or" list), both LIFTED OUT
+    of `app/create-poll/page.tsx` (the search box now imports them — same code
+    path), plus `detectCategory` + `decidePoll`. `decidePoll` precedence: ≥2
+    options → options (fixed-options ranked_choice); leading yes/no stem
+    (should/can/will/is/are/do/…) → yes/no; category trigger word
+    (eat→restaurant, movie, game→video_game, when/meet→time, where→place,
+    showtime) → that built-in category; else → yes/no.
+  - **`ios/App/App/AppDelegate.swift: PollTextParser`** is a faithful Swift PORT
+    of `decidePoll` (mirrors the regex/stems/triggers rule-for-rule). It runs in
+    the intent process; NO network parse call.
+  - **Alignment is test-pinned via a SHARED fixture** `tests/fixtures/poll-parse-cases.json`.
+    `tests/__tests__/poll-text-parse.test.ts` (vitest, CI) asserts the JS half;
+    the fixture cases are reproduced in `PollTextParser.alignmentCases` for a
+    future Swift XCTest / on-device parity check (no test target wired up here —
+    that'd need pbxproj surgery; the JSON is the contract). **Change a rule →
+    update `lib/pollTextParse.ts`, the fixture, AND the Swift port together.**
+  - **Headless vs form routing.** `QuickPollService.quickPollOutcome` creates
+    `.options` + `.yesNo` HEADLESSLY (options → `ranked_choice` body with the
+    parsed options + `winner_method: "consensus"` + an explicit "A, B, or C?"
+    title; yes/no unchanged shape). `.category` is NOT headless-created (those
+    polls need the form — time windows, suggestion entry, reference location);
+    instead it opens the create form prefilled via a new deep-link shape
+    `?create=1&category=<cat>&for=<context>` (no literal `title`, so the web
+    auto-titles "<Category> for <context>"). The `&for=` param + its handling in
+    the create-poll prefill effect are the only WEB changes; `&category=` already
+    existed. Spoken confirmation is type-aware ("Created a poll with 3 options:
+    …" vs "your poll"). Group-targeted (`QuickPollInGroupIntent`) inherits all of
+    this via the shared `quickPollOutcome`.
+  - **Verification.** JS parser is CI-tested. The Swift port + the headless
+    request bodies are native-iOS-only (not unit-testable in the JS suite or
+    demoable on the dev server) and need a fresh `latest` TestFlight build + a
+    real device — same as every prior Siri phase. The web prefill change (`&for=`)
+    IS live on canary as soon as the branch deploys. CLAUDE.md's iOS/Siri section
+    should gain a pointer to the shared-parser alignment contract on the next PR.
+
 - **2026-06-05 — Phase 4: `GroupEntity` + group-targeted creation shipped.** Built
   the group-level analog of `PollEntity`: `GroupEntity` (`AppEntity`, iOS 16) carries
   the group short_id (addressable id) + name (override → participant-names → "Group")

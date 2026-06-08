@@ -524,21 +524,36 @@ private func whoeverwantsFEHost() -> String {
 }
 
 // Build a deep link that opens the WebView create form prefilled: `https://<feHost>
-// <path>?create=1[&title=<prompt>]`. `path` is "/g/" (empty placeholder → fresh
-// group) or "/g/<groupShort>" (attach to that group via <body data-group-id>).
-// Shared by CreatePollIntent.createURL (Phase 1) and GroupEntity.fallbackCreateURL
-// (Phase 4) so the create-deep-link format lives in one place. Trims the prompt
-// internally (callers may pass raw or pre-trimmed — both are fine).
-private func whoeverwantsCreatePollURL(path: String, prompt: String) -> URL {
+// <path>?create=1[&title=<prompt>][&category=<cat>][&for=<context>]`. `path` is
+// "/g/" (empty placeholder → fresh group) or "/g/<groupShort>" (attach to that
+// group via <body data-group-id>). Shared by CreatePollIntent (Phase 1) and
+// GroupEntity (Phase 4) so the format lives in one place.
+//
+// Two prefill shapes (consumed by the effect in app/create-poll/page.tsx):
+//   • `title=` — a literal user-authored title (yes/no + the network-failure
+//     fallback). The web sets isAutoTitle=false so it isn't auto-overwritten.
+//   • `category=` + `for=` — a category poll (e.g. PollTextParser detected
+//     "movie for friday"): no literal title, so the web auto-titles
+//     "<Category> for <context>". Used by the `.category` fallback.
+// Trims internally (callers may pass raw or pre-trimmed — both are fine).
+private func whoeverwantsCreatePollURL(
+    path: String, prompt: String = "", category: String? = nil, context: String? = nil
+) -> URL {
     let host = whoeverwantsFEHost()
     var components = URLComponents()
     components.scheme = "https"
     components.host = host
     components.path = path
     var items = [URLQueryItem(name: "create", value: "1")]
-    let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !trimmed.isEmpty {
-        items.append(URLQueryItem(name: "title", value: trimmed))
+    let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmedPrompt.isEmpty {
+        items.append(URLQueryItem(name: "title", value: trimmedPrompt))
+    }
+    if let category = category, !category.isEmpty {
+        items.append(URLQueryItem(name: "category", value: category))
+    }
+    if let context = context?.trimmingCharacters(in: .whitespacesAndNewlines), !context.isEmpty {
+        items.append(URLQueryItem(name: "for", value: context))
     }
     components.queryItems = items
     // URLComponents always yields a valid URL for these fixed inputs.
@@ -569,6 +584,13 @@ struct CreatePollIntent: AppIntent {
     static func createURL(prompt: String) -> URL {
         // Empty placeholder route → the WebView mints a fresh group on submit.
         whoeverwantsCreatePollURL(path: "/g/", prompt: prompt)
+    }
+
+    // Category fallback (PollTextParser `.category`): open the form preselected
+    // to a built-in category with the context prefilled, NO literal title — so
+    // the web auto-titles "<Category> for <context>".
+    static func createCategoryURL(category: String, context: String) -> URL {
+        whoeverwantsCreatePollURL(path: "/g/", category: category, context: context)
     }
 }
 
@@ -617,6 +639,162 @@ struct QuickPollError: Error, CustomLocalizedStringResourceConvertible {
     let message: LocalizedStringResource
     init(_ message: LocalizedStringResource) { self.message = message }
     var localizedStringResource: LocalizedStringResource { message }
+}
+
+// Natural-language → poll-shape parser. FAITHFUL PORT of `lib/pollTextParse.ts`
+// (the in-app search box uses the same primitives), so a spoken "quick poll"
+// produces the same poll shape the box's top suggestion would — computed LOCALLY
+// on-device, no network parse round-trip.
+//
+// ALIGNMENT CONTRACT. The decision rules here mirror `lib/pollTextParse.ts:
+// decidePoll` rule-for-rule and are pinned by the SHARED fixture
+// `tests/fixtures/poll-parse-cases.json` (the JS half runs in CI via
+// tests/__tests__/poll-text-parse.test.ts). When changing a rule, update the TS
+// source, this port, AND the fixture together. A future Swift XCTest (once a
+// test target is wired up — not done here to avoid pbxproj surgery) should read
+// that same JSON fixture directly to assert parity, rather than duplicating the
+// cases in Swift.
+//
+// `title` formatting (yesNoTitle / optionsTitle) is a native PRESENTATION detail
+// — not part of the alignment fixture — but mirrors the box's displayed titles.
+@available(iOS 16.0, *)
+enum PollTextParser {
+    enum Kind { case options, category, yesNo }
+
+    struct Parsed {
+        let kind: Kind
+        let prompt: String       // trimmed phrase; the yes/no title + deep-link title=
+        let context: String      // the "for X" tail ("" when none)
+        let options: [String]    // kind == .options (empty otherwise)
+        let category: String?    // kind == .category (nil otherwise)
+    }
+
+    // Mirrors YESNO_STEMS in lib/pollTextParse.ts — first words that start an
+    // unambiguous yes/no question (checked BEFORE category detection).
+    private static let yesNoStems: Set<String> = [
+        "should", "shall", "can", "could", "will", "would", "is", "are", "am",
+        "was", "were", "do", "does", "did", "has", "have", "had", "may",
+        "might", "must",
+    ]
+
+    // Mirrors CATEGORY_TRIGGERS — ORDER IS PRECEDENCE (first match wins, so
+    // "where should we eat" → restaurant). Exact whole-word membership.
+    private static let categoryTriggers: [(String, Set<String>)] = [
+        ("restaurant", ["eat", "eats", "food", "restaurant", "restaurants", "dine", "takeout"]),
+        ("movie", ["movie", "movies", "film", "films", "watch"]),
+        ("video_game", ["game", "games", "videogame"]),
+        ("time", ["when", "time", "schedule", "meet"]),
+        ("location", ["where", "place", "places", "spot", "venue", "location"]),
+        ("showtime", ["showtime", "showtimes"]),
+    ]
+
+    private static let wordSeparators =
+        CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ","))
+
+    private static func words(_ s: String) -> [String] {
+        s.lowercased().components(separatedBy: wordSeparators).filter { !$0.isEmpty }
+    }
+
+    // Split on a standalone "for" (whole word, case-insensitive); subject before,
+    // context after. Mirrors parseForContext.
+    static func parseForContext(_ raw: String) -> (subject: String, context: String) {
+        let ns = raw as NSString
+        guard
+            let re = try? NSRegularExpression(pattern: "\\bfor\\b", options: [.caseInsensitive]),
+            let m = re.firstMatch(in: raw, options: [], range: NSRange(location: 0, length: ns.length))
+        else {
+            return (raw.trimmingCharacters(in: .whitespacesAndNewlines), "")
+        }
+        let subject = ns.substring(to: m.range.location)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let context = ns.substring(from: m.range.location + m.range.length)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (subject, context)
+    }
+
+    // Split on commas + the word "or", trim, drop blanks, de-dupe
+    // case-insensitively (keeping the first spelling). Mirrors parseOptionsFromText.
+    static func parseOptions(_ text: String) -> [String] {
+        let collapsed: String
+        let ns = text as NSString
+        if let re = try? NSRegularExpression(pattern: "\\s+or\\s+", options: [.caseInsensitive]) {
+            collapsed = re.stringByReplacingMatches(
+                in: text, options: [],
+                range: NSRange(location: 0, length: ns.length), withTemplate: ","
+            )
+        } else {
+            collapsed = text
+        }
+        var seen = Set<String>()
+        var out: [String] = []
+        for part in collapsed.split(separator: ",", omittingEmptySubsequences: false) {
+            let trimmed = part.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            let key = trimmed.lowercased()
+            if seen.contains(key) { continue }
+            seen.insert(key)
+            out.append(trimmed)
+        }
+        return out
+    }
+
+    // The built-in category implied by a subject, or nil. Mirrors detectCategory.
+    static func detectCategory(_ subject: String) -> String? {
+        let ws = words(subject)
+        for (category, triggers) in categoryTriggers {
+            if ws.contains(where: { triggers.contains($0) }) { return category }
+        }
+        return nil
+    }
+
+    // Decide the single best poll. Mirrors decidePoll precedence:
+    //   1. ≥2 options → options;  2. yes/no stem → yes/no;
+    //   3. category trigger → category;  4. else → yes/no.
+    static func decide(_ raw: String) -> Parsed {
+        let prompt = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let (subject, context) = parseForContext(prompt)
+
+        let options = parseOptions(subject)
+        if options.count >= 2 {
+            return Parsed(kind: .options, prompt: prompt, context: context, options: options, category: nil)
+        }
+
+        let firstWord = words(prompt).first ?? ""
+        if yesNoStems.contains(firstWord) {
+            return Parsed(kind: .yesNo, prompt: prompt, context: context, options: [], category: nil)
+        }
+
+        if let category = detectCategory(subject) {
+            return Parsed(kind: .category, prompt: prompt, context: context, options: [], category: category)
+        }
+
+        return Parsed(kind: .yesNo, prompt: prompt, context: context, options: [], category: nil)
+    }
+
+    // --- Native title presentation (NOT in the alignment fixture) ----------
+
+    // "?" appended unless the prompt already ends in terminal punctuation.
+    // Mirrors yesNoTitleText (prompt is non-empty here).
+    static func yesNoTitle(_ prompt: String) -> String {
+        let t = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { return t }
+        if let last = t.last, "?!.".contains(last) { return t }
+        return t + "?"
+    }
+
+    // "A or B?" / "A, B, or C[ for X]?" — mirrors the box's or-list title.
+    static func optionsTitle(_ options: [String], context: String) -> String {
+        let body: String
+        if options.count <= 1 {
+            body = options.first ?? ""
+        } else if options.count == 2 {
+            body = "\(options[0]) or \(options[1])"
+        } else {
+            body = options.dropLast().joined(separator: ", ") + ", or " + (options.last ?? "")
+        }
+        let withCtx = context.isEmpty ? body : "\(body) for \(context)"
+        return withCtx + "?"
+    }
 }
 
 @available(iOS 16.0, *)
@@ -686,7 +864,7 @@ enum QuickPollService {
     // any failure. `groupUuid` (the `groups.id` UUID, NOT the short_id) attaches
     // the new poll to an existing group via `CreatePollRequest.group_id`; nil →
     // the server mints a fresh group, exactly like an in-app create with no parent.
-    static func createPoll(prompt: String, identity: Identity, groupUuid: String? = nil) async throws -> CreatedPoll {
+    static func createPoll(decision: PollTextParser.Parsed, identity: Identity, groupUuid: String? = nil) async throws -> CreatedPoll {
         guard let url = URL(string: apiBase + "/api/polls") else {
             throw QuickPollError("I couldn't reach WhoeverWants. Try again in a moment.")
         }
@@ -700,16 +878,36 @@ enum QuickPollService {
             request.setValue(browserId, forHTTPHeaderField: "X-Browser-Id")
         }
 
-        // Minimal single-question yes/no poll. The spoken prompt is BOTH the
-        // wrapper title and the question's `context` — mirroring exactly what the
-        // FE's `draftToQuestionParams` produces for a single yes_no draft (the
-        // typed prompt becomes the wrapper title, and rides as `context` too). No
-        // deadlines, no suggestion phase, no category: the deliberately minimal
-        // native slice the plan calls for (don't reimplement the whole request).
+        // Build the single question + explicit title from the parsed decision,
+        // mirroring what the FE's `draftToQuestionParams` produces:
+        //   • .options → a fixed-options ranked_choice (the parsed options are the
+        //     ballot; winner_method "consensus" matches the FE default; the "for X"
+        //     tail rides as the question `context`). Title is the "A, B, or C?"
+        //     or-list the box would show.
+        //   • .yesNo  → a yes/no whose prompt is BOTH the wrapper title and the
+        //     question `context` (exactly the single-yes_no-draft shape).
+        // `.category` never reaches here — quickPollOutcome routes it to the
+        // deep-link fallback (those polls need the form to finish).
+        var question: [String: Any]
+        let title: String
+        switch decision.kind {
+        case .options:
+            question = [
+                "question_type": "ranked_choice",
+                "options": decision.options,
+                "winner_method": "consensus",
+            ]
+            if !decision.context.isEmpty { question["context"] = decision.context }
+            title = PollTextParser.optionsTitle(decision.options, context: decision.context)
+        case .yesNo, .category:
+            question = ["question_type": "yes_no", "context": decision.prompt]
+            title = PollTextParser.yesNoTitle(decision.prompt)
+        }
+
         var body: [String: Any] = [
             "creator_name": identity.name,
-            "title": prompt,
-            "questions": [["question_type": "yes_no", "context": prompt]],
+            "title": title,
+            "questions": [question],
         ]
         // Attach to an existing group when targeting one. The server treats an
         // unknown group_id as "mint a fresh group" (no 404), so a stale uuid
@@ -737,14 +935,14 @@ enum QuickPollService {
         // are both NOT NULL on a fresh PollResponse (migrations 100/101); fall back
         // to home if either is somehow absent.
         if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            let title = (obj["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? prompt
+            let echoed = (obj["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? title
             if let groupShort = obj["group_short_id"] as? String, !groupShort.isEmpty,
                let pollShort = obj["short_id"] as? String, !pollShort.isEmpty {
-                return CreatedPoll(title: title, path: "/g/\(groupShort)/p/\(pollShort)")
+                return CreatedPoll(title: echoed, path: "/g/\(groupShort)/p/\(pollShort)")
             }
-            return CreatedPoll(title: title, path: "/")
+            return CreatedPoll(title: echoed, path: "/")
         }
-        return CreatedPoll(title: prompt, path: "/")
+        return CreatedPoll(title: title, path: "/")
     }
 }
 
@@ -761,30 +959,54 @@ extension QuickPollService {
         guard !trimmed.isEmpty else {
             throw QuickPollError("I didn't catch a question for the poll.")
         }
-        // Try headless creation (App Group identity + direct API POST). On ANY
-        // failure — identity not readable from this process, network, or server —
-        // DON'T dead-end: fall back to the Phase 1 deep link so the user always
-        // gets their poll. Swift's opaque `some` return forces both intents'
-        // branches to share one underlying type, which is why both the headless
-        // and fallback paths return an OpenURLIntent-based result.
+
+        // Parse the phrase LOCALLY (no network) into the right poll shape — the
+        // same decision the in-app search box's top suggestion would make. So
+        // "pizza, tacos, or sushi" becomes a 3-option pick-one instead of a yes/no.
+        let decision = PollTextParser.decide(trimmed)
+        let inGroup = group.map { " in \($0.title)" } ?? ""
+
+        // Category polls (restaurant / movie / time / place / …) need the create
+        // FORM to finish — time windows, suggestion entry, reference location — so
+        // don't headlessly create a wrong/empty poll. Open the form prefilled to
+        // the detected category + context (the web auto-titles "<Category> for
+        // <context>"). Targets the group's page when one is named so attribution
+        // lands via `<body data-group-id>`.
+        if decision.kind == .category, let category = decision.category {
+            let url = group?.fallbackCreateURL(category: category, context: decision.context)
+                ?? CreatePollIntent.createCategoryURL(category: category, context: decision.context)
+            return (
+                OpenURLIntent(url),
+                IntentDialog("Opening WhoeverWants to finish your poll\(inGroup).")
+            )
+        }
+
+        // options / yes_no → create HEADLESSLY (App Group identity + direct API
+        // POST). On ANY failure — identity not readable from this process, network,
+        // or server — DON'T dead-end: fall back to the Phase 1 deep link so the
+        // user always gets their poll. Swift's opaque `some` return forces both
+        // intents' branches to share one underlying type, which is why both paths
+        // return an OpenURLIntent-based result.
         if let identity = loadIdentity(),
            let created = try? await createPoll(
-               prompt: trimmed, identity: identity, groupUuid: group?.groupUuid
+               decision: decision, identity: identity, groupUuid: group?.groupUuid
            ) {
             // Open straight to the new poll's detail page (not bare home): the user
             // lands on their freshly-created poll — that IS the confirmation — and
             // it's a real navigation, so it shows even when the WebView was already
             // mounted on `/` (where opening home is a no-op push).
-            let inGroup = group.map { " in \($0.title)" } ?? ""
+            let what = decision.kind == .options
+                ? "a poll with \(decision.options.count) options"
+                : "your poll"
             return (
                 OpenURLIntent(feURL(path: created.path)),
-                IntentDialog("Created your poll\(inGroup): \(created.title). Opening WhoeverWants.")
+                IntentDialog("Created \(what)\(inGroup): \(created.title). Opening WhoeverWants.")
             )
         }
-        // Headless unavailable — open the create form prefilled. When a group is
-        // targeted, route to that group's page (`/g/<short>?create=1&title=…`) so
-        // the create form attaches the new poll to it via `<body data-group-id>`;
-        // otherwise the empty placeholder mints a fresh group on submit.
+        // Headless unavailable — open the create form prefilled with the spoken
+        // text. When a group is targeted, route to that group's page so the create
+        // form attaches the new poll to it; otherwise the empty placeholder mints
+        // a fresh group on submit.
         let fallbackURL = group?.fallbackCreateURL(prompt: trimmed)
             ?? CreatePollIntent.createURL(prompt: trimmed)
         return (
@@ -1054,6 +1276,13 @@ struct GroupEntity: AppEntity {
         // The group's own route → the WebView attaches the new poll here via
         // `<body data-group-id>` (the group page sets it on mount).
         whoeverwantsCreatePollURL(path: "/g/\(id)", prompt: prompt)
+    }
+
+    // Category fallback for a group-targeted phrase (PollTextParser `.category`):
+    // preselect the category + context on the group's own page so the web
+    // auto-titles "<Category> for <context>" AND attaches via `<body data-group-id>`.
+    func fallbackCreateURL(category: String, context: String) -> URL {
+        whoeverwantsCreatePollURL(path: "/g/\(id)", category: category, context: context)
     }
 
     // Fetch the user's visible groups, browser-scoped via the bridged identity.

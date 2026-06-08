@@ -19,6 +19,7 @@ import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses, g
 import { debugLog } from "@/lib/debugLogger";
 import { getCategoryIcon } from "@/lib/questionListUtils";
 import { bestEmojiMatch, splitLeadingEmoji } from "@/lib/emojiData";
+import { parseForContext, parseOptionsFromText } from "@/lib/pollTextParse";
 import OptionsInput from "@/components/OptionsInput";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
@@ -146,41 +147,10 @@ function orderBubbleEntries(
 }
 
 // --- Search-bar text parsing -------------------------------------------
-// Split the typed text on a standalone "for": everything after the first
-// " for " becomes the poll's context (prefilled into `forField` on every
-// suggestion), everything before is the subject used for the category
-// filter / options / custom-category name. "for" only counts as a whole
-// word, so "comfortable" / "fortnite" don't trip it.
-function parseForContext(raw: string): { subject: string; context: string } {
-  const m = raw.match(/\bfor\b/i);
-  if (!m || m.index === undefined) return { subject: raw.trim(), context: "" };
-  return {
-    subject: raw.slice(0, m.index).trim(),
-    context: raw.slice(m.index + m[0].length).trim(),
-  };
-}
-
-// Parse free text into poll options by splitting on commas and the word
-// "or" (so "pizza, tacos or sushi" → ["pizza", "tacos", "sushi"]). The
-// oxford "a, b, or c" form is handled by collapsing " or " to a comma
-// first. Trims, drops blanks, and de-dupes case-insensitively (keeping the
-// first spelling). Returns the list; callers gate on length >= 2.
-function parseOptionsFromText(text: string): string[] {
-  const parts = text
-    .replace(/\s+or\s+/gi, ",")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const p of parts) {
-    const k = p.toLowerCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(p);
-  }
-  return out;
-}
+// `parseForContext` ("X for Y" split) and `parseOptionsFromText` (comma/"or"
+// list) now live in `@/lib/pollTextParse` so they're the single source of truth
+// shared with the Siri parser (AppDelegate.swift: PollTextParser) and pinned by
+// tests/__tests__/poll-text-parse.test.ts. Imported above.
 
 // --- Suggestion segment labelling --------------------------------------
 // A suggestion row's primary text is broken into segments so the parts that
@@ -326,6 +296,11 @@ export function CreateQuestionContent() {
   const prefillTitleParam = searchParams.get('title');
   const prefillCategoryParam = searchParams.get('category');
   const prefillCreateParam = searchParams.get('create');
+  // `&for=<context>` (Siri's category fallback, e.g. "movie for friday" →
+  // `?create=1&category=movie&for=friday`): prefill the Context field and let
+  // the auto-title build "Movie for friday" — distinct from `&title=`, which
+  // sets a literal user-authored title.
+  const prefillForParam = searchParams.get('for');
 
   // Track relationship to source question as part of form state
   const [followUpTo, setFollowUpTo] = useState<string | null>(null);
@@ -1761,7 +1736,7 @@ export function CreateQuestionContent() {
   // stripped so a refresh / re-render doesn't reopen the modal.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!prefillTitleParam && !prefillCreateParam) return;
+    if (!prefillTitleParam && !prefillCreateParam && !prefillForParam) return;
 
     const cat = normalizePrefillCategory(prefillCategoryParam);
     // Fresh draft for the chosen category (resets any stale in-progress form).
@@ -1782,6 +1757,14 @@ export function CreateQuestionContent() {
       setIsAutoTitle(false);
     }
 
+    // `&for=` prefills the Context field WITHOUT touching the title, so the
+    // auto-title effect builds "<Category> for <context>" (e.g. "Movie for
+    // friday"). Only meaningful when there's no explicit `&title=` overriding it.
+    const forContext = prefillForParam?.trim();
+    if (forContext && !spoken) {
+      setForField(forContext.slice(0, 100));
+    }
+
     setIsModalOpen(true);
 
     // Consume the prefill params so refresh / back doesn't re-trigger.
@@ -1789,8 +1772,9 @@ export function CreateQuestionContent() {
     url.searchParams.delete('title');
     url.searchParams.delete('category');
     url.searchParams.delete('create');
+    url.searchParams.delete('for');
     window.history.replaceState({}, '', url.toString());
-  }, [prefillTitleParam, prefillCategoryParam, prefillCreateParam, applyDraftToState]);
+  }, [prefillTitleParam, prefillCategoryParam, prefillCreateParam, prefillForParam, applyDraftToState]);
 
   // Set default date/time values after client initialization
   useEffect(() => {
