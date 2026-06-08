@@ -21,6 +21,7 @@
 // test is the CI-enforced half of the contract.
 
 import type { DayTimeWindow } from "./types";
+import { formatLocalDateISO, minutesToTime, timeToMinutes } from "./timeUtils";
 
 export type ParsedPollKind = "options" | "category" | "yes_no";
 
@@ -220,6 +221,10 @@ const BAND_LEXICON: ReadonlyArray<readonly [RegExp, string, string, boolean]> = 
   [/\b(?:tonight|nighttime|nights?)\b/i, "18:00", "23:00", false],
 ];
 
+// Global variants of each band pattern, compiled once, for the scratch-blanking
+// pass in `parseTemporal` (so it isn't rebuilt per matched band per keystroke).
+const BAND_BLANK_RES: ReadonlyArray<RegExp> = BAND_LEXICON.map(([re]) => new RegExp(re.source, "gi"));
+
 // Bare day with no band word → a narrow evening suggestion (the most common
 // "let's get together" slot), still obviously refinable. Tunable.
 const DEFAULT_SUGGESTED_BAND: ParsedWindow = { min: "17:00", max: "21:00" };
@@ -241,11 +246,7 @@ const WEEKDAYS: ReadonlyMap<string, number> = new Map([
 ]);
 
 function isoFromBase(base: Date, addDays: number): string {
-  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + addDays);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return formatLocalDateISO(new Date(base.getFullYear(), base.getMonth(), base.getDate() + addDays));
 }
 
 // Soonest date >= today matching weekday `wd`; `next` adds a week (so "next
@@ -254,12 +255,6 @@ function weekdayDate(base: Date, wd: number, next: boolean): string {
   let delta = (wd - base.getDay() + 7) % 7; // 0..6, today when it matches
   if (next) delta += 7;
   return isoFromBase(base, delta);
-}
-
-function pad(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 // Resolve a clock token to minutes-from-midnight. AM/PM: explicit wins; else a
@@ -283,28 +278,39 @@ function clamp(min: number, max: number): ParsedWindow | null {
   const lo = Math.max(0, min);
   const hi = Math.min(DAY_END_MIN, max);
   if (lo >= hi) return null;
-  return { min: pad(lo), max: pad(hi) };
+  return { min: minutesToTime(lo), max: minutesToTime(hi) };
 }
 
+// Clock-phrase regexes, compiled once (this runs per keystroke in the search
+// box). `\g` flag → always consumed via matchAll so a shared lastIndex can't
+// leak between calls. A clock token is `hour[:min][am|pm]`.
+const CLOCK_T = "(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?";
+const RANGE_RE = new RegExp(`(?:between\\s+)?${CLOCK_T}\\s*(?:-|–|—|to|until|till|and)\\s*${CLOCK_T}`, "gi");
+const AFTER_RE = new RegExp(`\\bafter\\s+${CLOCK_T}`, "gi");
+const BEFORE_RE = new RegExp(`\\bbefore\\s+${CLOCK_T}`, "gi");
+const POINT_RE = new RegExp(`(?:\\bat|\\bby|\\baround|@)\\s*${CLOCK_T}`, "gi");
+const ISH_RE = /\b(\d{1,2})\s*-?\s*ish\b/gi;
+
 // Pull explicit clock windows out of the raw text: ranges ("7-9pm",
-// "between 6 and 8"), open-ended ("after 6pm", "before noon"), and single
-// points ("at 7"). Bare numbers with no marker are ignored so an option like
-// "7" can't be misread as a time.
+// "between 6 and 8"), open-ended ("after 6pm", "before noon"), single points
+// ("at 7", "7ish"), and word anchors (noon/midnight). Bare numbers with no
+// marker are ignored so an option like "7" can't be misread as a time.
 function parseClockWindows(raw: string): ParsedWindow[] {
   const out: ParsedWindow[] = [];
-  const T = "(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?";
+  const push = (min: number, max: number) => { const w = clamp(min, max); if (w) out.push(w); };
+  // A clock token spans 3 match groups (hour, minute, am|pm) starting at `i`.
+  const tok = (m: RegExpMatchArray, i: number, ap?: string | null): number | null =>
+    clockToMinutes(parseInt(m[i], 10), m[i + 1] ? parseInt(m[i + 1], 10) : 0, ap === undefined ? (m[i + 2]?.toLowerCase() ?? null) : ap);
 
-  // Range: "7-9pm", "7 to 9", "between 6 and 8".
-  const rangeRe = new RegExp(`(?:between\\s+)?${T}\\s*(?:-|–|—|to|until|till|and)\\s*${T}`, "gi");
-  let m: RegExpExecArray | null;
-  while ((m = rangeRe.exec(raw)) !== null) {
+  // Ranges: "7-9pm", "7 to 9", "between 6 and 8".
+  for (const m of raw.matchAll(RANGE_RE)) {
     let ap1 = m[3]?.toLowerCase() ?? null;
     let ap2 = m[6]?.toLowerCase() ?? null;
     // "7-9pm": the trailing meridiem applies to both ends; and vice-versa.
     if (!ap1 && ap2) ap1 = ap2;
     if (!ap2 && ap1) ap2 = ap1;
     // Neither end marked. A morning→afternoon span ("9-5", "10-2", "11-3":
-    // first hour 8–12 AND descending to an afternoon hour 1–7) is the workday
+    // first hour 8–12 descending to an afternoon hour 1–7) is the workday
     // pattern → AM then PM. Otherwise infer ONE shared meridiem from the first
     // hour (1–7 → PM, 8–11 → AM, 12 → noon) and apply to both ends.
     if (!ap1 && !ap2) {
@@ -319,49 +325,31 @@ function parseClockWindows(raw: string): ParsedWindow[] {
         ap2 = shared;
       }
     }
-    const a = clockToMinutes(parseInt(m[1], 10), m[2] ? parseInt(m[2], 10) : 0, ap1);
-    const b = clockToMinutes(parseInt(m[4], 10), m[5] ? parseInt(m[5], 10) : 0, ap2);
-    if (a !== null && b !== null) {
-      const w = clamp(Math.min(a, b), Math.max(a, b));
-      if (w) out.push(w);
-    }
+    const a = tok(m, 1, ap1);
+    const b = tok(m, 4, ap2);
+    if (a !== null && b !== null) push(Math.min(a, b), Math.max(a, b));
   }
 
-  // "after 6pm" → [T, end-of-day]; "before noon" → [day-start, T].
-  const afterRe = new RegExp(`\\bafter\\s+${T}`, "gi");
-  while ((m = afterRe.exec(raw)) !== null) {
-    const t = clockToMinutes(parseInt(m[1], 10), m[2] ? parseInt(m[2], 10) : 0, m[3]?.toLowerCase() ?? null);
-    if (t !== null) { const w = clamp(t, DAY_END_MIN); if (w) out.push(w); }
-  }
-  if (/\bbefore\s+noon\b/i.test(raw)) { const w = clamp(DAY_START_MIN, 12 * 60); if (w) out.push(w); }
-  const beforeRe = new RegExp(`\\bbefore\\s+${T}`, "gi");
-  while ((m = beforeRe.exec(raw)) !== null) {
-    const t = clockToMinutes(parseInt(m[1], 10), m[2] ? parseInt(m[2], 10) : 0, m[3]?.toLowerCase() ?? null);
-    if (t !== null) { const w = clamp(DAY_START_MIN, t); if (w) out.push(w); }
-  }
+  // "after 6pm" → [T, end-of-day]; "before noon"/"before 9" → [day-start, T].
+  for (const m of raw.matchAll(AFTER_RE)) { const t = tok(m, 1); if (t !== null) push(t, DAY_END_MIN); }
+  if (/\bbefore\s+noon\b/i.test(raw)) push(DAY_START_MIN, 12 * 60); // "noon" isn't a digit, so BEFORE_RE misses it
+  for (const m of raw.matchAll(BEFORE_RE)) { const t = tok(m, 1); if (t !== null) push(DAY_START_MIN, t); }
 
-  // Single point: "at 7", "by 6pm", "around 8", "@ 7:30". Skips ranges (those
-  // are caught above and would double-count) by requiring a leading marker.
-  const pointRe = new RegExp(`(?:\\bat|\\bby|\\baround|@)\\s*${T}`, "gi");
-  while ((m = pointRe.exec(raw)) !== null) {
-    const t = clockToMinutes(parseInt(m[1], 10), m[2] ? parseInt(m[2], 10) : 0, m[3]?.toLowerCase() ?? null);
-    if (t !== null) { const w = clamp(t, t + DEFAULT_POINT_SPAN_MIN); if (w) out.push(w); }
-  }
+  // Single point: "at 7", "by 6pm", "around 8", "@ 7:30" — a leading marker is
+  // required so this doesn't double-count the ranges above.
+  for (const m of raw.matchAll(POINT_RE)) { const t = tok(m, 1); if (t !== null) push(t, t + DEFAULT_POINT_SPAN_MIN); }
 
-  // Fuzzy point: "7ish", "7-ish" → a point at that hour (bare-hour rule).
-  const ishRe = /\b(\d{1,2})\s*-?\s*ish\b/gi;
-  while ((m = ishRe.exec(raw)) !== null) {
+  // Fuzzy point: "7ish" → a point at that hour (bare-hour rule).
+  for (const m of raw.matchAll(ISH_RE)) {
     const t = clockToMinutes(parseInt(m[1], 10), 0, null);
-    if (t !== null) { const w = clamp(t, t + DEFAULT_POINT_SPAN_MIN); if (w) out.push(w); }
+    if (t !== null) push(t, t + DEFAULT_POINT_SPAN_MIN);
   }
 
-  // Word anchors: "noon" → midday window (unless it's a "before/after noon"
-  // open range, handled above/below); "midnight" → late.
-  if (/\bnoon\b/i.test(raw) && !/\b(?:before|after)\s+noon\b/i.test(raw)) {
-    const w = clamp(12 * 60, 12 * 60 + DEFAULT_POINT_SPAN_MIN); if (w) out.push(w);
-  }
-  if (/\bafter\s+noon\b/i.test(raw)) { const w = clamp(12 * 60, DAY_END_MIN); if (w) out.push(w); }
-  if (/\bmidnight\b/i.test(raw)) { const w = clamp(DAY_END_MIN - DEFAULT_POINT_SPAN_MIN, DAY_END_MIN); if (w) out.push(w); }
+  // Word anchors: "noon" → midday window (unless a "before/after noon" open
+  // range handles it); "midnight" → late.
+  if (/\bnoon\b/i.test(raw) && !/\b(?:before|after)\s+noon\b/i.test(raw)) push(12 * 60, 12 * 60 + DEFAULT_POINT_SPAN_MIN);
+  if (/\bafter\s+noon\b/i.test(raw)) push(12 * 60, DAY_END_MIN);
+  if (/\bmidnight\b/i.test(raw)) push(DAY_END_MIN - DEFAULT_POINT_SPAN_MIN, DAY_END_MIN);
 
   return out;
 }
@@ -498,11 +486,12 @@ export function parseTemporal(raw: string, today: Date = new Date()): DayTimeWin
     const bandKeys = new Set<string>();
     const bands: ParsedWindow[] = [];
     let scratch = raw;
-    for (const [re, min, max] of BAND_LEXICON) {
+    for (let i = 0; i < BAND_LEXICON.length; i++) {
+      const [re, min, max] = BAND_LEXICON[i];
       if (re.test(scratch)) {
         const k = `${min}-${max}`;
         if (!bandKeys.has(k)) { bandKeys.add(k); bands.push({ min, max }); }
-        scratch = scratch.replace(new RegExp(re.source, "gi"), " ");
+        scratch = scratch.replace(BAND_BLANK_RES[i], " ");
       }
     }
 
@@ -529,18 +518,13 @@ export function parseTemporal(raw: string, today: Date = new Date()): DayTimeWin
     return dayList.map((day) => ({
       day,
       windows: windows
-        .map((w) => clamp(toMin(w.min), toMin(w.max)))
+        .map((w) => clamp(timeToMinutes(w.min), timeToMinutes(w.max)))
         .filter((w): w is ParsedWindow => w !== null)
         .sort((a, b) => a.min.localeCompare(b.min)),
     })).filter((d) => d.windows.length > 0);
   } catch {
     return [];
   }
-}
-
-function toMin(hhmm: string): number {
-  const [h, m] = hhmm.split(":").map((n) => parseInt(n, 10));
-  return h * 60 + m;
 }
 
 // One regex matching every temporal phrase `parseTemporal` recognises, EXCEPT

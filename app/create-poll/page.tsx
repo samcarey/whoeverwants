@@ -37,7 +37,7 @@ import ShowtimeCreateFlow, { ShowtimeCurated } from "./ShowtimeCreateFlow";
 import type { DayTimeWindow } from "@/lib/types";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
-import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, formatMonthYearLabel, shiftMonth, DEFAULT_TIME_WINDOW, formatLocalDateISO } from "@/lib/timeUtils";
+import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, formatMonthYearLabel, shiftMonth, DEFAULT_TIME_WINDOW, formatLocalDateISO, formatDayLabel } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import { enterAdvancesFocus } from "@/lib/formNavigation";
 import { haptic } from "@/lib/haptics";
@@ -259,15 +259,12 @@ function formatClockRange(min: string, max: string): string {
 // parser builds D × T), so the time part is taken from the first day.
 function formatTemporalLabel(windows: DayTimeWindow[]): string {
   if (!windows.length) return '';
-  const dayLabels = windows.map((w) =>
-    new Date(w.day + 'T00:00:00')
-      .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-      .replace(',', ''),
-  );
+  // formatDayLabel → "Mon, Jun 12"; drop the comma for the compact annotation.
+  const dayLabels = windows.map((w) => formatDayLabel(w.day).replace(',', ''));
   const days = dayLabels.length <= 2
     ? dayLabels.join(', ')
     : `${dayLabels.slice(0, 2).join(', ')} +${dayLabels.length - 2}`;
-  const wins = windows[0]?.windows ?? [];
+  const wins = windows[0].windows ?? [];
   if (!wins.length) return days;
   let time = formatClockRange(wins[0].min, wins[0].max);
   if (wins.length > 1) time += ` +${wins.length - 1}`;
@@ -1482,12 +1479,12 @@ export function CreateQuestionContent() {
     // after the "?" — so the title reads "Time for dinner?" and the row trails
     // "· Fri Jun 12, 6–8 PM". The window is a refinable starting point.
     const temporalWindows = parseTemporal(raw, new Date());
-    const temporalLabel = formatTemporalLabel(temporalWindows);
-    // Build a Time row's segments: the normal "Time for <subject>?" title plus
-    // the trailing parsed-range annotation.
+    // The trailing parsed-range annotation, built once and shared across rows.
+    const timeRangeSegment: SuggestionSegment = { text: ` · ${formatTemporalLabel(temporalWindows)}`, colorText: SEG_TIME_RANGE };
+    // A Time row's segments: the normal "Time for <subject>?" title + annotation.
     const timeRowSegments = (ov: Partial<QuestionDraft>): SuggestionSegment[] => [
       ...overridesToSegments(ov),
-      { text: ` · ${temporalLabel}`, colorText: SEG_TIME_RANGE },
+      timeRangeSegment,
     ];
 
     // Filtered categories LAST, so they sit nearest the bar (below the Options /
