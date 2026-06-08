@@ -97,6 +97,11 @@ export function planPollSuggestions(rawInput: string, opts: PlanOptions = {}): P
   const customCategory = subject.trim() || raw;
 
   // ── Primary (nearest-bar default) — decidePoll-style precedence ──────────
+  // Mirrors decidePoll (options ≥2 → yes/no stem → category → fallback), with
+  // ONE box-only addition: a temporal hint with no category match defaults to a
+  // Time poll (so "hang out this weekend" → Time). decidePoll/Siri has no
+  // temporal capability (the deep link can't carry windows), so it intentionally
+  // omits this — do NOT "align" by removing it; that regresses scheduling input.
   let primaryKind: PlannedKind;
   let primaryCategory: string | undefined;
   if (hasOptions) primaryKind = "options";

@@ -87,32 +87,42 @@ function tokenHits(token: string, trigger: string): boolean {
   return t === k || k.startsWith(t) || t.startsWith(k);
 }
 
-/** Match score for a category against pre-tokenized subject words. Label hits
- *  weigh 2, alias-keyword hits weigh 1; 0 means no match. Each token counts at
- *  most once (its best hit). */
-export function scoreCategory(value: string, tokens: readonly string[]): number {
+// Label words per category, split once at module load (these run per keystroke
+// in the search box, so the split must not repeat per call).
+const LABEL_WORDS = new Map(
+  CATEGORY_DEFS.map((d) => [d.value, d.label.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)] as const),
+);
+
+// Score a category in ONE pass over the tokens, returning both the full score
+// (label hits weigh 2, alias-keyword hits 1) and the label-only score (used to
+// rank exact-label hits ahead of alias-only). Each token counts at most once.
+function scoreBoth(value: string, tokens: readonly string[]): { score: number; labelScore: number } {
   const def = DEF_BY_VALUE.get(value);
-  if (!def || !tokens.length) return 0;
-  const labelWords = def.label.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (!def || !tokens.length) return { score: 0, labelScore: 0 };
+  const labelWords = LABEL_WORDS.get(value)!;
   let score = 0;
+  let labelScore = 0;
   for (const tok of tokens) {
-    let best = 0;
-    if (labelWords.some((w) => tokenHits(tok, w))) best = 2;
-    else if (def.keywords.some((k) => tokenHits(tok, k))) best = 1;
-    score += best;
+    if (labelWords.some((w) => tokenHits(tok, w))) {
+      score += 2;
+      labelScore += 2;
+    } else if (def.keywords.some((k) => tokenHits(tok, k))) {
+      score += 1;
+    }
   }
-  return score;
+  return { score, labelScore };
+}
+
+/** Match score for a category against pre-tokenized subject words. Label hits
+ *  weigh 2, alias-keyword hits 1; 0 means no match. */
+export function scoreCategory(value: string, tokens: readonly string[]): number {
+  return scoreBoth(value, tokens).score;
 }
 
 /** Score against a category's LABEL words only (ignoring alias keywords). Used
  *  to rank exact-label hits ahead of alias-only hits. */
 export function scoreCategoryLabel(value: string, tokens: readonly string[]): number {
-  const def = DEF_BY_VALUE.get(value);
-  if (!def || !tokens.length) return 0;
-  const labelWords = def.label.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  let score = 0;
-  for (const tok of tokens) if (labelWords.some((w) => tokenHits(tok, w))) score += 2;
-  return score;
+  return scoreBoth(value, tokens).labelScore;
 }
 
 export interface RankedCategory { value: string; score: number; }
@@ -128,11 +138,11 @@ export function rankCategories(subject: string, recencyOrder: readonly string[] 
     return i === -1 ? Number.MAX_SAFE_INTEGER : i;
   };
   return CATEGORY_DEFS
-    .map((d) => ({ value: d.value, score: scoreCategory(d.value, tokens), label: scoreCategoryLabel(d.value, tokens) }))
+    .map((d) => ({ value: d.value, ...scoreBoth(d.value, tokens) }))
     .filter((r) => r.score > 0)
     .sort((a, b) =>
       b.score - a.score ||
-      b.label - a.label ||
+      b.labelScore - a.labelScore ||
       CATEGORY_ORDER.indexOf(a.value) - CATEGORY_ORDER.indexOf(b.value) ||
       recIndex(a.value) - recIndex(b.value),
     )
