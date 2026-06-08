@@ -94,6 +94,65 @@ add(["hang out this weekend", "get together next week"], { kind: "time" }, "temp
 
 export const POLL_SUGGESTION_CORPUS: readonly LabeledCase[] = CORPUS;
 
+// ── Long-tail corpus ─────────────────────────────────────────────────────────
+// Deliberately HARD phrasings that expose the keyword heuristic's ceiling:
+// slang/novel words it has no trigger for, typos that corrupt the trigger word
+// itself, compound multi-intent input, and non-English. Kept SEPARATE from the
+// CI-gated core (the heuristic is EXPECTED to do poorly here) so this set can be
+// the proving ground for an AI classifier without breaking the core CI gate.
+// `accept` stays a SET where intent is genuinely either-or. See
+// docs/poll-textbox-followups.md (TODO 2) + prototypes/poll-classify/.
+const LONGTAIL: LabeledCase[] = [];
+const addLong = (texts: string[], accept: Intent | Intent[], bucket: string) => {
+  const a = Array.isArray(accept) ? accept : [accept];
+  for (const text of texts) LONGTAIL.push({ text, accept: a, bucket });
+};
+
+// slang / novel vocabulary the keyword set lacks (a couple of controls the
+// heuristic already handles — "drinks"/"movie" — guard against AI regressions).
+addLong(["feed me", "i'm starving", "let's grub", "grub time", "what're we munching on",
+  "hungry, ideas?", "chow down where", "somewhere to nosh"], cat("restaurant"), "slang");
+addLong(["happy hour spot", "where we drinking"], [cat("restaurant"), cat("location")], "slang");
+addLong(["frag night", "let's frag", "controller time", "respawn night", "co-op session"],
+  cat("video_game"), "slang");
+addLong(["let's get drinks", "movie marathon"], [cat("restaurant"), cat("movie")], "slang"); // controls
+
+// typos that corrupt the TRIGGER word itself (typos on non-trigger words don't
+// challenge the heuristic). A few controls keep a surviving keyword.
+addLong(["moive night", "moive marathon", "pic a flim", "whihc moive"], cat("movie"), "typo");
+addLong(["restaraunt ideas", "diner tonight", "whats for dinr", "wheres good to eet"],
+  cat("restaurant"), "typo");
+addLong(["vidoe gaem night", "wat gaem to paly"], cat("video_game"), "typo");
+addLong(["schedual a meetnig", "whenn are we free"], cat("time"), "typo");
+addLong(["lunhc spot"], [cat("restaurant"), cat("location")], "typo");
+addLong(["resturant for dinner", "moveis to watch"], // controls (surviving keyword)
+  [cat("restaurant"), cat("movie")], "typo");
+
+// compound / multi-intent — the structural detectors (options, yes/no, temporal)
+// usually dominate, so accept the union; this measures that the AI category swap
+// doesn't BREAK structure-dominated input.
+addLong(["dinner friday or saturday with the team"], [{ kind: "time" }, cat("restaurant"), { kind: "options" }], "compound");
+addLong(["movie or game night this weekend"], [{ kind: "time" }, { kind: "options" }, cat("movie"), cat("video_game")], "compound");
+addLong(["pizza or sushi for lunch tomorrow"], [{ kind: "options" }, { kind: "time" }, cat("restaurant")], "compound");
+addLong(["thai or italian friday"], [{ kind: "options" }, cat("restaurant"), { kind: "time" }], "compound");
+addLong(["game or movie tonight"], [{ kind: "options" }, { kind: "time" }, cat("video_game"), cat("movie")], "compound");
+addLong(["brunch sunday or monday"], [{ kind: "time" }, { kind: "options" }, cat("restaurant")], "compound");
+addLong(["where and when should we meet"], [{ kind: "time" }, cat("location")], "compound");
+addLong(["what time and where for drinks"], [{ kind: "time" }, cat("restaurant"), cat("location")], "compound");
+addLong(["should we do dinner or a movie"], [{ kind: "yes_no" }, { kind: "options" }, cat("restaurant"), cat("movie")], "compound");
+addLong(["lunch spot near the office for the team"], [cat("restaurant"), cat("location")], "compound");
+
+// multilingual — English keyword set + an English-only embedder BOTH fail here;
+// this bucket exists to show that a MULTILINGUAL embedder is required to lift it.
+addLong(["dónde comemos", "dónde cenamos", "wo essen wir", "où manger ce soir", "dove mangiamo"], cat("restaurant"), "multilingual");
+addLong(["qué película vemos", "quel film regarder", "welcher film", "che film guardiamo"], cat("movie"), "multilingual");
+addLong(["cuándo nos reunimos", "quand se voit-on", "wann treffen wir uns"], cat("time"), "multilingual");
+addLong(["qué juego jugamos"], cat("video_game"), "multilingual");
+
+export const POLL_SUGGESTION_LONGTAIL: readonly LabeledCase[] = LONGTAIL;
+/** Core + long-tail, the full proving ground for an AI classifier eval. */
+export const POLL_SUGGESTION_CORPUS_FULL: readonly LabeledCase[] = [...CORPUS, ...LONGTAIL];
+
 // ── Matchers ──────────────────────────────────────────────────────────────────
 /** Does a prediction satisfy one intent? "time" is satisfied by either a
  *  `time` kind or a `category:time`, since the box surfaces both shapes. */
