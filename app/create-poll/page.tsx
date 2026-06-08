@@ -31,7 +31,7 @@ import VotingCutoffField from "@/components/VotingCutoffField";
 import CompactNumberRow from "@/components/CompactNumberRow";
 import OutcomeInfoButton from "@/components/OutcomeInfoButton";
 import MinMaxCounter from "@/components/MinMaxCounter";
-import DayTimeWindowsInput from "@/components/DayTimeWindowsInput";
+import DayTimeWindowsList from "@/components/DayTimeWindowsList";
 import DaysSelector from "@/components/DaysSelector";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import ShowtimeCreateFlow, { ShowtimeCurated } from "./ShowtimeCreateFlow";
@@ -389,8 +389,6 @@ export function CreateQuestionContent() {
   }, [calendarExpanded]);
   const {
     onDaysSelected: handleDaysSelected,
-    onWindowsChange: handleDayWindowsChange,
-    onDeleteDay: handleDeleteDay,
     reset: resetDayTimeWindowsCache,
   } = useDayTimeWindowsState(dayTimeWindows, setDayTimeWindows);
   const [deadlineOption, setDeadlineOption] = useState("10min");
@@ -2938,21 +2936,12 @@ export function CreateQuestionContent() {
                           Time Windows
                         </label>
                         <section className="rounded-3xl bg-white dark:bg-gray-800 pl-4 pr-3">
-                          <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                            {dayTimeWindows.map((dtw) => (
-                              <DayTimeWindowsInput
-                                key={dtw.day}
-                                day={dtw.day}
-                                windows={dtw.windows}
-                                onChange={(windows) => handleDayWindowsChange(dtw.day, windows)}
-                                onDelete={() => handleDeleteDay(dtw.day)}
-                                disabled={isLoading}
-                                minDurationMinutes={minDurationMinutesForWindows}
-                                allDays={dayTimeWindows}
-                                borderless
-                              />
-                            ))}
-                          </div>
+                          <DayTimeWindowsList
+                            dayTimeWindows={dayTimeWindows}
+                            onChange={setDayTimeWindows}
+                            disabled={isLoading}
+                            minDurationMinutes={minDurationMinutesForWindows}
+                          />
                         </section>
                       </div>
                     )}

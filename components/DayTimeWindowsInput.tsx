@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
+import type React from 'react';
 import TimeGridModal from './TimeGridModal';
 import { windowDurationMinutes, formatDayLabel, pickNextTimeWindow, pickVoterSplitWindow, isWindowWithinQuestionWindows, windowsOverlap, periodColorClass } from '@/lib/timeUtils';
 
@@ -8,6 +9,22 @@ interface TimeWindow {
   min: string; // HH:MM format
   max: string; // HH:MM format
   enabled?: boolean; // For voter form: whether this window is active (default true)
+}
+
+// Cross-day selection wiring supplied by the coordinator (DayTimeWindowsList).
+// Drives two long-press modes that span multiple days:
+//   • 'windows' — multi-select time-slot pills, then bulk-edit them all at once.
+//   • 'copy'    — pick a source day, then tap other days to paste its slots.
+// Absent (or mode 'none') keeps the plain tap-to-edit behaviour.
+export interface DayTimeSelection {
+  mode: 'none' | 'windows' | 'copy';
+  isWindowSelected: (index: number) => boolean;
+  onWindowLongPress: (index: number, x: number, y: number) => void;
+  onWindowTap: (index: number) => void;
+  onDayLongPress?: (x: number, y: number) => void;
+  isCopySource: boolean;
+  isPasteTarget: boolean;
+  onDayTapTarget: () => void;
 }
 
 interface DayTimeWindowsInputProps {
@@ -26,6 +43,8 @@ interface DayTimeWindowsInputProps {
   // cleanly inside a parent card's `divide-y` layout. Used by the create-poll
   // "Time Windows" card; default usage keeps the standalone-strip look.
   borderless?: boolean;
+  // Cross-day long-press selection wiring (managed by DayTimeWindowsList).
+  selection?: DayTimeSelection;
 }
 
 // Format time in 12-hour format (compact) - returns {time, period}
@@ -251,11 +270,55 @@ export default function DayTimeWindowsInput({
   minDurationMinutes,
   allDays,
   borderless = false,
+  selection,
 }: DayTimeWindowsInputProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   const isVoterForm = !!questionWindows;
+
+  const sel = selection;
+  const selectionActive = !!sel && sel.mode !== 'none';
+  const inWindowsMode = sel?.mode === 'windows';
+  const inCopyMode = sel?.mode === 'copy';
+
+  // Long-press detection shared by the time-slot pills (enter 'windows' mode)
+  // and the day label (open the copy context menu). One press happens at a time,
+  // so a single shared ref is enough. `fired` is consulted by the pill onClick
+  // to swallow the synthesized click that follows a long-press, then reset on
+  // the next pointerdown.
+  const lpRef = useRef<{ timer: number | null; sx: number; sy: number; fired: boolean }>({
+    timer: null, sx: 0, sy: 0, fired: false,
+  });
+  const clearLp = () => {
+    if (lpRef.current.timer !== null) {
+      clearTimeout(lpRef.current.timer);
+      lpRef.current.timer = null;
+    }
+  };
+  useEffect(() => () => clearLp(), []);
+  const longPressHandlers = (fire: (x: number, y: number) => void) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const x = e.clientX, y = e.clientY;
+      clearLp();
+      lpRef.current = {
+        timer: window.setTimeout(() => {
+          lpRef.current.fired = true;
+          lpRef.current.timer = null;
+          fire(x, y);
+        }, 500),
+        sx: x, sy: y, fired: false,
+      };
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      const s = lpRef.current;
+      if (s.timer !== null && Math.hypot(e.clientX - s.sx, e.clientY - s.sy) > 10) clearLp();
+    },
+    onPointerUp: clearLp,
+    onPointerLeave: clearLp,
+    onPointerCancel: clearLp,
+  });
 
   // Creator-form slot enter/leave animation. The voter form keeps its existing
   // ghost-row render path and is not animated.
@@ -348,23 +411,99 @@ export default function DayTimeWindowsInput({
     </button>
   );
 
+  // Renders one time-slot pill, handling the three selection modes:
+  //   • 'none'    — tap edits the window; long-press enters 'windows' mode.
+  //   • 'windows' — tap toggles selection (blue ring); editing is suppressed.
+  //   • 'copy'    — static display only, so taps fall through to the row's
+  //                 day-target toggle.
+  const renderWindowButton = (
+    index: number,
+    window: TimeWindow,
+    variant: keyof typeof PILL_STATE_CLASSES,
+  ) => {
+    const cls = `${PILL_BASE} ${PILL_STATE_CLASSES[variant]} ${pillBorderClass(variant, isVoterForm)}`;
+    if (inCopyMode) {
+      return (
+        <span className={`${cls} pointer-events-none`}>
+          {renderPillContent(window, true)}
+        </span>
+      );
+    }
+    const selected = !!inWindowsMode && !!sel?.isWindowSelected(index);
+    const lp = (!selectionActive && sel)
+      ? longPressHandlers((x, y) => sel.onWindowLongPress(index, x, y))
+      : {};
+    return (
+      <button
+        type="button"
+        {...lp}
+        onClick={() => {
+          if (lpRef.current.fired) { lpRef.current.fired = false; return; }
+          if (inWindowsMode) { sel?.onWindowTap(index); return; }
+          handleEditWindow(index);
+        }}
+        disabled={disabled}
+        className={`${cls}${selected ? ' ring-2 ring-blue-500' : ''}`}
+      >
+        {renderPillContent(window, true)}
+      </button>
+    );
+  };
+
+  // Copy-mode chrome for the day row: a leading checkbox/marker + a row click
+  // that toggles this day as a paste target (the source day is inert + dimmed).
+  const dayLongPress = !selectionActive ? sel?.onDayLongPress : undefined;
+  const dayLongPressHandlers = dayLongPress ? longPressHandlers(dayLongPress) : {};
+  const copyTarget = inCopyMode && !sel?.isCopySource;
+  const outerCopyClass = inCopyMode
+    ? (sel?.isCopySource
+        ? ' opacity-50'
+        : (sel?.isPasteTarget ? ' bg-blue-50 dark:bg-blue-900/30 rounded-lg cursor-pointer' : ' cursor-pointer'))
+    : '';
+
   return (
     <div
       className={
-        borderless
+        (borderless
           ? 'flex items-center gap-3 min-h-12 py-2'
-          : 'flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
+          : 'flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700')
+        + outerCopyClass
       }
+      onClick={copyTarget ? () => sel?.onDayTapTarget() : undefined}
     >
+      {/* Copy-mode marker: solid grey = source (inert), empty circle = an
+          unselected paste target, blue check = a selected paste target. */}
+      {inCopyMode && (
+        <span
+          className={`shrink-0 self-start mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+            sel?.isCopySource
+              ? 'bg-gray-300 dark:bg-gray-600 border-gray-300 dark:border-gray-600'
+              : sel?.isPasteTarget
+                ? 'bg-blue-600 border-blue-600'
+                : 'border-gray-300 dark:border-gray-600'
+          }`}
+        >
+          {sel?.isPasteTarget && (
+            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+        </span>
+      )}
+
       {/* Fixed-width date column so the + button to its right lands at the
           same X on every row. 88 px fits the widest expected label in
-          Geist Sans (date line ~81 px; abbreviated relative ~50 px). */}
-      <div className="w-[88px] self-start">
+          Geist Sans (date line ~81 px; abbreviated relative ~50 px).
+          Long-press (in 'none' mode) opens the copy context menu. */}
+      <div
+        className={`w-[88px] self-start${dayLongPress ? ' select-none' : ''}`}
+        {...dayLongPressHandlers}
+      >
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayLabel(day)}
         </div>
         <div className="text-xs text-blue-500 dark:text-blue-400">
-          {getRelativeDay(day)}
+          {sel?.isCopySource ? 'Copying…' : getRelativeDay(day)}
         </div>
       </div>
 
@@ -372,18 +511,21 @@ export default function DayTimeWindowsInput({
           flex pressure from squishing it; self-start centers it with the
           topmost pill regardless of slot count. Voters use it to split a
           window into disconnected segments (each added slot soft-validated
-          against the creator's allowed windows). */}
-      <button
-        type="button"
-        onClick={handleAddWindow}
-        disabled={disabled}
-        className="shrink-0 self-start w-[34px] h-[34px] flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        aria-label="Add time window"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-        </svg>
-      </button>
+          against the creator's allowed windows). Hidden during selection
+          modes to keep the row focused on the active gesture. */}
+      {!selectionActive && (
+        <button
+          type="button"
+          onClick={handleAddWindow}
+          disabled={disabled}
+          className="shrink-0 self-start w-[34px] h-[34px] flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          aria-label="Add time window"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      )}
 
       {/* Ballot slots are all deletable (like the creation form). On the voter
           form, any original question window that no current slot overlaps is
@@ -412,9 +554,10 @@ export default function DayTimeWindowsInput({
               return { kind: 'window', window, index, isTooShort, flagged: intersectsPrev || outsideConstraint };
             });
             // Ghost rows: original windows the voter has fully removed (no overlap).
-            // Suppressed in the read-only summary (`disabled`) — there they'd read
-            // as "options you forgot" rather than a re-add affordance.
-            const ghostRows: Row[] = isVoterForm && !disabled
+            // Suppressed in the read-only summary (`disabled`) and during a
+            // selection gesture — there they'd read as "options you forgot"
+            // rather than a re-add affordance / aren't real selectable windows.
+            const ghostRows: Row[] = isVoterForm && !disabled && !selectionActive
               ? (questionWindows ?? [])
                   .filter(orig => !windows.some(w => windowsOverlap(w, orig)))
                   .map(orig => ({ kind: 'ghost', window: orig }))
@@ -444,19 +587,12 @@ export default function DayTimeWindowsInput({
                   </label>
                 );
               }
-              const showTrash = isVoterForm || windows.length > 1;
+              const showTrash = (isVoterForm || windows.length > 1) && !selectionActive;
               const variant = pillVariant(row.isTooShort, row.flagged);
               return (
                 <div key={`win-${row.index}`} className="flex items-center gap-[7px]">
                   {showTrash ? renderDeleteButton(row.index) : null}
-                  <button
-                    type="button"
-                    onClick={() => handleEditWindow(row.index)}
-                    disabled={disabled}
-                    className={`${PILL_BASE} ${PILL_STATE_CLASSES[variant]} ${pillBorderClass(variant, isVoterForm)}`}
-                  >
-                    {renderPillContent(row.window, true)}
-                  </button>
+                  {renderWindowButton(row.index, row.window, variant)}
                 </div>
               );
             });
@@ -479,7 +615,7 @@ export default function DayTimeWindowsInput({
             const prevWin = isPresent && index > 0 ? windows[index - 1] : null;
             const intersectsPrev = !!prevWin && row.window.min <= prevWin.max;
             const variant = isPresent ? pillVariant(isTooShort, intersectsPrev) : 'normal';
-            const showTrash = isPresent && windows.length > 1;
+            const showTrash = isPresent && windows.length > 1 && !selectionActive;
             return (
               <AnimatedSlotRow
                 key={row.id}
@@ -494,14 +630,7 @@ export default function DayTimeWindowsInput({
                   <div className="flex items-center gap-[7px]">
                     {showTrash ? renderDeleteButton(index) : null}
                     {isPresent ? (
-                      <button
-                        type="button"
-                        onClick={() => handleEditWindow(index)}
-                        disabled={disabled}
-                        className={`${PILL_BASE} ${PILL_STATE_CLASSES[variant]} ${pillBorderClass(variant, isVoterForm)}`}
-                      >
-                        {renderPillContent(row.window, true)}
-                      </button>
+                      renderWindowButton(index, row.window, variant)
                     ) : (
                       <span
                         className={`${PILL_BASE} ${PILL_STATE_CLASSES.normal} ${pillBorderClass('normal', isVoterForm)}`}
