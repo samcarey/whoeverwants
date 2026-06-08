@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { formatDayLabel, groupSlotsByDay, parseSlotStart } from "@/lib/timeUtils";
+import { formatDayLabel, groupSlotsByDay, parseSlotStart, periodColorClass } from "@/lib/timeUtils";
 import type { OptionsMetadata } from "@/lib/types";
 
 /**
@@ -68,12 +68,14 @@ interface VoteProps {
 
 type Props = CurateProps | VoteProps;
 
-function fmt12(time: string): string {
+/** Split "19:10" into the 12h "7:10" part + its AM/PM period, so the period
+ *  can be tinted with the app-wide orange(AM)/purple(PM) convention. */
+function fmt12Parts(time: string): { hm: string; period: "AM" | "PM" } {
   const [hStr, m] = time.split(":");
   let h = parseInt(hStr, 10);
-  const period = h >= 12 ? "PM" : "AM";
+  const period: "AM" | "PM" = h >= 12 ? "PM" : "AM";
   h = h % 12 || 12;
-  return `${h}:${m} ${period}`;
+  return { hm: `${h}:${m}`, period };
 }
 
 export default function ShowtimeBubbles(props: Props) {
@@ -111,26 +113,36 @@ export default function ShowtimeBubbles(props: Props) {
     props.onToggle(key, next);
   }
 
+  // State is conveyed by border + background only (mirroring the theater
+  // suggestion pills), so the AM/PM tint + the muted secondary line stay
+  // consistent across want/neutral/can't — exactly how the time-slot bubbles
+  // keep the period column orange/purple regardless of like/dislike state.
   const classFor = (state: "on" | "neutral" | "off") => {
     if (state === "on")
-      return "bg-green-100 dark:bg-green-900/40 border-green-500 text-green-800 dark:text-green-200";
+      return "border-green-500 bg-green-50 dark:border-green-500 dark:bg-green-900/30";
     if (state === "off")
-      return "bg-red-100 dark:bg-red-900/40 border-red-500 text-red-800 dark:text-red-200";
-    return "bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200";
+      return "border-red-500 bg-red-50 dark:border-red-500 dark:bg-red-900/30";
+    return "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800";
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {days.map(([date, keys]) => (
         <div key={date} className="flex gap-3">
           <div className="w-14 shrink-0 pt-1 text-xs font-semibold text-gray-500 dark:text-gray-400 leading-tight">
             {formatDayLabel(date)}
           </div>
-          <div className="flex flex-1 flex-wrap gap-2">
+          <div className="flex flex-1 flex-wrap gap-[6.4px]">
             {keys.map((key, idx) => {
               const slot = byKey.get(key);
               if (!slot) return null;
               const state = bubbleState(key);
+              const { hm, period } = fmt12Parts(slot.time);
+              const tag = [slot.format, slot.cinema_name?.replace(/^Alamo /, "")]
+                .filter(Boolean)
+                .join(" · ");
+              const hasSeats =
+                typeof slot.seats_left === "number" && slot.seats_left >= 0;
               return (
                 <button
                   // Defense-in-depth: the server guarantees unique keys per
@@ -140,18 +152,17 @@ export default function ShowtimeBubbles(props: Props) {
                   type="button"
                   disabled={disabled}
                   onClick={() => handleTap(key)}
-                  className={`flex flex-col items-center rounded-xl border px-2.5 py-1.5 text-center transition-colors ${classFor(state)} ${disabled ? "cursor-default" : "active:scale-95"}`}
+                  className={`max-w-full rounded-[20.4px] border px-[7.2px] py-0.5 text-left transition-colors ${classFor(state)} ${disabled ? "cursor-default" : "active:scale-[0.98]"}`}
                 >
-                  <span className="font-mono text-sm font-bold leading-none">{fmt12(slot.time)}</span>
-                  {(slot.format || slot.cinema_name) && (
-                    <span className="mt-0.5 text-[10px] leading-tight opacity-80">
-                      {[slot.format, slot.cinema_name?.replace(/^Alamo /, "")]
+                  <div className="whitespace-nowrap text-[12.8px] font-semibold leading-tight tabular-nums text-gray-900 dark:text-gray-100">
+                    {hm} <span className={periodColorClass(period)}>{period}</span>
+                  </div>
+                  {(tag || hasSeats) && (
+                    <div className="mt-px whitespace-nowrap text-[11px] leading-tight text-gray-500 dark:text-gray-400">
+                      {[tag || null, hasSeats ? `${slot.seats_left} left` : null]
                         .filter(Boolean)
                         .join(" · ")}
-                    </span>
-                  )}
-                  {typeof slot.seats_left === "number" && slot.seats_left >= 0 && (
-                    <span className="text-[10px] leading-tight opacity-70">{slot.seats_left} seats</span>
+                    </div>
                   )}
                 </button>
               );
@@ -162,10 +173,10 @@ export default function ShowtimeBubbles(props: Props) {
       {props.mode === "vote" && (
         <div className="flex items-center justify-center gap-4 pt-1 text-[11px] text-gray-500 dark:text-gray-400">
           <span className="flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded border border-green-500 bg-green-100 dark:bg-green-900/40" /> Want
+            <span className="inline-block h-3 w-3 rounded border border-green-500 bg-green-50 dark:bg-green-900/30" /> Want
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded border border-red-500 bg-red-100 dark:bg-red-900/40" /> Can&apos;t attend
+            <span className="inline-block h-3 w-3 rounded border border-red-500 bg-red-50 dark:bg-red-900/30" /> Can&apos;t attend
           </span>
         </div>
       )}
