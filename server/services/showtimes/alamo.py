@@ -111,7 +111,8 @@ def _display_format(brand: str | None, fmt_name: str | None) -> str:
     if brand:
         # Alamo often repeats the brand AS the FormatName ("The Big Show");
         # only append a format that adds real signal (e.g. "70mm").
-        if fmt and fmt.casefold() not in _GENERIC_FORMATS and fmt.casefold() != brand.casefold():
+        fmt_cf = fmt.casefold()
+        if fmt and fmt_cf not in _GENERIC_FORMATS and fmt_cf != brand.casefold():
             return f"{brand} · {fmt}"
         return brand
     return fmt or "Digital"
