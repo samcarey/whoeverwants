@@ -10,7 +10,7 @@ import {
   CreateQuestionParams,
 } from "@/lib/api";
 import type { Poll, OptionsMetadata, Question } from "@/lib/types";
-import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isLocationLikeCategory, categoryMatchesQuery, categoryLabelMatchesQuery } from "@/components/TypeFieldInput";
+import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import AccountGateModal from "@/components/AccountGateModal";
@@ -19,7 +19,8 @@ import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses, g
 import { debugLog } from "@/lib/debugLogger";
 import { getCategoryIcon } from "@/lib/questionListUtils";
 import { bestEmojiMatch, splitLeadingEmoji } from "@/lib/emojiData";
-import { parseForContext, parseOptionsFromText, parseTemporal, stripTemporal } from "@/lib/pollTextParse";
+import { parseForContext } from "@/lib/pollTextParse";
+import { planPollSuggestions, type PlannedRow } from "@/lib/pollSuggestions";
 import OptionsInput from "@/components/OptionsInput";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
@@ -1400,142 +1401,96 @@ export function CreateQuestionContent() {
     segments: SuggestionSegment[];
     overrides: Partial<QuestionDraft>;
   }>>(() => {
-    // If the typed text leads with an emoji, peel it off: it becomes the icon
-    // for every suggestion (and the prefilled category emoji when one is
-    // picked), and the REST is what we parse for category / options / context.
+    // ORDERING + which-rows is decided by the pure planner (lib/pollSuggestions),
+    // the single source of truth shared with the committed scoring harness — so
+    // the box can't drift from what the tests measure. This component only maps
+    // each PlannedRow to its display (icon + annotated segments + form overrides).
+    //
+    // A leading typed emoji is peeled off for display: it becomes every row's
+    // icon (and the prefilled category emoji). The planner strips it internally
+    // for its decisions, so we re-derive the subject/context here only to feed
+    // the emoji matchers + the recent-poll token filter.
     const { emoji: leadingIcon, rest: raw } = splitLeadingEmoji(searchQuery.trim());
     const { subject, context } = parseForContext(raw);
-    const list: Array<{ key: string; icon: string; segments: SuggestionSegment[]; overrides: Partial<QuestionDraft> }> = [];
+    const titleEmoji = raw ? bestEmojiMatch(raw) : null;
+    const customEmoji = subject ? bestEmojiMatch(`${subject} ${context}`) : null;
 
-    // Each row's displayed text is derived from the same overrides it
-    // prefills, so the suggestion always reads as the title the poll lands on.
-    // The DISPLAYED icon must equal the one that gets prefilled, so derive both
-    // from a single source: a leading typed emoji wins, else the row's own
-    // `overrides.categoryIcon` (a content-matched emoji, e.g. from
-    // bestEmojiMatch), else the `icon` fallback. Whatever emoji the row shows is
-    // what lands on the form's chip — picking a suggestion can't surface a
-    // different emoji than the one the user tapped.
-    const row = (key: string, icon: string, overrides: Partial<QuestionDraft>, segmentsOverride?: SuggestionSegment[]) => {
+    // The DISPLAYED icon must equal the one prefilled onto the form's chip: a
+    // leading typed emoji wins, else the row's own content-matched
+    // `overrides.categoryIcon`, else the per-kind fallback icon. So a tap can
+    // never surface a different emoji than the one shown.
+    const display = (
+      key: string,
+      fallbackIcon: string,
+      overrides: Partial<QuestionDraft>,
+      segmentsOverride?: SuggestionSegment[],
+    ) => {
       const o = leadingIcon ? { ...overrides, categoryIcon: leadingIcon } : overrides;
-      list.push({ key, icon: leadingIcon ?? o.categoryIcon ?? icon, segments: segmentsOverride ?? overridesToSegments(o), overrides: o });
+      return {
+        key,
+        icon: leadingIcon ?? o.categoryIcon ?? fallbackIcon,
+        segments: segmentsOverride ?? overridesToSegments(o),
+        overrides: o,
+      };
     };
 
-    // Yes/No + Limited Supply (top): frame the whole typed text as the
-    // prompt / item name. When the typed text matches an emoji description,
-    // surface that emoji (same ranking the custom-category picker uses)
-    // instead of the generic 👍 / 🎟️ fallback.
-    if (raw) {
-      const titleEmoji = bestEmojiMatch(raw);
-      row('yesno', '👍', { category: 'yes_no', title: raw, isAutoTitle: false, categoryIcon: titleEmoji ?? undefined });
-      row('limited', '🎟️', { category: 'limited_supply', title: raw, isAutoTitle: false, categoryIcon: titleEmoji ?? undefined });
-    }
+    // A Time / time-category row trails the parsed range as a blue annotation
+    // ("· Fri Jun 12, 6–8 PM") after the normal "Time for <X>?" title.
+    const timeSegments = (ov: Partial<QuestionDraft>, windows?: DayTimeWindow[]): SuggestionSegment[] => [
+      ...overridesToSegments(ov),
+      { text: ` · ${formatTemporalLabel(windows ?? [])}`, colorText: SEG_TIME_RANGE },
+    ];
 
-    // A custom-category poll named after the typed subject — shown ABOVE the
-    // matched built-in category rows, with a distinct gold "Custom"
-    // annotation. No empty "New Poll" row — the + button opens a blank poll
-    // instead. When the custom category (or its context) matches an emoji
-    // description, show that emoji instead of the generic ✏️ fallback (same
-    // ranking the custom-category emoji picker uses).
-    if (subject) {
-      const customEmoji = bestEmojiMatch(`${subject} ${context}`);
-      const customOverrides = { category: subject, forField: context, categoryIcon: customEmoji ?? undefined };
-      row('custom', '✏️', customOverrides, customCategorySegments(customOverrides));
-    }
+    const toDisplay = (p: PlannedRow) => {
+      switch (p.kind) {
+        case 'yes_no':
+          return display('yesno', '👍', {
+            category: 'yes_no', title: p.subject, isAutoTitle: false, categoryIcon: titleEmoji ?? undefined,
+          });
+        case 'limited_supply':
+          return display('limited', '🎟️', {
+            category: 'limited_supply', title: p.subject, isAutoTitle: false, categoryIcon: titleEmoji ?? undefined,
+          });
+        case 'custom': {
+          const o = { category: p.category, forField: p.context, categoryIcon: customEmoji ?? undefined };
+          return display('custom', '✏️', o, customCategorySegments(o));
+        }
+        case 'context':
+          return display('context', '🗳️', { category: 'custom', forField: p.context });
+        case 'options':
+          return display('options', '🗳️', {
+            category: 'custom', options: p.options, collectSuggestions: false, forField: p.context,
+          });
+        case 'time': {
+          const o: Partial<QuestionDraft> = { category: 'time', forField: p.context, dayTimeWindows: p.temporalWindows };
+          return display('time', getBuiltInType('time')?.icon ?? '📅', o, timeSegments(o, p.temporalWindows));
+        }
+        case 'category': {
+          const o: Partial<QuestionDraft> = { category: p.category, forField: p.context };
+          if (p.temporalWindows) o.dayTimeWindows = p.temporalWindows;
+          const isTime = p.category === 'time' && !!p.temporalWindows;
+          return display(`cat:${p.category}`, getBuiltInType(p.category!)?.icon ?? '🗳️', o, isTime ? timeSegments(o, p.temporalWindows) : undefined);
+        }
+      }
+    };
 
-    // Shared token matcher for the typed subject — used by the recent-poll
-    // rows and by the category section (pushed LAST, so green category matches
-    // sit nearest the bar, below the "Options"/context interpretations).
+    const planned = planPollSuggestions(searchQuery, {
+      categoryOrder: orderedBubbleEntries.map((e) => e.value),
+      now: new Date(),
+    });
+    const list = planned.map(toDisplay).filter((r): r is NonNullable<typeof r> => !!r);
+
+    // Recently-posted poll titles (annotated), filtered by the typed subject's
+    // tokens — spliced in just ABOVE the planner's primary (nearest-bar) row so
+    // a reusable past poll is prominent without overriding the parsed default.
     const tokens = subject.toLowerCase().split(/[\s,]+/).filter(Boolean);
     const matchesTokens = (text: string) => {
       if (!tokens.length) return true;
       const words = text.toLowerCase().split(/[\s,]+/).filter(Boolean);
       return tokens.every((t) => words.some((w) => w.startsWith(t)));
     };
-
-    // Options — a fixed-options poll from comma / "or" text.
-    const opts = parseOptionsFromText(subject);
-    if (opts.length >= 2) {
-      row('options', '🗳️', { category: 'custom', options: opts, collectSuggestions: false, forField: context });
-    }
-
-    // Recently-posted poll titles (annotated), just above the bar — filtered
-    // by the same typed tokens, newest nearest the bar.
-    for (const e of recentEntries) {
-      if (matchesTokens(e.titleText)) row(e.key, e.icon, e.overrides);
-    }
-
-    // Context interpretation ("Options for Birthday"): treat the typed text as
-    // the poll's context rather than its category. Only when no "for" was typed
-    // yet — once the user writes "X for Y" they've already named a context.
-    if (subject && !/\bfor\b/i.test(raw)) {
-      row('context', '🗳️', { category: 'custom', forField: subject });
-    }
-
-    // Temporal hints ("this Friday", "tonight", "7-9pm") → prefill windows for
-    // a time poll. NEVER reclassifies the category (that stays keyword-driven);
-    // it only fills the window field. The day/time text is LIFTED OUT of the
-    // title/context (`stripTemporal` keeps meal nouns like "dinner" but drops
-    // "this friday") and shown instead as the inline parsed-range annotation
-    // after the "?" — so the title reads "Time for dinner?" and the row trails
-    // "· Fri Jun 12, 6–8 PM". The window is a refinable starting point.
-    const temporalWindows = parseTemporal(raw, new Date());
-    // The trailing parsed-range annotation, built once and shared across rows.
-    const timeRangeSegment: SuggestionSegment = { text: ` · ${formatTemporalLabel(temporalWindows)}`, colorText: SEG_TIME_RANGE };
-    // A Time row's segments: the normal "Time for <subject>?" title + annotation.
-    const timeRowSegments = (ov: Partial<QuestionDraft>): SuggestionSegment[] => [
-      ...overridesToSegments(ov),
-      timeRangeSegment,
-    ];
-
-    // Filtered categories LAST, so they sit nearest the bar (below the Options /
-    // context rows) — a category match is the strongest read of a typed term.
-    // Categories whose title MUST be user-typed (yes_no, limited_supply) are
-    // excluded — a default category row would render the category NAME as the
-    // title, which is exactly what the title is supposed to override. They're
-    // still creatable via the dedicated top rows (which frame the typed text as
-    // the title), and their recent polls still surface via recentEntries.
-    // Matching considers each built-in's curated alias keywords (in
-    // TypeFieldInput's BUILT_IN_TYPES), so "Movie" also surfaces "Showtime".
-    // Exact-label matches rank nearest the bar; alias-only matches sit just
-    // above. Recency order (from orderedBubbleEntries) is preserved within each
-    // group. cats[0] ends nearest the bar (the list is reversed before push).
-    const matchedCats = orderedBubbleEntries.filter(
-      (e) =>
-        e.value !== 'yes_no' &&
-        e.value !== 'limited_supply' &&
-        categoryMatchesQuery(getBuiltInType(e.value), tokens),
-    );
-    const cats = [
-      ...matchedCats.filter((e) => categoryLabelMatchesQuery(getBuiltInType(e.value), tokens)),
-      ...matchedCats.filter((e) => !categoryLabelMatchesQuery(getBuiltInType(e.value), tokens)),
-    ];
-    const catsHasTime = cats.some((e) => e.value === 'time');
-
-    // Additive Time row — only when a temporal hint was found AND a keyword-
-    // driven Time category row isn't already in `cats` (which would carry the
-    // windows itself, below). Pushed BEFORE the cats loop so a matched category
-    // stays the strongest (nearest-the-bar) pick and the Time row sits above it.
-    if (temporalWindows.length && !catsHasTime) {
-      const timeIcon = getBuiltInType('time')?.icon ?? '📅';
-      const ov: Partial<QuestionDraft> = {
-        category: 'time',
-        forField: stripTemporal(subject),
-        dayTimeWindows: temporalWindows,
-      };
-      row('time', timeIcon, ov, timeRowSegments(ov));
-    }
-
-    for (const e of [...cats].reverse()) {
-      const isTimeRow = e.value === 'time' && temporalWindows.length > 0;
-      // A typed time keyword ("time"/"when"/"meet"/...) surfaced this Time row;
-      // strip the day/time text out of the context + attach the parsed windows.
-      const ov: Partial<QuestionDraft> = {
-        category: e.value,
-        forField: isTimeRow ? stripTemporal(context) : context,
-      };
-      if (isTimeRow) ov.dayTimeWindows = temporalWindows;
-      row(`cat:${e.value}`, e.icon ?? '🗳️', ov, isTimeRow ? timeRowSegments(ov) : undefined);
-    }
+    const recents = recentEntries.filter((e) => matchesTokens(e.titleText)).map((e) => display(e.key, e.icon, e.overrides));
+    if (recents.length && list.length) list.splice(list.length - 1, 0, ...recents);
 
     return list;
   }, [searchQuery, orderedBubbleEntries, recentEntries]);
