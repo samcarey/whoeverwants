@@ -19,7 +19,7 @@
   --foreground: #171717;
   /* CreateQuestionContent (app/create-poll/page.tsx) rewrites this to the
      measured height of the floating create-poll search bar once it has
-     portaled into BubbleBarPanel's `#draft-poll-portal` div. Until then
+     portaled into the group page's `#draft-poll-portal` div. Until then
      (a transient window before CreateQuestionContent's MutationObserver
      discovers the portal target) the cards-wrapper bottom padding reads
      this default — sized to roughly match the unfocused pill bar (~48px

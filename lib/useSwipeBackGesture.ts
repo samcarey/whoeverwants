@@ -34,8 +34,12 @@ interface SwipeBackGestureOptions {
    *  layout measurement. */
   headerRef: React.RefObject<HTMLElement | null>;
   /** Additional body-portaled elements to transform alongside the wrapper
-   *  (e.g. group page's scroll-helper arrows). Caller passes refs; this
-   *  hook reads `current` on every transform. */
+   *  (e.g. group page's scroll-helper arrows, the create-poll bar's portal
+   *  node). Caller passes refs; this hook reads `current` on every transform.
+   *  NOTE: applying a transform makes the target a NEW stacking context, so a
+   *  static target drops to z-auto and can vanish behind the destination
+   *  backdrop (z-0) mid-swipe — give any target that must stay visible an
+   *  explicit `position: relative; z-index` above the backdrop. */
   extraTargets?: React.RefObject<HTMLElement | null>[];
   /** Mount the destination backdrop. Called once when motion crosses the
    *  swipe-recognize threshold. */

@@ -248,10 +248,10 @@ function TemplateInner({ children }: AppTemplateProps) {
             // Home reserves enough room for the new group button to clear the
             // last card.
             ? { paddingBottom: '6rem' }
-            // Group-like pages: no extra padding here. The BubbleBarPanel
-            // is `position: fixed` and the cards-wrapper inside GroupContent
-            // already reserves exactly the panel's measured height so the
-            // last card sits flush against the panel at scroll-bottom.
+            // Group-like pages: no extra padding here. The create-poll search
+            // bar is `position: fixed` and the cards-wrapper inside GroupContent
+            // already reserves exactly the bar's measured height so the
+            // last card sits flush against the bar at scroll-bottom.
             : undefined}
         >
           {children}

@@ -51,8 +51,7 @@ import {
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
-import { PANEL_HEIGHT_VAR } from "@/components/BubbleBarPanel";
+import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR, PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
 import {
   pollLookup,
   shortenOption,
@@ -1215,30 +1214,25 @@ export function CreateQuestionContent() {
     };
   }, [searchFocused]);
 
-  // Portal targets for the in-progress draft poll card. Rendered in the
-  // page body by the group / empty-group routes (one per route instance).
-  // Re-queried via a MutationObserver that stays armed for the full
-  // component lifetime — page navigations swap the portal target node
-  // (and the loading-spinner early-return inside GroupContent unmounts it
-  // transiently), so a self-disconnecting observer can leave us holding
-  // a stale reference pointing at a detached node.
+  // Portal targets for the create-poll search bar. The `#draft-poll-portal`
+  // is rendered by the group page CONTENT (GroupContent / EmptyPlaceholder),
+  // NOT at the layout level, so the fixed bar rides the page's motion: it
+  // slides in with a slide overlay (it's inside the overlay's `contain:
+  // strict` box) and is revealed with the swipe-back backdrop, exactly like
+  // the fixed GroupHeader.
   //
-  // We render into EVERY `#draft-poll-portal` in the DOM, not just the
-  // last one. During a slide-overlay transition there are two
-  // simultaneously: the real route's (inside #__next) and the overlay's
-  // (createPortal'd directly under <body>, so it appears later in DOM
-  // order). Both sit at the same screen position; the overlay's z=60
-  // layer covers the real-route one during the slide. Rendering into
-  // both means:
-  //   - During the slide: user sees the overlay copy slide in (the real-
-  //     route copy underneath is hidden by the overlay's opaque layer).
-  //   - When the overlay unmounts, the real-route copy is already there
-  //     — no portal-target swap, no React commit gap, no blink.
-  // Without this, the unmount of the overlay's portal target would force
-  // a setState → render → commit cycle to move the bubble bar from the
-  // (now-detached) overlay portal to the real-route portal, producing
-  // one frame where the bubble bar is rendered into a detached node and
-  // thus invisible.
+  // Re-queried via a MutationObserver that stays armed for the full
+  // component lifetime — the target node mounts / unmounts as the route
+  // changes (and the loading-spinner / no-access early-returns inside
+  // GroupContent omit it), so a self-disconnecting observer could leave us
+  // holding a stale reference pointing at a detached node.
+  //
+  // We render into EVERY `#draft-poll-portal` found, not just the last.
+  // During a slide overlay's post-commit overlap window the destination's
+  // GroupContent renders one target while the overlay's copy still renders
+  // another; both bars are identical fixed pills at the same position, so
+  // they coincide (no visible doubling) and the bar never blinks through a
+  // portal-target swap when the overlay unmounts.
   //
   // The listener runs synchronously on every mutation (no rAF
   // coalescing). React still no-op-renders when the list of portal
@@ -2426,12 +2420,20 @@ export function CreateQuestionContent() {
   // is bottom-anchored auto-height (just the bar). Focused → container is
   // pinned to the visual viewport (`top: vv.offsetTop; height: vv.height`)
   // so its bottom edge lands flush on the keyboard and the list fills above
-  // the bar. The bar's NO-transform fixed ancestor (the panel from
-  // BubbleBarHost) keeps this `fixed` viewport-relative.
+  // the bar. On the settled group page the `#draft-poll-portal` target has no
+  // transformed ancestor, so this `fixed` stays viewport-relative (the
+  // focused full-screen picker covers the page); during a slide it resolves
+  // to the overlay's `contain: strict` box so the bar slides with the page.
   const SEARCH_ROW_CLASS =
     "w-full flex items-center gap-[11.2px] pl-[14px] pr-5 py-[1.75px] text-left min-h-[0.4375rem] active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
   const pollSearchBar = (
     <div
+      // z-40 within the portal target's stacking context. On the settled
+      // group page the target is body-level, so this resolves to the
+      // viewport and the focused full-screen picker layers above the fixed
+      // header / commit badge. During a slide overlay the target lives inside
+      // the overlay's `contain: strict` box, so the bar paints within the
+      // overlay (z-60) and slides in with it — no manual elevation needed.
       className="fixed left-0 right-0 z-40 flex flex-col"
       style={
         searchFocused

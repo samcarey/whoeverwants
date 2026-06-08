@@ -27,8 +27,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
-import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
-import { setGroupAccessGranted } from "@/lib/groupAccessState";
+import { GROUP_ID_ATTR, DRAFT_POLL_PORTAL_ID, PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { useDeadlineTick } from "@/lib/useDeadlineTick";
@@ -53,7 +52,6 @@ import { forgetQuestion } from "@/lib/forgetQuestion";
 import { haptic } from "@/lib/haptics";
 import { PENDING_ACTION_COPY, type PendingActionKind } from "./groupActionCopy";
 import { GroupCardItem, ROW_DIVIDER_CLASS, type GroupCardGroup } from "./GroupCardItem";
-import { PANEL_HEIGHT_VAR } from "@/components/BubbleBarPanel";
 import { GroupNotFound as GroupNotFoundFallback } from "@/components/GroupLoadState";
 
 import type { Group } from "@/lib/groupUtils";
@@ -272,17 +270,10 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     }
   }, [group?.groupId]);
 
-  // Tell BubbleBarHost the viewer HAS access to this group so it shows the
-  // floating create-poll bar. Only fires once the group has loaded without
-  // error — the no-access wall (error || !group, rendered below) never
-  // reaches a granted state, so the bar stays hidden there. Keyed on the
-  // route id (groupId) so a different group's stale grant can't show the
-  // bar on this one.
-  useEffect(() => {
-    if (!loading && !error && group) {
-      setGroupAccessGranted(groupId);
-    }
-  }, [loading, error, group, groupId]);
+  // The create-poll bar's access gating is structural: GroupContent only
+  // renders the `#draft-poll-portal` (below) in its loaded-with-access main
+  // return. The loading spinner and the no-access wall (`error || !group`)
+  // return early WITHOUT the portal, so the bar can't appear there.
 
   // Signal to the view transition helper that this page's content is
   // rendered AND its initial scroll position has been applied. Without the
@@ -853,14 +844,19 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // made it visually collide with the (statically positioned) settings
   // gear at the viewport's left edge.
   const upArrowRef = useRef<HTMLButtonElement | null>(null);
-  // The bubble bar now lives at the layout level (components/BubbleBarHost),
-  // a single persistent instance, so it's no longer a swipe extra-target
-  // here. During the group→home swipe-back BubbleBarHost hides itself (it
-  // listens for SHOW/HIDE_HOME_BACKDROP_EVENT), so the bar doesn't float
-  // over the revealed home page.
+  // The create-poll search bar is portaled into `#draft-poll-portal`, which
+  // GroupContent renders as a body-level sibling of the swipe wrapper (so the
+  // bar's fixed full-screen focused picker still layers above the header /
+  // commit badge). Body-level means the gesture transform wouldn't reach it,
+  // so add the portal node to `extraTargets` — then a group→home swipe slides
+  // the bar off with the page (mirroring the header). During a slide OVERLAY
+  // the bar inherits the overlay's transform instead (it's portaled into the
+  // overlay's `contain: strict` GroupContent), so no per-frame work is needed
+  // there.
+  const barPortalRef = useRef<HTMLDivElement | null>(null);
   const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
     headerRef,
-    extraTargets: [upArrowRef],
+    extraTargets: [upArrowRef, barPortalRef],
     showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
     hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
     // No scroll save here: returning home intentionally resets every group's
@@ -1926,12 +1922,30 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         )}
       </div>
       </div>
-      {/* The bubble bar is mounted ONCE at the layout level
-          (components/BubbleBarHost) rather than per-GroupContent-instance,
-          so it appears instantly (independent of this heavy component's
-          commit) and can never be rendered twice during a slide. It still
-          reserves bottom space here via the --bubble-bar-panel-height CSS
-          var (set by the single BubbleBarPanel instance). */}
+      {/* Create-poll search bar portal target. CreateQuestionContent (in the
+          root layout) portals the fixed search pill + ➕ into here. Rendered
+          as a body-level sibling of the swipe wrapper — NOT inside it — so
+          the bar's focused full-screen picker still stacks above the fixed
+          header (z-20) and commit badge (z-30) in the viewport context.
+          Because it lives inside THIS GroupContent, it rides the page's
+          motion: a slide overlay's `contain: strict` box (slides in with the
+          group), the swipe-back backdrop (revealed under the sliding poll
+          page), and `barPortalRef` in the swipe `extraTargets` (slides off on
+          a group→home swipe).
+
+          `relative z-40` is load-bearing for that last case: the swipe
+          gesture sets a `transform` on this div, which makes it a NEW stacking
+          context — and a static div would land at z-auto, BELOW the z-0 home
+          backdrop that mounts at swipe start, so the bar would paint behind it
+          and vanish instantly instead of sliding off. `position: relative`
+          doesn't trap the fixed bar (only transform/contain do), so the
+          overlay-slide + backdrop-reveal cases are unchanged; it just pins the
+          stacking level above the backdrop. The bar reserves matching bottom
+          space on the cards wrapper above via the --bubble-bar-panel-height
+          CSS var (written by CreateQuestionContent after it measures the
+          bar). */}
+      <div id={DRAFT_POLL_PORTAL_ID} ref={barPortalRef} className="relative z-40" />
+      {/* End create-poll bar portal target. */}
 
       {/* Group-aware long-press modal — Copy + Forget, plus Reopen when
            the poll is closed and the current browser is the creator (or dev). */}

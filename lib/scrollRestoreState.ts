@@ -7,10 +7,9 @@
  * back navigation (see `GroupContent` in `app/g/[groupShortId]/GroupPage.tsx`).
  * That re-application is a PROGRAMMATIC scroll — often a large jump (e.g. 0 →
  * the saved mid-list offset after Next.js' post-commit scroll-to-0). Scroll-
- * driven chrome that infers user intent from scroll events (the
- * `BubbleBarPanel`'s hide-on-scroll-down, the scroll-helper arrows'
- * mid-scroll suppression) would otherwise misread the restore jump as the
- * user scrolling and hide/flicker.
+ * driven chrome that infers user intent from scroll events (the scroll-helper
+ * arrows' mid-scroll suppression) would otherwise misread the restore jump as
+ * the user scrolling and hide/flicker.
  *
  * The restore pin sets this true while it's actively re-applying and false
  * once it converges / the user takes over; consumers check it to skip their

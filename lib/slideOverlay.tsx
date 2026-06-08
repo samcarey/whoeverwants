@@ -473,8 +473,8 @@ export function SlideOverlayHost(): React.ReactElement | null {
   // Inner wrapper class must match what the destination route gets from
   // template.tsx around {children}. Group routes get the negative-margin
   // layout (max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4, no bottom
-  // padding — the BubbleBarPanel is position-fixed and reserves its own
-  // space via the cards-wrapper's padding-bottom); info / edit-title /
+  // padding — the create-poll search bar is position-fixed and reserves its
+  // own space via the cards-wrapper's padding-bottom); info / edit-title /
   // pollDetail get the standard layout (max-w-4xl mx-auto px-4 pb-6).
   // Without matching this, the page's own inner `max-w-4xl mx-auto px-4`
   // is the only padding layer the overlay has, and the unmount shifts

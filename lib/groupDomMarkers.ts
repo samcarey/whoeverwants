@@ -14,8 +14,20 @@ export const GROUP_ID_ATTR = 'data-group-id';
 
 /** Portal target rendered by the group page (and the empty `/g/`
  *  placeholder) where CreateQuestionContent portals the always-on
- *  draft poll card. */
+ *  create-poll search bar. Rendered INSIDE the page content (GroupContent /
+ *  EmptyPlaceholder) — not at the layout level — so the fixed bar inherits
+ *  the page's transform during a slide overlay (it's inside the overlay's
+ *  `contain: strict` box) and the swipe-back backdrop's containing block,
+ *  making it slide / be-revealed WITH the page exactly like the fixed
+ *  GroupHeader. */
 export const DRAFT_POLL_PORTAL_ID = 'draft-poll-portal';
+
+/** CSS variable on `<html>` holding the create-poll search bar's measured
+ *  height, so the group page can reserve matching bottom padding (its last
+ *  poll card clears the floating pill). Written by CreateQuestionContent
+ *  (which renders + measures the bar). A `:root` default in globals.css
+ *  covers the first paint before the bar mounts + measures. */
+export const PANEL_HEIGHT_VAR = '--bubble-bar-panel-height';
 
 /** Marker attribute on the fixed-position group header. Used by code
  *  that needs to scroll to a position just below the header (e.g.

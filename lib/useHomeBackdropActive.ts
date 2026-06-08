@@ -17,7 +17,10 @@ import {
  * addEventListener / removeEventListener boilerplate lives in one place:
  *   - HomeBackdropHost   — mounts/unmounts the static home snapshot
  *   - CreateGroupButtonHost — hides the FAB during the swipe
- *   - BubbleBarHost      — hides the bubble bar during the swipe
+ *
+ * (The create-poll search bar no longer needs this hook: it's rendered
+ * inside GroupContent and rides the swipe transform via the gesture's
+ * `extraTargets`, so it slides off with the page instead of being hidden.)
  */
 export function useHomeBackdropActive(): boolean {
   const [active, setActive] = useState(false);
