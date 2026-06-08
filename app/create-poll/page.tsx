@@ -19,7 +19,7 @@ import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses, g
 import { debugLog } from "@/lib/debugLogger";
 import { getCategoryIcon } from "@/lib/questionListUtils";
 import { bestEmojiMatch, splitLeadingEmoji } from "@/lib/emojiData";
-import { parseForContext, parseOptionsFromText } from "@/lib/pollTextParse";
+import { parseForContext, parseOptionsFromText, parseTemporal } from "@/lib/pollTextParse";
 import OptionsInput from "@/components/OptionsInput";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
@@ -1430,6 +1430,14 @@ export function CreateQuestionContent() {
       row('context', '🗳️', { category: 'custom', forField: subject });
     }
 
+    // Temporal hints ("this Friday", "tonight", "7-9pm") → prefill windows for
+    // a time poll. NEVER reclassifies the category (that stays keyword-driven);
+    // it only fills the window field. When no time keyword surfaced a Time
+    // category row below, an ADDITIVE Time row is offered with the full typed
+    // phrase as its context ("Time for dinner this Friday") and the parsed range
+    // pre-narrowed in the form. The window is just a refinable starting point.
+    const temporalWindows = parseTemporal(raw, new Date());
+
     // Filtered categories LAST, so they sit nearest the bar (below the Options /
     // context rows) — a category match is the strongest read of a typed term.
     // Categories whose title MUST be user-typed (yes_no, limited_supply) are
@@ -1452,8 +1460,23 @@ export function CreateQuestionContent() {
       ...matchedCats.filter((e) => categoryLabelMatchesQuery(getBuiltInType(e.value), tokens)),
       ...matchedCats.filter((e) => !categoryLabelMatchesQuery(getBuiltInType(e.value), tokens)),
     ];
+    const catsHasTime = cats.some((e) => e.value === 'time');
+
+    // Additive Time row — only when a temporal hint was found AND a keyword-
+    // driven Time category row isn't already in `cats` (which would carry the
+    // windows itself, below). Pushed BEFORE the cats loop so a matched category
+    // stays the strongest (nearest-the-bar) pick and the Time row sits above it.
+    if (temporalWindows.length && !catsHasTime) {
+      const timeIcon = getBuiltInType('time')?.icon ?? '📅';
+      row('time', timeIcon, { category: 'time', forField: subject, dayTimeWindows: temporalWindows });
+    }
+
     for (const e of [...cats].reverse()) {
-      row(`cat:${e.value}`, e.icon ?? '🗳️', { category: e.value, forField: context });
+      const ov: Partial<QuestionDraft> = { category: e.value, forField: context };
+      // A typed time keyword ("time"/"when"/"meet"/...) surfaced this Time row;
+      // attach the parsed windows so it prefills the form too.
+      if (e.value === 'time' && temporalWindows.length) ov.dayTimeWindows = temporalWindows;
+      row(`cat:${e.value}`, e.icon ?? '🗳️', ov);
     }
 
     return list;
