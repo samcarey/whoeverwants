@@ -277,6 +277,22 @@ function pollToRecentEntry(poll: Poll): RecentEntry | null {
   if (q.question_type === 'yes_no') {
     if (!q.title?.trim()) return null;
     overrides = { category: 'yes_no', title: q.title, isAutoTitle: false };
+  } else if (q.question_type === 'limited_supply') {
+    // The typed item name lives in `details` (the per-question context), like
+    // yes_no's prompt — re-frame it as a limited_supply draft so the row reads
+    // the item verbatim instead of a "for <item>" custom poll.
+    const title = (q.details ?? '').trim();
+    if (!title) return null;
+    overrides = { category: 'limited_supply', title, isAutoTitle: false };
+  } else if (q.question_type === 'time' || q.question_type === 'showtime') {
+    // Time stores category='custom' (and showtime='showtime'), and BOTH carry
+    // finalized slot / showtime keys in `options` — which are NOT ballot
+    // options to re-seed. Detect the real question_type so the row reads
+    // "Time for X" / "Showtime for X" and selecting it re-opens the matching
+    // form, instead of a generic custom poll prefilled with raw slot-key
+    // strings. (The showtime create flow re-fetches its catalog from scratch.)
+    const category = q.question_type === 'time' ? 'time' : 'showtime';
+    overrides = { category, forField: (q.details ?? '').trim() };
   } else {
     const category = q.category || 'custom';
     const forField = (q.details ?? '').trim();
