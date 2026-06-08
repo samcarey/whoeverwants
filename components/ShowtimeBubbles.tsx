@@ -26,6 +26,70 @@ export interface ShowtimeSlot {
   cinema_name?: string | null;
   format?: string | null;
   seats_left?: number | null;
+  distance_miles?: number | null; // from the creator's reference location
+}
+
+/** Per-cinema colors so each theater reads as one color across the bubble grid
+ *  + the top legend. Deliberately avoids orange/purple (reserved for the AM/PM
+ *  period tint) so the two color systems don't get confused. */
+const LOCATION_COLORS: { text: string; dot: string }[] = [
+  { text: "text-blue-600 dark:text-blue-400", dot: "bg-blue-500" },
+  { text: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
+  { text: "text-rose-600 dark:text-rose-400", dot: "bg-rose-500" },
+  { text: "text-cyan-600 dark:text-cyan-400", dot: "bg-cyan-500" },
+  { text: "text-pink-600 dark:text-pink-400", dot: "bg-pink-500" },
+  { text: "text-teal-600 dark:text-teal-400", dot: "bg-teal-500" },
+  { text: "text-indigo-600 dark:text-indigo-400", dot: "bg-indigo-500" },
+  { text: "text-lime-600 dark:text-lime-400", dot: "bg-lime-500" },
+];
+
+const NEUTRAL_LOCATION_COLOR = {
+  text: "text-gray-500 dark:text-gray-400",
+  dot: "bg-gray-400 dark:bg-gray-500",
+};
+
+interface LocationInfo {
+  name: string; // "Alamo "-stripped display name
+  distance: number | null;
+  color: { text: string; dot: string };
+}
+
+/** Strip the "Alamo " prefix used everywhere a cinema name is displayed. */
+function cinemaShortName(name: string | null | undefined): string | null {
+  return name ? name.replace(/^Alamo /, "") : null;
+}
+
+/** Assign a stable color (+ keep the distance) to each distinct cinema in the
+ *  slot set, ordered nearest-first so the legend reads top-down by proximity.
+ *  Keyed on the stripped display name so the bubble + legend agree. */
+function buildLocationMap(slots: ShowtimeSlot[]): Map<string, LocationInfo> {
+  const seen = new Map<string, { distance: number | null }>();
+  for (const s of slots) {
+    const name = cinemaShortName(s.cinema_name);
+    if (!name) continue;
+    const dist = typeof s.distance_miles === "number" ? s.distance_miles : null;
+    const prev = seen.get(name);
+    if (!prev) seen.set(name, { distance: dist });
+    else if (prev.distance == null && dist != null) prev.distance = dist;
+  }
+  const ordered = Array.from(seen.entries()).sort((a, b) => {
+    const da = a[1].distance,
+      db = b[1].distance;
+    if (da == null && db == null) return a[0].localeCompare(b[0]);
+    if (da == null) return 1;
+    if (db == null) return -1;
+    if (da !== db) return da - db;
+    return a[0].localeCompare(b[0]);
+  });
+  const map = new Map<string, LocationInfo>();
+  ordered.forEach(([name, { distance }], i) => {
+    map.set(name, {
+      name,
+      distance,
+      color: LOCATION_COLORS[i % LOCATION_COLORS.length],
+    });
+  });
+  return map;
 }
 
 /** Build the bubble slot list from a poll's option keys + their metadata.
@@ -45,6 +109,8 @@ export function slotsFromOptions(
       cinema_name: (m.cinema_name as string) ?? null,
       format: (m.format as string) ?? null,
       seats_left: typeof m.seats_left === "number" ? (m.seats_left as number) : null,
+      distance_miles:
+        typeof m.distance_miles === "number" ? (m.distance_miles as number) : null,
     };
   });
 }
@@ -125,8 +191,23 @@ export default function ShowtimeBubbles(props: Props) {
     return "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800";
   };
 
+  const locationMap = useMemo(() => buildLocationMap(slots), [slots]);
+
   return (
     <div className="space-y-2">
+      {/* Top legend: each theater's color + distance from the creator's
+          reference location, ordered nearest-first. */}
+      {locationMap.size > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pb-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+          {Array.from(locationMap.values()).map((loc) => (
+            <span key={loc.name} className="flex items-center gap-1">
+              <span className={`inline-block h-2.5 w-2.5 rounded-full ${loc.color.dot}`} />
+              <span className={`font-medium ${loc.color.text}`}>{loc.name}</span>
+              {loc.distance != null && <span>{loc.distance} mi</span>}
+            </span>
+          ))}
+        </div>
+      )}
       {days.map(([date, keys]) => (
         <div key={date} className="flex gap-3">
           <div className="w-14 shrink-0 pt-1 text-xs font-semibold text-gray-500 dark:text-gray-400 leading-tight">
@@ -138,12 +219,13 @@ export default function ShowtimeBubbles(props: Props) {
               if (!slot) return null;
               const state = bubbleState(key);
               const { hm, period } = fmt12Parts(slot.time);
-              const cinema = slot.cinema_name?.replace(/^Alamo /, "") || null;
+              const cinema = cinemaShortName(slot.cinema_name);
+              const locColor =
+                (cinema && locationMap.get(cinema)?.color) || NEUTRAL_LOCATION_COLOR;
               const seats =
                 typeof slot.seats_left === "number" && slot.seats_left >= 0
                   ? `${slot.seats_left} left`
                   : null;
-              const sub = [cinema, seats].filter(Boolean).join(" · ");
               return (
                 <button
                   // Defense-in-depth: the server guarantees unique keys per
@@ -163,9 +245,13 @@ export default function ShowtimeBubbles(props: Props) {
                       </span>
                     )}
                   </div>
-                  {sub && (
+                  {(cinema || seats) && (
                     <div className="mt-px whitespace-nowrap text-[11px] leading-tight text-gray-500 dark:text-gray-400">
-                      {sub}
+                      {cinema && (
+                        <span className={`font-medium ${locColor.text}`}>{cinema}</span>
+                      )}
+                      {cinema && seats && " · "}
+                      {seats}
                     </div>
                   )}
                 </button>
