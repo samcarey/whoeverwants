@@ -30,16 +30,18 @@ export interface ShowtimeSlot {
 }
 
 /** Per-cinema colors so each theater reads as one color across the bubble grid
- *  + the top legend. Deliberately avoids orange/purple (reserved for the AM/PM
- *  period tint) so the two color systems don't get confused. */
+ *  + the top legend. Ordered so the early entries (the typical 2–4 theaters)
+ *  steer clear of the green "want" / red "can't" state borders and the
+ *  orange(AM)/purple(PM) period tint — keeping the three color systems
+ *  (state / time-of-day / location) visually distinct. */
 const LOCATION_COLORS: { text: string; dot: string }[] = [
   { text: "text-blue-600 dark:text-blue-400", dot: "bg-blue-500" },
-  { text: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
-  { text: "text-rose-600 dark:text-rose-400", dot: "bg-rose-500" },
   { text: "text-cyan-600 dark:text-cyan-400", dot: "bg-cyan-500" },
   { text: "text-pink-600 dark:text-pink-400", dot: "bg-pink-500" },
   { text: "text-teal-600 dark:text-teal-400", dot: "bg-teal-500" },
   { text: "text-indigo-600 dark:text-indigo-400", dot: "bg-indigo-500" },
+  { text: "text-rose-600 dark:text-rose-400", dot: "bg-rose-500" },
+  { text: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
   { text: "text-lime-600 dark:text-lime-400", dot: "bg-lime-500" },
 ];
 
