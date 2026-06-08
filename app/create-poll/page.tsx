@@ -273,6 +273,11 @@ function pollToRecentEntry(poll: Poll): RecentEntry | null {
       ? { category, options: opts, collectSuggestions: false, forField }
       : { category, forField, collectSuggestions: true };
   }
+  // Carry an EXPLICIT category emoji into the overrides so picking the row
+  // prefills the same glyph the row shows. Only the explicit value (not the
+  // built-in / type-symbol fallback) rides along — a default icon must stay a
+  // faded default on the form, not become a solid override.
+  if (q.category_icon?.trim()) overrides.categoryIcon = q.category_icon;
   const titleText = overridesToSegments(overrides).map((s) => s.text).join('');
   if (!titleText.trim()) return null;
   // getCategoryIcon already does the category_icon → built-in → type-symbol
@@ -1365,11 +1370,15 @@ export function CreateQuestionContent() {
 
     // Each row's displayed text is derived from the same overrides it
     // prefills, so the suggestion always reads as the title the poll lands on.
-    // A leading emoji overrides the per-row icon and rides along as the draft's
-    // category emoji so picking the row prefills it onto the form.
+    // The DISPLAYED icon must equal the one that gets prefilled, so derive both
+    // from a single source: a leading typed emoji wins, else the row's own
+    // `overrides.categoryIcon` (a content-matched emoji, e.g. from
+    // bestEmojiMatch), else the `icon` fallback. Whatever emoji the row shows is
+    // what lands on the form's chip — picking a suggestion can't surface a
+    // different emoji than the one the user tapped.
     const row = (key: string, icon: string, overrides: Partial<QuestionDraft>) => {
       const o = leadingIcon ? { ...overrides, categoryIcon: leadingIcon } : overrides;
-      list.push({ key, icon: leadingIcon ?? icon, segments: overridesToSegments(o), overrides: o });
+      list.push({ key, icon: leadingIcon ?? o.categoryIcon ?? icon, segments: overridesToSegments(o), overrides: o });
     };
 
     // Yes/No + Limited Supply (top): frame the whole typed text as the
@@ -1378,8 +1387,8 @@ export function CreateQuestionContent() {
     // instead of the generic 👍 / 🎟️ fallback.
     if (raw) {
       const titleEmoji = bestEmojiMatch(raw);
-      row('yesno', titleEmoji ?? '👍', { category: 'yes_no', title: raw, isAutoTitle: false });
-      row('limited', titleEmoji ?? '🎟️', { category: 'limited_supply', title: raw, isAutoTitle: false });
+      row('yesno', '👍', { category: 'yes_no', title: raw, isAutoTitle: false, categoryIcon: titleEmoji ?? undefined });
+      row('limited', '🎟️', { category: 'limited_supply', title: raw, isAutoTitle: false, categoryIcon: titleEmoji ?? undefined });
     }
 
     // Filtered categories, reversed so the best match is at the bottom.
@@ -1432,7 +1441,7 @@ export function CreateQuestionContent() {
     // emoji picker uses).
     if (subject) {
       const customEmoji = bestEmojiMatch(`${subject} ${context}`);
-      row('custom', customEmoji ?? '✏️', { category: subject, forField: context });
+      row('custom', '✏️', { category: subject, forField: context, categoryIcon: customEmoji ?? undefined });
     }
 
     return list;
