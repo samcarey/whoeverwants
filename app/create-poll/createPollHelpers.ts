@@ -148,7 +148,10 @@ export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice
  *  optimistic-placeholder paths so the API payload and the placeholder can't
  *  diverge. */
 export function effectiveCategoryIcon(d: QuestionDraft): string | null {
-  return d.categoryIcon.trim() || null;
+  // Null-safe: a draft restored from a stale localStorage questionFormState
+  // (saved before the categoryIcon field shipped) has no categoryIcon, and an
+  // undefined .trim() would throw mid-submit.
+  return (d.categoryIcon ?? '').trim() || null;
 }
 
 /** Clamp a limited_supply slot count to a whole number >= 1. */
