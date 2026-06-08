@@ -4367,6 +4367,8 @@ Submitting a draft used to navigate to `/p/<newPollShortId>`. The user described
 
 **When adding a feature or fixing a bug with visible UI effects, you MUST take before/after screenshots to verify the change.**
 
+**Screenshots are a development aid, NOT a substitute for the live demo link.** Use screenshots to verify your own work and to catch visual regressions — but they do NOT replace the "Demo after every change" rule above. Every time you finish developing a feature or fix, you must STILL share an actual dev-server demo link with the user (a real, reachable URL showing the change in a realistic scenario), regardless of how many screenshots you took. Screenshots are for you; the demo link is for the user. Never close out work having shown only screenshots.
+
 #### The Workflow
 
 1. **Before starting the change**: Set up the page in the state that demonstrates the problem or current behavior. Take a "before" screenshot. Assess it — confirm it shows the issue you're about to fix (retry with different state/data if it doesn't).
