@@ -26,14 +26,24 @@ export const BUILT_IN_TYPES: BuiltInType[] = [
   { value: "showtime", label: "Showtime", icon: "🎬", keywords: ["movie", "film", "cinema", "theater", "theatre", "showtimes", "screening", "tickets"] },
 ];
 
-// Lowercase word list a search query is matched against for a category: the
-// display label PLUS its curated alias keywords. Split on whitespace, commas,
-// and slashes so "Yes / No" and "Video Game" both yield clean word tokens.
-function categoryWords(type: BuiltInType, includeKeywords: boolean): string[] {
-  const source = includeKeywords
-    ? `${type.label} ${(type.keywords ?? []).join(" ")}`
-    : type.label;
-  return source.toLowerCase().split(/[\s,/]+/).filter(Boolean);
+// Lowercase word tokens a search query is matched against for a category: the
+// `label` words alone, and the `search` words (label PLUS curated alias
+// keywords). Split on whitespace, commas, and slashes so "Yes / No" and "Video
+// Game" yield clean tokens. Computed once per category object (the BUILT_IN_TYPES
+// entries are static singletons) and cached — the picker re-derives these on
+// every keystroke, but the underlying data never changes.
+const CATEGORY_WORDS = new WeakMap<BuiltInType, { label: string[]; search: string[] }>();
+function categoryWords(type: BuiltInType): { label: string[]; search: string[] } {
+  let words = CATEGORY_WORDS.get(type);
+  if (!words) {
+    const split = (s: string) => s.toLowerCase().split(/[\s,/]+/).filter(Boolean);
+    words = {
+      label: split(type.label),
+      search: split(`${type.label} ${(type.keywords ?? []).join(" ")}`),
+    };
+    CATEGORY_WORDS.set(type, words);
+  }
+  return words;
 }
 
 function matchTokens(words: string[], tokens: string[]): boolean {
@@ -48,7 +58,7 @@ function matchTokens(words: string[], tokens: string[]): boolean {
  */
 export function categoryMatchesQuery(type: BuiltInType | undefined, tokens: string[]): boolean {
   if (!type) return false;
-  return matchTokens(categoryWords(type, true), tokens);
+  return matchTokens(categoryWords(type).search, tokens);
 }
 
 /**
@@ -58,7 +68,7 @@ export function categoryMatchesQuery(type: BuiltInType | undefined, tokens: stri
  */
 export function categoryLabelMatchesQuery(type: BuiltInType | undefined, tokens: string[]): boolean {
   if (!type) return false;
-  return matchTokens(categoryWords(type, false), tokens);
+  return matchTokens(categoryWords(type).label, tokens);
 }
 
 /** Placeholder examples for the "For" field, keyed by category value. */
