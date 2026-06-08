@@ -181,7 +181,7 @@ export default function ShowtimeCreateFlow({
   }
 
   return (
-    <div className="space-y-3 pt-2 pb-4">
+    <div className="space-y-3 pt-2 pb-[0.9rem]">
       <div>
         <ReferenceLocationInput
           latitude={refLatitude}
