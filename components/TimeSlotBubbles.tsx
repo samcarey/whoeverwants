@@ -37,6 +37,10 @@ const SLOT_CELL_SIZE =
 // Pointer travel (px) before a press is treated as a range-drag instead of a tap.
 const DRAG_THRESHOLD = 8;
 
+// A press counts as a "tap" (not a drag) while its travel stays under the threshold.
+const withinTapThreshold = (x1: number, y1: number, x2: number, y2: number) =>
+  Math.hypot(x2 - x1, y2 - y1) < DRAG_THRESHOLD;
+
 interface TimeSlotBubblesProps {
   /** Slot keys in display order, already filtered and sorted. */
   options: string[];
@@ -111,7 +115,7 @@ export default function TimeSlotBubbles({
   // bubble's own stopPropagation can't hide the event from us. A new drag begun
   // ON a bubble starts inside, so this never fights handleBubblePointerDown.
   useEffect(() => {
-    if (disabled || effectiveSelection.length === 0) return;
+    if (disabled || selection.size === 0) return;
     let start: { x: number; y: number; outside: boolean } | null = null;
     const onDown = (e: PointerEvent) => {
       const target = e.target as Element | null;
@@ -121,10 +125,7 @@ export default function TimeSlotBubbles({
       start = { x: e.clientX, y: e.clientY, outside: !inside };
     };
     const onUp = (e: PointerEvent) => {
-      if (
-        start?.outside &&
-        Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_THRESHOLD
-      ) {
+      if (start?.outside && withinTapThreshold(start.x, start.y, e.clientX, e.clientY)) {
         clearSelection();
       }
       start = null;
@@ -135,7 +136,7 @@ export default function TimeSlotBubbles({
       window.removeEventListener("pointerdown", onDown, true);
       window.removeEventListener("pointerup", onUp, true);
     };
-  }, [disabled, effectiveSelection.length, clearSelection]);
+  }, [disabled, selection.size, clearSelection]);
 
   // How many voters a slot excludes, ABSOLUTE: everyone who submitted
   // availability minus the slot's own count — so even the best-attended slot
@@ -220,7 +221,7 @@ export default function TimeSlotBubbles({
     const onMove = (ev: PointerEvent) => {
       const g = gestureRef.current;
       if (!g || ev.pointerId !== g.pointerId) return;
-      if (!g.moved && Math.hypot(ev.clientX - g.startX, ev.clientY - g.startY) < DRAG_THRESHOLD) {
+      if (!g.moved && withinTapThreshold(g.startX, g.startY, ev.clientX, ev.clientY)) {
         return;
       }
       g.moved = true;
