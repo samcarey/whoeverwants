@@ -127,7 +127,7 @@ export default function EmojiPickerModal({
                   aria-pressed={selected}
                   className={`shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-xl select-none ${
                     selected
-                      ? 'bg-blue-100 dark:bg-blue-900/40 ring-1 ring-blue-400 dark:ring-blue-500'
+                      ? 'bg-blue-100 dark:bg-blue-900/40 ring-1 ring-inset ring-blue-400 dark:ring-blue-500'
                       : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
                 >
