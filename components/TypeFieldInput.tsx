@@ -6,18 +6,70 @@ export interface BuiltInType {
   value: string;
   label: string;
   icon: string;
+  // Curated alias terms used ONLY to widen the new-poll search box's category
+  // matching beyond the literal label — e.g. typing "Movie" surfaces "Showtime"
+  // because `showtime` lists "movie" here. These are a SEMANTIC layer, not the
+  // displayed label; keep each list tight (terms a user might genuinely type
+  // for this category) to avoid false positives. Adding a related-term is a
+  // one-line edit here — no matching logic changes. See `categoryMatchesQuery`.
+  keywords?: string[];
 }
 
 export const BUILT_IN_TYPES: BuiltInType[] = [
-  { value: "yes_no", label: "Yes / No", icon: "👍" },
-  { value: "time", label: "Time", icon: "📅" },
-  { value: "restaurant", label: "Restaurant", icon: "🍽️" },
-  { value: "location", label: "Place", icon: "📍" },
-  { value: "movie", label: "Movie", icon: "🎬" },
-  { value: "video_game", label: "Video Game", icon: "🎮" },
-  { value: "limited_supply", label: "Limited Supply", icon: "🎟️" },
-  { value: "showtime", label: "Showtime", icon: "🎬" },
+  { value: "yes_no", label: "Yes / No", icon: "👍", keywords: ["yes", "no", "vote", "decide", "approve", "poll"] },
+  { value: "time", label: "Time", icon: "📅", keywords: ["when", "schedule", "date", "day", "availability", "available", "calendar", "meeting", "meet"] },
+  { value: "restaurant", label: "Restaurant", icon: "🍽️", keywords: ["dinner", "lunch", "food", "eat", "dining", "brunch", "cuisine", "meal", "takeout"] },
+  { value: "location", label: "Place", icon: "📍", keywords: ["location", "where", "spot", "venue", "destination", "address", "bar", "park", "trip"] },
+  { value: "movie", label: "Movie", icon: "🎬", keywords: ["film", "cinema", "showtime", "watch", "flick", "screening"] },
+  { value: "video_game", label: "Video Game", icon: "🎮", keywords: ["game", "gaming", "videogame", "play", "console", "esports"] },
+  { value: "limited_supply", label: "Limited Supply", icon: "🎟️", keywords: ["ticket", "tickets", "spot", "spots", "slot", "claim", "rsvp", "signup", "seat"] },
+  { value: "showtime", label: "Showtime", icon: "🎬", keywords: ["movie", "film", "cinema", "theater", "theatre", "showtimes", "screening", "tickets"] },
 ];
+
+// Lowercase word tokens a search query is matched against for a category: the
+// `label` words alone, and the `search` words (label PLUS curated alias
+// keywords). Split on whitespace, commas, and slashes so "Yes / No" and "Video
+// Game" yield clean tokens. Computed once per category object (the BUILT_IN_TYPES
+// entries are static singletons) and cached — the picker re-derives these on
+// every keystroke, but the underlying data never changes.
+const CATEGORY_WORDS = new WeakMap<BuiltInType, { label: string[]; search: string[] }>();
+function categoryWords(type: BuiltInType): { label: string[]; search: string[] } {
+  let words = CATEGORY_WORDS.get(type);
+  if (!words) {
+    const split = (s: string) => s.toLowerCase().split(/[\s,/]+/).filter(Boolean);
+    words = {
+      label: split(type.label),
+      search: split(`${type.label} ${(type.keywords ?? []).join(" ")}`),
+    };
+    CATEGORY_WORDS.set(type, words);
+  }
+  return words;
+}
+
+function matchTokens(words: string[], tokens: string[]): boolean {
+  if (!tokens.length) return true;
+  return tokens.every((t) => words.some((w) => w.startsWith(t)));
+}
+
+/**
+ * Does this category match the typed search tokens, considering label + alias
+ * keywords? Every token must prefix-match some word (matches the new-poll
+ * search box's existing token semantics). Empty token list matches everything.
+ */
+export function categoryMatchesQuery(type: BuiltInType | undefined, tokens: string[]): boolean {
+  if (!type) return false;
+  return matchTokens(categoryWords(type).search, tokens);
+}
+
+/**
+ * Does this category's LABEL alone match (ignoring alias keywords)? Used to rank
+ * exact-label hits ahead of alias-only hits, so typing "Movie" still puts the
+ * Movie row nearest the bar with Showtime (an alias match) just above it.
+ */
+export function categoryLabelMatchesQuery(type: BuiltInType | undefined, tokens: string[]): boolean {
+  if (!type) return false;
+  return matchTokens(categoryWords(type).label, tokens);
+}
 
 /** Placeholder examples for the "For" field, keyed by category value. */
 export const FOR_FIELD_PLACEHOLDERS: Record<string, string> = {
