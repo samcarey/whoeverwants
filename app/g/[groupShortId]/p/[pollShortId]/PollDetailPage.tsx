@@ -82,7 +82,6 @@ import InitialBubble from "@/components/InitialBubble";
 import QuestionBallot, { type QuestionBallotHandle, POLL_SUBCARD_CLASS } from "@/components/QuestionBallot";
 import QuestionDetails from "@/components/QuestionDetails";
 import QuestionResultsDisplay from "@/components/QuestionResults";
-import VoterList, { namedVoterCount } from "@/components/VoterList";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import AccountGateModal from "@/components/AccountGateModal";
 import { isValidUserName } from "@/lib/nameValidation";
@@ -532,8 +531,9 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   // (poll_views.last_viewed_at) drives three things: (1) the phase-transition
   // push skips a prevoter only when no new option arrived after their last
   // view; (2) the unread app-icon badge clears a poll once it's been opened;
-  // (3) the "Viewed (N)" roster. Fires on every open now (was prephase-only)
-  // — opening the poll page IS the "seen" signal per the badge model.
+  // (3) the "Viewed (N)" roster on the poll info page. Fires on every open
+  // now (was prephase-only) — opening the poll page IS the "seen" signal per
+  // the badge model.
   useEffect(() => {
     void apiRecordPollView(poll.id);
     // Local mirror of the same "seen" signal — drives the gold "unread" bar
@@ -1202,44 +1202,6 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
             </div>
           );
         })()}
-
-        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800">
-          {(() => {
-            // "Viewed (N)" roster: everyone who opened the poll = named voters
-            // + anon voters + ignored (viewed-but-no-action) viewers. Vote
-            // state is the per-person marker (chips below; ignored = the muted
-            // sub-line). See CLAUDE.md 'App-Icon Badge Model + Viewed Tracking'.
-            const ignored = poll.viewed_ignored_count ?? 0;
-            // Sum the multiplicity map so two people sharing a name ("Alex" ×2)
-            // count as 2 named voters — otherwise the total disagrees with the
-            // roster ("Viewed (2)" while 3 people actually voted).
-            const totalViewed =
-              namedVoterCount(poll.voter_names ?? [], poll.voter_name_counts) +
-              (poll.anonymous_count ?? 0) +
-              ignored;
-            return (
-              <>
-                <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
-                  Viewed ({totalViewed})
-                </h2>
-                <VoterList
-                  singleLine
-                  includeSelf
-                  staticVoterNames={poll.voter_names ?? []}
-                  staticAnonymousCount={poll.anonymous_count ?? 0}
-                  staticVoterNameCounts={poll.voter_name_counts}
-                  emptyText="No voters yet"
-                  className="px-1"
-                />
-                {ignored > 0 && (
-                  <p className="px-1 mt-1.5 text-xs italic text-gray-400 dark:text-gray-500">
-                    {`${ignored} viewed but haven't responded yet`}
-                  </p>
-                )}
-              </>
-            );
-          })()}
-        </div>
 
       </div>
       </div>

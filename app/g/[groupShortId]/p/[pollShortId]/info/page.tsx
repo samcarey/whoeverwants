@@ -33,6 +33,7 @@ import {
 import { isUuidLike } from "@/lib/questionId";
 import GroupHeader from "@/components/GroupHeader";
 import InitialBubble from "@/components/InitialBubble";
+import { namedVoterCount } from "@/components/VoterList";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import PollActionButton, { CutoffIcon } from "@/components/PollActionButton";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
@@ -203,7 +204,15 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
 
   const namedVoters = poll.voter_names ?? [];
   const anonymousCount = poll.anonymous_count ?? 0;
-  const totalCount = namedVoters.length + anonymousCount;
+  // Viewed-but-no-response viewers (opened >5 min ago, never voted/abstained).
+  const ignoredCount = poll.viewed_ignored_count ?? 0;
+  // Sum the multiplicity map so two people sharing a name ("Alex" ×2) count as
+  // 2 responders — matches the turnout semantics used elsewhere.
+  const respondedCount =
+    namedVoterCount(namedVoters, poll.voter_name_counts) + anonymousCount;
+  // Total distinct viewers = everyone who opened the poll = responders +
+  // viewed-but-no-response.
+  const totalViewed = respondedCount + ignoredCount;
   const currentUserName = useMemo(
     () => getUserName()?.trim().toLowerCase() ?? null,
     [],
@@ -358,13 +367,21 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
         </section>
 
         <section>
-          <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
-            {totalCount} {totalCount === 1 ? "Respondent" : "Respondents"}
+          <h2 className="px-1 mb-1 text-sm font-semibold text-gray-500 dark:text-gray-400">
+            Viewed ({totalViewed})
           </h2>
+          <p className="px-1 mb-3 text-xs text-gray-400 dark:text-gray-500">
+            {respondedCount} responded
+            {ignoredCount > 0 &&
+              ` · ${ignoredCount} viewed without responding`}
+          </p>
 
-          {totalCount === 0 ? (
+          <h3 className="px-1 mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            {respondedCount} {respondedCount === 1 ? "Respondent" : "Respondents"}
+          </h3>
+          {respondedCount === 0 ? (
             <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-              No respondents yet
+              No responses yet
             </div>
           ) : (
             <ul className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden divide-y divide-gray-200 dark:divide-gray-800">
@@ -402,6 +419,19 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
                 </li>
               )}
             </ul>
+          )}
+
+          {ignoredCount > 0 && (
+            <>
+              <h3 className="px-1 mt-4 mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                Viewed, No Response
+              </h3>
+              <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-3 text-sm italic text-gray-500 dark:text-gray-400">
+                {ignoredCount === 1
+                  ? "1 person viewed this poll without responding yet."
+                  : `${ignoredCount} people viewed this poll without responding yet.`}
+              </div>
+            </>
           )}
         </section>
       </div>
