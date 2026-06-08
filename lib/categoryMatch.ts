@@ -14,6 +14,11 @@
 // uses the decidePoll philosophy instead — drop generic stop words, then match
 // if ANY remaining token hits a category trigger — and RANKS the hits so the
 // strongest is the default. Precedence (CATEGORY_ORDER) breaks score ties.
+//
+// FOLLOW-UPS (docs/poll-textbox-followups.md): (1) mirror this matcher into the
+// Siri Swift parser (AppDelegate.swift: PollTextParser) for JS<->Swift parity;
+// (2) augment the heuristic with a small on-device / Mac-mini AI classifier,
+// benchmarked with the reusable corpus in tests/fixtures/poll-suggestion-corpus.ts.
 
 export type CategoryDef = {
   value: string;
