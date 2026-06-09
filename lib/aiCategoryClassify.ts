@@ -56,10 +56,14 @@ export interface AiCategory {
 }
 
 /**
- * Rollout gate. Enabled only in the browser AND only on dev / canary hosts for
- * now — prod (whoeverwants.com) stays off until real on-device latency + the
- * 30 MB first-load cost are validated on canary. Flip the prod host in here to
- * enable it everywhere (it's already fail-safe).
+ * Rollout gate. Enabled in the browser on dev, canary, AND prod. Canary
+ * validation (PR #672 follow-up) confirmed the full path works end-to-end —
+ * correct category rows for slang/typos, sub-second warm latency, ~10s cold
+ * background load that never blocks the box, and identical behavior when the
+ * model is unavailable. The feature is fully fail-safe (every failure path is a
+ * no-op that adds no row), so a missed/slow model only forgoes an extra
+ * suggestion. The one cost is a one-time ~30 MB model download per device on
+ * first poll-box focus.
  */
 export function isAiCategoryClassifyEnabled(): boolean {
   if (typeof window === "undefined") return false;
@@ -68,7 +72,8 @@ export function isAiCategoryClassifyEnabled(): boolean {
     h === "localhost" ||
     h === "127.0.0.1" ||
     h.endsWith(".dev.whoeverwants.com") ||
-    h === "latest.whoeverwants.com"
+    h === "latest.whoeverwants.com" ||
+    h === "whoeverwants.com"
   );
 }
 
