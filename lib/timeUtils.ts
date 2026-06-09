@@ -491,3 +491,66 @@ export function hasInvalidVoterWindows(
   }
   return false;
 }
+
+/** Autofix a single day's windows so they satisfy hasInvalidVoterWindows:
+ *  every window is clamped into the creator's allowed window it most overlaps
+ *  (or snapped, preserving duration, to the nearest allowed window when it
+ *  overlaps none), then the results are sorted and overlapping/touching windows
+ *  merged. Run after a bulk edit / paste so the "outside allowed times / overlap"
+ *  submit-blocker can't fire. With no `questionWindows` (creator form) only the
+ *  sort+merge runs. Cross-midnight allowed windows are skipped for the fit math.
+ *  Returns `changed: false` (and the original array ref) when nothing moved. */
+export function fitWindowsToBounds<W extends { min: string; max: string }>(
+  windows: W[],
+  questionWindows: { min: string; max: string }[],
+): { windows: W[]; changed: boolean } {
+  const qWins = (questionWindows ?? [])
+    .map(q => ({ s: timeToMinutes(q.min), e: timeToMinutes(q.max) }))
+    .filter(q => q.e > q.s);
+
+  const fitOne = (w: W): W => {
+    if (qWins.length === 0) return w;
+    const ws = timeToMinutes(w.min);
+    const we0 = timeToMinutes(w.max);
+    const we = we0 <= ws ? we0 + 1440 : we0;
+    const dur = Math.max(15, we - ws);
+    let best = qWins[0];
+    let bestScore = -Infinity;
+    for (const q of qWins) {
+      const overlap = Math.min(we, q.e) - Math.max(ws, q.s);
+      const score = overlap > 0 ? overlap : -(ws >= q.e ? ws - q.e : q.s - we);
+      if (score > bestScore) { bestScore = score; best = q; }
+    }
+    const span = best.e - best.s;
+    let nmin: number;
+    let nmax: number;
+    const overlap = Math.min(we, best.e) - Math.max(ws, best.s);
+    if (overlap > 0) {
+      nmin = Math.max(ws, best.s);
+      nmax = Math.min(we, best.e);
+    } else if (we <= best.s) {
+      nmin = best.s;
+      nmax = best.s + Math.min(dur, span);
+    } else {
+      nmax = best.e;
+      nmin = best.e - Math.min(dur, span);
+    }
+    return { ...w, min: minutesToTime(nmin), max: minutesToTime(nmax) };
+  };
+
+  const fitted = windows.map(fitOne).sort((a, b) => a.min.localeCompare(b.min));
+  const merged: W[] = [];
+  for (const w of fitted) {
+    const prev = merged[merged.length - 1];
+    if (prev && timeToMinutes(w.min) <= timeToMinutes(prev.max)) {
+      if (timeToMinutes(w.max) > timeToMinutes(prev.max)) merged[merged.length - 1] = { ...prev, max: w.max };
+    } else {
+      merged.push({ ...w });
+    }
+  }
+
+  const changed =
+    merged.length !== windows.length ||
+    merged.some((w, i) => w.min !== windows[i].min || w.max !== windows[i].max);
+  return { windows: changed ? merged : windows, changed };
+}
