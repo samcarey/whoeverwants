@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { formatDayLabel, groupSlotsByDay, parseSlotStart } from "@/lib/timeUtils";
+import { formatDayLabel, groupSlotsByDay, parseSlotStart, periodColorClass } from "@/lib/timeUtils";
 import type { OptionsMetadata } from "@/lib/types";
 
 /**
@@ -23,9 +23,84 @@ import type { OptionsMetadata } from "@/lib/types";
 export interface ShowtimeSlot {
   key: string; // "YYYY-MM-DD HH:MM-HH:MM"
   time: string; // "19:10"
+  cinema_id?: string | null;
   cinema_name?: string | null;
   format?: string | null;
   seats_left?: number | null;
+  distance_miles?: number | null; // from the creator's reference location
+}
+
+/** Per-cinema colors so each theater reads as one color across the bubble grid
+ *  + the top legend. Ordered so the early entries (the typical 2–4 theaters)
+ *  steer clear of the green "want" / red "can't" state borders and the
+ *  orange(AM)/purple(PM) period tint — keeping the three color systems
+ *  (state / time-of-day / location) visually distinct. */
+const LOCATION_COLORS: { text: string; dot: string }[] = [
+  { text: "text-blue-600 dark:text-blue-400", dot: "bg-blue-500" },
+  { text: "text-cyan-600 dark:text-cyan-400", dot: "bg-cyan-500" },
+  { text: "text-pink-600 dark:text-pink-400", dot: "bg-pink-500" },
+  { text: "text-teal-600 dark:text-teal-400", dot: "bg-teal-500" },
+  { text: "text-indigo-600 dark:text-indigo-400", dot: "bg-indigo-500" },
+  { text: "text-rose-600 dark:text-rose-400", dot: "bg-rose-500" },
+  { text: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
+  { text: "text-lime-600 dark:text-lime-400", dot: "bg-lime-500" },
+];
+
+const NEUTRAL_LOCATION_COLOR = {
+  text: "text-gray-500 dark:text-gray-400",
+  dot: "bg-gray-400 dark:bg-gray-500",
+};
+
+interface LocationInfo {
+  name: string; // "Alamo "-stripped display name
+  distance: number | null;
+  color: { text: string; dot: string };
+}
+
+/** Strip the "Alamo " prefix used everywhere a cinema name is displayed. */
+function cinemaShortName(name: string | null | undefined): string | null {
+  return name ? name.replace(/^Alamo /, "") : null;
+}
+
+/** Stable per-theater key for the color/distance map: the cinema_id (canonical,
+ *  survives renames + disambiguates same-named theaters), falling back to the
+ *  display name for any slot missing an id. */
+function cinemaKeyOf(slot: ShowtimeSlot): string | null {
+  return slot.cinema_id || cinemaShortName(slot.cinema_name);
+}
+
+/** Assign a stable color (+ keep the distance + display name) to each distinct
+ *  cinema in the slot set, keyed on cinema_id and ordered nearest-first so the
+ *  legend reads top-down by proximity. */
+function buildLocationMap(slots: ShowtimeSlot[]): Map<string, LocationInfo> {
+  const seen = new Map<string, { name: string; distance: number | null }>();
+  for (const s of slots) {
+    const key = cinemaKeyOf(s);
+    const name = cinemaShortName(s.cinema_name);
+    if (!key || !name) continue;
+    const dist = typeof s.distance_miles === "number" ? s.distance_miles : null;
+    const prev = seen.get(key);
+    if (!prev) seen.set(key, { name, distance: dist });
+    else if (prev.distance == null && dist != null) prev.distance = dist;
+  }
+  const ordered = Array.from(seen.entries()).sort((a, b) => {
+    const da = a[1].distance,
+      db = b[1].distance;
+    if (da == null && db == null) return a[1].name.localeCompare(b[1].name);
+    if (da == null) return 1;
+    if (db == null) return -1;
+    if (da !== db) return da - db;
+    return a[1].name.localeCompare(b[1].name);
+  });
+  const map = new Map<string, LocationInfo>();
+  ordered.forEach(([key, { name, distance }], i) => {
+    map.set(key, {
+      name,
+      distance,
+      color: LOCATION_COLORS[i % LOCATION_COLORS.length],
+    });
+  });
+  return map;
 }
 
 /** Build the bubble slot list from a poll's option keys + their metadata.
@@ -42,9 +117,12 @@ export function slotsFromOptions(
     return {
       key,
       time: `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,
+      cinema_id: (m.cinema_id as string) ?? null,
       cinema_name: (m.cinema_name as string) ?? null,
       format: (m.format as string) ?? null,
       seats_left: typeof m.seats_left === "number" ? (m.seats_left as number) : null,
+      distance_miles:
+        typeof m.distance_miles === "number" ? (m.distance_miles as number) : null,
     };
   });
 }
@@ -68,12 +146,14 @@ interface VoteProps {
 
 type Props = CurateProps | VoteProps;
 
-function fmt12(time: string): string {
+/** Split "19:10" into the 12h "7:10" part + its AM/PM period, so the period
+ *  can be tinted with the app-wide orange(AM)/purple(PM) convention. */
+function fmt12Parts(time: string): { hm: string; period: "AM" | "PM" } {
   const [hStr, m] = time.split(":");
   let h = parseInt(hStr, 10);
-  const period = h >= 12 ? "PM" : "AM";
+  const period: "AM" | "PM" = h >= 12 ? "PM" : "AM";
   h = h % 12 || 12;
-  return `${h}:${m} ${period}`;
+  return { hm: `${h}:${m}`, period };
 }
 
 export default function ShowtimeBubbles(props: Props) {
@@ -111,26 +191,55 @@ export default function ShowtimeBubbles(props: Props) {
     props.onToggle(key, next);
   }
 
+  // State is conveyed by border + background only (mirroring the theater
+  // suggestion pills), so the AM/PM tint + the muted secondary line stay
+  // consistent across want/neutral/can't — exactly how the time-slot bubbles
+  // keep the period column orange/purple regardless of like/dislike state.
   const classFor = (state: "on" | "neutral" | "off") => {
     if (state === "on")
-      return "bg-green-100 dark:bg-green-900/40 border-green-500 text-green-800 dark:text-green-200";
+      return "border-green-500 bg-green-50 dark:border-green-500 dark:bg-green-900/30";
     if (state === "off")
-      return "bg-red-100 dark:bg-red-900/40 border-red-500 text-red-800 dark:text-red-200";
-    return "bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200";
+      return "border-red-500 bg-red-50 dark:border-red-500 dark:bg-red-900/30";
+    return "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800";
   };
 
+  const locationMap = useMemo(() => buildLocationMap(slots), [slots]);
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
+      {/* Top legend: each theater's color + distance from the creator's
+          reference location, ordered nearest-first. */}
+      {locationMap.size > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pb-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+          {Array.from(locationMap.entries()).map(([key, loc]) => (
+            <span key={key} className="flex items-center gap-1">
+              <span className={`inline-block h-2.5 w-2.5 rounded-full ${loc.color.dot}`} />
+              <span className={`font-medium ${loc.color.text}`}>{loc.name}</span>
+              {loc.distance != null && <span>{loc.distance} mi</span>}
+            </span>
+          ))}
+        </div>
+      )}
       {days.map(([date, keys]) => (
         <div key={date} className="flex gap-3">
           <div className="w-14 shrink-0 pt-1 text-xs font-semibold text-gray-500 dark:text-gray-400 leading-tight">
             {formatDayLabel(date)}
           </div>
-          <div className="flex flex-1 flex-wrap gap-2">
+          <div className="flex flex-1 flex-wrap gap-[6.4px]">
             {keys.map((key, idx) => {
               const slot = byKey.get(key);
               if (!slot) return null;
               const state = bubbleState(key);
+              const { hm, period } = fmt12Parts(slot.time);
+              const cinema = cinemaShortName(slot.cinema_name);
+              const cinemaKey = cinemaKeyOf(slot);
+              const locColor =
+                (cinemaKey && locationMap.get(cinemaKey)?.color) ||
+                NEUTRAL_LOCATION_COLOR;
+              const seats =
+                typeof slot.seats_left === "number" && slot.seats_left >= 0
+                  ? `${slot.seats_left} left`
+                  : null;
               return (
                 <button
                   // Defense-in-depth: the server guarantees unique keys per
@@ -140,18 +249,24 @@ export default function ShowtimeBubbles(props: Props) {
                   type="button"
                   disabled={disabled}
                   onClick={() => handleTap(key)}
-                  className={`flex flex-col items-center rounded-xl border px-2.5 py-1.5 text-center transition-colors ${classFor(state)} ${disabled ? "cursor-default" : "active:scale-95"}`}
+                  className={`max-w-full rounded-[20.4px] border px-[10.8px] py-0.5 text-left transition-colors ${classFor(state)} ${disabled ? "cursor-default" : "active:scale-[0.98]"}`}
                 >
-                  <span className="font-mono text-sm font-bold leading-none">{fmt12(slot.time)}</span>
-                  {(slot.format || slot.cinema_name) && (
-                    <span className="mt-0.5 text-[10px] leading-tight opacity-80">
-                      {[slot.format, slot.cinema_name?.replace(/^Alamo /, "")]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  )}
-                  {typeof slot.seats_left === "number" && slot.seats_left >= 0 && (
-                    <span className="text-[10px] leading-tight opacity-70">{slot.seats_left} seats</span>
+                  <div className="whitespace-nowrap text-[12.8px] font-semibold leading-tight tabular-nums text-gray-900 dark:text-gray-100">
+                    {hm} <span className={periodColorClass(period)}>{period}</span>
+                    {slot.format && (
+                      <span className="ml-1 text-[11px] font-normal text-gray-500 dark:text-gray-400">
+                        {slot.format}
+                      </span>
+                    )}
+                  </div>
+                  {(cinema || seats) && (
+                    <div className="mt-px whitespace-nowrap text-[11px] leading-tight text-gray-500 dark:text-gray-400">
+                      {cinema && (
+                        <span className={`font-medium ${locColor.text}`}>{cinema}</span>
+                      )}
+                      {cinema && seats && " · "}
+                      {seats}
+                    </div>
                   )}
                 </button>
               );
@@ -162,10 +277,10 @@ export default function ShowtimeBubbles(props: Props) {
       {props.mode === "vote" && (
         <div className="flex items-center justify-center gap-4 pt-1 text-[11px] text-gray-500 dark:text-gray-400">
           <span className="flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded border border-green-500 bg-green-100 dark:bg-green-900/40" /> Want
+            <span className="inline-block h-3 w-3 rounded border border-green-500 bg-green-50 dark:bg-green-900/30" /> Want
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded border border-red-500 bg-red-100 dark:bg-red-900/40" /> Can&apos;t attend
+            <span className="inline-block h-3 w-3 rounded border border-red-500 bg-red-50 dark:bg-red-900/30" /> Can&apos;t attend
           </span>
         </div>
       )}

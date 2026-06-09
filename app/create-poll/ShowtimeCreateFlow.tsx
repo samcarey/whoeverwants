@@ -126,6 +126,14 @@ export default function ShowtimeCreateFlow({
     return m;
   }, [filmSessions]);
 
+  // cinema_id -> distance from the creator's reference location, so curated
+  // slots (and the persisted metadata) carry distance into the ballot legend.
+  const distanceByCinema = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of catalog?.cinemas ?? []) m.set(c.cinema_id, c.distance_miles);
+    return m;
+  }, [catalog]);
+
   const allowedDays = useMemo(
     () => Array.from(new Set(filmSessions.map((s) => s.date))).sort(),
     [filmSessions],
@@ -152,6 +160,7 @@ export default function ShowtimeCreateFlow({
         sales_url: s.sales_url ?? undefined,
         datetime: s.datetime,
         runtime: selectedFilm.runtime ?? undefined,
+        distance_miles: distanceByCinema.get(s.cinema_id) ?? undefined,
       } as Record<string, unknown>;
     }
     onChange({ options: keys, optionsMetadata: metadata, filmName: selectedFilm.name, filmId: selectedFilm.film_id });
@@ -346,28 +355,33 @@ export default function ShowtimeCreateFlow({
             />
           </div>
 
-          {[...selectedDays].sort().map((day) => {
-            const daySlots: ShowtimeSlot[] = filmSessions
-              .filter((s) => s.date === day)
+          {selectedDays.length > 0 && (() => {
+            // One combined ShowtimeBubbles across every selected day (it groups
+            // by day internally) so the location legend + colors are computed
+            // once over the full set, not redrawn / reassigned per day.
+            const daySet = new Set(selectedDays);
+            const curateSlots: ShowtimeSlot[] = filmSessions
+              .filter((s) => daySet.has(s.date))
+              .sort((a, b) => a.key.localeCompare(b.key))
               .map((s) => ({
                 key: s.key,
                 time: s.time,
+                cinema_id: s.cinema_id,
                 cinema_name: s.cinema_name,
                 format: s.format,
                 seats_left: s.seats_left,
+                distance_miles: distanceByCinema.get(s.cinema_id) ?? null,
               }));
             return (
-              <div key={day}>
-                <ShowtimeBubbles
-                  mode="curate"
-                  slots={daySlots}
-                  selectedKeys={Array.from(curated)}
-                  onToggle={toggleCurate}
-                  disabled={isLoading}
-                />
-              </div>
+              <ShowtimeBubbles
+                mode="curate"
+                slots={curateSlots}
+                selectedKeys={Array.from(curated)}
+                onToggle={toggleCurate}
+                disabled={isLoading}
+              />
             );
-          })}
+          })()}
 
           {selectedDays.length > 0 && curated.size === 0 && (
             <p className="text-center text-sm text-orange-600 dark:text-orange-400">
