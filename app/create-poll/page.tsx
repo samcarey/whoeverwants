@@ -23,6 +23,7 @@ import { parseForContext } from "@/lib/pollTextParse";
 import { planPollSuggestions, type PlannedRow } from "@/lib/pollSuggestions";
 import { classifyCategory, warmAiCategoryClassifier, isAiCategoryClassifyEnabled, type AiCategory } from "@/lib/aiCategoryClassify";
 import OptionsInput from "@/components/OptionsInput";
+import KeyboardSuggestionPicker from "@/components/KeyboardSuggestionPicker";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import ScoringAlgorithmField from "@/components/ScoringAlgorithmField";
@@ -530,18 +531,10 @@ export function CreateQuestionContent() {
   // suggestions at the bottom of the list.
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const searchListRef = useRef<HTMLDivElement | null>(null);
-  // Visible-viewport geometry, tracked so the focused picker fills exactly
-  // the area above the on-screen keyboard. iOS keeps the layout viewport at
-  // full height when the keyboard opens (a `position: fixed; bottom: 0`
-  // element would sit BEHIND the keyboard), so we pin the picker container
-  // to `top: vv.offsetTop; height: vv.height` — its bottom edge then lands
-  // flush on the keyboard's top edge and the input bar (the container's last
-  // child) sits just above it.
-  const [searchVv, setSearchVv] = useState<{ height: number; offsetTop: number }>({
-    height: 0,
-    offsetTop: 0,
-  });
+  // The focused picker's full-screen keyboard-aware layout (visual-viewport
+  // tracking + bottom-anchored list + auto-scroll) lives in
+  // <KeyboardSuggestionPicker>. `searchBarRef` is kept here only to measure the
+  // unfocused bar's height for the group page's bottom-padding CSS var.
   const searchBarRef = useRef<HTMLDivElement | null>(null);
 
   // A ranked_choice question is a "suggestion poll" when the creator left the
@@ -1246,25 +1239,6 @@ export function CreateQuestionContent() {
     };
   }, [isModalOpen, closeKeepState]);
 
-  // Track the visual viewport so the focused picker fills the area above the
-  // keyboard. `searchVv` is only read while focused, so attach the listeners
-  // ONLY while focused — otherwise this layout-persistent component would
-  // setState (and re-render) on every scroll/resize on every page where the
-  // bar isn't even open.
-  useEffect(() => {
-    if (!searchFocused) return;
-    const vp = window.visualViewport;
-    if (!vp) return;
-    const update = () => setSearchVv({ height: vp.height, offsetTop: vp.offsetTop });
-    update();
-    vp.addEventListener('resize', update);
-    vp.addEventListener('scroll', update);
-    return () => {
-      vp.removeEventListener('resize', update);
-      vp.removeEventListener('scroll', update);
-    };
-  }, [searchFocused]);
-
   // Portal targets for the create-poll search bar. The `#draft-poll-portal`
   // is rendered by the group page CONTENT (GroupContent / EmptyPlaceholder),
   // NOT at the layout level, so the fixed bar rides the page's motion: it
@@ -1565,18 +1539,6 @@ export function CreateQuestionContent() {
     entries.reverse();
     setRecentEntries(entries);
   }, [searchFocused]);
-
-  // Keep the bottom of the bottom-anchored list (Custom + the best-matching
-  // results, nearest the bar) in view. Re-pins to the bottom on focus, as the
-  // suggestion set changes while typing, and as the keyboard animates in
-  // (visual-viewport height shifts the overflow). Once stable the user can
-  // scroll up freely to browse (e.g. to the Yes/No row on top).
-  useEffect(() => {
-    if (!searchFocused) return;
-    const el = searchListRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [searchFocused, searchSuggestions, searchVv]);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {
@@ -2539,108 +2501,78 @@ export function CreateQuestionContent() {
   const SEARCH_ROW_CLASS =
     "w-full flex items-center gap-[11.2px] pl-[14px] pr-5 py-[1.75px] text-left min-h-[0.4375rem] active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
   const pollSearchBar = (
-    <div
-      // z-40 within the portal target's stacking context. On the settled
-      // group page the target is body-level, so this resolves to the
-      // viewport and the focused full-screen picker layers above the fixed
-      // header / commit badge. During a slide overlay the target lives inside
-      // the overlay's `contain: strict` box, so the bar paints within the
-      // overlay (z-60) and slides in with it — no manual elevation needed.
-      className="fixed left-0 right-0 z-40 flex flex-col"
-      style={
-        searchFocused
-          ? searchVv.height > 0
-            ? { top: searchVv.offsetTop, height: searchVv.height }
-            : { top: 0, bottom: 0 }
-          : { bottom: 0 }
-      }
-    >
-      {searchFocused && (
-        <div
-          ref={searchListRef}
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-background flex flex-col"
-          // Clear the notch / status bar in standalone PWA (viewport-fit=cover),
-          // where the visible viewport top sits under it. 0px elsewhere.
-          style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-        >
-          {/* `mt-auto` bottom-anchors the rows: with spare room they stack up
-              from just above the bar (best match at the bottom); once they
-              overflow it collapses to 0 so the top stays scrollable. The
-              auto-scroll effect keeps the bottom (best match) in view.
-              onMouseDown preventDefault keeps the input focused through the
-              tap so the click lands reliably before chooseSuggestion blurs it. */}
-          <div className="mt-auto">
-          {searchSuggestions.map((s) => {
-            // Rows with an annotation label reserve `pt-3` above BOTH the icon
-            // and the text so the label has room AND the two stay vertically
-            // centered against each other (matched box heights).
-            const hasLabel = s.segments.some((seg) => seg.label);
-            return (
-            <button
-              key={s.key}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => chooseSuggestion(s.overrides)}
-              disabled={isLoading}
-              className={SEARCH_ROW_CLASS}
-              aria-label={`Create poll: ${s.segments.map((seg) => seg.text).join('')}`}
+    // z-40 within the portal target's stacking context. On the settled group
+    // page the target is body-level, so the picker resolves to the viewport and
+    // its focused full-screen layer sits above the fixed header / commit badge.
+    // During a slide overlay the target lives inside the overlay's `contain:
+    // strict` box, so the bar paints within the overlay (z-60) and slides with
+    // it — no manual elevation needed.
+    <KeyboardSuggestionPicker
+      focused={searchFocused}
+      barRef={searchBarRef}
+      scrollSignal={searchSuggestions}
+      rows={searchSuggestions.map((s) => {
+        // Rows with an annotation label reserve `pt-3` above BOTH the icon
+        // and the text so the label has room AND the two stay vertically
+        // centered against each other (matched box heights).
+        const hasLabel = s.segments.some((seg) => seg.label);
+        return (
+          <button
+            key={s.key}
+            type="button"
+            // onMouseDown preventDefault keeps the input focused through the
+            // tap so the click lands reliably before chooseSuggestion blurs it.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => chooseSuggestion(s.overrides)}
+            disabled={isLoading}
+            className={SEARCH_ROW_CLASS}
+            aria-label={`Create poll: ${s.segments.map((seg) => seg.text).join('')}`}
+          >
+            <span
+              className={`w-7 text-center text-2xl leading-none shrink-0 ${
+                hasLabel ? 'pt-3' : ''
+              }`}
+              aria-hidden
             >
-              <span
-                className={`w-7 text-center text-2xl leading-none shrink-0 ${
-                  hasLabel ? 'pt-3' : ''
-                }`}
-                aria-hidden
-              >
-                {s.icon}
-              </span>
-              <span
-                className={`relative flex-1 min-w-0 overflow-hidden whitespace-nowrap text-base ${
-                  hasLabel ? 'pt-3' : ''
-                }`}
-              >
-                {s.segments.map((seg, i) =>
-                  seg.colorBorder ? (
-                    // `pt-3` on the wrapper reserves room above the text for the
-                    // label; `bottom-full` keeps the label inside that zone so
-                    // the wrapper's overflow-hidden (which clips long text on
-                    // the right) doesn't also clip it. The label is optional —
-                    // unlabelled-but-underlined segments (2nd+ options) skip it.
-                    <span key={i} className="relative inline-block align-baseline">
-                      {seg.label && (
-                        <span
-                          className={`absolute left-0 bottom-full translate-y-[1.368px] text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
-                          aria-hidden
-                        >
-                          {seg.label}
-                        </span>
-                      )}
-                      <span className={`border-b-2 ${seg.colorBorder}`}>{seg.text}</span>
-                    </span>
-                  ) : (
-                    <span
-                      key={i}
-                      className={seg.muted ? 'text-gray-400 dark:text-gray-500' : (seg.colorText || undefined)}
-                    >
-                      {seg.text}
-                    </span>
-                  )
-                )}
-              </span>
-            </button>
-            );
-          })}
-          </div>
-        </div>
-      )}
-      <div
-        ref={searchBarRef}
-        className={`shrink-0 px-3 pt-2 ${searchFocused ? 'bg-background' : ''}`}
-        style={
-          searchFocused
-            ? { paddingBottom: '0.5rem' }
-            : { paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)' }
-        }
-      >
+              {s.icon}
+            </span>
+            <span
+              className={`relative flex-1 min-w-0 overflow-hidden whitespace-nowrap text-base ${
+                hasLabel ? 'pt-3' : ''
+              }`}
+            >
+              {s.segments.map((seg, i) =>
+                seg.colorBorder ? (
+                  // `pt-3` on the wrapper reserves room above the text for the
+                  // label; `bottom-full` keeps the label inside that zone so
+                  // the wrapper's overflow-hidden (which clips long text on
+                  // the right) doesn't also clip it. The label is optional —
+                  // unlabelled-but-underlined segments (2nd+ options) skip it.
+                  <span key={i} className="relative inline-block align-baseline">
+                    {seg.label && (
+                      <span
+                        className={`absolute left-0 bottom-full translate-y-[1.368px] text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
+                        aria-hidden
+                      >
+                        {seg.label}
+                      </span>
+                    )}
+                    <span className={`border-b-2 ${seg.colorBorder}`}>{seg.text}</span>
+                  </span>
+                ) : (
+                  <span
+                    key={i}
+                    className={seg.muted ? 'text-gray-400 dark:text-gray-500' : (seg.colorText || undefined)}
+                  >
+                    {seg.text}
+                  </span>
+                )
+              )}
+            </span>
+          </button>
+        );
+      })}
+    >
         <div className="flex items-center gap-2">
           {/* Standalone circular button: + opens a blank new poll directly;
               while the text box is focused it becomes ✕ to cancel the picker.
@@ -2692,8 +2624,7 @@ export function CreateQuestionContent() {
           />
           </div>
         </div>
-      </div>
-    </div>
+    </KeyboardSuggestionPicker>
   );
 
   return (
