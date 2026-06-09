@@ -258,11 +258,6 @@ function ShowtimeBubbleButton({
         <span className="shrink-0 whitespace-nowrap tabular-nums">
           <span className="font-semibold text-gray-900 dark:text-gray-100">{hm}</span>
           <span className={`font-semibold ${periodColorClass(period)}`}>{period}</span>
-          {format && (
-            <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
-              {format}
-            </span>
-          )}
         </span>
         {(cinema || address) && (
           <span className="min-w-0 flex-1 truncate text-xs">
@@ -273,6 +268,11 @@ function ShowtimeBubbleButton({
             {address && (
               <span className="text-gray-500 dark:text-gray-400">{address}</span>
             )}
+          </span>
+        )}
+        {format && (
+          <span className="shrink-0 whitespace-nowrap text-xs font-normal text-gray-500 dark:text-gray-400">
+            {format}
           </span>
         )}
         {seats && (
