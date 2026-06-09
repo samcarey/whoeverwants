@@ -13,6 +13,7 @@
  * across devices and clears on sign-out.
  */
 
+import type { OptionMetadataEntry } from "@/lib/types";
 import { API_ORIGIN, userFetch } from "./_internal";
 
 // Bumped to v2 when the cache shape changed from browser_id to user_id
@@ -65,6 +66,40 @@ export async function apiGetPollCategoryHistory(
     group: Array.isArray(data.group) ? (data.group as string[]) : [],
     general: Array.isArray(data.general) ? (data.general as string[]) : [],
   };
+}
+
+/** A previously-referenced option for a category: its display text + optional
+ *  rich metadata (favicon / poster / address / rating / coords), so the
+ *  autocomplete dropdown can render and re-attach it like a fresh search hit. */
+export interface CategoryOptionEntry {
+  label: string;
+  metadata?: OptionMetadataEntry;
+}
+
+/** Options previously referenced (given as ballot options OR suggested) for a
+ *  category, most-recent-first. `group` is scoped to the passed group route id;
+ *  `general` spans every group the caller can see (group labels excluded). Used
+ *  to prime the create-poll autocomplete field before the user types. Drops to
+ *  empty lists on any failure (the field must still work). */
+export async function apiGetCategoryOptions(
+  category: string,
+  groupRouteId?: string | null,
+): Promise<{ group: CategoryOptionEntry[]; general: CategoryOptionEntry[] }> {
+  const params = new URLSearchParams({ category });
+  if (groupRouteId) params.set('group', groupRouteId);
+  const data = await userFetch<any>(`/me/category-options?${params}`);
+  const norm = (arr: any): CategoryOptionEntry[] =>
+    Array.isArray(arr)
+      ? arr
+          .filter((e) => e && typeof e.label === 'string')
+          .map((e) => ({
+            label: e.label,
+            // Server sends metadata: null for entries with none; normalize to
+            // undefined to match the optional field type.
+            metadata: (e.metadata ?? undefined) as OptionMetadataEntry | undefined,
+          }))
+      : [];
+  return { group: norm(data.group), general: norm(data.general) };
 }
 
 /**
