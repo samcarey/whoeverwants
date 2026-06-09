@@ -62,6 +62,12 @@ def test_normalize_joins_sessions_directory_and_posters(payloads, directory):
     assert len(parts) == 2 and parts[0] == s.date
     # Posters are best-effort but present for joinable slugs.
     assert any(x.poster_url for x in shows)
+    # Ticketing link is the stable per-cinema movie showpage (theater + movie),
+    # NOT a session deep link (those 404 once the session expires).
+    assert s.sales_url is not None
+    assert s.sales_url.startswith("https://drafthouse.com/")
+    assert "/show/" in s.sales_url and f"?cinemaId={s.cinema_id}" in s.sales_url
+    assert "/ticketing/" not in s.sales_url
 
 
 def test_normalize_drops_cinemas_outside_directory(payloads, directory):

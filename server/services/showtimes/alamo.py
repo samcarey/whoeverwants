@@ -273,13 +273,19 @@ def normalize(
                                 seats = int(sess.get("SeatsLeft")) if sess.get("SeatsLeft") else None
                             except (TypeError, ValueError):
                                 seats = None
-                            # `SessionSalesURL` is usually empty in the feed;
-                            # `drafthouse.com/ticketing/{SessionId}` is a stable
-                            # deep link (verified 200) — derive it as a fallback.
+                            # Ticketing link = the per-cinema MOVIE showpage,
+                            # NOT a session deep link. `drafthouse.com/ticketing/{SessionId}`
+                            # 404s in-browser once a session expires/sells out
+                            # (the checkout SPA can't resolve a stale id), and
+                            # `SessionSalesURL` is empty in practice. The
+                            # `/{market}/show/{film}?cinemaId={cinema}` page is
+                            # stable and as specific as we can get without the
+                            # gated checkout API (theater + movie).
                             session_id = str(sess.get("SessionId") or "")
                             sales_url = (
-                                sess.get("SessionSalesURL")
-                                or (f"https://drafthouse.com/ticketing/{session_id}" if session_id else None)
+                                f"https://drafthouse.com/{dir_cinema.market_slug}/show/{film_slug}?cinemaId={cinema_id}"
+                                if film_slug
+                                else None
                             )
                             out.append(
                                 Showtime(
