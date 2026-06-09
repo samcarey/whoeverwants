@@ -123,6 +123,15 @@ export default function DayTimeWindowsList({
     }
     return null;
   };
+  // Commit a bulk op + exit selection. `adjusted` (any day's windows were
+  // clamped/merged by the autofix) drives the transient toast, so the
+  // fit-then-notify contract lives in one place for both edit + paste.
+  const commitBulkOp = (next: DayTimeWindow[], adjusted: boolean) => {
+    haptic.medium();
+    onChange(next);
+    exitSelection();
+    if (adjusted) flashNotice('Adjusted slots to fit the allowed times');
+  };
   const applyBulkEdit = (min: string | null, max: string | null) => {
     if (!min || !max) return;
     let adjusted = false;
@@ -147,11 +156,8 @@ export default function DayTimeWindowsList({
       if (fit.changed) adjusted = true;
       return { ...d, windows: fit.windows };
     });
-    haptic.medium();
-    onChange(next);
     setEditOpen(false);
-    exitSelection();
-    if (adjusted) flashNotice('Adjusted slots to fit the allowed times');
+    commitBulkOp(next, adjusted);
   };
 
   // ── copy mode ─────────────────────────────────────────────────────────────
@@ -188,10 +194,7 @@ export default function DayTimeWindowsList({
       if (fit.changed) adjusted = true;
       return { ...d, windows: fit.windows };
     });
-    haptic.medium();
-    onChange(next);
-    exitSelection();
-    if (adjusted) flashNotice('Adjusted slots to fit the allowed times');
+    commitBulkOp(next, adjusted);
   };
 
   const selectionEnabled = !disabled && dayTimeWindows.length > 0;
@@ -271,7 +274,7 @@ export default function DayTimeWindowsList({
                   disabled={selectedWindows.size === 0}
                   className="h-10 px-4 rounded-full text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-transform active:scale-95 disabled:opacity-50"
                 >
-                  {`Edit ${selectedWindows.size || ''}`.trim()}
+                  {selectedWindows.size ? `Edit ${selectedWindows.size}` : 'Edit'}
                 </button>
               ) : (
                 <button
@@ -280,7 +283,7 @@ export default function DayTimeWindowsList({
                   disabled={targetDays.size === 0}
                   className="h-10 px-4 rounded-full text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-transform active:scale-95 disabled:opacity-50"
                 >
-                  {`Paste ${targetDays.size || ''}`.trim()}
+                  {targetDays.size ? `Paste ${targetDays.size}` : 'Paste'}
                 </button>
               )}
               <button
