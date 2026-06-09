@@ -226,8 +226,13 @@ function AnimatedSlotRow({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(phase !== 'enter');
+  // Clip content only WHILE animating. At rest (settled open) we switch to
+  // overflow-visible so a selection ring (`ring-2`, drawn 2px OUTSIDE the pill)
+  // isn't clipped at top/bottom by the height-collapse clip.
+  const [clip, setClip] = useState(phase !== 'shown');
   useEffect(() => {
     if (phase === 'enter') {
+      setClip(true);
       let raf2 = 0;
       const raf1 = requestAnimationFrame(() => {
         raf2 = requestAnimationFrame(() => setOpen(true));
@@ -235,27 +240,32 @@ function AnimatedSlotRow({
       return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
     }
     if (phase === 'leave') {
+      setClip(true);
       const raf = requestAnimationFrame(() => setOpen(false));
       return () => cancelAnimationFrame(raf);
     }
     setOpen(true);
+    setClip(false);
   }, [phase]);
 
   return (
     <div
-      className="grid overflow-hidden"
+      className="grid"
       style={{
         gridTemplateRows: open ? '1fr' : '0fr',
         opacity: open ? 1 : 0,
+        overflow: clip ? 'hidden' : 'visible',
         transition: 'grid-template-rows 300ms ease-in-out, opacity 300ms ease-in-out',
       }}
       onTransitionEnd={(e) => {
-        if (e.propertyName === 'grid-template-rows' && phase === 'leave' && !open) {
-          onLeaveDone();
-        }
+        if (e.propertyName !== 'grid-template-rows') return;
+        if (phase === 'leave' && !open) onLeaveDone();
+        // Settled open: stop clipping so the selection ring can paint past the
+        // pill's edges.
+        else if (open) setClip(false);
       }}
     >
-      <div className="min-h-0 overflow-hidden">{children}</div>
+      <div className="min-h-0" style={{ overflow: clip ? 'hidden' : 'visible' }}>{children}</div>
     </div>
   );
 }
