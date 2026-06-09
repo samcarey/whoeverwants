@@ -137,8 +137,13 @@ export function ScheduledView({ groupId }: ScheduledViewProps) {
         <div
           style={{
             paddingTop: `calc(${headerHeight}px + 1.25rem)`,
-            paddingLeft: "calc(1rem + max(0.35rem, env(safe-area-inset-left, 0px)))",
-            paddingRight: "calc(1rem + max(0.35rem, env(safe-area-inset-right, 0px)))",
+            // NO horizontal padding: the swipeWrapper's negative margins above
+            // cancel the template/overlay `px-4` + safe-area inset, and we do
+            // NOT re-apply it here — so the rows bleed edge-to-edge and their
+            // dividers butt against the body's safe-area content edge, exactly
+            // like the group page's cards (GroupContent does the same; the poll
+            // DETAIL page re-applies the inset because its rounded cards stay
+            // inset, which is the opposite of full-bleed rows).
           }}
         >
           {!loading && items.length === 0 && (
