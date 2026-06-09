@@ -371,6 +371,7 @@ export default function ShowtimeCreateFlow({
                 format: s.format,
                 seats_left: s.seats_left,
                 distance_miles: distanceByCinema.get(s.cinema_id) ?? null,
+                sales_url: s.sales_url,
               }));
             return (
               <ShowtimeBubbles
