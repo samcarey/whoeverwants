@@ -186,43 +186,21 @@ function classFor(state: "on" | "neutral" | "off"): string {
   return "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800";
 }
 
-/** External-link glyph (square with an arrow exiting diagonally). Marks the
- *  non-selectable ticket link sitting to the left of each showtime. */
-function ExternalLinkIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-3.5 w-3.5"
-      aria-hidden="true"
-    >
-      <path d="M14 4h6v6" />
-      <path d="M20 4l-9 9" />
-      <path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
-    </svg>
-  );
-}
-
 // Pointer travel (px) before a press is treated as a range-drag instead of a tap.
 const DRAG_THRESHOLD = 8;
 const withinTapThreshold = (x1: number, y1: number, x2: number, y2: number) =>
   Math.hypot(x2 - x1, y2 - y1) < DRAG_THRESHOLD;
 
 /**
- * One full-width showtime row: a non-selectable ticket link (external-link
- * icon) on the LEFT, then a single-line toggle bubble holding the time (+ a
- * distinctive format), the theatre name + street address (truncated to fit the
- * line), and seats on the right. The theatre name is location-colored to match
- * the top legend. The link opens the showtime's Alamo ticketing page; it's a
- * plain <a> sibling of the toggle button, so tapping it never changes the
- * vote/curate selection. (Buying tickets is orthogonal to whether the ballot is
- * editable, so the link works in every mode — curate / vote / disabled.)
+ * One full-width showtime row: the seats ("N left") sit OUTSIDE the selectable
+ * card on the LEFT as an underlined link to the showtime's Alamo ticketing page
+ * (no separate link icon). Then the toggle card holds the time (+ a distinctive
+ * format) and the theatre name + street address (truncated to fit the line). The
+ * theatre name is location-colored to match the top legend. The seats link is a
+ * plain <a> sibling of the card, so tapping it never changes the vote/curate
+ * selection; it works in every mode (curate / vote / disabled).
  *
- * The toggle bubble carries `data-slot` / `data-slot-available` + touch-action:
+ * The toggle card carries `data-slot` / `data-slot-available` + touch-action:
  * none + stopped touch propagation so a press-and-DRAG across rows lassoes a
  * range (mirroring the time-preference ballot) instead of selecting text /
  * scrolling / triggering the page swipe-back. A plain tap (no drag) cycles the
@@ -258,21 +236,28 @@ function ShowtimeBubbleButton({
     typeof slot.seats_left === "number" && slot.seats_left >= 0
       ? `${slot.seats_left} left`
       : null;
+  const linkLabel = seats ?? "Tickets"; // fall back to a generic label when seats unknown
 
   return (
-    <div className="flex items-center gap-1.5">
-      {slot.sales_url && (
-        <a
-          href={slot.sales_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          aria-label="Buy tickets"
-          className="shrink-0 text-gray-400 transition-colors hover:text-blue-500 dark:text-gray-500 dark:hover:text-blue-400"
-        >
-          <ExternalLinkIcon />
-        </a>
-      )}
+    <div className="flex items-center gap-2">
+      {/* Seats ("N left") sit to the LEFT of the card; underlined = the ticket
+          link. Fixed-width + right-aligned so the cards line up. */}
+      <div className="w-12 shrink-0 whitespace-nowrap text-right text-xs leading-tight">
+        {slot.sales_url ? (
+          <a
+            href={slot.sales_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Buy tickets"
+            className="underline decoration-1 underline-offset-2 text-gray-500 transition-colors hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400"
+          >
+            {linkLabel}
+          </a>
+        ) : (
+          seats && <span className="text-gray-400 dark:text-gray-500">{seats}</span>
+        )}
+      </div>
       <button
         type="button"
         data-slot={slot.key}
@@ -311,11 +296,6 @@ function ShowtimeBubbleButton({
         {format && (
           <span className="shrink-0 whitespace-nowrap text-xs font-normal text-gray-500 dark:text-gray-400">
             {format}
-          </span>
-        )}
-        {seats && (
-          <span className="shrink-0 whitespace-nowrap text-xs text-gray-400 dark:text-gray-500">
-            {seats}
           </span>
         )}
       </button>
@@ -567,8 +547,8 @@ export default function ShowtimeBubbles(props: Props) {
       )}
       {anyTicketable && (
         <p className="pt-1 text-center text-[11px] text-gray-400 dark:text-gray-500">
-          Tap the link icon beside a showtime to buy tickets, or drag across rows
-          to mark several at once
+          Tap the underlined seats to buy tickets, or drag across rows to mark
+          several at once
         </p>
       )}
 
