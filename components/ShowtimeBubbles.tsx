@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { formatDayLabel, groupSlotsByDay, parseSlotStart, periodColorClass } from "@/lib/timeUtils";
-import { haptic } from "@/lib/haptics";
 import type { OptionsMetadata } from "@/lib/types";
 
 /**
@@ -30,9 +29,9 @@ export interface ShowtimeSlot {
   seats_left?: number | null;
   distance_miles?: number | null; // from the creator's reference location
   // Per-cinema movie showpage on drafthouse.com (theater + movie — NOT a
-  // session deep link; those 404 once a session expires). Long-pressing a
-  // bubble opens it so the user buys at the authoritative source — live price
-  // + seat map live only in Alamo's checkout flow.
+  // session deep link; those 404 once a session expires). The link icon to the
+  // left of each bubble opens it so the user buys at the authoritative source —
+  // live price + seat map live only in Alamo's checkout flow.
   sales_url?: string | null;
 }
 
@@ -175,24 +174,34 @@ function classFor(state: "on" | "neutral" | "off"): string {
   return "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800";
 }
 
-const LONG_PRESS_MS = 450;
-const MOVE_CANCEL_PX2 = 100; // (10px)^2
+/** External-link glyph (square with an arrow exiting diagonally). Marks the
+ *  non-selectable ticket link sitting to the left of each showtime. */
+function ExternalLinkIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-3.5 w-3.5"
+      aria-hidden="true"
+    >
+      <path d="M14 4h6v6" />
+      <path d="M20 4l-9 9" />
+      <path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
+    </svg>
+  );
+}
 
 /**
- * One showtime bubble. Tap toggles its vote/curate state (when not `disabled`);
- * press-and-hold opens the showtime's Alamo ticketing page — works in EVERY
- * mode (curate / vote / disabled results), since buying tickets is orthogonal
- * to whether the ballot is still editable. We deliberately do NOT set the
- * `disabled` HTML attribute (a disabled <button> swallows pointer events, which
- * would kill the long-press on results bubbles); the toggle is gated in
- * `handleClick`.
- *
- * The link opens in `pointerup` (the real user gesture), NOT from the arm
- * timer: `window.open(_blank)` fired from a setTimeout has no transient user
- * activation, so the popup blocker (notably iOS Safari) silently drops it. The
- * timer only ARMS the gesture (ring + haptic at the hold threshold) so the user
- * knows they can release to buy; the open happens synchronously on release,
- * which preserves activation. A >10px move cancels (it's a scroll).
+ * One showtime row: a non-selectable ticket link (external-link icon) on the
+ * LEFT, then a single-line toggle bubble showing time · format · cinema · seats.
+ * The link opens the showtime's Alamo ticketing page; it's a plain <a> sibling
+ * of the toggle button, so tapping it never changes the vote/curate selection.
+ * (Buying tickets is orthogonal to whether the ballot is still editable, so the
+ * link works in every mode — curate / vote / disabled results.)
  */
 function ShowtimeBubbleButton({
   slot,
@@ -207,67 +216,6 @@ function ShowtimeBubbleButton({
   locColorText: string;
   onTap: () => void;
 }) {
-  const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const armedRef = useRef(false); // hold passed the threshold → release opens
-  const openedRef = useRef(false); // a long-press just opened → swallow the click
-  const startRef = useRef<{ x: number; y: number } | null>(null);
-  const [armed, setArmed] = useState(false);
-  const ticketable = !!slot.sales_url;
-
-  const clearArm = () => {
-    if (armTimerRef.current) {
-      clearTimeout(armTimerRef.current);
-      armTimerRef.current = null;
-    }
-    armedRef.current = false;
-    startRef.current = null;
-    setArmed(false);
-  };
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (!ticketable) return;
-    openedRef.current = false;
-    armedRef.current = false;
-    startRef.current = { x: e.clientX, y: e.clientY };
-    armTimerRef.current = setTimeout(() => {
-      armTimerRef.current = null;
-      armedRef.current = true;
-      setArmed(true);
-      haptic.light(); // "release to buy tickets"
-    }, LONG_PRESS_MS);
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    const s = startRef.current;
-    if (!s) return;
-    const dx = e.clientX - s.x;
-    const dy = e.clientY - s.y;
-    if (dx * dx + dy * dy > MOVE_CANCEL_PX2) clearArm(); // treat as a scroll
-  };
-
-  const onPointerUp = () => {
-    const url = slot.sales_url;
-    if (armedRef.current && url) {
-      openedRef.current = true;
-      haptic.medium();
-      // Synchronous, inside the pointerup gesture → preserves user activation.
-      // Sandboxed iframes (the Claude preview pane) + some webviews still block
-      // _blank popups (window.open returns null) — fall back to same-tab nav so
-      // the link always activates.
-      const w = window.open(url, "_blank", "noopener,noreferrer");
-      if (!w) window.location.href = url;
-    }
-    clearArm();
-  };
-
-  const handleClick = () => {
-    if (openedRef.current) {
-      openedRef.current = false;
-      return; // long-press just opened tickets; don't also toggle
-    }
-    if (!disabled) onTap();
-  };
-
   const { hm, period } = fmt12Parts(slot.time);
   const cinema = cinemaShortName(slot.cinema_name);
   const seats =
@@ -276,36 +224,43 @@ function ShowtimeBubbleButton({
       : null;
 
   return (
-    <button
-      type="button"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerLeave={clearArm}
-      onPointerCancel={clearArm}
-      onContextMenu={(e) => e.preventDefault()}
-      onClick={handleClick}
-      // select-none + touch-callout:none stop iOS from selecting the showtime
-      // text / popping the copy-callout magnifier during a press-and-hold.
-      style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
-      className={`max-w-full select-none rounded-[20.4px] border px-[10.8px] py-0.5 text-left transition-colors ${classFor(state)} ${armed ? "ring-2 ring-blue-400 dark:ring-blue-500" : ""} ${disabled ? "cursor-default" : "active:scale-[0.98]"}`}
-    >
-      <div className="whitespace-nowrap text-[12.8px] font-semibold leading-tight tabular-nums text-gray-900 dark:text-gray-100">
-        {hm} <span className={periodColorClass(period)}>{period}</span>
+    <span className="inline-flex max-w-full items-center gap-1">
+      {slot.sales_url && (
+        <a
+          href={slot.sales_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          aria-label="Buy tickets"
+          className="shrink-0 text-gray-400 transition-colors hover:text-blue-500 dark:text-gray-500 dark:hover:text-blue-400"
+        >
+          <ExternalLinkIcon />
+        </a>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          if (!disabled) onTap();
+        }}
+        className={`select-none whitespace-nowrap rounded-md border px-1.5 py-px text-left text-[12px] leading-tight tabular-nums transition-colors ${classFor(state)} ${disabled ? "cursor-default" : "active:scale-[0.98]"}`}
+      >
+        <span className="font-semibold text-gray-900 dark:text-gray-100">{hm}</span>{" "}
+        <span className={`font-semibold ${periodColorClass(period)}`}>{period}</span>
         {slot.format && (
-          <span className="ml-1 text-[11px] font-normal text-gray-500 dark:text-gray-400">
+          <span className="ml-1 font-normal text-gray-500 dark:text-gray-400">
             {slot.format}
           </span>
         )}
-      </div>
-      {(cinema || seats) && (
-        <div className="mt-px whitespace-nowrap text-[11px] leading-tight text-gray-500 dark:text-gray-400">
-          {cinema && <span className={`font-medium ${locColorText}`}>{cinema}</span>}
-          {cinema && seats && " · "}
-          {seats}
-        </div>
-      )}
-    </button>
+        {cinema && (
+          <span className={`ml-1 font-medium ${locColorText}`}>{cinema}</span>
+        )}
+        {seats && (
+          <span className="ml-1 font-normal text-gray-400 dark:text-gray-500">
+            {seats}
+          </span>
+        )}
+      </button>
+    </span>
   );
 }
 
@@ -348,7 +303,7 @@ export default function ShowtimeBubbles(props: Props) {
   const anyTicketable = useMemo(() => slots.some((s) => !!s.sales_url), [slots]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {/* Top legend: each theater's color + distance from the creator's
           reference location, ordered nearest-first. */}
       {locationMap.size > 0 && (
@@ -363,11 +318,11 @@ export default function ShowtimeBubbles(props: Props) {
         </div>
       )}
       {days.map(([date, keys]) => (
-        <div key={date} className="flex gap-3">
-          <div className="w-14 shrink-0 pt-1 text-xs font-semibold text-gray-500 dark:text-gray-400 leading-tight">
+        <div key={date} className="flex gap-2">
+          <div className="w-14 shrink-0 pt-0.5 text-xs font-semibold text-gray-500 dark:text-gray-400 leading-tight">
             {formatDayLabel(date)}
           </div>
-          <div className="flex flex-1 flex-wrap gap-[6.4px]">
+          <div className="flex flex-1 flex-wrap gap-x-2 gap-y-1">
             {keys.map((key, idx) => {
               const slot = byKey.get(key);
               if (!slot) return null;
@@ -404,7 +359,7 @@ export default function ShowtimeBubbles(props: Props) {
       )}
       {anyTicketable && (
         <p className="pt-1 text-center text-[11px] text-gray-400 dark:text-gray-500">
-          Press &amp; hold a showtime to buy tickets
+          Tap the link icon beside a showtime to buy tickets
         </p>
       )}
     </div>
