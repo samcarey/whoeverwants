@@ -61,6 +61,12 @@ export interface PlanOptions {
    *  ties among co-matched categories (keeps the default deterministic). */
   categoryOrder?: string[];
   now?: Date;
+  /** Optional embedding-classifier hint (lib/aiCategoryClassify). When present
+   *  and the keyword matcher didn't already surface this category, it ADDS a
+   *  category row just above the primary — it NEVER changes the nearest-bar
+   *  default. A no-op when null/absent, so the deterministic plan is unchanged
+   *  (and the scoring harness, which passes nothing, measures the heuristic). */
+  aiCategory?: { category: string; score: number } | null;
 }
 
 const keyOf = (kind: PlannedKind, category?: string) =>
@@ -157,6 +163,15 @@ export function planPollSuggestions(rawInput: string, opts: PlanOptions = {}): P
   }
   // Matched categories, weakest first so the 2nd-best sits just above primary.
   for (const r of [...ranked].reverse()) rows.push(categoryRow(r.value, false));
+
+  // AI augmentation (augment, never block): a confident embedding hint ADDS its
+  // category as the row nearest the bar (most prominent after the default), but
+  // only when the keyword matcher didn't already surface it and it isn't already
+  // the primary. Never replaces the primary — the heuristic default is untouched.
+  const aic = opts.aiCategory?.category;
+  if (aic && CATEGORY_ORDER.includes(aic) && !ranked.some((r) => r.value === aic) && primaryKey !== `category:${aic}`) {
+    rows.push(categoryRow(aic, false));
+  }
 
   // Drop the duplicate of whatever became primary, then pin primary last.
   return [...rows.filter((r) => keyOf(r.kind, r.category) !== primaryKey), primaryRow];

@@ -21,6 +21,7 @@ import { getCategoryIcon } from "@/lib/questionListUtils";
 import { bestEmojiMatch, splitLeadingEmoji } from "@/lib/emojiData";
 import { parseForContext } from "@/lib/pollTextParse";
 import { planPollSuggestions, type PlannedRow } from "@/lib/pollSuggestions";
+import { classifyCategory, warmAiCategoryClassifier, isAiCategoryClassifyEnabled, type AiCategory } from "@/lib/aiCategoryClassify";
 import OptionsInput from "@/components/OptionsInput";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
@@ -508,6 +509,10 @@ export function CreateQuestionContent() {
   // picker (see `pollSearchBar`). `searchQuery` filters the category rows.
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // On-device embedding category hint (augment, never block): a confident result
+  // ADDS a category suggestion when the keyword matcher misses (slang/typos). Fed
+  // into planPollSuggestions; null = no-op. Dev/canary only + fully fail-safe.
+  const [aiCategory, setAiCategory] = useState<AiCategory | null>(null);
   // Recently-posted poll titles, snapshotted from the in-memory accessible
   // cache when the search picker opens, offered as "create one like this"
   // suggestions at the bottom of the list.
@@ -1475,6 +1480,7 @@ export function CreateQuestionContent() {
     const planned = planPollSuggestions(searchQuery, {
       categoryOrder: orderedBubbleEntries.map((e) => e.value),
       now: new Date(),
+      aiCategory,
     });
     const list = planned.map(toDisplay).filter((r): r is NonNullable<typeof r> => !!r);
 
@@ -1491,7 +1497,33 @@ export function CreateQuestionContent() {
     if (recents.length && list.length) list.splice(list.length - 1, 0, ...recents);
 
     return list;
-  }, [searchQuery, orderedBubbleEntries, recentEntries]);
+  }, [searchQuery, orderedBubbleEntries, recentEntries, aiCategory]);
+
+  // Debounced on-device classify of the typed subject → aiCategory. Warms the
+  // model on focus (idempotent — the warm call short-circuits once loading) so
+  // it's likely ready by the time the user pauses. Latest-wins + cleared when
+  // the picker closes. Every failure path inside classifyCategory returns null,
+  // so this can only ADD a suggestion, never break the box.
+  useEffect(() => {
+    if (!searchFocused || !isAiCategoryClassifyEnabled()) {
+      setAiCategory(null);
+      return;
+    }
+    warmAiCategoryClassifier();
+    const { rest } = splitLeadingEmoji(searchQuery.trim());
+    const subject = parseForContext(rest).subject.trim();
+    if (!subject) {
+      setAiCategory(null);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      classifyCategory(subject)
+        .then((r) => { if (!cancelled) setAiCategory(r); })
+        .catch(() => { if (!cancelled) setAiCategory(null); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [searchQuery, searchFocused]);
 
   // Snapshot recently-posted poll titles whenever the picker opens (and clear
   // them when it closes so a re-open re-reads the cache, e.g. after creating a

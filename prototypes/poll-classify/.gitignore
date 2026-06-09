@@ -1,0 +1,4 @@
+node_modules/
+.embed-cache/
+package-lock.json
+corpus.json
