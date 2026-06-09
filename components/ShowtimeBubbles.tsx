@@ -191,6 +191,28 @@ const DRAG_THRESHOLD = 8;
 const withinTapThreshold = (x1: number, y1: number, x2: number, y2: number) =>
   Math.hypot(x2 - x1, y2 - y1) < DRAG_THRESHOLD;
 
+// Bulk-mark toolbar buttons (Want/Can't/Include/… ): a shared base + a per-action
+// color class so the five near-identical button blocks collapse to one element.
+const TOOLBAR_BTN_BASE =
+  "h-10 px-4 rounded-full text-sm font-semibold transition-transform active:scale-95";
+const TOOLBAR_NEUTRAL_COLOR =
+  "bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600";
+function ToolbarButton({
+  label,
+  onClick,
+  color,
+}: {
+  label: string;
+  onClick: () => void;
+  color: string;
+}) {
+  return (
+    <button type="button" onClick={onClick} className={`${TOOLBAR_BTN_BASE} ${color}`}>
+      {label}
+    </button>
+  );
+}
+
 /**
  * One full-width showtime row: the toggle card holds the time (+ a distinctive
  * format) and the theatre name + street address (truncated to fit the line);
@@ -326,9 +348,21 @@ export default function ShowtimeBubbles(props: Props) {
     return m;
   }, [orderedKeys]);
 
-  const likedSet = props.mode === "vote" ? new Set(props.likedKeys) : null;
-  const dislikedSet = props.mode === "vote" ? new Set(props.dislikedKeys) : null;
-  const selectedSet = props.mode === "curate" ? new Set(props.selectedKeys) : null;
+  // Memoize the per-state lookup sets on the source arrays (not on the parent's
+  // every-render props identity) so a selection-only re-render during a drag
+  // doesn't rebuild them.
+  const likedKeys = props.mode === "vote" ? props.likedKeys : null;
+  const dislikedKeys = props.mode === "vote" ? props.dislikedKeys : null;
+  const selectedKeys = props.mode === "curate" ? props.selectedKeys : null;
+  const likedSet = useMemo(() => (likedKeys ? new Set(likedKeys) : null), [likedKeys]);
+  const dislikedSet = useMemo(
+    () => (dislikedKeys ? new Set(dislikedKeys) : null),
+    [dislikedKeys],
+  );
+  const selectedSet = useMemo(
+    () => (selectedKeys ? new Set(selectedKeys) : null),
+    [selectedKeys],
+  );
 
   function bubbleState(key: string): "on" | "neutral" | "off" {
     if (props.mode === "curate") return selectedSet!.has(key) ? "on" : "neutral";
@@ -486,9 +520,6 @@ export default function ShowtimeBubbles(props: Props) {
   const locationMap = useMemo(() => buildLocationMap(slots), [slots]);
   const anyTicketable = useMemo(() => slots.some((s) => !!s.sales_url), [slots]);
 
-  const toolbarBtn =
-    "h-10 px-4 rounded-full text-sm font-semibold transition-transform active:scale-95";
-
   return (
     <div className="space-y-2.5">
       {/* Top legend: each theater's color + distance from the creator's
@@ -565,44 +596,14 @@ export default function ShowtimeBubbles(props: Props) {
             <div className="flex items-center gap-2 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 shadow-xl">
               {props.mode === "vote" ? (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => applyVote("want")}
-                    className={`${toolbarBtn} bg-green-500 hover:bg-green-600 text-white`}
-                  >
-                    Want
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyVote("cant")}
-                    className={`${toolbarBtn} bg-red-500 hover:bg-red-600 text-white`}
-                  >
-                    Can&apos;t
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyVote("neutral")}
-                    className={`${toolbarBtn} bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600`}
-                  >
-                    Neutral
-                  </button>
+                  <ToolbarButton label="Want" onClick={() => applyVote("want")} color="bg-green-500 hover:bg-green-600 text-white" />
+                  <ToolbarButton label="Can't" onClick={() => applyVote("cant")} color="bg-red-500 hover:bg-red-600 text-white" />
+                  <ToolbarButton label="Neutral" onClick={() => applyVote("neutral")} color={TOOLBAR_NEUTRAL_COLOR} />
                 </>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => applyCurate(true)}
-                    className={`${toolbarBtn} bg-green-500 hover:bg-green-600 text-white`}
-                  >
-                    Include
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyCurate(false)}
-                    className={`${toolbarBtn} bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600`}
-                  >
-                    Exclude
-                  </button>
+                  <ToolbarButton label="Include" onClick={() => applyCurate(true)} color="bg-green-500 hover:bg-green-600 text-white" />
+                  <ToolbarButton label="Exclude" onClick={() => applyCurate(false)} color={TOOLBAR_NEUTRAL_COLOR} />
                 </>
               )}
               <button
