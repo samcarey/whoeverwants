@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, apiSearchRestaurants, type SearchResult } from "@/lib/api";
 import type { QuestionCategory } from "@/lib/types";
@@ -124,7 +124,6 @@ export default function AutocompleteInput({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [overlayOpen, setOverlayOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const overlayInputRef = useRef<HTMLInputElement | null>(null);
 
   const lastSuccessfulQueryRef = useRef("");
   const lastResultsRef = useRef<SearchResult[]>([]);
@@ -208,6 +207,10 @@ export default function AutocompleteInput({
     if (trimmed !== value) onChange(trimmed);
   }, [cancelPrimer, value, onChange]);
 
+  // Best match first → render reversed so the most-relevant row sits nearest
+  // the input bar at the bottom of the bottom-anchored list.
+  const displaySuggestions = useMemo(() => [...suggestions].reverse(), [suggestions]);
+
   const selectSuggestion = (result: SearchResult) => {
     onChange(result.label);
     onSelect?.(result);
@@ -218,10 +221,6 @@ export default function AutocompleteInput({
     // and could clobber the label we just set. Unmounting dismisses the keyboard.
     setOverlayOpen(false);
   };
-
-  // Best match first → render reversed so the most-relevant row sits nearest
-  // the input bar at the bottom of the bottom-anchored list.
-  const displaySuggestions = [...suggestions].reverse();
 
   const handleOverlayKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
@@ -286,7 +285,7 @@ export default function AutocompleteInput({
           />
         )}
         <input
-          ref={(el) => { overlayInputRef.current = el; inputRef?.(el); }}
+          ref={inputRef}
           type="text"
           value={value}
           onChange={(e) => handleChange(e.target.value)}
@@ -393,7 +392,7 @@ export default function AutocompleteInput({
             </button>
             <div className="flex-1 min-w-0 flex items-center h-[42.24px] rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4 shadow-lg">
               <input
-                ref={(el) => { overlayInputRef.current = el; focusOnMount(el); inputRef?.(el); }}
+                ref={(el) => { focusOnMount(el); inputRef?.(el); }}
                 type="text"
                 value={value}
                 onChange={(e) => handleChange(e.target.value)}
