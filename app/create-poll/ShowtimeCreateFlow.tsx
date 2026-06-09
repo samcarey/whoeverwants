@@ -366,6 +366,7 @@ export default function ShowtimeCreateFlow({
               .map((s) => ({
                 key: s.key,
                 time: s.time,
+                cinema_id: s.cinema_id,
                 cinema_name: s.cinema_name,
                 format: s.format,
                 seats_left: s.seats_left,

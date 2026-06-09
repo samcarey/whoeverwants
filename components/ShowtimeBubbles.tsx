@@ -23,6 +23,7 @@ import type { OptionsMetadata } from "@/lib/types";
 export interface ShowtimeSlot {
   key: string; // "YYYY-MM-DD HH:MM-HH:MM"
   time: string; // "19:10"
+  cinema_id?: string | null;
   cinema_name?: string | null;
   format?: string | null;
   seats_left?: number | null;
@@ -61,31 +62,39 @@ function cinemaShortName(name: string | null | undefined): string | null {
   return name ? name.replace(/^Alamo /, "") : null;
 }
 
-/** Assign a stable color (+ keep the distance) to each distinct cinema in the
- *  slot set, ordered nearest-first so the legend reads top-down by proximity.
- *  Keyed on the stripped display name so the bubble + legend agree. */
+/** Stable per-theater key for the color/distance map: the cinema_id (canonical,
+ *  survives renames + disambiguates same-named theaters), falling back to the
+ *  display name for any slot missing an id. */
+function cinemaKeyOf(slot: ShowtimeSlot): string | null {
+  return slot.cinema_id || cinemaShortName(slot.cinema_name);
+}
+
+/** Assign a stable color (+ keep the distance + display name) to each distinct
+ *  cinema in the slot set, keyed on cinema_id and ordered nearest-first so the
+ *  legend reads top-down by proximity. */
 function buildLocationMap(slots: ShowtimeSlot[]): Map<string, LocationInfo> {
-  const seen = new Map<string, { distance: number | null }>();
+  const seen = new Map<string, { name: string; distance: number | null }>();
   for (const s of slots) {
+    const key = cinemaKeyOf(s);
     const name = cinemaShortName(s.cinema_name);
-    if (!name) continue;
+    if (!key || !name) continue;
     const dist = typeof s.distance_miles === "number" ? s.distance_miles : null;
-    const prev = seen.get(name);
-    if (!prev) seen.set(name, { distance: dist });
+    const prev = seen.get(key);
+    if (!prev) seen.set(key, { name, distance: dist });
     else if (prev.distance == null && dist != null) prev.distance = dist;
   }
   const ordered = Array.from(seen.entries()).sort((a, b) => {
     const da = a[1].distance,
       db = b[1].distance;
-    if (da == null && db == null) return a[0].localeCompare(b[0]);
+    if (da == null && db == null) return a[1].name.localeCompare(b[1].name);
     if (da == null) return 1;
     if (db == null) return -1;
     if (da !== db) return da - db;
-    return a[0].localeCompare(b[0]);
+    return a[1].name.localeCompare(b[1].name);
   });
   const map = new Map<string, LocationInfo>();
-  ordered.forEach(([name, { distance }], i) => {
-    map.set(name, {
+  ordered.forEach(([key, { name, distance }], i) => {
+    map.set(key, {
       name,
       distance,
       color: LOCATION_COLORS[i % LOCATION_COLORS.length],
@@ -108,6 +117,7 @@ export function slotsFromOptions(
     return {
       key,
       time: `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,
+      cinema_id: (m.cinema_id as string) ?? null,
       cinema_name: (m.cinema_name as string) ?? null,
       format: (m.format as string) ?? null,
       seats_left: typeof m.seats_left === "number" ? (m.seats_left as number) : null,
@@ -201,8 +211,8 @@ export default function ShowtimeBubbles(props: Props) {
           reference location, ordered nearest-first. */}
       {locationMap.size > 0 && (
         <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pb-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-          {Array.from(locationMap.values()).map((loc) => (
-            <span key={loc.name} className="flex items-center gap-1">
+          {Array.from(locationMap.entries()).map(([key, loc]) => (
+            <span key={key} className="flex items-center gap-1">
               <span className={`inline-block h-2.5 w-2.5 rounded-full ${loc.color.dot}`} />
               <span className={`font-medium ${loc.color.text}`}>{loc.name}</span>
               {loc.distance != null && <span>{loc.distance} mi</span>}
@@ -222,8 +232,10 @@ export default function ShowtimeBubbles(props: Props) {
               const state = bubbleState(key);
               const { hm, period } = fmt12Parts(slot.time);
               const cinema = cinemaShortName(slot.cinema_name);
+              const cinemaKey = cinemaKeyOf(slot);
               const locColor =
-                (cinema && locationMap.get(cinema)?.color) || NEUTRAL_LOCATION_COLOR;
+                (cinemaKey && locationMap.get(cinemaKey)?.color) ||
+                NEUTRAL_LOCATION_COLOR;
               const seats =
                 typeof slot.seats_left === "number" && slot.seats_left >= 0
                   ? `${slot.seats_left} left`
