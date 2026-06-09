@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useMemo } from "react";
+import { Dispatch, ReactNode, SetStateAction, useMemo } from "react";
 import AbstainLink from "@/components/AbstainLink";
 import ShowtimeBubbles, { slotsFromOptions } from "@/components/ShowtimeBubbles";
 import type { Question } from "@/lib/types";
@@ -22,9 +22,9 @@ export interface ShowtimeBallotSectionProps {
   isAbstaining: boolean;
   handleAbstain: () => void;
   likedSlots: string[] | null;
-  setLikedSlots: (v: string[] | null) => void;
+  setLikedSlots: Dispatch<SetStateAction<string[] | null>>;
   dislikedSlots: string[] | null;
-  setDislikedSlots: (v: string[] | null) => void;
+  setDislikedSlots: Dispatch<SetStateAction<string[] | null>>;
   wrapperHandlesSubmit: boolean;
   handleVoteClick: () => void;
 }
@@ -53,15 +53,23 @@ export default function ShowtimeBallotSection({
     [question.options, question.options_metadata],
   );
 
+  // Functional updates so a BULK mark (the drag-select toolbar fires onToggle
+  // once per selected key in a synchronous loop) composes under React batching —
+  // reading `likedSlots`/`dislikedSlots` from the closure would let every call
+  // see the same stale array and only the last key would survive.
   const toggle = (key: string, next: "want" | "neutral" | "cant") => {
-    const liked = new Set(likedSlots ?? []);
-    const disliked = new Set(dislikedSlots ?? []);
-    liked.delete(key);
-    disliked.delete(key);
-    if (next === "want") liked.add(key);
-    if (next === "cant") disliked.add(key);
-    setLikedSlots(Array.from(liked));
-    setDislikedSlots(Array.from(disliked));
+    setLikedSlots((prev) => {
+      const s = new Set(prev ?? []);
+      if (next === "want") s.add(key);
+      else s.delete(key);
+      return Array.from(s);
+    });
+    setDislikedSlots((prev) => {
+      const s = new Set(prev ?? []);
+      if (next === "cant") s.add(key);
+      else s.delete(key);
+      return Array.from(s);
+    });
   };
 
   // Read-only summary: closed, or voted-and-not-editing. Reflect the committed

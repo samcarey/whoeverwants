@@ -1,8 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { formatDayLabel, groupSlotsByDay, parseSlotStart, periodColorClass } from "@/lib/timeUtils";
-import { haptic } from "@/lib/haptics";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
+import ModalPortal from "@/components/ModalPortal";
+import {
+  formatDayLabel,
+  groupSlotsByDay,
+  parseSlotDate,
+  parseSlotStart,
+  periodColorClass,
+} from "@/lib/timeUtils";
 import type { OptionsMetadata } from "@/lib/types";
 
 /**
@@ -29,10 +36,11 @@ export interface ShowtimeSlot {
   format?: string | null;
   seats_left?: number | null;
   distance_miles?: number | null; // from the creator's reference location
+  address?: string | null; // hand-entered theater street address (one-line, truncated)
   // Per-cinema movie showpage on drafthouse.com (theater + movie — NOT a
-  // session deep link; those 404 once a session expires). Long-pressing a
-  // bubble opens it so the user buys at the authoritative source — live price
-  // + seat map live only in Alamo's checkout flow.
+  // session deep link; those 404 once a session expires). The link icon to the
+  // left of each bubble opens it so the user buys at the authoritative source —
+  // live price + seat map live only in Alamo's checkout flow.
   sales_url?: string | null;
 }
 
@@ -63,9 +71,11 @@ interface LocationInfo {
   color: { text: string; dot: string };
 }
 
-/** Strip the "Alamo " prefix used everywhere a cinema name is displayed. */
+/** The cinema's display name, kept verbatim (e.g. "Alamo Richardson"). The
+ *  "Alamo " prefix is no longer stripped — the brand reads as part of the name,
+ *  and one-row-per-showtime leaves room for the full name + address. */
 function cinemaShortName(name: string | null | undefined): string | null {
-  return name ? name.replace(/^Alamo /, "") : null;
+  return name ? name.trim() : null;
 }
 
 /** Stable per-theater key for the color/distance map: the cinema_id (canonical,
@@ -129,6 +139,7 @@ export function slotsFromOptions(
       seats_left: typeof m.seats_left === "number" ? (m.seats_left as number) : null,
       distance_miles:
         typeof m.distance_miles === "number" ? (m.distance_miles as number) : null,
+      address: typeof m.address === "string" ? (m.address as string) : null,
       sales_url: typeof m.sales_url === "string" ? (m.sales_url as string) : null,
     };
   });
@@ -175,137 +186,143 @@ function classFor(state: "on" | "neutral" | "off"): string {
   return "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800";
 }
 
-const LONG_PRESS_MS = 450;
-const MOVE_CANCEL_PX2 = 100; // (10px)^2
+// Pointer travel (px) before a press is treated as a range-drag instead of a tap.
+const DRAG_THRESHOLD = 8;
+const withinTapThreshold = (x1: number, y1: number, x2: number, y2: number) =>
+  Math.hypot(x2 - x1, y2 - y1) < DRAG_THRESHOLD;
+
+// Bulk-mark toolbar buttons (Want/Can't/Include/… ): a shared base + a per-action
+// color class so the five near-identical button blocks collapse to one element.
+const TOOLBAR_BTN_BASE =
+  "h-10 px-4 rounded-full text-sm font-semibold transition-transform active:scale-95";
+const TOOLBAR_NEUTRAL_COLOR =
+  "bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600";
+function ToolbarButton({
+  label,
+  onClick,
+  color,
+}: {
+  label: string;
+  onClick: () => void;
+  color: string;
+}) {
+  return (
+    <button type="button" onClick={onClick} className={`${TOOLBAR_BTN_BASE} ${color}`}>
+      {label}
+    </button>
+  );
+}
 
 /**
- * One showtime bubble. Tap toggles its vote/curate state (when not `disabled`);
- * press-and-hold opens the showtime's Alamo ticketing page — works in EVERY
- * mode (curate / vote / disabled results), since buying tickets is orthogonal
- * to whether the ballot is still editable. We deliberately do NOT set the
- * `disabled` HTML attribute (a disabled <button> swallows pointer events, which
- * would kill the long-press on results bubbles); the toggle is gated in
- * `handleClick`.
+ * One full-width showtime row: the toggle card holds the time (+ a distinctive
+ * format) and the theatre name + street address (truncated to fit the line);
+ * the seats ("N left") sit OUTSIDE the card on the RIGHT as an underlined link
+ * to the showtime's Alamo ticketing page (no separate link icon). The
+ * theatre name is location-colored to match the top legend. The seats link is a
+ * plain <a> sibling of the card, so tapping it never changes the vote/curate
+ * selection; it works in every mode (curate / vote / disabled).
  *
- * The link opens in `pointerup` (the real user gesture), NOT from the arm
- * timer: `window.open(_blank)` fired from a setTimeout has no transient user
- * activation, so the popup blocker (notably iOS Safari) silently drops it. The
- * timer only ARMS the gesture (ring + haptic at the hold threshold) so the user
- * knows they can release to buy; the open happens synchronously on release,
- * which preserves activation. A >10px move cancels (it's a scroll).
+ * The toggle card carries `data-slot` / `data-slot-available` + touch-action:
+ * none + stopped touch propagation so a press-and-DRAG across rows lassoes a
+ * range (mirroring the time-preference ballot) instead of selecting text /
+ * scrolling / triggering the page swipe-back. A plain tap (no drag) cycles the
+ * one bubble. select-none + touch-callout:none stop a long-press from selecting
+ * the row text or popping iOS's copy magnifier.
  */
 function ShowtimeBubbleButton({
   slot,
   state,
   disabled,
   locColorText,
-  onTap,
+  selected,
+  onPointerDown,
+  onKeyTap,
 }: {
   slot: ShowtimeSlot;
   state: "on" | "neutral" | "off";
   disabled?: boolean;
   locColorText: string;
-  onTap: () => void;
+  selected: boolean;
+  onPointerDown: (e: React.PointerEvent) => void;
+  onKeyTap: () => void;
 }) {
-  const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const armedRef = useRef(false); // hold passed the threshold → release opens
-  const openedRef = useRef(false); // a long-press just opened → swallow the click
-  const startRef = useRef<{ x: number; y: number } | null>(null);
-  const [armed, setArmed] = useState(false);
-  const ticketable = !!slot.sales_url;
-
-  const clearArm = () => {
-    if (armTimerRef.current) {
-      clearTimeout(armTimerRef.current);
-      armTimerRef.current = null;
-    }
-    armedRef.current = false;
-    startRef.current = null;
-    setArmed(false);
-  };
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (!ticketable) return;
-    openedRef.current = false;
-    armedRef.current = false;
-    startRef.current = { x: e.clientX, y: e.clientY };
-    armTimerRef.current = setTimeout(() => {
-      armTimerRef.current = null;
-      armedRef.current = true;
-      setArmed(true);
-      haptic.light(); // "release to buy tickets"
-    }, LONG_PRESS_MS);
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    const s = startRef.current;
-    if (!s) return;
-    const dx = e.clientX - s.x;
-    const dy = e.clientY - s.y;
-    if (dx * dx + dy * dy > MOVE_CANCEL_PX2) clearArm(); // treat as a scroll
-  };
-
-  const onPointerUp = () => {
-    const url = slot.sales_url;
-    if (armedRef.current && url) {
-      openedRef.current = true;
-      haptic.medium();
-      // Synchronous, inside the pointerup gesture → preserves user activation.
-      // Sandboxed iframes (the Claude preview pane) + some webviews still block
-      // _blank popups (window.open returns null) — fall back to same-tab nav so
-      // the link always activates.
-      const w = window.open(url, "_blank", "noopener,noreferrer");
-      if (!w) window.location.href = url;
-    }
-    clearArm();
-  };
-
-  const handleClick = () => {
-    if (openedRef.current) {
-      openedRef.current = false;
-      return; // long-press just opened tickets; don't also toggle
-    }
-    if (!disabled) onTap();
-  };
-
+  const stopTouch = (e: React.TouchEvent) => e.stopPropagation();
   const { hm, period } = fmt12Parts(slot.time);
   const cinema = cinemaShortName(slot.cinema_name);
+  const address = slot.address?.trim() || null;
+  // "Digital" is the default format — only distinctive formats (70mm, The Big
+  // Show, …) earn a spot on the line.
+  const format =
+    slot.format && slot.format.toLowerCase() !== "digital" ? slot.format : null;
   const seats =
     typeof slot.seats_left === "number" && slot.seats_left >= 0
       ? `${slot.seats_left} left`
       : null;
+  const linkLabel = seats ?? "Tickets"; // fall back to a generic label when seats unknown
 
   return (
-    <button
-      type="button"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerLeave={clearArm}
-      onPointerCancel={clearArm}
-      onContextMenu={(e) => e.preventDefault()}
-      onClick={handleClick}
-      // select-none + touch-callout:none stop iOS from selecting the showtime
-      // text / popping the copy-callout magnifier during a press-and-hold.
-      style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
-      className={`max-w-full select-none rounded-[20.4px] border px-[10.8px] py-0.5 text-left transition-colors ${classFor(state)} ${armed ? "ring-2 ring-blue-400 dark:ring-blue-500" : ""} ${disabled ? "cursor-default" : "active:scale-[0.98]"}`}
-    >
-      <div className="whitespace-nowrap text-[12.8px] font-semibold leading-tight tabular-nums text-gray-900 dark:text-gray-100">
-        {hm} <span className={periodColorClass(period)}>{period}</span>
-        {slot.format && (
-          <span className="ml-1 text-[11px] font-normal text-gray-500 dark:text-gray-400">
-            {slot.format}
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        data-slot={slot.key}
+        data-slot-available="true"
+        draggable={false}
+        onPointerDown={onPointerDown}
+        onTouchStart={stopTouch}
+        onTouchMove={stopTouch}
+        onTouchEnd={stopTouch}
+        onTouchCancel={stopTouch}
+        onContextMenu={(e) => e.preventDefault()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onKeyTap();
+          }
+        }}
+        style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
+        className={`flex min-w-0 flex-1 select-none touch-none items-baseline gap-2 rounded-md border px-2 py-1 text-left text-sm leading-tight transition-colors ${classFor(state)} ${selected ? "ring-2 ring-blue-500" : ""} ${disabled ? "cursor-default" : "active:scale-[0.99]"}`}
+      >
+        <span className="shrink-0 whitespace-nowrap tabular-nums">
+          <span className="font-semibold text-gray-900 dark:text-gray-100">{hm}</span>
+          <span className={`font-semibold ${periodColorClass(period)}`}>{period}</span>
+        </span>
+        {(cinema || address) && (
+          <span className="min-w-0 flex-1 truncate text-xs">
+            {cinema && <span className={`font-medium ${locColorText}`}>{cinema}</span>}
+            {cinema && address && (
+              <span className="text-gray-400 dark:text-gray-500"> · </span>
+            )}
+            {address && (
+              <span className="text-gray-500 dark:text-gray-400">{address}</span>
+            )}
           </span>
         )}
+        {format && (
+          <span className="shrink-0 whitespace-nowrap text-xs font-normal text-gray-500 dark:text-gray-400">
+            {format}
+          </span>
+        )}
+      </button>
+      {/* Seats ("N left") sit just to the RIGHT of the card; underlined = the
+          ticket link. Content-width + flush-right so it hugs the card (minimal
+          gap) while the counts still line up at the row's right edge. */}
+      <div className="shrink-0 whitespace-nowrap text-xs leading-tight">
+        {slot.sales_url ? (
+          <a
+            href={slot.sales_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Buy tickets"
+            className="underline decoration-1 underline-offset-2 text-gray-500 transition-colors hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400"
+          >
+            {linkLabel}
+          </a>
+        ) : (
+          seats && <span className="text-gray-400 dark:text-gray-500">{seats}</span>
+        )}
       </div>
-      {(cinema || seats) && (
-        <div className="mt-px whitespace-nowrap text-[11px] leading-tight text-gray-500 dark:text-gray-400">
-          {cinema && <span className={`font-medium ${locColorText}`}>{cinema}</span>}
-          {cinema && seats && " · "}
-          {seats}
-        </div>
-      )}
-    </button>
+    </div>
   );
 }
 
@@ -322,9 +339,30 @@ export default function ShowtimeBubbles(props: Props) {
     [slots],
   );
 
-  const likedSet = props.mode === "vote" ? new Set(props.likedKeys) : null;
-  const dislikedSet = props.mode === "vote" ? new Set(props.dislikedKeys) : null;
-  const selectedSet = props.mode === "curate" ? new Set(props.selectedKeys) : null;
+  // Flat key list in render order (chronological, day-grouped) — drives the
+  // range index so a lasso selects exactly the rows the finger passed over.
+  const orderedKeys = useMemo(() => days.flatMap(([, keys]) => keys), [days]);
+  const optionIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    orderedKeys.forEach((k, i) => m.set(k, i));
+    return m;
+  }, [orderedKeys]);
+
+  // Memoize the per-state lookup sets on the source arrays (not on the parent's
+  // every-render props identity) so a selection-only re-render during a drag
+  // doesn't rebuild them.
+  const likedKeys = props.mode === "vote" ? props.likedKeys : null;
+  const dislikedKeys = props.mode === "vote" ? props.dislikedKeys : null;
+  const selectedKeys = props.mode === "curate" ? props.selectedKeys : null;
+  const likedSet = useMemo(() => (likedKeys ? new Set(likedKeys) : null), [likedKeys]);
+  const dislikedSet = useMemo(
+    () => (dislikedKeys ? new Set(dislikedKeys) : null),
+    [dislikedKeys],
+  );
+  const selectedSet = useMemo(
+    () => (selectedKeys ? new Set(selectedKeys) : null),
+    [selectedKeys],
+  );
 
   function bubbleState(key: string): "on" | "neutral" | "off" {
     if (props.mode === "curate") return selectedSet!.has(key) ? "on" : "neutral";
@@ -344,11 +382,146 @@ export default function ShowtimeBubbles(props: Props) {
     props.onToggle(key, next);
   }
 
+  // ---- drag-to-select range + bulk-mark (mirrors TimeSlotBubbles) ----
+  // Lassoed slot keys; cleared after applying a bulk mark or cancelling.
+  const [selection, setSelection] = useState<Set<string>>(() => new Set());
+  // Intersect with the live keys so a stale selection (a slot that vanished as
+  // the curated set shifted) drops out instead of lingering.
+  const effectiveSelection = useMemo(
+    () => orderedKeys.filter((k) => selection.has(k)),
+    [orderedKeys, selection],
+  );
+  const clearSelection = useCallback(() => setSelection(new Set()), []);
+
+  const gestureRef = useRef<{
+    pointerId: number;
+    anchor: string;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    current: string;
+  } | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  // Defensive teardown if the component unmounts mid-drag.
+  useEffect(() => () => cleanupRef.current?.(), []);
+  // Drop any selection if the ballot becomes read-only.
+  useEffect(() => {
+    if (disabled) clearSelection();
+  }, [disabled, clearSelection]);
+
+  // Tapping outside the bubbles + toolbar deselects; a DRAG outside leaves the
+  // selection intact so the page can still scroll with one active. Capture phase
+  // so a bubble's own stopPropagation can't hide the event.
+  useEffect(() => {
+    if (disabled || selection.size === 0) return;
+    let start: { x: number; y: number; outside: boolean } | null = null;
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      const inside = !!target?.closest?.(
+        '[data-slot-available="true"],[data-slot-toolbar="true"]',
+      );
+      start = { x: e.clientX, y: e.clientY, outside: !inside };
+    };
+    const onUp = (e: PointerEvent) => {
+      if (start?.outside && withinTapThreshold(start.x, start.y, e.clientX, e.clientY)) {
+        clearSelection();
+      }
+      start = null;
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+    };
+  }, [disabled, selection.size, clearSelection]);
+
+  const rangeBetween = useCallback(
+    (a: string, b: string): string[] => {
+      const ia = optionIndex.get(a);
+      if (ia == null) return [];
+      const anchorDate = parseSlotDate(a);
+      const ib = optionIndex.get(b);
+      if (ib == null) return [a];
+      const lo = Math.min(ia, ib);
+      const hi = Math.max(ia, ib);
+      // Constrain to the anchor's day so the slice can't spill into adjacent days.
+      return orderedKeys.slice(lo, hi + 1).filter((s) => parseSlotDate(s) === anchorDate);
+    },
+    [optionIndex, orderedKeys],
+  );
+
+  // Pointer-down on a bubble: maybe a tap, maybe a range-drag. The decision is
+  // deferred to window move/up handlers so the finger can be tracked across
+  // other rows (touch implicitly captures to the target, but pointer events
+  // still bubble to window).
+  const handleBubblePointerDown = (key: string, e: React.PointerEvent) => {
+    if (disabled || e.button !== 0) return;
+    setSelection((prev) => (prev.size === 0 ? prev : new Set()));
+    gestureRef.current = {
+      pointerId: e.pointerId,
+      anchor: key,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      current: key,
+    };
+    const onMove = (ev: PointerEvent) => {
+      const g = gestureRef.current;
+      if (!g || ev.pointerId !== g.pointerId) return;
+      if (!g.moved && withinTapThreshold(g.startX, g.startY, ev.clientX, ev.clientY)) return;
+      g.moved = true;
+      const target = document
+        .elementFromPoint(ev.clientX, ev.clientY)
+        ?.closest<HTMLElement>('[data-slot-available="true"]');
+      if (target?.dataset.slot) g.current = target.dataset.slot;
+      setSelection(new Set(rangeBetween(g.anchor, g.current)));
+    };
+    const onUp = (ev: PointerEvent) => {
+      const g = gestureRef.current;
+      if (g && ev.pointerId === g.pointerId) {
+        if (!g.moved) handleTap(g.anchor); // no drag → plain tap cycles the bubble
+        gestureRef.current = null;
+        cleanup();
+      }
+    };
+    const onCancel = (ev: PointerEvent) => {
+      const g = gestureRef.current;
+      if (g && ev.pointerId === g.pointerId) {
+        gestureRef.current = null;
+        cleanup();
+      }
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      cleanupRef.current = null;
+    };
+    cleanupRef.current?.();
+    cleanupRef.current = cleanup;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  };
+
+  const applyVote = (next: "want" | "cant" | "neutral") => {
+    if (props.mode !== "vote") return;
+    effectiveSelection.forEach((k) => props.onToggle(k, next));
+    clearSelection();
+  };
+  const applyCurate = (selected: boolean) => {
+    if (props.mode !== "curate") return;
+    effectiveSelection.forEach((k) => props.onToggle(k, selected));
+    clearSelection();
+  };
+
   const locationMap = useMemo(() => buildLocationMap(slots), [slots]);
   const anyTicketable = useMemo(() => slots.some((s) => !!s.sales_url), [slots]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       {/* Top legend: each theater's color + distance from the creator's
           reference location, ordered nearest-first. */}
       {locationMap.size > 0 && (
@@ -363,11 +536,11 @@ export default function ShowtimeBubbles(props: Props) {
         </div>
       )}
       {days.map(([date, keys]) => (
-        <div key={date} className="flex gap-3">
-          <div className="w-14 shrink-0 pt-1 text-xs font-semibold text-gray-500 dark:text-gray-400 leading-tight">
+        <div key={date} className="flex gap-2.5">
+          <div className="w-14 shrink-0 pt-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 leading-tight">
             {formatDayLabel(date)}
           </div>
-          <div className="flex flex-1 flex-wrap gap-[6.4px]">
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             {keys.map((key, idx) => {
               const slot = byKey.get(key);
               if (!slot) return null;
@@ -385,7 +558,9 @@ export default function ShowtimeBubbles(props: Props) {
                   state={bubbleState(key)}
                   disabled={disabled}
                   locColorText={locColor.text}
-                  onTap={() => handleTap(key)}
+                  selected={selection.has(key)}
+                  onPointerDown={(e) => handleBubblePointerDown(key, e)}
+                  onKeyTap={() => handleTap(key)}
                 />
               );
             })}
@@ -404,8 +579,46 @@ export default function ShowtimeBubbles(props: Props) {
       )}
       {anyTicketable && (
         <p className="pt-1 text-center text-[11px] text-gray-400 dark:text-gray-500">
-          Press &amp; hold a showtime to buy tickets
+          Tap the underlined seats to buy tickets, or drag across rows to mark
+          several at once
         </p>
+      )}
+
+      {/* Range-selection toolbar — fixed to the viewport (via portal) so it
+          never reflows the page. Appears while a drag-selection is active. */}
+      {!disabled && effectiveSelection.length > 0 && (
+        <ModalPortal>
+          <div
+            data-slot-toolbar="true"
+            className="fixed left-1/2 -translate-x-1/2 z-50 animate-slide-up"
+            style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
+          >
+            <div className="flex items-center gap-2 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 shadow-xl">
+              {props.mode === "vote" ? (
+                <>
+                  <ToolbarButton label="Want" onClick={() => applyVote("want")} color="bg-green-500 hover:bg-green-600 text-white" />
+                  <ToolbarButton label="Can't" onClick={() => applyVote("cant")} color="bg-red-500 hover:bg-red-600 text-white" />
+                  <ToolbarButton label="Neutral" onClick={() => applyVote("neutral")} color={TOOLBAR_NEUTRAL_COLOR} />
+                </>
+              ) : (
+                <>
+                  <ToolbarButton label="Include" onClick={() => applyCurate(true)} color="bg-green-500 hover:bg-green-600 text-white" />
+                  <ToolbarButton label="Exclude" onClick={() => applyCurate(false)} color={TOOLBAR_NEUTRAL_COLOR} />
+                </>
+              )}
+              <button
+                type="button"
+                onClick={clearSelection}
+                aria-label="Cancel selection"
+                className="h-10 w-10 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </ModalPortal>
       )}
     </div>
   );
