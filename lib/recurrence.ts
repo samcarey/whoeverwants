@@ -80,9 +80,10 @@ function toLocalNoon(input: string | Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
 }
 
-export function formatLocalDateISO(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+// Canonical YYYY-MM-DD formatter — re-exported from timeUtils so recurrence
+// consumers can import it alongside the rest of the recurrence API without a
+// second import, while keeping a single source of truth.
+export { formatLocalDateISO } from './timeUtils';
 
 function addDays(d: Date, n: number): Date {
   const r = new Date(d);
