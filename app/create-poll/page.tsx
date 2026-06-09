@@ -1499,20 +1499,17 @@ export function CreateQuestionContent() {
     return list;
   }, [searchQuery, orderedBubbleEntries, recentEntries, aiCategory]);
 
-  // Warm the on-device classifier model when the picker opens, so it's likely
-  // ready by the time the user pauses typing (the ~30 MB load is one-off).
-  useEffect(() => {
-    if (searchFocused) warmAiCategoryClassifier();
-  }, [searchFocused]);
-
-  // Debounced classify of the typed subject → aiCategory. Latest-wins + cleared
-  // when the picker closes. Every failure path inside classifyCategory returns
-  // null, so this can only ADD a suggestion, never break the box.
+  // Debounced on-device classify of the typed subject → aiCategory. Warms the
+  // model on focus (idempotent — the warm call short-circuits once loading) so
+  // it's likely ready by the time the user pauses. Latest-wins + cleared when
+  // the picker closes. Every failure path inside classifyCategory returns null,
+  // so this can only ADD a suggestion, never break the box.
   useEffect(() => {
     if (!searchFocused || !isAiCategoryClassifyEnabled()) {
       setAiCategory(null);
       return;
     }
+    warmAiCategoryClassifier();
     const { rest } = splitLeadingEmoji(searchQuery.trim());
     const subject = parseForContext(rest).subject.trim();
     if (!subject) {
