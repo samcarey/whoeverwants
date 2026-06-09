@@ -36,9 +36,11 @@ interface FollowUpModalProps {
   // shown when the question is a ranked_choice in the suggestion phase AND the
   // caller deems ending possible (creator or dev).
   onCutoffSuggestions?: () => void;
+  // Shown when the poll is part of a recurring series — opens the cancel sheet.
+  onCancelRecurring?: () => void;
 }
 
-export default function FollowUpModal({ isOpen, question, poll, onClose, totalVotes, onDelete, onReopen, onCloseQuestion, onCutoffAvailability, onCutoffSuggestions }: FollowUpModalProps) {
+export default function FollowUpModal({ isOpen, question, poll, onClose, totalVotes, onDelete, onReopen, onCloseQuestion, onCutoffAvailability, onCutoffSuggestions, onCancelRecurring }: FollowUpModalProps) {
   const router = useRouter();
   const pathname = usePathname();
   // Ignore the synthetic click that fires immediately after the long-press
@@ -207,6 +209,16 @@ export default function FollowUpModal({ isOpen, question, poll, onClose, totalVo
               onClick={() => { onCutoffSuggestions(); onClose(); }}
               icon={<CutoffIcon />}
               label="Cutoff Suggestions"
+            />
+          )}
+
+          {onCancelRecurring && (
+            <PollActionButton
+              variant="red"
+              className="w-full mt-3"
+              onClick={() => { onCancelRecurring(); onClose(); }}
+              icon={<span className="text-base leading-none" aria-hidden>🔁</span>}
+              label="Cancel recurring…"
             />
           )}
 

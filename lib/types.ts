@@ -1,6 +1,8 @@
 // Core type definitions for WhoeverWants
 // Extracted from lib/supabase.ts during Phase 3 cleanup
 
+import type { RecurrenceRule } from "./recurrence";
+
 export type QuestionCategory = string;
 
 export type OptionMetadataEntry = {
@@ -277,6 +279,15 @@ export interface Poll {
   // counts for (each with an optional name). Resolved server-side at create
   // (default ON for time polls). Optional for pre-feature cached polls.
   allow_plus_ones?: boolean;
+  // Recurrence (migration 141). `recurrence` is the rule on an anchor poll
+  // (the one created with "Repeat" on); null on non-recurring polls and on
+  // materialized child instances (which carry `recurrence_anchor_id`).
+  // `recurrence_skip_dates` are individually-cancelled occurrence dates;
+  // `recurrence_until` is the exclusive "cancel this + remainder" cutoff.
+  recurrence?: RecurrenceRule | null;
+  recurrence_skip_dates?: string[];
+  recurrence_until?: string | null;
+  recurrence_anchor_id?: string | null;
   questions: Question[];
   // Poll-level voter aggregates (Phase 3.2). Use these instead of
   // iterating questions — see CLAUDE.md → "Addressability paradigm".

@@ -30,6 +30,14 @@ import SliderSwitch from "@/components/SliderSwitch";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
 import CompactNumberRow from "@/components/CompactNumberRow";
+import RecurrenceField from "@/components/RecurrenceField";
+import {
+  RecurrenceRule,
+  DEFAULT_RECURRENCE,
+  recurrenceIsActive,
+  recurrenceNote,
+  formatLocalDateISO as formatRecurrenceDateISO,
+} from "@/lib/recurrence";
 import OutcomeInfoButton from "@/components/OutcomeInfoButton";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
@@ -461,6 +469,10 @@ export function CreateQuestionContent() {
   // "Plus one/more": null = follow the type-based default (ON when the poll has
   // a time question, OFF otherwise); true/false is an explicit user override.
   const [allowPlusOnes, setAllowPlusOnes] = useState<boolean | null>(null);
+  // Poll recurrence (prototype): how often this poll re-runs. The first
+  // occurrence anchors on the day the form is opened.
+  const [recurrence, setRecurrence] = useState<RecurrenceRule>(DEFAULT_RECURRENCE);
+  const [recurrenceStart] = useState(() => formatRecurrenceDateISO(new Date()));
   const [details, setDetails] = useState("");
   const detailsRef = useRef<HTMLTextAreaElement>(null);
   const [category, setCategory] = useState<string>('custom');
@@ -748,11 +760,12 @@ export function CreateQuestionContent() {
         collectSuggestions,
         winnerMethod,
         collectAvailability,
+        recurrence,
         drafts,
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, collectSuggestions, winnerMethod, collectAvailability, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, collectSuggestions, winnerMethod, collectAvailability, recurrence, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -806,6 +819,7 @@ export function CreateQuestionContent() {
           if (formState.collectSuggestions !== undefined) setCollectSuggestions(formState.collectSuggestions);
           if (formState.winnerMethod === 'favorite' || formState.winnerMethod === 'consensus') setWinnerMethod(formState.winnerMethod);
           if (formState.collectAvailability !== undefined) setCollectAvailability(formState.collectAvailability);
+          if (formState.recurrence && typeof formState.recurrence === 'object') setRecurrence(formState.recurrence);
           if (Array.isArray(formState.drafts)) setDrafts(formState.drafts);
 
           return formState;
@@ -1129,6 +1143,7 @@ export function CreateQuestionContent() {
     setDrafts([]);
     // Back to the type-based default for the next poll.
     setAllowPlusOnes(null);
+    setRecurrence(DEFAULT_RECURRENCE);
     setShowDiscardConfirm(false);
   }, [applyDraftToState, resetDayTimeWindowsCache]);
 
@@ -2108,12 +2123,21 @@ export function CreateQuestionContent() {
       // bbox to its natural collapsed-card slot. apiCreatePoll runs in
       // parallel and dispatches POLL_HYDRATED_EVENT on success so the
       // group page can swap placeholder fields for real ones in place.
+      // Prototype: a real scheduler would consume the recurrence rule to spin
+      // up the next instance. Here we fold a human-readable schedule line into
+      // the poll's Notes so the created poll visibly advertises that it repeats.
+      const baseDetails = details.trim();
+      const detailsWithRecurrence = recurrenceIsActive(recurrence)
+        ? [baseDetails, recurrenceNote(recurrence, recurrenceStart)].filter(Boolean).join('\n')
+        : baseDetails;
+      const detailsForRequest = detailsWithRecurrence || null;
+
       const placeholderPoll = synthesizePlaceholderPoll(effectiveDrafts, {
         wrapperTitle,
         responseDeadline,
         groupId: effectiveGroupId ?? null,
         creatorName: creatorName.trim() || null,
-        details: details.trim() || null,
+        details: detailsForRequest,
         prephaseDeadline: effectivePrephaseDeadlineIso,
         allowPlusOnes: effectiveAllowPlusOnes,
       });
@@ -2177,13 +2201,19 @@ export function CreateQuestionContent() {
           group_id: requestGroupId,
           title: wrapperTitle,
           context: null,
-          details: details.trim() || null,
+          details: detailsForRequest,
           // Migration 098: poll-level results-display + ranked-choice settings.
           min_responses: minResponses,
           show_preliminary_results: showPreliminaryResults,
           allow_pre_ranking: allowPreRanking,
           // null → server applies the type-based default (ON for time polls).
           allow_plus_ones: allowPlusOnes,
+          // Recurrence (migration 141): when active, the poll becomes a
+          // recurring anchor and the server materializes future instances.
+          // The rule's `start` is the day the form was opened.
+          recurrence: recurrenceIsActive(recurrence)
+            ? { ...recurrence, start: recurrenceStart }
+            : null,
           questions: questionsForRequest,
         });
       } catch (apiError: any) {
@@ -2230,7 +2260,10 @@ export function CreateQuestionContent() {
 
       // Cache the real poll, then notify group state so it swaps placeholder
       // fields for real ones in place (same DOM node — no remount mid-FLIP).
+      // The poll carries its server-stored `recurrence`, which the group's
+      // Scheduled page reads to enumerate upcoming auto-opening instances.
       cachePoll(createdPoll);
+
       updateAccessiblePollsIfFresh(existing => [
         ...existing.filter(p => p.id !== placeholderPoll.id && p.id !== createdPoll.id),
         createdPoll,
@@ -3022,6 +3055,15 @@ export function CreateQuestionContent() {
                       setCustomTime={setCustomTime}
                       isLoading={isLoading}
                       isClient={isClient}
+                    />
+
+                    {/* Recurrence (prototype): how often this poll re-runs.
+                        Poll-level, always available. */}
+                    <RecurrenceField
+                      start={recurrenceStart}
+                      value={recurrence}
+                      setValue={setRecurrence}
+                      disabled={isLoading}
                     />
 
                     {pollHasPrephase && suggestionCutoffField}

@@ -24,6 +24,7 @@ export {
   apiReopenPoll,
   apiCutoffPollSuggestions,
   apiCutoffPollAvailability,
+  apiCancelRecurrence,
   apiRecordPollView,
   apiSetPollFollowState,
 } from "./polls";

@@ -9,7 +9,9 @@ import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, build
 // POLL_QUERY_PARAM is still used by `GroupPageInner` to redirect legacy
 // `?p=<pollShort>` URLs to the new `/g/<group>/p/<pollShort>` route.
 import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
-import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, apiSetPollFollowState, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiCancelRecurrence, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, apiSetPollFollowState, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import RecurrenceCancelSheet from "@/components/RecurrenceCancelSheet";
+import { formatLocalDateISO as formatRecurrenceDateISO } from "@/lib/recurrence";
 import type { Poll } from "@/lib/types";
 import { useGroupVoting } from "@/lib/useGroupVoting";
 import type { QuestionResults } from "@/lib/types";
@@ -38,7 +40,7 @@ import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/vot
 import { computePollUnread, useUnreadReactivity } from "@/lib/unread";
 import { classifyPollTab, type PollTab } from "@/lib/followState";
 import { usePrefetch } from "@/lib/prefetch";
-import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
+import { slideToGroupInfo, slideToGroupScheduled, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
 import { isScrollRestoring, setScrollRestoring } from "@/lib/scrollRestoreState";
 import { navigateWithTransition } from "@/lib/viewTransitions";
@@ -426,6 +428,10 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // Long press state
   const [modalQuestion, setModalQuestion] = useState<Question | null>(null);
   const [showModal, setShowModal] = useState(false);
+  // The recurring poll whose cancel sheet is open (long-press → "Cancel
+  // recurring…"). Null when the sheet is closed.
+  const [recurrenceSheetPoll, setRecurrenceSheetPoll] = useState<Poll | null>(null);
+  const [recurrenceSheetBusy, setRecurrenceSheetBusy] = useState(false);
   // Confirmation state for destructive/semi-destructive actions on a question
   // (forget / reopen). Rendered by a single ConfirmationModal that varies its
   // title/message/handler based on `kind`.
@@ -1831,6 +1837,26 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
+        {/* "Scheduled ›" — inline at the very top of the scroll, right-
+            justified, just above the To Do section. Opens the group's
+            Scheduled subroute listing upcoming recurring-poll instances. */}
+        {showFollowTabs && (
+          <button
+            type="button"
+            onClick={() => {
+              rememberCurrentScroll(groupScrollKey(groupId));
+              slideToGroupScheduled({ groupId });
+            }}
+            className="w-full flex items-center justify-end gap-0.5 pr-[0.65rem] py-0 leading-none text-[15px] font-medium text-gray-500 dark:text-gray-400 active:opacity-70"
+            aria-label="View scheduled polls"
+          >
+            Scheduled
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
+
         {/* Gap 1: the three follow/ignore lists (To Do · New · Old) rendered
             inline in order, each headed by a label with a divider line under
             it. Empty lists are skipped (no header) since `sections` already
@@ -1841,7 +1867,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         {sections.map((section, sectionIdx) => (
           <React.Fragment key={section.tab}>
             <div
-              className={`${sectionIdx > 0 ? "mt-[0.9rem]" : ""} border-b-2 ${ROW_DIVIDER_CLASS} pl-[0.9rem] pr-[0.65rem] pt-3 pb-1 text-[19.2px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
+              className={`border-b-2 ${ROW_DIVIDER_CLASS} pl-[0.9rem] pr-[0.65rem] pt-0.5 pb-1 text-[19.2px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
             >
               {section.label}
             </div>
@@ -1911,6 +1937,12 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                 />
               );
             })}
+            {/* Inter-section gap lives BELOW the last poll of a section (not
+                above the next header), so headers sit tight to whatever
+                precedes them — incl. the "Scheduled" link above the first. */}
+            {sectionIdx < sections.length - 1 && (
+              <div aria-hidden className="h-[0.9rem]" />
+            )}
           </React.Fragment>
         ))}
         {/* Short empty-state when the group has polls but none are visible to
@@ -1989,6 +2021,49 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                 ? () => setPendingAction({ kind: 'cutoff-suggestions', question: modalQuestion })
                 : undefined
             }
+            onCancelRecurring={
+              (modalWrapper.recurrence || modalWrapper.recurrence_anchor_id) && isCreatorOrDev
+                ? () => setRecurrenceSheetPoll(modalWrapper)
+                : undefined
+            }
+          />
+        );
+      })()}
+
+      {/* Cancel-recurring sheet for an OPEN recurring poll (long-press →
+          "Cancel recurring…"). "This poll" closes the open instance; "stop
+          repeating" also ends the series on the anchor. */}
+      {recurrenceSheetPoll && (() => {
+        const sheetPoll = recurrenceSheetPoll;
+        const anchorId = sheetPoll.recurrence_anchor_id || sheetPoll.id;
+        const closeThisPoll = async () => {
+          await apiClosePoll(sheetPoll.id, 'cancelled');
+          patchGroupPolls(
+            (mp) => mp.id === sheetPoll.id,
+            () => ({ is_closed: true, close_reason: 'cancelled' }),
+          );
+        };
+        const finish = () => { setRecurrenceSheetPoll(null); setRecurrenceSheetBusy(false); };
+        return (
+          <RecurrenceCancelSheet
+            isOpen={true}
+            pollTitle={sheetPoll.questions[0]?.title || sheetPoll.title || 'Poll'}
+            occurrenceLabel={null}
+            busy={recurrenceSheetBusy}
+            onCancelOccurrence={async () => {
+              setRecurrenceSheetBusy(true);
+              try { await closeThisPoll(); } catch (e) { console.error('cancel occurrence failed', e); }
+              finish();
+            }}
+            onCancelSeries={async () => {
+              setRecurrenceSheetBusy(true);
+              try {
+                await closeThisPoll();
+                await apiCancelRecurrence(anchorId, 'series', formatRecurrenceDateISO(new Date()));
+              } catch (e) { console.error('cancel series failed', e); }
+              finish();
+            }}
+            onClose={finish}
           />
         );
       })()}

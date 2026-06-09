@@ -424,7 +424,22 @@ class CreatePollRequest(BaseModel):
     # None → the server picks the default (ON when the poll has a time question,
     # OFF otherwise). True/False is an explicit FE override.
     allow_plus_ones: bool | None = None
+    # Poll recurrence rule (migration 141). When set, this poll becomes a
+    # recurring "anchor": the cron tick materializes a fresh copy of its
+    # questions on each future occurrence date. Shape:
+    #   {frequency, interval, weekdays, monthlyMode, end, start}
+    # (mirrors lib/recurrence.ts / services/recurrence.py). None = runs once.
+    recurrence: dict | None = None
     questions: list[CreateQuestionRequest] = Field(..., min_length=1)
+
+
+class CancelRecurrenceRequest(BaseModel):
+    # 'occurrence' → cancel just the instance on `date` (adds it to the
+    # anchor's skip list). 'series' → cancel that occurrence AND every later
+    # one (sets the anchor's `recurrence_until` to `date`, exclusive). `date`
+    # is the targeted occurrence's open date (YYYY-MM-DD).
+    scope: str
+    date: str
 
 
 class SetFollowStateRequest(BaseModel):
@@ -502,6 +517,16 @@ class PollResponse(BaseModel):
     # for. Resolved at create time (default ON for time polls, OFF otherwise);
     # the FE renders the plus-ones name list during voting when true.
     allow_plus_ones: bool = False
+    # Recurrence (migration 141). `recurrence` is the rule on an anchor poll
+    # (None for non-recurring polls AND for materialized child instances, which
+    # carry `recurrence_anchor_id` instead). `recurrence_skip_dates` are
+    # individually-cancelled occurrence dates; `recurrence_until` is the
+    # exclusive "cancel this + remainder" cutoff. The FE Scheduled page reads
+    # these to list upcoming instances.
+    recurrence: dict | None = None
+    recurrence_skip_dates: list[str] = Field(default_factory=list)
+    recurrence_until: str | None = None
+    recurrence_anchor_id: str | None = None
     questions: list[QuestionResponse]
     # Poll-level voter aggregates (Phase 3.2).
     # Per CLAUDE.md → "Addressability paradigm", poll-scoped data lives
