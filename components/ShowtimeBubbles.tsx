@@ -196,12 +196,15 @@ function ExternalLinkIcon() {
 }
 
 /**
- * One showtime row: a non-selectable ticket link (external-link icon) on the
- * LEFT, then a single-line toggle bubble showing time · format · cinema · seats.
- * The link opens the showtime's Alamo ticketing page; it's a plain <a> sibling
- * of the toggle button, so tapping it never changes the vote/curate selection.
- * (Buying tickets is orthogonal to whether the ballot is still editable, so the
- * link works in every mode — curate / vote / disabled results.)
+ * One compact showtime chip: a non-selectable, location-colored ticket link
+ * (external-link icon) on the LEFT, then a single-line toggle bubble showing
+ * the time (+ a distinctive format + seats). The cinema is conveyed by the link
+ * icon's color + the top legend, not a per-chip name, so chips stay narrow and
+ * several pack onto each row. The link opens the showtime's Alamo ticketing
+ * page; it's a plain <a> sibling of the toggle button, so tapping it never
+ * changes the vote/curate selection. (Buying tickets is orthogonal to whether
+ * the ballot is editable, so the link works in every mode — curate / vote /
+ * disabled results.)
  */
 function ShowtimeBubbleButton({
   slot,
@@ -217,14 +220,19 @@ function ShowtimeBubbleButton({
   onTap: () => void;
 }) {
   const { hm, period } = fmt12Parts(slot.time);
-  const cinema = cinemaShortName(slot.cinema_name);
+  // Cinema identity rides the location-colored link icon + the top legend, so
+  // the (long) cinema name is dropped from each chip to keep them narrow enough
+  // to pack several per row. "Digital" is the default format — only distinctive
+  // formats (70mm, The Big Show, …) are worth the width.
+  const format =
+    slot.format && slot.format.toLowerCase() !== "digital" ? slot.format : null;
   const seats =
     typeof slot.seats_left === "number" && slot.seats_left >= 0
-      ? `${slot.seats_left} left`
+      ? `${slot.seats_left}`
       : null;
 
   return (
-    <span className="inline-flex max-w-full items-center gap-1">
+    <span className="inline-flex items-center gap-0.5">
       {slot.sales_url && (
         <a
           href={slot.sales_url}
@@ -232,7 +240,7 @@ function ShowtimeBubbleButton({
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
           aria-label="Buy tickets"
-          className="shrink-0 text-gray-400 transition-colors hover:text-blue-500 dark:text-gray-500 dark:hover:text-blue-400"
+          className={`shrink-0 transition-opacity hover:opacity-70 ${locColorText}`}
         >
           <ExternalLinkIcon />
         </a>
@@ -244,15 +252,12 @@ function ShowtimeBubbleButton({
         }}
         className={`select-none whitespace-nowrap rounded-md border px-1.5 py-px text-left text-[12px] leading-tight tabular-nums transition-colors ${classFor(state)} ${disabled ? "cursor-default" : "active:scale-[0.98]"}`}
       >
-        <span className="font-semibold text-gray-900 dark:text-gray-100">{hm}</span>{" "}
+        <span className="font-semibold text-gray-900 dark:text-gray-100">{hm}</span>
         <span className={`font-semibold ${periodColorClass(period)}`}>{period}</span>
-        {slot.format && (
+        {format && (
           <span className="ml-1 font-normal text-gray-500 dark:text-gray-400">
-            {slot.format}
+            {format}
           </span>
-        )}
-        {cinema && (
-          <span className={`ml-1 font-medium ${locColorText}`}>{cinema}</span>
         )}
         {seats && (
           <span className="ml-1 font-normal text-gray-400 dark:text-gray-500">
