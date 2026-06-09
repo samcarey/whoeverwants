@@ -14,16 +14,17 @@ import {
   type GroupBackdropShowDetail,
 } from "@/lib/eventChannels";
 import {
-  getRecurrenceForPoll,
-  RECURRENCE_STORE_CHANGED_EVENT,
-} from "@/lib/recurrenceStore";
-import {
   generateOccurrences,
   summarizeRecurrence,
+  recurrenceIsActive,
   formatLocalDateISO,
 } from "@/lib/recurrence";
+import { apiCancelRecurrence } from "@/lib/api/polls";
 import { getCategoryIcon } from "@/lib/questionListUtils";
 import { ROW_DIVIDER_CLASS } from "@/app/g/[groupShortId]/GroupCardItem";
+import RecurrenceCancelSheet from "@/components/RecurrenceCancelSheet";
+import { haptic } from "@/lib/haptics";
+import { useLongPress } from "@/lib/useLongPress";
 import type { Poll } from "@/lib/types";
 
 interface ScheduledViewProps {
@@ -50,14 +51,14 @@ export function ScheduledView({ groupId }: ScheduledViewProps) {
   const { group, loading } = useGroup(groupId);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([!!group], 80);
 
-  // Recompute when the recurrence store changes (e.g. right after creating a
-  // recurring poll and navigating here).
-  const [storeTick, setStoreTick] = useState(0);
-  useEffect(() => {
-    const onChange = () => setStoreTick((t) => t + 1);
-    window.addEventListener(RECURRENCE_STORE_CHANGED_EVENT, onChange);
-    return () => window.removeEventListener(RECURRENCE_STORE_CHANGED_EVENT, onChange);
-  }, []);
+  // Optimistic cancellations, applied on top of the server data so a cancel
+  // reflects instantly without re-fetching the whole group. Keyed by anchor id:
+  // `extraSkip` holds individually-cancelled dates; `extraUntil` is the
+  // soonest series-cutoff date. The server is updated for persistence.
+  const [extraSkip, setExtraSkip] = useState<Record<string, Set<string>>>({});
+  const [extraUntil, setExtraUntil] = useState<Record<string, string>>({});
+  const [sheetItem, setSheetItem] = useState<ScheduledItem | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const goBack = () => {
     slideToGroupRoot({ groupId, direction: "back", useHistoryBack: hasAppHistory() });
@@ -86,28 +87,72 @@ export function ScheduledView({ groupId }: ScheduledViewProps) {
     const todayISO = formatLocalDateISO(new Date());
     const out: ScheduledItem[] = [];
     for (const poll of group.polls) {
-      const stored = getRecurrenceForPoll(poll.id);
-      if (!stored) continue;
-      // Generate enough occurrences to skip ones in the past, then take the
-      // next few that open strictly after today (the first instance IS the
-      // poll that already exists).
-      const occ = generateOccurrences(stored.rule, stored.start, { limit: PER_POLL + 30 });
-      const future = occ
-        .map((d) => ({ d, iso: formatLocalDateISO(d) }))
-        .filter(({ iso }) => iso > todayISO)
-        .slice(0, PER_POLL);
-      const summary = summarizeRecurrence(stored.rule, stored.start);
-      for (const { d, iso } of future) {
+      // Only ANCHOR polls carry the rule; materialized children have
+      // recurrence === null, so they're excluded naturally.
+      const rule = poll.recurrence;
+      if (!recurrenceIsActive(rule) || !rule) continue;
+      const start = rule.start ?? formatLocalDateISO(poll.created_at ? new Date(poll.created_at) : new Date());
+      const skip = new Set([
+        ...(poll.recurrence_skip_dates ?? []),
+        ...Array.from(extraSkip[poll.id] ?? []),
+      ]);
+      const untilCandidates = [poll.recurrence_until, extraUntil[poll.id]].filter(Boolean) as string[];
+      const until = untilCandidates.length ? untilCandidates.sort()[0] : null;
+      // Generate enough to skip past occurrences, then keep the next few that
+      // open strictly after today (the first instance IS the existing poll).
+      const occ = generateOccurrences(rule, start, { limit: PER_POLL + 60 });
+      const summary = summarizeRecurrence(rule, start);
+      let kept = 0;
+      for (const d of occ) {
+        const iso = formatLocalDateISO(d);
+        if (iso <= todayISO) continue;
+        if (until && iso >= until) break;
+        if (skip.has(iso)) continue;
         out.push({ poll, dateISO: iso, date: d, summary });
+        if (++kept >= PER_POLL) break;
       }
     }
     out.sort((a, b) => a.dateISO.localeCompare(b.dateISO));
     return out.slice(0, TOTAL_CAP);
-    // storeTick forces a recompute on store writes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group, storeTick]);
+  }, [group, extraSkip, extraUntil]);
 
   const groupName = group?.title ?? null;
+
+  // Resolve an item to the anchor poll id the cancel endpoint operates on.
+  // (Scheduled rows are always anchors here, but be defensive about children.)
+  const anchorIdFor = (poll: Poll) => poll.recurrence_anchor_id || poll.id;
+
+  const handleCancelOccurrence = async () => {
+    if (!sheetItem) return;
+    const { poll, dateISO } = sheetItem;
+    const anchorId = anchorIdFor(poll);
+    setBusy(true);
+    setExtraSkip((prev) => ({ ...prev, [poll.id]: new Set([...(prev[poll.id] ?? []), dateISO]) }));
+    setSheetItem(null);
+    try {
+      await apiCancelRecurrence(anchorId, "occurrence", dateISO);
+    } catch {
+      /* optimistic; a refresh will reconcile */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCancelSeries = async () => {
+    if (!sheetItem) return;
+    const { poll, dateISO } = sheetItem;
+    const anchorId = anchorIdFor(poll);
+    setBusy(true);
+    setExtraUntil((prev) => ({ ...prev, [poll.id]: dateISO }));
+    setSheetItem(null);
+    try {
+      await apiCancelRecurrence(anchorId, "series", dateISO);
+    } catch {
+      /* optimistic */
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <>
@@ -160,12 +205,32 @@ export function ScheduledView({ groupId }: ScheduledViewProps) {
             // Sentinel top divider (mirrors the group page's first-row divider).
             <div className={`border-t ${ROW_DIVIDER_CLASS}`}>
               {items.map((item, i) => (
-                <ScheduledRow key={`${item.poll.id}-${item.dateISO}-${i}`} item={item} />
+                <ScheduledRow
+                  key={`${item.poll.id}-${item.dateISO}-${i}`}
+                  item={item}
+                  onLongPress={() => { haptic.medium(); setSheetItem(item); }}
+                />
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {sheetItem && (
+        <RecurrenceCancelSheet
+          isOpen={true}
+          pollTitle={sheetItem.poll.questions[0]?.title || sheetItem.poll.title || "Poll"}
+          occurrenceLabel={sheetItem.date.toLocaleDateString(undefined, {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          })}
+          busy={busy}
+          onCancelOccurrence={handleCancelOccurrence}
+          onCancelSeries={handleCancelSeries}
+          onClose={() => setSheetItem(null)}
+        />
+      )}
     </>
   );
 }
@@ -179,18 +244,24 @@ export function ScheduledView({ groupId }: ScheduledViewProps) {
  * ("Opens <date>"), and the votes/views/countdown corner → the recurrence
  * cadence ("Weekly on Tue").
  */
-function ScheduledRow({ item }: { item: ScheduledItem }) {
+function ScheduledRow({ item, onLongPress }: { item: ScheduledItem; onLongPress: () => void }) {
   const q = item.poll.questions[0];
   const title = q?.title || item.poll.title || "Poll";
   const icon = q ? getCategoryIcon(q) : "🗳️";
   const creatorName = item.poll.creator_name;
+  const { props: longPressProps, isPressed } = useLongPress(onLongPress);
   const openDate = item.date.toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
     day: "numeric",
   });
   return (
-    <div className={`relative overflow-x-clip border-b ${ROW_DIVIDER_CLASS}`}>
+    <div
+      {...longPressProps}
+      className={`relative overflow-x-clip border-b ${ROW_DIVIDER_CLASS} select-none cursor-pointer transition-colors ${
+        isPressed ? "bg-blue-100 dark:bg-blue-900/40" : ""
+      }`}
+    >
       <div className="relative z-10 pl-[0.9rem] pr-[0.65rem] pt-[7px] pb-1">
         {/* Title row — mirrors TitleResultRow's no-result branch. */}
         <div className="min-w-0">

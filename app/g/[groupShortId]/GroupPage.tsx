@@ -9,7 +9,9 @@ import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, build
 // POLL_QUERY_PARAM is still used by `GroupPageInner` to redirect legacy
 // `?p=<pollShort>` URLs to the new `/g/<group>/p/<pollShort>` route.
 import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
-import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, apiSetPollFollowState, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiCancelRecurrence, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, apiSetPollFollowState, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import RecurrenceCancelSheet from "@/components/RecurrenceCancelSheet";
+import { formatLocalDateISO as formatRecurrenceDateISO } from "@/lib/recurrence";
 import type { Poll } from "@/lib/types";
 import { useGroupVoting } from "@/lib/useGroupVoting";
 import type { QuestionResults } from "@/lib/types";
@@ -426,6 +428,10 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // Long press state
   const [modalQuestion, setModalQuestion] = useState<Question | null>(null);
   const [showModal, setShowModal] = useState(false);
+  // The recurring poll whose cancel sheet is open (long-press → "Cancel
+  // recurring…"). Null when the sheet is closed.
+  const [recurrenceSheetPoll, setRecurrenceSheetPoll] = useState<Poll | null>(null);
+  const [recurrenceSheetBusy, setRecurrenceSheetBusy] = useState(false);
   // Confirmation state for destructive/semi-destructive actions on a question
   // (forget / reopen). Rendered by a single ConfirmationModal that varies its
   // title/message/handler based on `kind`.
@@ -2015,6 +2021,49 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
                 ? () => setPendingAction({ kind: 'cutoff-suggestions', question: modalQuestion })
                 : undefined
             }
+            onCancelRecurring={
+              (modalWrapper.recurrence || modalWrapper.recurrence_anchor_id) && isCreatorOrDev
+                ? () => setRecurrenceSheetPoll(modalWrapper)
+                : undefined
+            }
+          />
+        );
+      })()}
+
+      {/* Cancel-recurring sheet for an OPEN recurring poll (long-press →
+          "Cancel recurring…"). "This poll" closes the open instance; "stop
+          repeating" also ends the series on the anchor. */}
+      {recurrenceSheetPoll && (() => {
+        const sheetPoll = recurrenceSheetPoll;
+        const anchorId = sheetPoll.recurrence_anchor_id || sheetPoll.id;
+        const closeThisPoll = async () => {
+          await apiClosePoll(sheetPoll.id, 'cancelled');
+          patchGroupPolls(
+            (mp) => mp.id === sheetPoll.id,
+            () => ({ is_closed: true, close_reason: 'cancelled' }),
+          );
+        };
+        const finish = () => { setRecurrenceSheetPoll(null); setRecurrenceSheetBusy(false); };
+        return (
+          <RecurrenceCancelSheet
+            isOpen={true}
+            pollTitle={sheetPoll.questions[0]?.title || sheetPoll.title || 'Poll'}
+            occurrenceLabel={null}
+            busy={recurrenceSheetBusy}
+            onCancelOccurrence={async () => {
+              setRecurrenceSheetBusy(true);
+              try { await closeThisPoll(); } catch (e) { console.error('cancel occurrence failed', e); }
+              finish();
+            }}
+            onCancelSeries={async () => {
+              setRecurrenceSheetBusy(true);
+              try {
+                await closeThisPoll();
+                await apiCancelRecurrence(anchorId, 'series', formatRecurrenceDateISO(new Date()));
+              } catch (e) { console.error('cancel series failed', e); }
+              finish();
+            }}
+            onClose={finish}
           />
         );
       })()}

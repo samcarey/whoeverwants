@@ -36,6 +36,11 @@ export interface RecurrenceRule {
   weekdays: number[];
   monthlyMode: MonthlyMode;
   end: RecurrenceEnd;
+  /** First-occurrence anchor (YYYY-MM-DD). Present on a PERSISTED rule (the
+   *  create payload + a poll's stored `recurrence`); absent on the in-progress
+   *  form-state rule, where the start is tracked separately and passed to
+   *  `generateOccurrences`. */
+  start?: string;
 }
 
 export const DEFAULT_RECURRENCE: RecurrenceRule = {

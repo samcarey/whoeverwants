@@ -59,6 +59,7 @@ from services.push import (
     fan_out_to_browsers,
 )
 from services.vote_reminder import claim_due_reminders
+from services.recurrence import materialize_due_instances
 from services.questions import (
     _finalize_suggestion_options,
     _finalize_time_slots,
@@ -157,6 +158,13 @@ def tick(request: Request):
         #    after this transaction commits, like the close/transition pushes.
         reminder_targets = claim_due_reminders(conn, now)
 
+        # 5. Materialize due recurring-poll instances. For each anchor with a
+        #    recurrence rule, create a fresh copy of its questions in the same
+        #    group for every occurrence date that has arrived (and isn't
+        #    skipped / past the series' `until`), advancing the anchor's
+        #    `recurrence_last_run`. Idempotent via that watermark.
+        materialized_ids = materialize_due_instances(conn, now.date())
+
     # Dispatch outside the claim transaction. Each fan-out opens its own
     # connection and swallows errors, so one bad poll can't abort the batch.
     for pid in closed_ids:
@@ -195,4 +203,5 @@ def tick(request: Request):
         "transitioned": len(transitioned_ids),
         "cancelled": len(cancelled_ids),
         "reminded": reminded,
+        "materialized": len(materialized_ids),
     }

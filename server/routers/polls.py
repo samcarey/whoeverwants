@@ -21,6 +21,7 @@ from services.auth import (
     resolve_actor_user_id,
 )
 from models import (
+    CancelRecurrenceRequest,
     CloseQuestionRequest,
     CreatePollRequest,
     CreateQuestionRequest,
@@ -108,6 +109,37 @@ def _iso_or_none(value) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
+
+
+def _recurrence_obj(value) -> dict | None:
+    """A JSONB recurrence column → dict (psycopg usually decodes JSONB already,
+    but tolerate a raw string)."""
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        import json as _json
+        try:
+            parsed = _json.loads(value)
+            return parsed if isinstance(parsed, dict) else None
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def _recurrence_skip_list(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        import json as _json
+        try:
+            value = _json.loads(value)
+        except (ValueError, TypeError):
+            return []
+    if isinstance(value, list):
+        return [str(d)[:10] for d in value]
+    return []
 
 
 def _validate_request(req: CreatePollRequest) -> None:
@@ -312,6 +344,15 @@ def _insert_poll(
             in (QuestionType.time, QuestionType.limited_supply, QuestionType.showtime)
             for sp in req.questions
         )
+    # Recurrence (migration 141): when a rule is provided, this poll becomes
+    # the series anchor. `recurrence_last_run` starts at the rule's start date
+    # so the anchor itself counts as the first (already-existing) occurrence;
+    # the cron tick materializes only later occurrences. `_validate_recurrence`
+    # returns None for a non-recurring / malformed rule.
+    recurrence = _validate_recurrence(req.recurrence)
+    recurrence_last_run = None
+    if recurrence is not None:
+        recurrence_last_run = recurrence.get("start") or now.date().isoformat()
     row = conn.execute(
         """
         INSERT INTO polls (
@@ -320,6 +361,7 @@ def _insert_poll(
             context, details,
             min_responses, show_preliminary_results, allow_pre_ranking,
             allow_plus_ones,
+            recurrence, recurrence_last_run,
             group_id,
             created_at, updated_at
         )
@@ -329,6 +371,7 @@ def _insert_poll(
             %(context)s, %(details)s,
             %(min_responses)s, %(show_preliminary_results)s, %(allow_pre_ranking)s,
             %(allow_plus_ones)s,
+            %(recurrence)s::jsonb, %(recurrence_last_run)s,
             %(group_id)s,
             %(now)s, %(now)s
         )
@@ -346,11 +389,62 @@ def _insert_poll(
             "show_preliminary_results": req.show_preliminary_results,
             "allow_pre_ranking": req.allow_pre_ranking,
             "allow_plus_ones": allow_plus_ones,
+            "recurrence": _json_or_none(recurrence),
+            "recurrence_last_run": recurrence_last_run,
             "group_id": group_id,
             "now": now,
         },
     ).fetchone()
     return _attach_group_fields(conn, row)
+
+
+# Allowed recurrence frequencies (mirrors lib/recurrence.ts).
+_RECURRENCE_FREQUENCIES = {"daily", "weekly", "monthly"}
+
+
+def _validate_recurrence(rule: dict | None) -> dict | None:
+    """Light validation/normalization of an incoming recurrence rule. Returns
+    None for a non-recurring (frequency 'none'/missing) or malformed rule so a
+    bad payload simply yields a one-off poll rather than a 500. Mirrors the
+    RecurrenceRule shape; the heavy occurrence math lives in services.recurrence.
+    """
+    if not isinstance(rule, dict):
+        return None
+    freq = rule.get("frequency")
+    if freq not in _RECURRENCE_FREQUENCIES:
+        return None
+    start = rule.get("start")
+    if not isinstance(start, str) or len(start) < 10:
+        return None
+    interval = rule.get("interval", 1)
+    try:
+        interval = max(1, int(interval))
+    except (ValueError, TypeError):
+        interval = 1
+    weekdays = [d for d in (rule.get("weekdays") or []) if isinstance(d, int) and 0 <= d <= 6]
+    monthly_mode = rule.get("monthlyMode")
+    if monthly_mode not in ("dayOfMonth", "nthWeekday"):
+        monthly_mode = "dayOfMonth"
+    end = rule.get("end") or {"type": "never"}
+    end_type = end.get("type") if isinstance(end, dict) else "never"
+    if end_type == "after":
+        try:
+            count = max(1, int(end.get("count", 1)))
+        except (ValueError, TypeError):
+            count = 1
+        norm_end = {"type": "after", "count": count}
+    elif end_type == "on" and isinstance(end.get("date"), str):
+        norm_end = {"type": "on", "date": end["date"][:10]}
+    else:
+        norm_end = {"type": "never"}
+    return {
+        "frequency": freq,
+        "interval": interval,
+        "weekdays": weekdays,
+        "monthlyMode": monthly_mode,
+        "end": norm_end,
+        "start": start[:10],
+    }
 
 
 def _insert_question(
@@ -583,6 +677,12 @@ def _row_to_poll(
         show_preliminary_results=row.get("show_preliminary_results", True),
         allow_pre_ranking=row.get("allow_pre_ranking", True),
         allow_plus_ones=row.get("allow_plus_ones", False),
+        recurrence=_recurrence_obj(row.get("recurrence")),
+        recurrence_skip_dates=_recurrence_skip_list(row.get("recurrence_skip_dates")),
+        recurrence_until=_iso_or_none(row.get("recurrence_until")),
+        recurrence_anchor_id=(
+            str(row["recurrence_anchor_id"]) if row.get("recurrence_anchor_id") else None
+        ),
         questions=[_row_to_question(sp) for sp in question_rows],
         voter_names=vd.voter_names,
         anonymous_count=vd.anonymous_count,
@@ -1857,6 +1957,69 @@ def cutoff_poll_availability(
         voter_data = _compute_poll_voter_data(conn, poll_id)
 
     return _row_to_poll(poll_row, question_rows, voter_data, viewer_user_id=wrapper.get("creator_user_id"))
+
+
+@router.post("/{poll_id}/recurrence/cancel", response_model=PollResponse)
+def cancel_recurrence(poll_id: str, req: CancelRecurrenceRequest, request: Request):
+    """Cancel part of a recurring series (creator only).
+
+    `scope='occurrence'` adds `date` to the anchor's skip list (just that
+    instance is dropped). `scope='series'` sets the anchor's `recurrence_until`
+    to `date` (that instance AND every later one are dropped). `poll_id` may be
+    the anchor itself OR a materialized child instance — both resolve to the
+    anchor that carries the schedule. Returns the updated ANCHOR poll so the FE
+    can refresh the Scheduled list from one response.
+    """
+    require_uuid(poll_id, "poll_id")
+    if req.scope not in ("occurrence", "series"):
+        raise HTTPException(status_code=400, detail="scope must be 'occurrence' or 'series'")
+    target_date = (req.date or "")[:10]
+    if len(target_date) != 10:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+
+    with get_db() as conn:
+        # Authorize against the given poll (child instances share the anchor's
+        # creator_user_id, so a creator can cancel from either surface).
+        poll = _authorize_poll(conn, poll_id, request)
+        anchor_id = poll.get("recurrence_anchor_id") or poll["id"]
+        anchor = conn.execute(
+            "SELECT * FROM polls WHERE id = %(id)s",
+            {"id": str(anchor_id)},
+        ).fetchone()
+        if not anchor or not anchor.get("recurrence"):
+            raise HTTPException(status_code=404, detail="Poll is not part of a recurring series")
+
+        if req.scope == "occurrence":
+            existing = _recurrence_skip_list(anchor.get("recurrence_skip_dates"))
+            if target_date not in existing:
+                existing.append(target_date)
+            conn.execute(
+                "UPDATE polls SET recurrence_skip_dates = %(skip)s::jsonb, updated_at = %(now)s "
+                "WHERE id = %(id)s",
+                {
+                    "skip": _json_or_none(sorted(existing)),
+                    "now": datetime.now(timezone.utc),
+                    "id": str(anchor_id),
+                },
+            )
+        else:  # series
+            conn.execute(
+                "UPDATE polls SET recurrence_until = %(until)s, updated_at = %(now)s "
+                "WHERE id = %(id)s",
+                {
+                    "until": target_date,
+                    "now": datetime.now(timezone.utc),
+                    "id": str(anchor_id),
+                },
+            )
+
+        row = conn.execute(
+            f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.id = %(id)s",
+            {"id": str(anchor_id)},
+        ).fetchone()
+        question_rows = _fetch_questions(conn, str(anchor_id))
+        viewer_user_id = _caller_user_id(conn, request)
+    return _row_to_poll(row, question_rows, viewer_user_id=viewer_user_id)
 
 
 @router.post("/{poll_id}/viewed", status_code=204)

@@ -74,6 +74,10 @@ export interface CreatePollParams {
   // "Plus one/more": null → server default (ON for time polls, OFF otherwise);
   // true/false is the explicit FE toggle override.
   allow_plus_ones?: boolean | null;
+  // Recurrence rule (migration 141). When set, the poll becomes a recurring
+  // anchor and the server's cron tick materializes future instances. Shape
+  // mirrors lib/recurrence.ts RecurrenceRule + a `start` (YYYY-MM-DD).
+  recurrence?: import("@/lib/recurrence").RecurrenceRule | null;
   questions: CreateQuestionParams[];
 }
 
@@ -202,6 +206,28 @@ export async function apiClosePoll(
 
 export async function apiReopenPoll(pollId: string): Promise<Poll> {
   return pollOperation(pollId, 'reopen');
+}
+
+/**
+ * Cancel part of a recurring series (creator only). `scope='occurrence'` drops
+ * just the instance on `date`; `scope='series'` drops that instance and every
+ * later one. `pollId` may be the anchor or any materialized child — the server
+ * resolves to the anchor and returns it. Invalidates every cached poll in the
+ * group so the Scheduled list refreshes.
+ */
+export async function apiCancelRecurrence(
+  pollId: string,
+  scope: 'occurrence' | 'series',
+  date: string,
+): Promise<Poll> {
+  const data = await pollFetch(`/${encodeURIComponent(pollId)}/recurrence/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ scope, date }),
+  });
+  const poll = toPoll(data);
+  invalidatePoll(poll.id);
+  cachePoll(poll);
+  return poll;
 }
 
 export async function apiCutoffPollSuggestions(pollId: string): Promise<Poll> {
