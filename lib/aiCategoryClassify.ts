@@ -41,7 +41,12 @@ function importTransformers(): Promise<unknown> {
   return import(/* webpackIgnore: true */ /* turbopackIgnore: true */ url);
 }
 
-const LOAD_PROBE_MS = 60; // how long classify() waits on a not-yet-ready model before giving up (no block)
+// classify() AWAITS the model load (the box consumes it fully async — debounced +
+// latest-wins — so this never blocks the UI). The timeout only guards a dead/very
+// slow network; the ~30 MB load is a few seconds on first use, then cached. A
+// not-ready return is NOT cached, so the single per-query call still resolves once
+// the (warm-started) model finishes loading, as long as the query hasn't changed.
+const MODEL_LOAD_TIMEOUT_MS = 60_000;
 const INFER_TIMEOUT_MS = 1200; // safety cap on a single query embed (warm inference is ~tens of ms)
 const QUERY_CACHE_MAX = 200;
 
@@ -154,9 +159,10 @@ export async function classifyCategory(subject: string): Promise<AiCategory | nu
   if (!key) return null;
   if (queryCache.has(key)) return queryCache.get(key)!;
 
-  // Don't block while the model downloads — probe briefly, return null if not
-  // ready yet (the background load continues). Once ready, this resolves fast.
-  const ready = await withTimeout(ensureReady(), LOAD_PROBE_MS);
+  // Await the model load (non-blocking for the box — see MODEL_LOAD_TIMEOUT_MS).
+  // The not-ready/timeout path returns null WITHOUT caching, so a later call can
+  // still succeed once the model is up.
+  const ready = await withTimeout(ensureReady(), MODEL_LOAD_TIMEOUT_MS);
   if (!ready) return null;
 
   const embedded = await withTimeout(
