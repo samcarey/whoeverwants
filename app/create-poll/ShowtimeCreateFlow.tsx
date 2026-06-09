@@ -126,11 +126,16 @@ export default function ShowtimeCreateFlow({
     return m;
   }, [filmSessions]);
 
-  // cinema_id -> distance from the creator's reference location, so curated
-  // slots (and the persisted metadata) carry distance into the ballot legend.
+  // cinema_id -> distance / address from the creator's reference location, so
+  // curated slots (and the persisted metadata) carry both into the ballot rows.
   const distanceByCinema = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of catalog?.cinemas ?? []) m.set(c.cinema_id, c.distance_miles);
+    return m;
+  }, [catalog]);
+  const addressByCinema = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of catalog?.cinemas ?? []) if (c.address) m.set(c.cinema_id, c.address);
     return m;
   }, [catalog]);
 
@@ -161,6 +166,7 @@ export default function ShowtimeCreateFlow({
         datetime: s.datetime,
         runtime: selectedFilm.runtime ?? undefined,
         distance_miles: distanceByCinema.get(s.cinema_id) ?? undefined,
+        address: addressByCinema.get(s.cinema_id) ?? undefined,
       } as Record<string, unknown>;
     }
     onChange({ options: keys, optionsMetadata: metadata, filmName: selectedFilm.name, filmId: selectedFilm.film_id });
@@ -371,6 +377,7 @@ export default function ShowtimeCreateFlow({
                 format: s.format,
                 seats_left: s.seats_left,
                 distance_miles: distanceByCinema.get(s.cinema_id) ?? null,
+                address: addressByCinema.get(s.cinema_id) ?? null,
                 sales_url: s.sales_url,
               }));
             return (

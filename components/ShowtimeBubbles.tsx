@@ -28,6 +28,7 @@ export interface ShowtimeSlot {
   format?: string | null;
   seats_left?: number | null;
   distance_miles?: number | null; // from the creator's reference location
+  address?: string | null; // hand-entered theater street address (one-line, truncated)
   // Per-cinema movie showpage on drafthouse.com (theater + movie — NOT a
   // session deep link; those 404 once a session expires). The link icon to the
   // left of each bubble opens it so the user buys at the authoritative source —
@@ -62,9 +63,11 @@ interface LocationInfo {
   color: { text: string; dot: string };
 }
 
-/** Strip the "Alamo " prefix used everywhere a cinema name is displayed. */
+/** The cinema's display name, kept verbatim (e.g. "Alamo Richardson"). The
+ *  "Alamo " prefix is no longer stripped — the brand reads as part of the name,
+ *  and one-row-per-showtime leaves room for the full name + address. */
 function cinemaShortName(name: string | null | undefined): string | null {
-  return name ? name.replace(/^Alamo /, "") : null;
+  return name ? name.trim() : null;
 }
 
 /** Stable per-theater key for the color/distance map: the cinema_id (canonical,
@@ -128,6 +131,7 @@ export function slotsFromOptions(
       seats_left: typeof m.seats_left === "number" ? (m.seats_left as number) : null,
       distance_miles:
         typeof m.distance_miles === "number" ? (m.distance_miles as number) : null,
+      address: typeof m.address === "string" ? (m.address as string) : null,
       sales_url: typeof m.sales_url === "string" ? (m.sales_url as string) : null,
     };
   });
@@ -196,15 +200,14 @@ function ExternalLinkIcon() {
 }
 
 /**
- * One compact showtime chip: a non-selectable, location-colored ticket link
- * (external-link icon) on the LEFT, then a single-line toggle bubble showing
- * the time (+ a distinctive format + seats). The cinema is conveyed by the link
- * icon's color + the top legend, not a per-chip name, so chips stay narrow and
- * several pack onto each row. The link opens the showtime's Alamo ticketing
- * page; it's a plain <a> sibling of the toggle button, so tapping it never
- * changes the vote/curate selection. (Buying tickets is orthogonal to whether
- * the ballot is editable, so the link works in every mode — curate / vote /
- * disabled results.)
+ * One full-width showtime row: a non-selectable ticket link (external-link
+ * icon) on the LEFT, then a single-line toggle bubble holding the time (+ a
+ * distinctive format), the theatre name + street address (truncated to fit the
+ * line), and seats on the right. The theatre name is location-colored to match
+ * the top legend. The link opens the showtime's Alamo ticketing page; it's a
+ * plain <a> sibling of the toggle button, so tapping it never changes the
+ * vote/curate selection. (Buying tickets is orthogonal to whether the ballot is
+ * editable, so the link works in every mode — curate / vote / disabled.)
  */
 function ShowtimeBubbleButton({
   slot,
@@ -220,19 +223,19 @@ function ShowtimeBubbleButton({
   onTap: () => void;
 }) {
   const { hm, period } = fmt12Parts(slot.time);
-  // Cinema identity rides the location-colored link icon + the top legend, so
-  // the (long) cinema name is dropped from each chip to keep them narrow enough
-  // to pack several per row. "Digital" is the default format — only distinctive
-  // formats (70mm, The Big Show, …) are worth the width.
+  const cinema = cinemaShortName(slot.cinema_name);
+  const address = slot.address?.trim() || null;
+  // "Digital" is the default format — only distinctive formats (70mm, The Big
+  // Show, …) earn a spot on the line.
   const format =
     slot.format && slot.format.toLowerCase() !== "digital" ? slot.format : null;
   const seats =
     typeof slot.seats_left === "number" && slot.seats_left >= 0
-      ? `${slot.seats_left}`
+      ? `${slot.seats_left} left`
       : null;
 
   return (
-    <span className="inline-flex items-center gap-0.5">
+    <div className="flex items-center gap-1.5">
       {slot.sales_url && (
         <a
           href={slot.sales_url}
@@ -240,7 +243,7 @@ function ShowtimeBubbleButton({
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
           aria-label="Buy tickets"
-          className={`shrink-0 transition-opacity hover:opacity-70 ${locColorText}`}
+          className="shrink-0 text-gray-400 transition-colors hover:text-blue-500 dark:text-gray-500 dark:hover:text-blue-400"
         >
           <ExternalLinkIcon />
         </a>
@@ -250,22 +253,35 @@ function ShowtimeBubbleButton({
         onClick={() => {
           if (!disabled) onTap();
         }}
-        className={`select-none whitespace-nowrap rounded-md border px-1.5 py-px text-left text-[12px] leading-tight tabular-nums transition-colors ${classFor(state)} ${disabled ? "cursor-default" : "active:scale-[0.98]"}`}
+        className={`flex min-w-0 flex-1 items-baseline gap-2 rounded-md border px-2 py-1 text-left text-sm leading-tight transition-colors ${classFor(state)} ${disabled ? "cursor-default" : "active:scale-[0.99]"}`}
       >
-        <span className="font-semibold text-gray-900 dark:text-gray-100">{hm}</span>
-        <span className={`font-semibold ${periodColorClass(period)}`}>{period}</span>
-        {format && (
-          <span className="ml-1 font-normal text-gray-500 dark:text-gray-400">
-            {format}
+        <span className="shrink-0 whitespace-nowrap tabular-nums">
+          <span className="font-semibold text-gray-900 dark:text-gray-100">{hm}</span>
+          <span className={`font-semibold ${periodColorClass(period)}`}>{period}</span>
+          {format && (
+            <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
+              {format}
+            </span>
+          )}
+        </span>
+        {(cinema || address) && (
+          <span className="min-w-0 flex-1 truncate text-xs">
+            {cinema && <span className={`font-medium ${locColorText}`}>{cinema}</span>}
+            {cinema && address && (
+              <span className="text-gray-400 dark:text-gray-500"> · </span>
+            )}
+            {address && (
+              <span className="text-gray-500 dark:text-gray-400">{address}</span>
+            )}
           </span>
         )}
         {seats && (
-          <span className="ml-1 font-normal text-gray-400 dark:text-gray-500">
+          <span className="shrink-0 whitespace-nowrap text-xs text-gray-400 dark:text-gray-500">
             {seats}
           </span>
         )}
       </button>
-    </span>
+    </div>
   );
 }
 
@@ -308,7 +324,7 @@ export default function ShowtimeBubbles(props: Props) {
   const anyTicketable = useMemo(() => slots.some((s) => !!s.sales_url), [slots]);
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2.5">
       {/* Top legend: each theater's color + distance from the creator's
           reference location, ordered nearest-first. */}
       {locationMap.size > 0 && (
@@ -323,11 +339,11 @@ export default function ShowtimeBubbles(props: Props) {
         </div>
       )}
       {days.map(([date, keys]) => (
-        <div key={date} className="flex gap-2">
-          <div className="w-14 shrink-0 pt-0.5 text-xs font-semibold text-gray-500 dark:text-gray-400 leading-tight">
+        <div key={date} className="flex gap-2.5">
+          <div className="w-14 shrink-0 pt-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 leading-tight">
             {formatDayLabel(date)}
           </div>
-          <div className="flex flex-1 flex-wrap gap-x-2 gap-y-1">
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             {keys.map((key, idx) => {
               const slot = byKey.get(key);
               if (!slot) return null;
