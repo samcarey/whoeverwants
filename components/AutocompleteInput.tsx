@@ -3,12 +3,53 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, apiSearchRestaurants, type SearchResult } from "@/lib/api";
-import type { QuestionCategory } from "@/lib/types";
+import type { QuestionCategory, OptionMetadataEntry } from "@/lib/types";
 import { formatDistance, StarRating } from "./OptionLabel";
 import { advanceFormFocus } from "@/lib/formNavigation";
 import KeyboardSuggestionPicker from "./KeyboardSuggestionPicker";
 import { useKeyboardPrimer } from "@/lib/useKeyboardPrimer";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
+
+/** A previously-referenced option surfaced above live search results. */
+export interface PriorCategoryOption {
+  label: string;
+  metadata?: OptionMetadataEntry;
+}
+
+const EARTH_RADIUS_MILES = 3958.8;
+
+/** Great-circle distance in miles between two lat/lon points. */
+function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return EARTH_RADIUS_MILES * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/** Convert a previously-referenced option into a SearchResult so it renders
+ *  identically to a fresh search hit. The stored `distance_miles` is dropped
+ *  (it was relative to whatever reference existed when first referenced); the
+ *  caller recomputes it from the preserved lat/lon against the CURRENT
+ *  reference. */
+function priorToSearchResult(p: PriorCategoryOption): SearchResult {
+  const m = p.metadata ?? {};
+  return {
+    label: p.label,
+    name: m.name,
+    address: m.address,
+    imageUrl: m.imageUrl,
+    infoUrl: m.infoUrl,
+    lat: m.lat,
+    lon: m.lon,
+    rating: m.rating,
+    reviewCount: m.reviewCount,
+    cuisine: m.cuisine,
+    priceLevel: m.priceLevel,
+  };
+}
 
 interface AutocompleteInputProps {
   value: string;
@@ -31,6 +72,11 @@ interface AutocompleteInputProps {
   onRichValueCleared?: () => void;
   /** When true, skip API search calls and render a plain inline input (no overlay). */
   searchDisabled?: boolean;
+  /** Options previously referenced for this category (group-recency first,
+   *  then general), shown above live search results until the typed text
+   *  filters them out. Surfaced even when `searchDisabled` (they don't need
+   *  live search). */
+  priorOptions?: PriorCategoryOption[];
 }
 
 const attributionFor = (category: string) =>
@@ -119,6 +165,7 @@ export default function AutocompleteInput({
   isRichSelection = false,
   onRichValueCleared,
   searchDisabled = false,
+  priorOptions,
 }: AutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -127,6 +174,28 @@ export default function AutocompleteInput({
 
   const lastSuccessfulQueryRef = useRef("");
   const lastResultsRef = useRef<SearchResult[]>([]);
+
+  // Prior options as SearchResults, with distance recomputed from the CURRENT
+  // reference point (the stored distance was relative to a different one;
+  // coordinates are preserved so the recompute is honest).
+  const priorResults = useMemo(
+    () =>
+      (priorOptions ?? []).map((p) => {
+        const r = priorToSearchResult(p);
+        const lat = parseFloat(p.metadata?.lat ?? '');
+        const lon = parseFloat(p.metadata?.lon ?? '');
+        if (
+          referenceLatitude !== undefined &&
+          referenceLongitude !== undefined &&
+          Number.isFinite(lat) &&
+          Number.isFinite(lon)
+        ) {
+          r.distance_miles = haversineMiles(referenceLatitude, referenceLongitude, lat, lon);
+        }
+        return r;
+      }),
+    [priorOptions, referenceLatitude, referenceLongitude],
+  );
 
   const { prime, focusOnMount, cancel: cancelPrimer } = useKeyboardPrimer({ selectOnFocus: true });
 
@@ -189,13 +258,17 @@ export default function AutocompleteInput({
   // Open the full-screen overlay. Must run synchronously in the tap so the
   // keyboard primer claims the soft keyboard before the overlay input mounts.
   const openOverlay = useCallback(() => {
-    if (disabled || searchDisabled) return;
+    if (disabled) return;
+    // When search is disabled (no reference location) the overlay is still
+    // useful IF there are prior options to show + filter; otherwise it's a
+    // plain inline input (the early return below).
+    if (searchDisabled && priorResults.length === 0) return;
     prime();
     setOverlayOpen(true);
     // Surface any results for the existing value immediately (e.g. re-opening
-    // a field that already holds a typed query).
-    if (value.trim().length >= 2) doSearch(value.trim());
-  }, [disabled, searchDisabled, prime, value, doSearch]);
+    // a field that already holds a typed query). Skipped when searchDisabled.
+    if (!searchDisabled && value.trim().length >= 2) doSearch(value.trim());
+  }, [disabled, searchDisabled, priorResults.length, prime, value, doSearch]);
 
   // Closing unmounts the overlay (and its input), which dismisses the keyboard
   // on its own — no explicit blur(), which would fire onBlur→closeOverlay again
@@ -207,9 +280,45 @@ export default function AutocompleteInput({
     if (trimmed !== value) onChange(trimmed);
   }, [cancelPrimer, value, onChange]);
 
-  // Best match first → render reversed so the most-relevant row sits nearest
-  // the input bar at the bottom of the bottom-anchored list.
-  const displaySuggestions = useMemo(() => [...suggestions].reverse(), [suggestions]);
+  // Merge prior-referenced options with live results, then reverse for the
+  // bottom-anchored list (most-prominent row sits nearest the input bar).
+  // Logical order (most-prominent first): prior options (recency order, text-
+  // filtered) then live results (best first). Reversing puts the most-recent
+  // prior option closest to the bar, live results stacked above. A live result
+  // is dropped when it matches a shown prior option by label (case-insensitive,
+  // every category) OR near-equal coordinates (~11m — same place, different
+  // label string).
+  const { displaySuggestions, naturalCount } = useMemo(() => {
+    const tokens = value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const filteredPrior = priorResults.filter((r) => {
+      const label = r.label.toLowerCase();
+      return tokens.every((t) => label.includes(t));
+    });
+    const priorLabels = new Set(filteredPrior.map((r) => r.label.toLowerCase()));
+    const priorCoords = filteredPrior
+      .map((r) => ({ lat: parseFloat(r.lat ?? ''), lon: parseFloat(r.lon ?? '') }))
+      .filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lon));
+    const COORD_EPS = 1e-4; // ~11m — same place
+    const naturalFiltered = suggestions.filter((r) => {
+      if (priorLabels.has(r.label.toLowerCase())) return false;
+      const lat = parseFloat(r.lat ?? '');
+      const lon = parseFloat(r.lon ?? '');
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        if (
+          priorCoords.some(
+            (c) => Math.abs(c.lat - lat) < COORD_EPS && Math.abs(c.lon - lon) < COORD_EPS,
+          )
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+    return {
+      displaySuggestions: [...filteredPrior, ...naturalFiltered].reverse(),
+      naturalCount: naturalFiltered.length,
+    };
+  }, [priorResults, value, suggestions]);
 
   const selectSuggestion = (result: SearchResult) => {
     onChange(result.label);
@@ -272,8 +381,10 @@ export default function AutocompleteInput({
   const showInlineIcon = isRichSelection && !!richImageUrl;
   const richUnderline = isRichSelection ? ' underline decoration-blue-500/50 underline-offset-2' : '';
 
-  // searchDisabled → plain inline input (no overlay, free typing only).
-  if (searchDisabled) {
+  // searchDisabled with NO prior options → plain inline input (no overlay,
+  // free typing only). With prior options, fall through to the trigger+overlay
+  // so the user can still see + filter them (live search stays off).
+  if (searchDisabled && priorResults.length === 0) {
     return (
       <div className="relative">
         {showInlineIcon && (
@@ -344,9 +455,13 @@ export default function AutocompleteInput({
           scrollSignal={suggestions}
           rows={
             <>
-              <div className="px-3 py-1.5 text-[10px] text-gray-400 dark:text-gray-500">
-                {attributionFor(category)}
-              </div>
+              {/* Attribution credits the live-search data source; hide it when
+                  only prior options are showing (no live results). */}
+              {naturalCount > 0 && (
+                <div className="px-3 py-1.5 text-[10px] text-gray-400 dark:text-gray-500">
+                  {attributionFor(category)}
+                </div>
+              )}
               {displaySuggestions.map((result, index) => (
                 <button
                   key={index}

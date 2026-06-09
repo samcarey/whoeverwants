@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import type { QuestionCategory, OptionsMetadata } from "@/lib/types";
 import type { SearchResult } from "@/lib/api";
-import AutocompleteInput from "@/components/AutocompleteInput";
+import AutocompleteInput, { type PriorCategoryOption } from "@/components/AutocompleteInput";
 import { isAutocompleteCategory, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { enterAdvancesFocus, consumeAdvanceAutocap } from "@/lib/formNavigation";
 
@@ -21,6 +21,9 @@ interface OptionsInputProps {
   referenceLongitude?: number;
   searchRadius?: number;
   hideReferenceLocationWarning?: boolean;
+  /** Previously-referenced options for this category, surfaced above live
+   *  search results in each autocomplete row. */
+  priorOptions?: PriorCategoryOption[];
   /** When 'compact', each option input is rendered borderless with right-
    *  aligned text — for use inside row-style settings lists. */
   variant?: 'default' | 'compact';
@@ -38,6 +41,7 @@ export default function OptionsInput({
   referenceLongitude,
   searchRadius,
   hideReferenceLocationWarning = false,
+  priorOptions,
   variant = 'default',
 }: OptionsInputProps) {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -207,6 +211,7 @@ export default function OptionsInput({
                     richImageUrl={optionMeta?.imageUrl}
                     onRichValueCleared={() => clearMetadataForOption(option)}
                     searchDisabled={needsReferenceLocation}
+                    priorOptions={priorOptions}
                   />
                 </div>
               ) : (

@@ -7,10 +7,12 @@ import {
   apiCreatePoll,
   apiFindDuplicateQuestion,
   apiGetPollCategoryHistory,
+  apiGetCategoryOptions,
+  CategoryOptionEntry,
   CreateQuestionParams,
 } from "@/lib/api";
 import type { Poll, OptionsMetadata, Question } from "@/lib/types";
-import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
+import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isAutocompleteCategory, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import AccountGateModal from "@/components/AccountGateModal";
@@ -102,6 +104,11 @@ const SINGLE_LINE_INPUT_HEIGHT = 42;
 const BUBBLE_ENTRIES: Array<{ value: string; label: string; icon?: string }> = [
   ...BUILT_IN_TYPES,
 ];
+
+// Cap on the in-memory (category, group) → prior-options cache. Bounds memory
+// on the persistent create-poll host (≈ autocomplete-categories × groups
+// visited in a session).
+const CATEGORY_OPTIONS_CACHE_MAX = 50;
 
 // Categories a deep-link / Siri `?category=` param is allowed to preselect.
 // Anything outside this set (or absent) falls back to the catch-all `custom`
@@ -1370,6 +1377,49 @@ export function CreateQuestionContent() {
     [bubbleRecency],
   );
 
+  // Previously-referenced options for the current autocomplete category,
+  // surfaced above live search results in the options field. Fetched in the
+  // background the moment the form opens for an autocomplete category (before
+  // the user even taps the field) and cached per (category, group) so
+  // re-opening doesn't re-fetch. Failures leave the list empty — the field
+  // still works via live search.
+  const [categoryOptions, setCategoryOptions] = useState<CategoryOptionEntry[]>([]);
+  const categoryOptionsCacheRef = useRef<Map<string, CategoryOptionEntry[]>>(new Map());
+  useEffect(() => {
+    if (!isModalOpen || !isAutocompleteCategory(category)) {
+      setCategoryOptions((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+    const cacheKey = `${category}|${currentGroupId ?? ''}`;
+    const cached = categoryOptionsCacheRef.current.get(cacheKey);
+    if (cached) {
+      setCategoryOptions(cached);
+      return;
+    }
+    let ignore = false;
+    apiGetCategoryOptions(category, currentGroupId)
+      .then((res) => {
+        // group recency first, then general (already group-deduped server-side).
+        const merged = [...res.group, ...res.general];
+        // Bound the cache — CreateQuestionContent is persistent across
+        // navigation, so without a cap this grows by one entry per distinct
+        // (category, group) for the whole session. Evict oldest-inserted.
+        const cache = categoryOptionsCacheRef.current;
+        if (cache.size >= CATEGORY_OPTIONS_CACHE_MAX) {
+          const oldest = cache.keys().next().value;
+          if (oldest !== undefined) cache.delete(oldest);
+        }
+        cache.set(cacheKey, merged);
+        if (!ignore) setCategoryOptions(merged);
+      })
+      .catch(() => {
+        /* keep empty — field still works via live search */
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [isModalOpen, category, currentGroupId]);
+
   // Build the focused picker's rows from the typed text. The list is
   // bottom-anchored (it stacks UP from just above the search bar). Order,
   // top→bottom:
@@ -2476,6 +2526,7 @@ export function CreateQuestionContent() {
           searchRadius={searchRadius}
           variant="compact"
           hideReferenceLocationWarning
+          priorOptions={categoryOptions}
         />
       </section>
     </div>

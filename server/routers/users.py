@@ -39,6 +39,7 @@ from database import get_db
 from middleware import browser_id_from_request as _browser_id
 from middleware import user_id_from_request as _user_id
 from services.auth import create_anonymous_user, resolve_actor_user_id
+from services.category_options import load_category_options
 from services.groups import require_uuid, resolve_group_id_from_route_id
 from services.poll_categories import load_category_recency
 from services.validation import validate_user_name
@@ -102,6 +103,29 @@ class PollCategoryHistoryResponse(BaseModel):
     general: list[str]
 
 
+class CategoryOptionEntry(BaseModel):
+    """One previously-referenced option: its display text + optional rich
+    metadata (favicon / poster / address / rating / coords) so the
+    autocomplete dropdown can render it identically to a fresh search hit and
+    re-attach the metadata when it's picked."""
+
+    label: str
+    metadata: dict | None = None
+
+
+class CategoryOptionsResponse(BaseModel):
+    """Returned by `GET /api/users/me/category-options`.
+
+    Two most-recent-first lists of options previously referenced (given as
+    ballot options OR suggested) for the requested category: `group` is scoped
+    to the `?group=` route id; `general` spans every group the caller can see,
+    excluding labels already in `group`. The FE concatenates `group` then
+    `general` and shows them above live search results."""
+
+    group: list[CategoryOptionEntry]
+    general: list[CategoryOptionEntry]
+
+
 # Mirrors `MAX_IMAGE_BYTES` in routers/groups.py. 5 MiB is well above the
 # FE-cropped ~100KB target but bounded enough that a pathological client
 # can't OOM the 1GB droplet's API container.
@@ -161,6 +185,40 @@ def get_my_poll_category_history(request: Request, group: str | None = None):
             conn, browser_id, user_id=user_id, group_id=group_id
         )
     return PollCategoryHistoryResponse(group=recency.group, general=recency.general)
+
+
+@router.get("/me/category-options", response_model=CategoryOptionsResponse)
+def get_my_category_options(request: Request, category: str, group: str | None = None):
+    """Options previously referenced for `category`, to prime the create-poll
+    autocomplete dropdown before the user types. (Parallels
+    `get_my_poll_category_history`, which orders the category bubble bar; both
+    union across the caller's linked devices.)
+
+    `group` is the `/g/<routeId>` route id of the group being created in
+    (resolved against the four group route forms; omit on the empty `/g/`
+    placeholder). Identity is implicit (browser_id + signed-in user_id from
+    middleware), so the cross-group `general` list spans every linked device's
+    memberships.
+
+    Tolerant by design: anonymous request, blank category, unresolvable group,
+    or no history all return empty lists — the field must still work."""
+    browser_id = _browser_id(request)
+    user_id = _user_id(request)
+    if not browser_id and not user_id:
+        return CategoryOptionsResponse(group=[], general=[])
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, group) if group else None
+        result = load_category_options(
+            conn,
+            browser_id=browser_id,
+            user_id=user_id,
+            category=category,
+            group_id=group_id,
+        )
+    return CategoryOptionsResponse(
+        group=[CategoryOptionEntry(label=e.label, metadata=e.metadata) for e in result.group],
+        general=[CategoryOptionEntry(label=e.label, metadata=e.metadata) for e in result.general],
+    )
 
 
 @router.post("/me/image", response_model=UserImageResponse)
