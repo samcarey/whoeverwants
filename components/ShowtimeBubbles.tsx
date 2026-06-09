@@ -1,7 +1,15 @@
 "use client";
 
-import { useMemo } from "react";
-import { formatDayLabel, groupSlotsByDay, parseSlotStart, periodColorClass } from "@/lib/timeUtils";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
+import ModalPortal from "@/components/ModalPortal";
+import {
+  formatDayLabel,
+  groupSlotsByDay,
+  parseSlotDate,
+  parseSlotStart,
+  periodColorClass,
+} from "@/lib/timeUtils";
 import type { OptionsMetadata } from "@/lib/types";
 
 /**
@@ -199,6 +207,11 @@ function ExternalLinkIcon() {
   );
 }
 
+// Pointer travel (px) before a press is treated as a range-drag instead of a tap.
+const DRAG_THRESHOLD = 8;
+const withinTapThreshold = (x1: number, y1: number, x2: number, y2: number) =>
+  Math.hypot(x2 - x1, y2 - y1) < DRAG_THRESHOLD;
+
 /**
  * One full-width showtime row: a non-selectable ticket link (external-link
  * icon) on the LEFT, then a single-line toggle bubble holding the time (+ a
@@ -208,20 +221,32 @@ function ExternalLinkIcon() {
  * plain <a> sibling of the toggle button, so tapping it never changes the
  * vote/curate selection. (Buying tickets is orthogonal to whether the ballot is
  * editable, so the link works in every mode — curate / vote / disabled.)
+ *
+ * The toggle bubble carries `data-slot` / `data-slot-available` + touch-action:
+ * none + stopped touch propagation so a press-and-DRAG across rows lassoes a
+ * range (mirroring the time-preference ballot) instead of selecting text /
+ * scrolling / triggering the page swipe-back. A plain tap (no drag) cycles the
+ * one bubble. select-none + touch-callout:none stop a long-press from selecting
+ * the row text or popping iOS's copy magnifier.
  */
 function ShowtimeBubbleButton({
   slot,
   state,
   disabled,
   locColorText,
-  onTap,
+  selected,
+  onPointerDown,
+  onKeyTap,
 }: {
   slot: ShowtimeSlot;
   state: "on" | "neutral" | "off";
   disabled?: boolean;
   locColorText: string;
-  onTap: () => void;
+  selected: boolean;
+  onPointerDown: (e: React.PointerEvent) => void;
+  onKeyTap: () => void;
 }) {
+  const stopTouch = (e: React.TouchEvent) => e.stopPropagation();
   const { hm, period } = fmt12Parts(slot.time);
   const cinema = cinemaShortName(slot.cinema_name);
   const address = slot.address?.trim() || null;
@@ -250,10 +275,23 @@ function ShowtimeBubbleButton({
       )}
       <button
         type="button"
-        onClick={() => {
-          if (!disabled) onTap();
+        data-slot={slot.key}
+        data-slot-available="true"
+        draggable={false}
+        onPointerDown={onPointerDown}
+        onTouchStart={stopTouch}
+        onTouchMove={stopTouch}
+        onTouchEnd={stopTouch}
+        onTouchCancel={stopTouch}
+        onContextMenu={(e) => e.preventDefault()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onKeyTap();
+          }
         }}
-        className={`flex min-w-0 flex-1 items-baseline gap-2 rounded-md border px-2 py-1 text-left text-sm leading-tight transition-colors ${classFor(state)} ${disabled ? "cursor-default" : "active:scale-[0.99]"}`}
+        style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
+        className={`flex min-w-0 flex-1 select-none touch-none items-baseline gap-2 rounded-md border px-2 py-1 text-left text-sm leading-tight transition-colors ${classFor(state)} ${selected ? "ring-2 ring-blue-500" : ""} ${disabled ? "cursor-default" : "active:scale-[0.99]"}`}
       >
         <span className="shrink-0 whitespace-nowrap tabular-nums">
           <span className="font-semibold text-gray-900 dark:text-gray-100">{hm}</span>
@@ -298,6 +336,15 @@ export default function ShowtimeBubbles(props: Props) {
     [slots],
   );
 
+  // Flat key list in render order (chronological, day-grouped) — drives the
+  // range index so a lasso selects exactly the rows the finger passed over.
+  const orderedKeys = useMemo(() => days.flatMap(([, keys]) => keys), [days]);
+  const optionIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    orderedKeys.forEach((k, i) => m.set(k, i));
+    return m;
+  }, [orderedKeys]);
+
   const likedSet = props.mode === "vote" ? new Set(props.likedKeys) : null;
   const dislikedSet = props.mode === "vote" ? new Set(props.dislikedKeys) : null;
   const selectedSet = props.mode === "curate" ? new Set(props.selectedKeys) : null;
@@ -320,8 +367,146 @@ export default function ShowtimeBubbles(props: Props) {
     props.onToggle(key, next);
   }
 
+  // ---- drag-to-select range + bulk-mark (mirrors TimeSlotBubbles) ----
+  // Lassoed slot keys; cleared after applying a bulk mark or cancelling.
+  const [selection, setSelection] = useState<Set<string>>(() => new Set());
+  // Intersect with the live keys so a stale selection (a slot that vanished as
+  // the curated set shifted) drops out instead of lingering.
+  const effectiveSelection = useMemo(
+    () => orderedKeys.filter((k) => selection.has(k)),
+    [orderedKeys, selection],
+  );
+  const clearSelection = useCallback(() => setSelection(new Set()), []);
+
+  const gestureRef = useRef<{
+    pointerId: number;
+    anchor: string;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    current: string;
+  } | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  // Defensive teardown if the component unmounts mid-drag.
+  useEffect(() => () => cleanupRef.current?.(), []);
+  // Drop any selection if the ballot becomes read-only.
+  useEffect(() => {
+    if (disabled) clearSelection();
+  }, [disabled, clearSelection]);
+
+  // Tapping outside the bubbles + toolbar deselects; a DRAG outside leaves the
+  // selection intact so the page can still scroll with one active. Capture phase
+  // so a bubble's own stopPropagation can't hide the event.
+  useEffect(() => {
+    if (disabled || selection.size === 0) return;
+    let start: { x: number; y: number; outside: boolean } | null = null;
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      const inside = !!target?.closest?.(
+        '[data-slot-available="true"],[data-slot-toolbar="true"]',
+      );
+      start = { x: e.clientX, y: e.clientY, outside: !inside };
+    };
+    const onUp = (e: PointerEvent) => {
+      if (start?.outside && withinTapThreshold(start.x, start.y, e.clientX, e.clientY)) {
+        clearSelection();
+      }
+      start = null;
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+    };
+  }, [disabled, selection.size, clearSelection]);
+
+  const rangeBetween = useCallback(
+    (a: string, b: string): string[] => {
+      const ia = optionIndex.get(a);
+      if (ia == null) return [];
+      const anchorDate = parseSlotDate(a);
+      const ib = optionIndex.get(b);
+      if (ib == null) return [a];
+      const lo = Math.min(ia, ib);
+      const hi = Math.max(ia, ib);
+      // Constrain to the anchor's day so the slice can't spill into adjacent days.
+      return orderedKeys.slice(lo, hi + 1).filter((s) => parseSlotDate(s) === anchorDate);
+    },
+    [optionIndex, orderedKeys],
+  );
+
+  // Pointer-down on a bubble: maybe a tap, maybe a range-drag. The decision is
+  // deferred to window move/up handlers so the finger can be tracked across
+  // other rows (touch implicitly captures to the target, but pointer events
+  // still bubble to window).
+  const handleBubblePointerDown = (key: string, e: React.PointerEvent) => {
+    if (disabled || e.button !== 0) return;
+    setSelection((prev) => (prev.size === 0 ? prev : new Set()));
+    gestureRef.current = {
+      pointerId: e.pointerId,
+      anchor: key,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      current: key,
+    };
+    const onMove = (ev: PointerEvent) => {
+      const g = gestureRef.current;
+      if (!g || ev.pointerId !== g.pointerId) return;
+      if (!g.moved && withinTapThreshold(g.startX, g.startY, ev.clientX, ev.clientY)) return;
+      g.moved = true;
+      const target = document
+        .elementFromPoint(ev.clientX, ev.clientY)
+        ?.closest<HTMLElement>('[data-slot-available="true"]');
+      if (target?.dataset.slot) g.current = target.dataset.slot;
+      setSelection(new Set(rangeBetween(g.anchor, g.current)));
+    };
+    const onUp = (ev: PointerEvent) => {
+      const g = gestureRef.current;
+      if (g && ev.pointerId === g.pointerId) {
+        if (!g.moved) handleTap(g.anchor); // no drag → plain tap cycles the bubble
+        gestureRef.current = null;
+        cleanup();
+      }
+    };
+    const onCancel = (ev: PointerEvent) => {
+      const g = gestureRef.current;
+      if (g && ev.pointerId === g.pointerId) {
+        gestureRef.current = null;
+        cleanup();
+      }
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      cleanupRef.current = null;
+    };
+    cleanupRef.current?.();
+    cleanupRef.current = cleanup;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  };
+
+  const applyVote = (next: "want" | "cant" | "neutral") => {
+    if (props.mode !== "vote") return;
+    effectiveSelection.forEach((k) => props.onToggle(k, next));
+    clearSelection();
+  };
+  const applyCurate = (selected: boolean) => {
+    if (props.mode !== "curate") return;
+    effectiveSelection.forEach((k) => props.onToggle(k, selected));
+    clearSelection();
+  };
+
   const locationMap = useMemo(() => buildLocationMap(slots), [slots]);
   const anyTicketable = useMemo(() => slots.some((s) => !!s.sales_url), [slots]);
+
+  const toolbarBtn =
+    "h-10 px-4 rounded-full text-sm font-semibold transition-transform active:scale-95";
 
   return (
     <div className="space-y-2.5">
@@ -361,7 +546,9 @@ export default function ShowtimeBubbles(props: Props) {
                   state={bubbleState(key)}
                   disabled={disabled}
                   locColorText={locColor.text}
-                  onTap={() => handleTap(key)}
+                  selected={selection.has(key)}
+                  onPointerDown={(e) => handleBubblePointerDown(key, e)}
+                  onKeyTap={() => handleTap(key)}
                 />
               );
             })}
@@ -380,8 +567,76 @@ export default function ShowtimeBubbles(props: Props) {
       )}
       {anyTicketable && (
         <p className="pt-1 text-center text-[11px] text-gray-400 dark:text-gray-500">
-          Tap the link icon beside a showtime to buy tickets
+          Tap the link icon beside a showtime to buy tickets, or drag across rows
+          to mark several at once
         </p>
+      )}
+
+      {/* Range-selection toolbar — fixed to the viewport (via portal) so it
+          never reflows the page. Appears while a drag-selection is active. */}
+      {!disabled && effectiveSelection.length > 0 && (
+        <ModalPortal>
+          <div
+            data-slot-toolbar="true"
+            className="fixed left-1/2 -translate-x-1/2 z-50 animate-slide-up"
+            style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
+          >
+            <div className="flex items-center gap-2 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 shadow-xl">
+              {props.mode === "vote" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => applyVote("want")}
+                    className={`${toolbarBtn} bg-green-500 hover:bg-green-600 text-white`}
+                  >
+                    Want
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyVote("cant")}
+                    className={`${toolbarBtn} bg-red-500 hover:bg-red-600 text-white`}
+                  >
+                    Can&apos;t
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyVote("neutral")}
+                    className={`${toolbarBtn} bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600`}
+                  >
+                    Neutral
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => applyCurate(true)}
+                    className={`${toolbarBtn} bg-green-500 hover:bg-green-600 text-white`}
+                  >
+                    Include
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyCurate(false)}
+                    className={`${toolbarBtn} bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600`}
+                  >
+                    Exclude
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={clearSelection}
+                aria-label="Cancel selection"
+                className="h-10 w-10 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </ModalPortal>
       )}
     </div>
   );
