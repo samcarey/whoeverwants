@@ -152,11 +152,12 @@ export function ScheduledView({ groupId }: ScheduledViewProps) {
           )}
 
           {items.length > 0 && (
-            <ul className={`border-t ${ROW_DIVIDER_CLASS}`}>
+            // Sentinel top divider (mirrors the group page's first-row divider).
+            <div className={`border-t ${ROW_DIVIDER_CLASS}`}>
               {items.map((item, i) => (
                 <ScheduledRow key={`${item.poll.id}-${item.dateISO}-${i}`} item={item} />
               ))}
-            </ul>
+            </div>
           )}
         </div>
       </div>
@@ -164,42 +165,55 @@ export function ScheduledView({ groupId }: ScheduledViewProps) {
   );
 }
 
+/**
+ * A scheduled-instance row that mirrors the group page's poll card
+ * (GroupCardItem) — same edge-to-edge rectangle, padding, divider, title row
+ * (category icon + title at text-lg, hang-indented), and bottom metadata row
+ * (author · detail on the left, status on the right). The only key details
+ * swapped for a not-yet-open instance: the creation date → the OPEN date
+ * ("Opens <date>"), and the votes/views/countdown corner → the recurrence
+ * cadence ("Weekly on Tue").
+ */
 function ScheduledRow({ item }: { item: ScheduledItem }) {
   const q = item.poll.questions[0];
   const title = q?.title || item.poll.title || "Poll";
   const icon = q ? getCategoryIcon(q) : "🗳️";
+  const creatorName = item.poll.creator_name;
+  const openDate = item.date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
   return (
-    <li className={`flex items-center gap-3 border-b ${ROW_DIVIDER_CLASS} py-3 pl-[0.9rem] pr-[0.65rem]`}>
-      <span className="text-xl shrink-0" aria-hidden>{icon}</span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-base font-medium text-gray-900 dark:text-gray-100">{title}</div>
-        <div className="truncate text-xs text-gray-500 dark:text-gray-400">{item.summary}</div>
-      </div>
-      <div className="shrink-0 text-right">
-        <div className="text-sm font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
-          {item.date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+    <div className={`relative overflow-x-clip border-b ${ROW_DIVIDER_CLASS}`}>
+      <div className="relative z-10 pl-[0.9rem] pr-[0.65rem] pt-[7px] pb-1">
+        {/* Title row — mirrors TitleResultRow's no-result branch. */}
+        <div className="min-w-0">
+          <h3 className="flex items-start font-medium text-lg leading-tight text-gray-900 dark:text-white">
+            <span className="mr-1.5 shrink-0" aria-hidden="true">{icon}</span>
+            <span className="min-w-0">{title}</span>
+          </h3>
         </div>
-        <div className="text-[11px] text-gray-400 dark:text-gray-500">
-          Opens {relativeDay(item.date)}
-        </div>
-      </div>
-    </li>
-  );
-}
 
-/** "in 3 days" / "in 2 weeks" / "in 5 months" — coarse relative phrasing for
- *  when a scheduled instance opens. */
-function relativeDay(date: Date): string {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(date);
-  target.setHours(0, 0, 0, 0);
-  const days = Math.round((target.getTime() - today.getTime()) / 86400000);
-  if (days <= 0) return "today";
-  if (days === 1) return "tomorrow";
-  if (days < 14) return `in ${days} days`;
-  if (days < 60) return `in ${Math.round(days / 7)} weeks`;
-  return `in ${Math.round(days / 30)} months`;
+        {/* Bottom row — mirrors the group card: author · date (left), status
+            (right). Creation date → open date; vote/view counts → cadence. */}
+        <div className="mt-2 flex items-center justify-between gap-2 min-w-0">
+          <div className="flex items-baseline min-w-0 text-xs text-gray-400 dark:text-gray-500">
+            {creatorName && (
+              <>
+                <span className="truncate shrink min-w-0">{creatorName}</span>
+                <span className="shrink-0">&nbsp;&middot;&nbsp;</span>
+              </>
+            )}
+            <span className="shrink-0 whitespace-nowrap">Opens {openDate}</span>
+          </div>
+          <div className="shrink-0 flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+            {item.summary}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ScheduledPage() {
