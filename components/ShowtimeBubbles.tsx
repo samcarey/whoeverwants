@@ -239,7 +239,7 @@ function ShowtimeBubbleButton({
   const linkLabel = seats ?? "Tickets"; // fall back to a generic label when seats unknown
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1">
       <button
         type="button"
         data-slot={slot.key}
@@ -281,9 +281,10 @@ function ShowtimeBubbleButton({
           </span>
         )}
       </button>
-      {/* Seats ("N left") sit to the RIGHT of the card; underlined = the ticket
-          link. Fixed-width + right-aligned so the counts line up down the column. */}
-      <div className="w-12 shrink-0 whitespace-nowrap text-right text-xs leading-tight">
+      {/* Seats ("N left") sit just to the RIGHT of the card; underlined = the
+          ticket link. Content-width + flush-right so it hugs the card (minimal
+          gap) while the counts still line up at the row's right edge. */}
+      <div className="shrink-0 whitespace-nowrap text-xs leading-tight">
         {slot.sales_url ? (
           <a
             href={slot.sales_url}
