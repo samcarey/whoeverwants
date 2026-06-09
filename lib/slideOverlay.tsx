@@ -58,6 +58,7 @@ import { GroupInfoView } from "@/app/g/[groupShortId]/info/page";
 import { GroupEditTitleView } from "@/app/g/[groupShortId]/edit-title/page";
 import { GroupInviteMembersView } from "@/app/g/[groupShortId]/invite-members/page";
 import { PollDetailView } from "@/app/g/[groupShortId]/p/[pollShortId]/PollDetailPage";
+import { ScheduledView } from "@/app/g/[groupShortId]/scheduled/page";
 import { PollInfoView } from "@/app/g/[groupShortId]/p/[pollShortId]/info/page";
 import { EmptyPlaceholder } from "@/app/g/page";
 
@@ -232,6 +233,26 @@ export function slideToGroupInviteMembers({
   });
 }
 
+/** Slide-in the group's /scheduled subroute (upcoming recurring-poll
+ *  instances). Reached from the "Scheduled ›" link at the top of the group
+ *  scroll. */
+export function slideToGroupScheduled({
+  groupId,
+  direction = 'forward',
+  useHistoryBack = false,
+}: {
+  groupId: string;
+  direction?: 'forward' | 'back';
+  useHistoryBack?: boolean;
+}): void {
+  dispatchSlide({
+    href: `/g/${groupId}/scheduled`,
+    direction,
+    useHistoryBack,
+    kind: { type: 'groupScheduled', groupId },
+  });
+}
+
 /** Slide-in the "New Group" empty placeholder. Caller (the home new group button)
  *  fires `apiCreateGroup` in parallel, then `router.push('/g/<short_id>')`
  *  on success or `router.push('/g')` on failure. The host skips its
@@ -303,6 +324,8 @@ function renderForKind(
       return <GroupEditTitleView key={kind.groupId} groupId={kind.groupId} />;
     case 'groupInviteMembers':
       return <GroupInviteMembersView key={kind.groupId} groupId={kind.groupId} />;
+    case 'groupScheduled':
+      return <ScheduledView key={kind.groupId} groupId={kind.groupId} />;
     case 'pollDetail':
       return (
         <PollDetailView

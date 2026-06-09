@@ -38,7 +38,7 @@ import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/vot
 import { computePollUnread, useUnreadReactivity } from "@/lib/unread";
 import { classifyPollTab, type PollTab } from "@/lib/followState";
 import { usePrefetch } from "@/lib/prefetch";
-import { slideToGroupInfo, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
+import { slideToGroupInfo, slideToGroupScheduled, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
 import { isScrollRestoring, setScrollRestoring } from "@/lib/scrollRestoreState";
 import { navigateWithTransition } from "@/lib/viewTransitions";
@@ -1831,6 +1831,26 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
+        {/* "Scheduled ›" — inline at the very top of the scroll, right-
+            justified, just above the To Do section. Opens the group's
+            Scheduled subroute listing upcoming recurring-poll instances. */}
+        {showFollowTabs && (
+          <button
+            type="button"
+            onClick={() => {
+              rememberCurrentScroll(groupScrollKey(groupId));
+              slideToGroupScheduled({ groupId });
+            }}
+            className="w-full flex items-center justify-end gap-0.5 pr-[0.65rem] pt-2 pb-1.5 text-[15px] font-medium text-blue-600 dark:text-blue-400 active:opacity-70"
+            aria-label="View scheduled polls"
+          >
+            Scheduled
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
+
         {/* Gap 1: the three follow/ignore lists (To Do · New · Old) rendered
             inline in order, each headed by a label with a divider line under
             it. Empty lists are skipped (no header) since `sections` already

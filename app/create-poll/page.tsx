@@ -38,6 +38,7 @@ import {
   recurrenceNote,
   formatLocalDateISO as formatRecurrenceDateISO,
 } from "@/lib/recurrence";
+import { saveRecurrenceForPoll } from "@/lib/recurrenceStore";
 import OutcomeInfoButton from "@/components/OutcomeInfoButton";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
@@ -2255,6 +2256,14 @@ export function CreateQuestionContent() {
       // Cache the real poll, then notify group state so it swaps placeholder
       // fields for real ones in place (same DOM node — no remount mid-FLIP).
       cachePoll(createdPoll);
+
+      // Prototype: persist the recurrence rule keyed by the real poll id so the
+      // group's Scheduled page can enumerate this poll's upcoming auto-opening
+      // instances. (A real backend would store this + run a scheduler.)
+      if (recurrenceIsActive(recurrence)) {
+        saveRecurrenceForPoll(createdPoll.id, recurrence, recurrenceStart);
+      }
+
       updateAccessiblePollsIfFresh(existing => [
         ...existing.filter(p => p.id !== placeholderPoll.id && p.id !== createdPoll.id),
         createdPoll,

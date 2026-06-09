@@ -66,6 +66,10 @@ export type SlideOverlayKind =
   // contacts, select accounts with round checkboxes, Update to add them.
   // Reached from the "Add people" button atop the /info members list.
   | { type: 'groupInviteMembers'; groupId: string }
+  // Scheduled page at /g/<group>/scheduled. Lists the upcoming auto-opening
+  // instances of the group's recurring polls (prototype). Reached from the
+  // "Scheduled ›" link at the top of the group scroll.
+  | { type: 'groupScheduled'; groupId: string }
   // Per-poll detail page. Tapping a card on /g/<group> slides to
   // /g/<group>/p/<pollShortId>, which renders the poll's full content
   // (results, ballots, voter list) without card chrome.
