@@ -192,10 +192,10 @@ const withinTapThreshold = (x1: number, y1: number, x2: number, y2: number) =>
   Math.hypot(x2 - x1, y2 - y1) < DRAG_THRESHOLD;
 
 /**
- * One full-width showtime row: the seats ("N left") sit OUTSIDE the selectable
- * card on the LEFT as an underlined link to the showtime's Alamo ticketing page
- * (no separate link icon). Then the toggle card holds the time (+ a distinctive
- * format) and the theatre name + street address (truncated to fit the line). The
+ * One full-width showtime row: the toggle card holds the time (+ a distinctive
+ * format) and the theatre name + street address (truncated to fit the line);
+ * the seats ("N left") sit OUTSIDE the card on the RIGHT as an underlined link
+ * to the showtime's Alamo ticketing page (no separate link icon). The
  * theatre name is location-colored to match the top legend. The seats link is a
  * plain <a> sibling of the card, so tapping it never changes the vote/curate
  * selection; it works in every mode (curate / vote / disabled).
@@ -240,24 +240,6 @@ function ShowtimeBubbleButton({
 
   return (
     <div className="flex items-center gap-2">
-      {/* Seats ("N left") sit to the LEFT of the card; underlined = the ticket
-          link. Fixed-width + right-aligned so the cards line up. */}
-      <div className="w-12 shrink-0 whitespace-nowrap text-right text-xs leading-tight">
-        {slot.sales_url ? (
-          <a
-            href={slot.sales_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            aria-label="Buy tickets"
-            className="underline decoration-1 underline-offset-2 text-gray-500 transition-colors hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400"
-          >
-            {linkLabel}
-          </a>
-        ) : (
-          seats && <span className="text-gray-400 dark:text-gray-500">{seats}</span>
-        )}
-      </div>
       <button
         type="button"
         data-slot={slot.key}
@@ -299,6 +281,24 @@ function ShowtimeBubbleButton({
           </span>
         )}
       </button>
+      {/* Seats ("N left") sit to the RIGHT of the card; underlined = the ticket
+          link. Fixed-width + right-aligned so the counts line up down the column. */}
+      <div className="w-12 shrink-0 whitespace-nowrap text-right text-xs leading-tight">
+        {slot.sales_url ? (
+          <a
+            href={slot.sales_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Buy tickets"
+            className="underline decoration-1 underline-offset-2 text-gray-500 transition-colors hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400"
+          >
+            {linkLabel}
+          </a>
+        ) : (
+          seats && <span className="text-gray-400 dark:text-gray-500">{seats}</span>
+        )}
+      </div>
     </div>
   );
 }
