@@ -1841,7 +1841,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
               rememberCurrentScroll(groupScrollKey(groupId));
               slideToGroupScheduled({ groupId });
             }}
-            className="w-full flex items-center justify-end gap-0.5 pr-[0.65rem] pt-2 pb-1.5 text-[15px] font-medium text-blue-600 dark:text-blue-400 active:opacity-70"
+            className="w-full flex items-center justify-end gap-0.5 pr-[0.65rem] py-0.5 text-[15px] font-medium text-gray-500 dark:text-gray-400 active:opacity-70"
             aria-label="View scheduled polls"
           >
             Scheduled
