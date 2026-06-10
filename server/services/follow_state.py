@@ -23,26 +23,62 @@ def effective_follow_states(
     conn, poll_ids: list[str], *, browser_ids: list[str]
 ) -> dict[str, str]:
     """poll_id (str) → effective state ('new' | 'old') for the caller's browser
-    set. Polls with no row across any of the caller's browsers are ABSENT from
-    the returned dict — the caller treats absent as 'new' (default-follow).
+    set. Polls with no signal at all (no follow row across the caller's browsers
+    AND not auto-aged) are ABSENT — the caller treats absent as 'new'.
 
-    "Effective" across linked browsers is recency-based: the row with the
-    greatest `updated_at` wins, so the last ✕/+ the user tapped on any device
-    is authoritative."""
-    if not poll_ids or not browser_ids:
+    Two inputs combine, recency wins:
+      * the caller's most-recently-updated follow row across their linked
+        browsers (the last ✕/+ they tapped on any device), and
+      * the poll's `auto_aged_at` (migration 142): the instant a finished poll
+        was auto-filed into Old for EVERYONE (decided time fully past, event
+        cancelled, no winner, or simply closed for non-time polls).
+
+    An auto-aged poll reads 'old' for every viewer UNLESS that viewer has a
+    follow row newer than `auto_aged_at` — i.e. they tapped + to re-add it
+    AFTER it aged. So aging overrides any pre-aging ✕/+ once (for everyone), and
+    a post-aging + brings it back to Relevant and sticks. Notification / badge
+    suppression is deliberately NOT affected — that keys on EXPLICIT ✕ via
+    `old_poll_ids_for_browsers`, so a poll-closed push still reaches everyone who
+    didn't explicitly ignore the poll."""
+    if not poll_ids:
         return {}
-    rows = conn.execute(
+    rows = (
+        conn.execute(
+            """
+            SELECT DISTINCT ON (poll_id)
+                   poll_id::text AS pid, state, updated_at
+              FROM poll_follow_state
+             WHERE poll_id = ANY(%(pids)s::uuid[])
+               AND browser_id = ANY(%(bids)s::uuid[])
+             ORDER BY poll_id, updated_at DESC
+            """,
+            {"pids": poll_ids, "bids": browser_ids},
+        ).fetchall()
+        if browser_ids
+        else []
+    )
+    follow = {r["pid"]: (r["state"], r["updated_at"]) for r in rows}
+
+    aged_rows = conn.execute(
         """
-        SELECT DISTINCT ON (poll_id)
-               poll_id::text AS pid, state
-          FROM poll_follow_state
-         WHERE poll_id = ANY(%(pids)s::uuid[])
-           AND browser_id = ANY(%(bids)s::uuid[])
-         ORDER BY poll_id, updated_at DESC
+        SELECT id::text AS pid, auto_aged_at
+          FROM polls
+         WHERE id = ANY(%(pids)s::uuid[])
+           AND auto_aged_at IS NOT NULL
         """,
-        {"pids": poll_ids, "bids": browser_ids},
+        {"pids": poll_ids},
     ).fetchall()
-    return {r["pid"]: r["state"] for r in rows}
+    aged = {r["pid"]: r["auto_aged_at"] for r in aged_rows}
+
+    result: dict[str, str] = {}
+    for pid in {*follow, *aged}:
+        fr = follow.get(pid)
+        aged_at = aged.get(pid)
+        if fr is not None and (aged_at is None or fr[1] >= aged_at):
+            result[pid] = fr[0]
+        elif aged_at is not None:
+            result[pid] = "old"
+    return result
 
 
 def old_poll_ids_for_browsers(conn, browser_ids: list[str]) -> set[str]:

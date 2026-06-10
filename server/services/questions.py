@@ -8,7 +8,7 @@ imports.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
@@ -325,6 +325,84 @@ def _maybe_close_cancelled_event_poll(
         {"pid": poll_id, "now": now, "notified": notified},
     ).fetchone()
     return closed is not None
+
+
+# A wall-clock time-slot ("YYYY-MM-DD HH:MM") carries no timezone, so the same
+# key is a different real instant in every timezone. The latest real instant a
+# slot can refer to is in UTC-12 (UTC = wall-clock + 12h). We treat a slot as
+# "fully past for everyone" only once UTC `now` is past that latest instant, so
+# we never age an event that's still upcoming for some attendee. 14h = 12h +
+# margin for DST / clock skew.
+_SLOT_PAST_GRACE = timedelta(hours=14)
+
+
+def _time_outcome_settled(conn, question: dict, now: datetime) -> bool:
+    """For a closed time/showtime question: is its outcome unable to be in the
+    future? True when the event was cancelled, there's no winner (tie /
+    all-abstain / no votes), or the winning slot's end is fully past in every
+    timezone. False only when there's a concrete winning slot still upcoming —
+    that's what keeps the poll OUT of the auto-aged Old list until it passes."""
+    from algorithms.time_question import parse_slot_key
+
+    votes = conn.execute(
+        "SELECT * FROM votes WHERE question_id = %(qid)s",
+        {"qid": question["id"]},
+    ).fetchall()
+    results = _compute_results(
+        question, [dict(v) for v in votes], include_tentative_time_options=False
+    )
+    if getattr(results, "time_event_cancelled", False):
+        return True
+    winner = results.winner
+    if not winner:
+        return True  # no winner / tie / all-abstain → nothing future-able
+    try:
+        date_str, _start_min, end_min = parse_slot_key(winner)
+        end_dt = datetime.strptime(date_str, "%Y-%m-%d").replace(
+            tzinfo=timezone.utc
+        ) + timedelta(minutes=end_min)
+    except Exception:
+        return True  # unparseable winner → don't pin the poll out of Old forever
+    return end_dt + _SLOT_PAST_GRACE <= now
+
+
+def maybe_auto_age_poll(conn, poll_id: str, now: datetime) -> bool:
+    """Set `polls.auto_aged_at` if a closed poll is now "done" (no outcome can
+    still arrive in the future), so the follow-state read files it under Old for
+    every viewer. Returns whether it just aged the poll.
+
+    Done =
+      * the poll is closed, AND
+      * every time/showtime question's outcome is settled-and-not-future
+        (`_time_outcome_settled`). Non-time/showtime questions never block —
+        a closed yes/no / ranked-choice / limited-supply poll has no
+        future-able outcome, so closing it is enough.
+
+    Idempotent: no-op when the poll isn't closed or already has `auto_aged_at`.
+    The aging is a one-time, for-everyone move — a viewer can still + it back to
+    Relevant afterward (their follow row's `updated_at` then beats this stamp)."""
+    row = conn.execute(
+        "SELECT is_closed, auto_aged_at FROM polls WHERE id = %(pid)s::uuid",
+        {"pid": poll_id},
+    ).fetchone()
+    if not row or not row["is_closed"] or row["auto_aged_at"] is not None:
+        return False
+    q_rows = conn.execute(
+        "SELECT * FROM questions WHERE poll_id = %(pid)s::uuid",
+        {"pid": poll_id},
+    ).fetchall()
+    for q in q_rows:
+        if q["question_type"] in ("time", "showtime") and not _time_outcome_settled(
+            conn, dict(q), now
+        ):
+            return False
+    aged = conn.execute(
+        """UPDATE polls SET auto_aged_at = %(now)s
+           WHERE id = %(pid)s::uuid AND auto_aged_at IS NULL
+           RETURNING id""",
+        {"pid": poll_id, "now": now},
+    ).fetchone()
+    return aged is not None
 
 
 def _row_to_question(row: dict) -> QuestionResponse:

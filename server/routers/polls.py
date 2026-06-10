@@ -66,6 +66,7 @@ from services.questions import (
     _finalize_time_slots,
     _json_or_none,
     _maybe_close_cancelled_event_poll,
+    maybe_auto_age_poll,
     _row_to_question,
     _row_to_vote,
     _submit_vote_to_question,
@@ -1428,6 +1429,13 @@ def close_poll(
             for sp in question_rows:
                 _finalize_suggestion_options(conn, str(sp["id"]), now)
 
+        # Auto-file the just-closed poll under Old for everyone if it's now
+        # "done" (non-time/showtime, or a time/showtime poll whose decided slot
+        # is already past / cancelled / has no winner). A closed time poll whose
+        # winning slot is still upcoming is left for the cron tick to age once
+        # the slot passes. Re-addable via the green + (migration 142).
+        maybe_auto_age_poll(conn, poll_id, now)
+
         # Skip the push if this poll was already close-notified (a redundant
         # close on an already-closed poll mustn't re-notify).
         _schedule_close_notification(
@@ -1460,6 +1468,7 @@ def reopen_poll(poll_id: str, req: ReopenQuestionRequest, request: Request):
             SET is_closed = false,
                 close_reason = NULL,
                 close_notified = false,
+                auto_aged_at = NULL,
                 updated_at = %(now)s
             WHERE id = %(poll_id)s
             """,
@@ -1935,6 +1944,8 @@ def cutoff_poll_availability(
         # If the whole poll is now a cancelled time event ("event's off"),
         # auto-close it + fire the close push instead of "voting is open".
         if _maybe_close_cancelled_event_poll(conn, poll_id, now, notified=True):
+            # "Event's off" → file under Old for everyone (no future outcome).
+            maybe_auto_age_poll(conn, poll_id, now)
             _schedule_close_notification(
                 conn,
                 poll_id,
