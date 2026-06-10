@@ -101,7 +101,8 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   // consequential — promote is permanent, boot removes a member + revokes
   // their invite link).
   const [pendingAction, setPendingAction] = useState<
-    | { kind: "promote" | "boot"; userId: string; name: string }
+    | { kind: "promote"; userId: string; name: string }
+    | { kind: "boot"; userId: string; name: string }
     | { kind: "boot-anon"; handle: string; name: string }
     | null
   >(null);
