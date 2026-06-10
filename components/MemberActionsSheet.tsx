@@ -21,7 +21,7 @@ interface MemberActionsSheetProps {
 
 /**
  * Bottom action sheet opened from the 3-dots button on a group member row
- * (/info). Offers "Make admin" and (private groups only) "Remove from group".
+ * (/info). Offers "Make admin" (named members) and "Remove from group".
  * Selecting one closes the sheet; the parent then opens the shared
  * ConfirmationModal for the consequential confirm step. Haptic feedback fires
  * on every tap (iOS Core Haptics via @capacitor/haptics).

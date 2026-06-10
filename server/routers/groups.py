@@ -1646,6 +1646,11 @@ class GroupMembersResponse(BaseModel):
     members: list[GroupMemberResponse]
     anonymous_count: int
     anonymous_members: list[AnonymousMemberResponse] = []
+    # The viewer's OWN anonymous handle (when they're a nameless member). The FE
+    # drops this exact entry from the displayed anonymous list — they surface as
+    # the "You" row instead, and you can't boot yourself. Null is a harmless
+    # no-op when the viewer is a named member.
+    viewer_anonymous_handle: str | None = None
     viewer_is_admin: bool = False
 
 
@@ -1687,6 +1692,7 @@ def get_group_members(route_id: str, request: Request):
             )
             for m in anon
         ]
+        viewer_key = user_id or browser_id
         return GroupMembersResponse(
             members=[
                 GroupMemberResponse(
@@ -1698,6 +1704,9 @@ def get_group_members(route_id: str, request: Request):
             ],
             anonymous_count=len(anon),
             anonymous_members=anon_handles,
+            viewer_anonymous_handle=(
+                anonymous_member_handle(group_id, viewer_key) if viewer_key else None
+            ),
             viewer_is_admin=viewer_is_admin,
         )
 

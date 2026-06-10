@@ -15,6 +15,7 @@ rest.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -480,8 +481,6 @@ def anonymous_member_handle(group_id: str, person_key: str) -> str:
     attacker who could forge a handle would already know the browser_id, and
     boot is admin-only + scoped to existing members of the admin's group.
     """
-    import hashlib
-
     return hashlib.sha256(f"{group_id}:{person_key}".encode()).hexdigest()
 
 

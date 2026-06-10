@@ -42,6 +42,37 @@ import {
   type SessionUser,
 } from "@/lib/session";
 
+/** The right-aligned 3-dots button on a member row that opens the action
+ *  sheet. `stopPropagation` on pointerdown so it doesn't fire the row's
+ *  long-press → profile modal. */
+function MemberActionsButton({
+  label,
+  onOpen,
+}: {
+  label: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        haptic.medium();
+        onOpen();
+      }}
+      className="shrink-0 w-9 h-9 -mr-2 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 active:opacity-70"
+      aria-label={label}
+    >
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+        <circle cx="12" cy="5" r="2" />
+        <circle cx="12" cy="12" r="2" />
+        <circle cx="12" cy="19" r="2" />
+      </svg>
+    </button>
+  );
+}
+
 /** Prop-driven inner view. Exposed so the slide overlay can render this
  *  view directly without going through useParams() (the overlay mounts
  *  the component while the URL is still the source page). */
@@ -165,7 +196,11 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   let anonymousMembers: AnonymousMember[] = [];
   if (roster) {
     totalCount = roster.members.length + roster.anonymous_count;
-    anonymousMembers = [...roster.anonymous_members];
+    // Drop the viewer's OWN anonymous entry (the server tells us its handle) —
+    // they surface as the "You" row below, and you can't boot yourself.
+    anonymousMembers = roster.anonymous_members.filter(
+      (m) => m.handle !== roster.viewer_anonymous_handle,
+    );
     const rows: MemberRow[] = roster.members.map((m, i) => ({
       name: m.name,
       key: `member-${m.user_id ?? m.name}-${i}`,
@@ -175,9 +210,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     }));
     // The viewer is always a member (visiting auto-joins / the creator is a
     // member). If they aren't a resolved named row, they're one of the
-    // anonymous members — surface them as themselves and drop one anonymous
-    // slot (the viewer's; anonymous members are indistinguishable, and you
-    // can't boot yourself anyway) so the headcount stays right.
+    // anonymous members — surface them as the "You" row.
     if (!rows.some((r) => isCurrentUserName(r.name))) {
       // Viewer's own row isn't long-pressable (userId null); isAdmin still
       // drives the Admin badge on your own row.
@@ -187,7 +220,6 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         userId: null,
         isAdmin: viewerIsAdmin,
       });
-      if (anonymousMembers.length > 0) anonymousMembers.shift();
     }
     rows.sort((a, b) => a.name.localeCompare(b.name));
     membersList = rows;
@@ -328,30 +360,10 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
                   isAdmin={isAdmin}
                   actions={
                     canManage ? (
-                      <button
-                        type="button"
-                        // stopPropagation so a tap on the 3-dots doesn't also
-                        // fire the row's long-press → profile modal.
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          haptic.medium();
-                          setActionsFor({ userId: userId!, name });
-                        }}
-                        className="shrink-0 w-9 h-9 -mr-2 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 active:opacity-70"
-                        aria-label={`Actions for ${name}`}
-                      >
-                        <svg
-                          className="w-5 h-5"
-                          fill="currentColor"
-                          viewBox="0 0 24 24"
-                          aria-hidden
-                        >
-                          <circle cx="12" cy="5" r="2" />
-                          <circle cx="12" cy="12" r="2" />
-                          <circle cx="12" cy="19" r="2" />
-                        </svg>
-                      </button>
+                      <MemberActionsButton
+                        label={`Actions for ${name}`}
+                        onOpen={() => setActionsFor({ userId: userId!, name })}
+                      />
                     ) : null
                   }
                 />
@@ -402,20 +414,12 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
                       />
                       <span className="min-w-0 break-words flex-1">Anonymous</span>
                       {viewerIsAdmin && (
-                        <button
-                          type="button"
-                          onClick={() =>
+                        <MemberActionsButton
+                          label="Actions for anonymous member"
+                          onOpen={() =>
                             setActionsFor({ handle: m.handle, name: "Anonymous" })
                           }
-                          className="shrink-0 w-9 h-9 -mr-2 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 active:opacity-70"
-                          aria-label="Actions for anonymous member"
-                        >
-                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
-                            <circle cx="12" cy="5" r="2" />
-                            <circle cx="12" cy="12" r="2" />
-                            <circle cx="12" cy="19" r="2" />
-                          </svg>
-                        </button>
+                        />
                       )}
                     </li>
                   ))}
