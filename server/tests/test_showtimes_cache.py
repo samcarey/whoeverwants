@@ -15,16 +15,12 @@ from services.showtimes import cache as cache_mod
 from services.showtimes.alamo import Showtime, _DirectoryCinema
 
 
-# TODO (pre-existing, unrelated to the group-admin work): this fixture is stale —
-# the `Showtime` dataclass gained required `brand` + `group_key` fields (brand-prefix
-# normalization) but this helper wasn't updated, so all 3 tests in this file fail
-# with `TypeError: Showtime.__init__() missing 2 required positional arguments`.
-# Fix: add `brand=None, group_key="dune"` (or the canonical group key) to the call.
 def _showtime(cinema_id: str = "0701") -> Showtime:
     return Showtime(
         session_id="s1", film_id="f1", film_name="Dune", film_year="2026",
         film_rating="PG-13", runtime=90, poster_url=None, cinema_id=cinema_id,
         cinema_name="Alamo Richardson", cinema_slug="richardson", fmt="Digital",
+        brand=None, group_key="dune",
         seats_left=None, sales_url=None, datetime_local="2026-06-08T19:00:00",
         date="2026-06-08", start_time="19:00", key="2026-06-08 19:00-20:30",
     )
@@ -46,8 +42,8 @@ class _FakeSource:
         return [
             _DirectoryCinema(
                 cinema_id="0701", slug="richardson", name="Alamo Richardson",
-                market_id="0700", market_slug="dfw", lat=32.9483, lng=-96.7299,
-                timezone="America/Chicago",
+                address=None, market_id="0700", market_slug="dfw",
+                lat=32.9483, lng=-96.7299, timezone="America/Chicago",
             )
         ]
 
