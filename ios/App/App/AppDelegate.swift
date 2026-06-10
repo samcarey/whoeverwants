@@ -677,22 +677,106 @@ enum PollTextParser {
         "might", "must",
     ]
 
-    // Mirrors CATEGORY_TRIGGERS — ORDER IS PRECEDENCE (first match wins, so
-    // "where should we eat" → restaurant). Exact whole-word membership.
-    private static let categoryTriggers: [(String, Set<String>)] = [
-        ("restaurant", ["eat", "eats", "food", "restaurant", "restaurants", "dine", "takeout"]),
-        ("movie", ["movie", "movies", "film", "films", "watch"]),
-        ("video_game", ["game", "games", "videogame"]),
-        ("time", ["when", "time", "schedule", "meet"]),
-        ("location", ["where", "place", "places", "spot", "venue", "location"]),
-        ("showtime", ["showtime", "showtimes"]),
+    // Faithful Swift mirror of lib/categoryMatch.ts — the canonical ranked,
+    // any-token, stop-word-filtered category matcher (the single source of truth
+    // shared with the web search box). When changing a category trigger / label /
+    // stop word, update lib/categoryMatch.ts, this block, AND the shared fixture
+    // poll-parse-cases.json together. See docs/poll-textbox-followups.md (TODO 1).
+    private struct CategoryDef {
+        let value: String
+        let label: String           // label words weigh 2 vs alias keywords' 1
+        let keywords: [String]
+    }
+
+    // ORDER IS PRECEDENCE (breaks score ties — so "where should we eat" →
+    // restaurant: both "eat" and "where" score 1, restaurant comes first). Only
+    // the six SEARCHABLE categories; yes_no / limited_supply are never matched.
+    private static let categoryDefs: [CategoryDef] = [
+        CategoryDef(value: "restaurant", label: "Restaurant", keywords: ["eat", "eats", "dinner", "lunch", "food", "dining", "dine", "brunch", "breakfast", "supper", "cuisine", "meal", "takeout", "coffee", "drinks", "cafe", "bite"]),
+        CategoryDef(value: "movie", label: "Movie", keywords: ["film", "films", "cinema", "watch", "flick", "flicks", "screening", "showtime"]),
+        CategoryDef(value: "video_game", label: "Video Game", keywords: ["game", "games", "gaming", "videogame", "play", "console", "esports"]),
+        CategoryDef(value: "time", label: "Time", keywords: ["when", "schedule", "date", "day", "availability", "available", "calendar", "meeting", "meet", "free"]),
+        CategoryDef(value: "location", label: "Place", keywords: ["where", "spot", "spots", "venue", "destination", "address", "bar", "park", "trip", "location", "places"]),
+        CategoryDef(value: "showtime", label: "Showtime", keywords: ["movie", "film", "cinema", "theater", "theatre", "showtimes", "screening", "tickets", "showings"]),
     ]
+
+    // Generic filler words removed before matching. MUST NOT contain any category
+    // trigger word (the JS test pins this disjointness). Question words that ARE
+    // triggers ("where", "when") are deliberately absent.
+    private static let stopWords: Set<String> = [
+        "should", "shall", "would", "could", "can", "will", "do", "does", "did",
+        "is", "are", "am", "was", "were", "be", "been", "being", "have", "has", "had",
+        "the", "a", "an", "of", "to", "we", "i", "you", "he", "she", "they", "it",
+        "us", "our", "your", "my", "me", "this", "that", "these", "those",
+        "what", "whats", "which", "who", "whose", "how",
+        "lets", "let", "get", "got", "want", "wanna", "gonna", "going", "go",
+        "pick", "choose", "choosing", "need", "please", "maybe", "some", "any",
+        "every", "all", "on", "at", "in", "with", "and", "or", "for", "from",
+        "next", "best", "favorite", "favourite", "vote", "poll", "decide", "decision",
+        "grab", "hang", "out", "up", "still", "ok", "okay", "about", "around",
+        "idea", "ideas", "plan", "plans", "option", "options", "vs", "versus",
+        "make", "find", "doing", "having", "everyone", "people",
+    ]
+
+    // Split on anything not a-z0-9 (mirrors JS [^a-z0-9]+, not Unicode-aware).
+    private static let alnumSeparators =
+        CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789").inverted
 
     private static let wordSeparators =
         CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ","))
 
     private static func words(_ s: String) -> [String] {
         s.lowercased().components(separatedBy: wordSeparators).filter { !$0.isEmpty }
+    }
+
+    // Lowercase alphanumeric tokens, dropping stop words + sub-2-char fragments.
+    // Mirrors tokenizeSubject.
+    private static func tokenizeSubject(_ text: String) -> [String] {
+        text.lowercased()
+            .components(separatedBy: alnumSeparators)
+            .filter { $0.count >= 2 && !stopWords.contains($0) }
+    }
+
+    // Strip a trailing "s" on words longer than 3 (lightweight plural folding).
+    private static func singular(_ w: String) -> String {
+        (w.count > 3 && w.hasSuffix("s")) ? String(w.dropLast()) : w
+    }
+
+    // A token matches a trigger when either is a (singularized) prefix of the
+    // other. Mirrors tokenHits.
+    private static func tokenHits(_ token: String, _ trigger: String) -> Bool {
+        let t = singular(token)
+        let k = singular(trigger)
+        return t == k || k.hasPrefix(t) || t.hasPrefix(k)
+    }
+
+    // Label words per category, split once (mirrors LABEL_WORDS).
+    private static let labelWords: [String: [String]] = {
+        var m: [String: [String]] = [:]
+        for d in categoryDefs {
+            m[d.value] = d.label.lowercased()
+                .components(separatedBy: alnumSeparators)
+                .filter { !$0.isEmpty }
+        }
+        return m
+    }()
+
+    // Full score (label hits 2, alias keyword 1) + label-only score, one pass.
+    // Mirrors scoreBoth. Each token counts at most once.
+    private static func scoreBoth(_ def: CategoryDef, _ tokens: [String]) -> (score: Int, labelScore: Int) {
+        if tokens.isEmpty { return (0, 0) }
+        let lw = labelWords[def.value] ?? []
+        var score = 0
+        var labelScore = 0
+        for tok in tokens {
+            if lw.contains(where: { tokenHits(tok, $0) }) {
+                score += 2
+                labelScore += 2
+            } else if def.keywords.contains(where: { tokenHits(tok, $0) }) {
+                score += 1
+            }
+        }
+        return (score, labelScore)
     }
 
     // Split on a standalone "for" (whole word, case-insensitive); subject before,
@@ -738,13 +822,26 @@ enum PollTextParser {
         return out
     }
 
-    // The built-in category implied by a subject, or nil. Mirrors detectCategory.
+    // The single best built-in category implied by a subject, or nil. Mirrors
+    // detectCategory → topCategory (the top of the shared ranking). Sort:
+    // score desc → label-hit desc (exact label beats alias) → precedence (the
+    // categoryDefs order). Recency tie-break is web-box-only (not mirrored here).
     static func detectCategory(_ subject: String) -> String? {
-        let ws = words(subject)
-        for (category, triggers) in categoryTriggers {
-            if ws.contains(where: { triggers.contains($0) }) { return category }
+        let tokens = tokenizeSubject(subject)
+        if tokens.isEmpty { return nil }
+        var ranked: [(value: String, score: Int, labelScore: Int, order: Int)] = []
+        for (i, def) in categoryDefs.enumerated() {
+            let s = scoreBoth(def, tokens)
+            if s.score > 0 {
+                ranked.append((def.value, s.score, s.labelScore, i))
+            }
         }
-        return nil
+        ranked.sort {
+            if $0.score != $1.score { return $0.score > $1.score }
+            if $0.labelScore != $1.labelScore { return $0.labelScore > $1.labelScore }
+            return $0.order < $1.order
+        }
+        return ranked.first?.value
     }
 
     // Decide the single best poll. Mirrors decidePoll precedence:

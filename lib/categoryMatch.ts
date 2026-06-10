@@ -15,9 +15,14 @@
 // if ANY remaining token hits a category trigger — and RANKS the hits so the
 // strongest is the default. Precedence (CATEGORY_ORDER) breaks score ties.
 //
-// FOLLOW-UPS (docs/poll-textbox-followups.md): (1) mirror this matcher into the
-// Siri Swift parser (AppDelegate.swift: PollTextParser) for JS<->Swift parity;
-// (2) augment the heuristic with a small on-device / Mac-mini AI classifier,
+// PARITY: this matcher is mirrored in the Siri Swift parser
+// (AppDelegate.swift: PollTextParser — `categoryDefs` / `stopWords` /
+// `tokenizeSubject` / `scoreBoth` / `detectCategory`). When you change a trigger
+// word, label, or stop word here, update that Swift block AND the shared fixture
+// tests/fixtures/poll-parse-cases.json together. See docs/poll-textbox-followups.md.
+//
+// FOLLOW-UP (docs/poll-textbox-followups.md, TODO 2 — SHIPPED on web): the
+// on-device AI classifier (lib/aiCategoryClassify.ts) augments this heuristic,
 // benchmarked with the reusable corpus in tests/fixtures/poll-suggestion-corpus.ts.
 
 export type CategoryDef = {

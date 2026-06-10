@@ -20,6 +20,10 @@
     { "text": "what game should we play", "expect": { "kind": "category", "category": "video_game", "context": "" } },
     { "text": "when should we meet", "expect": { "kind": "category", "category": "time", "context": "" } },
     { "text": "where should we go", "expect": { "kind": "category", "category": "location", "context": "" } },
+    { "text": "dinner tonight", "expect": { "kind": "category", "category": "restaurant", "context": "" } },
+    { "text": "movie night", "expect": { "kind": "category", "category": "movie", "context": "" } },
+    { "text": "pick a game", "expect": { "kind": "category", "category": "video_game", "context": "" } },
+    { "text": "where to eat", "expect": { "kind": "category", "category": "restaurant", "context": "" } },
 
     { "text": "best superhero", "expect": { "kind": "yes_no", "context": "" } },
     { "text": "team name for the league", "expect": { "kind": "yes_no", "context": "the league" } }
