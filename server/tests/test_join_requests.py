@@ -391,6 +391,39 @@ def test_list_join_requests_creator_sees_pending_in_order(
     assert body[1]["requester_email"] == e2
 
 
+def test_list_join_requests_surfaces_name_and_image_fields(
+    client, creator_browser
+):
+    """The creator-facing list carries the requester's display_name and
+    the profile-photo cache-buster (NULL when no photo) so the FE can
+    render an avatar + name + email + request date."""
+    ctoken, _, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+
+    rb = str(uuid.uuid4())
+    rtoken, _, remail = _sign_in(client, rb, name="Alice Requester")
+    client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": None},
+        headers=_bearer_headers(rb, rtoken),
+    )
+
+    resp = client.get(
+        f"/api/groups/{group['id']}/join-requests",
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body) == 1
+    row = body[0]
+    assert row["requester_name"] == "Alice Requester"
+    assert row["requester_email"] == remail
+    # No uploaded photo → null cache-buster (FE falls back to initials).
+    assert row["requester_image_updated_at"] is None
+    # requested_at is an ISO timestamp the FE renders as "Requested Xm ago".
+    assert row["requested_at"]
+
+
 def test_list_join_requests_anon_created_group_returns_403(
     client, creator_browser
 ):

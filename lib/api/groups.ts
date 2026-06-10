@@ -452,6 +452,12 @@ export interface GroupJoinRequest {
   group_id: string;
   requester_user_id: string;
   requester_email: string | null;
+  /** Account display_name. Populated for real requests (a name is
+   *  required to request access); may be null for legacy/edge rows. */
+  requester_name: string | null;
+  /** Profile-photo cache-buster; null when the requester has no
+   *  uploaded photo. Feed into `buildUserImageUrl(requester_user_id, ...)`. */
+  requester_image_updated_at: string | null;
   message: string | null;
   requested_at: string;
 }
