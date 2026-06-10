@@ -19,6 +19,13 @@ TEST_DB_URL = os.environ.get(
 )
 os.environ["DATABASE_URL"] = TEST_DB_URL
 
+# 1x1 transparent PNG — shared by every test that uploads an avatar
+# (user-profile + group image endpoints).
+PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
 from fastapi.testclient import TestClient
 
 from main import app

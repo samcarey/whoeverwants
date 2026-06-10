@@ -29,14 +29,7 @@ from services.auth import (
     hash_token,
     normalize_email,
 )
-from tests.conftest import TEST_DB_URL
-
-
-# 1x1 transparent PNG.
-_PNG_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
-    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-)
+from tests.conftest import PNG_B64, TEST_DB_URL
 
 
 @pytest.fixture
@@ -322,7 +315,7 @@ class TestSummaryAndImagePrivacy:
         up = client.post(
             f"/api/groups/{g['short_id']}/image",
             headers=_bearer_headers(creator_browser, token),
-            json={"image_base64": _PNG_B64, "mime_type": "image/png"},
+            json={"image_base64": PNG_B64, "mime_type": "image/png"},
         )
         assert up.status_code == 200, up.text
 
