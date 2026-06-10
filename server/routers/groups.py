@@ -795,35 +795,41 @@ def delete_group_image(route_id: str):
 
 
 @router.get("/by-route-id/{route_id}/image")
-def get_group_image(route_id: str, request: Request):
+def get_group_image(route_id: str):
     """Serve the group's avatar image bytes with the stored MIME type.
 
-    Public groups: no membership / browser-id check. The URL itself is
-    unguessable (it requires the group's short_id or uuid), and the
-    image surface is intentionally narrow (just the avatar). Cached
-    via the FE's `?v=<image_updated_at>` query string; the response
-    sets `Cache-Control: public, max-age=31536000, immutable` so a
-    given URL never re-fetches once received (the next change bumps
-    the timestamp, producing a new URL).
+    PUBLIC for both public AND private groups — no membership /
+    browser-id check. This is required, not just convenient: the avatar
+    is rendered with a plain `<img src>` tag, which CANNOT send the
+    `X-Browser-Id` / `Authorization: Bearer` headers the membership
+    check reads. Gating private groups by membership here therefore
+    404'd the avatar for EVERY member (the creator included) — the
+    `<img>` request always arrives header-less, so the middleware mints
+    a fresh non-member browser_id and the gate fails. The result was the
+    reported "set a group image, it shows as a question mark" bug.
 
-    Private groups (Phase E): gated by membership. Strangers get 404 —
-    the avatar is private-group content too. Members get the bytes with
-    the same immutable cache headers.
+    The unguessable route_id (short_id / uuid) in the path IS the
+    capability token — exactly the model the user-profile image uses
+    (`by-user-id/<user_id>/image`, public because `<img>` can't carry
+    the bearer). It's consistent with the rest of this group's trust
+    model: `POST /image` and `POST /title` are already unauthenticated
+    ("anyone with the URL can change it"), and `/preview` already
+    exposes the group's title to anyone with the URL. The avatar is the
+    narrowest, least-sensitive surface of all — keeping it loadable for
+    members necessarily means keeping it loadable for anyone with the
+    link, since `<img>` can't distinguish the two.
+
+    Cached via the FE's `?v=<image_updated_at>` query string; the
+    response sets `Cache-Control: public, max-age=31536000, immutable`
+    so a given URL never re-fetches once received (the next change bumps
+    the timestamp, producing a new URL).
 
     Returns 404 when no image is set (FE renders fallback initials).
     """
-    browser_id = _browser_id(request)
-    user_id = _user_id(request)
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        meta = get_group_metadata(conn, group_id)
-        if meta and meta["privacy"] == "private":
-            if not is_caller_member_of_group(
-                conn, group_id, browser_id=browser_id, user_id=user_id
-            ):
-                raise HTTPException(status_code=404, detail="Group not found")
         row = conn.execute(
             "SELECT image_data, image_mime_type FROM groups WHERE id = %(id)s",
             {"id": group_id},

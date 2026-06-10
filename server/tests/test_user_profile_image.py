@@ -12,13 +12,7 @@ import uuid
 import psycopg
 
 from services.auth import generate_token, hash_token, normalize_email
-from tests.conftest import TEST_DB_URL
-
-# 1x1 transparent PNG.
-PNG_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
-    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-)
+from tests.conftest import PNG_B64, TEST_DB_URL
 
 
 def _bid_headers(bid):
