@@ -9,11 +9,12 @@ interface MemberActionsSheetProps {
   isOpen: boolean;
   /** The member's display name (shown in the sheet header). */
   name: string;
-  /** Whether to offer the destructive "Remove from group" action. Boot is
-   *  private-groups-only (booting a public-group member is futile — they
-   *  auto-rejoin on visit), so the /info page passes `false` for public groups. */
+  /** Whether to offer "Make admin". False for anonymous members (admins are
+   *  account-keyed, so a nameless member can't be promoted). */
+  canMakeAdmin?: boolean;
+  /** Whether to offer the destructive "Remove from group" action. */
   canRemove: boolean;
-  onMakeAdmin: () => void;
+  onMakeAdmin?: () => void;
   onRemove: () => void;
   onClose: () => void;
 }
@@ -28,6 +29,7 @@ interface MemberActionsSheetProps {
 export default function MemberActionsSheet({
   isOpen,
   name,
+  canMakeAdmin = true,
   canRemove,
   onMakeAdmin,
   onRemove,
@@ -61,15 +63,17 @@ export default function MemberActionsSheet({
             {name}
           </p>
 
-          <button
-            onClick={() => {
-              haptic.medium();
-              onMakeAdmin();
-            }}
-            className="w-full mb-2 py-3 rounded-2xl bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium border border-blue-200 dark:border-blue-800 active:scale-[0.99]"
-          >
-            Make admin
-          </button>
+          {canMakeAdmin && (
+            <button
+              onClick={() => {
+                haptic.medium();
+                onMakeAdmin?.();
+              }}
+              className="w-full mb-2 py-3 rounded-2xl bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium border border-blue-200 dark:border-blue-800 active:scale-[0.99]"
+            >
+              Make admin
+            </button>
+          )}
           {canRemove && (
             <button
               onClick={() => {

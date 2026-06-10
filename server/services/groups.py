@@ -388,12 +388,12 @@ def is_caller_member_of_group(
     return row is not None
 
 
-def load_group_members(conn, group_id: str) -> tuple[list[dict], int]:
+def load_group_members(conn, group_id: str) -> tuple[list[dict], list[dict]]:
     """Resolve a group's ACTUAL roster from `group_members` (NOT poll
     participants — that's what `Group.participantNames` is, and it misses
     members who joined via approve/invite/add-people but haven't voted yet).
 
-    Returns ``(named_members, anonymous_count)``:
+    Returns ``(named_members, anonymous_members)``:
       - ``named_members``: ``[{"name": str, "user_id": str | None}, ...]``,
         one entry per DISTINCT person who has a resolvable display name.
         Account-aware: a person signed in across N browsers collapses to ONE
@@ -401,11 +401,15 @@ def load_group_members(conn, group_id: str) -> tuple[list[dict], int]:
         `user_browsers` union); an anonymous (no-account) browser member is
         its own person keyed on `browser_id`. Name resolution per person:
         account `display_name`, else the most-recent `voter_name` that
-        browser used, else they fall into `anonymous_count`.
-      - ``anonymous_count``: distinct persons with no resolvable name
-        (drive-by URL visitors who auto-joined a public group, nameless
-        browser members). Rolled up so a public group's roster isn't a wall
-        of "anonymous" rows.
+        browser used, else they fall into `anonymous_members`.
+      - ``anonymous_members``: ``[{"user_id": str | None, "browser_id": str},
+        ...]`` — distinct persons with no resolvable name (drive-by URL
+        visitors who auto-joined a public group, nameless browser members).
+        `browser_id` is a REPRESENTATIVE member-row browser for the person;
+        callers must NOT leak it to clients (it's a cross-group identity
+        token) — surface an opaque handle instead (see
+        `anonymous_member_handle`). The list lets admins act on (boot) an
+        individual anonymous member.
 
     Named members are sorted by name (case-insensitive).
     """
@@ -414,6 +418,7 @@ def load_group_members(conn, group_id: str) -> tuple[list[dict], int]:
         SELECT
             COALESCE(ub.user_id::text, gm.browser_id::text) AS person_key,
             ub.user_id::text AS user_id,
+            gm.browser_id::text AS browser_id,
             COALESCE(
                 NULLIF(BTRIM(u.display_name), ''),
                 NULLIF(BTRIM((
@@ -433,13 +438,18 @@ def load_group_members(conn, group_id: str) -> tuple[list[dict], int]:
     ).fetchall()
 
     # Collapse to one entry per person (account de-dup). Keep the first
-    # non-null name we see across the person's browser rows.
+    # non-null name we see across the person's browser rows + a representative
+    # browser_id (any of their member rows — used to target a boot).
     by_person: dict[str, dict] = {}
     for r in rows:
         key = r["person_key"]
         existing = by_person.get(key)
         if existing is None:
-            by_person[key] = {"user_id": r.get("user_id"), "name": r.get("name")}
+            by_person[key] = {
+                "user_id": r.get("user_id"),
+                "name": r.get("name"),
+                "browser_id": r.get("browser_id"),
+            }
         elif not existing["name"] and r.get("name"):
             existing["name"] = r["name"]
 
@@ -448,9 +458,31 @@ def load_group_members(conn, group_id: str) -> tuple[list[dict], int]:
         for p in by_person.values()
         if p["name"]
     ]
-    anonymous_count = sum(1 for p in by_person.values() if not p["name"])
+    anonymous = [
+        {"user_id": p["user_id"], "browser_id": p["browser_id"]}
+        for p in by_person.values()
+        if not p["name"]
+    ]
     named.sort(key=lambda m: m["name"].lower())
-    return named, anonymous_count
+    return named, anonymous
+
+
+def anonymous_member_handle(group_id: str, person_key: str) -> str:
+    """An opaque, deterministic, group-scoped handle for an anonymous member.
+
+    `person_key` is the member's account user_id (account-with-no-name) or
+    their browser_id (browser-only). We NEVER return the raw browser_id to the
+    client (it's a cross-group identity token — an admin could impersonate the
+    member). A SHA-256 over `group_id:person_key` is one-way (doesn't reveal
+    the key), deterministic (stable per response so the FE can act on a row),
+    and matchable server-side: the boot endpoint recomputes the handle over
+    the group's anonymous members and finds the match. No secret needed — an
+    attacker who could forge a handle would already know the browser_id, and
+    boot is admin-only + scoped to existing members of the admin's group.
+    """
+    import hashlib
+
+    return hashlib.sha256(f"{group_id}:{person_key}".encode()).hexdigest()
 
 
 def load_poll_voters(conn, poll_id: str) -> tuple[list[dict], int]:
@@ -634,6 +666,38 @@ def boot_member(conn, group_id: str, target_user_id: str) -> None:
            )
         """,
         {"g": group_id, "u": target_user_id},
+    )
+
+
+def boot_member_by_browser(conn, group_id: str, browser_id: str) -> None:
+    """Boot an anonymous (no resolvable name) member identified by a
+    representative `browser_id`. If that browser is linked to an account,
+    delegate to `boot_member` (removes every linked browser + revokes their
+    invites). Otherwise revoke this row's invite + delete just this
+    (group, browser) membership row. Caller authorizes (admin-only, target is
+    not the caller / not an admin)."""
+    row = conn.execute(
+        "SELECT user_id::text AS uid FROM user_browsers WHERE browser_id = %(b)s::uuid",
+        {"b": browser_id},
+    ).fetchone()
+    if row and row.get("uid"):
+        boot_member(conn, group_id, row["uid"])
+        return
+    conn.execute(
+        """
+        UPDATE group_invites SET revoked_at = NOW()
+         WHERE id = (
+             SELECT joined_via_invite_id FROM group_members
+              WHERE group_id = %(g)s::uuid AND browser_id = %(b)s::uuid
+         )
+           AND revoked_at IS NULL
+        """,
+        {"g": group_id, "b": browser_id},
+    )
+    conn.execute(
+        "DELETE FROM group_members "
+        "WHERE group_id = %(g)s::uuid AND browser_id = %(b)s::uuid",
+        {"g": group_id, "b": browser_id},
     )
 
 

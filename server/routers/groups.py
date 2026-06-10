@@ -69,7 +69,9 @@ from services.validation import validate_user_name
 from services.groups import (
     _is_uuid_like,
     add_group_admin,
+    anonymous_member_handle,
     boot_member,
+    boot_member_by_browser,
     claim_group as _claim_group_row,
     filter_visible_polls,
     get_group_metadata,
@@ -1622,16 +1624,28 @@ class GroupMemberResponse(BaseModel):
     is_admin: bool = False
 
 
+class AnonymousMemberResponse(BaseModel):
+    """An individual member with no resolvable name. `handle` is an opaque,
+    group-scoped, one-way id (NOT the browser_id — that's a cross-group
+    identity token we never leak) that the boot-by-handle endpoint can match
+    back to the member server-side. Lets an admin remove a specific anonymous
+    drive-by visitor."""
+
+    handle: str
+
+
 class GroupMembersResponse(BaseModel):
     """The group's actual roster. `members` are the named people (one entry
-    per distinct person, account-aware); `anonymous_count` rolls up members
-    with no resolvable name (drive-by URL visitors on public groups).
-    `viewer_is_admin` (migration 142) gates the FE's admin chrome (privacy
-    toggle, invites, join requests, add-people, promote/boot, title/avatar
-    edits)."""
+    per distinct person, account-aware); `anonymous_members` lists members
+    with no resolvable name (drive-by URL visitors on public groups), each
+    carrying an opaque boot handle. `anonymous_count` mirrors its length (kept
+    for older clients). `viewer_is_admin` (migration 142) gates the FE's admin
+    chrome (privacy toggle, invites, join requests, add-people, promote/boot,
+    title/avatar edits)."""
 
     members: list[GroupMemberResponse]
     anonymous_count: int
+    anonymous_members: list[AnonymousMemberResponse] = []
     viewer_is_admin: bool = False
 
 
@@ -1662,6 +1676,17 @@ def get_group_members(route_id: str, request: Request):
         viewer_is_admin = is_caller_admin(
             conn, group_id, browser_id=browser_id, user_id=user_id
         )
+        # Opaque per-person handle keyed on user_id (account-no-name) else
+        # browser_id (browser-only) — same key the boot-by-handle endpoint
+        # re-derives. Never the raw browser_id (cross-group identity token).
+        anon_handles = [
+            AnonymousMemberResponse(
+                handle=anonymous_member_handle(
+                    group_id, m["user_id"] or m["browser_id"]
+                )
+            )
+            for m in anon
+        ]
         return GroupMembersResponse(
             members=[
                 GroupMemberResponse(
@@ -1671,7 +1696,8 @@ def get_group_members(route_id: str, request: Request):
                 )
                 for m in named
             ],
-            anonymous_count=anon,
+            anonymous_count=len(anon),
+            anonymous_members=anon_handles,
             viewer_is_admin=viewer_is_admin,
         )
 
@@ -1727,9 +1753,11 @@ def promote_group_admin(
 )
 def boot_group_member(route_id: str, user_id: str, request: Request):
     """Remove a member from the group and revoke the invite link they joined
-    through. Admin-only, PRIVATE groups only (Q3 — booting a public-group
-    member is futile since they auto-rejoin on the next visit). The target
-    must be a NON-admin member (admins can't be booted — Q4)."""
+    through. Admin-only. Works on public groups too (the owner asked for it —
+    revising the original private-only Q3: on a public group the member can
+    re-visit and auto-rejoin, but the boot still clears the current roster +
+    revokes their specific invite). The target must be a NON-admin member
+    (admins can't be booted — Q4)."""
     target = user_id
     if not _is_uuid_like(target):
         raise HTTPException(status_code=400, detail="Invalid user_id")
@@ -1741,12 +1769,6 @@ def boot_group_member(route_id: str, user_id: str, request: Request):
             conn, group_id,
             browser_id=_browser_id(request), user_id=_user_id(request),
         )
-        meta = get_group_metadata(conn, group_id)
-        if not meta or meta["privacy"] != "private":
-            raise HTTPException(
-                status_code=400,
-                detail="Members can only be booted from private groups",
-            )
         if target == admin:
             raise HTTPException(
                 status_code=400, detail="Leave the group instead of booting yourself"
@@ -1762,6 +1784,48 @@ def boot_group_member(route_id: str, user_id: str, request: Request):
                 status_code=404, detail="User is not a member of this group"
             )
         boot_member(conn, group_id, target)
+    return BootMemberResponse(booted=True)
+
+
+@router.post(
+    "/{route_id}/members/by-handle/{handle}/boot",
+    response_model=BootMemberResponse,
+)
+def boot_anonymous_group_member(route_id: str, handle: str, request: Request):
+    """Remove a specific ANONYMOUS (no resolvable name) member, identified by
+    the opaque handle from the /members roster. Admin-only. We never accept a
+    raw browser_id from the client (cross-group identity token) — instead we
+    re-derive each anonymous member's handle server-side and match. Same
+    public-group semantics as the named boot above."""
+    caller_browser = _browser_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        _require_admin(
+            conn, group_id, browser_id=caller_browser, user_id=_user_id(request),
+        )
+        _, anon = load_group_members(conn, group_id)
+        match = next(
+            (
+                m
+                for m in anon
+                if anonymous_member_handle(
+                    group_id, m["user_id"] or m["browser_id"]
+                )
+                == handle
+            ),
+            None,
+        )
+        if match is None:
+            raise HTTPException(
+                status_code=404, detail="Anonymous member not found"
+            )
+        if caller_browser and match["browser_id"] == caller_browser:
+            raise HTTPException(
+                status_code=400, detail="Leave the group instead of booting yourself"
+            )
+        boot_member_by_browser(conn, group_id, match["browser_id"])
     return BootMemberResponse(booted=True)
 
 

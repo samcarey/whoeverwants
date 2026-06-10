@@ -3204,11 +3204,16 @@ toggle privacy, edit title/avatar, approve join requests, mint/revoke invite
 links, add people directly, **promote** members to admin, and **boot** non-admin
 members. Design decisions (owner-confirmed): **no demotion and no owner
 hierarchy** (Q4 — once an admin, you stay one until you LEAVE the group, which is
-the only event that shrinks the admin set); **boot is PRIVATE-groups-only** (Q3 —
-booting a public-group member is futile, they auto-rejoin on visit) and revokes
-the specific invite link the booted member joined through; **admins are
-account-keyed** (`group_members` is browser-keyed, but admin powers need a real
-account).
+the only event that shrinks the admin set); **boot works on PUBLIC groups too**
+(the original Q3 "private-only" rule was REVISED by the owner — boot revokes the
+member's invite + clears the current roster; on a public group the member can
+still re-visit and auto-rejoin, but the owner wanted the removal action
+available everywhere) and revokes the specific invite link the booted member
+joined through; **admins are account-keyed** (`group_members` is browser-keyed,
+but admin powers need a real account). **Anonymous (no-name) members can be
+booted too** via an opaque per-roster handle (see the boot endpoints + the
+`anonymous_member_handle` bullet below) — we never expose a member's raw
+`browser_id` to the client (it's a cross-group identity token).
 
 - **Schema:** `group_admins(group_id, user_id, granted_at)` PK `(group_id,
   user_id)`, both FKs CASCADE, index on `user_id`. `group_members.joined_via_invite_id`
@@ -3251,23 +3256,45 @@ account).
   silently demotes. No account member to promote ⇒ group stays admin-less (the
   accepted "≥1 account member" condition).
 - **New endpoints:** `POST /{route}/admins {user_id}` (promote a member; target
-  must be a member), `POST /{route}/members/{user_id}/boot` (private-only,
+  must be a member), `POST /{route}/members/{user_id}/boot` (any-privacy now,
   non-admin target, not self → removes membership across linked browsers +
-  revokes their `joined_via_invite_id`). Both admin-only.
+  revokes their `joined_via_invite_id`), `POST /{route}/members/by-handle/{handle}/boot`
+  (boot an ANONYMOUS member by their opaque roster handle — re-derives each
+  anon member's handle server-side, matches, then `boot_member_by_browser`).
+  All admin-only.
+- **`anonymous_member_handle(group_id, person_key)` (`services/groups.py`)** is
+  the opaque-id scheme for booting nameless members without leaking
+  `browser_id`. `person_key` = the member's account user_id (account-no-name)
+  else their browser_id (browser-only); the handle is
+  `sha256(f"{group_id}:{person_key}")` — one-way (doesn't reveal the key),
+  deterministic, group-scoped, and matchable server-side by recomputing it over
+  the group's anonymous members. No secret needed (an attacker who could forge a
+  handle already knows the browser_id; boot is admin-only + scoped to existing
+  members). `load_group_members` now returns `(named, anonymous)` where
+  `anonymous` is a list of `{user_id, browser_id}` (browser_id is a
+  REPRESENTATIVE member row, kept server-side only); the endpoint maps it to
+  `anonymous_members: [{handle}]` and keeps `anonymous_count = len(anonymous)`
+  for older clients.
 - **`GET /{route}/members`** now returns `viewer_is_admin` (top-level) +
-  per-member `is_admin`. Anonymous (nameless) members roll into `anonymous_count`
-  and are never admins (account-keyed); a nameless admin (no display_name) is an
-  admin but rolls up anonymously — FE admins always have a name via the name-gate.
-- **FE:** `apiGetGroupMembers` surfaces `viewer_is_admin` + `is_admin`;
-  `apiPromoteGroupAdmin` / `apiBootGroupMember`. The `/info` page gates ALL admin
-  chrome on `roster.viewer_is_admin` (replacing the old
-  `session.user_id === group.creatorUserId` computation): Privacy toggle (via
-  `GroupPrivacySection`'s new `viewerIsAdmin` prop — its claim flow is removed),
-  JoinRequestsSection/InviteLinksSection `enabled`, Add-people, Edit-title, and
-  per-member Make-admin / Remove buttons (behind a `ConfirmationModal`; Remove
-  only when `group.privacy === 'private'`). The per-POLL info page is UNCHANGED —
-  its close/reopen/cutoff actions gate on POLL authorship (`poll.viewer_is_creator`),
-  a separate concept from group admin.
+  per-member `is_admin`, plus `anonymous_members: [{handle}]` (and the
+  count-only `anonymous_count`). Anonymous (nameless) members are never admins
+  (account-keyed); a nameless admin (no display_name) is an admin but rolls up
+  anonymously — FE admins always have a name via the name-gate.
+- **FE:** `apiGetGroupMembers` surfaces `viewer_is_admin` + `is_admin` +
+  `anonymous_members`; `apiPromoteGroupAdmin` / `apiBootGroupMember` /
+  `apiBootGroupAnonymous`. The `/info` page gates ALL admin chrome on
+  `roster.viewer_is_admin`: Privacy toggle (via `GroupPrivacySection`'s
+  `viewerIsAdmin` prop — its claim flow is removed),
+  JoinRequestsSection/InviteLinksSection `enabled`, Add-people, Edit-title, and a
+  per-member **3-dots action sheet** (`components/MemberActionsSheet.tsx`, haptic
+  on open) offering **Make admin** (named members only) + **Remove from group**
+  (all members, incl. anonymous via handle), each routed through a
+  `ConfirmationModal`. The expandable "N anonymous" roster row reveals individual
+  "Anonymous" rows, each with its own 3-dots → Remove. `InviteLinksSection` is
+  one compact line per invite (mode · usage · age) with a trashcan revoke, and a
+  small `+` mint button in the section header (no separate bottom button). The
+  per-POLL info page is UNCHANGED — its close/reopen/cutoff actions gate on POLL
+  authorship (`poll.viewer_is_creator`), a separate concept from group admin.
 - **Pitfall (the NOT NULL trap):** an early version made `creator_user_id` NOT
   NULL as a guardrail — it broke account deletion (FK SET NULL → NOT NULL
   violation) AND cascaded failures in instant-link / follow-state / account tests.

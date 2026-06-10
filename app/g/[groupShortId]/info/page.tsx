@@ -14,8 +14,9 @@ import {
   apiGetGroupMembers,
   apiPromoteGroupAdmin,
   apiBootGroupMember,
+  apiBootGroupAnonymous,
 } from "@/lib/api";
-import type { GroupRoster } from "@/lib/api";
+import type { GroupRoster, AnonymousMember } from "@/lib/api";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import {
   GROUP_MEMBERS_CHANGED_EVENT,
@@ -69,11 +70,17 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   // consequential — promote is permanent, boot removes a member + revokes
   // their invite link).
   const [pendingAction, setPendingAction] = useState<
-    { kind: "promote" | "boot"; userId: string; name: string } | null
+    | { kind: "promote" | "boot"; userId: string; name: string }
+    | { kind: "boot-anon"; handle: string; name: string }
+    | null
   >(null);
-  // The member whose 3-dots action sheet (Make admin / Remove) is open.
+  // The member whose 3-dots action sheet is open. Named members carry a
+  // `userId` (promote/boot); anonymous members carry an opaque `handle`
+  // (Remove only — they can't be promoted).
   const [actionsFor, setActionsFor] = useState<
-    { userId: string; name: string } | null
+    | { userId: string; name: string }
+    | { handle: string; name: string }
+    | null
   >(null);
   // Anonymous members are returned only as a count (no per-person data), so
   // the rolled-up "N anonymous" row expands into N identical "Anonymous" rows.
@@ -98,16 +105,17 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   const [roster, setRoster] = useState<GroupRoster | null>(null);
   const [rosterTick, setRosterTick] = useState(0);
   const viewerIsAdmin = roster?.viewer_is_admin ?? false;
-  const isPrivateGroup = group.privacy === "private";
 
   const runPendingAction = () => {
     if (!pendingAction) return;
-    const { kind, userId } = pendingAction;
+    const action = pendingAction;
     setPendingAction(null);
     const call =
-      kind === "promote"
-        ? apiPromoteGroupAdmin(groupId, userId)
-        : apiBootGroupMember(groupId, userId);
+      action.kind === "promote"
+        ? apiPromoteGroupAdmin(groupId, action.userId)
+        : action.kind === "boot"
+          ? apiBootGroupMember(groupId, action.userId)
+          : apiBootGroupAnonymous(groupId, action.handle);
     // Refetch the roster on success so the badge / removal reflects.
     call.then(() => setRosterTick((t) => t + 1)).catch(() => {
       setRosterTick((t) => t + 1);
@@ -154,10 +162,10 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   };
   let membersList: MemberRow[];
   let totalCount: number;
-  let anonymousExtra = 0;
+  let anonymousMembers: AnonymousMember[] = [];
   if (roster) {
     totalCount = roster.members.length + roster.anonymous_count;
-    let anon = roster.anonymous_count;
+    anonymousMembers = [...roster.anonymous_members];
     const rows: MemberRow[] = roster.members.map((m, i) => ({
       name: m.name,
       key: `member-${m.user_id ?? m.name}-${i}`,
@@ -167,8 +175,9 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     }));
     // The viewer is always a member (visiting auto-joins / the creator is a
     // member). If they aren't a resolved named row, they're one of the
-    // anonymous members — surface them as themselves and pull one out of the
-    // anonymous roll-up so the headcount stays right.
+    // anonymous members — surface them as themselves and drop one anonymous
+    // slot (the viewer's; anonymous members are indistinguishable, and you
+    // can't boot yourself anyway) so the headcount stays right.
     if (!rows.some((r) => isCurrentUserName(r.name))) {
       // Viewer's own row isn't long-pressable (userId null); isAdmin still
       // drives the Admin badge on your own row.
@@ -178,11 +187,10 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         userId: null,
         isAdmin: viewerIsAdmin,
       });
-      if (anon > 0) anon -= 1;
+      if (anonymousMembers.length > 0) anonymousMembers.shift();
     }
     rows.sort((a, b) => a.name.localeCompare(b.name));
     membersList = rows;
-    anonymousExtra = anon;
   } else {
     // First-paint fallback before the roster lands: poll participants + the
     // viewer (the prior behavior). Replaced within a tick by the real roster.
@@ -349,7 +357,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
                 />
               );
             })}
-            {anonymousExtra > 0 && (
+            {anonymousMembers.length > 0 && (
               <>
                 <li>
                   <button
@@ -367,7 +375,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
                       className="shrink-0"
                     />
                     <span className="min-w-0 break-words flex-1">
-                      {anonymousExtra} anonymous
+                      {anonymousMembers.length} anonymous
                     </span>
                     <svg
                       className={`shrink-0 w-4 h-4 transition-transform ${anonExpanded ? "rotate-180" : ""}`}
@@ -382,9 +390,9 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
                   </button>
                 </li>
                 {anonExpanded &&
-                  Array.from({ length: anonymousExtra }, (_, i) => (
+                  anonymousMembers.map((m) => (
                     <li
-                      key={`anon-${i}`}
+                      key={`anon-${m.handle}`}
                       className="flex items-center gap-3 px-4 py-3 text-gray-500 dark:text-gray-400 italic"
                     >
                       <InitialBubble
@@ -392,7 +400,23 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
                         sizeClassName="w-8 h-8"
                         className="shrink-0"
                       />
-                      <span className="min-w-0 break-words">Anonymous</span>
+                      <span className="min-w-0 break-words flex-1">Anonymous</span>
+                      {viewerIsAdmin && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActionsFor({ handle: m.handle, name: "Anonymous" })
+                          }
+                          className="shrink-0 w-9 h-9 -mr-2 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 active:opacity-70"
+                          aria-label="Actions for anonymous member"
+                        >
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                            <circle cx="12" cy="5" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="12" cy="19" r="2" />
+                          </svg>
+                        </button>
+                      )}
                     </li>
                   ))}
               </>
@@ -405,13 +429,21 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         <MemberActionsSheet
           isOpen={true}
           name={actionsFor.name}
-          canRemove={isPrivateGroup}
+          // Anonymous members (carry a handle) can be removed but not promoted.
+          canMakeAdmin={"userId" in actionsFor}
+          canRemove={true}
           onMakeAdmin={() => {
-            setPendingAction({ kind: "promote", userId: actionsFor.userId, name: actionsFor.name });
+            if ("userId" in actionsFor) {
+              setPendingAction({ kind: "promote", userId: actionsFor.userId, name: actionsFor.name });
+            }
             setActionsFor(null);
           }}
           onRemove={() => {
-            setPendingAction({ kind: "boot", userId: actionsFor.userId, name: actionsFor.name });
+            setPendingAction(
+              "userId" in actionsFor
+                ? { kind: "boot", userId: actionsFor.userId, name: actionsFor.name }
+                : { kind: "boot-anon", handle: actionsFor.handle, name: actionsFor.name },
+            );
             setActionsFor(null);
           }}
           onClose={() => setActionsFor(null)}
@@ -426,7 +458,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           message={
             pendingAction.kind === "promote"
               ? `Make ${pendingAction.name} an admin? Admins can manage members, invites, and group settings. This can't be undone.`
-              : `Remove ${pendingAction.name} from the group? The invite link they joined with will stop working.`
+              : `Remove ${pendingAction.name} from the group? Any invite link they joined with stops working. On a public group they can rejoin by visiting the link again.`
           }
           confirmText={pendingAction.kind === "promote" ? "Make admin" : "Remove"}
           confirmButtonClass={

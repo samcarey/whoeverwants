@@ -69,6 +69,7 @@ export {
   apiGetGroupPollVoters,
   apiPromoteGroupAdmin,
   apiBootGroupMember,
+  apiBootGroupAnonymous,
 } from "./groups";
 export type {
   GroupJoinRequest,
@@ -78,6 +79,7 @@ export type {
   GroupPollResult,
   InvitableAccount,
   GroupMember,
+  AnonymousMember,
   GroupRoster,
 } from "./groups";
 

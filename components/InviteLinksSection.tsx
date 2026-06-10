@@ -42,6 +42,7 @@ import {
 } from "@/lib/api";
 import type { GroupInvite } from "@/lib/api";
 import { haptic } from "@/lib/haptics";
+import { compactDurationSince } from "@/lib/questionListUtils";
 
 interface Props {
   groupId: string;
@@ -182,9 +183,26 @@ export default function InviteLinksSection({
 
   return (
     <section className={className}>
-      <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
-        Invite links
-      </h2>
+      <div className="px-1 mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+          Invite links
+        </h2>
+        <button
+          type="button"
+          onClick={createInvite}
+          disabled={creating}
+          aria-label="Create invite link"
+          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white disabled:opacity-50 transition-transform"
+        >
+          {creating ? (
+            <span className="text-xs">…</span>
+          ) : (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+            </svg>
+          )}
+        </button>
+      </div>
       {error && (
         <p
           className="px-1 mb-2 text-xs text-red-600 dark:text-red-400"
@@ -205,10 +223,16 @@ export default function InviteLinksSection({
                   : `${invite.use_count} used`;
               const modeLabel =
                 invite.mode === "single" ? "Single use" : "Multi-use";
+              const age = invite.created_at
+                ? compactDurationSince(invite.created_at)
+                : null;
               return (
                 <li key={invite.id} className="px-4 py-2.5 flex items-center gap-2">
                   <span className="min-w-0 flex-1 truncate text-sm text-gray-900 dark:text-white">
                     {modeLabel} · {usageLabel}
+                    {age && (
+                      <span className="text-gray-400 dark:text-gray-500"> · {age}</span>
+                    )}
                   </span>
                   {url && (
                     <button
@@ -237,14 +261,6 @@ export default function InviteLinksSection({
           </ul>
         </div>
       )}
-      <button
-        type="button"
-        onClick={createInvite}
-        disabled={creating}
-        className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-sm font-medium rounded-full disabled:opacity-50 transition-transform"
-      >
-        {creating ? "Creating…" : "Create invite link"}
-      </button>
     </section>
   );
 }
