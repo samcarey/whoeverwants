@@ -74,6 +74,7 @@ from services.groups import (
     grant_group_membership_inline,
     group_name_phrase,
     is_caller_member_of_group,
+    load_group_members,
     load_user_visibility,
     poll_ids_for_group_ids,
     polls_for_poll_ids,
@@ -1596,6 +1597,55 @@ def add_group_members(
         )
 
     return AddMembersResponse(added=len(added_user_ids))
+
+
+class GroupMemberResponse(BaseModel):
+    name: str
+    user_id: str | None
+
+
+class GroupMembersResponse(BaseModel):
+    """The group's actual roster. `members` are the named people (one entry
+    per distinct person, account-aware); `anonymous_count` rolls up members
+    with no resolvable name (drive-by URL visitors on public groups)."""
+
+    members: list[GroupMemberResponse]
+    anonymous_count: int
+
+
+@router.get("/{route_id}/members", response_model=GroupMembersResponse)
+def get_group_members(route_id: str, request: Request):
+    """The group's ACTUAL roster from `group_members` — NOT poll participants.
+
+    The /info "Members" list used to be built purely from
+    `Group.participantNames` (poll creators + voters), so a member who
+    joined via approve / invite-link / "Add people" but hadn't voted on a
+    poll yet was invisible. This reads the real membership table instead:
+    named members (account display_name, else most-recent voter_name) are
+    listed individually + de-duped account-aware; nameless members roll up
+    into `anonymous_count`.
+
+    Privacy: members-only for private groups (404 to non-members, same as
+    /summary — the roster would leak who's in a private group). Public
+    groups are open, consistent with /summary + /preview being public.
+    """
+    browser_id = _browser_id(request)
+    user_id = _user_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        meta = get_group_metadata(conn, group_id)
+        if meta and meta["privacy"] == "private":
+            if not is_caller_member_of_group(
+                conn, group_id, browser_id=browser_id, user_id=user_id
+            ):
+                raise HTTPException(status_code=404, detail="Group not found")
+        named, anon = load_group_members(conn, group_id)
+        return GroupMembersResponse(
+            members=[GroupMemberResponse(**m) for m in named],
+            anonymous_count=anon,
+        )
 
 
 # ---------------------------------------------------------------------------

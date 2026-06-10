@@ -388,6 +388,71 @@ def is_caller_member_of_group(
     return row is not None
 
 
+def load_group_members(conn, group_id: str) -> tuple[list[dict], int]:
+    """Resolve a group's ACTUAL roster from `group_members` (NOT poll
+    participants — that's what `Group.participantNames` is, and it misses
+    members who joined via approve/invite/add-people but haven't voted yet).
+
+    Returns ``(named_members, anonymous_count)``:
+      - ``named_members``: ``[{"name": str, "user_id": str | None}, ...]``,
+        one entry per DISTINCT person who has a resolvable display name.
+        Account-aware: a person signed in across N browsers collapses to ONE
+        entry keyed on `user_id` (mirrors `load_user_visibility`'s
+        `user_browsers` union); an anonymous (no-account) browser member is
+        its own person keyed on `browser_id`. Name resolution per person:
+        account `display_name`, else the most-recent `voter_name` that
+        browser used, else they fall into `anonymous_count`.
+      - ``anonymous_count``: distinct persons with no resolvable name
+        (drive-by URL visitors who auto-joined a public group, nameless
+        browser members). Rolled up so a public group's roster isn't a wall
+        of "anonymous" rows.
+
+    Named members are sorted by name (case-insensitive).
+    """
+    rows = conn.execute(
+        """
+        SELECT
+            COALESCE(ub.user_id::text, gm.browser_id::text) AS person_key,
+            ub.user_id::text AS user_id,
+            COALESCE(
+                NULLIF(BTRIM(u.display_name), ''),
+                NULLIF(BTRIM((
+                    SELECT v.voter_name FROM votes v
+                     WHERE v.browser_id = gm.browser_id
+                       AND v.voter_name IS NOT NULL
+                     ORDER BY v.created_at DESC
+                     LIMIT 1
+                )), '')
+            ) AS name
+          FROM group_members gm
+          LEFT JOIN user_browsers ub ON ub.browser_id = gm.browser_id
+          LEFT JOIN users u ON u.id = ub.user_id
+         WHERE gm.group_id = %(g)s::uuid
+        """,
+        {"g": group_id},
+    ).fetchall()
+
+    # Collapse to one entry per person (account de-dup). Keep the first
+    # non-null name we see across the person's browser rows.
+    by_person: dict[str, dict] = {}
+    for r in rows:
+        key = r["person_key"]
+        existing = by_person.get(key)
+        if existing is None:
+            by_person[key] = {"user_id": r.get("user_id"), "name": r.get("name")}
+        elif not existing["name"] and r.get("name"):
+            existing["name"] = r["name"]
+
+    named = [
+        {"name": p["name"], "user_id": p["user_id"]}
+        for p in by_person.values()
+        if p["name"]
+    ]
+    anonymous_count = sum(1 for p in by_person.values() if not p["name"])
+    named.sort(key=lambda m: m["name"].lower())
+    return named, anonymous_count
+
+
 def resolve_group_for_visit(
     conn,
     route_id: str,

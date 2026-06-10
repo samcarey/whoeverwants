@@ -58,12 +58,16 @@ interface Props {
    *  Falsy → don't fetch; the section renders nothing. */
   enabled: boolean;
   className?: string;
+  /** Fired after a request is successfully approved/denied so the parent can
+   *  refresh dependent UI (e.g. the member roster grows on approve). */
+  onDecided?: (action: "approve" | "deny") => void;
 }
 
 export default function JoinRequestsSection({
   groupId,
   enabled,
   className = "mt-6",
+  onDecided,
 }: Props) {
   const [requests, setRequests] = useState<GroupJoinRequest[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -165,6 +169,11 @@ export default function JoinRequestsSection({
       prev ? prev.filter((r) => r.id !== request.id) : prev,
     );
     apiDecideGroupJoinRequest(groupId, request.id, action)
+      .then(() => {
+        // Let the parent refresh dependent UI — an approve adds the
+        // requester to the group, so the member roster should grow.
+        onDecided?.(action);
+      })
       .catch((e) => {
         // Roll the row back so the creator can retry.
         setRequests((prev) => (prev ? [request, ...prev] : prev));

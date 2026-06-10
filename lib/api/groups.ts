@@ -35,7 +35,7 @@ import {
   invalidateGroupSummary,
   invalidatePoll,
 } from "@/lib/questionCache";
-import { groupFetch, toPoll, toQuestionResults } from "./_internal";
+import { ApiError, groupFetch, toPoll, toQuestionResults } from "./_internal";
 
 function toGroupSummary(data: any): GroupSummary {
   return {
@@ -634,6 +634,47 @@ export async function apiAddGroupMembers(
     },
   );
   return { added: typeof data?.added === 'number' ? data.added : 0 };
+}
+
+export interface GroupMember {
+  /** Resolved display name (account display_name, else recent voter name). */
+  name: string;
+  /** Account id when this member is signed in; null for anonymous browsers. */
+  user_id: string | null;
+}
+
+export interface GroupRoster {
+  /** Named members, one per distinct person (account-aware de-dup). */
+  members: GroupMember[];
+  /** Distinct members with no resolvable name (drive-by public-group joins). */
+  anonymous_count: number;
+}
+
+/** The group's ACTUAL roster from `group_members` — named members plus a
+ *  rolled-up anonymous count. Distinct from `Group.participantNames`, which
+ *  only reflects poll creators/voters (so a just-approved member who hasn't
+ *  voted yet would be missing). Members-only for private groups (404 maps to
+ *  an empty roster). */
+export async function apiGetGroupMembers(
+  routeId: string,
+): Promise<GroupRoster> {
+  try {
+    const data = await groupFetch<any>(
+      `/${encodeURIComponent(routeId)}/members`,
+    );
+    return {
+      members: Array.isArray(data?.members)
+        ? (data.members as GroupMember[])
+        : [],
+      anonymous_count:
+        typeof data?.anonymous_count === 'number' ? data.anonymous_count : 0,
+    };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return { members: [], anonymous_count: 0 };
+    }
+    throw err;
+  }
 }
 
 /** Encode an ArrayBuffer as base64. Chunked to avoid the `apply()`
