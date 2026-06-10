@@ -1040,12 +1040,17 @@ class JoinRequestSummaryResponse(BaseModel):
     """Per-request shape returned to the creator (list endpoint) and
     echoed by the create endpoint. `requester_email` is NULL for
     passkey-only users (Phase D registration permits no-email accounts)
-    — the FE renders a "Passkey user" fallback."""
+    — the FE renders a "Passkey user" fallback. `requester_name` is the
+    requester's account display_name; `requester_image_updated_at` is the
+    profile-photo cache-buster (NULL when no photo) the FE feeds into the
+    public `/by-user-id/<id>/image?v=<ts>` URL."""
 
     id: str
     group_id: str
     requester_user_id: str
     requester_email: str | None
+    requester_name: str | None = None
+    requester_image_updated_at: str | None = None
     message: str | None
     requested_at: str
 
@@ -1079,6 +1084,12 @@ def _summary_to_response(s, fallback_email: str | None = None) -> JoinRequestSum
         group_id=s.group_id,
         requester_user_id=s.requester_user_id,
         requester_email=s.requester_email if s.requester_email is not None else fallback_email,
+        requester_name=getattr(s, "requester_name", None),
+        requester_image_updated_at=(
+            s.requester_image_updated_at.isoformat()
+            if getattr(s, "requester_image_updated_at", None)
+            else None
+        ),
         message=s.message,
         requested_at=s.requested_at.isoformat() if s.requested_at else "",
     )

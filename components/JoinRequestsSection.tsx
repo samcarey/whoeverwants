@@ -19,13 +19,15 @@
  *   3. On success, leave the row removed. On failure, restore + show
  *      a transient error message above the section.
  *
- * Requester identity display:
- *   - Email when available (most users — magic-link sign-in always
- *     records one, OAuth merges via verified email).
- *   - "Passkey user" fallback for Phase D no-email accounts.
- *   - Message (if any) renders below the identity line in lighter
- *     text. Long messages truncate to 3 lines with an expandable
- *     "more" link (deferred — for v1, line-clamp-3 is enough).
+ * Requester identity display (avatar + stacked text):
+ *   - Profile photo when uploaded, else a name-initials disc
+ *     (`InitialBubble`).
+ *   - Name (account display_name) as the primary label; falls back to
+ *     email, then "Passkey user" (Phase D no-email accounts).
+ *   - Email as a secondary line under the name (when both exist).
+ *   - "Requested <relative time>" so the creator sees how long it's
+ *     been waiting.
+ *   - Message (if any) renders below in lighter text.
  */
 
 "use client";
@@ -38,8 +40,11 @@ import {
   apiListGroupJoinRequests,
 } from "@/lib/api";
 import type { GroupJoinRequest } from "@/lib/api";
+import { buildUserImageUrl } from "@/lib/api";
+import InitialBubble from "@/components/InitialBubble";
 import { haptic } from "@/lib/haptics";
 import { isPathPrefix } from "@/lib/questionId";
+import { relativeTime } from "@/lib/questionListUtils";
 import {
   SW_NOTIFICATION_CLICK_EVENT,
   SW_PUSH_RECEIVED_EVENT,
@@ -200,18 +205,45 @@ export default function JoinRequestsSection({
         <ul className="divide-y divide-gray-200 dark:divide-gray-800">
           {requests.map((r) => {
             const deciding = decidingIds.has(r.id);
-            const identity = r.requester_email ?? "Passkey user";
+            const displayName = r.requester_name?.trim() || null;
+            // Primary label is the requester's name; fall back to their
+            // email, then the passkey-only placeholder.
+            const identity =
+              displayName ?? r.requester_email ?? "Passkey user";
+            // Secondary line: show the email under the name (only when we
+            // actually have a name above it, so it isn't duplicated).
+            const subLabel = displayName ? r.requester_email : null;
+            const imageUrl = buildUserImageUrl(
+              r.requester_user_id,
+              r.requester_image_updated_at,
+            );
             return (
               <li key={r.id} className="px-4 py-3 flex flex-col gap-2">
-                <div className="flex flex-col min-w-0">
-                  <span className="text-gray-900 dark:text-white break-words">
-                    {identity}
-                  </span>
-                  {r.message && (
-                    <span className="mt-0.5 text-sm text-gray-600 dark:text-gray-400 break-words whitespace-pre-wrap">
-                      {r.message}
+                <div className="flex items-start gap-3 min-w-0">
+                  <InitialBubble
+                    name={displayName ?? r.requester_email ?? null}
+                    imageUrl={imageUrl}
+                    sizeClassName="w-9 h-9 shrink-0"
+                    textSizeClassName="text-sm"
+                  />
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="text-gray-900 dark:text-white break-words">
+                      {identity}
                     </span>
-                  )}
+                    {subLabel && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400 break-words">
+                        {subLabel}
+                      </span>
+                    )}
+                    <span className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+                      Requested {relativeTime(r.requested_at)}
+                    </span>
+                    {r.message && (
+                      <span className="mt-1 text-sm text-gray-600 dark:text-gray-400 break-words whitespace-pre-wrap">
+                        {r.message}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button

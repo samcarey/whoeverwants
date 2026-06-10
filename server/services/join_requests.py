@@ -38,12 +38,21 @@ class JoinRequestSummary:
     """Creator-facing view of a pending request. `requester_email` is
     null for passkey-only users — Phase D registration permits accounts
     with no email at all. UI falls back to a "Passkey user" placeholder
-    in that case."""
+    in that case.
+
+    `requester_name` is the requester's account `display_name` (a name
+    is required to request access, so it's populated for real requests).
+    `requester_image_updated_at` is the cache-buster for the requester's
+    profile image (NULL when they have no uploaded photo) — the FE builds
+    the public `/by-user-id/<id>/image?v=<ts>` URL from it +
+    `requester_user_id`."""
 
     id: str
     group_id: str
     requester_user_id: str
     requester_email: str | None
+    requester_name: str | None
+    requester_image_updated_at: datetime | None
     message: str | None
     requested_at: datetime
 
@@ -95,6 +104,8 @@ def create_join_request(
         group_id=str(row["group_id"]),
         requester_user_id=str(row["requester_user_id"]),
         requester_email=None,
+        requester_name=None,
+        requester_image_updated_at=None,
         message=row.get("message"),
         requested_at=row["requested_at"],
     )
@@ -137,7 +148,9 @@ def is_member_or_creator(
 def list_pending_requests(conn, group_id: str) -> list[JoinRequestSummary]:
     """Pending requests for a group, oldest first. The email column is
     the requester's most-recently-verified email across their identity
-    rows (NULL for passkey-only)."""
+    rows (NULL for passkey-only). `requester_name` is the account
+    display_name; `requester_image_updated_at` is the profile-photo
+    cache-buster (NULL when no photo)."""
     rows = conn.execute(
         """
         SELECT r.id,
@@ -145,6 +158,8 @@ def list_pending_requests(conn, group_id: str) -> list[JoinRequestSummary]:
                r.requester_user_id,
                r.message,
                r.requested_at,
+               u.display_name AS requester_name,
+               up.image_updated_at AS requester_image_updated_at,
                (
                    SELECT ui.email
                      FROM user_identities ui
@@ -154,6 +169,8 @@ def list_pending_requests(conn, group_id: str) -> list[JoinRequestSummary]:
                     LIMIT 1
                ) AS requester_email
           FROM group_join_requests r
+          LEFT JOIN users u ON u.id = r.requester_user_id
+          LEFT JOIN user_profiles up ON up.user_id = r.requester_user_id
          WHERE r.group_id = %(g)s::uuid
            AND r.status = 'pending'
          ORDER BY r.requested_at ASC
@@ -166,6 +183,8 @@ def list_pending_requests(conn, group_id: str) -> list[JoinRequestSummary]:
             group_id=str(r["group_id"]),
             requester_user_id=str(r["requester_user_id"]),
             requester_email=r.get("requester_email"),
+            requester_name=r.get("requester_name"),
+            requester_image_updated_at=r.get("requester_image_updated_at"),
             message=r.get("message"),
             requested_at=r["requested_at"],
         )
