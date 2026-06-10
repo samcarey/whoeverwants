@@ -75,6 +75,7 @@ from services.groups import (
     group_name_phrase,
     is_caller_member_of_group,
     load_group_members,
+    load_poll_voters,
     load_user_visibility,
     poll_ids_for_group_ids,
     polls_for_poll_ids,
@@ -1642,6 +1643,48 @@ def get_group_members(route_id: str, request: Request):
             ):
                 raise HTTPException(status_code=404, detail="Group not found")
         named, anon = load_group_members(conn, group_id)
+        return GroupMembersResponse(
+            members=[GroupMemberResponse(**m) for m in named],
+            anonymous_count=anon,
+        )
+
+
+@router.get(
+    "/by-route-id/{route_id}/poll/{poll_ref}/voter-identities",
+    response_model=GroupMembersResponse,
+)
+def get_poll_voters(route_id: str, poll_ref: str, request: Request):
+    """A single poll's respondent roster — one entry per distinct voter person
+    (account-deduped) + a rolled-up anonymous count, same shape as the group
+    members roster. Lets the poll /info respondents list render one row per
+    person and long-press the right account. Member-gated; 404 on unresolvable
+    route/poll."""
+    browser_id = _browser_id(request)
+    user_id = _user_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        if not is_caller_member_of_group(
+            conn, group_id, browser_id=browser_id, user_id=user_id
+        ):
+            raise HTTPException(
+                status_code=404, detail="Group not found"
+            )
+        poll_row = conn.execute(
+            "SELECT id FROM polls "
+            "WHERE group_id = %(gid)s::uuid AND short_id = %(ref)s",
+            {"gid": group_id, "ref": poll_ref},
+        ).fetchone()
+        if not poll_row and _is_uuid_like(poll_ref):
+            poll_row = conn.execute(
+                "SELECT id FROM polls "
+                "WHERE group_id = %(gid)s::uuid AND id = %(ref)s::uuid",
+                {"gid": group_id, "ref": poll_ref},
+            ).fetchone()
+        if not poll_row:
+            raise HTTPException(status_code=404, detail="Poll not found")
+        named, anon = load_poll_voters(conn, str(poll_row["id"]))
         return GroupMembersResponse(
             members=[GroupMemberResponse(**m) for m in named],
             anonymous_count=anon,

@@ -19,7 +19,9 @@ import {
   apiCutoffPollAvailability,
   apiCutoffPollSuggestions,
   apiGetGroupPoll,
+  apiGetGroupPollVoters,
   apiReopenPoll,
+  type GroupRoster,
 } from "@/lib/api";
 import type { Poll, Question } from "@/lib/types";
 import { hasAppHistory } from "@/lib/viewTransitions";
@@ -31,6 +33,7 @@ import {
 } from "@/lib/questionListUtils";
 import GroupHeader from "@/components/GroupHeader";
 import InitialBubble from "@/components/InitialBubble";
+import RosterRow from "@/components/RosterRow";
 import { namedVoterCount } from "@/components/VoterList";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import PollActionButton, { CutoffIcon } from "@/components/PollActionButton";
@@ -209,20 +212,56 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
     isCreatorOrDev;
 
   const namedVoters = poll.voter_names ?? [];
-  const anonymousCount = poll.anonymous_count ?? 0;
   // Viewed-but-no-response viewers (opened >5 min ago, never voted/abstained).
   const ignoredCount = poll.viewed_ignored_count ?? 0;
-  // Sum the multiplicity map so two people sharing a name ("Alex" ×2) count as
-  // 2 responders — matches the turnout semantics used elsewhere.
-  const respondedCount =
-    namedVoterCount(namedVoters, poll.voter_name_counts) + anonymousCount;
-  // Total distinct viewers = everyone who opened the poll = responders +
-  // viewed-but-no-response.
-  const totalViewed = respondedCount + ignoredCount;
   const currentUserName = useMemo(
     () => getUserName()?.trim().toLowerCase() ?? null,
     [],
   );
+
+  // Per-person voter roster (account-deduped) so each respondent is one row +
+  // long-pressable to their profile. Same shape as the group members roster.
+  // Null until loaded; fall back to poll.voter_names (no-flash, no long-press).
+  const pollShortId = poll.short_id;
+  const [roster, setRoster] = useState<GroupRoster | null>(null);
+  useEffect(() => {
+    if (!pollShortId) return;
+    let cancelled = false;
+    apiGetGroupPollVoters(groupId, pollShortId)
+      .then((r) => {
+        if (!cancelled) setRoster(r);
+      })
+      .catch(() => {
+        /* keep the voter-name fallback on failure */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [groupId, pollShortId]);
+
+  const anonymousCount = roster
+    ? roster.anonymous_count
+    : poll.anonymous_count ?? 0;
+  const namedCount = roster
+    ? roster.members.length
+    : namedVoterCount(namedVoters, poll.voter_name_counts);
+  const respondedCount = namedCount + anonymousCount;
+  const totalViewed = respondedCount + ignoredCount;
+
+  // One row per named respondent. `userId` = account to long-press (null for
+  // the viewer's own row / anonymous / pre-roster fallback).
+  const respondentRows: { name: string; key: string; userId: string | null }[] =
+    roster
+      ? roster.members.map((m, i) => ({
+          name: m.name,
+          key: `voter-${m.user_id ?? m.name}-${i}`,
+          userId: isCurrentUserName(m.name) ? null : m.user_id,
+        }))
+      : namedVoters.map((name, idx) => ({
+          name,
+          key: `${name}-${idx}`,
+          userId: null,
+        }));
 
   const [pendingAction, setPendingAction] = useState<PendingActionKind | null>(
     null,
@@ -391,23 +430,18 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
             </div>
           ) : (
             <ul className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden divide-y divide-gray-200 dark:divide-gray-800">
-              {namedVoters.map((name, idx) => {
+              {respondentRows.map((row) => {
                 const isViewer =
                   currentUserName !== null &&
-                  name.trim().toLowerCase() === currentUserName;
+                  row.name.trim().toLowerCase() === currentUserName;
                 return (
-                  <li
-                    key={`${name}-${idx}`}
-                    className="flex items-center gap-3 px-4 py-3 text-gray-900 dark:text-white"
-                  >
-                    <InitialBubble
-                      name={name}
-                      imageUrl={isViewer ? myUserImageUrl : null}
-                      sizeClassName="w-8 h-8"
-                      className="shrink-0"
-                    />
-                    <span className="min-w-0 break-words">{name}</span>
-                  </li>
+                  <RosterRow
+                    key={row.key}
+                    displayName={row.name}
+                    bubbleName={row.name}
+                    imageUrl={isViewer ? myUserImageUrl : null}
+                    userId={row.userId}
+                  />
                 );
               })}
               {anonymousCount > 0 && (

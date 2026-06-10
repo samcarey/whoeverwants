@@ -15,6 +15,7 @@ import { UniversalLinksHandler } from "@/components/UniversalLinksHandler";
 import { ClipboardLinkPrompt } from "@/components/ClipboardLinkPrompt";
 import { PushAutoRegister } from "@/components/PushAutoRegister";
 import { NativeIdentityHost } from "@/components/NativeIdentityHost";
+import UserProfileModalHost from "@/components/UserProfileModalHost";
 import { THEME_KEY } from "@/lib/theme";
 
 
@@ -186,6 +187,11 @@ export default function RootLayout({
             Inert on non-native platforms. Lives in the layout so the
             subscription survives client-side route changes. */}
         <NativeIdentityHost />
+
+        {/* Long-press (touch) / click (desktop) a user's name/avatar anywhere →
+            profile modal. Mounted once so the triggering surfaces just dispatch
+            the open event. */}
+        <UserProfileModalHost />
         <script
           dangerouslySetInnerHTML={{
             __html: `

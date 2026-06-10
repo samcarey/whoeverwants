@@ -66,6 +66,7 @@ export {
   apiGetGroupInvitableAccounts,
   apiAddGroupMembers,
   apiGetGroupMembers,
+  apiGetGroupPollVoters,
 } from "./groups";
 export type {
   GroupJoinRequest,
@@ -80,6 +81,7 @@ export type {
 
 export {
   apiGetMyUserProfile,
+  apiGetUserProfileCard,
   apiGetPollCategoryHistory,
   apiGetCategoryOptions,
   apiUploadMyUserImage,
@@ -91,7 +93,13 @@ export {
   getMyUserImageUrl,
   USER_PROFILE_CHANGED_EVENT,
 } from "./users";
-export type { UserProfile, PollCategoryHistory, CategoryOptionEntry } from "./users";
+export type {
+  UserProfile,
+  UserProfileCard,
+  SharedGroupSummary,
+  PollCategoryHistory,
+  CategoryOptionEntry,
+} from "./users";
 
 export {
   apiSearchLocations,

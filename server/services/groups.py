@@ -453,6 +453,49 @@ def load_group_members(conn, group_id: str) -> tuple[list[dict], int]:
     return named, anonymous_count
 
 
+def load_poll_voters(conn, poll_id: str) -> tuple[list[dict], int]:
+    """A single poll's voter roster, same shape + account-dedup as
+    `load_group_members` but scoped to who VOTED on `poll_id`. Returns
+    ``(named_voters, anonymous_count)`` — one entry per distinct voter person
+    (account-aware), plus a rolled-up count of voters with no resolvable name.
+    Used by the poll /info respondents list (per-person rows + long-press)."""
+    rows = conn.execute(
+        """
+        SELECT
+            COALESCE(ub.user_id::text, v.browser_id::text) AS person_key,
+            ub.user_id::text AS user_id,
+            NULLIF(BTRIM(v.voter_name), '') AS name,
+            v.created_at AS ts
+          FROM votes v
+          JOIN questions q ON v.question_id = q.id
+          LEFT JOIN user_browsers ub ON ub.browser_id = v.browser_id
+         WHERE q.poll_id = %(p)s::uuid
+         ORDER BY v.created_at
+        """,
+        {"p": poll_id},
+    ).fetchall()
+
+    by_person: dict[str, dict] = {}
+    for r in rows:
+        # Legacy votes (pre-migration-120) can carry neither account nor
+        # browser_id — treat each as its own anonymous person.
+        key = r["person_key"] or f"legacy:{r['ts']}"
+        existing = by_person.get(key)
+        if existing is None:
+            by_person[key] = {"user_id": r.get("user_id"), "name": r.get("name")}
+        elif not existing["name"] and r.get("name"):
+            existing["name"] = r["name"]
+
+    named = [
+        {"name": p["name"], "user_id": p["user_id"]}
+        for p in by_person.values()
+        if p["name"]
+    ]
+    anonymous_count = sum(1 for p in by_person.values() if not p["name"])
+    named.sort(key=lambda m: m["name"].lower())
+    return named, anonymous_count
+
+
 def resolve_group_for_visit(
     conn,
     route_id: str,

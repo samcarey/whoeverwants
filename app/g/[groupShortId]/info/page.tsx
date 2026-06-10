@@ -21,6 +21,7 @@ import GroupShareButton from "@/components/GroupShareButton";
 import GroupPrivacySection from "@/components/GroupPrivacySection";
 import HeaderPortal from "@/components/HeaderPortal";
 import InitialBubble from "@/components/InitialBubble";
+import RosterRow from "@/components/RosterRow";
 import InviteLinksSection from "@/components/InviteLinksSection";
 import JoinRequestsSection from "@/components/JoinRequestsSection";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
@@ -119,7 +120,9 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   // people who share a name (two "Bob"s). `anonymousExtra` is the rolled-up
   // count of members with no resolvable name (drive-by URL visitors on a
   // public group).
-  let membersList: { name: string; key: string }[];
+  // `userId` is the account to long-press → profile modal (null = anonymous or
+  // the viewer's own row, which isn't long-pressable).
+  let membersList: { name: string; key: string; userId: string | null }[];
   let totalCount: number;
   let anonymousExtra = 0;
   if (roster) {
@@ -128,13 +131,15 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     const rows = roster.members.map((m, i) => ({
       name: m.name,
       key: `member-${m.user_id ?? m.name}-${i}`,
+      // Don't long-press yourself; otherwise the resolved account.
+      userId: isCurrentUserName(m.name) ? null : m.user_id,
     }));
     // The viewer is always a member (visiting auto-joins / the creator is a
     // member). If they aren't a resolved named row, they're one of the
     // anonymous members — surface them as themselves and pull one out of the
     // anonymous roll-up so the headcount stays right.
     if (!rows.some((r) => isCurrentUserName(r.name))) {
-      rows.push({ name: viewerLabel, key: "__viewer__" });
+      rows.push({ name: viewerLabel, key: "__viewer__", userId: null });
       if (anon > 0) anon -= 1;
     }
     rows.sort((a, b) => a.name.localeCompare(b.name));
@@ -147,10 +152,10 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
       ...group.participantNames.flatMap((name) =>
         Array.from(
           { length: nameCount(group.participantNameCounts, name) },
-          (_, i) => ({ name, key: `${name}#${i}` }),
+          (_, i) => ({ name, key: `${name}#${i}`, userId: null }),
         ),
       ),
-      { name: viewerLabel, key: "__viewer__" },
+      { name: viewerLabel, key: "__viewer__", userId: null },
     ].sort((a, b) => a.name.localeCompare(b.name));
     totalCount = membersList.length;
   }
@@ -249,7 +254,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
 
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
           <ul className="divide-y divide-gray-200 dark:divide-gray-800">
-            {membersList.map(({ name, key }) => {
+            {membersList.map(({ name, key, userId }) => {
               // Viewer row resolves either as the literal "You" label
               // (no saved name) or as a real-name row matching the
               // current saved name. `name === "You"` passes `null` to
@@ -259,15 +264,13 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
               const imageUrl = isViewer ? myUserImageUrl : null;
               const bubbleName = name === "You" ? null : name;
               return (
-                <li key={key} className="flex items-center gap-3 px-4 py-3 text-gray-900 dark:text-white">
-                  <InitialBubble
-                    name={bubbleName}
-                    imageUrl={imageUrl}
-                    sizeClassName="w-8 h-8"
-                    className="shrink-0"
-                  />
-                  <span className="min-w-0 break-words">{name}</span>
-                </li>
+                <RosterRow
+                  key={key}
+                  displayName={name}
+                  bubbleName={bubbleName}
+                  imageUrl={imageUrl}
+                  userId={userId}
+                />
               );
             })}
             {anonymousExtra > 0 && (
