@@ -260,15 +260,21 @@ def test_boot_allowed_on_public_group(client, creator_browser, member_browser):
 def test_boot_anonymous_member_by_handle(
     client, creator_browser, member_browser
 ):
-    # Public group; an anonymous (no-name) browser drive-by joins, then the
-    # admin boots them via the opaque handle from /members.
-    resp = client.post("/api/groups", headers=_bid(creator_browser))
-    g = resp.json()
+    # Named admin's public group; an anonymous (no-name) browser drive-by
+    # joins, then the admin boots them via the opaque handle from /members.
+    token, _ = _sign_in(client, creator_browser)
+    g = _create_private_group(client, creator_browser, token)
+    flip = client.post(
+        f"/api/groups/{g['short_id']}/privacy",
+        json={"privacy": "public"},
+        headers=_auth(creator_browser, token),
+    )
+    assert flip.status_code == 200, flip.text
     # Anonymous visitor (no account, no name) auto-joins.
     client.get(
         f"/api/groups/by-route-id/{g['short_id']}", headers=_bid(member_browser)
     )
-    roster = _members(client, g["short_id"], creator_browser)
+    roster = _members(client, g["short_id"], creator_browser, token)
     assert roster["anonymous_count"] >= 1
     assert len(roster["anonymous_members"]) == roster["anonymous_count"]
     handle = roster["anonymous_members"][0]["handle"]

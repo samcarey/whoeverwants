@@ -1802,7 +1802,7 @@ def boot_anonymous_group_member(route_id: str, handle: str, request: Request):
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        _require_admin(
+        admin = _require_admin(
             conn, group_id, browser_id=caller_browser, user_id=_user_id(request),
         )
         _, anon = load_group_members(conn, group_id)
@@ -1821,10 +1821,16 @@ def boot_anonymous_group_member(route_id: str, handle: str, request: Request):
             raise HTTPException(
                 status_code=404, detail="Anonymous member not found"
             )
-        if caller_browser and match["browser_id"] == caller_browser:
+        # A nameless admin (auto-account creator) also rolls up anonymously —
+        # don't let the handle path bypass the self/admin guards.
+        if (match["user_id"] and match["user_id"] == admin) or (
+            caller_browser and match["browser_id"] == caller_browser
+        ):
             raise HTTPException(
                 status_code=400, detail="Leave the group instead of booting yourself"
             )
+        if match["user_id"] and is_group_admin(conn, group_id, match["user_id"]):
+            raise HTTPException(status_code=403, detail="Admins can't be booted")
         boot_member_by_browser(conn, group_id, match["browser_id"])
     return BootMemberResponse(booted=True)
 
