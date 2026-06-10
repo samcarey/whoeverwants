@@ -10,6 +10,8 @@ import {
 } from "@/lib/slideOverlay";
 import { useGroup } from "@/lib/useGroup";
 import { nameCount } from "@/lib/groupUtils";
+import { apiGetGroupMembers } from "@/lib/api";
+import type { GroupRoster } from "@/lib/api";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupShareButton from "@/components/GroupShareButton";
 import GroupPrivacySection from "@/components/GroupPrivacySection";
@@ -73,30 +75,73 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     slideToGroupRoot({ groupId, direction: 'back', useHistoryBack: hasAppHistory() });
   };
 
-  // /info is the canonical roster — the viewer is always a member
-  // (visiting the URL auto-joins them via the by-route-id read endpoint),
-  // so they always appear in the list. Other surfaces filter them out of
-  // `participantNames` so they don't see themselves in the group name;
-  // here we add them back in. `viewerLabel` falls back to "You" when no
-  // localStorage name is set so a freshly-joined nameless viewer doesn't
-  // see "0 Members".
+  // /info is the canonical roster. It's built from the ACTUAL membership
+  // (`group_members`) via `apiGetGroupMembers`, NOT from
+  // `group.participantNames` (poll creators/voters) — otherwise a member who
+  // joined via approve / invite-link / "Add people" but hasn't voted on a
+  // poll yet is invisible (the reported bug: approve Bob → roster still shows
+  // only you). `rosterTick` re-fetches after an approval + on tab refocus.
   const currentUserName = getUserName()?.trim() || null;
   const viewerLabel = currentUserName ?? "You";
-  // Expand each name into one member row PER distinct person who used it
-  // (`participantNameCounts` carries the multiplicity), so two genuinely-
-  // different "Alex"es render as two "Alex" rows and the "N Members" header
-  // tallies them correctly — instead of collapsing to one member. The viewer
-  // is always exactly one person. `key` disambiguates the duplicate rows.
-  const membersList = [
-    ...group.participantNames.flatMap((name) =>
-      Array.from(
-        { length: nameCount(group.participantNameCounts, name) },
-        (_, i) => ({ name, key: `${name}#${i}` }),
+  const [roster, setRoster] = useState<GroupRoster | null>(null);
+  const [rosterTick, setRosterTick] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      apiGetGroupMembers(groupId)
+        .then((r) => { if (!cancelled) setRoster(r); })
+        .catch(() => { /* keep the participant-name fallback on failure */ });
+    };
+    load();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [groupId, rosterTick]);
+
+  // Each member is one person; `key` disambiguates two genuinely-different
+  // people who share a name (two "Bob"s). `anonymousExtra` is the rolled-up
+  // count of members with no resolvable name (drive-by URL visitors on a
+  // public group).
+  let membersList: { name: string; key: string }[];
+  let totalCount: number;
+  let anonymousExtra = 0;
+  if (roster) {
+    totalCount = roster.members.length + roster.anonymous_count;
+    let anon = roster.anonymous_count;
+    const rows = roster.members.map((m, i) => ({
+      name: m.name,
+      key: `member-${m.user_id ?? m.name}-${i}`,
+    }));
+    // The viewer is always a member (visiting auto-joins / the creator is a
+    // member). If they aren't a resolved named row, they're one of the
+    // anonymous members — surface them as themselves and pull one out of the
+    // anonymous roll-up so the headcount stays right.
+    if (!rows.some((r) => isCurrentUserName(r.name))) {
+      rows.push({ name: viewerLabel, key: "__viewer__" });
+      if (anon > 0) anon -= 1;
+    }
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    membersList = rows;
+    anonymousExtra = anon;
+  } else {
+    // First-paint fallback before the roster lands: poll participants + the
+    // viewer (the prior behavior). Replaced within a tick by the real roster.
+    membersList = [
+      ...group.participantNames.flatMap((name) =>
+        Array.from(
+          { length: nameCount(group.participantNameCounts, name) },
+          (_, i) => ({ name, key: `${name}#${i}` }),
+        ),
       ),
-    ),
-    { name: viewerLabel, key: "__viewer__" },
-  ].sort((a, b) => a.name.localeCompare(b.name));
-  const totalCount = membersList.length;
+      { name: viewerLabel, key: "__viewer__" },
+    ].sort((a, b) => a.name.localeCompare(b.name));
+    totalCount = membersList.length;
+  }
 
   // Hero + title also surface the viewer in the solo case so the page
   // doesn't render a gray placeholder + "New Group" fallback for a
@@ -162,7 +207,13 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           onCreatorClaimed={setClaimedCreatorOverride}
         />
 
-        <JoinRequestsSection groupId={groupId} enabled={viewerIsCreator} />
+        <JoinRequestsSection
+          groupId={groupId}
+          enabled={viewerIsCreator}
+          onDecided={(action) => {
+            if (action === "approve") setRosterTick((t) => t + 1);
+          }}
+        />
 
         <InviteLinksSection groupId={groupId} enabled={viewerIsCreator} />
 
@@ -207,6 +258,18 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
                 </li>
               );
             })}
+            {anonymousExtra > 0 && (
+              <li className="flex items-center gap-3 px-4 py-3 text-gray-500 dark:text-gray-400 italic">
+                <InitialBubble
+                  name={null}
+                  sizeClassName="w-8 h-8"
+                  className="shrink-0"
+                />
+                <span className="min-w-0 break-words">
+                  {anonymousExtra} anonymous
+                </span>
+              </li>
+            )}
           </ul>
         </div>
       </div>

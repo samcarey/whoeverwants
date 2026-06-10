@@ -65,6 +65,7 @@ export {
   apiRevokeGroupInvite,
   apiGetGroupInvitableAccounts,
   apiAddGroupMembers,
+  apiGetGroupMembers,
 } from "./groups";
 export type {
   GroupJoinRequest,
@@ -73,6 +74,8 @@ export type {
   CreateGroupInviteOptions,
   GroupPollResult,
   InvitableAccount,
+  GroupMember,
+  GroupRoster,
 } from "./groups";
 
 export {
