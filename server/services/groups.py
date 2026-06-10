@@ -674,17 +674,22 @@ def polls_for_poll_ids(
 
     # Gap 1: the caller's per-poll follow/ignore state, account-aware across
     # every browser linked to their account. Absent = 'new' (default-follow).
-    follow_states: dict[str, str] = {}
+    # `auto_aged_at` (migration 142) is read straight off the already-loaded
+    # poll rows (SELECT polls.*) so the hot read path adds no extra query; an
+    # aged poll reads 'old' for everyone unless they have a newer follow row.
+    from services.follow_state import effective_follow_states
+
+    aged_map = {str(r["id"]): r["auto_aged_at"] for r in poll_rows}
+    bids: list[str] = []
     if viewer_browser_id:
         from services.auth import caller_browser_ids
-        from services.follow_state import effective_follow_states
 
         bids = caller_browser_ids(
             conn, browser_id=viewer_browser_id, user_id=viewer_user_id
         )
-        follow_states = effective_follow_states(
-            conn, poll_ids_present, browser_ids=bids
-        )
+    follow_states = effective_follow_states(
+        conn, poll_ids_present, browser_ids=bids, auto_aged_at=aged_map
+    )
 
     responses: list[PollResponse] = []
     for mp_row in poll_rows:

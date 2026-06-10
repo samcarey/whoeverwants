@@ -20,7 +20,7 @@ VALID_STATES = ("new", "old")
 
 
 def effective_follow_states(
-    conn, poll_ids: list[str], *, browser_ids: list[str]
+    conn, poll_ids: list[str], *, browser_ids: list[str], auto_aged_at=None
 ) -> dict[str, str]:
     """poll_id (str) → effective state ('new' | 'old') for the caller's browser
     set. Polls with no signal at all (no follow row across the caller's browsers
@@ -39,7 +39,12 @@ def effective_follow_states(
     a post-aging + brings it back to Relevant and sticks. Notification / badge
     suppression is deliberately NOT affected — that keys on EXPLICIT ✕ via
     `old_poll_ids_for_browsers`, so a poll-closed push still reaches everyone who
-    didn't explicitly ignore the poll."""
+    didn't explicitly ignore the poll.
+
+    `auto_aged_at` is an optional `{poll_id: timestamp}` map (only aged polls
+    need an entry). Callers that already loaded the poll rows (the hot
+    `polls_for_poll_ids` path) pass it to skip a redundant query; pass None to
+    have this function look it up."""
     if not poll_ids:
         return {}
     rows = (
@@ -59,24 +64,27 @@ def effective_follow_states(
     )
     follow = {r["pid"]: (r["state"], r["updated_at"]) for r in rows}
 
-    aged_rows = conn.execute(
-        """
-        SELECT id::text AS pid, auto_aged_at
-          FROM polls
-         WHERE id = ANY(%(pids)s::uuid[])
-           AND auto_aged_at IS NOT NULL
-        """,
-        {"pids": poll_ids},
-    ).fetchall()
-    aged = {r["pid"]: r["auto_aged_at"] for r in aged_rows}
+    if auto_aged_at is None:
+        aged_rows = conn.execute(
+            """
+            SELECT id::text AS pid, auto_aged_at
+              FROM polls
+             WHERE id = ANY(%(pids)s::uuid[])
+               AND auto_aged_at IS NOT NULL
+            """,
+            {"pids": poll_ids},
+        ).fetchall()
+        aged_at = {r["pid"]: r["auto_aged_at"] for r in aged_rows}
+    else:
+        aged_at = {k: v for k, v in auto_aged_at.items() if v is not None}
 
     result: dict[str, str] = {}
-    for pid in {*follow, *aged}:
+    for pid in {*follow, *aged_at}:
         fr = follow.get(pid)
-        aged_at = aged.get(pid)
-        if fr is not None and (aged_at is None or fr[1] >= aged_at):
+        stamp = aged_at.get(pid)
+        if fr is not None and (stamp is None or fr[1] >= stamp):
             result[pid] = fr[0]
-        elif aged_at is not None:
+        elif stamp is not None:
             result[pid] = "old"
     return result
 

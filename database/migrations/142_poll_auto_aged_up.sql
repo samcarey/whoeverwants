@@ -17,3 +17,10 @@
 --
 -- NULL = not yet aged. Reopening a poll clears it back to NULL.
 ALTER TABLE polls ADD COLUMN IF NOT EXISTS auto_aged_at TIMESTAMPTZ;
+
+-- The cron tick scans `is_closed AND auto_aged_at IS NULL` each minute (tick
+-- pass 6). A partial index keeps that to the live "closed but not yet aged"
+-- set (which shrinks as polls age) instead of a full polls seq-scan.
+CREATE INDEX IF NOT EXISTS idx_polls_aging_candidates
+  ON polls (id)
+  WHERE is_closed = true AND auto_aged_at IS NULL;
