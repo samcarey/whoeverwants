@@ -390,6 +390,9 @@ class TestGroupAddition:
     source of truth for the group-name override (no per-poll copies)."""
 
     def _create_root(self, client, creator_secret, **kwargs):
+        # Pin a browser_id so the creator's auto-account (= group admin) is
+        # stable for later admin-gated calls (e.g. the title endpoint).
+        bid = str(uuid.uuid4())
         resp = client.post(
             "/api/polls",
             json={
@@ -397,9 +400,12 @@ class TestGroupAddition:
                 "questions": [_yes_no_question()],
                 **kwargs,
             },
+            headers={"X-Browser-Id": bid},
         )
         assert resp.status_code == 201, resp.text
-        return resp.json()
+        data = resp.json()
+        data["_creator_bid"] = bid
+        return data
 
     def test_poll_added_to_group_inherits_group_id(self, client, creator_secret):
         parent = self._create_root(client, creator_secret)
@@ -504,11 +510,15 @@ class TestGroupAddition:
     def test_update_group_title_endpoint(self, client, creator_secret):
         parent = self._create_root(client, creator_secret)
         group_id = parent["group_id"]
+        # Migration 142: title edits are admin-gated; the creator's browser
+        # resolves to its auto-account admin.
+        admin_hdr = {"X-Browser-Id": parent["_creator_bid"]}
 
         # Set
         resp = client.post(
             f"/api/groups/{group_id}/title",
             json={"group_title": "Renamed"},
+            headers=admin_hdr,
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -523,6 +533,7 @@ class TestGroupAddition:
         cleared = client.post(
             f"/api/groups/{group_id}/title",
             json={"group_title": ""},
+            headers=admin_hdr,
         )
         assert cleared.json()["title"] is None
         assert client.get(
@@ -533,11 +544,13 @@ class TestGroupAddition:
         self, client, creator_secret
     ):
         parent = self._create_root(client, creator_secret)
+        admin_hdr = {"X-Browser-Id": parent["_creator_bid"]}
         # groups.short_id is the canonical FE-facing form
         for route_id in (parent["group_id"], parent["group_short_id"]):
             r = client.post(
                 f"/api/groups/{route_id}/title",
                 json={"group_title": f"name-{route_id[:6]}"},
+                headers=admin_hdr,
             )
             assert r.status_code == 200, r.text
 

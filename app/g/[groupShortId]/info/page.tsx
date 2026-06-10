@@ -10,8 +10,13 @@ import {
 } from "@/lib/slideOverlay";
 import { useGroup } from "@/lib/useGroup";
 import { nameCount } from "@/lib/groupUtils";
-import { apiGetGroupMembers } from "@/lib/api";
+import {
+  apiGetGroupMembers,
+  apiPromoteGroupAdmin,
+  apiBootGroupMember,
+} from "@/lib/api";
 import type { GroupRoster } from "@/lib/api";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import {
   GROUP_MEMBERS_CHANGED_EVENT,
   type GroupMembersChangedDetail,
@@ -58,19 +63,12 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     window.addEventListener(SESSION_CHANGED_EVENT, update);
     return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
   }, []);
-  // Phase I: when the viewer claims the group, GroupPrivacySection
-  // fires `onCreatorClaimed(newUserId)` and we lift the value here so
-  // every downstream creator-only gate (Join Requests, Invite Links)
-  // flips on the same render. The cache-backed `group.creatorUserId`
-  // remains stale until the next group fetch — bounded by the
-  // questionCache TTL — which is harmless since the override always
-  // wins.
-  const [claimedCreatorOverride, setClaimedCreatorOverride] = useState<
-    string | null
+  // Migration 142: a pending promote/boot the admin must confirm (both are
+  // consequential — promote is permanent, boot removes a member + revokes
+  // their invite link).
+  const [pendingAction, setPendingAction] = useState<
+    { kind: "promote" | "boot"; userId: string; name: string } | null
   >(null);
-  const effectiveCreatorUserId = claimedCreatorOverride ?? group.creatorUserId;
-  const viewerIsCreator =
-    !!session && !!effectiveCreatorUserId && session.user_id === effectiveCreatorUserId;
 
   const goBack = () => {
     // Slide overlay: mount the group root above the current page and slide
@@ -90,6 +88,22 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   const viewerLabel = currentUserName ?? "You";
   const [roster, setRoster] = useState<GroupRoster | null>(null);
   const [rosterTick, setRosterTick] = useState(0);
+  const viewerIsAdmin = roster?.viewer_is_admin ?? false;
+  const isPrivateGroup = group.privacy === "private";
+
+  const runPendingAction = () => {
+    if (!pendingAction) return;
+    const { kind, userId } = pendingAction;
+    setPendingAction(null);
+    const call =
+      kind === "promote"
+        ? apiPromoteGroupAdmin(groupId, userId)
+        : apiBootGroupMember(groupId, userId);
+    // Refetch the roster on success so the badge / removal reflects.
+    call.then(() => setRosterTick((t) => t + 1)).catch(() => {
+      setRosterTick((t) => t + 1);
+    });
+  };
   useEffect(() => {
     let cancelled = false;
     const load = () => {
@@ -121,25 +135,40 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   // count of members with no resolvable name (drive-by URL visitors on a
   // public group).
   // `userId` is the account to long-press → profile modal (null = anonymous or
-  // the viewer's own row, which isn't long-pressable).
-  let membersList: { name: string; key: string; userId: string | null }[];
+  // the viewer's own row, which isn't long-pressable). `isAdmin` drives the
+  // Admin badge + gates the promote/boot actions.
+  type MemberRow = {
+    name: string;
+    key: string;
+    userId: string | null;
+    isAdmin: boolean;
+  };
+  let membersList: MemberRow[];
   let totalCount: number;
   let anonymousExtra = 0;
   if (roster) {
     totalCount = roster.members.length + roster.anonymous_count;
     let anon = roster.anonymous_count;
-    const rows = roster.members.map((m, i) => ({
+    const rows: MemberRow[] = roster.members.map((m, i) => ({
       name: m.name,
       key: `member-${m.user_id ?? m.name}-${i}`,
       // Don't long-press yourself; otherwise the resolved account.
       userId: isCurrentUserName(m.name) ? null : m.user_id,
+      isAdmin: m.is_admin,
     }));
     // The viewer is always a member (visiting auto-joins / the creator is a
     // member). If they aren't a resolved named row, they're one of the
     // anonymous members — surface them as themselves and pull one out of the
     // anonymous roll-up so the headcount stays right.
     if (!rows.some((r) => isCurrentUserName(r.name))) {
-      rows.push({ name: viewerLabel, key: "__viewer__", userId: null });
+      // Viewer's own row isn't long-pressable (userId null); isAdmin still
+      // drives the Admin badge on your own row.
+      rows.push({
+        name: viewerLabel,
+        key: "__viewer__",
+        userId: null,
+        isAdmin: viewerIsAdmin,
+      });
       if (anon > 0) anon -= 1;
     }
     rows.sort((a, b) => a.name.localeCompare(b.name));
@@ -152,10 +181,10 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
       ...group.participantNames.flatMap((name) =>
         Array.from(
           { length: nameCount(group.participantNameCounts, name) },
-          (_, i) => ({ name, key: `${name}#${i}`, userId: null }),
+          (_, i) => ({ name, key: `${name}#${i}`, userId: null, isAdmin: false }),
         ),
       ),
-      { name: viewerLabel, key: "__viewer__", userId: null },
+      { name: viewerLabel, key: "__viewer__", userId: null, isAdmin: false },
     ].sort((a, b) => a.name.localeCompare(b.name));
     totalCount = membersList.length;
   }
@@ -188,14 +217,16 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <button
-          onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
-          className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70 text-blue-600 dark:text-blue-400 text-sm font-medium"
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
-          aria-label="Edit group title"
-        >
-          Edit
-        </button>
+        {viewerIsAdmin && (
+          <button
+            onClick={() => slideToGroupEditTitle({ groupId, direction: 'forward' })}
+            className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70 text-blue-600 dark:text-blue-400 text-sm font-medium"
+            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+            aria-label="Edit group title"
+          >
+            Edit
+          </button>
+        )}
       </HeaderPortal>
 
       <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1.05rem)' }}>
@@ -220,33 +251,34 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         <GroupPrivacySection
           group={group}
           groupId={groupId}
-          effectiveCreatorUserId={effectiveCreatorUserId}
-          onCreatorClaimed={setClaimedCreatorOverride}
+          viewerIsAdmin={viewerIsAdmin}
         />
 
         <JoinRequestsSection
           groupId={groupId}
-          enabled={viewerIsCreator}
+          enabled={viewerIsAdmin}
           onDecided={(action) => {
             if (action === "approve") setRosterTick((t) => t + 1);
           }}
         />
 
-        <InviteLinksSection groupId={groupId} enabled={viewerIsCreator} />
+        <InviteLinksSection groupId={groupId} enabled={viewerIsAdmin} />
 
         <NotificationSettingsCard groupRouteId={groupId} className="mt-[0.96rem]" />
 
-        <button
-          type="button"
-          onClick={() => slideToGroupInviteMembers({ groupId, direction: 'forward' })}
-          className="mt-6 w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white text-sm font-medium flex items-center justify-center gap-2 transition-transform"
-          aria-label="Add people to this group"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3M9 12a4 4 0 100-8 4 4 0 000 8zm0 0c-2.761 0-5 2.239-5 5v1h7" />
-          </svg>
-          Add people
-        </button>
+        {viewerIsAdmin && (
+          <button
+            type="button"
+            onClick={() => slideToGroupInviteMembers({ groupId, direction: 'forward' })}
+            className="mt-6 w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white text-sm font-medium flex items-center justify-center gap-2 transition-transform"
+            aria-label="Add people to this group"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3M9 12a4 4 0 100-8 4 4 0 000 8zm0 0c-2.761 0-5 2.239-5 5v1h7" />
+            </svg>
+            Add people
+          </button>
+        )}
 
         <h2 className="mt-4 px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
           {totalCount} {totalCount === 1 ? 'Member' : 'Members'}
@@ -254,7 +286,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
 
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
           <ul className="divide-y divide-gray-200 dark:divide-gray-800">
-            {membersList.map(({ name, key, userId }) => {
+            {membersList.map(({ name, key, userId, isAdmin }) => {
               // Viewer row resolves either as the literal "You" label
               // (no saved name) or as a real-name row matching the
               // current saved name. `name === "You"` passes `null` to
@@ -263,6 +295,12 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
               const isViewer = name === viewerLabel || isCurrentUserName(name);
               const imageUrl = isViewer ? myUserImageUrl : null;
               const bubbleName = name === "You" ? null : name;
+              // Admins can act on non-admin, account-backed members other
+              // than themselves (Q4: admins can't demote/boot each other).
+              // `userId` is the member's real account id (main's RosterRow
+              // long-press path nulls it only for the viewer's own / anonymous
+              // rows, which `!isViewer` / `!!userId` already exclude).
+              const canManage = viewerIsAdmin && !!userId && !isViewer && !isAdmin;
               return (
                 <RosterRow
                   key={key}
@@ -270,6 +308,35 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
                   bubbleName={bubbleName}
                   imageUrl={imageUrl}
                   userId={userId}
+                  isAdmin={isAdmin}
+                  actions={
+                    canManage ? (
+                      <>
+                        <button
+                          type="button"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() =>
+                            setPendingAction({ kind: "promote", userId: userId!, name })
+                          }
+                          className="shrink-0 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline active:opacity-70"
+                        >
+                          Make admin
+                        </button>
+                        {isPrivateGroup && (
+                          <button
+                            type="button"
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={() =>
+                              setPendingAction({ kind: "boot", userId: userId!, name })
+                            }
+                            className="shrink-0 text-xs font-medium text-red-600 dark:text-red-400 hover:underline active:opacity-70"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </>
+                    ) : null
+                  }
                 />
               );
             })}
@@ -288,6 +355,25 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           </ul>
         </div>
       </div>
+
+      {pendingAction && (
+        <ConfirmationModal
+          isOpen={true}
+          onConfirm={runPendingAction}
+          onCancel={() => setPendingAction(null)}
+          message={
+            pendingAction.kind === "promote"
+              ? `Make ${pendingAction.name} an admin? Admins can manage members, invites, and group settings. This can't be undone.`
+              : `Remove ${pendingAction.name} from the group? The invite link they joined with will stop working.`
+          }
+          confirmText={pendingAction.kind === "promote" ? "Make admin" : "Remove"}
+          confirmButtonClass={
+            pendingAction.kind === "promote"
+              ? "bg-blue-600 hover:bg-blue-700 text-white"
+              : "bg-red-600 hover:bg-red-700 text-white"
+          }
+        />
+      )}
     </>
   );
 }

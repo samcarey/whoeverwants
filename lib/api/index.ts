@@ -67,6 +67,8 @@ export {
   apiAddGroupMembers,
   apiGetGroupMembers,
   apiGetGroupPollVoters,
+  apiPromoteGroupAdmin,
+  apiBootGroupMember,
 } from "./groups";
 export type {
   GroupJoinRequest,

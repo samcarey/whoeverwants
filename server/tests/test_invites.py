@@ -111,14 +111,17 @@ def _create_private_group(client, browser_id, token):
 # ----------------------------------------------------------------- create
 
 
-def test_create_invite_anonymous_returns_401(client, creator_browser):
+def test_create_invite_no_account_returns_401(client, creator_browser):
     ctoken, _ = _sign_in(client, creator_browser)
     group = _create_private_group(client, creator_browser, ctoken)
 
+    # Migration 142: admin-gated. A fresh browser resolving to no account → 401
+    # (the creator's own browser would still resolve via its account link even
+    # without a bearer, so use an unlinked one).
     resp = client.post(
         f"/api/groups/{group['id']}/invites",
         json={"mode": "multi"},
-        headers=_bid_headers(creator_browser),  # no bearer
+        headers={"X-Browser-Id": str(uuid.uuid4())},
     )
     assert resp.status_code == 401
 

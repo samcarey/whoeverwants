@@ -3189,6 +3189,91 @@ Bob → list still says only Sam). Shipped on
 
 ---
 
+## Group Admin System (migration 142)
+
+Every group has ≥1 **admin** at all times (when it has ≥1 account member). Admins
+generalize the old single `groups.creator_user_id` into a set. An admin can:
+toggle privacy, edit title/avatar, approve join requests, mint/revoke invite
+links, add people directly, **promote** members to admin, and **boot** non-admin
+members. Design decisions (owner-confirmed): **no demotion and no owner
+hierarchy** (Q4 — once an admin, you stay one until you LEAVE the group, which is
+the only event that shrinks the admin set); **boot is PRIVATE-groups-only** (Q3 —
+booting a public-group member is futile, they auto-rejoin on visit) and revokes
+the specific invite link the booted member joined through; **admins are
+account-keyed** (`group_members` is browser-keyed, but admin powers need a real
+account).
+
+- **Schema:** `group_admins(group_id, user_id, granted_at)` PK `(group_id,
+  user_id)`, both FKs CASCADE, index on `user_id`. `group_members.joined_via_invite_id`
+  (FK → `group_invites`, SET NULL) records which invite a member joined through
+  (set in `redeem_invite`, only on a genuine first join) so boot can revoke it.
+  The migration WIPED all legacy NULL-creator groups (owner: disposable
+  anonymous-era data — prod was ~97% NULL-creator since group creator was
+  deliberately NULL for anonymous creators) and seeded surviving creators as
+  admin #1.
+- **`creator_user_id` is now vestigial historical data, NOT an authorization
+  signal.** It is NOT NOT-NULL (its FK is ON DELETE SET NULL, so a creator
+  deleting their account legitimately nulls it). The "every group has an admin"
+  invariant lives in `group_admins` (seeded on create + auto-promotion), not a
+  column constraint. Don't reintroduce creator-based auth gates.
+- **No more NULL-creator groups going forward.** Both create paths always record
+  a creator: `POST /api/polls` (`_resolve_or_create_group` uses the poll's
+  always-set `creator_user_id` — the auto-account for anonymous creators —
+  DECOUPLED from privacy, which still keys on genuine sign-in so anonymous groups
+  stay public/URL-shareable) and `POST /api/groups` (resolves the actor, or
+  auto-mints a nameless account for a bare browser). Both seed the `group_admins`
+  row. The **claim** endpoint/flow is obsolete (every group already has a
+  creator → claim always 409s); kept as harmless dead code, FE claim UI removed.
+- **`_require_admin(conn, group_id, *, browser_id, user_id) → admin_user_id`**
+  (`routers/groups.py`) is the single authorization gate. It resolves the actor
+  via `resolve_actor_user_id` (bearer OR the browser→account link — so a
+  browser-tied auto-account admin qualifies WITHOUT a bearer; 401 only when NO
+  account resolves) then requires a `group_admins` row (403 otherwise). It
+  REPLACED the per-endpoint `creator_user_id == user_id` gate on privacy /
+  join-requests / invites, and NEWLY gates title + image edits + add-people (Q6:
+  admin-only; these had no check before). `revoke_invite` is now group-scoped (any
+  admin revokes any of the group's invites, not just the minter).
+- **Service helpers (`services/groups.py`):** `is_group_admin` / `is_caller_admin`
+  / `add_group_admin` / `remove_group_admin` / `group_admin_user_ids` /
+  `promote_oldest_member_if_adminless` / `boot_member`. **Auto-promotion** runs
+  whenever the admin set could empty: `leave_group` endpoint (leaving drops your
+  admin row, then promotes the oldest remaining account-member by
+  `MIN(joined_at)`), and `delete_user_account` (captures the user's admin groups
+  before the cascade, promotes after). `merge_accounts` repoints `group_admins`
+  (dest keeps its row on collision) so a sign-in absorb / explicit merge never
+  silently demotes. No account member to promote ⇒ group stays admin-less (the
+  accepted "≥1 account member" condition).
+- **New endpoints:** `POST /{route}/admins {user_id}` (promote a member; target
+  must be a member), `POST /{route}/members/{user_id}/boot` (private-only,
+  non-admin target, not self → removes membership across linked browsers +
+  revokes their `joined_via_invite_id`). Both admin-only.
+- **`GET /{route}/members`** now returns `viewer_is_admin` (top-level) +
+  per-member `is_admin`. Anonymous (nameless) members roll into `anonymous_count`
+  and are never admins (account-keyed); a nameless admin (no display_name) is an
+  admin but rolls up anonymously — FE admins always have a name via the name-gate.
+- **FE:** `apiGetGroupMembers` surfaces `viewer_is_admin` + `is_admin`;
+  `apiPromoteGroupAdmin` / `apiBootGroupMember`. The `/info` page gates ALL admin
+  chrome on `roster.viewer_is_admin` (replacing the old
+  `session.user_id === group.creatorUserId` computation): Privacy toggle (via
+  `GroupPrivacySection`'s new `viewerIsAdmin` prop — its claim flow is removed),
+  JoinRequestsSection/InviteLinksSection `enabled`, Add-people, Edit-title, and
+  per-member Make-admin / Remove buttons (behind a `ConfirmationModal`; Remove
+  only when `group.privacy === 'private'`). The per-POLL info page is UNCHANGED —
+  its close/reopen/cutoff actions gate on POLL authorship (`poll.viewer_is_creator`),
+  a separate concept from group admin.
+- **Pitfall (the NOT NULL trap):** an early version made `creator_user_id` NOT
+  NULL as a guardrail — it broke account deletion (FK SET NULL → NOT NULL
+  violation) AND cascaded failures in instant-link / follow-state / account tests.
+  The invariant must live in `group_admins` + app code, never a NOT NULL on a
+  SET-NULL-FK column.
+- **Tests:** `server/tests/test_group_admins.py` (13: create-seeds-admin signed-in
+  + anon auto-account, roster flags, promote + guards, boot + revoke + all
+  negatives, auto-promote-on-leave, title/image admin-gating). Updated
+  group-privacy / claim / invite / join-request tests for the creator→admin +
+  auto-account-creator behavior changes.
+
+---
+
 ## Invite Members (In-App Address Book)
 
 From `/g/<id>/info`, a member taps **"Add people"** (above the members list) to open `/g/<id>/invite-members` — a screen that searches the caller's contacts, selects accounts with round checkboxes (whole row tappable), and adds them on **Update** (gated on ≥1 selection, behind a `ConfirmationModal`). Added accounts get a push. Shipped on `claude/group-member-invitations-DuZXc` (migration 126).

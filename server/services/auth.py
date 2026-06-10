@@ -538,6 +538,25 @@ def merge_accounts(conn, *, source_user_id: str, dest_user_id: str) -> None:
         p,
     )
 
+    # --- group_admins (PK (group_id, user_id), migration 142): dest keeps its
+    # admin row on collision; otherwise the source's admin status moves over so
+    # a merge never silently demotes the keeper.
+    conn.execute(
+        """
+        DELETE FROM group_admins s
+         WHERE s.user_id = %(src)s::uuid
+           AND EXISTS (
+             SELECT 1 FROM group_admins d
+              WHERE d.user_id = %(dst)s::uuid AND d.group_id = s.group_id
+           )
+        """,
+        p,
+    )
+    conn.execute(
+        "UPDATE group_admins SET user_id = %(dst)s::uuid WHERE user_id = %(src)s::uuid",
+        p,
+    )
+
     # --- user_contacts (PK (owner_user_id, contact_user_id)): move both
     # directions, dedupe via ON CONFLICT (newest watermark wins), and never
     # create a self-contact (owner == contact).
@@ -994,12 +1013,28 @@ def delete_user_account(conn, user_id: str) -> bool:
     that's now the sole poll-mutation authority (migration 123 retired
     `creator_secret`), a deleted creator's polls become immutable
     (close/reopen/cutoff no longer authorize). Returns True if a row was
-    deleted, False if the user was already gone (idempotent)."""
+    deleted, False if the user was already gone (idempotent).
+
+    Migration 142: `group_admins.user_id` cascades, so deleting a user drops
+    their admin rows. For any group that leaves admin-less, auto-promote the
+    oldest remaining account-member — same rule as "the last admin left"."""
+    # Capture the user's admin groups BEFORE the delete cascades the rows away.
+    admin_group_rows = conn.execute(
+        "SELECT group_id::text AS g FROM group_admins WHERE user_id = %(u)s::uuid",
+        {"u": user_id},
+    ).fetchall()
     row = conn.execute(
         "DELETE FROM users WHERE id = %(u)s::uuid RETURNING id",
         {"u": user_id},
     ).fetchone()
-    return row is not None
+    if row is None:
+        return False
+    # Local import avoids a top-level services.auth → services.groups cycle.
+    from services.groups import promote_oldest_member_if_adminless
+
+    for r in admin_group_rows:
+        promote_oldest_member_if_adminless(conn, r["g"])
+    return True
 
 
 # ---------------------------------------------------------------------------

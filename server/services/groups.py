@@ -496,6 +496,147 @@ def load_poll_voters(conn, poll_id: str) -> tuple[list[dict], int]:
     return named, anonymous_count
 
 
+# ---------------------------------------------------------------------------
+# Admin roster (migration 142)
+# ---------------------------------------------------------------------------
+#
+# `group_admins(group_id, user_id)` is the authorization source of truth for
+# every group-administration power (privacy toggle, title/avatar edits,
+# join-request approval, invite minting, promoting members, booting). It's
+# ACCOUNT-keyed: `group_members` is browser-keyed, but admin powers require a
+# real account. The original creator is admin #1 (seeded at create time and by
+# the migration backfill). There is no demotion and no owner hierarchy — the
+# only event that shrinks the admin set is an admin LEAVING the group (or
+# having their account deleted), which triggers auto-promotion below.
+
+
+def is_group_admin(conn, group_id: str, user_id: str | None) -> bool:
+    """True iff `user_id` (already resolved) is an admin of `group_id`."""
+    if not user_id:
+        return False
+    row = conn.execute(
+        "SELECT 1 FROM group_admins "
+        "WHERE group_id = %(g)s::uuid AND user_id = %(u)s::uuid LIMIT 1",
+        {"g": group_id, "u": user_id},
+    ).fetchone()
+    return row is not None
+
+
+def is_caller_admin(
+    conn,
+    group_id: str,
+    *,
+    browser_id: str | None,
+    user_id: str | None,
+) -> bool:
+    """True iff the caller is an admin of `group_id`. Resolves the actor via
+    `resolve_actor_user_id` (bearer session OR the account linked to this
+    browser) so browser-tied auto-account admins can exercise their powers,
+    not just bearer-signed-in users."""
+    from services.auth import resolve_actor_user_id
+
+    actor = resolve_actor_user_id(conn, user_id=user_id, browser_id=browser_id)
+    return is_group_admin(conn, group_id, actor)
+
+
+def group_admin_user_ids(conn, group_id: str) -> set[str]:
+    """The set of admin user_ids for a group (for member-list badging)."""
+    rows = conn.execute(
+        "SELECT user_id::text AS u FROM group_admins WHERE group_id = %(g)s::uuid",
+        {"g": group_id},
+    ).fetchall()
+    return {r["u"] for r in rows}
+
+
+def add_group_admin(conn, group_id: str, user_id: str) -> None:
+    """Grant admin. Idempotent (ON CONFLICT DO NOTHING preserves the original
+    `granted_at`). Caller authorizes (admin-only at the router, or seeded at
+    group-create time)."""
+    conn.execute(
+        """
+        INSERT INTO group_admins (group_id, user_id)
+        VALUES (%(g)s::uuid, %(u)s::uuid)
+        ON CONFLICT (group_id, user_id) DO NOTHING
+        """,
+        {"g": group_id, "u": user_id},
+    )
+
+
+def remove_group_admin(conn, group_id: str, user_id: str) -> None:
+    """Drop an admin row (used when an admin leaves the group). Does NOT
+    auto-promote — call `promote_oldest_member_if_adminless` afterward."""
+    conn.execute(
+        "DELETE FROM group_admins "
+        "WHERE group_id = %(g)s::uuid AND user_id = %(u)s::uuid",
+        {"g": group_id, "u": user_id},
+    )
+
+
+def promote_oldest_member_if_adminless(conn, group_id: str) -> str | None:
+    """If `group_id` has no admins, promote its oldest member that resolves to
+    an account (MIN(joined_at) across the group, account-aware). Returns the
+    promoted user_id, or None when there's already an admin OR no member has an
+    account (a legacy edge — the group stays admin-less rather than inventing
+    one). This is both the "last admin left" rule and the legacy backfill."""
+    if conn.execute(
+        "SELECT 1 FROM group_admins WHERE group_id = %(g)s::uuid LIMIT 1",
+        {"g": group_id},
+    ).fetchone():
+        return None
+    row = conn.execute(
+        """
+        SELECT ub.user_id::text AS uid
+          FROM group_members gm
+          JOIN user_browsers ub ON ub.browser_id = gm.browser_id
+         WHERE gm.group_id = %(g)s::uuid
+         GROUP BY ub.user_id
+         ORDER BY MIN(gm.joined_at) ASC
+         LIMIT 1
+        """,
+        {"g": group_id},
+    ).fetchone()
+    if not row:
+        return None
+    add_group_admin(conn, group_id, row["uid"])
+    return row["uid"]
+
+
+def boot_member(conn, group_id: str, target_user_id: str) -> None:
+    """Remove `target_user_id` from `group_id` and revoke the invite link(s)
+    they joined through. Deletes their `group_members` rows across every linked
+    browser, then stamps `revoked_at` on each `joined_via_invite_id` they used
+    so that link can't re-admit them. Caller authorizes (admin-only, private
+    group, target is a non-admin member)."""
+    invite_rows = conn.execute(
+        """
+        SELECT DISTINCT gm.joined_via_invite_id AS iid
+          FROM group_members gm
+         WHERE gm.group_id = %(g)s::uuid
+           AND gm.joined_via_invite_id IS NOT NULL
+           AND gm.browser_id IN (
+               SELECT browser_id FROM user_browsers WHERE user_id = %(u)s::uuid
+           )
+        """,
+        {"g": group_id, "u": target_user_id},
+    ).fetchall()
+    for r in invite_rows:
+        conn.execute(
+            "UPDATE group_invites SET revoked_at = NOW() "
+            "WHERE id = %(i)s::uuid AND revoked_at IS NULL",
+            {"i": r["iid"]},
+        )
+    conn.execute(
+        """
+        DELETE FROM group_members
+         WHERE group_id = %(g)s::uuid
+           AND browser_id IN (
+               SELECT browser_id FROM user_browsers WHERE user_id = %(u)s::uuid
+           )
+        """,
+        {"g": group_id, "u": target_user_id},
+    )
+
+
 def resolve_group_for_visit(
     conn,
     route_id: str,

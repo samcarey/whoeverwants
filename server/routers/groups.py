@@ -56,7 +56,7 @@ from services.join_requests import (
     is_member_or_creator,
     list_pending_requests,
 )
-from services.auth import resolve_actor_user_id
+from services.auth import create_anonymous_user, resolve_actor_user_id
 from services.contacts import (
     add_member_for_user,
     is_contact,
@@ -68,17 +68,24 @@ from services.memberships import leave_group as _leave_group_row
 from services.validation import validate_user_name
 from services.groups import (
     _is_uuid_like,
+    add_group_admin,
+    boot_member,
     claim_group as _claim_group_row,
     filter_visible_polls,
     get_group_metadata,
     grant_group_membership_inline,
+    group_admin_user_ids,
     group_name_phrase,
+    is_caller_admin,
     is_caller_member_of_group,
+    is_group_admin,
     load_group_members,
     load_poll_voters,
     load_user_visibility,
     poll_ids_for_group_ids,
     polls_for_poll_ids,
+    promote_oldest_member_if_adminless,
+    remove_group_admin,
     resolve_group_for_visit,
     resolve_group_id_from_route_id,
 )
@@ -353,6 +360,31 @@ _GROUP_SUMMARY_COLUMNS = (
 )
 
 
+def _require_admin(
+    conn, group_id: str, *, browser_id: str | None, user_id: str | None
+) -> str:
+    """Authorize an admin-only group action (migration 142). Resolves the
+    caller's account via `resolve_actor_user_id` (bearer session OR the account
+    linked to this browser, so a browser-tied auto-account admin qualifies),
+    then requires a `group_admins` row. Returns the resolved admin user_id.
+
+    Replaces the old single-creator gate on privacy / join-requests / invites,
+    and newly gates title + avatar edits + add-people (Q6: admin-only).
+      * 401 when the caller has no resolvable account.
+      * 403 when signed in / resolved but not an admin of this group.
+    """
+    actor = resolve_actor_user_id(conn, user_id=user_id, browser_id=browser_id)
+    if not actor:
+        raise HTTPException(
+            status_code=401, detail="Sign in to manage this group"
+        )
+    if not is_group_admin(conn, group_id, actor):
+        raise HTTPException(
+            status_code=403, detail="Only a group admin can do this"
+        )
+    return actor
+
+
 @router.post("", response_model=GroupSummary, status_code=201)
 def create_group(request: Request):
     """Create an empty group + auto-join the caller as a member.
@@ -361,28 +393,38 @@ def create_group(request: Request):
     the group would be created but unreachable, so return 400 and let
     the FE retry after the middleware mints an id.
 
-    Phase E: privacy + creator_user_id are derived from the caller's
-    auth state. Signed-in callers get `privacy='private'` with
-    `creator_user_id` recorded; anonymous callers always get
-    `privacy='public'`. There's no body param for this — anonymous
-    browsers can't create private groups (the spec invariant: approval
-    authority can't be stranded on a wiped browser).
+    Migration 142: every group records a creator (= admin #1). The caller's
+    account is resolved via `resolve_actor_user_id` (bearer OR browser-tied
+    auto-account); a bare browser with no account yet gets a lightweight
+    auto-account minted on the spot (same pattern as an anonymous poll-create),
+    so the new group always has an admin. Privacy still keys on genuine
+    sign-in: bearer-signed-in → 'private', anything else → 'public'
+    (URL-shareable).
     """
     browser_id = _browser_id(request)
     if not browser_id:
         raise HTTPException(status_code=400, detail="Missing browser identity")
-    user_id = _user_id(request)
-    privacy = "private" if user_id else "public"
+    signed_in_uid = _user_id(request)
+    privacy = "private" if signed_in_uid else "public"
 
     with get_db() as conn:
+        creator_user_id = resolve_actor_user_id(
+            conn, user_id=signed_in_uid, browser_id=browser_id
+        )
+        if not creator_user_id:
+            creator_user_id = create_anonymous_user(
+                conn, browser_id=browser_id, display_name=None
+            )
         row = conn.execute(
             f"""
             INSERT INTO groups (privacy, creator_user_id)
             VALUES (%(privacy)s, %(creator_user_id)s)
             RETURNING {_GROUP_SUMMARY_COLUMNS}
             """,
-            {"privacy": privacy, "creator_user_id": user_id},
+            {"privacy": privacy, "creator_user_id": creator_user_id},
         ).fetchone()
+        # Creator is admin #1.
+        add_group_admin(conn, str(row["id"]), creator_user_id)
         # Bypass the helper's private-skip — creators are always members.
         grant_group_membership_inline(
             conn, str(row["id"]), browser_id, privacy="public"
@@ -671,13 +713,12 @@ def get_group_preview(route_id: str, p: str | None = None):
 
 
 @router.post("/{route_id}/title", response_model=GroupTitleResponse)
-def update_group_title(route_id: str, req: UpdateGroupTitleRequest):
+def update_group_title(route_id: str, req: UpdateGroupTitleRequest, request: Request):
     """Set or clear a group's title override.
 
     Migration 105 moved the override from `polls.group_title` (per-poll)
-    to `groups.title` (one row per group). Anyone with the URL can
-    rename the group — there's no creator-secret check today, matching
-    the prior `/api/polls/<id>/group-title` semantics.
+    to `groups.title` (one row per group). Migration 142: admin-only (Q6) —
+    editing group identity is a group-administration power.
 
     Empty / whitespace-only `group_title` clears the override (NULL).
 
@@ -690,6 +731,10 @@ def update_group_title(route_id: str, req: UpdateGroupTitleRequest):
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
+        _require_admin(
+            conn, group_id,
+            browser_id=_browser_id(request), user_id=_user_id(request),
+        )
         row = conn.execute(
             """
             UPDATE groups
@@ -709,7 +754,7 @@ def update_group_title(route_id: str, req: UpdateGroupTitleRequest):
 
 
 @router.post("/{route_id}/image", response_model=GroupImageResponse)
-def upload_group_image(route_id: str, req: GroupImageRequest):
+def upload_group_image(route_id: str, req: GroupImageRequest, request: Request):
     """Set the group's avatar image (migration 108).
 
     Body: base64-encoded JPEG or PNG bytes (already square-cropped by the
@@ -717,8 +762,7 @@ def upload_group_image(route_id: str, req: GroupImageRequest):
     on the group. Stamps `image_updated_at` so the FE knows to invalidate
     its `/api/groups/by-route-id/<id>/image?v=<ts>` cache.
 
-    Anyone with the URL can change the group's image — same trust model
-    as `POST /api/groups/{route_id}/title`. No creator-secret check today.
+    Migration 142: admin-only (Q6) — same as the title edit.
 
     `route_id` accepts the same four forms as `/by-route-id/{route_id}`:
     `groups.short_id`, `groups.id`, `polls.short_id`, `polls.id`.
@@ -745,6 +789,10 @@ def upload_group_image(route_id: str, req: GroupImageRequest):
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
+        _require_admin(
+            conn, group_id,
+            browser_id=_browser_id(request), user_id=_user_id(request),
+        )
         row = conn.execute(
             """
             UPDATE groups
@@ -767,15 +815,21 @@ def upload_group_image(route_id: str, req: GroupImageRequest):
 
 
 @router.delete("/{route_id}/image", response_model=GroupImageResponse)
-def delete_group_image(route_id: str):
+def delete_group_image(route_id: str, request: Request):
     """Clear the group's avatar image. Idempotent — a 200 is returned
     even if no image was set, so the FE doesn't have to distinguish
     "was set" from "wasn't set" to reset state. `image_updated_at` is
-    set to NULL so the FE falls back to the initials avatar."""
+    set to NULL so the FE falls back to the initials avatar.
+
+    Migration 142: admin-only (Q6)."""
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
+        _require_admin(
+            conn, group_id,
+            browser_id=_browser_id(request), user_id=_user_id(request),
+        )
         row = conn.execute(
             """
             UPDATE groups
@@ -854,50 +908,21 @@ def update_group_privacy(
 ):
     """Phase E: flip a group between 'public' and 'private'.
 
-    Authorization: must be signed in AND match the group's
-    `creator_user_id`. Groups created anonymously (creator_user_id NULL)
-    and grandfathered pre-Phase-E groups can NOT be flipped — they stay
-    public forever. Phase I will add an "anonymous → claim → private"
-    upgrade path; deferred until then.
-
-    Without this endpoint, signed-in users who create a group get a
-    private group with no way to share it (Phase F/G aren't shipped
-    yet). The toggle is the escape hatch: flip to public until invites
-    land, then optionally flip back to private once the group is
-    bootstrapped.
+    Migration 142: admin-only (Q6). Any admin of the group can flip privacy.
     """
     if req.privacy not in ("public", "private"):
         raise HTTPException(
             status_code=400,
             detail="privacy must be 'public' or 'private'",
         )
-    user_id = _user_id(request)
-    if not user_id:
-        raise HTTPException(
-            status_code=401,
-            detail="Sign in to change group privacy",
-        )
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        meta = get_group_metadata(conn, group_id)
-        if not meta:
-            raise HTTPException(status_code=404, detail="Group not found")
-        # Anonymous-created or pre-Phase-E groups can't be re-keyed by
-        # any signed-in caller: there's no creator to authorize against.
-        # Returning 403 distinguishes "not your group" from "no such
-        # group" (404).
-        if not meta["creator_user_id"]:
-            raise HTTPException(
-                status_code=403,
-                detail="Group has no recorded creator; cannot change privacy",
-            )
-        if meta["creator_user_id"] != user_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Only the group's creator can change privacy",
-            )
+        _require_admin(
+            conn, group_id,
+            browser_id=_browser_id(request), user_id=_user_id(request),
+        )
         row = conn.execute(
             """
             UPDATE groups
@@ -1008,7 +1033,16 @@ def leave_group(route_id: str, request: Request):
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
+        # Migration 142: leaving the group also drops admin status. If that
+        # empties the admin set, the oldest remaining account-member is
+        # auto-promoted so every group always has an admin.
+        actor = resolve_actor_user_id(
+            conn, user_id=user_id, browser_id=browser_id
+        )
         _leave_group_row(conn, group_id, browser_id, user_id=user_id)
+        if actor:
+            remove_group_admin(conn, group_id, actor)
+            promote_oldest_member_if_adminless(conn, group_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1271,38 +1305,19 @@ def create_group_join_request(
     response_model=list[JoinRequestSummaryResponse],
 )
 def list_group_join_requests(route_id: str, request: Request):
-    """Phase F: list pending requests for a group. Creator-only.
+    """Phase F: list pending requests for a group. Migration 142: admin-only.
 
-    Authorization: must be signed in AND match the group's recorded
-    `creator_user_id`. Anonymous-created / pre-Phase-E groups have
-    NULL creator and can't have a creator viewer either, so they 403
-    here for everyone — the join-request system simply isn't available
-    on those groups.
-
-    404 on route resolution failure; 401 when not signed in; 403 when
-    signed in but not the creator (distinguishes "not your group" from
-    "no such group" — same convention as the privacy toggle).
+    404 on route resolution failure; 401 when the caller has no account;
+    403 when resolved but not an admin of the group.
     """
-    user_id = _user_id(request)
-    if not user_id:
-        raise HTTPException(
-            status_code=401, detail="Sign in to view join requests"
-        )
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        meta = get_group_metadata(conn, group_id)
-        if not meta or not meta["creator_user_id"]:
-            raise HTTPException(
-                status_code=403,
-                detail="Group has no recorded creator",
-            )
-        if meta["creator_user_id"] != user_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Only the group's creator can view join requests",
-            )
+        _require_admin(
+            conn, group_id,
+            browser_id=_browser_id(request), user_id=_user_id(request),
+        )
         summaries = list_pending_requests(conn, group_id)
     return [_summary_to_response(s) for s in summaries]
 
@@ -1345,11 +1360,6 @@ def decide_group_join_request(
         raise HTTPException(
             status_code=400, detail="action must be 'approve' or 'deny'"
         )
-    user_id = _user_id(request)
-    if not user_id:
-        raise HTTPException(
-            status_code=401, detail="Sign in to decide join requests"
-        )
     decision = "approved" if body.action == "approve" else "denied"
     notify_payload: dict | None = None
     notify_user_id: str | None = None
@@ -1358,16 +1368,12 @@ def decide_group_join_request(
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        meta = get_group_metadata(conn, group_id)
-        if not meta or not meta["creator_user_id"]:
-            raise HTTPException(
-                status_code=403, detail="Group has no recorded creator"
-            )
-        if meta["creator_user_id"] != user_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Only the group's creator can decide join requests",
-            )
+        # Migration 142: admin-only. The resolved admin id is recorded as the
+        # decider.
+        decider = _require_admin(
+            conn, group_id,
+            browser_id=_browser_id(request), user_id=_user_id(request),
+        )
         # Existence + group-scoping guard: the route-id MUST match the
         # request's group_id. Without this, a creator of group A could
         # decide on a request that belongs to group B by guessing
@@ -1389,7 +1395,7 @@ def decide_group_join_request(
                 status_code=404,
                 detail="Request not found or already decided",
             )
-        decided = decide_request(conn, request_id, decision, user_id)
+        decided = decide_request(conn, request_id, decision, decider)
         if decided and decision == "approved":
             # Build the approval-push payload while we still hold the
             # connection; same shape as the invite-members fan-out so
@@ -1478,16 +1484,12 @@ def list_group_invitable_accounts(route_id: str, request: Request):
     """Accounts the caller can add to this group: people they've encountered
     (the `user_contacts` address book) who aren't already members here.
 
-    Authorization: caller must be a member of the group (any member can
-    invite). 404 on unresolvable route; 403 when the caller isn't a member.
-    An account-less caller (no resolvable user_id — e.g. a pure lurker who
-    never created or voted) has no contacts, so this returns an empty list
-    rather than erroring.
+    Migration 142: admin-only — adding people directly is an "allow users to
+    join" power. 404 on unresolvable route; 401/403 from `_require_admin`.
 
     Reconciles the caller's contacts inline first so the list reflects
-    everyone they currently share a group with, even on the first open after
-    this feature shipped. Sorted: most shared groups first, then most
-    recently seen together.
+    everyone they currently share a group with. Sorted: most shared groups
+    first, then most recently seen together.
     """
     browser_id = _browser_id(request)
     user_id = _user_id(request)
@@ -1495,15 +1497,9 @@ def list_group_invitable_accounts(route_id: str, request: Request):
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        if not is_caller_member_of_group(
+        me = _require_admin(
             conn, group_id, browser_id=browser_id, user_id=user_id
-        ):
-            raise HTTPException(
-                status_code=403, detail="Join the group to invite people"
-            )
-        me = resolve_actor_user_id(conn, user_id=user_id, browser_id=browser_id)
-        if not me:
-            return []
+        )
         reconcile_contacts(conn, me)
         accounts = list_invitable_accounts(conn, me, group_id)
     return [
@@ -1524,11 +1520,11 @@ def add_group_members(
     request: Request,
     background_tasks: BackgroundTasks,
 ):
-    """Add one or more accounts to a group. Any member can invite.
+    """Add one or more accounts to a group. Migration 142: admin-only.
 
     Each requested user_id must be one of the caller's contacts (in the
-    `user_contacts` address book) — non-contacts are silently skipped so a
-    member can't add an arbitrary stranger by guessing ids. Accounts already
+    `user_contacts` address book) — non-contacts are silently skipped so an
+    admin can't add an arbitrary stranger by guessing ids. Accounts already
     in the group (via any of their browsers) are skipped too (no duplicate
     membership, no notification). Each newly-added account gets an 'added to
     a group' push.
@@ -1542,18 +1538,9 @@ def add_group_members(
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        if not is_caller_member_of_group(
+        me = _require_admin(
             conn, group_id, browser_id=browser_id, user_id=user_id
-        ):
-            raise HTTPException(
-                status_code=403, detail="Join the group to invite people"
-            )
-        me = resolve_actor_user_id(conn, user_id=user_id, browser_id=browser_id)
-        if not me:
-            raise HTTPException(
-                status_code=403,
-                detail="Create or join a poll first so we can invite from your account",
-            )
+        )
 
         added_user_ids: list[str] = []
         # dict.fromkeys dedupes while preserving order. Skip the caller, any
@@ -1603,15 +1590,22 @@ def add_group_members(
 class GroupMemberResponse(BaseModel):
     name: str
     user_id: str | None
+    # migration 142: is this member an admin? (account-keyed, so a member with
+    # no resolvable user_id is never an admin)
+    is_admin: bool = False
 
 
 class GroupMembersResponse(BaseModel):
     """The group's actual roster. `members` are the named people (one entry
     per distinct person, account-aware); `anonymous_count` rolls up members
-    with no resolvable name (drive-by URL visitors on public groups)."""
+    with no resolvable name (drive-by URL visitors on public groups).
+    `viewer_is_admin` (migration 142) gates the FE's admin chrome (privacy
+    toggle, invites, join requests, add-people, promote/boot, title/avatar
+    edits)."""
 
     members: list[GroupMemberResponse]
     anonymous_count: int
+    viewer_is_admin: bool = False
 
 
 @router.get("/{route_id}/members", response_model=GroupMembersResponse)
@@ -1643,10 +1637,111 @@ def get_group_members(route_id: str, request: Request):
             ):
                 raise HTTPException(status_code=404, detail="Group not found")
         named, anon = load_group_members(conn, group_id)
-        return GroupMembersResponse(
-            members=[GroupMemberResponse(**m) for m in named],
-            anonymous_count=anon,
+        admin_ids = group_admin_user_ids(conn, group_id)
+        viewer_is_admin = is_caller_admin(
+            conn, group_id, browser_id=browser_id, user_id=user_id
         )
+        return GroupMembersResponse(
+            members=[
+                GroupMemberResponse(
+                    name=m["name"],
+                    user_id=m["user_id"],
+                    is_admin=bool(m["user_id"]) and m["user_id"] in admin_ids,
+                )
+                for m in named
+            ],
+            anonymous_count=anon,
+            viewer_is_admin=viewer_is_admin,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Admin roster management (migration 142)
+# ---------------------------------------------------------------------------
+
+
+class PromoteAdminRequest(BaseModel):
+    user_id: str
+
+
+class PromoteAdminResponse(BaseModel):
+    user_id: str
+    is_admin: bool = True
+
+
+class BootMemberResponse(BaseModel):
+    booted: bool
+
+
+@router.post("/{route_id}/admins", response_model=PromoteAdminResponse)
+def promote_group_admin(
+    route_id: str, body: PromoteAdminRequest, request: Request
+):
+    """Promote an existing member to admin. Admin-only. The target must be a
+    member of the group (account-keyed). There is no demotion (Q4): once
+    promoted, an admin stays one until they leave the group."""
+    target = body.user_id
+    if not _is_uuid_like(target):
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        _require_admin(
+            conn, group_id,
+            browser_id=_browser_id(request), user_id=_user_id(request),
+        )
+        if not is_caller_member_of_group(
+            conn, group_id, browser_id=None, user_id=target
+        ):
+            raise HTTPException(
+                status_code=400, detail="User is not a member of this group"
+            )
+        add_group_admin(conn, group_id, target)
+    return PromoteAdminResponse(user_id=target)
+
+
+@router.post(
+    "/{route_id}/members/{user_id}/boot", response_model=BootMemberResponse
+)
+def boot_group_member(route_id: str, user_id: str, request: Request):
+    """Remove a member from the group and revoke the invite link they joined
+    through. Admin-only, PRIVATE groups only (Q3 — booting a public-group
+    member is futile since they auto-rejoin on the next visit). The target
+    must be a NON-admin member (admins can't be booted — Q4)."""
+    target = user_id
+    if not _is_uuid_like(target):
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        admin = _require_admin(
+            conn, group_id,
+            browser_id=_browser_id(request), user_id=_user_id(request),
+        )
+        meta = get_group_metadata(conn, group_id)
+        if not meta or meta["privacy"] != "private":
+            raise HTTPException(
+                status_code=400,
+                detail="Members can only be booted from private groups",
+            )
+        if target == admin:
+            raise HTTPException(
+                status_code=400, detail="Leave the group instead of booting yourself"
+            )
+        if is_group_admin(conn, group_id, target):
+            raise HTTPException(
+                status_code=403, detail="Admins can't be booted"
+            )
+        if not is_caller_member_of_group(
+            conn, group_id, browser_id=None, user_id=target
+        ):
+            raise HTTPException(
+                status_code=404, detail="User is not a member of this group"
+            )
+        boot_member(conn, group_id, target)
+    return BootMemberResponse(booted=True)
 
 
 @router.get(
@@ -1781,26 +1876,6 @@ def _issued_to_invite_response(
     )
 
 
-def _require_creator(conn, group_id: str, user_id: str | None) -> None:
-    """Raise 401/403 unless the caller is signed in AND matches the
-    group's recorded `creator_user_id`. Shared 3-way authorization
-    gate for every invite-management endpoint."""
-    if not user_id:
-        raise HTTPException(
-            status_code=401, detail="Sign in to manage invites"
-        )
-    meta = get_group_metadata(conn, group_id)
-    if not meta or not meta["creator_user_id"]:
-        raise HTTPException(
-            status_code=403, detail="Group has no recorded creator"
-        )
-    if meta["creator_user_id"] != user_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Only the group's creator can manage invites",
-        )
-
-
 @router.post(
     "/{route_id}/invites",
     response_model=InviteResponse,
@@ -1811,7 +1886,7 @@ def create_group_invite(
     body: CreateInviteRequest,
     request: Request,
 ):
-    """Phase G: mint a new invite link. Creator-only.
+    """Phase G: mint a new invite link. Migration 142: admin-only.
 
     The response is the ONLY time the raw token + URL are returned —
     sha256(token) is what hits the DB. If the creator loses the URL,
@@ -1819,12 +1894,14 @@ def create_group_invite(
     """
     from services.fe_origin import resolve_fe_origin
 
-    user_id = _user_id(request)
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        _require_creator(conn, group_id, user_id)
+        admin = _require_admin(
+            conn, group_id,
+            browser_id=_browser_id(request), user_id=_user_id(request),
+        )
 
         if body.mode not in ("single", "multi"):
             raise HTTPException(
@@ -1857,7 +1934,7 @@ def create_group_invite(
         issued = issue_invite(
             conn,
             group_id=group_id,
-            created_by_user_id=user_id,
+            created_by_user_id=admin,
             mode=body.mode,
             target_poll_id=target_poll_id,
             max_uses=body.max_uses,
@@ -1877,17 +1954,19 @@ def create_group_invite(
     response_model=list[InviteResponse],
 )
 def list_group_invites(route_id: str, request: Request):
-    """Phase G: list a group's active invites. Creator-only.
+    """Phase G: list a group's active invites. Migration 142: admin-only.
 
     "Active" = not revoked, not expired, has remaining uses. Revoked
     or fully-used invites are excluded — the UI doesn't need them.
     """
-    user_id = _user_id(request)
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        _require_creator(conn, group_id, user_id)
+        _require_admin(
+            conn, group_id,
+            browser_id=_browser_id(request), user_id=_user_id(request),
+        )
         summaries = list_active_invites(conn, group_id)
     return [_summary_to_invite_response(s) for s in summaries]
 
@@ -1899,20 +1978,22 @@ def list_group_invites(route_id: str, request: Request):
 def revoke_group_invite(
     route_id: str, invite_id: str, request: Request
 ):
-    """Phase G: revoke an active invite. Creator-only.
+    """Phase G: revoke an active invite. Migration 142: admin-only — any
+    admin of the group can revoke any of its invites (revoke is group-scoped,
+    not limited to the admin who minted it).
 
-    Returns 204 on successful revoke. 404 when the invite doesn't
-    exist OR isn't owned by the caller OR was already revoked —
-    indistinguishable to the caller, no information leak about
-    invites belonging to other creators.
+    Returns 204 on successful revoke. 404 when the invite doesn't exist in
+    this group OR was already revoked.
     """
-    user_id = _user_id(request)
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
             raise HTTPException(status_code=404, detail="Group not found")
-        _require_creator(conn, group_id, user_id)
-        ok = revoke_invite(conn, invite_id, user_id)
+        _require_admin(
+            conn, group_id,
+            browser_id=_browser_id(request), user_id=_user_id(request),
+        )
+        ok = revoke_invite(conn, invite_id, group_id)
     if not ok:
         raise HTTPException(
             status_code=404, detail="Invite not found or already revoked"

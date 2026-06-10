@@ -84,8 +84,9 @@ def _sign_in(client, browser_id, email=None):
 
 def _create_anonymous_group(client, browser_id):
     """Create a fresh group via the anonymous (no-bearer) path.
-    Result: privacy='public', creator_user_id=NULL — exactly the
-    'grandfathered / anonymous-created' shape claim is for.
+    Migration 142: this now yields privacy='public' but with an auto-account
+    creator (no more NULL-creator groups), so claim is effectively obsolete —
+    see test_claim_obsolete_group_always_has_creator.
     """
     resp = client.post(
         "/api/groups",
@@ -144,111 +145,18 @@ def test_claim_403_when_not_a_member(
     assert resp.status_code == 403
 
 
-def test_claim_succeeds_for_signed_in_member(client, creator_browser):
-    group = _create_anonymous_group(client, creator_browser)
-    # Anonymous-create wrote the member row keyed on creator_browser.
-    # Sign in on the SAME browser so user_browsers links the session's
-    # user_id to that browser → the member walk finds the row.
-    token, user_id = _sign_in(client, creator_browser)
-    resp = client.post(
-        f"/api/groups/{group['id']}/claim",
-        headers=_bearer_headers(creator_browser, token),
-    )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["group_id"] == group["id"]
-    assert body["creator_user_id"] == user_id
-    # Privacy state is preserved — claim doesn't auto-flip to private.
-    assert body["privacy"] == "public"
-    # DB write committed:
-    db = _read_group_row(group["id"])
-    assert db["creator_user_id"] == user_id
-    assert db["privacy"] == "public"
-
-
-def test_claim_409_when_already_claimed_by_same_user(
-    client, creator_browser
-):
+def test_claim_obsolete_group_always_has_creator(client, creator_browser):
+    """Migration 142 made claim obsolete: every group is minted with a creator
+    (= admin #1), so the atomic `UPDATE ... WHERE creator_user_id IS NULL`
+    never matches and claim always 409s. The endpoint is retained as harmless
+    (a future caller can't take over a group that already has an admin)."""
     group = _create_anonymous_group(client, creator_browser)
     token, _ = _sign_in(client, creator_browser)
-    first = client.post(
-        f"/api/groups/{group['id']}/claim",
-        headers=_bearer_headers(creator_browser, token),
-    )
-    assert first.status_code == 200, first.text
-    second = client.post(
-        f"/api/groups/{group['id']}/claim",
-        headers=_bearer_headers(creator_browser, token),
-    )
-    assert second.status_code == 409
-
-
-def test_claim_409_when_already_claimed_by_someone_else(
-    client, creator_browser, stranger_browser
-):
-    """Once claimed, the row is no longer NULL → no other member can
-    re-claim. Even if the second signed-in user has membership, the
-    atomic UPDATE WHERE creator_user_id IS NULL bounces them with 409."""
-    group = _create_anonymous_group(client, creator_browser)
-    # Precondition for the auto-join path used below: the by-route-id
-    # read only writes a group_members row when privacy='public'. If a
-    # future schema flip changes the anonymous-create default, this
-    # assertion catches the regression rather than letting the test
-    # silently morph into a 403-not-a-member check.
-    assert group["privacy"] == "public"
-    first_token, first_user_id = _sign_in(client, creator_browser)
     resp = client.post(
         f"/api/groups/{group['id']}/claim",
-        headers=_bearer_headers(creator_browser, first_token),
-    )
-    assert resp.status_code == 200
-
-    # Second user joins via the read endpoint (auto-join writes a
-    # group_members row for their browser on the public group), then
-    # signs in and tries to claim.
-    second_user_browser = str(uuid.uuid4())
-    join = client.get(
-        f"/api/groups/by-route-id/{group['id']}",
-        headers=_bid_headers(second_user_browser),
-    )
-    assert join.status_code == 200
-    second_token, _ = _sign_in(
-        client, second_user_browser, email="second@example.com"
-    )
-    resp = client.post(
-        f"/api/groups/{group['id']}/claim",
-        headers=_bearer_headers(second_user_browser, second_token),
+        headers=_bearer_headers(creator_browser, token),
     )
     assert resp.status_code == 409
-    # DB still reflects the FIRST user as creator — no takeover.
+    # The auto-account creator is recorded; claiming didn't change it.
     db = _read_group_row(group["id"])
-    assert db["creator_user_id"] == first_user_id
-
-
-def test_claim_unlocks_privacy_toggle(client, creator_browser):
-    """Smoke test that claiming actually unlocks downstream
-    creator-only authorization. Before claim, privacy flip 403s
-    (the legacy 'no recorded creator' branch). After claim, the
-    same caller's flip succeeds."""
-    group = _create_anonymous_group(client, creator_browser)
-    token, _ = _sign_in(client, creator_browser)
-    # Pre-claim flip is rejected — the group has no recorded creator.
-    pre = client.post(
-        f"/api/groups/{group['id']}/privacy",
-        json={"privacy": "private"},
-        headers=_bearer_headers(creator_browser, token),
-    )
-    assert pre.status_code == 403
-    # Claim, then re-attempt the flip.
-    claim = client.post(
-        f"/api/groups/{group['id']}/claim",
-        headers=_bearer_headers(creator_browser, token),
-    )
-    assert claim.status_code == 200
-    post = client.post(
-        f"/api/groups/{group['id']}/privacy",
-        json={"privacy": "private"},
-        headers=_bearer_headers(creator_browser, token),
-    )
-    assert post.status_code == 200, post.text
-    assert post.json()["privacy"] == "private"
+    assert db["creator_user_id"] is not None
