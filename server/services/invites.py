@@ -199,27 +199,26 @@ def list_active_invites(conn, group_id: str) -> list[InviteSummary]:
     ]
 
 
-def revoke_invite(conn, invite_id: str, by_user_id: str) -> bool:
-    """Mark a creator-owned invite as revoked. Returns True iff the
-    UPDATE affected a row (i.e. the invite existed, was owned by
-    `by_user_id`, and wasn't already revoked).
+def revoke_invite(conn, invite_id: str, group_id: str) -> bool:
+    """Mark an invite as revoked. Returns True iff the UPDATE affected a row
+    (the invite existed in `group_id` and wasn't already revoked).
 
-    The `created_by_user_id` check in the WHERE clause is the
-    authorization gate. A non-creator hitting the revoke endpoint
-    surfaces as a no-op (False return → 404 at the router). We don't
-    need a separate ownership lookup because the UPDATE's predicate
-    enforces it atomically.
+    Migration 142: scoped to `group_id` rather than the minting user, so ANY
+    admin of the group (gated at the router) can revoke any of its invites —
+    invite management is a shared admin power. The group_id check keeps a
+    guessed invite_id from another group from being revoked through this
+    group's route.
     """
     row = conn.execute(
         """
         UPDATE group_invites
            SET revoked_at = NOW()
          WHERE id = %(i)s::uuid
-           AND created_by_user_id = %(u)s::uuid
+           AND group_id = %(g)s::uuid
            AND revoked_at IS NULL
         RETURNING id
         """,
-        {"i": invite_id, "u": by_user_id},
+        {"i": invite_id, "g": group_id},
     ).fetchone()
     return row is not None
 
@@ -316,6 +315,25 @@ def redeem_invite(
     backdate_membership_for_user(
         conn, group_id, user_id, invite_created_at
     )
+
+    # Record which invite this member joined through (migration 142) so a
+    # future boot can revoke this specific link. Only on a genuine first join
+    # (not an already-member re-click — they didn't join via this link) and
+    # only when not already attributed, on the earliest-linked browser's row
+    # (the one backdate_membership_for_user wrote).
+    if not already_member:
+        conn.execute(
+            """
+            UPDATE group_members
+               SET joined_via_invite_id = %(i)s::uuid
+             WHERE group_id = %(g)s::uuid
+               AND joined_via_invite_id IS NULL
+               AND browser_id IN (
+                   SELECT browser_id FROM user_browsers WHERE user_id = %(u)s::uuid
+               )
+            """,
+            {"i": str(invite["id"]), "g": group_id, "u": user_id},
+        )
 
     # Resolve short_ids in one round-trip so the FE can build the
     # redirect URL without a follow-up call.

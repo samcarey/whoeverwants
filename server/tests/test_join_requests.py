@@ -131,13 +131,13 @@ def _create_private_group(client, browser_id, token):
 
 
 def _create_public_anon_group(client, browser_id):
-    """Anonymous create → privacy='public', creator_user_id NULL.
-    Used for the "no recorded creator" 403 cases."""
+    """Anonymous create → privacy='public'. Migration 142: a lightweight
+    auto-account is recorded as creator/admin (no more NULL-creator groups)."""
     resp = client.post("/api/groups", headers=_bid_headers(browser_id))
     assert resp.status_code == 201, resp.text
     group = resp.json()
     assert group["privacy"] == "public"
-    assert group["creator_user_id"] is None
+    assert group["creator_user_id"] is not None
     return group
 
 
@@ -331,13 +331,14 @@ def test_create_join_request_existing_member_short_circuits(
 # ----------------------------------------------------------------------- list
 
 
-def test_list_join_requests_anonymous_returns_401(client, creator_browser):
+def test_list_join_requests_no_account_returns_401(client, creator_browser):
     ctoken, _, _ = _sign_in(client, creator_browser)
     group = _create_private_group(client, creator_browser, ctoken)
 
+    # Migration 142: admin-gated. Fresh unlinked browser → no account → 401.
     resp = client.get(
         f"/api/groups/{group['id']}/join-requests",
-        headers=_bid_headers(creator_browser),  # no token
+        headers={"X-Browser-Id": str(uuid.uuid4())},
     )
     assert resp.status_code == 401
 
@@ -424,11 +425,13 @@ def test_list_join_requests_surfaces_name_and_image_fields(
     assert row["requested_at"]
 
 
-def test_list_join_requests_anon_created_group_returns_403(
+def test_list_join_requests_anon_created_group_creator_is_admin(
     client, creator_browser
 ):
-    """Anonymous-created groups have no recorded creator — no one can
-    list them. Phase I will add a 'claim' upgrade path."""
+    """Migration 142: an anonymous-created group records its creator's
+    auto-account as admin #1. Signing in on the same browser absorbs that
+    auto-account (keeping its admin row), so the original creator CAN now
+    manage join requests — listing returns 200, not the old 403."""
     group = _create_public_anon_group(client, creator_browser)
     ctoken, _, _ = _sign_in(client, creator_browser)
 
@@ -436,21 +439,22 @@ def test_list_join_requests_anon_created_group_returns_403(
         f"/api/groups/{group['id']}/join-requests",
         headers=_bearer_headers(creator_browser, ctoken),
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
 
 
 # --------------------------------------------------------------------- decide
 
 
-def test_decide_anonymous_returns_401(client, creator_browser):
+def test_decide_no_account_returns_401(client, creator_browser):
     ctoken, _, _ = _sign_in(client, creator_browser)
     group = _create_private_group(client, creator_browser, ctoken)
 
+    # Migration 142: admin-gated. Fresh unlinked browser → no account → 401.
     bogus_request = str(uuid.uuid4())
     resp = client.post(
         f"/api/groups/{group['id']}/join-requests/{bogus_request}/decide",
         json={"action": "approve"},
-        headers=_bid_headers(creator_browser),
+        headers={"X-Browser-Id": str(uuid.uuid4())},
     )
     assert resp.status_code == 401
 

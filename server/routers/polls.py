@@ -45,7 +45,13 @@ from services.contacts import (
     user_responded_to_poll,
 )
 from services.invites import issue_invite
-from services.groups import NIL_UUID, _is_uuid_like, group_name_phrase, require_uuid
+from services.groups import (
+    NIL_UUID,
+    _is_uuid_like,
+    add_group_admin,
+    group_name_phrase,
+    require_uuid,
+)
 from services.memberships import join_group, join_group_for_poll
 from services.poll_categories import record_poll_categories
 from services.push import (
@@ -203,6 +209,7 @@ def _resolve_or_create_group(
     initial_title: str | None,
     *,
     creator_user_id: str | None,
+    signed_in: bool,
 ) -> str:
     """Resolve `req.group_id` to an existing group, or mint a fresh one.
 
@@ -213,11 +220,14 @@ def _resolve_or_create_group(
     (optionally with `title` set on creation so first-poll-with-name
     flows are a single transaction).
 
-    Phase E: minting a fresh group sets `privacy` from the caller's
-    auth state — signed-in (`creator_user_id` set) → 'private' + records
-    the creator; anonymous → 'public' (forced) + creator_user_id NULL.
-    Resolving to an existing group doesn't touch privacy or
-    creator_user_id; those are set-at-create-time fields.
+    Migration 142: a freshly-minted group ALWAYS records a creator —
+    `creator_user_id` is the poll's creator, which is always set now (the
+    signed-in user, or the auto-minted anonymous account) — and seeds it as
+    admin #1, so no group is ever admin-less (`groups.creator_user_id` is
+    NOT NULL). Privacy is DECOUPLED from the creator: it still keys on genuine
+    sign-in (`signed_in`), so an anonymous creator gets a public, URL-shareable
+    group even though their auto-account is the recorded creator/admin.
+    Resolving to an existing group doesn't touch privacy, creator, or admins.
 
     Unknown / malformed group ids fall through to "mint a fresh group"
     rather than 404 — the request still succeeds, it just lands in a new
@@ -240,7 +250,7 @@ def _resolve_or_create_group(
             "create_poll: requested group_id=%s not found; minting a fresh group",
             requested_group_id,
         )
-    privacy = "private" if creator_user_id else "public"
+    privacy = "private" if signed_in else "public"
     row = conn.execute(
         "INSERT INTO groups (title, privacy, creator_user_id) "
         "VALUES (%(title)s, %(privacy)s, %(creator_user_id)s) RETURNING id",
@@ -250,7 +260,10 @@ def _resolve_or_create_group(
             "creator_user_id": creator_user_id,
         },
     ).fetchone()
-    return str(row["id"])
+    group_id = str(row["id"])
+    if creator_user_id:
+        add_group_admin(conn, group_id, creator_user_id)
+    return group_id
 
 
 def _attach_group_fields(conn, row) -> dict:
@@ -315,7 +328,8 @@ def _insert_poll(
         conn,
         req.group_id,
         req.group_title,
-        creator_user_id=group_creator_user_id,
+        creator_user_id=creator_user_id,
+        signed_in=group_creator_user_id is not None,
     )
     # The prephase (suggestion / availability) countdown starts at creation —
     # there is no deferral to the first submission. A preset duration

@@ -125,12 +125,15 @@ def _set_group_privacy_direct(group_id, privacy):
 
 
 class TestCreateGroupPrivacy:
-    def test_anonymous_creates_public_group_no_creator(
+    def test_anonymous_creates_public_group_with_auto_creator(
         self, client, creator_browser
     ):
+        # Migration 142: anonymous create still yields a PUBLIC group, but a
+        # lightweight auto-account is minted and recorded as creator (= admin
+        # #1) so no group is ever admin-less.
         g = _create_empty_group(client, creator_browser)
         assert g["privacy"] == "public"
-        assert g["creator_user_id"] is None
+        assert g["creator_user_id"] is not None
 
     def test_signed_in_creates_private_group_with_creator(
         self, client, creator_browser
@@ -145,7 +148,9 @@ class TestCreateGroupPrivacy:
     ):
         poll = _create_poll(client, creator_browser)
         assert poll["group_privacy"] == "public"
-        assert poll["group_creator_user_id"] is None
+        # Migration 142: the group records the poll's auto-account creator even
+        # for anonymous creates (privacy stays public, decoupled from creator).
+        assert poll["group_creator_user_id"] is not None
 
     def test_signed_in_poll_creates_private_group(
         self, client, creator_browser
@@ -173,9 +178,13 @@ class TestCreateGroupPrivacy:
         )
         assert followup["group_id"] == group_id
         assert followup["group_privacy"] == "public"
-        # creator_user_id was set on the original (anonymous) create as
-        # NULL and isn't touched when adding follow-ups.
-        assert followup["group_creator_user_id"] is None
+        # Migration 142: the original anonymous create recorded an auto-account
+        # creator; adding follow-ups doesn't touch it (or the privacy).
+        assert (
+            followup["group_creator_user_id"]
+            == first["group_creator_user_id"]
+            is not None
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -425,14 +434,19 @@ class TestUpdateGroupPrivacy:
         assert resp.status_code == 200
         assert resp.json()["privacy"] == "private"
 
-    def test_anonymous_caller_401(self, client, creator_browser):
+    def test_no_account_caller_401(
+        self, client, creator_browser, stranger_browser
+    ):
+        # Migration 142: admin-gated. A caller whose browser resolves to NO
+        # account (fresh browser, no bearer) gets 401. NOTE the creator's own
+        # browser would still resolve to its account via the user_browsers
+        # link even without the bearer, so we use a fresh unlinked browser.
         token, _ = _sign_in(client, creator_browser)
         g = _create_empty_group(client, creator_browser, token)
-        # No Authorization header.
         resp = client.post(
             f"/api/groups/{g['short_id']}/privacy",
             json={"privacy": "public"},
-            headers=_bid_headers(creator_browser),
+            headers=_bid_headers(stranger_browser),
         )
         assert resp.status_code == 401
 
@@ -610,19 +624,19 @@ class TestPrivateMemberVisibility:
 
 
 class TestGrandfatheredGroups:
-    def test_existing_groups_are_public(self):
-        """Migration 114 backfilled every pre-Phase-E group to public.
-        Check by-direct-sql on a fresh row created via DEFAULT-only
-        insert (skips application code that sets privacy explicitly)."""
-        with psycopg.connect(TEST_DB_URL) as conn:
-            row = conn.execute(
-                "INSERT INTO groups DEFAULT VALUES RETURNING id, privacy"
-            ).fetchone()
-            conn.commit()
-            assert row[1] == "private"  # default for new INSERTs
-            # Clean up.
-            conn.execute("DELETE FROM groups WHERE id = %s", (row[0],))
-            conn.commit()
+    def test_create_paths_always_record_a_creator(
+        self, client, creator_browser
+    ):
+        """Migration 142: every group-create path records a creator (= admin
+        #1) so no NULL-creator group is ever minted, even anonymously. The
+        invariant lives in app code + `group_admins`, not a NOT NULL on the
+        (still-nullable, vestigial) `creator_user_id` column."""
+        # Empty-group create (anonymous → auto-account creator).
+        g = _create_empty_group(client, creator_browser)
+        assert g["creator_user_id"] is not None
+        # Poll create (anonymous → auto-account creator).
+        poll = _create_poll(client, creator_browser)
+        assert poll["group_creator_user_id"] is not None
 
     def test_legacy_group_remains_accessible_to_strangers(
         self, client, creator_browser, stranger_browser
