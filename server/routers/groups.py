@@ -235,6 +235,39 @@ class GroupTitleResponse(BaseModel):
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
 
+def require_group_read_access(
+    conn, route_id: str, *, browser_id: str | None, user_id: str | None
+) -> str:
+    """Resolve `route_id` → group_id for a members-only READ endpoint,
+    enforcing Phase E privacy. Returns the group_id; raises HTTPException(404)
+    when the route doesn't resolve OR the group is private and the caller
+    isn't a member.
+
+    This is the read-side sibling of `resolve_group_for_visit` (used by the
+    `/by-route-id` endpoints), with ONE deliberate difference: it does NOT
+    auto-join public-group visitors — these endpoints (/summary, /members)
+    only READ metadata + roster, so they leave membership untouched. Public
+    groups stay openly readable (consistent with /summary + /preview being
+    public); private groups 404 non-members. Collapsing the members-only
+    reads onto this helper makes "who can read a private group's
+    chrome/roster" a single auditable point, so a new members-only read
+    can't drift from the existing ones.
+    """
+    group_id = resolve_group_id_from_route_id(conn, route_id)
+    if not group_id:
+        raise HTTPException(status_code=404, detail="Group not found")
+    meta = get_group_metadata(conn, group_id)
+    if (
+        meta
+        and meta["privacy"] == "private"
+        and not is_caller_member_of_group(
+            conn, group_id, browser_id=browser_id, user_id=user_id
+        )
+    ):
+        raise HTTPException(status_code=404, detail="Group not found")
+    return group_id
+
+
 class MyGroupsRequest(BaseModel):
     """Request body for `POST /api/groups/mine`.
 
@@ -452,15 +485,9 @@ def get_group_summary(route_id: str, request: Request):
     browser_id = _browser_id(request)
     user_id = _user_id(request)
     with get_db() as conn:
-        group_id = resolve_group_id_from_route_id(conn, route_id)
-        if not group_id:
-            raise HTTPException(status_code=404, detail="Group not found")
-        meta = get_group_metadata(conn, group_id)
-        if meta and meta["privacy"] == "private":
-            if not is_caller_member_of_group(
-                conn, group_id, browser_id=browser_id, user_id=user_id
-            ):
-                raise HTTPException(status_code=404, detail="Group not found")
+        group_id = require_group_read_access(
+            conn, route_id, browser_id=browser_id, user_id=user_id
+        )
         # `has_polls` (visibility-blind) lets the FE tell "all my history is
         # hidden pre-join" apart from "brand-new empty group" — folded into
         # the one SELECT so the summary stays a single round-trip. See
@@ -1627,15 +1654,9 @@ def get_group_members(route_id: str, request: Request):
     browser_id = _browser_id(request)
     user_id = _user_id(request)
     with get_db() as conn:
-        group_id = resolve_group_id_from_route_id(conn, route_id)
-        if not group_id:
-            raise HTTPException(status_code=404, detail="Group not found")
-        meta = get_group_metadata(conn, group_id)
-        if meta and meta["privacy"] == "private":
-            if not is_caller_member_of_group(
-                conn, group_id, browser_id=browser_id, user_id=user_id
-            ):
-                raise HTTPException(status_code=404, detail="Group not found")
+        group_id = require_group_read_access(
+            conn, route_id, browser_id=browser_id, user_id=user_id
+        )
         named, anon = load_group_members(conn, group_id)
         admin_ids = group_admin_user_ids(conn, group_id)
         viewer_is_admin = is_caller_admin(

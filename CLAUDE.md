@@ -3173,16 +3173,23 @@ Bob → list still says only Sam). Shipped on
   the in-tree child through the global event would be a downgrade (it'd
   pretend a parent/child relationship is cross-route). `/info` also refetches
   on tab `visibilitychange → visible`.
-- **TODO (pre-existing, out of scope of the roster PR): extract a shared
-  `require_group_read_access(conn, route_id, *, browser_id, user_id) → group_id`
-  helper.** The "resolve route → 404 on miss → `get_group_metadata` → 404
-  non-members of a private group" block is now copy-pasted byte-for-byte
-  across ≥3 read endpoints (`get_group_summary`, the by-route-id read, and the
-  new `get_group_members`); `get_group_metadata` is fetched at ~7 call sites.
-  The new endpoint faithfully follows the existing pattern; collapsing all
-  members-only reads onto one helper (so the privacy contract is a single
-  auditable point) is a separate refactor that touches untouched endpoints —
-  do it as its own change, not bolted onto a feature PR.
+- **`require_group_read_access(conn, route_id, *, browser_id, user_id) → group_id`
+  (`routers/groups.py`, SHIPPED) is the single members-only-read privacy gate.**
+  Collapses the "resolve route → 404 on miss → `get_group_metadata` → 404
+  non-members of a private group" block that was copy-pasted byte-for-byte in
+  `get_group_summary` + `get_group_members`. Public groups stay openly readable
+  (NO auto-join — these endpoints only READ metadata/roster), private groups 404
+  non-members; raises HTTPException(404, "Group not found") internally. It's the
+  read-side sibling of `services/groups.py: resolve_group_for_visit` (the
+  `/by-route-id` AUTO-JOIN variant — that one writes a membership row for public
+  visitors, so the two can't be merged). Route any NEW members-only read through
+  this helper so the privacy contract stays a single auditable point. NOTE the
+  deliberately-stricter outliers that do NOT use it: `get_poll_voters`
+  (`/poll/{ref}/voter-identities`) member-gates EVEN public groups, and `claim_group`
+  gates on membership with a 403/custom detail — different contracts. `get_group_metadata`
+  is still fetched directly at the non-read sites (push creator lookup in the
+  join-request endpoint, the boot-private-only check) where the read-access gate
+  doesn't apply.
 - Tests: `server/tests/test_group_members_roster.py` (named members incl.
   not-yet-voted, account de-dup across browsers, anonymous roll-up, private
   members-only).
