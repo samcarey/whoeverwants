@@ -701,8 +701,11 @@ enum PollTextParser {
     ]
 
     // Generic filler words removed before matching. MUST NOT contain any category
-    // trigger word (the JS test pins this disjointness). Question words that ARE
-    // triggers ("where", "when") are deliberately absent.
+    // trigger word — the JS test pins this disjointness on the JS side; there's no
+    // Swift check yet (covered by the remaining-XCTest TODO in
+    // docs/poll-textbox-followups.md), so keep this set byte-identical to STOP_WORDS
+    // in lib/categoryMatch.ts. Question words that ARE triggers ("where", "when")
+    // are deliberately absent.
     private static let stopWords: Set<String> = [
         "should", "shall", "would", "could", "can", "will", "do", "does", "did",
         "is", "are", "am", "was", "were", "be", "been", "being", "have", "has", "had",
