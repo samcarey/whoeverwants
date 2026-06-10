@@ -641,6 +641,9 @@ export interface GroupMember {
   name: string;
   /** Account id when this member is signed in; null for anonymous browsers. */
   user_id: string | null;
+  /** Migration 142: is this member a group admin? (always false for anonymous
+   *  members — admins are account-keyed). */
+  is_admin: boolean;
 }
 
 export interface GroupRoster {
@@ -648,6 +651,10 @@ export interface GroupRoster {
   members: GroupMember[];
   /** Distinct members with no resolvable name (drive-by public-group joins). */
   anonymous_count: number;
+  /** Migration 142: is the viewer an admin of this group? Gates the /info
+   *  admin chrome (privacy toggle, invites, join requests, add-people,
+   *  promote/boot, title/avatar edits). */
+  viewer_is_admin: boolean;
 }
 
 /** The group's ACTUAL roster from `group_members` — named members plus a
@@ -664,14 +671,19 @@ export async function apiGetGroupMembers(
     );
     return {
       members: Array.isArray(data?.members)
-        ? (data.members as GroupMember[])
+        ? (data.members as any[]).map((m) => ({
+            name: m.name,
+            user_id: m.user_id ?? null,
+            is_admin: !!m.is_admin,
+          }))
         : [],
       anonymous_count:
         typeof data?.anonymous_count === 'number' ? data.anonymous_count : 0,
+      viewer_is_admin: !!data?.viewer_is_admin,
     };
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
-      return { members: [], anonymous_count: 0 };
+      return { members: [], anonymous_count: 0, viewer_is_admin: false };
     }
     throw err;
   }
@@ -679,7 +691,9 @@ export async function apiGetGroupMembers(
 
 /** A single poll's respondent roster — same shape as the group members roster
  *  (one entry per distinct voter person + a rolled-up anonymous count). Drives
- *  the poll /info respondents list (per-person rows + long-press to profile). */
+ *  the poll /info respondents list (per-person rows + long-press to profile).
+ *  `is_admin` / `viewer_is_admin` are not meaningful here (it's a voter roster,
+ *  not group membership) — defaulted false to satisfy the shared types. */
 export async function apiGetGroupPollVoters(
   routeId: string,
   pollRef: string,
@@ -690,17 +704,45 @@ export async function apiGetGroupPollVoters(
     );
     return {
       members: Array.isArray(data?.members)
-        ? (data.members as GroupMember[])
+        ? (data.members as any[]).map((m) => ({
+            name: m.name,
+            user_id: m.user_id ?? null,
+            is_admin: false,
+          }))
         : [],
       anonymous_count:
         typeof data?.anonymous_count === 'number' ? data.anonymous_count : 0,
+      viewer_is_admin: false,
     };
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
-      return { members: [], anonymous_count: 0 };
+      return { members: [], anonymous_count: 0, viewer_is_admin: false };
     }
     throw err;
   }
+}
+
+/** Migration 142: promote a member to admin (admin-only). */
+export async function apiPromoteGroupAdmin(
+  routeId: string,
+  userId: string,
+): Promise<void> {
+  await groupFetch<any>(`/${encodeURIComponent(routeId)}/admins`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+/** Migration 142: remove a non-admin member from a PRIVATE group and revoke
+ *  the invite they joined through (admin-only). */
+export async function apiBootGroupMember(
+  routeId: string,
+  userId: string,
+): Promise<void> {
+  await groupFetch<any>(
+    `/${encodeURIComponent(routeId)}/members/${encodeURIComponent(userId)}/boot`,
+    { method: 'POST' },
+  );
 }
 
 /** Encode an ArrayBuffer as base64. Chunked to avoid the `apply()`
