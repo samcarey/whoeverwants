@@ -64,6 +64,7 @@ from services.questions import (
     _finalize_suggestion_options,
     _finalize_time_slots,
     _maybe_close_cancelled_event_poll,
+    maybe_auto_age_poll,
 )
 
 log = logging.getLogger("internal")
@@ -165,6 +166,24 @@ def tick(request: Request):
         #    `recurrence_last_run`. Idempotent via that watermark.
         materialized_ids = materialize_due_instances(conn, now.date())
 
+        # 6. Auto-age finished polls into the per-viewer "Old" list (migration
+        #    142). Scans every closed-but-not-aged poll and stamps
+        #    `auto_aged_at` once it's "done" — non-time/showtime polls age the
+        #    first tick after they close; time/showtime polls age once their
+        #    decided slot is fully past (or it was cancelled / has no winner).
+        #    A closed poll with a still-upcoming winning slot stays NULL and is
+        #    re-scanned next tick. The set that lingers NULL is therefore just
+        #    "closed events not yet held" — naturally small. Idempotent via the
+        #    `auto_aged_at IS NULL` guard inside maybe_auto_age_poll.
+        aged = 0
+        aging_candidates = conn.execute(
+            "SELECT id::text AS id FROM polls "
+            "WHERE is_closed = true AND auto_aged_at IS NULL"
+        ).fetchall()
+        for r in aging_candidates:
+            if maybe_auto_age_poll(conn, r["id"], now):
+                aged += 1
+
     # Dispatch outside the claim transaction. Each fan-out opens its own
     # connection and swallows errors, so one bad poll can't abort the batch.
     for pid in closed_ids:
@@ -204,4 +223,5 @@ def tick(request: Request):
         "cancelled": len(cancelled_ids),
         "reminded": reminded,
         "materialized": len(materialized_ids),
+        "aged": aged,
     }
