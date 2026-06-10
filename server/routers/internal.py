@@ -36,6 +36,13 @@ Auth: `Authorization: Bearer <INTERNAL_TICK_SECRET>`. When the env var is
 unset the endpoint 503s (disabled) rather than running unauthenticated — dev
 tiers without the secret simply don't run the tick; the inline close/cutoff
 pushes still fire there.
+
+`POST /api/internal/dev/tick` is a non-production convenience that runs the
+SAME tick body without the bearer, gated by request Origin (inert on prod via
+`services.fe_origin.is_prod_origin`, same model as the dev instant-sign-in
+links). Per-branch dev servers don't run the cron, so this is how a session
+exercises the tick-only paths (recurrence materialization, deadline-driven
+auto-close, phase-transition pushes, vote reminders, auto-aging) end-to-end.
 """
 
 from __future__ import annotations
@@ -66,6 +73,7 @@ from services.questions import (
     _maybe_close_cancelled_event_poll,
     maybe_auto_age_poll,
 )
+from services.fe_origin import is_prod_origin
 
 log = logging.getLogger("internal")
 
@@ -100,8 +108,25 @@ def _finalize_poll_questions(conn, poll_id: str, now: datetime) -> None:
 @router.post("/tick")
 def tick(request: Request):
     _authorize_tick(request)
-    now = datetime.now(timezone.utc)
+    return _run_tick(datetime.now(timezone.utc))
 
+
+@router.post("/dev/tick")
+def dev_tick(request: Request):
+    """NON-PROD: run the tick body without the bearer secret. Gated to
+    dev / canary / localhost via the request Origin (503 on production),
+    mirroring the dev instant-sign-in links — per-branch dev servers have
+    no cron, so this is the only way to exercise the tick-driven paths
+    there. Idempotent and safe to re-run."""
+    if is_prod_origin(request):
+        raise HTTPException(
+            status_code=503,
+            detail="The dev tick isn't available on this tier",
+        )
+    return _run_tick(datetime.now(timezone.utc))
+
+
+def _run_tick(now: datetime) -> dict:
     with get_db() as conn:
         # 1. Make is_closed authoritative for past-deadline polls.
         conn.execute(

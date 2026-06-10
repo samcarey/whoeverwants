@@ -75,131 +75,29 @@ CI-enforced anchor.
 
 ---
 
-## TODO 2 — Replace/augment the heuristic with a small AI model
+## TODO 2 — Augment the heuristic with a small AI model — SHIPPED (web, on-device)
 
-**Status:** open, exploratory. The keyword matcher is a big step up but is still
-a hand-curated heuristic, so it has a structural ceiling:
+**Status:** the embedding category ranker shipped and is live on all tiers incl.
+prod. Canonical writeup is in CLAUDE.md (search "Embedding category ranker").
+Summary: `lib/aiCategoryClassify.ts` embeds the typed subject (transformers.js
+`Xenova/bge-small-en-v1.5`, q8, lazy-loaded from a CDN ESM URL — not bundled)
+and cosine-ranks it against `lib/categoryPrototypes.ts`; a confident hint feeds
+`planPollSuggestions(..., { aiHint })` and only ADDS a row, never overrides the
+heuristic default. Fail-safe (no model / no network / SSR → planner no-op).
+Benchmarked at +7.6% default-correctness / +15.9% recall over the heuristic on
+the long-tail corpus.
 
-- **Synonyms / novel phrasings** it has no word for: "where should we grub",
-  "feed me", "let's get plastered" (→ restaurant/bar), "frag night" (→ game).
-- **Idioms** the rules mishandle: `what's for dinner` splits on "for" → a
-  custom poll named "what's"; `place to eat` ranks Place over Restaurant
-  because "place" is literally the Place label.
-- **Compound / ambiguous intent**: "dinner friday or saturday with the team" is
-  simultaneously time + options + restaurant + a context ("with the team").
-- **Typos / multilingual**: "moive night", "dónde comemos".
+**Still open (out of scope of the shipped work):**
+- Multilingual — bge is English-only; a multilingual model (e.g.
+  `paraphrase-multilingual-MiniLM-L12`) would lift the multilingual bucket but
+  isn't wired up.
+- The **iOS / Siri** side has no AI classifier (it uses only the keyword
+  matcher) — and that matcher itself still needs the TODO 1 Swift port first.
 
-An embedding/LLM classifier maps free text → poll shape by *meaning*, lifting
-long-tail recall well past what adding more keywords can.
-
-### Hard constraints (non-negotiable UX)
-
-1. **AI augments, never blocks.** The deterministic planner stays the *instant*
-   default (per-keystroke, offline, zero-cost). The AI result arrives async and
-   only *re-ranks / adds* a suggestion. The box must stay instant and work with
-   no network / model down.
-2. **Cheap + low-latency.** The box reacts per-keystroke; an AI pass must be
-   debounced (~250–350 ms after typing pauses), cached by query string, and
-   cancellable.
-3. **Privacy.** Prefer on-device. A self-hosted Mac-mini model is acceptable
-   (no third party); a paid cloud LLM per keystroke is not.
-
-### Hosting reality (be honest about it)
-
-- **Production API = the DigitalOcean droplet (1 GB RAM).** It **cannot** host
-  even a tiny LLM. So for *production*, the viable path is **on-device**.
-- **Mac mini (M4, 32 GB, Colima VM)** already hosts dev servers + `cmd-api` and
-  has a precedent for small self-hosted services (favicon cache, showtimes
-  adapter). It's the right place to **prototype + evaluate** a model, and could
-  serve **dev/canary** classification — but don't design prod around it unless
-  prod hosting changes.
-
-### Design options (sweet spot first)
-
-**A. Embedding-similarity category ranker (recommended first step).**
-Precompute embeddings for a handful of *prototype phrases* per category
-("where to eat", "pick a restaurant", "dinner spot", … for restaurant). At
-query time, embed the typed subject and cosine-rank categories. Tiny, fast
-(~10–40 ms), deterministic, and extended by adding prototypes (not keywords).
-- **On-device iOS:** `NLEmbedding` (Apple's built-in sentence embeddings) —
-  free, offline, no model to ship. Also usable from the Siri App-Intent process.
-- **On-device web:** `transformers.js` running a small int8 embedder
-  (e.g. `all-MiniLM-L6-v2`, ~20 MB) via WASM/WebGPU, lazy-loaded with the
-  create-poll chunk so it doesn't bloat the initial bundle.
-- **Mac mini (dev/canary):** a `/api/poll-classify` FastAPI endpoint wrapping
-  `bge-small` / `all-MiniLM` (sentence-transformers). The per-branch dev FE
-  already proxies `/api/*` to the in-container API.
-
-**B. Small instruction-tuned LLM for the hard cases.** A sub-2B quantized model
-(Qwen2.5-0.5B/1.5B, Llama-3.2-1B, Phi-3-mini) with **grammar/JSON-constrained
-output** returning `{kind, category, options[], context, temporal}` in one shot
-— handles compound/ambiguous input the embedder can't. Heavier (~100–300 ms),
-so fire it on a longer pause or on submit, NOT per keystroke.
-- **On-device iOS 18+:** Apple Foundation Models (on-device Apple Intelligence)
-  via the system LLM APIs, where available; else Core ML with a distilled
-  classifier.
-- **Mac mini:** llama.cpp / Ollama behind the same `/api/poll-classify`
-  endpoint; free, self-hosted, fine for dev/canary + eval.
-
-### Architecture sketch
-
-```
-type typed → planner() → instant suggestions (default, offline)        [unchanged]
-            └─ debounce 300ms ─→ classify(text) ─→ {kind,category,...,confidence}
-                                   (NLEmbedding on-device / Mac /api/poll-classify)
-                                 └─ if confidence high → promote/add a row,
-                                    re-rank above the heuristic primary;
-                                    else leave the heuristic result as-is.
-```
-
-Keep `lib/pollSuggestions.ts` as the merge point: the planner returns the
-deterministic rows; an optional `aiHint?: {kind, category, score}` re-orders the
-primary. Cache `classify()` by normalized query; cancel in-flight on new input;
-hard-timeout (~400 ms) → fall back to heuristic.
-
-### Evaluation substrate (already built — reuse it for prompt/model dev)
-
-The test suite from the rework is a **reusable, classifier-agnostic benchmark**,
-intentionally decoupled so an AI variant is graded against the heuristic on the
-SAME data:
-
-- **`tests/fixtures/poll-suggestion-corpus.ts`** — the versioned labeled dataset
-  (`POLL_SUGGESTION_CORPUS`, ~77 cases with bucket tags) + the scorers
-  (`scoreTopChoice` for single-best/default-correctness, `scoreRecall` for
-  list/recall) + the matcher (`intentMatches`, ambiguity-tolerant via an
-  `accept` SET per case). `Prediction = {kind, category?}` is classifier-agnostic
-  so a PlannedRow, a `decidePoll` result, OR an AI's JSON all plug in.
-- **`tests/__tests__/poll-suggestion-scoring.test.ts`** — the CI gate; just wires
-  the heuristic planner into those scorers + pins canonical cases.
-
-**Benchmark an AI classifier (or a prompt variant) like this:**
-
-```ts
-import { scoreTopChoice, scoreRecall } from "tests/fixtures/poll-suggestion-corpus";
-const predict = (text) => myClassifier(text);          // → {kind, category?} | null
-const ai   = scoreTopChoice(predict);                  // default-correctness + per-bucket
-const base = scoreTopChoice(plannerPrimary);           // heuristic baseline, same corpus
-// ship only if  ai.rate > base.rate  AND latency budget met
-```
-
-Workflow for AI/prompt development:
-1. **Quality** comes from the corpus + scorers (default-correct, recall,
-   `byBucket` slices to see WHERE a model wins/loses — slang vs idiom vs compound).
-2. **Latency** is measured by the caller (wrap `predict` with timing → p50/p95);
-   the corpus deliberately doesn't bake in timing.
-3. **Grow the corpus** with long-tail buckets (slang, typos, compound,
-   multilingual) — this is exactly what exposes the heuristic's ceiling and gives
-   prompt iteration signal. Keep `accept` a SET for genuine ambiguity.
-4. **Gate** any AI path on (a) measurable recall/default lift over the heuristic
-   AND (b) a latency budget, so a slower-but-not-better model can't ship.
-5. For a **Python / Mac-mini** eval (e.g. sentence-transformers, llama.cpp),
-   snapshot the corpus to JSON and re-implement the tiny scorer there, OR call a
-   Node harness — the corpus is the contract either way.
-
-### Suggested first move
-
-Prototype **Option A on-device** (`NLEmbedding` on iOS, `transformers.js` on
-web) behind a flag, A/B it against the heuristic with the scoring harness on a
-fresh long-tail corpus, and measure recall lift + latency before committing to
-anything heavier. The Mac-mini endpoint is the fastest way to iterate on
-prototypes/prompts; on-device is the prod-viable end state.
+**Reusable eval substrate (kept):** `tests/fixtures/poll-suggestion-corpus.ts`
+(labeled dataset + classifier-agnostic scorers `scoreTopChoice` / `scoreRecall`,
+`Prediction = {kind, category?}`) and `prototypes/poll-classify/bench.mts` (the
+IRV-vs-model bench that imports the real planner as baseline). Use these to
+re-tune `AI_CATEGORY_MIN_SCORE` or compare a different model; grow the corpus
+(esp. the non-CI `POLL_SUGGESTION_LONGTAIL` slang/typo/compound/multilingual
+buckets) to expose where a candidate wins/loses.
