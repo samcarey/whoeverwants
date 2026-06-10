@@ -27,6 +27,8 @@ import GroupPrivacySection from "@/components/GroupPrivacySection";
 import HeaderPortal from "@/components/HeaderPortal";
 import InitialBubble from "@/components/InitialBubble";
 import RosterRow from "@/components/RosterRow";
+import MemberActionsSheet from "@/components/MemberActionsSheet";
+import { haptic } from "@/lib/haptics";
 import InviteLinksSection from "@/components/InviteLinksSection";
 import JoinRequestsSection from "@/components/JoinRequestsSection";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
@@ -69,6 +71,13 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   const [pendingAction, setPendingAction] = useState<
     { kind: "promote" | "boot"; userId: string; name: string } | null
   >(null);
+  // The member whose 3-dots action sheet (Make admin / Remove) is open.
+  const [actionsFor, setActionsFor] = useState<
+    { userId: string; name: string } | null
+  >(null);
+  // Anonymous members are returned only as a count (no per-person data), so
+  // the rolled-up "N anonymous" row expands into N identical "Anonymous" rows.
+  const [anonExpanded, setAnonExpanded] = useState(false);
 
   const goBack = () => {
     // Slide overlay: mount the group root above the current page and slide
@@ -311,50 +320,103 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
                   isAdmin={isAdmin}
                   actions={
                     canManage ? (
-                      <>
-                        <button
-                          type="button"
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() =>
-                            setPendingAction({ kind: "promote", userId: userId!, name })
-                          }
-                          className="shrink-0 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline active:opacity-70"
+                      <button
+                        type="button"
+                        // stopPropagation so a tap on the 3-dots doesn't also
+                        // fire the row's long-press → profile modal.
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          haptic.medium();
+                          setActionsFor({ userId: userId!, name });
+                        }}
+                        className="shrink-0 w-9 h-9 -mr-2 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 active:opacity-70"
+                        aria-label={`Actions for ${name}`}
+                      >
+                        <svg
+                          className="w-5 h-5"
+                          fill="currentColor"
+                          viewBox="0 0 24 24"
+                          aria-hidden
                         >
-                          Make admin
-                        </button>
-                        {isPrivateGroup && (
-                          <button
-                            type="button"
-                            onPointerDown={(e) => e.stopPropagation()}
-                            onClick={() =>
-                              setPendingAction({ kind: "boot", userId: userId!, name })
-                            }
-                            className="shrink-0 text-xs font-medium text-red-600 dark:text-red-400 hover:underline active:opacity-70"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </>
+                          <circle cx="12" cy="5" r="2" />
+                          <circle cx="12" cy="12" r="2" />
+                          <circle cx="12" cy="19" r="2" />
+                        </svg>
+                      </button>
                     ) : null
                   }
                 />
               );
             })}
             {anonymousExtra > 0 && (
-              <li className="flex items-center gap-3 px-4 py-3 text-gray-500 dark:text-gray-400 italic">
-                <InitialBubble
-                  name={null}
-                  sizeClassName="w-8 h-8"
-                  className="shrink-0"
-                />
-                <span className="min-w-0 break-words">
-                  {anonymousExtra} anonymous
-                </span>
-              </li>
+              <>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      haptic.light();
+                      setAnonExpanded((v) => !v);
+                    }}
+                    aria-expanded={anonExpanded}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-500 dark:text-gray-400 italic hover:bg-gray-50 dark:hover:bg-gray-800/50 active:opacity-70"
+                  >
+                    <InitialBubble
+                      name={null}
+                      sizeClassName="w-8 h-8"
+                      className="shrink-0"
+                    />
+                    <span className="min-w-0 break-words flex-1">
+                      {anonymousExtra} anonymous
+                    </span>
+                    <svg
+                      className={`shrink-0 w-4 h-4 transition-transform ${anonExpanded ? "rotate-180" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                      aria-hidden
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </li>
+                {anonExpanded &&
+                  Array.from({ length: anonymousExtra }, (_, i) => (
+                    <li
+                      key={`anon-${i}`}
+                      className="flex items-center gap-3 px-4 py-3 text-gray-500 dark:text-gray-400 italic"
+                    >
+                      <InitialBubble
+                        name={null}
+                        sizeClassName="w-8 h-8"
+                        className="shrink-0"
+                      />
+                      <span className="min-w-0 break-words">Anonymous</span>
+                    </li>
+                  ))}
+              </>
             )}
           </ul>
         </div>
       </div>
+
+      {actionsFor && (
+        <MemberActionsSheet
+          isOpen={true}
+          name={actionsFor.name}
+          canRemove={isPrivateGroup}
+          onMakeAdmin={() => {
+            setPendingAction({ kind: "promote", userId: actionsFor.userId, name: actionsFor.name });
+            setActionsFor(null);
+          }}
+          onRemove={() => {
+            setPendingAction({ kind: "boot", userId: actionsFor.userId, name: actionsFor.name });
+            setActionsFor(null);
+          }}
+          onClose={() => setActionsFor(null)}
+        />
+      )}
 
       {pendingAction && (
         <ConfirmationModal
