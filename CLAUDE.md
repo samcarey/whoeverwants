@@ -3277,7 +3277,10 @@ booted too** via an opaque per-roster handle (see the boot endpoints + the
   for older clients.
 - **`GET /{route}/members`** now returns `viewer_is_admin` (top-level) +
   per-member `is_admin`, plus `anonymous_members: [{handle}]` (and the
-  count-only `anonymous_count`). Anonymous (nameless) members are never admins
+  count-only `anonymous_count`) and `viewer_anonymous_handle` (the viewer's own
+  anon handle, or null — the FE filters exactly this entry out of the displayed
+  anon list so the viewer shows as the "You" row, never with a self-boot
+  3-dots). Anonymous (nameless) members are never admins
   (account-keyed); a nameless admin (no display_name) is an admin but rolls up
   anonymously — FE admins always have a name via the name-gate.
 - **FE:** `apiGetGroupMembers` surfaces `viewer_is_admin` + `is_admin` +
