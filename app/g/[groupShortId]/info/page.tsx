@@ -12,6 +12,10 @@ import { useGroup } from "@/lib/useGroup";
 import { nameCount } from "@/lib/groupUtils";
 import { apiGetGroupMembers } from "@/lib/api";
 import type { GroupRoster } from "@/lib/api";
+import {
+  GROUP_MEMBERS_CHANGED_EVENT,
+  type GroupMembersChangedDetail,
+} from "@/lib/eventChannels";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupShareButton from "@/components/GroupShareButton";
 import GroupPrivacySection from "@/components/GroupPrivacySection";
@@ -96,10 +100,18 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     const onVisible = () => {
       if (document.visibilityState === "visible") load();
     };
+    // The "Add people" screen slides back to this still-mounted page, so a
+    // remount can't be relied on — refetch when it reports a membership change.
+    const onMembersChanged = (e: Event) => {
+      const detail = (e as CustomEvent<GroupMembersChangedDetail>).detail;
+      if (detail?.routeId === groupId) load();
+    };
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener(GROUP_MEMBERS_CHANGED_EVENT, onMembersChanged);
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(GROUP_MEMBERS_CHANGED_EVENT, onMembersChanged);
     };
   }, [groupId, rosterTick]);
 

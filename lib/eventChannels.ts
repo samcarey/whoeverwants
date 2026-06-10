@@ -50,6 +50,18 @@ export interface HomeSelectionModeChangeDetail {
   active: boolean;
 }
 
+/** Fired after a group's membership changes from a surface OTHER than the
+ *  /info page itself (today: the "Add people" / invite-members screen, which
+ *  slides BACK to a still-mounted /info — so /info can't rely on a remount to
+ *  re-read the roster). /info listens and refetches its member list when the
+ *  `routeId` matches. (Join-request approvals are handled in-place via
+ *  JoinRequestsSection's `onDecided`, so they don't need this.) */
+export const GROUP_MEMBERS_CHANGED_EVENT = 'groupMembersChanged';
+export interface GroupMembersChangedDetail {
+  /** The group route id (short_id or uuid) whose membership changed. */
+  routeId: string;
+}
+
 /** Fired by `slideToGroup()` / `slideToGroupInfo()` / `slideToGroupEditTitle()`
  *  / `slideToGroupRoot()` to ask `SlideOverlayHost` to mount the destination
  *  overlay + run the slide-in animation. The host calls `router.push(href)`

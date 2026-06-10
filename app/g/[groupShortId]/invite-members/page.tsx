@@ -11,6 +11,10 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
 import { haptic } from "@/lib/haptics";
 import {
+  GROUP_MEMBERS_CHANGED_EVENT,
+  type GroupMembersChangedDetail,
+} from "@/lib/eventChannels";
+import {
   ApiError,
   apiAddGroupMembers,
   apiGetGroupInvitableAccounts,
@@ -88,7 +92,14 @@ function InviteMembers({ groupId }: { groupId: string }) {
     haptic.medium();
     apiAddGroupMembers(groupId, [...selected])
       .then(() => {
-        // The /info members list refetches on next mount, so just slide back.
+        // /info stays mounted under the slide overlay, so it can't rely on a
+        // remount to re-read the roster — tell it to refetch, then slide back.
+        window.dispatchEvent(
+          new CustomEvent<GroupMembersChangedDetail>(
+            GROUP_MEMBERS_CHANGED_EVENT,
+            { detail: { routeId: groupId } },
+          ),
+        );
         goBack();
       })
       .catch((e) => {
