@@ -1871,8 +1871,20 @@ without blocking re-requests after a denial. Three endpoints in
     bullet below). Idempotent via the partial unique index —
     second call doesn't re-fire the creator push.
   * `GET /api/groups/<route_id>/join-requests` — creator-only.
-    Returns pending oldest first, with `requester_email` joined
-    in (NULL for passkey-only requesters). 401/403/404.
+    Returns pending oldest first. Each row carries `requester_email`
+    (NULL for passkey-only requesters), `requester_name`
+    (`users.display_name`, LEFT JOIN), `requester_image_updated_at`
+    (`user_profiles.image_updated_at`, LEFT JOIN — the profile-photo
+    cache-buster, NULL when no photo), and `requested_at`. The two
+    LEFT JOINs select ONLY scalar columns (display_name, the timestamp)
+    — never `user_profiles.image_data` (the BYTEA blob) — so the join
+    stays cheap. The FE (`JoinRequestsSection`) renders an avatar
+    (`InitialBubble` fed `buildUserImageUrl(requester_user_id,
+    requester_image_updated_at)`, falling back to a name-initials disc)
+    + name (primary) + email (secondary) + "Requested <relativeTime>".
+    Name is the primary label because instant-link / browser-tied
+    accounts (and passkey-only ones) have no email — `requester_email`
+    is frequently NULL in practice. 401/403/404.
   * `POST /api/groups/<route_id>/join-requests/<id>/decide` (body
     `{action: 'approve' | 'deny'}`) — creator-only. Approve writes
     a `group_members` row keyed on the requester's

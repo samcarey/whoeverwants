@@ -1049,8 +1049,8 @@ class JoinRequestSummaryResponse(BaseModel):
     group_id: str
     requester_user_id: str
     requester_email: str | None
-    requester_name: str | None = None
-    requester_image_updated_at: str | None = None
+    requester_name: str | None
+    requester_image_updated_at: str | None
     message: str | None
     requested_at: str
 
@@ -1084,10 +1084,10 @@ def _summary_to_response(s, fallback_email: str | None = None) -> JoinRequestSum
         group_id=s.group_id,
         requester_user_id=s.requester_user_id,
         requester_email=s.requester_email if s.requester_email is not None else fallback_email,
-        requester_name=getattr(s, "requester_name", None),
+        requester_name=s.requester_name,
         requester_image_updated_at=(
             s.requester_image_updated_at.isoformat()
-            if getattr(s, "requester_image_updated_at", None)
+            if s.requester_image_updated_at
             else None
         ),
         message=s.message,
