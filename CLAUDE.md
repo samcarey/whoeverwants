@@ -3204,6 +3204,24 @@ From `/g/<id>/info`, a member taps **"Add people"** (above the members list) to 
 
 ---
 
+## User Profile Modal (long-press / click another user)
+
+Long-pressing (touch) or **clicking (desktop)** another user's name/avatar anywhere a per-user identity renders — group members list (`/info`), poll respondents list (`/g/<g>/p/<p>/info`), poll creator (detail page), invite-members list — opens a modal with their name, a larger avatar, account age ("Joined X ago"), and the groups the **caller** shares with them (tappable → navigate). Never targets yourself.
+
+- **`lib/useUserProfile.ts`** — `useProfileLongPress(userId, name?)` returns handlers to spread onto the element. Mouse → plain `onClick` opens; touch → 500ms long-press (a plain tap falls through to the element's own onClick, e.g. an invite row's select-toggle); movement >10px cancels; it `stopPropagation`s when it acts so it can sit on an inner element (invite row's avatar+name div) without firing the row's onClick. Returns `{}` (no handlers) when `userId` is null/undefined → disabled for anonymous participants + the viewer's own rows. `openUserProfileCard(userId, name?)` fires `USER_PROFILE_OPEN_EVENT`; `<UserProfileModalHost>` (mounted once in `app/layout.tsx`) renders the modal and ignores opens targeting the caller's own `getCachedSessionUser().user_id`.
+- **`components/UserProfileModal.tsx`** fetches `apiGetUserProfileCard(userId)` (`GET /api/users/{user_id}/profile-card`). Uses the shared `useBodyScrollLock(true)`; z-`[80]` (above ConfirmationModal's z-70).
+- **`components/RosterRow.tsx`** is the shared one-person row (avatar + name + the long-press hook), used by BOTH the /info members list and the poll /info respondents list. Don't reintroduce per-page row duplicates. The invite-members row keeps its own `InvitableRow` (checkbox + select-toggle structure) with the hook on the inner avatar+name div.
+
+### Distinct-people rosters
+
+Both rosters render **one row per distinct PERSON**, account-deduped. The **group** members list already does this via `#683`'s `apiGetGroupMembers → GroupRoster` (`services/groups.py: load_group_members`, keyed on `COALESCE(user_id, browser_id)` so two same-named people are two rows and an account across N browsers/roles is one). This feature:
+- Threads each member's `user_id` (already on `GroupMember`) into the /info row so it's long-pressable (the viewer's own row, matched via `isCurrentUserName`, gets `userId=null`).
+- Adds **`services/groups.py: load_poll_voters(conn, poll_id)`** — the poll-scoped sibling of `load_group_members` (same `(named[{name,user_id}], anonymous_count)` shape, but from `votes` of one poll). Endpoint `GET /api/groups/by-route-id/{route_id}/poll/{poll_ref}/voter-identities` → `GroupMembersResponse` (reuses #683's model); FE `apiGetGroupPollVoters(routeId, pollRef) → GroupRoster` (reuses #683's type). The poll /info respondents list renders this roster (one row per voter person + long-press), falling back to `poll.voter_names` only until it loads.
+- **`get_profile_card`** (`services/profiles.py`) returns name + `created_at` (age) + shared groups = intersection of the caller's visible memberships (`load_user_visibility`) and the target's memberships (one `group_display_name` query per shared group — fine, modal-open only). Endpoint in `routers/users.py` (`GET /{user_id}/profile-card`, public-ish: user_id is the URL token; shared_groups is caller-scoped). FE `apiGetUserProfileCard` + `UserProfileCard` in `lib/api/users.ts`.
+- **Rule**: any new "list the distinct people in a group/poll" surface should consume `load_group_members` / `load_poll_voters` (account-deduped) rather than re-deriving from name aggregates. Tests: `server/tests/test_profiles.py` (poll roster + profile card; the group `/members` roster is covered by #683's tests).
+
+---
+
 ## Group Avatar Images
 
 Groups can have a custom uploaded image avatar that replaces the participant-initials graphic. **Storage**: inline on the `groups` row — migration 108 added `image_data BYTEA`, `image_mime_type TEXT`, `image_updated_at TIMESTAMPTZ` columns. Keeping bytes in Postgres (vs filesystem / object storage) means pg_dump captures them automatically, no second storage surface to provision per-branch on the Mac dev infrastructure, and "destroy + recreate dev DB" stays a one-step operation. Trade-off accepted for the current scale.

@@ -42,6 +42,7 @@ from services.auth import create_anonymous_user, resolve_actor_user_id
 from services.category_options import load_category_options
 from services.groups import require_uuid, resolve_group_id_from_route_id
 from services.poll_categories import load_category_recency
+from services.profiles import get_profile_card
 from services.validation import validate_user_name
 
 
@@ -88,6 +89,26 @@ class UserProfileResponse(BaseModel):
 
     user_id: str | None = None
     image_updated_at: str | None = None
+
+
+class SharedGroupResponse(BaseModel):
+    """One group the caller shares with the profiled user. `route_id` builds a
+    `/g/<route_id>` link; `name` is the group's display name (may be null)."""
+
+    route_id: str
+    name: str | None = None
+
+
+class UserProfileCardResponse(BaseModel):
+    """`GET /api/users/{user_id}/profile-card` — the long-press profile modal
+    data. `name`/`image_updated_at`/`created_at` are account-level;
+    `shared_groups` is computed per-caller (groups BOTH belong to)."""
+
+    user_id: str
+    name: str | None = None
+    image_updated_at: str | None = None
+    created_at: str
+    shared_groups: list[SharedGroupResponse]
 
 
 class PollCategoryHistoryResponse(BaseModel):
@@ -158,6 +179,42 @@ def get_my_profile(request: Request):
     return UserProfileResponse(
         user_id=user_id,
         image_updated_at=image_updated_at.isoformat() if image_updated_at else None,
+    )
+
+
+@router.get("/{user_id}/profile-card", response_model=UserProfileCardResponse)
+def get_user_profile_card(user_id: str, request: Request):
+    """Profile card for another user: name, avatar timestamp, account age
+    (`created_at`), and the groups the caller shares with them. The user_id is
+    the URL token (name + image are already broadly exposed); shared_groups is
+    intersected with the caller's own visible memberships. 404 when the target
+    account doesn't exist.
+    """
+    require_uuid(user_id, "user_id")
+    browser_id = _browser_id(request)
+    caller_user_id = _user_id(request)
+    with get_db() as conn:
+        card = get_profile_card(
+            conn,
+            user_id,
+            caller_browser_id=browser_id,
+            caller_user_id=resolve_actor_user_id(
+                conn, user_id=caller_user_id, browser_id=browser_id
+            ),
+        )
+    if card is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return UserProfileCardResponse(
+        user_id=card.user_id,
+        name=card.name,
+        image_updated_at=card.image_updated_at.isoformat()
+        if card.image_updated_at
+        else None,
+        created_at=card.created_at.isoformat(),
+        shared_groups=[
+            SharedGroupResponse(route_id=g.route_id, name=g.name)
+            for g in card.shared_groups
+        ],
     )
 
 

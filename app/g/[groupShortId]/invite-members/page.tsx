@@ -20,6 +20,7 @@ import {
   apiGetGroupInvitableAccounts,
   type InvitableAccount,
 } from "@/lib/api";
+import { useProfileLongPress } from "@/lib/useUserProfile";
 
 /** Prop-driven inner view. Exposed so the slide overlay can render this
  *  directly without going through useParams() (the overlay mounts the
@@ -184,49 +185,14 @@ function InviteMembers({ groupId }: { groupId: string }) {
         ) : (
           <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
             <ul className="divide-y divide-gray-200 dark:divide-gray-800">
-              {filtered.map((a) => {
-                const isSelected = selected.has(a.user_id);
-                const label = a.name ?? "Unnamed";
-                return (
-                  <li key={a.user_id}>
-                    <button
-                      type="button"
-                      onClick={() => toggle(a.user_id)}
-                      aria-pressed={isSelected}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-900 dark:text-white active:bg-gray-50 dark:active:bg-gray-800/60"
-                    >
-                      <div
-                        role="checkbox"
-                        aria-checked={isSelected}
-                        className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                          isSelected
-                            ? "bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500"
-                            : "border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-900"
-                        }`}
-                      >
-                        {isSelected && (
-                          <svg
-                            className="w-4 h-4 text-white"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={3}
-                            viewBox="0 0 24 24"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </div>
-                      <InitialBubble
-                        name={a.name}
-                        imageUrl={null}
-                        sizeClassName="w-8 h-8"
-                        className="shrink-0"
-                      />
-                      <span className="min-w-0 break-words">{label}</span>
-                    </button>
-                  </li>
-                );
-              })}
+              {filtered.map((a) => (
+                <InvitableRow
+                  key={a.user_id}
+                  account={a}
+                  isSelected={selected.has(a.user_id)}
+                  onToggle={toggle}
+                />
+              ))}
             </ul>
           </div>
         )}
@@ -240,6 +206,64 @@ function InviteMembers({ groupId }: { groupId: string }) {
         confirmText="Add"
       />
     </>
+  );
+}
+
+/** A single invitable-account row. Tap the checkbox/row toggles selection;
+ *  click (desktop) or long-press (touch) the avatar/name opens the profile
+ *  modal — the hook stops propagation so it doesn't also toggle. Extracted so
+ *  `useProfileLongPress` is a top-level hook (not called inside the .map). */
+function InvitableRow({
+  account,
+  isSelected,
+  onToggle,
+}: {
+  account: InvitableAccount;
+  isSelected: boolean;
+  onToggle: (userId: string) => void;
+}) {
+  const lp = useProfileLongPress(account.user_id, account.name);
+  const label = account.name ?? "Unnamed";
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onToggle(account.user_id)}
+        aria-pressed={isSelected}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-900 dark:text-white active:bg-gray-50 dark:active:bg-gray-800/60 select-none"
+      >
+        <div
+          role="checkbox"
+          aria-checked={isSelected}
+          className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+            isSelected
+              ? "bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500"
+              : "border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-900"
+          }`}
+        >
+          {isSelected && (
+            <svg
+              className="w-4 h-4 text-white"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={3}
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+        </div>
+        <div className="flex items-center gap-3 min-w-0 cursor-pointer" {...lp}>
+          <InitialBubble
+            name={account.name}
+            imageUrl={null}
+            sizeClassName="w-8 h-8"
+            className="shrink-0"
+          />
+          <span className="min-w-0 break-words">{label}</span>
+        </div>
+      </button>
+    </li>
   );
 }
 

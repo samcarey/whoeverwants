@@ -677,6 +677,32 @@ export async function apiGetGroupMembers(
   }
 }
 
+/** A single poll's respondent roster — same shape as the group members roster
+ *  (one entry per distinct voter person + a rolled-up anonymous count). Drives
+ *  the poll /info respondents list (per-person rows + long-press to profile). */
+export async function apiGetGroupPollVoters(
+  routeId: string,
+  pollRef: string,
+): Promise<GroupRoster> {
+  try {
+    const data = await groupFetch<any>(
+      `/by-route-id/${encodeURIComponent(routeId)}/poll/${encodeURIComponent(pollRef)}/voter-identities`,
+    );
+    return {
+      members: Array.isArray(data?.members)
+        ? (data.members as GroupMember[])
+        : [],
+      anonymous_count:
+        typeof data?.anonymous_count === 'number' ? data.anonymous_count : 0,
+    };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return { members: [], anonymous_count: 0 };
+    }
+    throw err;
+  }
+}
+
 /** Encode an ArrayBuffer as base64. Chunked to avoid the `apply()`
  *  call-stack limit on big buffers — handles the 5 MiB max-image-size
  *  cap comfortably. */

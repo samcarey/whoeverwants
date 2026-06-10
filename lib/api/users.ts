@@ -102,6 +102,44 @@ export async function apiGetCategoryOptions(
   return { group: norm(data.group), general: norm(data.general) };
 }
 
+/** A group the caller shares with the profiled user. `routeId` builds the
+ *  `/g/<routeId>` link; `name` is the group's display name (may be null). */
+export interface SharedGroupSummary {
+  routeId: string;
+  name: string | null;
+}
+
+/** The long-press profile modal payload for another user. */
+export interface UserProfileCard {
+  user_id: string;
+  name: string | null;
+  image_updated_at: string | null;
+  /** ISO timestamp the account was created — drives the "joined X ago" age. */
+  created_at: string;
+  shared_groups: SharedGroupSummary[];
+}
+
+/** Fetch another user's profile card. Throws ApiError(404) when missing. */
+export async function apiGetUserProfileCard(
+  userId: string,
+): Promise<UserProfileCard> {
+  const data = await userFetch<any>(`/${encodeURIComponent(userId)}/profile-card`);
+  return {
+    user_id: data.user_id,
+    name: (data.name ?? null) as string | null,
+    image_updated_at: (data.image_updated_at ?? null) as string | null,
+    created_at: data.created_at,
+    shared_groups: Array.isArray(data.shared_groups)
+      ? data.shared_groups
+          .filter((g: any) => g && typeof g.route_id === 'string')
+          .map((g: any) => ({
+            routeId: g.route_id as string,
+            name: (g.name ?? null) as string | null,
+          }))
+      : [],
+  };
+}
+
 /**
  * Upload a profile image. `creatorName` is used ONLY when the caller has
  * no account yet — it names the lightweight account the server mints to

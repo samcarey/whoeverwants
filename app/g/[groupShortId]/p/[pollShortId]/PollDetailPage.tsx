@@ -67,6 +67,7 @@ import {
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
+import { useProfileLongPress } from "@/lib/useUserProfile";
 import {
   loadVotedQuestions,
   parseYesNoChoice,
@@ -808,6 +809,12 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
     poll.viewer_is_creator === true ||
     isCurrentUserName(poll.creator_name);
   const creatorImageUrl = creatorIsMe ? myUserImageUrl : null;
+  // Long-press (touch) / click (desktop) the creator's avatar/name → their
+  // profile modal (disabled when it's the viewer's own poll or no account).
+  const creatorLongPress = useProfileLongPress(
+    creatorIsMe ? null : poll.creator_user_id ?? null,
+    poll.creator_name,
+  );
 
   // When a submit action fires without a saved name, the retry closure is
   // stashed here and replayed after AccountGateModal completes.
@@ -964,19 +971,26 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
             surfaces the same information about the poll. */}
         {anchor && (
           <div className="mb-2 flex items-center gap-2 px-1 min-w-0">
-            <InitialBubble
-              name={poll.creator_name ?? null}
-              imageUrl={creatorImageUrl}
-              className="shrink-0"
-            />
-            <ClientOnly fallback={null}>
-              <span className="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400">
-                {poll.creator_name && <>{poll.creator_name} &middot; </>}
-                <span title={formatCreationTimestamp(anchor.created_at)}>
-                  {relativeTime(anchor.created_at)}
+            <div
+              className={`flex items-center gap-2 min-w-0 select-none${
+                creatorIsMe ? "" : " cursor-pointer"
+              }`}
+              {...creatorLongPress}
+            >
+              <InitialBubble
+                name={poll.creator_name ?? null}
+                imageUrl={creatorImageUrl}
+                className="shrink-0"
+              />
+              <ClientOnly fallback={null}>
+                <span className="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400">
+                  {poll.creator_name && <>{poll.creator_name} &middot; </>}
+                  <span title={formatCreationTimestamp(anchor.created_at)}>
+                    {relativeTime(anchor.created_at)}
+                  </span>
                 </span>
-              </span>
-            </ClientOnly>
+              </ClientOnly>
+            </div>
             <div className="flex-1 min-w-0 flex justify-end text-sm leading-tight text-gray-500 dark:text-gray-400">
               <ClientOnly fallback={null}>{statusEl}</ClientOnly>
             </div>
