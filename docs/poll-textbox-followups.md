@@ -20,58 +20,47 @@ Box default-correctness on natural phrasings went 18% → ~95%, recall 42% → ~
 
 ## TODO 1 — Mirror the unified matcher into the Siri Swift parser (parity)
 
-**Status:** open. Web ✅ shipped; Swift ⏳ still on the OLD narrow trigger set.
+**Status:** Swift port ✅ LANDED (the matcher); fixture extended ✅; on-device
+verification ⏳ still owed (needs a TestFlight build — can't compile iOS in the
+sandbox). A Swift `XCTest` reading the shared fixture is NOT yet added (no test
+target wired into the Xcode project).
 
-**What's diverged.** `detectCategory` / `decidePoll` (JS) now delegate to
-`lib/categoryMatch.ts` (rich keyword set, any-token, stop-word-filtered,
-ranked). The Siri/App-Intents Swift port — `PollTextParser` in
-`ios/App/App/AppDelegate.swift` (~the `CATEGORY_TRIGGERS` / `detectCategory` /
-`decide` block) — still uses the original *narrow, whole-word* trigger set. So
-the two parsers now classify natural sentences differently:
+**What shipped.** `PollTextParser` in `ios/App/App/AppDelegate.swift` is now a
+faithful Swift mirror of `lib/categoryMatch.ts` — the OLD narrow whole-word
+`categoryTriggers` set was replaced by:
+- `categoryDefs` — the six searchable categories + label/keywords, in precedence
+  order (restaurant, movie, video_game, time, location, showtime).
+- `stopWords` — the generic-filler set (disjoint from every trigger word; the JS
+  test `category-search.test.ts` / `poll-text-parse.test.ts` pin the invariant
+  on the JS side).
+- `tokenizeSubject` (lowercase, split on non-`a-z0-9`, drop stop words +
+  sub-2-char), `singular` (strip trailing "s" when len > 3), `tokenHits`
+  (singularized prefix-match either direction).
+- `scoreBoth` (label hit = 2, alias-keyword hit = 1) feeding the ranked
+  `detectCategory` (= `topCategory`): sort score desc → label-score desc →
+  precedence (the `categoryDefs` order). The web-only recency tie-break is NOT
+  mirrored (Siri has no recency signal).
+- `decide` precedence is UNCHANGED (options ≥2 → yes/no stem → category →
+  yes/no) — only the category lookup underneath it changed.
 
-| Input | JS `decidePoll` (now) | Swift `PollTextParser` (now) |
-|---|---|---|
-| `movie night` | category:movie | category:movie ✅ (lucky — "movie" is in the old set) |
-| `dinner tonight` | category:restaurant | **yes_no** ❌ (old set has no "dinner") |
-| `where to eat` | category:restaurant | category:restaurant ✅ ("eat") |
-| `pick a game` | category:video_game | category:video_game ✅ |
-| `what's for dinner` | yes_no | yes_no ✅ |
+So the two parsers now classify natural sentences the same way (previously
+`dinner tonight` → yes_no on Swift, restaurant on JS, etc.).
 
-The shared fixture (`poll-parse-cases.json`) is still **green on both sides** —
-the rework was designed to keep every existing fixture case unchanged — so CI
-isn't red and Siri still works; it's just less rich than the web until ported.
-
-**What to port** (faithful Swift mirror of `lib/categoryMatch.ts`):
-1. `CATEGORY_DEFS` — the six searchable categories + their label/keywords, in
-   precedence order (restaurant, movie, video_game, time, location, showtime).
-2. `STOP_WORDS` — the generic-filler set (assert it stays disjoint from every
-   trigger word, same invariant the JS test pins).
-3. `tokenizeSubject` (lowercase, split on non-alphanumeric, drop stop words +
-   sub-2-char), `singular` (strip trailing "s" when len > 3), `tokenHits`
-   (prefix-match in either direction after singularizing).
-4. `scoreCategory` (label hit = 2, alias-keyword hit = 1, sum over tokens) →
-   `rankCategories` (sort score desc → label-score desc → precedence) →
-   `topCategory`. `detectCategory` = `topCategory`.
-5. `decidePoll` precedence is UNCHANGED (options ≥2 → yes/no stem → category →
-   yes/no) — only the category lookup underneath it changes.
-
-**Then extend the alignment contract.** Once Swift mirrors, ADD the
-natural-sentence wins to `poll-parse-cases.json` (e.g. `dinner tonight` →
-restaurant, `movie night` → movie, `pick a game` → video_game) so the JS test
-*and* the Swift unit test both pin the unified behavior and can't silently drift
-again. Don't add these BEFORE Swift mirrors — the fixture is the shared contract;
-a case JS passes but Swift fails breaks the manual-mirror discipline.
+**Fixture extended.** Four natural-sentence wins were added to
+`poll-parse-cases.json` now that both sides agree: `dinner tonight` →
+restaurant, `movie night` → movie, `pick a game` → video_game, `where to eat` →
+restaurant. The JS test (`poll-text-parse.test.ts`, 30 cases) is green.
 
 **NOT in scope for Siri parity:** `parseTemporal` / `stripTemporal` and the
 whole `lib/pollSuggestions.ts` planner are **web-search-box only** (the Siri
 deep link can't carry day/time windows or a ranked suggestion list yet). Only
-the `decidePoll` decision (kind + category + options + context) is mirrored.
+the `decide` decision (kind + category + options + context) is mirrored.
 
-**Verification.** Can't compile iOS in the sandbox — needs a real iOS build.
-Add a Swift `XCTest` that reads the SAME `poll-parse-cases.json` and asserts
-`PollTextParser.decide`, then verify on a TestFlight build (the device-verify
-pattern in CLAUDE.md). The JS half (`poll-text-parse.test.ts`) is the
-CI-enforced anchor.
+**Remaining.** (a) Add a Swift `XCTest` that reads the SAME
+`poll-parse-cases.json` and asserts `PollTextParser.decide` (needs a test target
+in the Xcode project). (b) Verify the spoken/Spotlight path on a TestFlight
+build (the device-verify pattern in CLAUDE.md) — the JS half
+(`poll-text-parse.test.ts`) is the CI-enforced anchor in the meantime.
 
 ---
 
