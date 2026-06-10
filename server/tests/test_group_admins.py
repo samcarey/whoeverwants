@@ -5,9 +5,10 @@ Covers:
     auto-account path).
   * GET /members surfaces `viewer_is_admin` + per-member `is_admin`.
   * POST /{route}/admins promotes a member; admin-only; target must be a member.
-  * POST /{route}/members/{user_id}/boot removes a non-admin from a PRIVATE
-    group and revokes the invite they joined through; rejects public groups,
-    admins, and self.
+  * POST /{route}/members/{user_id}/boot removes a non-admin and revokes the
+    invite they joined through (works on public groups too now); rejects
+    admins and self. POST /{route}/members/by-handle/{handle}/boot removes an
+    anonymous member by their opaque roster handle (admin-only).
   * Auto-promotion: when the last admin leaves, the oldest remaining
     account-member is promoted so the group always has an admin.
   * Title/image edits are admin-gated (Q6).
@@ -233,21 +234,76 @@ def test_boot_member_revokes_their_invite(
     assert row is not None and row[0] is not None
 
 
-def test_boot_rejected_on_public_group(client, creator_browser, member_browser):
-    # Public group (anonymous create) — booting is futile, so 400.
+def test_boot_allowed_on_public_group(client, creator_browser, member_browser):
+    # Public group (anonymous create). Booting a named member now works on
+    # public groups too (owner revised the original private-only Q3 rule).
     resp = client.post("/api/groups", headers=_bid(creator_browser))
     g = resp.json()
     assert g["privacy"] == "public"
-    # A second browser visits → auto-joins.
+    # A second browser visits → auto-joins, then signs in (named member).
+    member_token, member_uid = _sign_in(client, member_browser)
     client.get(
-        f"/api/groups/by-route-id/{g['short_id']}", headers=_bid(member_browser)
+        f"/api/groups/by-route-id/{g['short_id']}",
+        headers=_auth(member_browser, member_token),
     )
-    _, member_uid = _sign_in(client, member_browser)
     boot = client.post(
         f"/api/groups/{g['short_id']}/members/{member_uid}/boot",
         headers=_bid(creator_browser),
     )
-    assert boot.status_code == 400
+    assert boot.status_code == 200, boot.text
+    assert boot.json()["booted"] is True
+    # Membership row gone.
+    members = _members(client, g["short_id"], creator_browser)
+    assert all(m["user_id"] != member_uid for m in members["members"])
+
+
+def test_boot_anonymous_member_by_handle(
+    client, creator_browser, member_browser
+):
+    # Named admin's public group; an anonymous (no-name) browser drive-by
+    # joins, then the admin boots them via the opaque handle from /members.
+    token, _ = _sign_in(client, creator_browser)
+    g = _create_private_group(client, creator_browser, token)
+    flip = client.post(
+        f"/api/groups/{g['short_id']}/privacy",
+        json={"privacy": "public"},
+        headers=_auth(creator_browser, token),
+    )
+    assert flip.status_code == 200, flip.text
+    # Anonymous visitor (no account, no name) auto-joins.
+    client.get(
+        f"/api/groups/by-route-id/{g['short_id']}", headers=_bid(member_browser)
+    )
+    roster = _members(client, g["short_id"], creator_browser, token)
+    assert roster["anonymous_count"] >= 1
+    assert len(roster["anonymous_members"]) == roster["anonymous_count"]
+    handle = roster["anonymous_members"][0]["handle"]
+    # The raw browser_id must never appear in the response.
+    import json as _json
+
+    assert member_browser not in _json.dumps(roster)
+
+    boot = client.post(
+        f"/api/groups/{g['short_id']}/members/by-handle/{handle}/boot",
+        headers=_bid(creator_browser),
+    )
+    assert boot.status_code == 200, boot.text
+    after = _members(client, g["short_id"], creator_browser)
+    assert after["anonymous_count"] == roster["anonymous_count"] - 1
+
+    # A non-admin can't boot anonymous members.
+    other = str(uuid.uuid4())
+    client.get(
+        f"/api/groups/by-route-id/{g['short_id']}", headers=_bid(other)
+    )
+    roster2 = _members(client, g["short_id"], creator_browser)
+    if roster2["anonymous_members"]:
+        denied = client.post(
+            f"/api/groups/{g['short_id']}/members/by-handle/"
+            f"{roster2['anonymous_members'][0]['handle']}/boot",
+            headers=_bid(other),
+        )
+        assert denied.status_code in (401, 403)
 
 
 def test_boot_admin_rejected(client, creator_browser, member_browser):

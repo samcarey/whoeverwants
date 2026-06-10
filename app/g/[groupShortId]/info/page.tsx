@@ -14,8 +14,9 @@ import {
   apiGetGroupMembers,
   apiPromoteGroupAdmin,
   apiBootGroupMember,
+  apiBootGroupAnonymous,
 } from "@/lib/api";
-import type { GroupRoster } from "@/lib/api";
+import type { GroupRoster, AnonymousMember } from "@/lib/api";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import {
   GROUP_MEMBERS_CHANGED_EVENT,
@@ -27,6 +28,8 @@ import GroupPrivacySection from "@/components/GroupPrivacySection";
 import HeaderPortal from "@/components/HeaderPortal";
 import InitialBubble from "@/components/InitialBubble";
 import RosterRow from "@/components/RosterRow";
+import MemberActionsSheet from "@/components/MemberActionsSheet";
+import { haptic } from "@/lib/haptics";
 import InviteLinksSection from "@/components/InviteLinksSection";
 import JoinRequestsSection from "@/components/JoinRequestsSection";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
@@ -38,6 +41,37 @@ import {
   SESSION_CHANGED_EVENT,
   type SessionUser,
 } from "@/lib/session";
+
+/** The right-aligned 3-dots button on a member row that opens the action
+ *  sheet. `stopPropagation` on pointerdown so it doesn't fire the row's
+ *  long-press → profile modal. */
+function MemberActionsButton({
+  label,
+  onOpen,
+}: {
+  label: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        haptic.medium();
+        onOpen();
+      }}
+      className="shrink-0 w-9 h-9 -mr-2 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 active:opacity-70"
+      aria-label={label}
+    >
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+        <circle cx="12" cy="5" r="2" />
+        <circle cx="12" cy="12" r="2" />
+        <circle cx="12" cy="19" r="2" />
+      </svg>
+    </button>
+  );
+}
 
 /** Prop-driven inner view. Exposed so the slide overlay can render this
  *  view directly without going through useParams() (the overlay mounts
@@ -67,8 +101,22 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   // consequential — promote is permanent, boot removes a member + revokes
   // their invite link).
   const [pendingAction, setPendingAction] = useState<
-    { kind: "promote" | "boot"; userId: string; name: string } | null
+    | { kind: "promote"; userId: string; name: string }
+    | { kind: "boot"; userId: string; name: string }
+    | { kind: "boot-anon"; handle: string; name: string }
+    | null
   >(null);
+  // The member whose 3-dots action sheet is open. Named members carry a
+  // `userId` (promote/boot); anonymous members carry an opaque `handle`
+  // (Remove only — they can't be promoted).
+  const [actionsFor, setActionsFor] = useState<
+    | { userId: string; name: string }
+    | { handle: string; name: string }
+    | null
+  >(null);
+  // Anonymous members are returned only as a count (no per-person data), so
+  // the rolled-up "N anonymous" row expands into N identical "Anonymous" rows.
+  const [anonExpanded, setAnonExpanded] = useState(false);
 
   const goBack = () => {
     // Slide overlay: mount the group root above the current page and slide
@@ -89,16 +137,17 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   const [roster, setRoster] = useState<GroupRoster | null>(null);
   const [rosterTick, setRosterTick] = useState(0);
   const viewerIsAdmin = roster?.viewer_is_admin ?? false;
-  const isPrivateGroup = group.privacy === "private";
 
   const runPendingAction = () => {
     if (!pendingAction) return;
-    const { kind, userId } = pendingAction;
+    const action = pendingAction;
     setPendingAction(null);
     const call =
-      kind === "promote"
-        ? apiPromoteGroupAdmin(groupId, userId)
-        : apiBootGroupMember(groupId, userId);
+      action.kind === "promote"
+        ? apiPromoteGroupAdmin(groupId, action.userId)
+        : action.kind === "boot"
+          ? apiBootGroupMember(groupId, action.userId)
+          : apiBootGroupAnonymous(groupId, action.handle);
     // Refetch the roster on success so the badge / removal reflects.
     call.then(() => setRosterTick((t) => t + 1)).catch(() => {
       setRosterTick((t) => t + 1);
@@ -145,10 +194,14 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   };
   let membersList: MemberRow[];
   let totalCount: number;
-  let anonymousExtra = 0;
+  let anonymousMembers: AnonymousMember[] = [];
   if (roster) {
     totalCount = roster.members.length + roster.anonymous_count;
-    let anon = roster.anonymous_count;
+    // Drop the viewer's OWN anonymous entry (the server tells us its handle) —
+    // they surface as the "You" row below, and you can't boot yourself.
+    anonymousMembers = roster.anonymous_members.filter(
+      (m) => m.handle !== roster.viewer_anonymous_handle,
+    );
     const rows: MemberRow[] = roster.members.map((m, i) => ({
       name: m.name,
       key: `member-${m.user_id ?? m.name}-${i}`,
@@ -158,8 +211,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     }));
     // The viewer is always a member (visiting auto-joins / the creator is a
     // member). If they aren't a resolved named row, they're one of the
-    // anonymous members — surface them as themselves and pull one out of the
-    // anonymous roll-up so the headcount stays right.
+    // anonymous members — surface them as the "You" row.
     if (!rows.some((r) => isCurrentUserName(r.name))) {
       // Viewer's own row isn't long-pressable (userId null); isAdmin still
       // drives the Admin badge on your own row.
@@ -169,11 +221,9 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         userId: null,
         isAdmin: viewerIsAdmin,
       });
-      if (anon > 0) anon -= 1;
     }
     rows.sort((a, b) => a.name.localeCompare(b.name));
     membersList = rows;
-    anonymousExtra = anon;
   } else {
     // First-paint fallback before the roster lands: poll participants + the
     // viewer (the prior behavior). Replaced within a tick by the real roster.
@@ -311,50 +361,99 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
                   isAdmin={isAdmin}
                   actions={
                     canManage ? (
-                      <>
-                        <button
-                          type="button"
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() =>
-                            setPendingAction({ kind: "promote", userId: userId!, name })
-                          }
-                          className="shrink-0 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline active:opacity-70"
-                        >
-                          Make admin
-                        </button>
-                        {isPrivateGroup && (
-                          <button
-                            type="button"
-                            onPointerDown={(e) => e.stopPropagation()}
-                            onClick={() =>
-                              setPendingAction({ kind: "boot", userId: userId!, name })
-                            }
-                            className="shrink-0 text-xs font-medium text-red-600 dark:text-red-400 hover:underline active:opacity-70"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </>
+                      <MemberActionsButton
+                        label={`Actions for ${name}`}
+                        onOpen={() => setActionsFor({ userId: userId!, name })}
+                      />
                     ) : null
                   }
                 />
               );
             })}
-            {anonymousExtra > 0 && (
-              <li className="flex items-center gap-3 px-4 py-3 text-gray-500 dark:text-gray-400 italic">
-                <InitialBubble
-                  name={null}
-                  sizeClassName="w-8 h-8"
-                  className="shrink-0"
-                />
-                <span className="min-w-0 break-words">
-                  {anonymousExtra} anonymous
-                </span>
-              </li>
+            {anonymousMembers.length > 0 && (
+              <>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      haptic.light();
+                      setAnonExpanded((v) => !v);
+                    }}
+                    aria-expanded={anonExpanded}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left text-gray-500 dark:text-gray-400 italic hover:bg-gray-50 dark:hover:bg-gray-800/50 active:opacity-70"
+                  >
+                    <InitialBubble
+                      name={null}
+                      sizeClassName="w-8 h-8"
+                      className="shrink-0"
+                    />
+                    <span className="min-w-0 break-words flex-1">
+                      {anonymousMembers.length} anonymous
+                    </span>
+                    <svg
+                      className={`shrink-0 w-4 h-4 transition-transform ${anonExpanded ? "rotate-180" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                      aria-hidden
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </li>
+                {anonExpanded &&
+                  anonymousMembers.map((m) => (
+                    <li
+                      key={`anon-${m.handle}`}
+                      className="flex items-center gap-3 px-4 py-3 text-gray-500 dark:text-gray-400 italic"
+                    >
+                      <InitialBubble
+                        name={null}
+                        sizeClassName="w-8 h-8"
+                        className="shrink-0"
+                      />
+                      <span className="min-w-0 break-words flex-1">Anonymous</span>
+                      {viewerIsAdmin && (
+                        <MemberActionsButton
+                          label="Actions for anonymous member"
+                          onOpen={() =>
+                            setActionsFor({ handle: m.handle, name: "Anonymous" })
+                          }
+                        />
+                      )}
+                    </li>
+                  ))}
+              </>
             )}
           </ul>
         </div>
       </div>
+
+      {actionsFor && (
+        <MemberActionsSheet
+          isOpen={true}
+          name={actionsFor.name}
+          // Anonymous members (carry a handle) can be removed but not promoted.
+          canMakeAdmin={"userId" in actionsFor}
+          canRemove={true}
+          onMakeAdmin={() => {
+            if ("userId" in actionsFor) {
+              setPendingAction({ kind: "promote", userId: actionsFor.userId, name: actionsFor.name });
+            }
+            setActionsFor(null);
+          }}
+          onRemove={() => {
+            setPendingAction(
+              "userId" in actionsFor
+                ? { kind: "boot", userId: actionsFor.userId, name: actionsFor.name }
+                : { kind: "boot-anon", handle: actionsFor.handle, name: actionsFor.name },
+            );
+            setActionsFor(null);
+          }}
+          onClose={() => setActionsFor(null)}
+        />
+      )}
 
       {pendingAction && (
         <ConfirmationModal
@@ -364,7 +463,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
           message={
             pendingAction.kind === "promote"
               ? `Make ${pendingAction.name} an admin? Admins can manage members, invites, and group settings. This can't be undone.`
-              : `Remove ${pendingAction.name} from the group? The invite link they joined with will stop working.`
+              : `Remove ${pendingAction.name} from the group? Any invite link they joined with stops working. On a public group they can rejoin by visiting the link again.`
           }
           confirmText={pendingAction.kind === "promote" ? "Make admin" : "Remove"}
           confirmButtonClass={

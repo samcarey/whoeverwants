@@ -646,11 +646,39 @@ export interface GroupMember {
   is_admin: boolean;
 }
 
+/** An anonymous (no resolvable name) member. `handle` is an opaque,
+ *  group-scoped id (NOT a browser_id) the boot-by-handle endpoint matches. */
+export interface AnonymousMember {
+  handle: string;
+}
+
+const EMPTY_ROSTER: GroupRoster = {
+  members: [],
+  anonymous_count: 0,
+  anonymous_members: [],
+  viewer_anonymous_handle: null,
+  viewer_is_admin: false,
+};
+
+/** Parse the server's `anonymous_members` array into `AnonymousMember[]`. */
+function parseAnonymousMembers(data: any): AnonymousMember[] {
+  return Array.isArray(data?.anonymous_members)
+    ? (data.anonymous_members as any[])
+        .filter((m) => typeof m?.handle === 'string')
+        .map((m) => ({ handle: m.handle as string }))
+    : [];
+}
+
 export interface GroupRoster {
   /** Named members, one per distinct person (account-aware de-dup). */
   members: GroupMember[];
   /** Distinct members with no resolvable name (drive-by public-group joins). */
   anonymous_count: number;
+  /** Same set as `anonymous_count`, one entry each with a boot handle. */
+  anonymous_members: AnonymousMember[];
+  /** The viewer's own anonymous handle (when they're a nameless member), so the
+   *  FE can drop exactly their entry from the displayed list. Null otherwise. */
+  viewer_anonymous_handle: string | null;
   /** Migration 142: is the viewer an admin of this group? Gates the /info
    *  admin chrome (privacy toggle, invites, join requests, add-people,
    *  promote/boot, title/avatar edits). */
@@ -679,11 +707,16 @@ export async function apiGetGroupMembers(
         : [],
       anonymous_count:
         typeof data?.anonymous_count === 'number' ? data.anonymous_count : 0,
+      anonymous_members: parseAnonymousMembers(data),
+      viewer_anonymous_handle:
+        typeof data?.viewer_anonymous_handle === 'string'
+          ? data.viewer_anonymous_handle
+          : null,
       viewer_is_admin: !!data?.viewer_is_admin,
     };
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
-      return { members: [], anonymous_count: 0, viewer_is_admin: false };
+      return EMPTY_ROSTER;
     }
     throw err;
   }
@@ -712,11 +745,13 @@ export async function apiGetGroupPollVoters(
         : [],
       anonymous_count:
         typeof data?.anonymous_count === 'number' ? data.anonymous_count : 0,
+      anonymous_members: parseAnonymousMembers(data),
+      viewer_anonymous_handle: null,
       viewer_is_admin: false,
     };
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
-      return { members: [], anonymous_count: 0, viewer_is_admin: false };
+      return EMPTY_ROSTER;
     }
     throw err;
   }
@@ -733,14 +768,26 @@ export async function apiPromoteGroupAdmin(
   });
 }
 
-/** Migration 142: remove a non-admin member from a PRIVATE group and revoke
- *  the invite they joined through (admin-only). */
+/** Migration 142: remove a non-admin member from a group and revoke the
+ *  invite they joined through (admin-only; works on public groups too). */
 export async function apiBootGroupMember(
   routeId: string,
   userId: string,
 ): Promise<void> {
   await groupFetch<any>(
     `/${encodeURIComponent(routeId)}/members/${encodeURIComponent(userId)}/boot`,
+    { method: 'POST' },
+  );
+}
+
+/** Remove a specific ANONYMOUS member by their opaque roster handle
+ *  (admin-only). The server never exposes the raw browser_id. */
+export async function apiBootGroupAnonymous(
+  routeId: string,
+  handle: string,
+): Promise<void> {
+  await groupFetch<any>(
+    `/${encodeURIComponent(routeId)}/members/by-handle/${encodeURIComponent(handle)}/boot`,
     { method: 'POST' },
   );
 }
