@@ -32,6 +32,13 @@ from services.auth import (
 from tests.conftest import TEST_DB_URL
 
 
+# 1x1 transparent PNG.
+_PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
 @pytest.fixture
 def creator_browser():
     return str(uuid.uuid4())
@@ -290,22 +297,48 @@ class TestSummaryAndImagePrivacy:
         assert resp.status_code == 200
         assert resp.json()["privacy"] == "public"
 
-    def test_image_private_404s_strangers(
+    def test_image_get_is_public_even_for_private_groups(
         self, client, creator_browser, stranger_browser
     ):
-        """No image set means 404 either way; but the privacy check
-        runs BEFORE the "image not set" check, so the response stays
-        consistent with the rest of the gating."""
+        """The avatar `/image` GET is intentionally PUBLIC (no membership
+        gate) even for private groups. It's rendered with a plain
+        `<img src>`, which can't carry the X-Browser-Id / bearer headers
+        the membership check reads, so gating it 404'd the avatar for
+        every member (the "set a group image → question mark" bug). The
+        unguessable short_id is the capability token. A stranger with the
+        URL can fetch the bytes — consistent with the already-public
+        `POST /image`, `POST /title`, and `/preview` endpoints."""
         token, _ = _sign_in(client, creator_browser)
         g = _create_empty_group(client, creator_browser, token)
+
+        # No image set yet → 404 "Image not set" (NOT a privacy 404).
+        not_set = client.get(
+            f"/api/groups/by-route-id/{g['short_id']}/image",
+            headers=_bid_headers(stranger_browser),
+        )
+        assert not_set.status_code == 404
+
+        # Creator uploads an avatar.
+        up = client.post(
+            f"/api/groups/{g['short_id']}/image",
+            headers=_bearer_headers(creator_browser, token),
+            json={"image_base64": _PNG_B64, "mime_type": "image/png"},
+        )
+        assert up.status_code == 200, up.text
+
+        # A stranger (no membership, fresh browser, no bearer) — mirroring
+        # a header-less `<img>` request — can now fetch the bytes.
         resp = client.get(
             f"/api/groups/by-route-id/{g['short_id']}/image",
             headers=_bid_headers(stranger_browser),
         )
-        # The image-not-set 404 and the privacy-gated 404 are
-        # indistinguishable from the wire — which is by design (info
-        # leak reduction).
-        assert resp.status_code == 404
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["content-type"] == "image/png"
+        assert len(resp.content) > 0
+
+        # A truly header-less request (the real `<img>` case) also works.
+        bare = client.get(f"/api/groups/by-route-id/{g['short_id']}/image")
+        assert bare.status_code == 200
 
 
 # ---------------------------------------------------------------------------
