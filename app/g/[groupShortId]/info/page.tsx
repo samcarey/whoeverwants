@@ -316,23 +316,23 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
 
         <NotificationSettingsCard groupRouteId={groupId} className="mt-[0.96rem]" />
 
-        {viewerIsAdmin && (
-          <button
-            type="button"
-            onClick={() => slideToGroupInviteMembers({ groupId, direction: 'forward' })}
-            className="mt-6 w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white text-sm font-medium flex items-center justify-center gap-2 transition-transform"
-            aria-label="Add people to this group"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3M9 12a4 4 0 100-8 4 4 0 000 8zm0 0c-2.761 0-5 2.239-5 5v1h7" />
-            </svg>
-            Add people
-          </button>
-        )}
-
-        <h2 className="mt-4 px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
-          {totalCount} {totalCount === 1 ? 'Member' : 'Members'}
-        </h2>
+        <div className="mt-4 px-1 mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+            {totalCount} {totalCount === 1 ? 'Member' : 'Members'}
+          </h2>
+          {viewerIsAdmin && (
+            <button
+              type="button"
+              onClick={() => slideToGroupInviteMembers({ groupId, direction: 'forward' })}
+              aria-label="Add people to this group"
+              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white transition-transform"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+          )}
+        </div>
 
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
           <ul className="divide-y divide-gray-200 dark:divide-gray-800">
