@@ -62,6 +62,24 @@ def reconcile_contacts(conn, owner_user_id: str) -> None:
     )
 
 
+def forget_contact(conn, owner_user_id: str, contact_user_id: str) -> None:
+    """Remove `contact_user_id` from the owner's address book ("forget" them).
+
+    Idempotent — deleting a non-existent row is a no-op. NOTE that
+    `reconcile_contacts` re-adds anyone the owner CURRENTLY shares a group
+    with, so forgetting only sticks for accounts with no shared groups —
+    exactly the case the FE's profile-modal Forget button is gated on.
+    """
+    conn.execute(
+        """
+        DELETE FROM user_contacts
+         WHERE owner_user_id = %(o)s::uuid
+           AND contact_user_id = %(c)s::uuid
+        """,
+        {"o": owner_user_id, "c": contact_user_id},
+    )
+
+
 def reconcile_contacts_safe(owner_user_id: str | None) -> None:
     """Decoupled, best-effort `reconcile_contacts` for use as a BackgroundTask
     from a hot read path. Opens its own connection; logs + swallows any error

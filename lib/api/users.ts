@@ -141,6 +141,19 @@ export async function apiGetUserProfileCard(
 }
 
 /**
+ * Remove an account from the caller's address book ("forget" them). Backs
+ * the profile modal's Forget button (shown only when no groups are shared —
+ * `reconcile_contacts` server-side re-adds anyone you currently share a
+ * group with, so forgetting only sticks in that case). Idempotent: the
+ * server returns 204 even when no contact row existed.
+ */
+export async function apiForgetUserContact(userId: string): Promise<void> {
+  await userFetch<void>(`/me/contacts/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
  * Upload a profile image. `creatorName` is used ONLY when the caller has
  * no account yet — it names the lightweight account the server mints to
  * own the photo (ignored when an account already resolves). The FE gates

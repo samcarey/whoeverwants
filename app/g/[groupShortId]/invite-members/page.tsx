@@ -12,7 +12,9 @@ import { GroupLoading, GroupNotFound } from "@/components/GroupLoadState";
 import { haptic } from "@/lib/haptics";
 import {
   GROUP_MEMBERS_CHANGED_EVENT,
+  USER_CONTACT_FORGOTTEN_EVENT,
   type GroupMembersChangedDetail,
+  type UserContactForgottenDetail,
 } from "@/lib/eventChannels";
 import {
   ApiError,
@@ -58,6 +60,28 @@ function InviteMembers({ groupId }: { groupId: string }) {
       cancelled = true;
     };
   }, [groupId]);
+
+  // The long-press profile modal's "Forget" removes a contact while this
+  // list stays mounted underneath it — drop them locally so they vanish
+  // without a refetch (the server row is already gone).
+  useEffect(() => {
+    const onForgot = (e: Event) => {
+      const detail = (e as CustomEvent<UserContactForgottenDetail>).detail;
+      if (!detail?.userId) return;
+      setAccounts((prev) =>
+        prev ? prev.filter((a) => a.user_id !== detail.userId) : prev,
+      );
+      setSelected((prev) => {
+        if (!prev.has(detail.userId)) return prev;
+        const next = new Set(prev);
+        next.delete(detail.userId);
+        return next;
+      });
+    };
+    window.addEventListener(USER_CONTACT_FORGOTTEN_EVENT, onForgot);
+    return () =>
+      window.removeEventListener(USER_CONTACT_FORGOTTEN_EVENT, onForgot);
+  }, []);
 
   const goBack = () =>
     slideToGroupInfo({
