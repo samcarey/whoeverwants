@@ -61,6 +61,7 @@ export default function KeyboardSuggestionPicker({
     height: 0,
     offsetTop: 0,
   });
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // Track the visual viewport ONLY while focused — otherwise a layout-
@@ -89,8 +90,57 @@ export default function KeyboardSuggestionPicker({
     el.scrollTop = el.scrollHeight;
   }, [focused, vv.height, vv.offsetTop, scrollSignal]);
 
+  // iOS Safari: while the keyboard is open, a drag the suggestion list can't
+  // consume (no overflow, or already at the edge in the drag direction) pans
+  // the VISUAL VIEWPORT within the layout viewport instead. Neither the
+  // callsite's body lock (`position: fixed`) nor `overscroll-contain` governs
+  // that keyboard-driven pan — the page behind visibly scrolls by, and the
+  // pan's visualViewport scroll events make this pinned container chase
+  // `vv.offsetTop` through async re-renders (the reported stutter). Block such
+  // drags ourselves with a non-passive touchmove. preventDefault here is safe
+  // despite the "never preventDefault in touchmove on a scrollable element"
+  // rule (see CLAUDE.md): gestures the list CAN consume return early and are
+  // never prevented, so real list scrolling is untouched.
+  useEffect(() => {
+    if (!focused) return;
+    const root = rootRef.current;
+    if (!root) return;
+    let lastY = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      lastY = e.touches[0]?.clientY ?? 0;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const y = e.touches[0]?.clientY ?? lastY;
+      const dy = y - lastY;
+      lastY = y;
+      const target = e.target instanceof Element ? e.target : null;
+      // Let native caret-drag / text-selection gestures through on the input.
+      if (target?.closest("input, textarea")) return;
+      const list = listRef.current;
+      if (list && target && list.contains(target)) {
+        const canScroll = list.scrollHeight > list.clientHeight + 1;
+        if (canScroll) {
+          const atTop = list.scrollTop <= 0;
+          const atBottom =
+            list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
+          // Not at the edge the drag pushes past → the list consumes it.
+          if (!((dy > 0 && atTop) || (dy < 0 && atBottom))) return;
+        }
+      }
+      e.preventDefault();
+    };
+    root.addEventListener("touchstart", onTouchStart, { passive: true });
+    root.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => {
+      root.removeEventListener("touchstart", onTouchStart);
+      root.removeEventListener("touchmove", onTouchMove);
+    };
+  }, [focused]);
+
   return (
     <div
+      ref={rootRef}
       className={`fixed left-0 right-0 ${zClassName} flex flex-col`}
       style={
         focused
