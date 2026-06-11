@@ -95,6 +95,12 @@ export const dynamic = 'force-dynamic';
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
+// How long the new-poll sheet body's open-at-top scroll pin stays armed
+// (see setSheetScrollerRef). Sized to outlast the iOS soft-keyboard collapse
+// (~250-400ms) + the sheet's 300ms slide-up with margin; the user's first
+// touch/wheel disarms it earlier, so the window never fights a real scroll.
+const SHEET_SCROLL_PIN_MS = 800;
+
 // Order matches the dropdown inside the modal so muscle memory carries over.
 // The leading "New" button (rendered separately at the start of the row)
 // is the catch-all that opens the modal with the default `custom` category;
@@ -469,6 +475,44 @@ export function CreateQuestionContent() {
       removeKeyboardPrimer();
     }
   }, [removeKeyboardPrimer]);
+
+  // The new-poll sheet body must open scrolled to the top — always. On a real
+  // iOS device, picking a suggestion from the focused search picker opens the
+  // sheet WHILE the soft keyboard is collapsing; during that settle window
+  // WebKit can scroll the freshly-mounted sheet scroller (reported as "the
+  // form opens with the Options card at the top"). The scroller mounts inside
+  // <ModalPortal> (deferred commit), so an effect keyed on isModalOpen would
+  // run while the node is still null — use a callback ref (same pattern as
+  // setTitleInputRef) that zeroes scrollTop on attach and re-zeroes any
+  // programmatic scroll for a short window. The pin is interaction-gated:
+  // the user's first touch/wheel/pointerdown disarms it immediately, so a
+  // real scroll gesture is never fought. Doesn't reproduce in headless
+  // Chromium/WebKit — device-only, like the other keyboard-settle races.
+  const sheetScrollPinCleanupRef = useRef<(() => void) | null>(null);
+  const setSheetScrollerRef = useCallback((node: HTMLDivElement | null) => {
+    sheetScrollPinCleanupRef.current?.();
+    if (!node) return;
+    node.scrollTop = 0;
+    const cleanup = () => {
+      window.clearTimeout(timer);
+      node.removeEventListener('scroll', onScroll);
+      node.removeEventListener('touchstart', cleanup);
+      node.removeEventListener('wheel', cleanup);
+      node.removeEventListener('pointerdown', cleanup);
+      if (sheetScrollPinCleanupRef.current === cleanup) {
+        sheetScrollPinCleanupRef.current = null;
+      }
+    };
+    const onScroll = () => {
+      if (node.scrollTop !== 0) node.scrollTop = 0;
+    };
+    node.addEventListener('scroll', onScroll);
+    node.addEventListener('touchstart', cleanup, { passive: true });
+    node.addEventListener('wheel', cleanup, { passive: true });
+    node.addEventListener('pointerdown', cleanup, { passive: true });
+    const timer = window.setTimeout(cleanup, SHEET_SCROLL_PIN_MS);
+    sheetScrollPinCleanupRef.current = cleanup;
+  }, []);
 
   const [suggestionCutoff, setSuggestionCutoff] = useState("0.5x");
   const [customSuggestionDate, setCustomSuggestionDate] = useState('');
@@ -2727,7 +2771,7 @@ export function CreateQuestionContent() {
                   Bottom padding reserves breathing room above the sheet's
                   bottom edge so the last form field doesn't sit flush with
                   the rounded corner when scrolled to bottom. */}
-              <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
+              <div ref={setSheetScrollerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
                 <div className="text-center px-2 pt-1 break-words h-8 flex items-center justify-center gap-2">
                   {category !== 'yes_no' && (
                     <button
