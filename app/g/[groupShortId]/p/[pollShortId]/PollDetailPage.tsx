@@ -29,9 +29,11 @@ import {
   POLL_HYDRATED_EVENT,
   SHOW_GROUP_BACKDROP_EVENT,
   HIDE_GROUP_BACKDROP_EVENT,
+  HIDE_POLL_BACKDROP_EVENT,
   type PollHydratedDetail,
   type GroupBackdropShowDetail,
 } from "@/lib/eventChannels";
+import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
 import { slideToGroupRoot, slideToPollInfo } from "@/lib/slideOverlay";
 import {
@@ -139,12 +141,19 @@ interface PollDetailViewProps {
   pollShortId: string;
   /** See `SlideToGroupDetail.overlayCardsOffset` in `lib/eventChannels.ts`. */
   overlayCardsOffset?: number;
+  /** True when mounted inside the slide overlay or the poll backdrop
+   *  (PollBackdropHost) rather than as the real route. Gates every
+   *  document-scroll side effect — the overlay/backdrop instance must not
+   *  call `window.scrollTo`, which would scroll the still-mounted SOURCE
+   *  page underneath; it positions via `overlayCardsOffset`'s cards-wrapper
+   *  transform instead. Same contract as `GroupContent.inOverlay`. */
+  inOverlay?: boolean;
 }
 
 /** Prop-driven view exposed so SlideOverlayHost can render the page during
  *  the slide-in animation. The default page export below wraps this with
  *  `useParams` for direct URL navigation. */
-export function PollDetailView({ groupId, pollShortId, overlayCardsOffset }: PollDetailViewProps) {
+export function PollDetailView({ groupId, pollShortId, overlayCardsOffset, inOverlay }: PollDetailViewProps) {
   const router = useRouter();
 
   const [poll, setPoll] = useState<Poll | null>(() => {
@@ -252,6 +261,7 @@ export function PollDetailView({ groupId, pollShortId, overlayCardsOffset }: Pol
       pollShortId={pollShortId}
       onBack={goBack}
       overlayCardsOffset={overlayCardsOffset}
+      inOverlay={inOverlay}
     />
   );
 }
@@ -303,9 +313,10 @@ interface PollDetailProps {
   pollShortId: string;
   onBack: () => void;
   overlayCardsOffset?: number;
+  inOverlay?: boolean;
 }
 
-function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsOffset }: PollDetailProps) {
+function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsOffset, inOverlay }: PollDetailProps) {
   const router = useRouter();
   const scrollKey = pollScrollKey(pollShortId);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([], 80);
@@ -590,6 +601,13 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
+    // Overlay / backdrop instances must never touch document scroll — the
+    // still-mounted source page underneath is what's scrolling. They show
+    // the right position via the cards-wrapper `overlayCardsOffset`
+    // transform instead; only the real-route instance owns window scroll.
+    // (Skipping here also leaves restoreTargetRef null, so the restore-pin
+    // effect below stays inert for those instances.)
+    if (inOverlay) return;
     const remembered = getRememberedScroll(scrollKey);
     if (remembered !== undefined) {
       restoreTargetRef.current = remembered;
@@ -1305,6 +1323,25 @@ function PollDetailPageInner() {
   const params = useParams();
   const groupId = params.groupShortId as string;
   const pollShortId = params.pollShortId as string;
+
+  // Dismiss the pollInfo→pollDetail swipe-back backdrop on mount (mirrors
+  // GroupPageInner's HIDE_GROUP_BACKDROP dispatch). The backdrop persists
+  // across the router.push that commits the swipe so there's no blank frame
+  // between the info page's unmount and this page's first paint; once we
+  // render, tell the host to unmount. The info page has already unmounted
+  // by this point, so this is the last place that can reset the
+  // commit-badge transform and the html/body scrollbar lock.
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const badge = document.getElementById("commit-badge-portal");
+    if (badge) {
+      badge.style.transform = "";
+      badge.style.transition = "";
+    }
+    setSwipeScrollbarLock(false);
+    window.dispatchEvent(new Event(HIDE_POLL_BACKDROP_EVENT));
+  }, []);
+
   return <PollDetailView groupId={groupId} pollShortId={pollShortId} />;
 }
 

@@ -8,6 +8,7 @@ import ResponsiveScaling from "@/components/ResponsiveScaling";
 import { SlideOverlayHost } from "@/lib/slideOverlay";
 import HomeBackdropHost from "@/components/HomeBackdropHost";
 import GroupBackdropHost from "@/components/GroupBackdropHost";
+import PollBackdropHost from "@/components/PollBackdropHost";
 import CreateGroupButtonHost from "@/components/CreateGroupButtonHost";
 import RecoveryReminderHost from "@/components/RecoveryReminderHost";
 import { PersistentCreatePollHost } from "@/components/PersistentCreatePollHost";
@@ -116,8 +117,18 @@ export default function RootLayout({
           </div>
         </ResponsiveScaling>
         
-        {/* Header elements rendered outside scaling to maintain proper positioning */}
-        <div id="header-portal"></div>
+        {/* Header elements rendered outside scaling to maintain proper positioning.
+            Fixed + zero-height + z-30 (mirrors #commit-badge-portal) so the
+            swipe-back gesture can transform it as a unit: its children are
+            `position: fixed` floating buttons, and a transform on this div
+            makes it their containing block — because the div is itself pinned
+            at the viewport's top edge spanning the full width, the buttons'
+            `top/left/right` offsets resolve to the same coordinates whether
+            the div is transformed or not, so they slide with the page without
+            jumping. The explicit z-30 keeps the (transformed → new stacking
+            context) buttons above the z-0 swipe backdrops. Zero height means
+            the div itself never intercepts taps. */}
+        <div id="header-portal" className="fixed top-0 left-0 right-0 h-0 z-30"></div>
 
         {/* New group button rendered outside scaling to maintain proper positioning */}
         <div id="floating-fab-portal"></div>
@@ -139,8 +150,13 @@ export default function RootLayout({
 
         {/* Persistent group backdrop for the poll→group swipe-back gesture.
             Mirrors HomeBackdropHost but for the poll detail page's
-            swipe-back gesture — see components/GroupBackdropHost.tsx. */}
+            swipe-back gesture — see components/GroupBackdropHost.tsx.
+            Also used by the group INFO page's swipe-back (info→group root). */}
         <GroupBackdropHost />
+
+        {/* Persistent poll-detail backdrop for the poll-info→poll-detail
+            swipe-back gesture — see components/PollBackdropHost.tsx. */}
+        <PollBackdropHost />
 
         {/* Single persistent "+ Group" button instance for the home page
             and the group→home swipe-back gesture window. Mounted at layout

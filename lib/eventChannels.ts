@@ -185,3 +185,19 @@ export interface GroupBackdropShowDetail {
  *  mount effect (so the backdrop dismisses itself once the real group page
  *  has rendered through it). */
 export const HIDE_GROUP_BACKDROP_EVENT = 'group-backdrop:hide';
+
+/** Fired by the poll INFO page's swipe-back gesture when motion is recognized
+ *  AND when it commits to navigation. PollBackdropHost (in app/layout.tsx)
+ *  mounts a body-level portal showing the cached poll DETAIL page underneath
+ *  the info page. Mirrors the group-backdrop architecture but for the
+ *  pollInfo→pollDetail transition. */
+export const SHOW_POLL_BACKDROP_EVENT = 'poll-backdrop:show';
+export interface PollBackdropShowDetail {
+  groupId: string;
+  pollShortId: string;
+}
+
+/** Fired by snap-back / cancel paths in the poll info page AND by the poll
+ *  detail route's mount effect (so the backdrop dismisses itself once the
+ *  real poll detail page has rendered through it). */
+export const HIDE_POLL_BACKDROP_EVENT = 'poll-backdrop:hide';

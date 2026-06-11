@@ -2378,6 +2378,15 @@ function GroupPageInner() {
       badge.style.transform = '';
       badge.style.transition = '';
     }
+    // The group INFO page's swipe-back transforms #header-portal (its
+    // floating back/Edit buttons live there); on commit the transform
+    // lingers on the persistent portal node — reset it here, same as the
+    // commit badge above.
+    const headerPortal = document.getElementById('header-portal');
+    if (headerPortal) {
+      headerPortal.style.transform = '';
+      headerPortal.style.transition = '';
+    }
     setSwipeScrollbarLock(false);
     window.dispatchEvent(new Event(HIDE_GROUP_BACKDROP_EVENT));
   }, []);
