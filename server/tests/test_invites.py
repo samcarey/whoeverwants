@@ -328,6 +328,24 @@ def test_revoke_unknown_invite_returns_404(client, creator_browser):
     assert resp.status_code == 404
 
 
+def test_revoke_malformed_invite_id_returns_404_not_500(
+    client, creator_browser
+):
+    # The anonymous-path uuid tests in test_uuid_validation.py never reach
+    # the ::uuid cast (401 at _require_admin first) — only an authenticated
+    # admin exercises it. Before the require_uuid gate this raised
+    # psycopg.errors.InvalidTextRepresentation → unhandled 500, which the
+    # prod browser sees as a CORS-blocked opaque network error.
+    ctoken, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+
+    resp = client.delete(
+        f"/api/groups/{group['id']}/invites/not-a-uuid",
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert resp.status_code == 404, resp.text
+
+
 def test_revoke_already_revoked_returns_404(client, creator_browser):
     ctoken, _ = _sign_in(client, creator_browser)
     group = _create_private_group(client, creator_browser, ctoken)

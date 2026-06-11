@@ -52,6 +52,12 @@ interface Props {
   className?: string;
 }
 
+// The `&& e.message` guard matters: over HTTP/2 `res.statusText` is "",
+// so an ApiError from a body-less error response can carry an empty
+// message — which would render as a blank (invisible) error line.
+const errorMessage = (e: unknown, fallback: string): string =>
+  e instanceof ApiError && e.message ? e.message : fallback;
+
 export default function InviteLinksSection({
   groupId,
   enabled,
@@ -89,9 +95,7 @@ export default function InviteLinksSection({
           setInvites([]);
           return;
         }
-        setError(
-          e instanceof ApiError ? e.message : "Failed to load invites",
-        );
+        setError(errorMessage(e, "Failed to load invites"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -116,9 +120,7 @@ export default function InviteLinksSection({
         }
       })
       .catch((e) => {
-        setError(
-          e instanceof ApiError ? e.message : "Failed to create invite",
-        );
+        setError(errorMessage(e, "Failed to create invite"));
       })
       .finally(() => setCreating(false));
   };
@@ -143,11 +145,25 @@ export default function InviteLinksSection({
       return next;
     });
     apiRevokeGroupInvite(groupId, invite.id)
-      .catch((e) => {
-        setInvites((prev) => (prev ? [invite, ...prev] : prev));
-        setError(
-          e instanceof ApiError ? e.message : "Failed to revoke invite",
-        );
+      .catch(async (e) => {
+        // 404 = the invite is already revoked/gone server-side. The goal
+        // state is reached — keep the row removed, no error.
+        if (e instanceof ApiError && e.status === 404) return;
+        // Other failures are ambiguous: a network-level drop (deploy
+        // window, lost connection, CORS-blocked 5xx) can occur AFTER the
+        // server applied the revoke. Don't blindly resurrect the row —
+        // re-sync from the server, which is the source of truth.
+        const message = errorMessage(e, "Failed to revoke invite");
+        try {
+          const data = await apiListGroupInvites(groupId);
+          setInvites(data);
+          // Only surface the error if the invite genuinely survived.
+          if (data.some((i) => i.id === invite.id)) setError(message);
+        } catch {
+          // Server unreachable — restore the row locally and report.
+          setInvites((prev) => (prev ? [invite, ...prev] : prev));
+          setError(message);
+        }
       })
       .finally(() => {
         setRevokingIds((prev) => {

@@ -88,6 +88,7 @@ from services.groups import (
     polls_for_poll_ids,
     promote_oldest_member_if_adminless,
     remove_group_admin,
+    require_uuid,
     resolve_group_for_visit,
     resolve_group_id_from_route_id,
 )
@@ -1389,6 +1390,9 @@ def decide_group_join_request(
         raise HTTPException(
             status_code=400, detail="action must be 'approve' or 'deny'"
         )
+    # Same defense as revoke_group_invite: decide_request compares the raw
+    # path param against a uuid column, so a malformed id would 500.
+    require_uuid(request_id, "request id")
     decision = "approved" if body.action == "approve" else "denied"
     notify_payload: dict | None = None
     notify_user_id: str | None = None
@@ -2085,6 +2089,10 @@ def revoke_group_invite(
     Returns 204 on successful revoke. 404 when the invite doesn't exist in
     this group OR was already revoked.
     """
+    # Gate before the ::uuid cast in revoke_invite — a malformed id would
+    # otherwise raise InvalidTextRepresentation (an unhandled 500, which
+    # the prod browser sees as an opaque CORS-blocked network error).
+    require_uuid(invite_id, "invite id")
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, route_id)
         if not group_id:
