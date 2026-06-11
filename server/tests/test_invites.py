@@ -643,3 +643,90 @@ def test_redeem_returns_target_poll_short_id(
     body = redeem.json()
     assert body["target_poll_id"] == poll["id"]
     assert body["target_poll_short_id"] == poll["short_id"]
+
+
+# --------------------------------------------------------------- preview
+
+
+def _mint_invite(client, group, browser_id, token, **body):
+    resp = client.post(
+        f"/api/groups/{group['id']}/invites",
+        json={"mode": "multi", **body},
+        headers=_bearer_headers(browser_id, token),
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def test_invite_preview_returns_group_name(client, creator_browser):
+    """The identity-free preview endpoint resolves a token to the
+    group's display name so the FE shell can render an Open Graph
+    title. No headers at all — crawlers carry no identity."""
+    ctoken, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+    titled = client.post(
+        f"/api/groups/{group['id']}/title",
+        json={"group_title": "Trip to Boise"},
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert titled.status_code == 200, titled.text
+    invite = _mint_invite(client, group, creator_browser, ctoken)
+
+    resp = client.get(f"/api/auth/invites/{invite['token']}/preview")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["group_name"] == "Trip to Boise"
+
+
+def test_invite_preview_unnamed_group_returns_null(client, creator_browser):
+    """A fresh empty group has no title override and no participants —
+    group_name is null and the FE falls back to generic copy."""
+    ctoken, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+    invite = _mint_invite(client, group, creator_browser, ctoken)
+
+    resp = client.get(f"/api/auth/invites/{invite['token']}/preview")
+    assert resp.status_code == 200
+    assert resp.json()["group_name"] is None
+
+
+def test_invite_preview_invalid_token_returns_404(client):
+    resp = client.get("/api/auth/invites/not-a-real-token/preview")
+    assert resp.status_code == 404
+
+
+def test_invite_preview_revoked_returns_404(client, creator_browser):
+    """A revoked invite stops previewing — the group name shouldn't
+    leak past revocation."""
+    ctoken, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+    invite = _mint_invite(client, group, creator_browser, ctoken)
+
+    revoke = client.delete(
+        f"/api/groups/{group['id']}/invites/{invite['id']}",
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert revoke.status_code == 204
+
+    resp = client.get(f"/api/auth/invites/{invite['token']}/preview")
+    assert resp.status_code == 404
+
+
+def test_invite_preview_does_not_consume_use(
+    client, creator_browser, joiner_browser
+):
+    """Crawler fetches must never burn an invite use: preview a
+    single-use invite twice, then redeem successfully."""
+    ctoken, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+    invite = _mint_invite(client, group, creator_browser, ctoken, mode="single")
+
+    for _ in range(2):
+        resp = client.get(f"/api/auth/invites/{invite['token']}/preview")
+        assert resp.status_code == 200
+
+    jtoken, _ = _sign_in(client, joiner_browser)
+    redeem = client.post(
+        f"/api/auth/invites/{invite['token']}/redeem",
+        headers=_bearer_headers(joiner_browser, jtoken),
+    )
+    assert redeem.status_code == 200, redeem.text
