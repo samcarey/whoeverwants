@@ -155,7 +155,7 @@ export default function CounterInput({
       onBlur={handleBlur}
       disabled={disabled}
       placeholder={placeholder}
-      className={`w-16 ${suffix ? 'pl-1 pr-5 text-right' : 'px-0.5 text-center'} py-1.5 text-xl font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50`}
+      className={`${suffix ? 'w-[4.5rem] pl-1 pr-5 text-right text-lg tracking-tight' : 'w-16 px-0.5 text-center text-xl'} py-1.5 font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50`}
     />
   );
 
@@ -164,7 +164,7 @@ export default function CounterInput({
       {inputEl}
       <span
         aria-hidden="true"
-        className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none select-none text-gray-400 dark:text-gray-500 text-xl font-medium leading-none"
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none select-none text-gray-400 dark:text-gray-500 text-lg font-medium leading-none"
       >
         {suffix}
       </span>
