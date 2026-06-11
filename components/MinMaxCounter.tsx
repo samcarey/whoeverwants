@@ -93,7 +93,10 @@ export default function MinMaxCounter({
           />
         )}
 
-        <div className="flex items-center gap-3">
+        {/* gap-2 (was gap-3) offsets the wider suffix-mode CounterInput
+            (w-[4.5rem]) so the row still clears the edge checkboxes on
+            narrow phones. */}
+        <div className="flex items-center gap-2">
           {/* Min counter */}
           <div className={onMinCheckboxChange && !minCheckboxEnabled ? 'opacity-40' : ''}>
             <CounterInput
