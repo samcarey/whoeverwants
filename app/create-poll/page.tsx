@@ -835,14 +835,19 @@ export function CreateQuestionContent() {
           const formState = JSON.parse(saved);
           setTitle(formState.title || '');
           if (formState.isAutoTitle === false) setIsAutoTitle(false);
-          if (formState.questionType === 'time') setQuestionType('time');
           setDetails(formState.details || '');
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '10min');
           setCustomDate(formState.customDate || '');
           setCustomTime(formState.customTime || '');
           setCreatorName(formState.creatorName || '');
-          if (formState.category) setCategory(formState.category);
+          // Legacy saved states (the pre-fix duplicate flow) used the retired
+          // questionType='time' + a stored category of 'custom'. Convert to
+          // the canonical questionType='question' (the default — no setter
+          // needed) + category='time' pair so the Category/Context card
+          // renders.
+          if (formState.questionType === 'time') setCategory('time');
+          else if (formState.category) setCategory(formState.category);
           if (formState.categoryEmoji !== undefined) setCategoryEmoji(formState.categoryEmoji);
           if (formState.forField) setForField(formState.forField);
 
@@ -1715,7 +1720,17 @@ export function CreateQuestionContent() {
           // Auto-fill form with duplicate data. Title is intentionally NOT
           // copied — it regenerates fresh from the new input fields (or stays
           // empty for user-typed yes_no prompts). See buildQuestionSnapshot.
-          setDetails(duplicateData.details || "");
+          //
+          // `duplicateData.details` is the PER-QUESTION context
+          // (questions.details) — restore it into the Context field so the
+          // copy auto-titles the same ("Time for Party"), NOT into Notes
+          // (polls.details, which the snapshot never carried). For
+          // yes_no/limited_supply, details holds the typed prompt / item
+          // name, which — like the title — is intentionally not copied.
+          setDetails("");
+          if (duplicateData.question_type !== 'yes_no' && duplicateData.question_type !== 'limited_supply') {
+            setForField(duplicateData.details || "");
+          }
 
           // Set question type based on duplicated question
           if (duplicateData.question_type === 'ranked_choice') {
@@ -1730,7 +1745,15 @@ export function CreateQuestionContent() {
             // Preserve the original's headline method (favorite/consensus).
             setWinnerMethod(duplicateData.winner_method === 'consensus' ? 'consensus' : 'favorite');
           } else if (duplicateData.question_type === 'time') {
-            setQuestionType('time');
+            // Time polls store category='custom' in the DB (the Time bubble
+            // never overrides it), so reconstruct the canonical
+            // questionType='question' + category='time' pair instead of
+            // trusting the snapshot's category — mirrors pollToRecentEntry's
+            // question_type detection. The retired questionType='time' path
+            // hid the whole top card (Category/Context/availability rows
+            // gate on questionType === 'question').
+            setQuestionType('question');
+            setCategory('time');
             setOptions(['']);
             if (duplicateData.time_min_participants != null) setMinParticipants(duplicateData.time_min_participants);
             if (duplicateData.exclusion_tolerance != null) setExclusionTolerance(duplicateData.exclusion_tolerance);
@@ -1764,7 +1787,13 @@ export function CreateQuestionContent() {
             // flow); the copied windows give it real slots to work from.
             setCollectAvailability(true);
           } else {
-            // yes_no question
+            // yes_no question (and any type without a dedicated branch).
+            // TODO: limited_supply duplicates lose their type — the snapshot
+            // stores category='custom' (draftToQuestionParams never sets
+            // category for limited_supply) and supply_count /
+            // reveal_claimant_names aren't snapshotted, so the copy opens as
+            // a plain custom poll. Needs a dedicated branch (detect
+            // question_type, like time above) + snapshot fields.
             setQuestionType('question');
             setOptions(['']);
           }
@@ -1786,7 +1815,9 @@ export function CreateQuestionContent() {
           if (duplicateData.creator_name) {
             setCreatorName(duplicateData.creator_name);
           }
-          if (duplicateData.category) {
+          // Skip for time questions: the branch above already set the
+          // canonical 'time'; the stored 'custom' would clobber it.
+          if (duplicateData.category && duplicateData.question_type !== 'time') {
             setCategory(duplicateData.category);
           }
           if (duplicateData.category_icon) {
