@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { getApiEndpoint } from "@/lib/api/_internal";
+import { buildMetadata, SITE_NAME } from "@/lib/metadata";
 import InviteRedeemPage from "./InviteRedeemPage";
-
-const SITE_NAME = "WhoeverWants";
 
 // Server-component shell. The client UI lives in `./InviteRedeemPage.tsx`;
 // this file exists only so `generateMetadata` can resolve the invite token
@@ -10,15 +9,6 @@ const SITE_NAME = "WhoeverWants";
 // `GET /api/auth/invites/<token>/preview` endpoint — so a shared invite
 // link previews as "Join <Group Name>" in messaging apps instead of the
 // generic site title. Same shell split as `app/g/[groupShortId]/page.tsx`.
-// No og:image / twitter:image: titles dominate messaging previews.
-function buildMetadata(title: string, description?: string): Metadata {
-  return {
-    title,
-    description,
-    openGraph: { title, description, type: "website" },
-    twitter: { card: "summary", title, description },
-  };
-}
 
 export async function generateMetadata({
   params,

@@ -1,22 +1,12 @@
 import type { Metadata } from "next";
 import { getApiEndpoint } from "@/lib/api/_internal";
+import { buildMetadata, SITE_NAME } from "@/lib/metadata";
 import GroupPage from "./GroupPage";
-
-const SITE_NAME = "WhoeverWants";
 
 // Server-component shell. The client UI lives in `./GroupPage.tsx`;
 // this file exists only so `generateMetadata` can read `searchParams.p`
 // (page-level form sees them, layout-level doesn't), letting the
 // link-preview surface the linked poll instead of the group's latest.
-// No og:image / twitter:image: titles dominate messaging previews.
-function buildMetadata(title: string, description?: string): Metadata {
-  return {
-    title,
-    description,
-    openGraph: { title, description, type: "website" },
-    twitter: { card: "summary", title, description },
-  };
-}
 
 export async function generateMetadata({
   params,
