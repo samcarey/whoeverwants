@@ -20,10 +20,25 @@ Box default-correctness on natural phrasings went 18% → ~95%, recall 42% → ~
 
 ## TODO 1 — Mirror the unified matcher into the Siri Swift parser (parity)
 
-**Status:** Swift port ✅ LANDED (the matcher); fixture extended ✅; on-device
-verification ⏳ still owed (needs a TestFlight build — can't compile iOS in the
-sandbox). A Swift `XCTest` reading the shared fixture is NOT yet added (no test
-target wired into the Xcode project).
+**Status:** Swift port ✅ LANDED (the matcher); fixture extended ✅; **Swift
+parity test ✅ LANDED in CI** (June 2026 — as a swiftc fixture harness, not an
+XCTest target; see below); on-device verification ⏳ still owed (needs a
+TestFlight build — can't compile iOS in the sandbox).
+
+**Parity test (shipped).** `PollTextParser` was extracted from
+`AppDelegate.swift` into its own `ios/App/App/PollTextParser.swift` (pure
+Foundation — keep it free of UIKit/Capacitor imports) so
+`scripts/ios/test-parser.sh` can `swiftc`-compile it for the macOS host
+together with the harness `scripts/ios/parser-harness/main.swift`, which reads
+the SAME `tests/fixtures/poll-parse-cases.json` the JS test asserts and checks
+`PollTextParser.decide` case-by-case (kind / options / category / context —
+identical assertion semantics to `poll-text-parse.test.ts`). The
+`ios-build.yml` workflow runs it on the Mac runner before archiving, so a
+drifting Swift port now FAILS the iOS build instead of silently shipping. This
+supersedes the original "Swift XCTest target" idea — an XCTest target would
+need pbxproj surgery for a whole native test target plus a simulator to run
+in CI; the standalone-compile harness gets the same fixture-pinned guarantee
+with none of that.
 
 **What shipped.** `PollTextParser` in `ios/App/App/AppDelegate.swift` is now a
 faithful Swift mirror of `lib/categoryMatch.ts` — the OLD narrow whole-word
@@ -56,11 +71,11 @@ whole `lib/pollSuggestions.ts` planner are **web-search-box only** (the Siri
 deep link can't carry day/time windows or a ranked suggestion list yet). Only
 the `decide` decision (kind + category + options + context) is mirrored.
 
-**Remaining.** (a) Add a Swift `XCTest` that reads the SAME
-`poll-parse-cases.json` and asserts `PollTextParser.decide` (needs a test target
-in the Xcode project). (b) Verify the spoken/Spotlight path on a TestFlight
-build (the device-verify pattern in CLAUDE.md) — the JS half
-(`poll-text-parse.test.ts`) is the CI-enforced anchor in the meantime.
+**Remaining.** Only (b): verify the spoken/Spotlight path on a TestFlight
+build (the device-verify pattern in CLAUDE.md) — owner/device action. Both
+halves of the fixture are now CI-enforced: JS via `poll-text-parse.test.ts`
+(Node CI), Swift via `scripts/ios/test-parser.sh` (Mac runner, every iOS
+build).
 
 ---
 
