@@ -9,7 +9,7 @@ import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, build
 // POLL_QUERY_PARAM is still used by `GroupPageInner` to redirect legacy
 // `?p=<pollShort>` URLs to the new `/g/<group>/p/<pollShort>` route.
 import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
-import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiCancelRecurrence, apiGetPollById, apiGetPollByShortId, apiSetPollFollowState, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupMembers, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiCancelRecurrence, apiGetPollById, apiGetPollByShortId, apiSetPollFollowState, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import RecurrenceCancelSheet from "@/components/RecurrenceCancelSheet";
 import { formatLocalDateISO as formatRecurrenceDateISO } from "@/lib/recurrence";
 import type { Poll } from "@/lib/types";
@@ -24,6 +24,8 @@ import {
   SHOW_HOME_BACKDROP_EVENT,
   HIDE_HOME_BACKDROP_EVENT,
   HIDE_GROUP_BACKDROP_EVENT,
+  GROUP_MEMBERS_CHANGED_EVENT,
+  type GroupMembersChangedDetail,
   type PollPendingDetail,
   type PollHydratedDetail,
   type PollFailedDetail,
@@ -40,7 +42,8 @@ import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/vot
 import { computePollUnread, useUnreadReactivity } from "@/lib/unread";
 import { classifyPollTab, type PollTab } from "@/lib/followState";
 import { usePrefetch } from "@/lib/prefetch";
-import { slideToGroupInfo, slideToGroupScheduled, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
+import { slideToGroupInfo, slideToGroupInviteMembers, slideToGroupScheduled, useIsSlideOverlayGroupActive, SLIDE_DURATION_MS } from "@/lib/slideOverlay";
+import { startInviteCreation, stashInviteCreation } from "@/lib/inviteCreation";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
 import { isScrollRestoring, setScrollRestoring } from "@/lib/scrollRestoreState";
 import { navigateWithTransition } from "@/lib/viewTransitions";
@@ -276,6 +279,85 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // renders the `#draft-poll-portal` (below) in its loaded-with-access main
   // return. The loading spinner and the no-access wall (`error || !group`)
   // return early WITHOUT the portal, so the bar can't appear there.
+
+  // "No one else is here yet" CTAs: when the viewer is this group's admin
+  // AND its only member (a freshly-created group), float two big buttons —
+  // Add People / Create Invite Link — just above the create-poll search bar.
+  // `participantNames`/`anonymousRespondentCount` (poll voters, viewer
+  // excluded) are a cheap client-side pre-filter: any OTHER participant means
+  // the group can't be solo, so the roster round-trip only fires on
+  // quiet/fresh groups.
+  const maybeSoloGroup =
+    !!group &&
+    group.participantNames.length === 0 &&
+    group.anonymousRespondentCount === 0;
+  const [soloAdmin, setSoloAdmin] = useState(false);
+  useEffect(() => {
+    if (!maybeSoloGroup) {
+      setSoloAdmin(false);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      apiGetGroupMembers(groupId)
+        .then((roster) => {
+          if (cancelled) return;
+          setSoloAdmin(
+            roster.viewer_is_admin &&
+              roster.members.length + roster.anonymous_count <= 1,
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setSoloAdmin(false);
+        });
+    };
+    load();
+    // The Add People screen slides back over this still-mounted page, so a
+    // remount can't be relied on — refetch when it reports a membership
+    // change so the CTAs dismiss once someone is added.
+    const onMembersChanged = (e: Event) => {
+      const detail = (e as CustomEvent<GroupMembersChangedDetail>).detail;
+      if (detail?.routeId === groupId) load();
+    };
+    // Someone may redeem the invite link while this tab is backgrounded.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    window.addEventListener(GROUP_MEMBERS_CHANGED_EVENT, onMembersChanged);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(GROUP_MEMBERS_CHANGED_EVENT, onMembersChanged);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [groupId, maybeSoloGroup]);
+
+  const handleEmptyStateAddPeople = () => {
+    haptic.medium();
+    rememberCurrentScroll(groupScrollKey(groupId));
+    // "Push the Add people button on /info for them": slide to /info first so
+    // the history/back chain matches the manual path (invite-members' back
+    // returns to /info), then chain into the invite-members slide once the
+    // first slide lands. The overlay host is built for consecutive events —
+    // it clears the pending unmount + replaces its state, and slide 1's
+    // router.push has committed /info underneath by then.
+    slideToGroupInfo({ groupId });
+    window.setTimeout(
+      () => slideToGroupInviteMembers({ groupId }),
+      SLIDE_DURATION_MS + 80,
+    );
+  };
+
+  const handleEmptyStateCreateInvite = () => {
+    haptic.medium();
+    rememberCurrentScroll(groupScrollKey(groupId));
+    // Mint + register the clipboard write INSIDE this tap's user-activation
+    // window (iOS rejects async clipboard writes outside it), stash the
+    // in-flight creation, and slide to /info — InviteLinksSection adopts the
+    // stash and shows the fresh row in its auto-"Copied!" state.
+    stashInviteCreation(groupId, startInviteCreation(groupId));
+    slideToGroupInfo({ groupId });
+  };
 
   // Signal to the view transition helper that this page's content is
   // rendered AND its initial scroll position has been applied. Without the
@@ -860,9 +942,13 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // overlay's `contain: strict` GroupContent), so no per-frame work is needed
   // there.
   const barPortalRef = useRef<HTMLDivElement | null>(null);
+  // The solo-group CTAs (Add People / Create Invite Link) get the same
+  // body-level-sibling treatment as the bar portal, so they too need to ride
+  // the group→home swipe via extraTargets.
+  const emptyActionsRef = useRef<HTMLDivElement | null>(null);
   const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
     headerRef,
-    extraTargets: [upArrowRef, barPortalRef],
+    extraTargets: [upArrowRef, barPortalRef, emptyActionsRef],
     showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
     hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
     // No scroll save here: returning home intentionally resets every group's
@@ -1827,7 +1913,11 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           // sits flush against the panel's top edge at scroll-bottom.
           // Fallback covers a 3-row bubble bar + heading + safe-area
           // inset for the first paint before the ResizeObserver fires.
-          paddingBottom: `var(${PANEL_HEIGHT_VAR}, 12rem)`,
+          // The solo-group CTAs float above the bar; reserve their height
+          // too so they never cover the bottom-most card.
+          paddingBottom: soloAdmin
+            ? `calc(var(${PANEL_HEIGHT_VAR}, 12rem) + 5.5rem)`
+            : `var(${PANEL_HEIGHT_VAR}, 12rem)`,
           // Saved-scroll restore uses `overlayCardsOffset`; a fresh-nav
           // overlay has no offset (shows the top, matching the real route's
           // fresh-visit scroll-to-top). Undefined means no transform.
@@ -1976,6 +2066,45 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           space on the cards wrapper above via the --bubble-bar-panel-height
           CSS var (written by CreateQuestionContent after it measures the
           bar). */}
+      {/* Solo-group CTAs — the creator is the only member, so surface the
+          two ways to bring people in, hovering just above the create-poll
+          search bar. Same body-level-sibling + `relative z-40` treatment as
+          the bar portal below (rides the slide overlay / swipe-back backdrop
+          via the containing block; `emptyActionsRef` is in the swipe
+          gesture's extraTargets so a group→home swipe slides them off with
+          the page). Rendered BEFORE the portal div so the bar's focused
+          full-screen picker (same z-40, later in DOM) paints above them. */}
+      {soloAdmin && (
+        <div ref={emptyActionsRef} className="relative z-40">
+          <div
+            className="fixed left-0 right-0 flex justify-center gap-3 px-5 pointer-events-none"
+            style={{ bottom: `calc(var(${PANEL_HEIGHT_VAR}, 12rem) + 0.5rem)` }}
+          >
+            <button
+              type="button"
+              onClick={handleEmptyStateAddPeople}
+              className="pointer-events-auto flex-1 max-w-[13rem] h-[4.5rem] rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white shadow-lg flex flex-col items-center justify-center gap-1 transition-transform"
+              aria-label="Add people to this group"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3M9 12a4 4 0 100-8 4 4 0 000 8zm0 0c-2.761 0-5 2.239-5 5v1h7" />
+              </svg>
+              <span className="text-sm font-semibold">Add People</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleEmptyStateCreateInvite}
+              className="pointer-events-auto flex-1 max-w-[13rem] h-[4.5rem] rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white shadow-lg flex flex-col items-center justify-center gap-1 transition-transform"
+              aria-label="Create an invite link"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5" />
+              </svg>
+              <span className="text-sm font-semibold">Create Invite Link</span>
+            </button>
+          </div>
+        </div>
+      )}
       <div id={DRAFT_POLL_PORTAL_ID} ref={barPortalRef} className="relative z-40" />
       {/* End create-poll bar portal target. */}
 

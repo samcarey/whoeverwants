@@ -62,7 +62,7 @@ import { ScheduledView } from "@/app/g/[groupShortId]/scheduled/page";
 import { PollInfoView } from "@/app/g/[groupShortId]/p/[pollShortId]/info/page";
 import { EmptyPlaceholder } from "@/app/g/page";
 
-const SLIDE_DURATION_MS = 350; // iOS push duration. Tune here only.
+export const SLIDE_DURATION_MS = 350; // iOS push duration. Tune here only.
 
 // Module-level state for "is a group-kind overlay currently mounted?" —
 // read synchronously by `useIsSlideOverlayGroupActive()` on first render
