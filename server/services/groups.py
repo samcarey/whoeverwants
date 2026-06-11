@@ -895,14 +895,9 @@ def polls_for_poll_ids(
         conn, poll_ids_present, browser_ids=bids, auto_aged_at=aged_map
     )
 
-    # Per-viewer "already responded" flag, account-aware over the same browser
-    # set: any votes row (vote OR abstain) by a linked browser on any of the
-    # poll's questions. This is what lets a vote cast on device A clear the
-    # To Do classification on a freshly-signed-in device B, whose localStorage
-    # voted/abstained sets are empty. Mirrors the to-do badge's "no votes row
-    # on any of P's questions" semantics (`compute_badge_count`). Pre-migration
-    # 120 votes have NULL browser_id and can't match — same accepted
-    # limitation as the badge.
+    # Per-viewer "already responded" flag over the same account-aware browser
+    # set — any votes row (vote OR abstain) on any of the poll's questions.
+    # Full semantics on `PollResponse.viewer_responded` (models.py).
     responded_poll_ids: set[str] = set()
     if bids and all_question_ids:
         responded_rows = conn.execute(

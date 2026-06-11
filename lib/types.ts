@@ -245,13 +245,11 @@ export interface Poll {
   // Account-aware server-side. Absent on synthesized placeholder polls →
   // treated as 'new'.
   viewer_follow_state?: "new" | "old";
-  // Per-viewer flag computed server-side, account-aware: true when ANY
-  // browser linked to the caller's account has a votes row (vote OR abstain)
-  // on any of this poll's questions. ORed into the localStorage
-  // voted/abstained check (`pollHasResponse`) so a vote cast on another
-  // device clears To Do / the gold unread bar here. Absent on synthesized
-  // placeholder polls + reads that don't thread the viewer → treated false
-  // (the local sets still cover this device's own votes).
+  // Per-viewer, account-aware "already voted/abstained on this poll" flag
+  // computed server-side. Consumed by `pollHasResponse` (lib/unread.ts —
+  // full semantics there). Absent on synthesized placeholder polls + reads
+  // that don't thread the viewer → treated false (the local sets still
+  // cover this device's own votes).
   viewer_responded?: boolean;
   response_deadline?: string | null;
   prephase_deadline?: string | null;

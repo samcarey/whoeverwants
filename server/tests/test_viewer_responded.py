@@ -69,6 +69,17 @@ def test_vote_on_one_device_sets_viewer_responded_on_another(client):
     _add_member(group_id, stranger)
     assert _read_poll(client, poll["id"], stranger)["viewer_responded"] is False
 
+    # The visibility-aware poll-detail read (direct poll-link landing on a
+    # fresh device) carries the flag too.
+    detail = client.get(
+        f"/api/groups/by-route-id/{poll['group_short_id']}/poll/{poll['short_id']}",
+        headers=_bearer(bid_b, token_b),
+    )
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["status"] == "visible"
+    assert body["poll"]["viewer_responded"] is True
+
 
 def test_anonymous_vote_marks_own_browser_responded(client):
     """An anonymous (no-bearer) voter's own browser reads responded; the

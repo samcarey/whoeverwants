@@ -345,9 +345,8 @@ function buildGroupFromPolls(
 
   for (const mp of polls) {
     if (!isPollOpen(mp, now)) continue;
-    // pollHasResponse ORs the server's account-aware `viewer_responded` into
-    // the local sets, so a vote cast on another linked device clears the
-    // home-list unvoted countdown/dot here too.
+    // pollHasResponse = local sets OR the account-aware `viewer_responded`,
+    // so a vote on another linked device clears the countdown/dot here too.
     if (pollHasResponse(mp, votedQuestionIds, abstainedQuestionIds)) continue;
     unvotedCount++;
 

@@ -630,7 +630,7 @@ def get_group_poll(route_id: str, poll_ref: str, request: Request):
             )
             polls = polls_for_poll_ids(
                 conn, visible, include_results=True,
-                viewer_user_id=viewer_user_id,
+                viewer_user_id=viewer_user_id, viewer_browser_id=browser_id,
             )
             return GroupPollResponse(
                 status="visible", poll=polls[0] if polls else None,
