@@ -2538,7 +2538,16 @@ different FE origin, extend the allowlist.
 > the Pydantic model (older bundles still send it) but the server
 > ignores it. (Migration 106 had already collapsed the per-poll-access
 > leg; the bridge was the only remaining non-membership signal, and
-> it's removed too.)
+> it's removed too.) NOTE: the group-page "forget the LAST poll →
+> apiLeaveGroup + route home" special case actually LINGERED until June
+> 2026 despite this bullet — it silently dropped membership, so the
+> whole group vanished from home and private groups 404'd (a real user
+> report). Removed on `claude/group-visibility-poll-deletion-comd3t`:
+> "Forget" is per-poll local browser state on EVERY surface (group-page
+> long-press AND poll info page), never a membership change; only
+> `forgetGroup` / the home bulk-forget leaves a group. Don't
+> reintroduce a last-poll special case — an empty-looking group is a
+> valid state.
 >
 > **Phase C.3 of the group-routing redesign shipped (#267).** (Historical
 > — the legacy bridge described below has since been REMOVED; the
