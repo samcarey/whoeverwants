@@ -479,7 +479,8 @@ function orListSegments(items: string[]): TitleSegment[] {
 /**
  * Build an optimistic Poll/Question pair from the draft list at submit
  * time, before the server has responded. The group page renders this as a
- * normal collapsed poll card while the FLIP animation runs and apiCreatePoll
+ * normal collapsed poll card (fading in via `card-pending-enter`) while
+ * apiCreatePoll
  * resolves in parallel. Once the real Poll arrives, GroupContent swaps the
  * placeholder fields for the real ones via POLL_HYDRATED_EVENT.
  *
