@@ -351,52 +351,47 @@ def get_my_empty_groups(request: Request):
         report, June 2026 — the disappearance was misattributed to an
         unrelated settings change).
 
-    The per-poll visibility predicate mirrors `filter_visible_polls`
-    (`is_closed = false OR updated_at >= joined_at`), with the MIN
-    joined_at across the caller's linked browsers — same
-    most-permissive account-union semantics as `load_user_visibility`.
+    Composes the same `load_user_visibility` + `filter_visible_polls`
+    pair as `/mine` so the closed-before-join rule keeps a single
+    source of truth: an "empty" group is simply a member group none
+    of whose polls survive the filter.
     """
     browser_id = _browser_id(request)
     user_id = _user_id(request)
     if not browser_id and not user_id:
         return []
     with get_db() as conn:
-        # Membership predicate matches `load_user_visibility`'s logic:
-        # current browser OR any browser linked to the caller's
-        # user_id, grouped to one row per group with the earliest
-        # joined_at watermark.
+        visibility = load_user_visibility(conn, browser_id, user_id=user_id)
+        member_gids = list(visibility.joined_by_group.keys())
+        if not member_gids:
+            return []
+
+        poll_rows = conn.execute(
+            "SELECT id, group_id FROM polls"
+            " WHERE group_id = ANY(%(gids)s::uuid[])",
+            {"gids": member_gids},
+        ).fetchall()
+        visible_pids = set(filter_visible_polls(
+            conn, [str(r["id"]) for r in poll_rows], visibility,
+        ))
+        groups_with_polls = {str(r["group_id"]) for r in poll_rows}
+        groups_with_visible = {
+            str(r["group_id"]) for r in poll_rows
+            if str(r["id"]) in visible_pids
+        }
+
+        empty_gids = [g for g in member_gids if g not in groups_with_visible]
+        if not empty_gids:
+            return []
         rows = conn.execute(
-            """WITH my_groups AS (
-                    SELECT m.group_id, MIN(m.joined_at) AS joined_at
-                      FROM group_members m
-                     WHERE m.browser_id = %(bid)s::uuid
-                        OR (
-                            %(uid)s::uuid IS NOT NULL
-                            AND m.browser_id IN (
-                                SELECT browser_id FROM user_browsers
-                                 WHERE user_id = %(uid)s::uuid
-                            )
-                        )
-                     GROUP BY m.group_id
-               )
-               SELECT g.id, g.short_id, g.title, g.created_at,
-                      g.image_updated_at, g.privacy, g.creator_user_id,
-                      EXISTS (
-                          SELECT 1 FROM polls p WHERE p.group_id = g.id
-                      ) AS has_polls
-                 FROM groups g
-                 JOIN my_groups mg ON mg.group_id = g.id
-                WHERE NOT EXISTS (
-                      SELECT 1 FROM polls p
-                       WHERE p.group_id = g.id
-                         AND (p.is_closed = false
-                              OR p.updated_at >= mg.joined_at)
-                  )
-                ORDER BY g.created_at DESC""",
-            {"bid": browser_id, "uid": user_id},
+            f"""SELECT {_GROUP_SUMMARY_COLUMNS}
+                 FROM groups
+                WHERE id = ANY(%(gids)s::uuid[])
+                ORDER BY created_at DESC""",
+            {"gids": empty_gids},
         ).fetchall()
         return [
-            _row_to_group_summary(r, has_polls=bool(r.get("has_polls")))
+            _row_to_group_summary(r, has_polls=str(r["id"]) in groups_with_polls)
             for r in rows
         ]
 

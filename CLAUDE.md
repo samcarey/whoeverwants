@@ -2404,10 +2404,11 @@ different FE origin, extend the allowlist.
 >     `GroupSummary {id, short_id, title, created_at}`. Requires a
 >     `browser_id` (400 if missing) so the new group has a member.
 >   * `POST /api/groups/empty` — every group the caller is a member of
->     that has zero polls **visible to them** (June 2026: the anti-join
->     is visibility-aware, mirroring `filter_visible_polls`'s
->     `is_closed = false OR updated_at >= MIN(joined_at)` predicate
->     with the same account-union joined_at semantics). Two shapes:
+>     that has zero polls **visible to them** (June 2026: composes the
+>     same `load_user_visibility` + `filter_visible_polls` pair as
+>     `/mine`, so the closed-before-join rule has a single source of
+>     truth — an "empty" group is a member group none of whose polls
+>     survive the filter). Two shapes:
 >     brand-new poll-less groups (`has_polls: false`) AND groups whose
 >     every poll is hidden by the closed-before-join filter
 >     (`has_polls: true` → FE `Group.hasHiddenPolls`; the home row
