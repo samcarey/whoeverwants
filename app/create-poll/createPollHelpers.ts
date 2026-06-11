@@ -10,7 +10,7 @@ import { CreatePollParams, CreateQuestionParams } from "@/lib/api";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { buildPollMap } from "@/lib/groupUtils";
 import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
-import { DEFAULT_TIME_WINDOW } from "@/lib/timeUtils";
+import { DEFAULT_TIME_WINDOW, formatLocalDateISO } from "@/lib/timeUtils";
 import type { DayTimeWindow, OptionsMetadata, Poll, Question } from "@/lib/types";
 
 /**
@@ -90,8 +90,7 @@ export interface QuestionDraft {
 export function emptyDraft(
   opts: { mode?: 'question' | 'time'; category?: string; forField?: string; collectSuggestions?: boolean; collectAvailability?: boolean } = {},
 ): QuestionDraft {
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const todayStr = formatLocalDateISO(new Date());
   const isTime = opts.mode === 'time' || opts.category === 'time';
   const isYesNo = opts.category === 'yes_no';
   // limited_supply: the title IS the thing being handed out (e.g. "Concert
@@ -480,7 +479,8 @@ function orListSegments(items: string[]): TitleSegment[] {
 /**
  * Build an optimistic Poll/Question pair from the draft list at submit
  * time, before the server has responded. The group page renders this as a
- * normal collapsed poll card while the FLIP animation runs and apiCreatePoll
+ * normal collapsed poll card (fading in via `card-pending-enter`) while
+ * apiCreatePoll
  * resolves in parallel. Once the real Poll arrives, GroupContent swaps the
  * placeholder fields for the real ones via POLL_HYDRATED_EVENT.
  *

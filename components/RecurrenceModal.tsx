@@ -13,6 +13,7 @@ import {
   monthlyNthWeekdayLabel,
   monthlyDayOfMonthLabel,
   recurrenceIsActive,
+  formatLocalDateISO,
 } from '@/lib/recurrence';
 import { haptic } from '@/lib/haptics';
 
@@ -342,5 +343,5 @@ function EndRadio({
 function defaultUntil(start: string): string {
   const d = new Date(`${start}T12:00:00`);
   d.setMonth(d.getMonth() + 3);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return formatLocalDateISO(d);
 }

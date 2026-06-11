@@ -1,7 +1,7 @@
 'use client';
 
 import { VOTING_CUTOFF_OPTIONS } from '@/components/VotingCutoffConditionsModal';
-import { formatDeadlineLabel } from '@/lib/timeUtils';
+import { formatDeadlineLabel, formatLocalDateISO } from '@/lib/timeUtils';
 
 interface VotingCutoffFieldProps {
   deadlineOption: string;
@@ -19,8 +19,7 @@ interface VotingCutoffFieldProps {
 
 function getTodayDate(): string {
   if (typeof window === 'undefined') return '';
-  const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return formatLocalDateISO(new Date());
 }
 
 export default function VotingCutoffField({

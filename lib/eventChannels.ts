@@ -13,16 +13,14 @@
 import type { Poll } from "@/lib/types";
 
 /** Fired by CreateQuestionContent immediately on Submit (BEFORE the API call
- *  resolves). Carries a placeholder Poll built from the draft state plus the
- *  bounding box of the unmounting draft card. GroupContent listens, inserts
- *  the placeholder into its poll list, and FLIP-animates the new card from
- *  the captured bbox to its natural collapsed-card position over 1s.
+ *  resolves). Carries a placeholder Poll built from the draft state.
+ *  GroupContent listens, inserts the placeholder into its poll list, and
+ *  fades the new card in via the `card-pending-enter` CSS class.
  *  The real apiCreatePoll continues in parallel; on success it fires
  *  `POLL_HYDRATED_EVENT` with the real Poll keyed by the placeholder id. */
 export const POLL_PENDING_EVENT = 'pollPending';
 export interface PollPendingDetail {
   poll: Poll;
-  fromBbox: { x: number; y: number; width: number; height: number };
 }
 
 /** Fired after `apiCreatePoll` resolves. Identifies the placeholder by the

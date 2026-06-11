@@ -534,8 +534,8 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     fetchGroup();
   }, [groupId]);
 
-  // The first question of a freshly submitted (placeholder) poll, while its
-  // card is FLIP-animating from the draft frame to its natural slot. While
+  // The first question of a freshly submitted (placeholder) poll, while
+  // hydration is pending. While
   // this is set, the matching card mounts with only its title visible — the
   // status row, voter circles, etc. are suppressed until hydration completes.
   const [pendingPollFirstQuestionId, setPendingPollFirstQuestionId] = useState<string | null>(null);
@@ -603,7 +603,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // POLL_HYDRATED_EVENT: the API call has resolved with the real Poll.
   // Replace the placeholder fields in group state with the real ones in
   // place — keep the SAME placeholder id as the React key so the card's
-  // DOM node doesn't unmount/re-mount mid-FLIP. Once the placeholder is
+  // DOM node doesn't unmount/re-mount mid-hydration. Once the placeholder is
   // gone (its id was 'pending-...'), the real Poll's id takes over for
   // subsequent operations.
   //
