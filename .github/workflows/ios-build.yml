@@ -113,6 +113,15 @@ jobs:
           npm --version
           pod --version || true
 
+      - name: Swift parser parity test (shared JS↔Swift fixture)
+        # Compiles ios/App/App/PollTextParser.swift standalone (pure Foundation)
+        # with the harness in scripts/ios/parser-harness/ and asserts it against
+        # tests/fixtures/poll-parse-cases.json — the SAME fixture the JS test
+        # (tests/__tests__/poll-text-parse.test.ts) pins in the Node CI. Fails
+        # the build before the archive if the Siri parser drifts from
+        # lib/pollTextParse.ts. See docs/poll-textbox-followups.md (TODO 1).
+        run: bash scripts/ios/test-parser.sh
+
       - name: Install npm dependencies
         run: npm ci
 
