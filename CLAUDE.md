@@ -2103,6 +2103,54 @@ care about correctness (e.g. a webhook), refactor to a single
 conditional UPDATE that doesn't bump in the first place when the
 caller is already a member.
 
+**Pitfall: 5xx responses generated OUTSIDE the FastAPI app have no CORS
+headers — on prod they surface to the FE as opaque network errors, not
+ApiErrors.** Diagnosed from a real prod report ("Failed to revoke invite",
+group ~4e, June 2026). Because the prod browser calls
+`api.whoeverwants.com` cross-origin (the Vercel-proxy bypass), every
+response MUST carry `Access-Control-Allow-Origin` or the browser blocks it
+and `fetch` rejects with a bare TypeError → `e instanceof ApiError` is
+false → the FE catch shows its generic fallback string. Two response
+classes lack the header: (a) Caddy-generated 502s while the api container
+is down — **each release deploy takes the prod API down for ~60-90s**
+(docker rebuild + uv venv re-sync on the 1 GB droplet; the webhook's own
+health check at +10s routinely fails with "Remote end closed connection
+without response" before uvicorn finishes booting), and (b) Starlette
+unhandled-exception 500s (ServerErrorMiddleware sits OUTSIDE
+CORSMiddleware, so e.g. a psycopg `InvalidTextRepresentation` from an
+unvalidated `::uuid` cast returns a header-less 500). Related: over
+HTTP/2 `res.statusText` is `""`, so an ApiError built from a body-less
+error response can carry an EMPTY message — FE catch blocks should use
+`e instanceof ApiError && e.message ? e.message : "<generic>"`, never
+trust `e.message` to be non-empty. Also remember the api container
+RECREATE on deploy wipes both docker logs and the in-memory client-log
+ring buffer — capture evidence for incidents that straddle a deploy
+quickly or it's gone.
+
+**Pitfall: optimistic-remove + blind-restore-on-error resurrects rows the
+server already mutated.** `InviteLinksSection.revokeInvite` used to
+restore the optimistically-removed row in `.catch` — but a network-level
+failure (deploy window, dropped connection, app backgrounding killing the
+fetch) can occur AFTER the server applied the revoke (observed in the prod
+DB: `revoked_at` stamped at the moment the user saw the failure). The
+restored stale row then 404s ("Invite not found or already revoked") on
+retry, compounding the confusion. The fix pattern: on failure, treat 404
+as success (the goal state is reached — keep the row removed, no error);
+otherwise RE-SYNC the authoritative list from the server and only show the
+error if the row genuinely survived; blind-restore only when the re-sync
+itself fails (server unreachable). Apply this shape to any future
+optimistic-remove UI whose server op is idempotent-ish.
+
+**Pitfall: the anonymous uuid-validation suite can't reach casts behind
+`_require_admin`.** `test_uuid_validation.py` probes endpoints with no
+identity, so admin-gated paths 401 before any `::uuid` cast runs — a
+missing `require_uuid` on `invite_id` / `request_id` was invisible to it
+(authenticated admins got 500s). When adding an admin-gated endpoint with
+a uuid path param, call `require_uuid` AND add an authenticated
+malformed-id test next to the endpoint's own suite (see
+`test_invites.py::test_revoke_malformed_invite_id_returns_404_not_500`,
+`test_join_requests.py::test_decide_malformed_request_id_returns_404_not_500`).
+
 **Pitfall: invite URLs are origin-derived, not hardcoded.** The
 `POST /api/groups/<route>/invites` response's `url` field uses
 `services/fe_origin.resolve_fe_origin(request)` — same allowlist

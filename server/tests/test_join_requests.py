@@ -445,6 +445,23 @@ def test_list_join_requests_anon_created_group_creator_is_admin(
 # --------------------------------------------------------------------- decide
 
 
+def test_decide_malformed_request_id_returns_404_not_500(
+    client, creator_browser
+):
+    # Authenticated-admin path: a malformed request_id used to reach the
+    # uuid-column comparison in decide_request and 500 (same class as the
+    # invite-revoke gap; see test_invites.py's malformed-invite-id test).
+    ctoken, _, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+
+    resp = client.post(
+        f"/api/groups/{group['id']}/join-requests/not-a-uuid/decide",
+        json={"action": "approve"},
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert resp.status_code == 404, resp.text
+
+
 def test_decide_no_account_returns_401(client, creator_browser):
     ctoken, _, _ = _sign_in(client, creator_browser)
     group = _create_private_group(client, creator_browser, ctoken)

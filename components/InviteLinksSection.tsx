@@ -90,7 +90,9 @@ export default function InviteLinksSection({
           return;
         }
         setError(
-          e instanceof ApiError ? e.message : "Failed to load invites",
+          e instanceof ApiError && e.message
+            ? e.message
+            : "Failed to load invites",
         );
       })
       .finally(() => {
@@ -117,7 +119,9 @@ export default function InviteLinksSection({
       })
       .catch((e) => {
         setError(
-          e instanceof ApiError ? e.message : "Failed to create invite",
+          e instanceof ApiError && e.message
+            ? e.message
+            : "Failed to create invite",
         );
       })
       .finally(() => setCreating(false));
@@ -143,11 +147,28 @@ export default function InviteLinksSection({
       return next;
     });
     apiRevokeGroupInvite(groupId, invite.id)
-      .catch((e) => {
-        setInvites((prev) => (prev ? [invite, ...prev] : prev));
-        setError(
-          e instanceof ApiError ? e.message : "Failed to revoke invite",
-        );
+      .catch(async (e) => {
+        // 404 = the invite is already revoked/gone server-side. The goal
+        // state is reached — keep the row removed, no error.
+        if (e instanceof ApiError && e.status === 404) return;
+        // Other failures are ambiguous: a network-level drop (deploy
+        // window, lost connection, CORS-blocked 5xx) can occur AFTER the
+        // server applied the revoke. Don't blindly resurrect the row —
+        // re-sync from the server, which is the source of truth.
+        const message =
+          e instanceof ApiError && e.message
+            ? e.message
+            : "Failed to revoke invite";
+        try {
+          const data = await apiListGroupInvites(groupId);
+          setInvites(data);
+          // Only surface the error if the invite genuinely survived.
+          if (data.some((i) => i.id === invite.id)) setError(message);
+        } catch {
+          // Server unreachable — restore the row locally and report.
+          setInvites((prev) => (prev ? [invite, ...prev] : prev));
+          setError(message);
+        }
       })
       .finally(() => {
         setRevokingIds((prev) => {
