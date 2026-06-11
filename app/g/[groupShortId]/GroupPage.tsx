@@ -9,7 +9,7 @@ import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, build
 // POLL_QUERY_PARAM is still used by `GroupPageInner` to redirect legacy
 // `?p=<pollShort>` URLs to the new `/g/<group>/p/<pollShort>` route.
 import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
-import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiCancelRecurrence, apiGetPollById, apiGetPollByShortId, apiLeaveGroup, apiSetPollFollowState, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiCancelRecurrence, apiGetPollById, apiGetPollByShortId, apiSetPollFollowState, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import RecurrenceCancelSheet from "@/components/RecurrenceCancelSheet";
 import { formatLocalDateISO as formatRecurrenceDateISO } from "@/lib/recurrence";
 import type { Poll } from "@/lib/types";
@@ -2086,16 +2086,14 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           setPendingAction(null);
           if (action.kind === 'forget') {
             forgetQuestion(action.question.id);
-            const remaining = group ? group.questions.filter((p) => p.id !== action.question.id) : [];
-            if (group && remaining.length === 0) {
-              // Drop the server-side `group_members` row so the group
-              // doesn't reappear via Phase C.3 membership-based visibility
-              // on the next /api/groups/mine call. Fire-and-forget.
-              void apiLeaveGroup(groupId);
-              router.push('/');
-            } else {
-              setGroup((prev) => (prev ? { ...prev, questions: prev.questions.filter((p) => p.id !== action.question.id) } : prev));
-            }
+            // Forget is per-poll browser state only — it must never touch
+            // group membership. An earlier special case called apiLeaveGroup
+            // when the forgotten poll was the group's last, which silently
+            // removed the user from the whole group (it vanished from home
+            // and private groups 404'd). Groups are first-class now, so an
+            // empty-looking group is a valid state; leaving a group is the
+            // home list's bulk-forget flow, not a side effect of this.
+            setGroup((prev) => (prev ? { ...prev, questions: prev.questions.filter((p) => p.id !== action.question.id) } : prev));
           } else if (action.kind === 'reopen') {
             try {
               // Identity-based authorization server-side (migration 123).
