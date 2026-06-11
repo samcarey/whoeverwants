@@ -2404,11 +2404,25 @@ different FE origin, extend the allowlist.
 >     `GroupSummary {id, short_id, title, created_at}`. Requires a
 >     `browser_id` (400 if missing) so the new group has a member.
 >   * `POST /api/groups/empty` — every group the caller is a member of
->     that has zero polls. The membership lookup is `group_members` ∩
->     anti-join `polls`. Sorted newest-first. Pure membership — empty
->     groups always show for their members. (Same as everywhere now:
->     the legacy `accessible_question_ids` forget bridge has been
->     removed; `group_members` is the single source of truth.)
+>     that has zero polls **visible to them** (June 2026: composes the
+>     same `load_user_visibility` + `filter_visible_polls` pair as
+>     `/mine`, so the closed-before-join rule has a single source of
+>     truth — an "empty" group is a member group none of whose polls
+>     survive the filter). Two shapes:
+>     brand-new poll-less groups (`has_polls: false`) AND groups whose
+>     every poll is hidden by the closed-before-join filter
+>     (`has_polls: true` → FE `Group.hasHiddenPolls`; the home row
+>     shows "No open polls" instead of "New group — tap to add a
+>     poll"). The second shape closes a home-list gap from a real prod
+>     report: an invitee to a group whose only poll had closed before
+>     the invite was minted had NO home entry at all — `/mine` filtered
+>     the poll out and the old all-polls anti-join excluded the group
+>     here too, so the group "disappeared" after redeem (misattributed
+>     by the reporter to a username change made in between — the rename
+>     was a red herring; they just hadn't visited home before it).
+>     Sorted newest-first. Pure membership otherwise (the legacy
+>     `accessible_question_ids` forget bridge is gone; `group_members`
+>     is the single source of truth).
 >   * `GET /api/groups/by-route-id/{id}/summary` — identity-free read
 >     returning just `GroupSummary`. No membership write. Used by
 >     `useGroup` (and `GroupPageInner`'s fallback chain) when
@@ -2466,6 +2480,12 @@ different FE origin, extend the allowlist.
 > into the creator's account) joins "now", so account-aware visibility
 > doesn't union the creator's old membership — signing in surfaces the
 > full history. The blank-page fix is independent of that.
+> **The HOME-LIST counterpart shipped June 2026**: `/api/groups/empty`
+> now ALSO returns member groups whose every poll is hidden pre-join
+> (with `has_polls: true`), so such a group keeps a home row ("No open
+> polls" badge via `Group.hasHiddenPolls` in `GroupList.tsx`) instead
+> of vanishing from home entirely — see the `POST /api/groups/empty`
+> bullet above for the prod report that surfaced the gap.
 >
 > **`Group.groupTitleOverride` carries the raw `groups.title`** (or
 > null) so the edit-title page input can pre-fill with the raw value

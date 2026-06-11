@@ -13,7 +13,7 @@ Shared fixtures (`client`, `creator_secret`, `browser_id`) and helpers
 import re
 import uuid
 
-from tests.conftest import bid_headers, create_poll
+from tests.conftest import bid_headers, close_poll, create_poll
 
 
 UUID_RE = re.compile(
@@ -136,6 +136,80 @@ class TestGetMyEmptyGroups:
         # Either no groups for the empty header, or no groups for the
         # freshly minted id — both produce an empty list.
         assert resp.json() == []
+
+    def test_group_with_all_polls_hidden_pre_join_appears(
+        self, client, creator_secret, browser_id,
+    ):
+        """The home-list gap from the June 2026 prod report: a member
+        whose group's every poll closed BEFORE they joined gets nothing
+        from `/mine` (closed-before-join filter) — so `/empty` must
+        surface the group (with `has_polls: true`) or it has no home
+        entry at all and the only way back is the invite URL."""
+        poll = create_poll(client, creator_secret, browser_id=browser_id)
+        resp = close_poll(client, poll)
+        assert resp.status_code == 200, resp.text
+
+        # A late joiner: visiting the (public) group URL auto-joins with
+        # joined_at = now, which is AFTER the poll closed.
+        joiner = str(uuid.uuid4())
+        read = client.get(
+            f"/api/groups/by-route-id/{poll['group_short_id']}",
+            headers=bid_headers(joiner),
+        )
+        assert read.status_code == 200, read.text
+        # The closed-pre-join poll is filtered from the group read…
+        assert read.json() == []
+
+        # …and /mine is equally empty…
+        mine = client.post(
+            "/api/groups/mine",
+            json={"include_results": False},
+            headers=bid_headers(joiner),
+        )
+        assert mine.status_code == 200
+        assert mine.json() == []
+
+        # …so /empty must carry the group, flagged as having (hidden)
+        # polls so the FE renders the hidden-history row, not the
+        # "new group — tap to add a poll" copy.
+        empty = client.post("/api/groups/empty", headers=bid_headers(joiner))
+        assert empty.status_code == 200, empty.text
+        by_id = {g["id"]: g for g in empty.json()}
+        assert poll["group_id"] in by_id
+        assert by_id[poll["group_id"]]["has_polls"] is True
+
+    def test_closed_poll_group_stays_off_empty_for_pre_close_member(
+        self, client, creator_secret, browser_id,
+    ):
+        """The creator joined before the close, so the closed poll is
+        still visible to them — the group belongs to their `/mine`
+        response and must NOT also appear on `/empty`."""
+        poll = create_poll(client, creator_secret, browser_id=browser_id)
+        resp = close_poll(client, poll)
+        assert resp.status_code == 200, resp.text
+
+        empty = client.post(
+            "/api/groups/empty", headers=bid_headers(browser_id),
+        )
+        assert empty.status_code == 200
+        assert poll["group_id"] not in {g["id"] for g in empty.json()}
+
+    def test_open_poll_group_stays_off_empty_for_late_joiner(
+        self, client, creator_secret, browser_id,
+    ):
+        """An open poll is visible to any member regardless of join
+        time, so its group is `/mine` territory — never `/empty`."""
+        poll = create_poll(client, creator_secret, browser_id=browser_id)
+        joiner = str(uuid.uuid4())
+        read = client.get(
+            f"/api/groups/by-route-id/{poll['group_short_id']}",
+            headers=bid_headers(joiner),
+        )
+        assert read.status_code == 200, read.text
+
+        empty = client.post("/api/groups/empty", headers=bid_headers(joiner))
+        assert empty.status_code == 200
+        assert poll["group_id"] not in {g["id"] for g in empty.json()}
 
 
 class TestGroupSummary:
