@@ -116,6 +116,9 @@ function isPollContentEqual(a: Poll, b: Poll): boolean {
   if ((a.viewed_total ?? 0) !== (b.viewed_total ?? 0)) return false;
   // Gap 1: a cross-device ✕/+ flips this; reflect it on the next refresh.
   if ((a.viewer_follow_state ?? "new") !== (b.viewer_follow_state ?? "new")) return false;
+  // A vote cast on another linked device flips this; reflect it so the
+  // To Do classification + gold bar clear on the 5s refresh.
+  if ((a.viewer_responded ?? false) !== (b.viewer_responded ?? false)) return false;
   if ((a.suggestion_count ?? 0) !== (b.suggestion_count ?? 0)) return false;
   if (a.updated_at !== b.updated_at) return false;
   if (a.creator_name !== b.creator_name) return false;

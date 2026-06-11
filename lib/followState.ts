@@ -14,8 +14,10 @@
  *             followed so the viewer sees the outcome).
  *
  * Pure + dependency-light so it's testable and cheap to call per-card. The
- * "responded" signal is the same localStorage voted/abstained sets the rest of
- * the group page uses (`pollHasResponse`).
+ * "responded" signal is `pollHasResponse`: the localStorage voted/abstained
+ * sets the rest of the group page uses, ORed with the server's account-aware
+ * `poll.viewer_responded` (a vote cast on another linked device clears To Do
+ * here even though this device's local sets are empty).
  */
 
 import type { Poll } from "@/lib/types";

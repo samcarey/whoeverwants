@@ -895,6 +895,25 @@ def polls_for_poll_ids(
         conn, poll_ids_present, browser_ids=bids, auto_aged_at=aged_map
     )
 
+    # Per-viewer "already responded" flag over the same account-aware browser
+    # set — any votes row (vote OR abstain) on any of the poll's questions.
+    # Full semantics on `PollResponse.viewer_responded` (models.py).
+    responded_poll_ids: set[str] = set()
+    if bids and all_question_ids:
+        responded_rows = conn.execute(
+            """
+            SELECT DISTINCT question_id::text AS qid
+              FROM votes
+             WHERE question_id = ANY(%(qids)s::uuid[])
+               AND browser_id = ANY(%(bids)s::uuid[])
+            """,
+            {"qids": all_question_ids, "bids": bids},
+        ).fetchall()
+        for r in responded_rows:
+            sp = question_rows_by_id.get(r["qid"])
+            if sp is not None:
+                responded_poll_ids.add(str(sp["poll_id"]))
+
     responses: list[PollResponse] = []
     for mp_row in poll_rows:
         mp_id = str(mp_row["id"])
@@ -904,6 +923,7 @@ def polls_for_poll_ids(
             viewer_user_id=viewer_user_id,
         )
         mp_resp.viewer_follow_state = follow_states.get(mp_id, "new")
+        mp_resp.viewer_responded = mp_id in responded_poll_ids
         if include_results:
             for sp_resp in mp_resp.questions:
                 pid = sp_resp.id

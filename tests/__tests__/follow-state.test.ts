@@ -47,6 +47,12 @@ describe("classifyPollTab", () => {
     expect(cls(poll({}), NONE, new Set(["q1"]))).toBe("new");
   });
 
+  it("responded on another linked device (server viewer_responded) → New", () => {
+    // Fresh sign-in on a new device: localStorage sets are empty, but the
+    // account voted elsewhere — the server's account-aware flag clears To Do.
+    expect(cls(poll({ viewer_responded: true }))).toBe("new");
+  });
+
   it("closed → New (followed so the outcome is visible)", () => {
     expect(cls(poll({ is_closed: true }))).toBe("new");
   });

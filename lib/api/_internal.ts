@@ -285,6 +285,7 @@ export function toPoll(data: any): Poll {
     creator_user_id: data.creator_user_id ?? null,
     viewer_is_creator: data.viewer_is_creator ?? false,
     viewer_follow_state: data.viewer_follow_state === "old" ? "old" : "new",
+    viewer_responded: data.viewer_responded ?? false,
     response_deadline: data.response_deadline ?? null,
     prephase_deadline: data.prephase_deadline ?? null,
     prephase_deadline_minutes: data.prephase_deadline_minutes ?? null,

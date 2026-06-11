@@ -473,6 +473,16 @@ class PollResponse(BaseModel):
     # account wins. Defaults 'new' (no row = default-follow); set by
     # `polls_for_poll_ids` when a `viewer_browser_id` is threaded in.
     viewer_follow_state: str = "new"
+    # Per-viewer flag: true when the caller has a votes row (vote OR abstain)
+    # on ANY of this poll's questions, ACCOUNT-AWARE across every browser
+    # linked to their account — so a vote cast in the browser clears the
+    # freshly-signed-in app's "To Do" for the same poll. The FE ORs this into
+    # its localStorage voted/abstained check (`pollHasResponse`); same
+    # semantics as the to-do badge branch of `compute_badge_count`. Votes
+    # cast before migration 120 have NULL browser_id and can't match (same
+    # accepted limitation as the badge). Defaults False; set by
+    # `polls_for_poll_ids` when a `viewer_browser_id` is threaded in.
+    viewer_responded: bool = False
     response_deadline: str | None = None
     prephase_deadline: str | None = None
     prephase_deadline_minutes: int | None = None
