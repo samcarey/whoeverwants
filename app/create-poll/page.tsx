@@ -81,6 +81,7 @@ import {
   emptyDraft,
   draftDbQuestionType,
   draftToQuestionParams,
+  detailsIsTypedPrompt,
   yesNoTitleText,
   anyDraftUsesPrephase,
   anyDraftUsesAvailabilityPhase,
@@ -1728,13 +1729,18 @@ export function CreateQuestionContent() {
           // yes_no/limited_supply, details holds the typed prompt / item
           // name, which — like the title — is intentionally not copied.
           setDetails("");
-          if (duplicateData.question_type !== 'yes_no' && duplicateData.question_type !== 'limited_supply') {
+          if (!detailsIsTypedPrompt(duplicateData.question_type)) {
             setForField(duplicateData.details || "");
           }
 
-          // Set question type based on duplicated question
+          // Every duplicate opens on the standard form path. The retired
+          // questionType='time' value would hide the whole top card —
+          // Category/Context/availability rows gate on
+          // questionType === 'question'.
+          setQuestionType('question');
+
+          // Per-type restore of the form fields
           if (duplicateData.question_type === 'ranked_choice') {
-            setQuestionType('question');
             setOptions(duplicateData.options || ['']);
             // Preserve the original's nature: a poll with concrete options
             // duplicates as a fixed-options ballot, not a suggestion round.
@@ -1745,15 +1751,6 @@ export function CreateQuestionContent() {
             // Preserve the original's headline method (favorite/consensus).
             setWinnerMethod(duplicateData.winner_method === 'consensus' ? 'consensus' : 'favorite');
           } else if (duplicateData.question_type === 'time') {
-            // Time polls store category='custom' in the DB (the Time bubble
-            // never overrides it), so reconstruct the canonical
-            // questionType='question' + category='time' pair instead of
-            // trusting the snapshot's category — mirrors pollToRecentEntry's
-            // question_type detection. The retired questionType='time' path
-            // hid the whole top card (Category/Context/availability rows
-            // gate on questionType === 'question').
-            setQuestionType('question');
-            setCategory('time');
             setOptions(['']);
             if (duplicateData.time_min_participants != null) setMinParticipants(duplicateData.time_min_participants);
             if (duplicateData.exclusion_tolerance != null) setExclusionTolerance(duplicateData.exclusion_tolerance);
@@ -1792,9 +1789,9 @@ export function CreateQuestionContent() {
             // stores category='custom' (draftToQuestionParams never sets
             // category for limited_supply) and supply_count /
             // reveal_claimant_names aren't snapshotted, so the copy opens as
-            // a plain custom poll. Needs a dedicated branch (detect
-            // question_type, like time above) + snapshot fields.
-            setQuestionType('question');
+            // a plain custom poll. When fixing, route the per-type restore
+            // through a shared question_type → draft-overrides mapping (see
+            // pollToRecentEntry) rather than growing this hand-rolled tree.
             setOptions(['']);
           }
           if (duplicateData.response_deadline) {
@@ -1815,10 +1812,14 @@ export function CreateQuestionContent() {
           if (duplicateData.creator_name) {
             setCreatorName(duplicateData.creator_name);
           }
-          // Skip for time questions: the branch above already set the
-          // canonical 'time'; the stored 'custom' would clobber it.
-          if (duplicateData.category && duplicateData.question_type !== 'time') {
-            setCategory(duplicateData.category);
+          // Time polls store category='custom' in the DB (the Time bubble
+          // never overrides it) — reconstruct the canonical 'time' instead of
+          // trusting the snapshot, so the Category row + time cards render
+          // (mirrors pollToRecentEntry's question_type detection).
+          const restoredCategory =
+            duplicateData.question_type === 'time' ? 'time' : duplicateData.category;
+          if (restoredCategory) {
+            setCategory(restoredCategory);
           }
           if (duplicateData.category_icon) {
             setCategoryEmoji(duplicateData.category_icon);

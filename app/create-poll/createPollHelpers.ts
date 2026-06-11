@@ -139,6 +139,18 @@ export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice
   return 'ranked_choice';
 }
 
+/**
+ * Types whose `questions.details` holds the user-TYPED prompt / item name
+ * (forwarded from the title at create time) rather than a "for X" context.
+ * Single source of truth for the forward mapping in draftToQuestionParams
+ * (title → API `context`) and the ?duplicate= restore in page.tsx (which
+ * must NOT copy details back into the Context field for these types — the
+ * typed prompt, like the title, is deliberately retyped on a fresh copy).
+ */
+export function detailsIsTypedPrompt(questionType: string): boolean {
+  return questionType === 'yes_no' || questionType === 'limited_supply';
+}
+
 /** The emoji to persist for a draft's category: the trimmed chosen emoji when
  *  the creator picked one, else null (the app then falls back to the category's
  *  default icon — the built-in icon, or the generic glyph for a custom
@@ -242,7 +254,7 @@ export function draftToQuestionParams(
   // prompt/item-name (not auto-generated), so it rides along as `context` for
   // the multi-question section header + same-kind disambiguation, the same way
   // yes_no does.
-  const typedPrompt = dbType === 'yes_no' || dbType === 'limited_supply' ? d.title.trim() : '';
+  const typedPrompt = detailsIsTypedPrompt(dbType) ? d.title.trim() : '';
   const contextValue = typedPrompt || trimmedForField;
   if (contextValue) {
     params.context = contextValue;
