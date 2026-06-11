@@ -106,27 +106,36 @@ export default function KeyboardSuggestionPicker({
     const root = rootRef.current;
     if (!root) return;
     let lastY = 0;
+    // Per-gesture state, classified ONCE at touchstart — touch events keep
+    // targeting the touchstart element for the whole gesture, and the list's
+    // size doesn't change mid-drag — so the 60Hz move handler avoids repeated
+    // DOM traversal + layout-forcing size reads (only scrollTop per move).
+    let allowNative = false; // caret-drag / text-selection on the input
+    let scrollableList: HTMLDivElement | null = null;
+    let listMaxScroll = 0;
     const onTouchStart = (e: TouchEvent) => {
       lastY = e.touches[0]?.clientY ?? 0;
+      const target = e.target instanceof Element ? e.target : null;
+      allowNative = !!target?.closest("input, textarea");
+      const list = listRef.current;
+      const maxScroll =
+        list && target && list.contains(target)
+          ? list.scrollHeight - list.clientHeight
+          : 0;
+      scrollableList = maxScroll > 1 ? list : null;
+      listMaxScroll = maxScroll;
     };
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length !== 1) return;
       const y = e.touches[0]?.clientY ?? lastY;
       const dy = y - lastY;
       lastY = y;
-      const target = e.target instanceof Element ? e.target : null;
-      // Let native caret-drag / text-selection gestures through on the input.
-      if (target?.closest("input, textarea")) return;
-      const list = listRef.current;
-      if (list && target && list.contains(target)) {
-        const canScroll = list.scrollHeight > list.clientHeight + 1;
-        if (canScroll) {
-          const atTop = list.scrollTop <= 0;
-          const atBottom =
-            list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
-          // Not at the edge the drag pushes past → the list consumes it.
-          if (!((dy > 0 && atTop) || (dy < 0 && atBottom))) return;
-        }
+      if (allowNative) return;
+      if (scrollableList) {
+        const atTop = scrollableList.scrollTop <= 0;
+        const atBottom = scrollableList.scrollTop >= listMaxScroll - 1;
+        // Not at the edge the drag pushes past → the list consumes it.
+        if (!((dy > 0 && atTop) || (dy < 0 && atBottom))) return;
       }
       e.preventDefault();
     };
