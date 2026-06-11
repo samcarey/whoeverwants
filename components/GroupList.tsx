@@ -378,7 +378,17 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
             participantNameCounts={group.participantNameCounts}
             imageUrl={group.imageUrl}
             createdAt={latestQuestion?.created_at ?? null}
-            statusBadge={group.isEmpty ? 'New group — tap to add a poll' : undefined}
+            statusBadge={
+              group.isEmpty
+                ? group.hasHiddenPolls
+                  // Every poll closed before this viewer joined (the
+                  // closed-before-join filter hides them), so "new
+                  // group" would mislead — there's history, just none
+                  // they can see yet.
+                  ? 'No open polls'
+                  : 'New group — tap to add a poll'
+                : undefined
+            }
             soonestUnvotedDeadline={group.soonestUnvotedDeadline}
             unvotedDeadlineKind={group.unvotedDeadlineKind}
             hasUnread={hasUnread}

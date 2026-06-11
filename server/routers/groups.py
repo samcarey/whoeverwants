@@ -9,9 +9,10 @@ home / group page bootstrap (discoverRelatedQuestions + getAccessiblePolls
 `POST /api/groups` creates an empty group and joins the caller — used by
 the home "+" FAB so a group materializes in the DB BEFORE any polls
 exist. That way the user can name the group, see info, and share the
-URL immediately. Empty groups (member with 0 visible polls) are
-surfaced on `POST /api/groups/mine` via the `empty_groups` array, and
-on `GET /api/groups/by-route-id/{id}/summary` for the group page's
+URL immediately. Groups with 0 polls visible to the member (brand-new
+empty groups AND groups whose every poll is hidden by the
+closed-before-join filter) are surfaced by `POST /api/groups/empty`,
+and on `GET /api/groups/by-route-id/{id}/summary` for the group page's
 direct-URL load path.
 
 A third endpoint — `DELETE /api/groups/{route_id}/membership` — is the
@@ -126,9 +127,10 @@ class GroupSummary(BaseModel):
     # late joiner, so `/by-route-id` returns [] while the group is not
     # actually empty). Lets the FE distinguish a brand-new empty group
     # (show the create-first-poll flow) from a group whose history is all
-    # hidden pre-join (show the To Do/New/Old tabs with empty messages).
-    # Only `get_group_summary` computes a real value; the /empty + create
-    # paths are genuinely poll-less so they keep the False default.
+    # hidden pre-join (show the To Do/New/Old tabs with empty messages;
+    # home list shows a "No open polls" row). `get_group_summary` and
+    # `get_my_empty_groups` compute real values; the create path is
+    # genuinely poll-less so it keeps the False default.
     has_polls: bool = False
 
 
@@ -333,14 +335,26 @@ def get_my_groups(
 @router.post("/empty", response_model=list[GroupSummary])
 def get_my_empty_groups(request: Request):
     """Return every group the caller is a `group_members` row for that
-    has zero polls. Sorted newest-first. Called by the home page in
-    parallel with `/mine`.
+    has zero polls VISIBLE to them. Sorted newest-first. Called by the
+    home page in parallel with `/mine`.
 
-    The visibility rule is intentionally NOT applied — a group whose
-    every poll was closed before the caller's joined_at watermark
-    still appears here (the "are there any polls at all?" question
-    has no time dimension). The /mine endpoint owns visibility
-    filtering for groups that do have polls.
+    Two shapes land here:
+      * brand-new groups with no polls at all (`has_polls: false`) —
+        the home list shows the "tap to add a poll" row;
+      * groups whose every poll is hidden by the closed-before-join
+        filter (`has_polls: true`, surfaced FE-side as
+        `Group.hasHiddenPolls`). Without this shape, a member invited
+        to a group whose polls had ALL closed before they joined had
+        NO home entry at all: `/mine` filtered every poll out and the
+        old all-polls anti-join here excluded the group too, so the
+        only way back in was re-opening the invite URL (real prod
+        report, June 2026 — the disappearance was misattributed to an
+        unrelated settings change).
+
+    The per-poll visibility predicate mirrors `filter_visible_polls`
+    (`is_closed = false OR updated_at >= joined_at`), with the MIN
+    joined_at across the caller's linked browsers — same
+    most-permissive account-union semantics as `load_user_visibility`.
     """
     browser_id = _browser_id(request)
     user_id = _user_id(request)
@@ -349,30 +363,42 @@ def get_my_empty_groups(request: Request):
     with get_db() as conn:
         # Membership predicate matches `load_user_visibility`'s logic:
         # current browser OR any browser linked to the caller's
-        # user_id. DISTINCT collapses duplicates when multiple linked
-        # browsers all have a row for the same group.
+        # user_id, grouped to one row per group with the earliest
+        # joined_at watermark.
         rows = conn.execute(
-            """SELECT DISTINCT g.id, g.short_id, g.title, g.created_at,
-                       g.image_updated_at, g.privacy, g.creator_user_id
-                 FROM groups g
-                 JOIN group_members m ON m.group_id = g.id
-                WHERE (
-                    m.browser_id = %(bid)s::uuid
-                    OR (
-                        %(uid)s::uuid IS NOT NULL
-                        AND m.browser_id IN (
-                            SELECT browser_id FROM user_browsers
-                             WHERE user_id = %(uid)s::uuid
+            """WITH my_groups AS (
+                    SELECT m.group_id, MIN(m.joined_at) AS joined_at
+                      FROM group_members m
+                     WHERE m.browser_id = %(bid)s::uuid
+                        OR (
+                            %(uid)s::uuid IS NOT NULL
+                            AND m.browser_id IN (
+                                SELECT browser_id FROM user_browsers
+                                 WHERE user_id = %(uid)s::uuid
+                            )
                         )
-                    )
-                )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM polls p WHERE p.group_id = g.id
+                     GROUP BY m.group_id
+               )
+               SELECT g.id, g.short_id, g.title, g.created_at,
+                      g.image_updated_at, g.privacy, g.creator_user_id,
+                      EXISTS (
+                          SELECT 1 FROM polls p WHERE p.group_id = g.id
+                      ) AS has_polls
+                 FROM groups g
+                 JOIN my_groups mg ON mg.group_id = g.id
+                WHERE NOT EXISTS (
+                      SELECT 1 FROM polls p
+                       WHERE p.group_id = g.id
+                         AND (p.is_closed = false
+                              OR p.updated_at >= mg.joined_at)
                   )
                 ORDER BY g.created_at DESC""",
             {"bid": browser_id, "uid": user_id},
         ).fetchall()
-        return [_row_to_group_summary(r) for r in rows]
+        return [
+            _row_to_group_summary(r, has_polls=bool(r.get("has_polls")))
+            for r in rows
+        ]
 
 
 def _row_to_group_summary(row, has_polls: bool = False) -> GroupSummary:
