@@ -1919,8 +1919,28 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
+        {/* "Scheduled ›" — inline at the very top of the scroll, right-
+            justified, just above the To Do section. Opens the group's
+            Scheduled subroute listing upcoming recurring-poll instances. */}
+        {showFollowTabs && (
+          <button
+            type="button"
+            onClick={() => {
+              rememberCurrentScroll(groupScrollKey(groupId));
+              slideToGroupScheduled({ groupId });
+            }}
+            className="w-full flex items-center justify-end gap-0.5 pr-[0.65rem] py-0 leading-none text-[15px] font-medium text-gray-500 dark:text-gray-400 active:opacity-70"
+            aria-label="View scheduled polls"
+          >
+            Scheduled
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
+
         {/* Solo-group CTAs — the creator is the only member, so surface the
-            two ways to bring people in, inline at the top of the scroll
+            two ways to bring people in, inline under the Scheduled link and
             above any polls. Subtle tinted pills (hemisphere sides via
             rounded-full), distinct hues so the two actions read apart. */}
         {soloAdmin && (
@@ -1948,26 +1968,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
               <span className="text-sm font-medium">Create Invite Link</span>
             </button>
           </div>
-        )}
-
-        {/* "Scheduled ›" — inline at the very top of the scroll, right-
-            justified, just above the To Do section. Opens the group's
-            Scheduled subroute listing upcoming recurring-poll instances. */}
-        {showFollowTabs && (
-          <button
-            type="button"
-            onClick={() => {
-              rememberCurrentScroll(groupScrollKey(groupId));
-              slideToGroupScheduled({ groupId });
-            }}
-            className="w-full flex items-center justify-end gap-0.5 pr-[0.65rem] py-0 leading-none text-[15px] font-medium text-gray-500 dark:text-gray-400 active:opacity-70"
-            aria-label="View scheduled polls"
-          >
-            Scheduled
-            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
         )}
 
         {/* Gap 1: the three follow/ignore lists (To Do · New · Old) rendered
