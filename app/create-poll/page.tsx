@@ -499,9 +499,9 @@ export function CreateQuestionContent() {
       node.removeEventListener('touchstart', cleanup);
       node.removeEventListener('wheel', cleanup);
       node.removeEventListener('pointerdown', cleanup);
-      if (sheetScrollPinCleanupRef.current === cleanup) {
-        sheetScrollPinCleanupRef.current = null;
-      }
+      // Always the current pin when this fires — every trigger (timer,
+      // interaction listeners, next ref attach) detaches on first run.
+      sheetScrollPinCleanupRef.current = null;
     };
     const onScroll = () => {
       if (node.scrollTop !== 0) node.scrollTop = 0;
