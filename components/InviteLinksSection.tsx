@@ -52,6 +52,12 @@ interface Props {
   className?: string;
 }
 
+// The `&& e.message` guard matters: over HTTP/2 `res.statusText` is "",
+// so an ApiError from a body-less error response can carry an empty
+// message — which would render as a blank (invisible) error line.
+const errorMessage = (e: unknown, fallback: string): string =>
+  e instanceof ApiError && e.message ? e.message : fallback;
+
 export default function InviteLinksSection({
   groupId,
   enabled,
@@ -89,11 +95,7 @@ export default function InviteLinksSection({
           setInvites([]);
           return;
         }
-        setError(
-          e instanceof ApiError && e.message
-            ? e.message
-            : "Failed to load invites",
-        );
+        setError(errorMessage(e, "Failed to load invites"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -118,11 +120,7 @@ export default function InviteLinksSection({
         }
       })
       .catch((e) => {
-        setError(
-          e instanceof ApiError && e.message
-            ? e.message
-            : "Failed to create invite",
-        );
+        setError(errorMessage(e, "Failed to create invite"));
       })
       .finally(() => setCreating(false));
   };
@@ -155,10 +153,7 @@ export default function InviteLinksSection({
         // window, lost connection, CORS-blocked 5xx) can occur AFTER the
         // server applied the revoke. Don't blindly resurrect the row —
         // re-sync from the server, which is the source of truth.
-        const message =
-          e instanceof ApiError && e.message
-            ? e.message
-            : "Failed to revoke invite";
+        const message = errorMessage(e, "Failed to revoke invite");
         try {
           const data = await apiListGroupInvites(groupId);
           setInvites(data);
