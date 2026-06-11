@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { isPollUnread } from '@/lib/unread';
+import { isPollUnread, pollHasResponse } from '@/lib/unread';
 import type { BadgeSettings } from '@/lib/badgeSettings';
 import type { Poll } from '@/lib/types';
 
@@ -94,5 +94,29 @@ describe('isPollUnread — stay-unread-until-I-respond (to-do)', () => {
   it('is read while still in suggestion phase (prephase not passed)', () => {
     const p = poll({ prephase_deadline: new Date(NOW + HOUR).toISOString() });
     expect(unread(p, { settings: RESPOND_MODE, lastViewedMs: 0, hasResponded: false })).toBe(false);
+  });
+});
+
+describe('pollHasResponse — local sets ORed with the server account-aware flag', () => {
+  const NONE = new Set<string>();
+  const q1Poll = (overrides: Partial<Poll> = {}) =>
+    poll({ questions: [{ id: 'q1' } as any], ...overrides });
+
+  it('false with empty local sets and no server flag', () => {
+    expect(pollHasResponse(q1Poll(), NONE, NONE)).toBe(false);
+  });
+
+  it('true from this device\'s local voted/abstained sets', () => {
+    expect(pollHasResponse(q1Poll(), new Set(['q1']), NONE)).toBe(true);
+    expect(pollHasResponse(q1Poll(), NONE, new Set(['q1']))).toBe(true);
+  });
+
+  it('true from the server viewer_responded flag even with empty local sets', () => {
+    // Fresh sign-in on a new device: the account voted elsewhere.
+    expect(pollHasResponse(q1Poll({ viewer_responded: true }), NONE, NONE)).toBe(true);
+  });
+
+  it('an explicit false / absent server flag falls back to the local sets', () => {
+    expect(pollHasResponse(q1Poll({ viewer_responded: false }), new Set(['q1']), NONE)).toBe(true);
   });
 });

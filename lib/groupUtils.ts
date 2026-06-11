@@ -21,6 +21,7 @@ import {
 } from './questionCache';
 import { isUuidLike } from './questionId';
 import { getUserName } from './userProfile';
+import { pollHasResponse } from './unread';
 import { API_ORIGIN } from './api/_internal';
 
 /** Fallback group title when no participant names remain after filtering
@@ -344,10 +345,10 @@ function buildGroupFromPolls(
 
   for (const mp of polls) {
     if (!isPollOpen(mp, now)) continue;
-    const hasRespondedToAnySub = mp.questions.some(
-      sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
-    );
-    if (hasRespondedToAnySub) continue;
+    // pollHasResponse ORs the server's account-aware `viewer_responded` into
+    // the local sets, so a vote cast on another linked device clears the
+    // home-list unvoted countdown/dot here too.
+    if (pollHasResponse(mp, votedQuestionIds, abstainedQuestionIds)) continue;
     unvotedCount++;
 
     // Per-poll state: an active prephase deadline ALWAYS wins over the

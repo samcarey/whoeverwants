@@ -895,6 +895,30 @@ def polls_for_poll_ids(
         conn, poll_ids_present, browser_ids=bids, auto_aged_at=aged_map
     )
 
+    # Per-viewer "already responded" flag, account-aware over the same browser
+    # set: any votes row (vote OR abstain) by a linked browser on any of the
+    # poll's questions. This is what lets a vote cast on device A clear the
+    # To Do classification on a freshly-signed-in device B, whose localStorage
+    # voted/abstained sets are empty. Mirrors the to-do badge's "no votes row
+    # on any of P's questions" semantics (`compute_badge_count`). Pre-migration
+    # 120 votes have NULL browser_id and can't match — same accepted
+    # limitation as the badge.
+    responded_poll_ids: set[str] = set()
+    if bids and all_question_ids:
+        responded_rows = conn.execute(
+            """
+            SELECT DISTINCT question_id::text AS qid
+              FROM votes
+             WHERE question_id = ANY(%(qids)s::uuid[])
+               AND browser_id = ANY(%(bids)s::uuid[])
+            """,
+            {"qids": all_question_ids, "bids": bids},
+        ).fetchall()
+        for r in responded_rows:
+            sp = question_rows_by_id.get(r["qid"])
+            if sp is not None:
+                responded_poll_ids.add(str(sp["poll_id"]))
+
     responses: list[PollResponse] = []
     for mp_row in poll_rows:
         mp_id = str(mp_row["id"])
@@ -904,6 +928,7 @@ def polls_for_poll_ids(
             viewer_user_id=viewer_user_id,
         )
         mp_resp.viewer_follow_state = follow_states.get(mp_id, "new")
+        mp_resp.viewer_responded = mp_id in responded_poll_ids
         if include_results:
             for sp_resp in mp_resp.questions:
                 pid = sp_resp.id

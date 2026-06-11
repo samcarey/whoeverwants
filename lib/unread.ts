@@ -142,13 +142,19 @@ function effectiveViewedAt(pollId: string): number {
   return Math.max(getPollViewedAt(pollId), getUnreadBaseline());
 }
 
-/** True iff this browser has a recorded vote OR abstain on any of the poll's
- *  questions. */
+/** True iff the viewer has a recorded vote OR abstain on any of the poll's
+ *  questions — either on THIS device (the localStorage voted/abstained sets)
+ *  or, account-aware, on any linked device (the server-computed
+ *  `poll.viewer_responded`, which unions votes across every browser linked to
+ *  the caller's account). The server flag is what keeps a freshly-signed-in
+ *  device from showing To Do / the gold bar for a poll the account already
+ *  voted on elsewhere. */
 export function pollHasResponse(
   poll: Poll,
   voted: Set<string>,
   abstained: Set<string>,
 ): boolean {
+  if (poll.viewer_responded === true) return true;
   return poll.questions.some((q) => voted.has(q.id) || abstained.has(q.id));
 }
 
