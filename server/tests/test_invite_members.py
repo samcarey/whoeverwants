@@ -226,6 +226,82 @@ def test_non_member_forbidden(client, people):
     assert resp2.status_code == 403, resp2.text
 
 
+def _remove_member_direct(group_id, browser_id):
+    with psycopg.connect(TEST_DB_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM group_members
+                 WHERE group_id = %s::uuid AND browser_id = %s::uuid
+                """,
+                (group_id, browser_id),
+            )
+        conn.commit()
+
+
+def test_forget_contact_sticks_only_without_shared_groups(client, people):
+    tok_a, _ = _sign_in(client, people["a"], name="Alice")
+    _tok_c, uid_c = _sign_in(client, people["c"], name="Cara")
+
+    target = _create_group(client, people["a"], tok_a)
+    g1 = _create_group(client, people["a"], tok_a)
+    _add_member_direct(g1["id"], people["c"])  # C becomes a contact via g1
+
+    def candidate_names():
+        resp = client.get(
+            f"/api/groups/{target['short_id']}/invitable-accounts",
+            headers=_bearer_headers(people["a"], tok_a),
+        )
+        assert resp.status_code == 200, resp.text
+        return [r["name"] for r in resp.json()]
+
+    assert "Cara" in candidate_names()  # warms contacts via inline reconcile
+
+    # Forgetting while STILL sharing g1: allowed, but the next reconcile
+    # (inline on the candidates GET) re-adds — documented semantics.
+    resp = client.delete(
+        f"/api/users/me/contacts/{uid_c}",
+        headers=_bearer_headers(people["a"], tok_a),
+    )
+    assert resp.status_code == 204, resp.text
+    assert "Cara" in candidate_names()
+
+    # No shared groups anymore → forgetting sticks (the FE only offers the
+    # button in this case).
+    _remove_member_direct(g1["id"], people["c"])
+    resp2 = client.delete(
+        f"/api/users/me/contacts/{uid_c}",
+        headers=_bearer_headers(people["a"], tok_a),
+    )
+    assert resp2.status_code == 204, resp2.text
+    assert "Cara" not in candidate_names()
+
+
+def test_forget_contact_idempotent_and_validates_id(client, people):
+    tok_a, _ = _sign_in(client, people["a"], name="Alice")
+
+    # Never-a-contact (or repeat) deletes are 204 no-ops.
+    resp = client.delete(
+        f"/api/users/me/contacts/{uuid.uuid4()}",
+        headers=_bearer_headers(people["a"], tok_a),
+    )
+    assert resp.status_code == 204, resp.text
+
+    # Account-less caller has no contacts — still an idempotent 204.
+    resp2 = client.delete(
+        f"/api/users/me/contacts/{uuid.uuid4()}",
+        headers=_bid_headers(str(uuid.uuid4())),
+    )
+    assert resp2.status_code == 204, resp2.text
+
+    # Malformed id → 404 via require_uuid, never a 500.
+    resp3 = client.delete(
+        "/api/users/me/contacts/not-a-uuid",
+        headers=_bearer_headers(people["a"], tok_a),
+    )
+    assert resp3.status_code == 404, resp3.text
+
+
 def test_unknown_route_404(client, people):
     tok_a, _ = _sign_in(client, people["a"], name="Alice")
     resp = client.get(

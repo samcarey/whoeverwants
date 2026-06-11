@@ -60,6 +60,18 @@ export interface GroupMembersChangedDetail {
   routeId: string;
 }
 
+/** Fired after the long-press profile modal's "Forget" action succeeds
+ *  (`apiForgetUserContact` resolved). Contact-driven lists that are already
+ *  mounted — today the invite-members ("Add people") screen, which is the
+ *  main surface where a no-shared-groups person appears — listen and drop
+ *  the forgotten account from their local state, since the modal lives at
+ *  the layout level and can't reach them via props. */
+export const USER_CONTACT_FORGOTTEN_EVENT = 'userContactForgotten';
+export interface UserContactForgottenDetail {
+  /** The forgotten account's user_id. */
+  userId: string;
+}
+
 /** Fired by `slideToGroup()` / `slideToGroupInfo()` / `slideToGroupEditTitle()`
  *  / `slideToGroupRoot()` to ask `SlideOverlayHost` to mount the destination
  *  overlay + run the slide-in animation. The host calls `router.push(href)`

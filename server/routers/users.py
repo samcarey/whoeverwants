@@ -40,6 +40,7 @@ from middleware import browser_id_from_request as _browser_id
 from middleware import user_id_from_request as _user_id
 from services.auth import create_anonymous_user, resolve_actor_user_id
 from services.category_options import load_category_options
+from services.contacts import forget_contact
 from services.groups import require_uuid, resolve_group_id_from_route_id
 from services.poll_categories import load_category_recency
 from services.profiles import get_profile_card
@@ -362,6 +363,28 @@ def delete_my_image(request: Request):
                 {"id": user_id},
             )
     return UserImageResponse(user_id=user_id, image_updated_at=None)
+
+
+@router.delete("/me/contacts/{contact_user_id}", status_code=204)
+def forget_my_contact(contact_user_id: str, request: Request):
+    """Remove an account from the caller's address book ("forget" them).
+
+    Backs the long-press profile modal's Forget button, shown only when the
+    caller shares NO groups with the person — without a shared group, the
+    `user_contacts` row is the only reason they keep surfacing (invite-members
+    candidates, plus-one lookup), and `reconcile_contacts` won't re-add them.
+    (Forgetting someone you DO still share a group with is allowed but
+    pointless: the next reconcile re-adds them.)
+
+    Idempotent — 204 even when no contact row existed or the caller has no
+    account (no account → no contacts). Malformed ids 404 via `require_uuid`.
+    """
+    require_uuid(contact_user_id, "user_id")
+    with get_db() as conn:
+        user_id = _caller_user_id(conn, request)
+        if user_id:
+            forget_contact(conn, user_id, contact_user_id)
+    return Response(status_code=204)
 
 
 @router.get("/by-user-id/{user_id}/image")
