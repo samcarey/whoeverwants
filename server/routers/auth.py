@@ -1415,6 +1415,40 @@ class InviteRedeemResponse(BaseModel):
     already_member: bool
 
 
+class InvitePreviewResponse(BaseModel):
+    """Result of `GET /api/auth/invites/{token}/preview`. `group_name`
+    is None when the group has no title override and no named
+    participants — the FE shell falls back to generic copy."""
+
+    group_name: str | None
+
+
+@router.get(
+    "/invites/{token}/preview",
+    response_model=InvitePreviewResponse,
+)
+def get_invite_preview(token: str):
+    """Identity-free link-preview metadata for an invite URL.
+
+    Mirrors `GET /api/groups/by-route-id/{id}/preview`'s trust model:
+    crawlers (iMessage, Slack, ...) hit the URL with no browser
+    identity, so there's no auth gate and no membership write. The
+    unguessable token is the capability; the only data returned is the
+    group's display name. Read-only — fetching a preview never
+    consumes a use on a single-use invite. 404 on invalid / expired /
+    revoked / fully-used tokens (indistinguishable, same as redeem).
+    """
+    from services.invites import invite_group_name
+
+    with get_db() as conn:
+        preview = invite_group_name(conn, token)
+    if preview is None:
+        raise HTTPException(
+            status_code=404, detail="Invite invalid or expired"
+        )
+    return InvitePreviewResponse(group_name=preview.group_name)
+
+
 @router.post(
     "/invites/{token}/redeem",
     response_model=InviteRedeemResponse,

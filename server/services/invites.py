@@ -1,6 +1,6 @@
 """Phase G (group invites) — server-side helpers.
 
-Four operations:
+Five operations:
   * `issue_invite(conn, ...)` mints a raw token + persists its sha256
     hash + metadata. Returns the raw token to the caller exactly once.
   * `list_active_invites(conn, group_id)` returns non-revoked,
@@ -14,6 +14,9 @@ Four operations:
     target poll info for the FE redirect.
   * `revoke_invite(conn, invite_id, by_user_id)` stamps `revoked_at`
     on a creator-owned invite. Idempotent.
+  * `invite_group_name(conn, token)` resolves an ACTIVE token to its
+    group's display name for link previews — read-only, never bumps
+    use_count.
 
 Token storage mirrors sessions + magic-link tokens: raw value returned
 ONLY at create time, sha256 hash persisted. The raw token never sits in
@@ -31,7 +34,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from services.auth import generate_token, hash_token
-from services.groups import backdate_membership_for_user
+from services.groups import backdate_membership_for_user, group_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +200,54 @@ def list_active_invites(conn, group_id: str) -> list[InviteSummary]:
         )
         for r in rows
     ]
+
+
+@dataclass
+class InvitePreview:
+    """Result of `invite_group_name` — link-preview metadata for an
+    invite URL. `group_name` is None when the group has no title
+    override and no named participants yet (the caller picks a generic
+    fallback)."""
+
+    group_name: str | None
+
+
+def invite_group_name(conn, token: str) -> InvitePreview | None:
+    """Resolve an ACTIVE invite token to its group's display name, for
+    the Open Graph link preview on `/invite/<token>`.
+
+    Read-only — never bumps `use_count`, never writes membership — so a
+    messaging app's crawler fetching the preview can't consume a
+    single-use invite. The active predicate mirrors `redeem_invite` so
+    a revoked/expired/fully-used link previews as generic rather than
+    leaking the group name past revocation. Returns None when the
+    token doesn't resolve (the router 404s, same no-leak posture as
+    redeem).
+
+    Surfacing the name pre-redemption is the intentional Phase E leak
+    channel: an invite URL is the creator deliberately sharing the
+    group, and the name is exactly what makes the shared link legible.
+    """
+    if not token:
+        return None
+    row = conn.execute(
+        """
+        SELECT gi.group_id, g.title
+          FROM group_invites gi
+          JOIN groups g ON g.id = gi.group_id
+         WHERE gi.token_hash = %(h)s
+           AND gi.revoked_at IS NULL
+           AND (gi.expires_at IS NULL OR gi.expires_at > NOW())
+           AND (gi.max_uses IS NULL OR gi.use_count < gi.max_uses)
+        """,
+        {"h": hash_token(token)},
+    ).fetchone()
+    if row is None:
+        return None
+    name = group_display_name(
+        conn, str(row["group_id"]), override=row.get("title")
+    )
+    return InvitePreview(group_name=name)
 
 
 def revoke_invite(conn, invite_id: str, group_id: str) -> bool:

@@ -1,23 +1,13 @@
 import type { Metadata } from "next";
 import { getApiEndpoint } from "@/lib/api/_internal";
+import { buildMetadata, SITE_NAME } from "@/lib/metadata";
 import PollDetailPage from "./PollDetailPage";
-
-const SITE_NAME = "WhoeverWants";
 
 // Server-component shell. The client UI lives in `./PollDetailPage.tsx`;
 // this file exists only so `generateMetadata` can surface the linked poll's
 // title in messaging-app previews. Both ids come from the path (no
 // searchParams), so the preview fetch targets `?p=<pollShortId>` directly.
-// No og:image / twitter:image: titles dominate messaging previews. Mirrors
-// the group route's shell in `app/g/[groupShortId]/page.tsx`.
-function buildMetadata(title: string, description?: string): Metadata {
-  return {
-    title,
-    description,
-    openGraph: { title, description, type: "website" },
-    twitter: { card: "summary", title, description },
-  };
-}
+// Mirrors the group route's shell in `app/g/[groupShortId]/page.tsx`.
 
 export async function generateMetadata({
   params,
