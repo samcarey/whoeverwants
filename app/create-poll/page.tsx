@@ -774,13 +774,10 @@ export function CreateQuestionContent() {
     }
     const now = new Date();
     const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-    const year = oneHourLater.getFullYear();
-    const month = String(oneHourLater.getMonth() + 1).padStart(2, '0');
-    const day = String(oneHourLater.getDate()).padStart(2, '0');
     const hours = String(oneHourLater.getHours()).padStart(2, '0');
     const minutes = String(oneHourLater.getMinutes()).padStart(2, '0');
     return {
-      date: `${year}-${month}-${day}`,
+      date: formatLocalDateISO(oneHourLater),
       time: `${hours}:${minutes}`
     };
   };
@@ -1595,11 +1592,7 @@ export function CreateQuestionContent() {
     if (typeof window === 'undefined') {
       return '';
     }
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return formatLocalDateISO(new Date());
   };
 
   // Set default custom suggestion date/time when switching to custom
@@ -1607,7 +1600,7 @@ export function CreateQuestionContent() {
     if (suggestionCutoff === 'custom' && !customSuggestionDate && isClient) {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      setCustomSuggestionDate(`${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`);
+      setCustomSuggestionDate(formatLocalDateISO(tomorrow));
       setCustomSuggestionTime('12:00');
     }
   }, [suggestionCutoff, customSuggestionDate, isClient]);
@@ -1651,11 +1644,7 @@ export function CreateQuestionContent() {
       // Default to a single 8 AM – 5 PM window so the "first day" rule lands
       // even when the day is auto-added by opening the time-bubble modal.
       if (!savedFormState || !savedFormState.dayTimeWindows || savedFormState.dayTimeWindows.length === 0) {
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        const todayStr = `${year}-${month}-${day}`;
+        const todayStr = formatLocalDateISO(new Date());
         setDayTimeWindows([{ day: todayStr, windows: [{ ...DEFAULT_TIME_WINDOW }] }]);
       }
     }
@@ -2131,8 +2120,8 @@ export function CreateQuestionContent() {
       // Build a placeholder Poll from the draft data so the group can render
       // a real card in the destination position immediately, before the API
       // call resolves. The card mounts with only the title visible (other
-      // fields empty / default) and FLIP-animates from the draft card's
-      // bbox to its natural collapsed-card slot. apiCreatePoll runs in
+      // fields empty / default) and fades in via the `card-pending-enter`
+      // CSS class. apiCreatePoll runs in
       // parallel and dispatches POLL_HYDRATED_EVENT on success so the
       // group page can swap placeholder fields for real ones in place.
       // Prototype: a real scheduler would consume the recurrence rule to spin
@@ -2155,19 +2144,9 @@ export function CreateQuestionContent() {
       });
 
       // For new-root submissions on /g/ (the empty placeholder), the
-      // placeholder card needs to be visible. The placeholder route doesn't
-      // render a poll list, so we still navigate first; the destination
-      // GroupContent mounts with the placeholder in cache and FLIP-animates.
-      // We use router.replace with a placeholder id route — once apiCreatePoll
-      // resolves, we router.replace again to the real shortId.
+      // destination GroupContent mounts with the placeholder in cache.
       // For follow-ups, the current group page is already rendering and
       // takes the placeholder via POLL_PENDING_EVENT inline.
-      const draftCardEl = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
-      const draftBbox = draftCardEl?.getBoundingClientRect();
-      const fromBbox = draftBbox
-        ? { x: draftBbox.x, y: draftBbox.y, width: draftBbox.width, height: draftBbox.height }
-        : { x: 0, y: 0, width: 0, height: 0 };
-
       // Cache the placeholder so destination group render can find it.
       cachePoll(placeholderPoll);
       updateAccessiblePollsIfFresh(existing => [
@@ -2175,11 +2154,11 @@ export function CreateQuestionContent() {
         placeholderPoll,
       ]);
 
-      // Dispatch BEFORE we clear the draft state so listeners can read the
-      // bbox in time.
+      // Dispatch the placeholder so the destination group inserts the card
+      // immediately.
       window.dispatchEvent(
         new CustomEvent<PollPendingDetail>(POLL_PENDING_EVENT, {
-          detail: { poll: placeholderPoll, fromBbox },
+          detail: { poll: placeholderPoll },
         }),
       );
 
@@ -2782,10 +2761,7 @@ export function CreateQuestionContent() {
                     left, values right, hairlines between. Complex widgets
                     (reference location, time fields, options list) render
                     full-width below the simple-row group. */}
-                <section
-                  data-draft-poll-card
-                  className="rounded-3xl bg-white dark:bg-gray-800 px-4"
-                >
+                <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
                   {questionType === 'question' && (
                     <div className="divide-y divide-gray-200 dark:divide-gray-700">
                       <label className="flex items-center justify-between gap-3 h-12 cursor-pointer">

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import ModalPortal from '@/components/ModalPortal';
 import SliderSwitch from '@/components/SliderSwitch';
-import { formatDeadlineLabel } from '@/lib/timeUtils';
+import { formatDeadlineLabel, formatLocalDateISO } from '@/lib/timeUtils';
 
 // Deadline options starting small and scaling up to 1 month
 const VOTING_CUTOFF_OPTIONS = [
@@ -41,8 +41,7 @@ interface VotingCutoffConditionsModalProps {
 
 function getTodayDate(): string {
   if (typeof window === 'undefined') return '';
-  const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return formatLocalDateISO(new Date());
 }
 
 export default function VotingCutoffConditionsModal({
