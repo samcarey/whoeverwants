@@ -207,11 +207,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     mousePosition: { x: 0, y: 0 }
   });
 
-  // Dynamic container heights for drag preview
-  const [containerHeights, setContainerHeights] = useState({
-    main: 0,
-    noPreference: 0
-  });
+  // Dynamic container heights for drag preview. Seeded with the no-drag
+  // base heights (pure math from the seeded list lengths — same formula as
+  // calculateContainerHeights) so the first commit doesn't paint a
+  // zero-height container around the absolutely-positioned items.
+  const [containerHeights, setContainerHeights] = useState(() => ({
+    main: Math.max(initialState.mainList.length * totalItemHeight - gapSize, totalItemHeight),
+    noPreference: Math.max(initialState.noPreferenceList.length * totalItemHeight - gapSize, totalItemHeight),
+  }));
 
   // DOM Refs
   const mainContainerRef = useRef<HTMLDivElement>(null);
@@ -1744,6 +1747,20 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       {dragState.isDragging && renderDraggedItem()}
     </div>
   );
+
+  // When the synchronous seed ran (every client mount), render the real
+  // interface on the FIRST commit — the ClientOnlyDragDrop mounted-flag +
+  // extra-rAF wrapper otherwise shows its "Loading interactive ranking
+  // interface..." fallback for 1-2 frames, which reads as the ballot
+  // flickering when this page mounts over a settled backdrop/overlay
+  // instance during a swipe-back handoff. The wrapper's hydration-safety
+  // role is moot in practice: ballots only mount client-side after the
+  // poll resolves from cache/fetch (the SSR HTML is always a loading
+  // frame), so this subtree is never hydrated against server HTML. The
+  // wrapper is kept only for the un-seeded SSR render path.
+  if (initialState.initialized) {
+    return renderRankableInterface();
+  }
 
   return (
     <ClientOnlyDragDrop
