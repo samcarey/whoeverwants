@@ -92,9 +92,20 @@ import {
 } from "./createPollHelpers";
 export const dynamic = 'force-dynamic';
 
-// Matches the rendered height of a single-line <input> with py-2 padding.
-// Used for the Details textarea initial height and auto-grow reset.
-const SINGLE_LINE_INPUT_HEIGHT = 42;
+// Matches the rendered height of a single-line field row (h-12 = 48px:
+// a 24px text-base line + py-3's 24px). Used for the Details textarea
+// auto-grow reset so one line of Notes lines up with the other field rows.
+const SINGLE_LINE_INPUT_HEIGHT = 48;
+
+// Sizes the Notes textarea to its content: starts at one line and grows up
+// to ~5 lines, then scrolls. Called on every change AND when the textarea
+// first attaches (callback ref) so it opens at one line instead of rows={N}.
+function autoSizeDetailsTextarea(el: HTMLTextAreaElement) {
+  el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
+  const maxH = 5 * 24 + 24;
+  el.style.height = Math.min(el.scrollHeight, maxH) + "px";
+  el.style.overflowY = el.scrollHeight > maxH ? "auto" : "hidden";
+}
 
 // How long the new-poll sheet body's open-at-top scroll pin stays armed
 // (see setSheetScrollerRef). Sized to outlast the iOS soft-keyboard collapse
@@ -527,7 +538,12 @@ export function CreateQuestionContent() {
   const [recurrence, setRecurrence] = useState<RecurrenceRule>(DEFAULT_RECURRENCE);
   const [recurrenceStart] = useState(() => formatRecurrenceDateISO(new Date()));
   const [details, setDetails] = useState("");
-  const detailsRef = useRef<HTMLTextAreaElement>(null);
+  // Callback ref: size the Notes textarea to its content the moment it
+  // attaches (ModalPortal mounts it after open), so it opens at one line for
+  // an empty draft yet grows to fit restored/duplicated multi-line content.
+  const setDetailsEl = useCallback((el: HTMLTextAreaElement | null) => {
+    if (el) autoSizeDetailsTextarea(el);
+  }, []);
   const [category, setCategory] = useState<string>('custom');
   // Emoji for the poll category (empty = use the default fallback glyph,
   // rendered faded in front of the title preview).
@@ -3216,24 +3232,20 @@ export function CreateQuestionContent() {
                   </label>
                   <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
                     <textarea
-                      ref={detailsRef}
+                      ref={setDetailsEl}
                       id="details"
                       value={details}
                       onChange={(e) => {
                         setDetails(e.target.value);
-                        const el = e.target;
-                        el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
-                        const maxH = 5 * 20 + 16;
-                        el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
-                        el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+                        autoSizeDetailsTextarea(e.target);
                       }}
                       onBlur={() => {
                         const trimmed = details.trim();
                         if (trimmed !== details) setDetails(trimmed);
                       }}
                       disabled={isLoading}
-                      rows={3}
-                      className="block w-full bg-transparent text-sm focus:outline-none dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none"
+                      rows={1}
+                      className="block w-full bg-transparent text-base py-3 text-gray-500 dark:text-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none"
                     />
                   </section>
                 </div>
