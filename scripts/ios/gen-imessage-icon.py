@@ -25,7 +25,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 SRC = os.path.join(REPO, "public", "icon-512x512.png")
 OUT = os.path.join(
     REPO, "ios", "App", "MessagesExtension", "Assets.xcassets",
-    "iMessage App Icon.appiconset",
+    "iMessage App Icon.stickersiconset",
 )
 
 # (idiom, size, scale, platform|None, pixel W, pixel H) — the canonical Xcode
