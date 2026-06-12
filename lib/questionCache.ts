@@ -214,6 +214,11 @@ export function invalidateQuestion(id: string): void {
  *  `invalidateQuestion` / `invalidatePoll` and leave this cache alone;
  *  see the invariant in those helpers' doc comments. */
 export function invalidateAccessibleQuestions(): void {
+  // TEMP DIAGNOSTIC (swipe-back groups-vanish investigation): log who wipes
+  // the accessible-polls cache so we can find the settings→home culprit.
+  if (typeof window !== "undefined" && accessiblePollsCache !== null) {
+    console.warn("[accessible-cache-wipe]", new Error().stack);
+  }
   accessiblePollsCache = null;
 }
 
