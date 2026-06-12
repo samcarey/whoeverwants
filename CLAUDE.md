@@ -3251,8 +3251,12 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
 
 > **Plan: `docs/imessage-extension-plan.md`.** Goal: interactive poll bubbles in
 > the Messages transcript via a Messages app extension. **Phase 0 (target
-> scaffold + CI wiring) SHIPPED** on `claude/imessage-interactive-polls-vax1x2`;
-> a static SwiftUI placeholder, no live layout / identity / networking yet.
+> scaffold + CI wiring) SHIPPED** via #712. **Phase 1 (share a poll from the
+> drawer) SHIPPED** on `claude/imessage-extension-phase-1-a6esys` — drawer
+> picker (the `PollEntity.fetchAll` fetch via the App-Group identity),
+> `MSMessageTemplateLayout` insert (canonical URL public / poll-scoped invite
+> URL private), bubble-tap native summary with live results; full shape in the
+> plan doc's Phase 1 section; device verification owner-owned.
 > Owner decisions: ship additive (degraded no-app fallback OK); embed a
 > poll-scoped invite token for private-group bubbles (auto-join); v1 inline
 > voting = yes_no + limited_supply only; pursue compose-in-Messages keeping
@@ -3270,16 +3274,64 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
   target/embed-phase/dependency) without a Mac — the single biggest de-risker
   for editing the project from here. Re-run the script to regenerate; it's a
   no-op if the target exists.
-- **Phase 0 has NO entitlements, on purpose.** No App Group / keychain group →
-  automatic signing self-provisions the new bundle ids
+- **Phase 0 had NO entitlements, on purpose; Phase 1 added the App Group.**
+  Phase 0's bare scaffold let automatic signing self-provision the new bundle ids
   (`com.whoeverwants.app[.latest].MessagesExtension`) with ZERO manual Apple
-  Developer portal steps, which is what makes a green canary CI build achievable
-  unattended. The App Group identity bridge (reading `NativeIdentityAppGroup`,
-  the same separate-process channel Siri uses — the extension is its own process,
-  so plain Keychain won't cross to it) is a **Phase 1 prerequisite** that DOES
-  need the one-time manual "App Groups" capability registration on both extension
-  bundle ids (automatic signing does not auto-create App Groups — same caveat the
-  host app's `App.entitlements` documents).
+  Developer portal steps — the unattended green-canary-build trick. Phase 1
+  added `MessagesExtension/MessagesExtension.entitlements` carrying ONLY the
+  App Group (`group.com.whoeverwants.siri` — the same separate-process identity
+  channel Siri uses; the extension is its own process, so plain Keychain won't
+  cross to it), wired via `CODE_SIGN_ENTITLEMENTS` on both ext configs (the gem
+  edit is reflected in `add-messages-extension.rb`). The group is TIER-SHARED,
+  so no per-tier entitlement-scoping step is needed in `ios-build.yml` (unlike
+  the host app's associated-domains). **One-time manual prerequisite: register
+  the "App Groups" capability + assign the group on BOTH extension bundle ids
+  in the Apple Developer portal** (automatic signing does not auto-create App
+  Groups — same caveat the host app's `App.entitlements` documents); without it
+  the archive fails at provisioning for the extension target.
+- **Phase 1 implementation notes (`ios/App/MessagesExtension/MessagesViewController.swift`,
+  self-contained):**
+  - The extension CANNOT import App-target sources without pbxproj surgery, so
+    the tiny tier/identity helpers (`isCanaryBundle`/`feHost`/`apiBase` +
+    the `BridgedIdentity` App Group reader) are DUPLICATED from
+    `AppDelegate.swift` — keep them in lockstep. Canary detection is
+    `bundleIdentifier.hasPrefix("com.whoeverwants.app.latest")` (the ext id is
+    `<host id>.MessagesExtension`, so equality won't match).
+  - Poll picker = the same `POST /api/groups/mine` fetch/title-rule/sort/cap as
+    Siri's `PollEntity.fetchAll`, with X-Browser-Id from the App Group. No
+    identity → "Open WhoeverWants first" state (the name-gate, mirroring Siri).
+  - Private-group shares mint a poll-scoped multi-use no-expiry invite
+    (`POST /api/groups/<route>/invites`, admin-only server-side) and embed
+    `/invite/<token>?wwPoll=<pollShort>` as `message.url`; `wwPoll` exists
+    because the token URL doesn't otherwise name the poll — only the extension
+    reads it (the contract is registered in the `POLL_QUERY_PARAM` docblock in
+    `lib/groupUtils.ts` so web changes don't strip it). The minted token is
+    cached per-poll for the SESSION (re-shares reuse it); cross-session shares
+    mint fresh invites — accepted, each stays revocable from /info (a server
+    get-or-mint would require storing raw tokens, breaking hash-only-storage).
+    Mint failure (non-admin member, network) falls back to the canonical
+    `/g/<g>/p/<p>` URL → recipient hits the normal request-access wall. Public
+    shares use the bare canonical URL (no payload params; the path names it).
+  - The recipient summary uses the deliberately identity-free + visibility-blind
+    `GET /api/polls/{short_id}` + concurrent per-question
+    `GET /api/questions/{id}/results` — acceptable for the on-demand expanded
+    view under decision B (a bubble IS a deliberate capability share), but
+    Phase 2 should add a single identity-free server summary endpoint and
+    migrate this onto it (see the plan doc). Display rules mirror the web:
+    question labels follow `getQuestionSectionTitle` (incl. the yes_no /
+    limited_supply null-label rule; the Swift `categoryLabels` map is the 4th
+    label-mirror site), slot winners render in `_format_slot_label`'s shape,
+    respondent counts honor `voter_name_counts` multiplicity.
+  - `MSMessage` is inserted with `conversation.insert` (NEVER auto-send) +
+    `dismiss()` on success; the template-layout image is RENDERED AT RUNTIME
+    (👋 on black via `UIGraphicsImageRenderer`) because the extension icon is a
+    `.stickersiconset`, which `UIImage(named:)` can't load.
+  - "Open in WhoeverWants" = `extensionContext.open(url)` with a copy-link
+    fallback on failure (the API is known-finicky from Messages extensions);
+    a separate always-visible Copy Link button covers the rest.
+  - The drawer label (ext `CFBundleDisplayName`) is stamped per-tier in the
+    existing display-name workflow step ("Whoever" / "Whoever α") so testers
+    with both apps can tell the two drawer entries apart.
 - **CI wiring (`ios-build.yml`), two load-bearing fixes for a second target:**
   1. The bundle-id sed must patch BOTH targets, **extension-first with anchored
      `;`** (`com\.whoeverwants\.app\.MessagesExtension;` before
@@ -4665,7 +4717,7 @@ Submitting a draft used to navigate to `/p/<newPollShortId>`. The user described
 - **Place detail modal**: Tapping a restaurant/location name opens `PlaceDetailModal` (map embed + metadata). Tapping the address opens an iOS-style action sheet (`AddressActionsModal`) with "Open in Maps" (Apple Maps), "Open in Google Maps", and "Copy Address". Don't use `geo:` URIs on iOS — they're unreliable (may open Google Earth or other random apps). Don't include the business name in maps queries — it triggers a search for multiple branches instead of navigating to the specific address.
 - **`line-clamp-2` breaks flex layouts**: Don't apply `line-clamp-*` to containers with flex children (like `OptionLabel`). The CSS treats flex items as flowing text and truncates unexpectedly. Use `overflow-hidden` instead and let inner components handle their own truncation.
 - **Voting Cutoff field is a shared component**: `components/VotingCutoffField.tsx` renders the inline colored-value dropdown + conditional custom date/time inputs used by every question category in `app/create-question/page.tsx`. Reuse it when adding new categories — don't copy-paste the JSX. The custom date/time inputs inside use ids `customDate` and `customTime`; the component assumes only one instance is rendered at a time (enforced by the mutually exclusive `category === 'time'` vs `category !== 'time'` branches).
-- **Three places to mirror new built-in labels**: `components/TypeFieldInput.tsx: BUILT_IN_TYPES`, `app/create-poll/createPollHelpers.ts: _CATEGORY_LABELS` (used by `labelForCategory`, the canonical FE label resolver), and `server/algorithms/poll_title.py: _CATEGORY_LABELS`. The two label maps must stay in lockstep — the server drives auto-generated wrapper titles; the FE drives draft preview + per-question section headers. `getQuestionSectionTitle` in `lib/questionListUtils.ts` follows this convention (special-cases `time` → `"Time"`, returns null for `yes_no` per the "yes_no is a category, not display text" rule, falls through to `getBuiltInType(category)?.label` for everything else). **yes_no is filtered out of auto-titles on both sides** (see the "'Yes/No' is a CATEGORY, not display text" bullet in the Poll Cards section) — both `draftPollPreview` (FE) and `generate_poll_title` (server) skip yes_no when composing wrapper titles. **`BUILT_IN_TYPES.label` and `_CATEGORY_LABELS` are NOT 1:1** for non-yes_no categories with formatting variants (e.g. the "Yes / No" UI label with spaces vs the historical "Yes/No" auto-title label without spaces) — when you need the auto-title-aligned label string, route through `labelForCategory`, don't read `BUILT_IN_TYPES.label` directly.
+- **Four places to mirror new built-in labels**: `components/TypeFieldInput.tsx: BUILT_IN_TYPES`, `app/create-poll/createPollHelpers.ts: _CATEGORY_LABELS` (used by `labelForCategory`, the canonical FE label resolver), `server/algorithms/poll_title.py: _CATEGORY_LABELS`, and the Swift mirror `categoryLabels` in `ios/App/MessagesExtension/MessagesViewController.swift` (drives the iMessage bubble summary's question labels via its `questionLabel`, which mirrors `getQuestionLabel`'s semantics). The two label maps must stay in lockstep — the server drives auto-generated wrapper titles; the FE drives draft preview + per-question section headers. `getQuestionSectionTitle` in `lib/questionListUtils.ts` follows this convention (special-cases `time` → `"Time"`, returns null for `yes_no` per the "yes_no is a category, not display text" rule, falls through to `getBuiltInType(category)?.label` for everything else). **yes_no is filtered out of auto-titles on both sides** (see the "'Yes/No' is a CATEGORY, not display text" bullet in the Poll Cards section) — both `draftPollPreview` (FE) and `generate_poll_title` (server) skip yes_no when composing wrapper titles. **`BUILT_IN_TYPES.label` and `_CATEGORY_LABELS` are NOT 1:1** for non-yes_no categories with formatting variants (e.g. the "Yes / No" UI label with spaces vs the historical "Yes/No" auto-title label without spaces) — when you need the auto-title-aligned label string, route through `labelForCategory`, don't read `BUILT_IN_TYPES.label` directly.
 - **Time questions need a `question_type === 'time'` short-circuit before reading `category`**, mirroring `_category_for_title` in `server/routers/polls.py`. The Time bubble in `app/create-poll/page.tsx` sets `question_type=time` but leaves `category="custom"` (the form's default). Reading the category alone gives "Custom" everywhere this matters — auto-title generation, section headers, label lookups, AND category-icon lookups (e.g. compact preview pills): `getBuiltInCategoryIcon(sp.category)` returns `undefined` for time questions because "custom" isn't a built-in, so the pill rendered iconless. The `CompactTimePreview` callsite in `app/g/[groupShortId]/GroupCardItem.tsx` hard-codes `getBuiltInCategoryIcon("time")` since it's already inside a `question_type === "time"` branch — same fix idiom. Both `getQuestionSectionTitle` (FE) and `_category_for_title` (server) implement the short-circuit; if you write a third helper that maps a question to its display label, icon, or any other category-driven attribute, it must too.
 
 ### Custom-Category Emoji (per-question icon)

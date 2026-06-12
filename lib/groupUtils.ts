@@ -46,7 +46,14 @@ export function filterOutCurrentUser(
 
 /** Query-param key on `/g/<group>` URLs that names a specific poll the page
  *  should expand and scroll to. Absent → no auto-expand, page scrolls to
- *  bottom (the draft form area). */
+ *  bottom (the draft form area).
+ *
+ *  Related reserved param (read by NATIVE code only): the iMessage extension
+ *  embeds `?wwPoll=<pollShortId>` on the `/invite/<token>` URLs it puts in
+ *  message bubbles, because the token path doesn't otherwise name the target
+ *  poll (ios/App/MessagesExtension/MessagesViewController.swift). The web
+ *  deliberately ignores it — don't add invite-page query-param validation or
+ *  forwarding that would strip/reject it, or in-flight bubbles break. */
 export const POLL_QUERY_PARAM = 'p';
 
 /** How many distinct people voted under `name`, per a `voter_name_counts` /

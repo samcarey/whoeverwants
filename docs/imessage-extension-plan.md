@@ -5,8 +5,10 @@
 > live, tappable poll bubble in the conversation transcript. Written so a future
 > session can pick it up cold.
 >
-> **Status (June 2026): research + plan only — no code yet.** Several owner
-> decisions are needed before Phase 1 (see "Open questions" at the bottom).
+> **Status (June 2026): Phase 0 (target scaffold + CI) shipped via #712;
+> Phase 1 (share-from-drawer) implemented — see the Phase 1 section for what
+> landed and the on-device verification owed.** Owner decisions are resolved
+> (see "Resolved decisions" at the bottom).
 >
 > **Verdict up front: feasible, and `MSMessageLiveLayout` is the right API** — but
 > this is the project's first *additional Xcode target* (a Messages extension is a
@@ -113,9 +115,15 @@ These shape every decision below; re-read before changing the plan.
   visiting the URL). **Private groups: the payload embeds a group invite token**
   (decision B) so the recipient auto-joins on interaction, exactly like clicking
   an `/invite/<token>` link. When sharing a poll whose group is private, the
-  extension mints (or reuses) a multi-use invite scoped to that poll
+  extension mints a multi-use invite scoped to that poll
   (`POST /api/groups/<route>/invites` with `target_poll_id`, the Phase G
-  machinery) and embeds the raw token in the `MSMessage` payload; the bubble's
+  machinery) and embeds the raw token in the `MSMessage` payload. Reuse is
+  SESSION-scoped only (an in-memory poll→token cache in the extension): the raw
+  token is hash-stored server-side and can never be re-listed, so cross-session
+  re-shares mint fresh invites — accepted; they accumulate in the group's /info
+  invites list, where each stays individually revocable (a server-side
+  get-or-mint would require storing raw tokens, breaking hash-only-storage).
+  The bubble's
   "Open in WhoeverWants" deep-link is the canonical `/invite/<token>` URL so the
   fallback path redeems too. **Caveat — redemption needs an account:**
   `POST /api/auth/invites/<token>/redeem` is `user_id`-only (401 anonymous), so a
@@ -196,25 +204,61 @@ App Groups — same caveat the host app already documents in `App.entitlements`)
   sandbox; the device half is owner-owned, consistent with every prior native
   phase (Siri, push, haptics).
 
-### Phase 1 — share a poll from the drawer (template layout, no live layout yet)
+### Phase 1 — share a poll from the drawer (SHIPPED, pending device verification)
 
-- **Prerequisite (manual, one-time):** add the App Group
-  (`group.com.whoeverwants.siri`) entitlement to the extension target + register
-  the "App Groups" capability on `com.whoeverwants.app.MessagesExtension` and
-  `com.whoeverwants.app.latest.MessagesExtension` in the Apple Developer portal.
-  Phase 0 deliberately deferred this so its build self-provisions.
-- Compact/expanded view lists the user's recent polls (the `PollEntity.fetchAll`
-  fetch via the App Group identity; signed-out/nameless → "open the app first"
-  state).
-- Tapping a poll inserts an `MSMessage` with `MSMessageTemplateLayout` (app icon
-  image, poll title as caption, `url` = canonical poll URL for public groups, or
-  a freshly-minted poll-scoped `/invite/<token>` URL for private groups per
-  decision B) into the compose field; user hits send.
-- Tapping the bubble (recipient with app) opens the extension in expanded style:
-  native poll summary + live results + "Open in WhoeverWants"
-  (`extensionContext?.open` — known to be finicky from Messages extensions;
-  budget time, fall back to "copy link" if it won't cooperate).
-- Independently shippable; already useful without any live layout.
+What landed (all in `ios/App/MessagesExtension/MessagesViewController.swift` —
+self-contained; the tier/identity helpers from AppDelegate.swift are duplicated
+there because the extension can't import App-target sources, keep in lockstep):
+- **Entitlements:** `MessagesExtension.entitlements` carries the App Group
+  (`group.com.whoeverwants.siri`), wired via `CODE_SIGN_ENTITLEMENTS` on both
+  configs (and into `add-messages-extension.rb` so the regenerator matches).
+  Same group on both tiers → NO per-tier scoping step in ios-build.yml.
+  **Prerequisite (manual, one-time):** register the "App Groups" capability +
+  assign the group on `com.whoeverwants.app.MessagesExtension` and
+  `com.whoeverwants.app.latest.MessagesExtension` in the Apple Developer portal
+  — automatic signing does NOT auto-create App Groups; without it the archive
+  fails at provisioning for the extension target.
+- **Picker:** drawer lists the user's recent polls — the same
+  `POST /api/groups/mine` fetch / title rule / newest-first sort / cap-50 as
+  Siri's `PollEntity.fetchAll`, authenticated with the App-Group-bridged
+  X-Browser-Id. No bridged identity → "Open WhoeverWants first" state (with a
+  re-check button); distinct empty + network-error states. Private/Closed
+  badges per row.
+- **Share:** tapping a poll inserts an `MSMessage` (`MSMessageTemplateLayout`:
+  runtime-rendered 👋-on-black image, poll title caption, group-name
+  subcaption) into the compose field — never auto-sends. `message.url` =
+  canonical `/g/<group>/p/<poll>` for public groups; for private groups a
+  poll-scoped multi-use invite is minted (`POST /api/groups/<route>/invites`,
+  `target_poll_id` set, no expiry — revocable from /info) and the url is
+  `/invite/<token>?wwPoll=<pollShort>` (decision B). The `wwPoll` param is the
+  extension-side payload (the token URL doesn't otherwise name the poll; the
+  web ignores it). Invite minting is admin-only server-side — a non-admin
+  member sharing a private-group poll falls back to the canonical URL and the
+  recipient hits the normal request-access wall (degraded but coherent).
+- **Bubble tap (recipient with app):** extension opens with
+  `conversation.selectedMessage` set (cold via `willBecomeActive`, warm via
+  `didSelect`) → native summary: title, group, Open/Closed, per-question live
+  results (yes/no counts, claimed counts, winner/leader, time slots in the
+  server's `_format_slot_label` shape; question labels mirror the web's
+  `getQuestionSectionTitle` rules incl. the "Yes/No is a category, not display
+  text" null), respondent count (name-multiplicity-aware, mirroring
+  `namedVoterCount`), "Open in WhoeverWants" (`extensionContext.open`,
+  copy-link fallback on failure) + an always-visible Copy Link button. Fetches
+  the identity-free `GET /api/polls/<short>` + per-question
+  `GET /api/questions/<id>/results` (concurrent) — fine for the on-demand
+  expanded view, but **Phase 2's transcript bubble should get a single tiny
+  identity-free server summary endpoint** (built from
+  `_question_decision_label` / `_format_slot_label` / `_compute_poll_voter_data`)
+  and this view should migrate onto it: multiple live bubbles re-fetching N+1
+  endpoints per render won't fly, and a server endpoint also frees the
+  visibility-blind poll read to be tightened someday without breaking
+  in-flight bubbles.
+- CI: the drawer label (extension `CFBundleDisplayName`) is stamped per-tier
+  ("Whoever" / "Whoever α") in the existing display-name step so testers with
+  both apps can tell the drawer entries apart.
+- Exit criteria: (CI) green canary build. (Owner, device) drawer picker lists
+  polls, send a public + a private poll bubble, recipient tap shows the summary
+  + results, invite-URL bubble redeems on the web fallback path.
 
 ### Phase 2 — live transcript bubble (read-only)
 
@@ -223,6 +267,12 @@ App Groups — same caveat the host app already documents in `App.entitlements`)
 - Transcript instance renders title + live result bars + status (open/closed,
   countdown), fetched on `willBecomeActive`/render with a short in-process cache
   (multiple bubbles, aggressive teardown — keep fetches coalesced + tiny).
+- **Build the identity-free server summary endpoint here** (e.g.
+  `GET /api/polls/{short}/summary` from `_question_decision_label` +
+  `_format_slot_label` + `_compute_poll_voter_data`): one tiny round-trip per
+  bubble instead of Phase 1's poll + per-question results fan-out, and migrate
+  the Phase 1 expanded summary onto it too (frees the visibility-blind
+  `GET /api/polls/{short_id}` to be tightened later without breaking bubbles).
 - `contentSizeThatFits` returns a fixed compact height; no scrolling inside the
   bubble.
 - Private-group bubble (decision B): on first render the recipient isn't a member

@@ -268,6 +268,14 @@ jobs:
           set -euo pipefail
           plutil -replace CFBundleDisplayName -string "${{ steps.bundle.outputs.display_name }}" ios/App/App/Info.plist
           plutil -extract CFBundleDisplayName raw ios/App/App/Info.plist
+          # The Messages extension's CFBundleDisplayName is the label under the
+          # app's icon in the Messages drawer. Stamp it with the same per-tier
+          # name so a tester with BOTH apps installed can tell the two drawer
+          # entries apart (the committed plist keeps "WhoeverWants" for local
+          # Xcode builds, same convention as the host app's plist).
+          plutil -replace CFBundleDisplayName -string "${{ steps.bundle.outputs.display_name }}" ios/App/MessagesExtension/Info.plist
+          plutil -extract CFBundleDisplayName raw ios/App/MessagesExtension/Info.plist
+          plutil -lint ios/App/MessagesExtension/Info.plist
           # CFBundleSpokenName: set for the canary tier (Siri voice-match fix),
           # ensure ABSENT for prod (so it falls back to "Whoever"). The committed
           # Info.plist carries no spoken name, so prod is clean by default; the
