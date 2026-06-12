@@ -1064,7 +1064,7 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 > non-members; creator-only privacy toggle on /info. F = group join
 > requests (migration 115) — signed-in non-members request access
 > via the /info-not-found page, creators approve/deny from a /info
-> "Pending requests" section, push notification fans out to every
+> "Pending Join Requests" section, push notification fans out to every
 > browser the creator's signed in on. G = invite links (migration
 > 116) — creators mint shareable URLs (`/invite/<token>`); raw token
 > + URL surfaced once at create time and persisted as sha256 hash;
@@ -1911,14 +1911,30 @@ browser_id) DO NOTHING` pattern as the auto-join paths so an
 existing membership row keeps its original `joined_at` watermark.
 
 Push fan-out: `services/push.py: fan_out_join_request(group_id,
-creator_user_id, payload)`. Walks `user_browsers WHERE user_id =
-creator_user_id` (NOT group_members) — the creator might have
-requested notifications on Device A and be looking at Device B
-when the request lands. Gated on the per-group `notify_new_poll`
-pref so muting a group still mutes join-request noise. Shares
-`_dispatch_pushes` with `fan_out_new_poll` (the send + record-
-outcomes loop is identical) — extracted on this PR so adding a
-third event type doesn't fork the loop.
+admin_user_ids, payload)`. **Targets ALL group admins (June 2026 —
+migration-142 alignment), not just the creator**: the endpoint passes
+`sorted(group_admin_user_ids(conn, group_id))`, so a promoted co-admin
+hears about requests they can act on and a group whose creator deleted
+their account still notifies surviving admins (the old creator-only
+form silently dropped the push when `creator_user_id` was NULL via the
+SET NULL FK). Walks `user_browsers WHERE user_id = ANY(admins)` (NOT
+group_members) — an admin might have requested notifications on Device
+A and be looking at Device B when the request lands. Gated PER-ADMIN
+on the per-group `notify_new_poll` pref (the apref join keys on
+`ub.user_id`, so one admin's account-keyed mute doesn't silence the
+others) — muting a group still mutes join-request noise. Empty admin
+set (admin-less group) → no-op. Shares `_dispatch_pushes` with
+`fan_out_new_poll` (the send + record-outcomes loop is identical).
+Recipient selection pinned by
+`test_join_requests.py::test_join_request_schedules_push_to_all_admins`
+(router level) +
+`test_group_mute_account.py::test_join_request_fan_out_targets_every_admin_account_aware`
+(SQL level). The payload deep-links `/g/<route>/info` — where
+`JoinRequestsSection` (the approve/deny UI) renders for admins — and
+the member-added push on approve/direct-add deep-links `/g/<route>`;
+both carry `tag` + `group_uuid` so the SW/Capacitor bridge listeners
+match on either URL form, and on native iOS the tap routes via
+`pushNotificationActionPerformed` → `navigateFn(detail.url)`.
 
 FE: `apiCreateGroupJoinRequest`, `apiListGroupJoinRequests`,
 `apiDecideGroupJoinRequest` in `lib/api/groups.ts`. The /info page
@@ -3558,6 +3574,7 @@ Per-group "New Poll" notifications via Web Push (browser / PWA / iOS PWA 16.4+) 
 - **`Notification.permission` returns 'denied' in headless Chromium.** Playwright's `permissions: ['notifications']` context grant doesn't override it. To screenshot the active-state card, inject `Object.defineProperty(Notification, 'permission', {get: () => 'granted'})` via `context.addInitScript()` BEFORE the page loads. Real-browser behavior is what users see; the override is screenshot-only.
 - **`ensurePushSubscription()` is idempotent and handles VAPID key rotation.** Before subscribing, it calls `getSubscription()` and compares the existing `applicationServerKey` to the current VAPID public key via `arrayBuffersEqual`. Mismatch → unsubscribe → fresh subscribe. Without this, a dev-DB-nuke (or VAPID key reset) leaves browsers stuck with a stale subscription that the server can no longer sign for.
 - **Capacitor APNS registration is event-based, not promise-returning.** `PushNotifications.register()` returns void; the device token arrives via `addListener('registration', ({value}) => ...)` async. Wrap in a `Promise` that resolves on `registration` and rejects on `registrationError`, with a 60s timeout — first-install on a fresh APNS connection routinely takes 20-40s for iOS to deliver the token (after that the connection is cached and it's near-instant). Bootstrap is fire-and-forget so the long wait costs nothing user-visible. Bundle ID is read from `@capacitor/app: App.getInfo()` (matches the iOS topic for the APNS push); fall back to `com.whoeverwants.app` if the lookup fails. **If `register()` reliably hits the timeout instead of firing `registration` or `registrationError`, the cause is almost certainly the AppDelegate forwarding hooks being missing** — not slow APNS. See the "@capacitor/push-notifications requires AppDelegate forwarding hooks" pitfall below for the symptom + fix.
+- **iOS foreground banners require `plugins.PushNotifications.presentationOptions` in `capacitor.config.ts`** (set June 2026 to `['badge', 'sound', 'alert']`). Without it, iOS suppresses the banner entirely while the app is FOREGROUNDED — only the JS `pushNotificationReceived` event fires, so e.g. a "Join request for ‹group›" / "Added to ‹group›" push arriving while the user was in the app was invisible. The option feeds Capacitor's `userNotificationCenter(_:willPresent:)` so foreground pushes show the banner + sound + badge like backgrounded ones. Config is baked into the native shell at `npx cap sync ios` time → **requires a fresh iOS build + TestFlight update** to take effect (the workflow's path filter triggers on `capacitor.config.ts`), and like all push behavior it can only be verified on a real device.
 - **iOS `App.entitlements` is required AND wired via `CODE_SIGN_ENTITLEMENTS` in both Debug + Release configs in `project.pbxproj`.** Capacitor's default scaffold doesn't add this file. Without `aps-environment` in entitlements, `PushNotifications.register()` fails with `no aps-environment entitlement string found`. The pbxproj edit sits next to the existing `PRODUCT_BUNDLE_IDENTIFIER` line so the workflow's bundle-id sed-patch doesn't interfere.
 - **Each bundle ID needs Push Notifications capability enabled in Apple Developer Portal → Identifiers.** This is per-bundle: `com.whoeverwants.app` AND `com.whoeverwants.app.latest`. Capability mismatch surfaces as `BadDeviceToken` from APNS at send time, not at registration.
 - **Fan-out runs via `BackgroundTasks`, not inline.** `create_poll` schedules `fan_out_new_poll(group_id, creator_browser_id, payload)` to run AFTER the create response is sent. Each subscription's send is wrapped in try/except — a slow or failing push service can't slow the creator's API response, and 410/404 responses delete the dead subscription row inline. `pywebpush` is synchronous (requests under the hood); httpx HTTP/2 is used for APNS. For a typical group with <20 members this fan-out is well under a second; for larger groups, switch to a thread pool inside `fan_out_new_poll`.

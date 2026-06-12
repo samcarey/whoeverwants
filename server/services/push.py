@@ -604,39 +604,46 @@ def fan_out_new_poll(group_id: str, creator_browser_id: str | None, payload: dic
 
 def fan_out_join_request(
     group_id: str,
-    creator_user_id: str,
+    admin_user_ids: list[str],
     payload: dict,
 ) -> None:
     """Phase F: send a 'someone wants to join your group' push to every
-    browser the creator is signed in on, subject to the per-group
+    browser each group ADMIN is signed in on, subject to the per-group
     notification preference. Same safety contract as `fan_out_new_poll`:
     every error caught, logged, and swallowed so a failing push service
     can't block the request response.
 
-    Recipients are derived from `user_browsers WHERE user_id = creator`
-    (one per linked browser), filtered down to those with active push
-    subscriptions, and gated on the same `notify_new_poll` pref the
-    new-poll path uses — for v1 the per-group pref is the single signal
-    that the creator wants to hear about anything happening on the
-    group. Phase I can add a dedicated `notify_join_request` column if
-    we want to surface join requests separately from new-poll noise.
+    Migration 142 made admins (not the vestigial `creator_user_id`) the
+    people who approve/deny join requests, so they're the recipient set
+    — a promoted co-admin hears about requests they can act on, and a
+    group whose creator deleted their account still notifies its
+    surviving admins. Recipients are derived from `user_browsers WHERE
+    user_id = ANY(admins)` (one per linked browser, per admin), filtered
+    down to those with active push subscriptions, and gated on the same
+    `notify_new_poll` pref the new-poll path uses — for v1 the per-group
+    pref is the single signal that an admin wants to hear about anything
+    happening on the group. Phase I can add a dedicated
+    `notify_join_request` column if we want to surface join requests
+    separately from new-poll noise.
     """
     try:
+        if not admin_user_ids:
+            return
         with get_db() as conn:
             recipients = conn.execute(
                 """
                 SELECT DISTINCT ub.browser_id::text AS browser_id
                   FROM user_browsers ub
                   LEFT JOIN group_notification_preferences apref
-                    ON apref.user_id = %(uid)s::uuid
+                    ON apref.user_id = ub.user_id
                    AND apref.group_id = %(gid)s::uuid
                   LEFT JOIN group_notification_preferences bpref
                     ON bpref.browser_id = ub.browser_id
                    AND bpref.group_id = %(gid)s::uuid
-                 WHERE ub.user_id = %(uid)s::uuid
+                 WHERE ub.user_id = ANY(%(uids)s::uuid[])
                    AND COALESCE(apref.notify_new_poll, bpref.notify_new_poll, TRUE) = TRUE
                 """,
-                {"gid": group_id, "uid": creator_user_id},
+                {"gid": group_id, "uids": list(admin_user_ids)},
             ).fetchall()
             browser_ids = [r["browser_id"] for r in recipients]
             if not browser_ids:

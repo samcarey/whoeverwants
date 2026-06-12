@@ -35,6 +35,20 @@ const config: CapacitorConfig = {
     contentInset: 'never',
     backgroundColor: '#ffffff',
   },
+  plugins: {
+    // Without presentationOptions, iOS suppresses push banners entirely
+    // while the app is FOREGROUNDED — only the JS `pushNotificationReceived`
+    // event fires, so e.g. a "Join request for <group>" or "Added to
+    // <group>" push arriving while the user is in the app was invisible.
+    // Listing alert/sound/badge makes Capacitor's
+    // `userNotificationCenter(_:willPresent:)` show the banner (and play
+    // the sound / stamp the badge) in the foreground too, matching the
+    // backgrounded behavior. Requires a fresh iOS build to take effect
+    // (config is baked into the native shell at `npx cap sync ios` time).
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
+  },
 };
 
 export default config;
