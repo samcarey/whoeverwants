@@ -44,6 +44,7 @@ import {
   apiRevokeGroupInvite,
 } from "@/lib/api";
 import type { GroupInvite } from "@/lib/api";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { haptic } from "@/lib/haptics";
 import {
   peekInviteCreation,
@@ -70,10 +71,6 @@ const errorMessage = (e: unknown, fallback: string): string =>
 // still visible after the page transition that often precedes it.
 const MANUAL_COPY_FLASH_MS = 1800;
 const AUTO_COPY_FLASH_MS = 4000;
-// A stashed creation older than this (a late /info revisit within the
-// stash TTL) keeps its Copy button but doesn't re-flash "Copied!" or
-// re-surface a stale mint error.
-const STASH_RECENCY_MS = 8000;
 
 export default function InviteLinksSection({
   groupId,
@@ -94,8 +91,9 @@ export default function InviteLinksSection({
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Set the "Copied!" indicator on a row, clearing after `ms` so the user
-  // can tell repeated copies registered. useCallback([]) so the list-load
-  // effect (which adopts a stashed creation) can reference it without a dep.
+  // can tell repeated copies registered. useCallback([]) keeps its identity
+  // stable, so its presence in the list-load effect's deps never re-fires
+  // the fetch.
   const flashCopied = useCallback((inviteId: string, ms: number) => {
     setCopiedId(inviteId);
     window.setTimeout(() => {
@@ -115,13 +113,13 @@ export default function InviteLinksSection({
     // the in-gesture clipboard write) BEFORE sliding here; adopt the stashed
     // creation so this view shows the fresh row with its Copy button +
     // "Copied!" state. Non-consuming peek — the slide-overlay handoff mounts
-    // this section twice (overlay + real route) and both must agree.
+    // this section twice (overlay + real route) and both must agree. The
+    // stash's own short TTL guarantees anything peeked is a just-now tap,
+    // so adoption flashes/errors unconditionally.
     const pending = peekInviteCreation(groupId);
-    const pendingIsRecent =
-      pending !== null && Date.now() - pending.startedAt < STASH_RECENCY_MS;
     Promise.all([
       apiListGroupInvites(groupId),
-      pending ? pending.invitePromise.catch(() => null) : Promise.resolve(null),
+      pending ? pending.invitePromise.catch(() => null) : null,
     ])
       .then(([data, minted]) => {
         if (cancelled) return;
@@ -132,11 +130,11 @@ export default function InviteLinksSection({
             ? [minted, ...data]
             : data;
         setInvites(merged);
-        if (minted?.url) {
-          const url = minted.url;
+        const url = minted?.url;
+        if (minted && url) {
           setFreshUrls((prev) => ({ ...prev, [minted.id]: url }));
         }
-        if (pending && pendingIsRecent) {
+        if (pending) {
           if (!minted) {
             setError("Failed to create invite");
           } else {
@@ -175,8 +173,9 @@ export default function InviteLinksSection({
     pending.invitePromise
       .then((invite) => {
         setInvites((prev) => (prev ? [invite, ...prev] : [invite]));
-        if (invite.url) {
-          setFreshUrls((prev) => ({ ...prev, [invite.id]: invite.url! }));
+        const url = invite.url;
+        if (url) {
+          setFreshUrls((prev) => ({ ...prev, [invite.id]: url }));
         }
         pending.copiedPromise.then((ok) => {
           if (ok) flashCopied(invite.id, AUTO_COPY_FLASH_MS);
@@ -239,11 +238,10 @@ export default function InviteLinksSection({
 
   const copyUrl = async (invite: GroupInvite, url: string) => {
     haptic.light();
-    try {
-      await navigator.clipboard.writeText(url);
+    if (await copyTextToClipboard(url)) {
       flashCopied(invite.id, MANUAL_COPY_FLASH_MS);
-    } catch {
-      // Last-resort fallback if Clipboard API is unavailable
+    } else {
+      // Last-resort fallback if every clipboard path failed
       // (older WebViews, permissions blocked, etc.).
       window.prompt("Copy this URL:", url);
     }

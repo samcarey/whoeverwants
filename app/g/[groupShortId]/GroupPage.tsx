@@ -42,7 +42,7 @@ import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/vot
 import { computePollUnread, useUnreadReactivity } from "@/lib/unread";
 import { classifyPollTab, type PollTab } from "@/lib/followState";
 import { usePrefetch } from "@/lib/prefetch";
-import { slideToGroupInfo, slideToGroupInviteMembers, slideToGroupScheduled, useIsSlideOverlayGroupActive, SLIDE_DURATION_MS } from "@/lib/slideOverlay";
+import { groupInviteMembersSlideDetail, slideToGroupInfo, slideToGroupScheduled, useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import { startInviteCreation, stashInviteCreation } from "@/lib/inviteCreation";
 import { getRememberedScroll, groupScrollKey, rememberCurrentScroll } from "@/lib/scrollMemory";
 import { isScrollRestoring, setScrollRestoring } from "@/lib/scrollRestoreState";
@@ -81,6 +81,12 @@ const SECTION_DEFS: { tab: PollTab; label: string }[] = [
 // don't collide. Used in the .map() loop's key + virtualization mountedKeys.
 const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
   q.poll_id ?? `solo-${q.id}`;
+
+// Shared layout half of the two solo-group CTA pills (Add People / Create
+// Invite Link); each call site appends its own color literal so Tailwind's
+// JIT still sees full class strings.
+const SOLO_CTA_CLASS_BASE =
+  'flex-1 max-w-[13rem] h-9 rounded-full active:scale-[0.98] flex items-center justify-center gap-1.5 transition-transform';
 
 // Scroll-restore (back-nav) re-application window. Measured from the first
 // time the pin actually runs, not from when the layoutEffect arms it — the
@@ -292,20 +298,30 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     group.participantNames.length === 0 &&
     group.anonymousRespondentCount === 0;
   const [soloAdmin, setSoloAdmin] = useState(false);
+  // This effect mirrors the /info roster-refresh wiring
+  // (app/g/[groupShortId]/info/page.tsx) — keep the two in lockstep;
+  // extract a shared useGroupRoster hook if a 3rd copy appears.
   useEffect(() => {
     if (!maybeSoloGroup) {
       setSoloAdmin(false);
       return;
     }
     let cancelled = false;
+    // Once a roster proves the group non-solo, the CTAs can't come back
+    // (membership only grows from this page's perspective), so the
+    // visibility refetch quiesces — otherwise every tab refocus would
+    // refire the roster GET forever on quiet-but-not-solo groups (the
+    // participant-names pre-filter can't see members who never voted).
+    let knownNotSolo = false;
     const load = () => {
       apiGetGroupMembers(groupId)
         .then((roster) => {
           if (cancelled) return;
-          setSoloAdmin(
+          const solo =
             roster.viewer_is_admin &&
-              roster.members.length + roster.anonymous_count <= 1,
-          );
+            roster.members.length + roster.anonymous_count <= 1;
+          knownNotSolo = !solo;
+          setSoloAdmin(solo);
         })
         .catch(() => {
           if (!cancelled) setSoloAdmin(false);
@@ -321,7 +337,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     };
     // Someone may redeem the invite link while this tab is backgrounded.
     const onVisible = () => {
-      if (document.visibilityState === "visible") load();
+      if (!knownNotSolo && document.visibilityState === "visible") load();
     };
     window.addEventListener(GROUP_MEMBERS_CHANGED_EVENT, onMembersChanged);
     document.addEventListener("visibilitychange", onVisible);
@@ -337,15 +353,13 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     rememberCurrentScroll(groupScrollKey(groupId));
     // "Push the Add people button on /info for them": slide to /info first so
     // the history/back chain matches the manual path (invite-members' back
-    // returns to /info), then chain into the invite-members slide once the
-    // first slide lands. The overlay host is built for consecutive events —
-    // it clears the pending unmount + replaces its state, and slide 1's
-    // router.push has committed /info underneath by then.
-    slideToGroupInfo({ groupId });
-    window.setTimeout(
-      () => slideToGroupInviteMembers({ groupId }),
-      SLIDE_DURATION_MS + 80,
-    );
+    // returns to /info), chaining into the invite-members slide once the
+    // first slide lands. The overlay host sequences the chain on the real
+    // router commit (see SlideToGroupDetail.chainTo).
+    slideToGroupInfo({
+      groupId,
+      chainTo: groupInviteMembersSlideDetail({ groupId }),
+    });
   };
 
   const handleEmptyStateCreateInvite = () => {
@@ -1948,7 +1962,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
             <button
               type="button"
               onClick={handleEmptyStateAddPeople}
-              className="flex-1 max-w-[13rem] h-9 rounded-full bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 active:scale-[0.98] flex items-center justify-center gap-1.5 transition-transform"
+              className={`${SOLO_CTA_CLASS_BASE} bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300`}
               aria-label="Add people to this group"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
@@ -1959,7 +1973,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
             <button
               type="button"
               onClick={handleEmptyStateCreateInvite}
-              className="flex-1 max-w-[13rem] h-9 rounded-full bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 active:scale-[0.98] flex items-center justify-center gap-1.5 transition-transform"
+              className={`${SOLO_CTA_CLASS_BASE} bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300`}
               aria-label="Create an invite link"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>

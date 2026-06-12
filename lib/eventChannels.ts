@@ -148,6 +148,14 @@ export interface SlideToGroupDetail {
    *  naturally (sidesteps the WebKit contain:strict +
    *  position-fixed-scrolls-with-content interaction). */
   overlayCardsOffset?: number;
+  /** Follow-up slide to play once THIS slide has landed (URL flipped +
+   *  slide duration elapsed). The overlay host dispatches it from its
+   *  unmount timer's url-matched branch — never from the safety-timeout
+   *  branch — so the chain is sequenced on the real router commit instead
+   *  of a caller-side duration guess. Used by the solo-group "Add People"
+   *  CTA to play group → /info → /invite-members so the back chain matches
+   *  the manual path (invite-members' back returns to /info). */
+  chainTo?: SlideToGroupDetail;
 }
 
 /** Fired by GroupContent when a swipe-back gesture is recognized AND when it

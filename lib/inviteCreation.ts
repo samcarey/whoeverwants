@@ -2,19 +2,15 @@
  * Invite-link creation with in-gesture auto-copy.
  *
  * Every "create invite link" affordance auto-copies the freshly-minted URL
- * to the clipboard and surfaces a "Copied!" state. The wrinkle is iOS
- * Safari: `navigator.clipboard.writeText` is rejected when it runs outside
- * the tap's user-activation window — and the URL only exists once the mint
- * API resolves, which is always after that window. `ClipboardItem` accepts
- * promise-valued entries for exactly this case: the write is REGISTERED
- * synchronously inside the tap handler, and the browser fills in the text
- * when the promise resolves. `copyTextFromPromise` tries that path first
- * and falls back to an awaited `writeText` (fine on Chromium/Android).
+ * to the clipboard and surfaces a "Copied!" state. The clipboard mechanics
+ * live in `lib/clipboard.ts: copyTextFromPromise` (the write must be
+ * registered synchronously inside the tap for iOS Safari's user-activation
+ * rules; see that helper's doc).
  *
  * `startInviteCreation` bundles the mint + copy so both callers share one
  * implementation:
  *   - InviteLinksSection's "+" button (mint in place on /info).
- *   - The group page's "Create Invite Link" empty-state CTA, which mints
+ *   - The group page's "Create Invite Link" solo-group CTA, which mints
  *     in the tap, STASHES the in-flight creation, and slides to /info —
  *     where InviteLinksSection adopts the stash and renders the fresh row
  *     in its "Copied!" state. The stash peek is non-consuming because the
@@ -24,6 +20,7 @@
 
 import { apiCreateGroupInvite } from "@/lib/api";
 import type { GroupInvite } from "@/lib/api";
+import { copyTextFromPromise } from "@/lib/clipboard";
 
 export interface PendingInviteCreation {
   invitePromise: Promise<GroupInvite>;
@@ -32,40 +29,6 @@ export interface PendingInviteCreation {
    *  rejects. */
   copiedPromise: Promise<boolean>;
   startedAt: number;
-}
-
-/** Best-effort clipboard write fed by a promise. MUST be called
- *  synchronously inside a tap/click handler for the iOS path to work. */
-export function copyTextFromPromise(
-  textPromise: Promise<string>,
-): Promise<boolean> {
-  const fallback = async (): Promise<boolean> => {
-    try {
-      const text = await textPromise;
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  try {
-    if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
-      const item = new ClipboardItem({
-        "text/plain": textPromise.then(
-          (text) => new Blob([text], { type: "text/plain" }),
-        ),
-      });
-      // A rejected write (no permission, or the text promise itself failed)
-      // falls through to the awaited-writeText path, which either succeeds
-      // (non-iOS engines without the promise-entry support) or resolves
-      // false.
-      return navigator.clipboard.write([item]).then(() => true, fallback);
-    }
-  } catch {
-    // ClipboardItem constructor rejected the promise-valued entry shape
-    // (older engines) — fall through.
-  }
-  return fallback();
 }
 
 /** Mint a multi-use invite for the group and auto-copy its URL. Call from
@@ -87,10 +50,11 @@ export function startInviteCreation(groupId: string): PendingInviteCreation {
 
 // --- Cross-page stash (group-page CTA → /info handoff) ---
 
-// Generous TTL so the fresh URL's Copy button survives an /info remount
-// within the session window; the "Copied!" flash itself is additionally
-// gated on recency by the consumer so it doesn't re-fire on late visits.
-const STASH_TTL_MS = 60_000;
+// Sized to survive the slide + the real route's mount/list-load (even on a
+// slow dev-server route compile), and nothing more: a later /info visit
+// treats the invite like any other existing one (no URL, no Copy button),
+// matching the "raw URL is shown once at create time" security model.
+const STASH_TTL_MS = 8_000;
 const stash = new Map<string, PendingInviteCreation>();
 
 export function stashInviteCreation(
@@ -98,6 +62,12 @@ export function stashInviteCreation(
   pending: PendingInviteCreation,
 ): void {
   stash.set(groupId, pending);
+  // Hard eviction (identity-guarded so a re-stash isn't clobbered): a tap
+  // that never reaches /info would otherwise retain the resolved invite —
+  // including its raw URL — for the page lifetime.
+  window.setTimeout(() => {
+    if (stash.get(groupId) === pending) stash.delete(groupId);
+  }, STASH_TTL_MS);
 }
 
 /** Non-consuming peek — see the module comment for why (double-mount). */
