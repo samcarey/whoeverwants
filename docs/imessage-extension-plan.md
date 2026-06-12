@@ -292,6 +292,10 @@ changes — the bubble is pure code in the existing extension target):
   computed at render — no ticking timer in the transcript, per Apple's
   guidance). `contentSizeThatFits` returns a fixed 148pt; >2 questions
   collapse into "+N more" so the fixed height never clips mid-row.
+  **Device-found pitfall:** Messages overlays the extension's APP ICON on
+  the bubble's top-left corner (OS-drawn, immovable, invisible in mockups)
+  — the first line indents `iconBadgeClearance = 44` clear of it; lower
+  rows aren't overlapped and keep the full width.
 - **`SummaryStore`** — process-level cache (20s TTL) + in-flight coalescing
   shared by every transcript instance AND the Phase 1 expanded summary view
   (which migrated onto the `/summary` endpoint, retiring its
