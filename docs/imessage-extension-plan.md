@@ -110,9 +110,22 @@ These shape every decision below; re-read before changing the plan.
 - **Membership on the recipient side falls out of existing semantics.** A
   recipient interacting with the bubble calls the visibility-aware group/poll
   endpoints with their own browser id: public groups auto-join on read (same as
-  visiting the URL), private groups 404. v1 renders private/404 as a locked
-  "Open in WhoeverWants to request access" state. The closed-before-join filter
-  applies as usual.
+  visiting the URL). **Private groups: the payload embeds a group invite token**
+  (decision B) so the recipient auto-joins on interaction, exactly like clicking
+  an `/invite/<token>` link. When sharing a poll whose group is private, the
+  extension mints (or reuses) a multi-use invite scoped to that poll
+  (`POST /api/groups/<route>/invites` with `target_poll_id`, the Phase G
+  machinery) and embeds the raw token in the `MSMessage` payload; the bubble's
+  "Open in WhoeverWants" deep-link is the canonical `/invite/<token>` URL so the
+  fallback path redeems too. **Caveat — redemption needs an account:**
+  `POST /api/auth/invites/<token>/redeem` is `user_id`-only (401 anonymous), so a
+  recipient who installed but never opened the app has no bridged identity yet;
+  those fall through to the "open the app first" state, then redeem on next
+  interaction. The closed-before-join filter applies as usual, but
+  `redeem_invite` backdates `joined_at` to the invite's creation time, so a poll
+  that closed between share and open stays visible (existing behavior). Every
+  bubble is now a capability token — acceptable, mirrors how an invite link
+  already works, and the invite is poll-scoped + revocable.
 - **Vote submission goes through the atomic batch endpoint**
   (`POST /api/polls/{id}/votes`) like every other surface. Inline transcript
   voting is realistic for **yes_no** (two taps) and **limited_supply**
@@ -124,9 +137,11 @@ These shape every decision below; re-read before changing the plan.
 
 ## Recommended architecture (one paragraph)
 
-The MSMessage payload (`MSMessage.url` components) carries only the canonical
-poll URL (`/g/<groupShort>/p/<pollShort>`) + poll uuid; it doubles as the
-macOS/web fallback link. The transcript live layout is a small native SwiftUI
+The MSMessage payload (`MSMessage.url` components) carries the poll uuid + a
+deep-link URL that doubles as the macOS/web fallback: the canonical
+`/g/<groupShort>/p/<pollShort>` for public groups, or `/invite/<token>` for
+private groups (decision B — the token auto-joins the recipient). The transcript
+live layout is a small native SwiftUI
 view: poll title + compact live results + (for yes_no/limited_supply) tap-to-vote
 buttons, all fetched/POSTed against the per-tier API with the App-Group-bridged
 identity. The server stays the single source of truth; the bubble is a live
@@ -155,8 +170,9 @@ Messages drawer.
   fetch via the App Group identity; signed-out/nameless → "open the app first"
   state).
 - Tapping a poll inserts an `MSMessage` with `MSMessageTemplateLayout` (app icon
-  image, poll title as caption, `url` = canonical poll URL) into the compose
-  field; user hits send.
+  image, poll title as caption, `url` = canonical poll URL for public groups, or
+  a freshly-minted poll-scoped `/invite/<token>` URL for private groups per
+  decision B) into the compose field; user hits send.
 - Tapping the bubble (recipient with app) opens the extension in expanded style:
   native poll summary + live results + "Open in WhoeverWants"
   (`extensionContext?.open` — known to be finicky from Messages extensions;
@@ -172,6 +188,10 @@ Messages drawer.
   (multiple bubbles, aggressive teardown — keep fetches coalesced + tiny).
 - `contentSizeThatFits` returns a fixed compact height; no scrolling inside the
   bubble.
+- Private-group bubble (decision B): on first render the recipient isn't a member
+  yet, so the visibility-aware fetch 404s — redeem the embedded invite token
+  (when an identity is bridged) before fetching, then render normally. No identity
+  → "Open in WhoeverWants" state until they open the app once.
 
 ### Phase 3 — inline voting in the transcript
 
@@ -192,26 +212,31 @@ Messages drawer.
   expanded style loading the poll detail page with the session injected via
   `WKUserScript` (localStorage seed from the App Group identity) — prototype
   before committing; memory + auth-injection complexity are both real.
-- Compose-a-new-poll inside Messages: expanded view text field →
-  `PollTextParser.decide` → headless create (the `QuickPollService` flow) →
-  insert the bubble for the fresh poll. "Create and share a poll without leaving
-  the conversation" is arguably the killer demo of the whole feature.
+- **Compose-a-new-poll inside Messages (decision D — pursue it).** Expanded view
+  text field → `PollTextParser.decide` → headless create (the `QuickPollService`
+  flow) → insert the bubble for the fresh poll. "Create and share a poll without
+  leaving the conversation" is the killer demo. **Constraint (owner): the
+  in-app create path must stay exposed** — the Messages composer is purely
+  additive, never the only way to make a poll. In practice the extension's text
+  field only handles the parser-headless-creatable types (yes_no, options,
+  category-deep-link); anything richer ("Open in WhoeverWants to finish") routes
+  to the in-app create flow, same fork as Siri Phase 3's `.category` deep link.
 
-## Open questions (owner)
+## Resolved decisions (owner, June 2026)
 
-A. **Is the degraded no-app fallback acceptable?** Recipients without the app get
-   an App Store prompt instead of the website. If most invitees are app-less,
-   plain links remain the better share; the bubble then mainly serves
-   app-having friend groups. (Recommendation: yes, ship it as additive —
-   drawer-only, in-app share unchanged.)
-B. **Private groups in the bubble:** locked "request access" state (recommended,
-   matches web semantics) vs. embedding an invite token in the payload (auto-join
-   like invite links — more magical, but turns every bubble into a capability
-   token; needs the Phase G invite machinery per message).
-C. **Which poll types vote inline in v1?** Recommendation: yes_no +
-   limited_supply only; everything else read-only + open-in-app.
-D. **Does Phase 4 compose-in-Messages matter enough to pull forward?** It reuses
-   the Siri headless-create stack nearly verbatim.
+A. **Ship the additive bubble despite the degraded no-app fallback** — "worth
+   trying." Recipients without the app get an App Store prompt instead of the
+   website; accepted because the in-app share button still emits plain URLs, so
+   the bubble is drawer-only and additive.
+B. **Embed an invite token in the payload for private groups** (NOT a locked
+   "request access" state) — the recipient auto-joins like an invite link. Each
+   bubble becomes a poll-scoped, revocable capability token; see the membership
+   bullet above for the redemption-needs-an-account caveat.
+C. **v1 inline voting = yes_no + limited_supply only.** Everything else is
+   read-only in the bubble + "Open in app."
+D. **Pursue Phase 4 compose-in-Messages**, with the standing constraint that the
+   in-app create path remains exposed (the composer is additive, never
+   exclusive).
 
 ## Sources
 
