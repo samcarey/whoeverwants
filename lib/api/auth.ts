@@ -274,10 +274,17 @@ export async function apiGetMe(): Promise<SessionUser | null> {
     return user;
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
-      // fetchWithBase already called clearSession when a bearer token
-      // was attached; this branch covers the no-token case AND keeps
-      // the local cache in sync.
-      clearSession();
+      // A 401 with a token attached = the server revoked the session;
+      // clear local state (fetchWithBase already did when the token was
+      // attached, but clearSession is idempotent + keeps the cache in
+      // sync). With NO token, the 401 just means "you're anonymous" —
+      // there's nothing to clear, and calling clearSession() would fire
+      // its invalidateAccessibleQuestions() side effect, wiping the home
+      // groups cache. That made groups vanish (then re-fetch) after a
+      // visit to ANY page that calls apiGetMe (e.g. /settings) — surfaced
+      // by the settings→home swipe-back, where the backdrop + the real
+      // route both read the now-empty cache.
+      if (getSessionToken()) clearSession();
       return null;
     }
     throw err;
