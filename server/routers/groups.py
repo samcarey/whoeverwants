@@ -1307,20 +1307,23 @@ def create_group_join_request(
         ).fetchone()
         requester_email = email_row["email"] if email_row else None
 
-        # Read the creator for the push fan-out. Anonymous-created
-        # groups have NULL creator_user_id; skip the push in that case.
-        meta = get_group_metadata(conn, group_id)
-        creator_user_id = meta["creator_user_id"] if meta else None
+        # Read the ADMIN set for the push fan-out. Migration 142: admins —
+        # not the vestigial `creator_user_id` — are who approve/deny join
+        # requests, so every admin (creator + promoted co-admins) gets the
+        # push, and a group whose creator deleted their account still
+        # notifies its surviving admins. An admin-less group has nobody who
+        # could act on the request, so the push is skipped.
+        admin_ids = sorted(group_admin_user_ids(conn, group_id))
         route_for_url, group_phrase, _ = _build_group_push_context(conn, group_id)
 
     # Fire-and-forget push fan-out. Runs only on a brand-new request;
     # a repeat-ping for an already-pending request would just noise the
-    # creator on every "polite re-request" tap.
-    if is_new and creator_user_id:
+    # admins on every "polite re-request" tap.
+    if is_new and admin_ids:
         # Line 1 names the event + group ("Join request for <Group>"); line 2
         # is who's asking. Body stays generic for passkey-only requesters
         # (no email) so they don't surface as a literal "null wants to join".
-        # The /info page has full details once the creator taps in.
+        # The /info page has full details once an admin taps in.
         body_text = (
             f"{requester_email} wants to join"
             if requester_email
@@ -1329,7 +1332,7 @@ def create_group_join_request(
         background_tasks.add_task(
             fan_out_join_request,
             group_id,
-            creator_user_id,
+            admin_ids,
             {
                 "title": f"Join request for {group_phrase}",
                 "body": body_text,

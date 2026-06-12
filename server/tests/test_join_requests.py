@@ -776,6 +776,99 @@ def test_approve_schedules_member_added_push(
     assert captured == []
 
 
+def test_join_request_schedules_push_to_all_admins(
+    client, creator_browser, requester_browser, monkeypatch
+):
+    """A brand-new join request must schedule ONE `fan_out_join_request`
+    targeting EVERY group admin (migration 142: admins — not the
+    vestigial creator_user_id — approve/deny, so a promoted co-admin
+    must hear about requests they can act on). Payload must carry the
+    `join-request-*` tag + an `/info` deep link (where the pending-
+    requests section lives) + `group_uuid` so the SW/Capacitor bridge
+    listeners can match regardless of the viewer's URL form. A repeat
+    request (already_pending) must NOT re-fire.
+
+    Monkeypatches the helper at its router-side import site — push
+    DELIVERY needs a real subscription; recipient selection is the
+    testable contract.
+    """
+    import routers.groups as groups_router
+
+    captured: list[dict] = []
+
+    def fake_fan_out(group_id, admin_user_ids, payload):
+        captured.append(
+            {
+                "group_id": group_id,
+                "admin_user_ids": list(admin_user_ids),
+                "payload": payload,
+            }
+        )
+
+    monkeypatch.setattr(groups_router, "fan_out_join_request", fake_fan_out)
+
+    ctoken, creator_uid, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+
+    # Add a second member via invite, then promote them to admin so the
+    # group has TWO admins.
+    invite = client.post(
+        f"/api/groups/{group['id']}/invites",
+        json={"mode": "single"},
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert invite.status_code == 201, invite.text
+    coadmin_browser = str(uuid.uuid4())
+    atoken, coadmin_uid, _ = _sign_in(client, coadmin_browser)
+    redeemed = client.post(
+        f"/api/auth/invites/{invite.json()['token']}/redeem",
+        headers=_bearer_headers(coadmin_browser, atoken),
+    )
+    assert redeemed.status_code == 200, redeemed.text
+    promoted = client.post(
+        f"/api/groups/{group['id']}/admins",
+        json={"user_id": coadmin_uid},
+        headers=_bearer_headers(creator_browser, ctoken),
+    )
+    assert promoted.status_code == 200, promoted.text
+
+    rtoken, _, requester_email = _sign_in(client, requester_browser)
+    create = client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": "let me in"},
+        headers=_bearer_headers(requester_browser, rtoken),
+    )
+    assert create.status_code == 200, create.text
+    assert create.json()["status"] == "pending"
+    request_id = create.json()["request"]["id"]
+
+    assert len(captured) == 1, captured
+    call = captured[0]
+    assert call["group_id"] == group["id"]
+    # BOTH admins — the creator and the promoted co-admin — are targeted.
+    assert set(call["admin_user_ids"]) == {creator_uid, coadmin_uid}
+    payload = call["payload"]
+    assert payload["tag"] == f"join-request-{request_id}"
+    # Deep link lands on the group /info page, where JoinRequestsSection
+    # (the approve/deny UI) renders for admins.
+    assert payload["url"].startswith("/g/")
+    assert payload["url"].endswith("/info")
+    assert payload["group_id"]
+    assert payload["group_uuid"] == group["id"]
+    assert requester_email in payload["body"]
+
+    # Repeat request → already_pending → no second push.
+    captured.clear()
+    again = client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": "still me"},
+        headers=_bearer_headers(requester_browser, rtoken),
+    )
+    assert again.status_code == 200
+    assert again.json()["status"] == "already_pending"
+    assert captured == []
+
+
 def test_deny_does_not_grant_membership_and_allows_re_request(
     client, creator_browser, requester_browser
 ):

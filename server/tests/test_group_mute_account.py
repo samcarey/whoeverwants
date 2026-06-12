@@ -120,3 +120,56 @@ def test_account_less_mute_is_per_browser(client, monkeypatch):
     )
     assert resp.status_code == 200, resp.text
     assert _recipients(monkeypatch, group_id, creator) == [bid_b]
+
+
+def _join_request_recipients(monkeypatch, group_id, admin_user_ids):
+    """Run fan_out_join_request, capturing the browser_ids it would push to."""
+    captured = {}
+
+    def fake_dispatch(subscriptions, payload, vapid):
+        captured["browser_ids"] = sorted(s["browser_id"] for s in subscriptions)
+
+    monkeypatch.setattr(services.push, "_dispatch_pushes", fake_dispatch)
+    services.push.fan_out_join_request(group_id, admin_user_ids, {"title": "x"})
+    return captured.get("browser_ids", [])
+
+
+def test_join_request_fan_out_targets_every_admin_account_aware(
+    client, monkeypatch
+):
+    """`fan_out_join_request` (migration-142 form: a LIST of admin user_ids)
+    must reach every browser of every admin, and an account-keyed mute on one
+    admin must silence ALL of that admin's devices without touching the
+    other admin's."""
+    email_a = f"jr-admin-a-{uuid.uuid4().hex[:8]}@example.com"
+    email_b = f"jr-admin-b-{uuid.uuid4().hex[:8]}@example.com"
+    # Admin A is signed in on two devices; admin B on one.
+    bid_a1, bid_a2, bid_b = (str(uuid.uuid4()) for _ in range(3))
+    token_a, uid_a = _sign_in(client, bid_a1, email_a)
+    _sign_in(client, bid_a2, email_a)
+    _, uid_b = _sign_in(client, bid_b, email_b)
+
+    poll = create_poll(client, browser_id=str(uuid.uuid4()))
+    group_id, route = poll["group_id"], poll["group_short_id"]
+    for bid in (bid_a1, bid_a2, bid_b):
+        _add_member_and_sub(group_id, bid)
+
+    # Both admins, default pref ON → every linked browser is a recipient.
+    assert _join_request_recipients(monkeypatch, group_id, [uid_a, uid_b]) == (
+        sorted([bid_a1, bid_a2, bid_b])
+    )
+
+    # Admin A mutes the group (account-keyed) → both of A's devices drop;
+    # B still gets it.
+    resp = client.put(
+        f"/api/notifications/groups/{route}",
+        json={"notify_new_poll": False},
+        headers=_bearer(bid_a1, token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    assert _join_request_recipients(
+        monkeypatch, group_id, [uid_a, uid_b]
+    ) == [bid_b]
+
+    # Empty admin set (admin-less group) → no-op.
+    assert _join_request_recipients(monkeypatch, group_id, []) == []
