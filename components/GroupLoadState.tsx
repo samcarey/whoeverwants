@@ -228,12 +228,6 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
               ? "Request access to view this group."
               : "This group may not exist or you don’t have access."}
           </p>
-          <button
-            onClick={() => router.push("/")}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-          >
-            Go Home
-          </button>
           {canRequest && !requestSent && (
             <div className="mt-4">
               {/* Optional note shown to the group's admins next to the
@@ -294,6 +288,14 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
               {status.message}
             </p>
           )}
+          <div className="mt-6">
+            <button
+              onClick={() => router.push("/")}
+              className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Go Home
+            </button>
+          </div>
         </div>
       </div>
       <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
