@@ -35,7 +35,7 @@ import {
   invalidateGroupSummary,
   invalidatePoll,
 } from "@/lib/questionCache";
-import { ApiError, groupFetch, toPoll, toQuestionResults } from "./_internal";
+import { ApiError, coalesced, groupFetch, toPoll, toQuestionResults } from "./_internal";
 
 function toGroupSummary(data: any): GroupSummary {
   return {
@@ -689,37 +689,43 @@ export interface GroupRoster {
  *  rolled-up anonymous count. Distinct from `Group.participantNames`, which
  *  only reflects poll creators/voters (so a just-approved member who hasn't
  *  voted yet would be missing). Members-only for private groups (404 maps to
- *  an empty roster). */
+ *  an empty roster). In-flight coalesced: the slide-overlay handoff mounts
+ *  GroupContent (and /info) twice in quick succession, and both instances
+ *  fetch the roster — without coalescing every navigation would fire two
+ *  identical /members GETs. */
+const groupMembersInFlight = new Map<string, Promise<GroupRoster>>();
 export async function apiGetGroupMembers(
   routeId: string,
 ): Promise<GroupRoster> {
-  try {
-    const data = await groupFetch<any>(
-      `/${encodeURIComponent(routeId)}/members`,
-    );
-    return {
-      members: Array.isArray(data?.members)
-        ? (data.members as any[]).map((m) => ({
-            name: m.name,
-            user_id: m.user_id ?? null,
-            is_admin: !!m.is_admin,
-          }))
-        : [],
-      anonymous_count:
-        typeof data?.anonymous_count === 'number' ? data.anonymous_count : 0,
-      anonymous_members: parseAnonymousMembers(data),
-      viewer_anonymous_handle:
-        typeof data?.viewer_anonymous_handle === 'string'
-          ? data.viewer_anonymous_handle
-          : null,
-      viewer_is_admin: !!data?.viewer_is_admin,
-    };
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      return EMPTY_ROSTER;
+  return coalesced(groupMembersInFlight, routeId, null, async () => {
+    try {
+      const data = await groupFetch<any>(
+        `/${encodeURIComponent(routeId)}/members`,
+      );
+      return {
+        members: Array.isArray(data?.members)
+          ? (data.members as any[]).map((m) => ({
+              name: m.name,
+              user_id: m.user_id ?? null,
+              is_admin: !!m.is_admin,
+            }))
+          : [],
+        anonymous_count:
+          typeof data?.anonymous_count === 'number' ? data.anonymous_count : 0,
+        anonymous_members: parseAnonymousMembers(data),
+        viewer_anonymous_handle:
+          typeof data?.viewer_anonymous_handle === 'string'
+            ? data.viewer_anonymous_handle
+            : null,
+        viewer_is_admin: !!data?.viewer_is_admin,
+      };
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        return EMPTY_ROSTER;
+      }
+      throw err;
     }
-    throw err;
-  }
+  });
 }
 
 /** A single poll's respondent roster — same shape as the group members roster

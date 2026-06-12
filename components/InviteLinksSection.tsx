@@ -20,11 +20,15 @@
  *     at create time. So an invite row from list mode shows
  *     "Active link" + use_count + Revoke; no Copy button (we don't
  *     have the URL to copy).
- *   - The newly-minted invite from `apiCreateGroupInvite` DOES carry
+ *   - A newly-minted invite (via `startInviteCreation`) DOES carry
  *     `url` + `token`. We prepend it to the list and surface a Copy
  *     button for THAT row only. After page refresh / unmount, the
  *     URL is lost (matches the security model — server didn't keep
  *     it either).
+ *   - Every create AUTO-COPIES the fresh URL to the clipboard and
+ *     flashes "Copied!" on the row — whether minted in place (the +
+ *     button) or stashed by the group page's "Create Invite Link"
+ *     CTA before sliding here (see lib/inviteCreation.ts).
  *
  * Empty active list (and no freshly-minted row) → just shows the
  * "Create new invite link" button; no "no invites yet" placeholder.
@@ -32,16 +36,20 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   ApiError,
-  apiCreateGroupInvite,
   apiListGroupInvites,
   apiRevokeGroupInvite,
 } from "@/lib/api";
 import type { GroupInvite } from "@/lib/api";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { haptic } from "@/lib/haptics";
+import {
+  peekInviteCreation,
+  startInviteCreation,
+} from "@/lib/inviteCreation";
 import { compactDurationSince } from "@/lib/questionListUtils";
 
 interface Props {
@@ -57,6 +65,12 @@ interface Props {
 // message — which would render as a blank (invisible) error line.
 const errorMessage = (e: unknown, fallback: string): string =>
   e instanceof ApiError && e.message ? e.message : fallback;
+
+// "Copied!" flash durations. Manual taps keep the snappy flash; auto-copies
+// (every invite create auto-copies its URL) hold longer so the state is
+// still visible after the page transition that often precedes it.
+const MANUAL_COPY_FLASH_MS = 1800;
+const AUTO_COPY_FLASH_MS = 4000;
 
 export default function InviteLinksSection({
   groupId,
@@ -76,6 +90,17 @@ export default function InviteLinksSection({
   const [revokingIds, setRevokingIds] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Set the "Copied!" indicator on a row, clearing after `ms` so the user
+  // can tell repeated copies registered. useCallback([]) keeps its identity
+  // stable, so its presence in the list-load effect's deps never re-fires
+  // the fetch.
+  const flashCopied = useCallback((inviteId: string, ms: number) => {
+    setCopiedId(inviteId);
+    window.setTimeout(() => {
+      setCopiedId((prev) => (prev === inviteId ? null : prev));
+    }, ms);
+  }, []);
+
   useEffect(() => {
     if (!enabled) {
       setInvites(null);
@@ -84,10 +109,40 @@ export default function InviteLinksSection({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    apiListGroupInvites(groupId)
-      .then((data) => {
+    // The group page's "Create Invite Link" CTA mints the invite (and starts
+    // the in-gesture clipboard write) BEFORE sliding here; adopt the stashed
+    // creation so this view shows the fresh row with its Copy button +
+    // "Copied!" state. Non-consuming peek — the slide-overlay handoff mounts
+    // this section twice (overlay + real route) and both must agree. The
+    // stash's own short TTL guarantees anything peeked is a just-now tap,
+    // so adoption flashes/errors unconditionally.
+    const pending = peekInviteCreation(groupId);
+    Promise.all([
+      apiListGroupInvites(groupId),
+      pending ? pending.invitePromise.catch(() => null) : null,
+    ])
+      .then(([data, minted]) => {
         if (cancelled) return;
-        setInvites(data);
+        // The list GET can race the mint's commit — merge the minted invite
+        // in when the server's list doesn't carry it yet.
+        const merged =
+          minted && !data.some((i) => i.id === minted.id)
+            ? [minted, ...data]
+            : data;
+        setInvites(merged);
+        const url = minted?.url;
+        if (minted && url) {
+          setFreshUrls((prev) => ({ ...prev, [minted.id]: url }));
+        }
+        if (pending) {
+          if (!minted) {
+            setError("Failed to create invite");
+          } else {
+            pending.copiedPromise.then((ok) => {
+              if (!cancelled && ok) flashCopied(minted.id, AUTO_COPY_FLASH_MS);
+            });
+          }
+        }
       })
       .catch((e) => {
         if (cancelled) return;
@@ -103,7 +158,7 @@ export default function InviteLinksSection({
     return () => {
       cancelled = true;
     };
-  }, [groupId, enabled]);
+  }, [groupId, enabled, flashCopied]);
 
   const createInvite = () => {
     if (creating) return;
@@ -111,13 +166,20 @@ export default function InviteLinksSection({
     setCreating(true);
     setError(null);
     // v1 defaults: multi-use, unlimited, no expiry, no target poll.
-    // The modal-driven configuration UI is a follow-up.
-    apiCreateGroupInvite(groupId, { mode: "multi" })
+    // The modal-driven configuration UI is a follow-up. The URL auto-copy
+    // starts inside this tap's user-activation window (iOS requires the
+    // clipboard write to be registered in-gesture — see copyTextFromPromise).
+    const pending = startInviteCreation(groupId);
+    pending.invitePromise
       .then((invite) => {
         setInvites((prev) => (prev ? [invite, ...prev] : [invite]));
-        if (invite.url) {
-          setFreshUrls((prev) => ({ ...prev, [invite.id]: invite.url! }));
+        const url = invite.url;
+        if (url) {
+          setFreshUrls((prev) => ({ ...prev, [invite.id]: url }));
         }
+        pending.copiedPromise.then((ok) => {
+          if (ok) flashCopied(invite.id, AUTO_COPY_FLASH_MS);
+        });
       })
       .catch((e) => {
         setError(errorMessage(e, "Failed to create invite"));
@@ -176,16 +238,10 @@ export default function InviteLinksSection({
 
   const copyUrl = async (invite: GroupInvite, url: string) => {
     haptic.light();
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopiedId(invite.id);
-      // Clear the "Copied!" indicator after a short delay so the
-      // user can tell repeated taps registered.
-      window.setTimeout(() => {
-        setCopiedId((prev) => (prev === invite.id ? null : prev));
-      }, 1800);
-    } catch {
-      // Last-resort fallback if Clipboard API is unavailable
+    if (await copyTextToClipboard(url)) {
+      flashCopied(invite.id, MANUAL_COPY_FLASH_MS);
+    } else {
+      // Last-resort fallback if every clipboard path failed
       // (older WebViews, permissions blocked, etc.).
       window.prompt("Copy this URL:", url);
     }

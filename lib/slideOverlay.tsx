@@ -178,21 +178,28 @@ export function slideToPollInfo({
   });
 }
 
-/** Slide-in the group's /info subroute. Used by GroupHeader's title click. */
+/** Slide-in the group's /info subroute. Used by GroupHeader's title click.
+ *  `chainTo` plays a follow-up slide once this one lands (see
+ *  `SlideToGroupDetail.chainTo`) — the solo-group "Add People" CTA chains
+ *  into `groupInviteMembersSlideDetail` so the /info history entry exists
+ *  for invite-members' back button. */
 export function slideToGroupInfo({
   groupId,
   direction = 'forward',
   useHistoryBack = false,
+  chainTo,
 }: {
   groupId: string;
   direction?: 'forward' | 'back';
   useHistoryBack?: boolean;
+  chainTo?: SlideToGroupDetail;
 }): void {
   dispatchSlide({
     href: `/g/${groupId}/info`,
     direction,
     useHistoryBack,
     kind: { type: 'groupInfo', groupId },
+    chainTo,
   });
 }
 
@@ -214,9 +221,10 @@ export function slideToGroupEditTitle({
   });
 }
 
-/** Slide-in the group's /invite-members subroute. Used by the "Add people"
- *  button atop the /info members list. */
-export function slideToGroupInviteMembers({
+/** Detail for the group's /invite-members subroute slide. Exported (in
+ *  addition to the dispatching helper below) so callers can pass it as a
+ *  `chainTo` follow-up on another slide. */
+export function groupInviteMembersSlideDetail({
   groupId,
   direction = 'forward',
   useHistoryBack = false,
@@ -224,13 +232,21 @@ export function slideToGroupInviteMembers({
   groupId: string;
   direction?: 'forward' | 'back';
   useHistoryBack?: boolean;
-}): void {
-  dispatchSlide({
+}): SlideToGroupDetail {
+  return {
     href: `/g/${groupId}/invite-members`,
     direction,
     useHistoryBack,
     kind: { type: 'groupInviteMembers', groupId },
-  });
+  };
+}
+
+/** Slide-in the group's /invite-members subroute. Used by the "Add people"
+ *  button atop the /info members list. */
+export function slideToGroupInviteMembers(
+  opts: Parameters<typeof groupInviteMembersSlideDetail>[0],
+): void {
+  dispatchSlide(groupInviteMembersSlideDetail(opts));
 }
 
 /** Slide-in the group's /scheduled subroute (upcoming recurring-poll
@@ -478,9 +494,23 @@ export function SlideOverlayHost(): React.ReactElement | null {
         ? isGroupRootView(current)
         : current === target;
     const delay = urlMatches ? SLIDE_DURATION_MS + 30 : OVERLAY_SAFETY_TIMEOUT_MS;
+    const chainTo = urlMatches ? state.chainTo : undefined;
     unmountTimerRef.current = setTimeout(() => {
       unmountTimerRef.current = null;
-      setState(null);
+      if (chainTo) {
+        // Chained slide (see SlideToGroupDetail.chainTo): the URL has
+        // genuinely flipped to this slide's destination, so the follow-up
+        // slide's own router.push stacks the next history entry on top.
+        // dispatchSlide is synchronous — the event handler above replaces
+        // the overlay state in place (entering from the right over the
+        // committed destination), so no setState(null) in between. The
+        // safety-timeout branch deliberately DROPS the chain: if this
+        // slide never landed, playing the next leg would compound the
+        // failure.
+        dispatchSlide(chainTo);
+      } else {
+        setState(null);
+      }
     }, delay);
     return clearUnmountTimer;
   }, [pathname, state?.phase]);
