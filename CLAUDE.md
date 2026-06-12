@@ -1949,6 +1949,26 @@ viewers on the same page get a "Sign in to request access" CTA
 that opens `SignInModal`; signing in fires
 `SESSION_CHANGED_EVENT` and the button surfaces without remount.
 
+**Requester messages (June 2026).** The wall's request flow includes an
+optional note textarea ("Add a note so they know who you are") sent as
+the request's `message` — previously the API/`/info` display supported
+messages but the only UI callsite hardcoded `null`, so no user could
+ever attach one. Cap: `MESSAGE_MAX_CHARS = 500` in
+`services/join_requests.py` (SILENT truncation for raw-API callers,
+mirroring the `_sanitize_plus_one_names` trim-and-bound convention —
+not a 400; the column is unbounded TEXT so this is the only guard);
+the FE `JOIN_REQUEST_MESSAGE_MAX` maxLength in `GroupLoadState.tsx`
+must stay in lockstep. The admins' join-request push body appends a
+120-char snippet of the note (`<email> wants to join: "<note…>"`,
+same cap convention as `_poll_decision_summary` — 2 sites, inline per
+the extract-at-the-3rd-site rule). Re-requests still keep the FIRST
+pending message (no overwrite). The textarea needs `text-left` (the
+wall wrapper is text-center and text-align cascades into form fields).
+The Go Home button sits at the BOTTOM of the wall — the request flow
+is the primary action, Go Home is the escape hatch. Tests:
+`test_create_join_request_message_truncated_to_cap` +
+`test_join_request_push_body_includes_message`.
+
 **Account name is required to request access (server backstop + FE
 gate).** `POST /api/groups/<route_id>/join-requests` runs
 `validate_user_name(users.display_name)` AFTER the member-or-creator
