@@ -18,7 +18,7 @@ import {
 } from "@/lib/api";
 import { usePageReady } from "@/lib/usePageReady";
 import { navigateWithTransition } from "@/lib/viewTransitions";
-import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
+import { useSwipeBackGesture, useHeaderPortalRef } from "@/lib/useSwipeBackGesture";
 import {
   SHOW_SETTINGS_BACKDROP_EVENT,
   HIDE_SETTINGS_BACKDROP_EVENT,
@@ -149,13 +149,7 @@ export default function SettingsEditPage() {
   // discarding a cropped photo / typed name would be data loss. With
   // changes staged the handlers simply aren't attached, so the drag
   // scrolls/no-ops like any non-swipe page.
-  const headerPortalRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    headerPortalRef.current = document.getElementById("header-portal");
-    return () => {
-      headerPortalRef.current = null;
-    };
-  }, []);
+  const headerPortalRef = useHeaderPortalRef();
   const { swipeWrapperRef, touchHandlers } = useSwipeBackGesture({
     headerRef: headerPortalRef,
     showBackdrop: () => window.dispatchEvent(new Event(SHOW_SETTINGS_BACKDROP_EVENT)),

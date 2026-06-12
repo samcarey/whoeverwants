@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getUserName, getUserLocation, type UserLocation } from "@/lib/userProfile";
 import {
@@ -28,8 +28,11 @@ import { usePageReady } from "@/lib/usePageReady";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import { useLongPress } from "@/lib/useLongPress";
 import { isAppHydrated } from "@/lib/hydration";
-import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
-import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
+import {
+  useSwipeBackGesture,
+  useHeaderPortalRef,
+  resetSwipeBackChrome,
+} from "@/lib/useSwipeBackGesture";
 import {
   SHOW_HOME_BACKDROP_EVENT,
   HIDE_HOME_BACKDROP_EVENT,
@@ -225,14 +228,19 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
 
   // Refresh from the server on mount — catches server-side revocation
   // (different device signed out, account deleted, session expired).
+  // The backdrop instance skips every server fetch in this component
+  // (`inOverlay` gates below): it lives for less than a second under a
+  // swipe gesture and displays purely from the seeded caches; the real
+  // route re-fetches moments later anyway.
   useEffect(() => {
+    if (inOverlay) return;
     apiGetMe()
       .then((user) => setCurrentUser(user))
       .catch(() => {
         // Treat as "not signed in" for the network-blip case; the
         // cached value still drives the optimistic display.
       });
-  }, []);
+  }, [inOverlay]);
 
   // Close the add-sign-in modal whenever the signed-in identity changes
   // (sign-out, or sign-in as a different user) so it doesn't linger over
@@ -286,6 +294,7 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
   // checking on mount means the "Add passkey" button is correctly
   // hidden / shown by the time it's relevant.
   useEffect(() => {
+    if (inOverlay) return; // backdrop displays from the seeded caches
     apiGetAuthProviders()
       .then((p) => {
         cachedPasskeyServerEnabled = p.passkey;
@@ -296,12 +305,13 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
       cachedPlatformAuthAvailable = v;
       setPlatformAuthAvailable(v);
     });
-  }, []);
+  }, [inOverlay]);
 
   // Load the user's existing passkeys whenever sign-in flips to true.
   // Cleared on sign-out (currentUser=null) so a subsequent sign-in
   // doesn't briefly show the previous user's list.
   useEffect(() => {
+    if (inOverlay) return; // backdrop displays from the seeded caches
     if (!currentUser) {
       updatePasskeys(null);
       return;
@@ -317,7 +327,7 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
         // User can retry via the page refresh.
         updatePasskeys([]);
       });
-  }, [currentUser, passkeyServerEnabled]);
+  }, [inOverlay, currentUser, passkeyServerEnabled]);
 
   const handleAddPasskey = async () => {
     if (passkeyRegisterInFlight) return;
@@ -379,6 +389,7 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
   useEffect(() => {
     setTheme(getStoredTheme());
 
+    if (inOverlay) return; // backdrop displays from the seeded caches
     // Sync the cached profile with the server. cacheMyUserProfile fires
     // USER_PROFILE_CHANGED_EVENT, so the useMyUserImageUrl hook (and every
     // other avatar surface) refreshes if the account's image changed.
@@ -387,7 +398,7 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
       .catch(() => {
         // Network blip — the cached value is still authoritative.
       });
-  }, []);
+  }, [inOverlay]);
 
   const selectedTheme = THEME_OPTIONS.find((o) => o.value === theme);
 
@@ -410,13 +421,7 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
   // `#header-portal` node, so that node is the gesture's "header"
   // transform target — the buttons slide with the page (see app/layout.tsx
   // for why the portal's fixed/zero-height styling makes that safe).
-  const headerPortalRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    headerPortalRef.current = document.getElementById("header-portal");
-    return () => {
-      headerPortalRef.current = null;
-    };
-  }, []);
+  const headerPortalRef = useHeaderPortalRef();
   const { swipeWrapperRef, touchHandlers } = useSwipeBackGesture({
     headerRef: headerPortalRef,
     showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
@@ -945,14 +950,7 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
 export default function SettingsPage() {
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
-    for (const id of ["commit-badge-portal", "header-portal"]) {
-      const el = document.getElementById(id);
-      if (el) {
-        el.style.transform = "";
-        el.style.transition = "";
-      }
-    }
-    setSwipeScrollbarLock(false);
+    resetSwipeBackChrome();
     window.dispatchEvent(new Event(HIDE_SETTINGS_BACKDROP_EVENT));
   }, []);
 

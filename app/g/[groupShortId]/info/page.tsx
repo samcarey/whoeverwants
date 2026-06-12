@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { hasAppHistory } from "@/lib/viewTransitions";
-import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
+import { useSwipeBackGesture, useHeaderPortalRef } from "@/lib/useSwipeBackGesture";
 import {
   slideToGroupRoot,
   slideToGroupEditTitle,
@@ -101,13 +101,7 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   // see app/layout.tsx). The group backdrop renders the group root behind
   // the page during the drag; on commit we navigate directly with
   // router.push (the backdrop is already showing the group).
-  const headerPortalRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    headerPortalRef.current = document.getElementById("header-portal");
-    return () => {
-      headerPortalRef.current = null;
-    };
-  }, []);
+  const headerPortalRef = useHeaderPortalRef();
   const { swipeWrapperRef, touchHandlers } = useSwipeBackGesture({
     headerRef: headerPortalRef,
     showBackdrop: () => {

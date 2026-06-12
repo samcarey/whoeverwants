@@ -35,8 +35,7 @@ import { GROUP_ID_ATTR, DRAFT_POLL_PORTAL_ID, PANEL_HEIGHT_VAR } from "@/lib/gro
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { useDeadlineTick } from "@/lib/useDeadlineTick";
-import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
-import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
+import { useSwipeBackGesture, resetSwipeBackChrome } from "@/lib/useSwipeBackGesture";
 import { isInTimeAvailabilityPhase, isInSuggestionPhase } from "@/lib/questionListUtils";
 import { loadVotedQuestions, getStoredVoteId, parseYesNoChoice } from "@/lib/votedQuestionsStorage";
 import { computePollUnread, useUnreadReactivity } from "@/lib/unread";
@@ -2373,21 +2372,11 @@ function GroupPageInner() {
   // commit-badge transform and the html/body scrollbar lock.
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
-    const badge = document.getElementById('commit-badge-portal');
-    if (badge) {
-      badge.style.transform = '';
-      badge.style.transition = '';
-    }
-    // The group INFO page's swipe-back transforms #header-portal (its
-    // floating back/Edit buttons live there); on commit the transform
-    // lingers on the persistent portal node — reset it here, same as the
-    // commit badge above.
-    const headerPortal = document.getElementById('header-portal');
-    if (headerPortal) {
-      headerPortal.style.transform = '';
-      headerPortal.style.transition = '';
-    }
-    setSwipeScrollbarLock(false);
+    // Covers both swipe sources that land here: poll-detail/scheduled →
+    // group (badge transform + scrollbar lock) and group INFO → group
+    // (those plus the #header-portal transform — the info page's floating
+    // back/Edit buttons live there).
+    resetSwipeBackChrome();
     window.dispatchEvent(new Event(HIDE_GROUP_BACKDROP_EVENT));
   }, []);
 

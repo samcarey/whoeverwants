@@ -18,9 +18,45 @@
  * orchestrates the gesture state-machine + transforms.
  */
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type React from "react";
 import { setSwipeScrollbarLock } from "./scrollbarLock";
+
+/** Reset the swipe transforms left on the persistent body-level portal
+ *  nodes after a COMMITTED swipe, plus the html/body scrollbar lock. On
+ *  commit the source page unmounts before its snap-back/cancel cleanup can
+ *  run, so the DESTINATION route's mount effect calls this (alongside
+ *  dispatching its backdrop's HIDE event) — it's the last place that can
+ *  clear them. The portal ids cover every persistent transform target the
+ *  gesture touches: the commit-age badge (always) and #header-portal (the
+ *  pages whose header chrome is HeaderPortal-floated buttons). */
+export function resetSwipeBackChrome(): void {
+  if (typeof window === "undefined") return;
+  for (const id of ["commit-badge-portal", "header-portal"]) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.style.transform = "";
+      el.style.transition = "";
+    }
+  }
+  setSwipeScrollbarLock(false);
+}
+
+/** Ref to the body-level `#header-portal` node, for pages whose header
+ *  chrome is HeaderPortal-floated fixed buttons: pass it as the gesture's
+ *  `headerRef` so the buttons slide with the page. The node's
+ *  fixed/zero-height/z-30 styling (see app/layout.tsx) is what makes it a
+ *  safe transform target. */
+export function useHeaderPortalRef(): React.RefObject<HTMLElement | null> {
+  const ref = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    ref.current = document.getElementById("header-portal");
+    return () => {
+      ref.current = null;
+    };
+  }, []);
+  return ref;
+}
 
 const COMMIT_OFFSET_RATIO = 0.3;
 const COMMIT_VELOCITY = 0.5; // px/ms

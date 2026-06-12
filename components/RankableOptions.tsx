@@ -25,7 +25,6 @@ import {
   loadSavedRanking,
   saveRanking,
   shuffleArray,
-  createRankedOptions,
   type RankableOption,
 } from './rankable/storage';
 

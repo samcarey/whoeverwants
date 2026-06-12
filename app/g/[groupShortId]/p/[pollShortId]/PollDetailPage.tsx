@@ -33,8 +33,7 @@ import {
   type PollHydratedDetail,
   type GroupBackdropShowDetail,
 } from "@/lib/eventChannels";
-import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
-import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
+import { useSwipeBackGesture, resetSwipeBackChrome } from "@/lib/useSwipeBackGesture";
 import { slideToGroupRoot, slideToPollInfo } from "@/lib/slideOverlay";
 import {
   buildGroupFromPollDown,
@@ -1333,12 +1332,7 @@ function PollDetailPageInner() {
   // commit-badge transform and the html/body scrollbar lock.
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
-    const badge = document.getElementById("commit-badge-portal");
-    if (badge) {
-      badge.style.transform = "";
-      badge.style.transition = "";
-    }
-    setSwipeScrollbarLock(false);
+    resetSwipeBackChrome();
     window.dispatchEvent(new Event(HIDE_POLL_BACKDROP_EVENT));
   }, []);
 
