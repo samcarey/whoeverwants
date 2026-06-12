@@ -36,6 +36,7 @@ yarn-error.log*
 *.png
 !public/*.png
 !ios/App/App/Assets.xcassets/**/*.png
+!ios/App/MessagesExtension/Assets.xcassets/**/*.png
 
 # env files (can opt-in for committing if needed)
 .env*
