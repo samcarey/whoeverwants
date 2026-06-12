@@ -577,6 +577,50 @@ class PollResponse(BaseModel):
     initial_suggestion_vote_ids: dict[str, str] | None = None
 
 
+class PollSummaryQuestionResponse(BaseModel):
+    """One question's compact result line for the iMessage bubble summary
+    (GET /api/polls/{short_id}/summary). `result_text` is server-rendered so
+    the native bubble stays dumb (and the label/slot/winner formatting can't
+    drift from the push-notification copy it shares helpers with); the
+    structured counts ride along for the yes/no result bar (and the Phase 3
+    inline-voting buttons)."""
+
+    id: str
+    # Disambiguator in multi-question polls, mirroring the FE's
+    # getQuestionSectionTitle ("<Label> for <Context>", either half optional).
+    # None for single-question polls (the poll title IS the question) and for
+    # yes_no / limited_supply questions with no context — the documented
+    # "Yes/No is a CATEGORY, not display text" rule.
+    label: str | None = None
+    question_type: str
+    result_text: str | None = None
+    total_votes: int = 0
+    yes_count: int | None = None
+    no_count: int | None = None
+    secured_count: int | None = None
+    supply_count: int | None = None
+
+
+class PollSummaryResponse(BaseModel):
+    """Identity-free compact poll summary powering the iMessage live
+    transcript bubble (Phase 2 of docs/imessage-extension-plan.md): one tiny
+    round-trip instead of the Phase 1 fan-out (visibility-blind poll read +
+    per-question results). Deliberately public, like /preview — a bubble in a
+    Messages thread IS a deliberate capability share (owner decision B) and a
+    transcript instance may have no identity at all. Exposes only
+    render-necessary aggregates (title, group name, status, respondent COUNT,
+    per-question one-liners) — never voter identities or ballots."""
+
+    poll_id: str
+    short_id: str | None = None
+    title: str
+    group_name: str | None = None
+    is_closed: bool = False
+    response_deadline: str | None = None
+    respondent_count: int = 0
+    questions: list[PollSummaryQuestionResponse] = Field(default_factory=list)
+
+
 # Resolve forward references (QuestionResponse.results -> QuestionResultsResponse)
 QuestionResultsResponse.model_rebuild()
 QuestionResponse.model_rebuild()

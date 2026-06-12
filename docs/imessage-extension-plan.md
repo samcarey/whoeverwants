@@ -6,9 +6,11 @@
 > session can pick it up cold.
 >
 > **Status (June 2026): Phase 0 (target scaffold + CI) shipped via #712;
-> Phase 1 (share-from-drawer) implemented — see the Phase 1 section for what
-> landed and the on-device verification owed.** Owner decisions are resolved
-> (see "Resolved decisions" at the bottom).
+> Phase 1 (share-from-drawer) shipped via #713; Phase 2 (live read-only
+> transcript bubble + the identity-free `/summary` endpoint) implemented —
+> see the Phase 2 section for what landed and the on-device verification
+> owed.** Owner decisions are resolved (see "Resolved decisions" at the
+> bottom).
 >
 > **Verdict up front: feasible, and `MSMessageLiveLayout` is the right API** — but
 > this is the project's first *additional Xcode target* (a Messages extension is a
@@ -243,16 +245,14 @@ there because the extension can't import App-target sources, keep in lockstep):
   `getQuestionSectionTitle` rules incl. the "Yes/No is a category, not display
   text" null), respondent count (name-multiplicity-aware, mirroring
   `namedVoterCount`), "Open in WhoeverWants" (`extensionContext.open`,
-  copy-link fallback on failure) + an always-visible Copy Link button. Fetches
-  the identity-free `GET /api/polls/<short>` + per-question
-  `GET /api/questions/<id>/results` (concurrent) — fine for the on-demand
-  expanded view, but **Phase 2's transcript bubble should get a single tiny
-  identity-free server summary endpoint** (built from
-  `_question_decision_label` / `_format_slot_label` / `_compute_poll_voter_data`)
-  and this view should migrate onto it: multiple live bubbles re-fetching N+1
-  endpoints per render won't fly, and a server endpoint also frees the
-  visibility-blind poll read to be tightened someday without breaking
-  in-flight bubbles.
+  copy-link fallback on failure) + an always-visible Copy Link button.
+  *(Historical:)* originally fetched the identity-free
+  `GET /api/polls/<short>` + per-question `GET /api/questions/<id>/results`
+  (concurrent) — Phase 2 built the single identity-free
+  `GET /api/polls/<short>/summary` endpoint and migrated this view onto it
+  (one round-trip, shared `SummaryStore` cache with the transcript bubbles),
+  which also frees the visibility-blind poll read to be tightened someday
+  without breaking in-flight bubbles.
 - CI: the drawer label (extension `CFBundleDisplayName`) is stamped per-tier
   ("Whoever" / "Whoever α") in the existing display-name step so testers with
   both apps can tell the drawer entries apart.
@@ -260,25 +260,62 @@ there because the extension can't import App-target sources, keep in lockstep):
   polls, send a public + a private poll bubble, recipient tap shows the summary
   + results, invite-URL bubble redeems on the web fallback path.
 
-### Phase 2 — live transcript bubble (read-only)
+### Phase 2 — live transcript bubble, read-only (SHIPPED, pending device verification)
 
-- Switch inserts to `MSMessageLiveLayout(alternateLayout: templateLayout)` — the
-  alternate IS the Phase 1 fallback, so non-app recipients are unchanged.
-- Transcript instance renders title + live result bars + status (open/closed,
-  countdown), fetched on `willBecomeActive`/render with a short in-process cache
-  (multiple bubbles, aggressive teardown — keep fetches coalesced + tiny).
-- **Build the identity-free server summary endpoint here** (e.g.
-  `GET /api/polls/{short}/summary` from `_question_decision_label` +
-  `_format_slot_label` + `_compute_poll_voter_data`): one tiny round-trip per
-  bubble instead of Phase 1's poll + per-question results fan-out, and migrate
-  the Phase 1 expanded summary onto it too (frees the visibility-blind
-  `GET /api/polls/{short_id}` to be tightened later without breaking bubbles).
-- `contentSizeThatFits` returns a fixed compact height; no scrolling inside the
-  bubble.
-- Private-group bubble (decision B): on first render the recipient isn't a member
-  yet, so the visibility-aware fetch 404s — redeem the embedded invite token
-  (when an identity is bridged) before fetching, then render normally. No identity
-  → "Open in WhoeverWants" state until they open the app once.
+What landed (Swift in `ios/App/MessagesExtension/MessagesViewController.swift`,
+server in `routers/polls.py` + `models.py`; no entitlement / CI / pbxproj
+changes — the bubble is pure code in the existing extension target):
+- **Inserts switched to `MSMessageLiveLayout(alternateLayout: templateLayout)`**
+  — the alternate IS the Phase 1 template, so no-app / macOS / SMS recipients
+  are byte-identical to before.
+- **`GET /api/polls/{short_id}/summary`** — the identity-free compact summary
+  (model `PollSummaryResponse`): poll title (own-title rule), group display
+  name (`group_display_name`, so unnamed groups resolve to participant names),
+  `is_closed` + `response_deadline` (microseconds stripped — Swift's
+  `ISO8601DateFormatter` rejects them), respondent count
+  (name-multiplicity-aware, server-side now), and per-question
+  `{label, result_text, yes/no/secured/supply counts}`. `result_text` +
+  `label` are server-rendered with the SAME helpers as the push-notification
+  copy (`_compute_results`, `_format_slot_label`, the auto-title
+  `_CATEGORY_LABELS`) and the same wording the Phase 1 Swift rendered
+  client-side ("Yes 2 · No 1", "1/3 claimed", "Winner:"/"Leading:") — which
+  let the Swift label/slot-formatting mirrors (`categoryLabels`,
+  `questionLabel`, `prettySlot`) be DELETED. Public like `/preview` (a bubble
+  is a deliberate capability share, decision B); does NOT write membership.
+  Tests: `server/tests/test_poll_summary.py`.
+- **Transcript rendering**: `MessagesViewController` now mounts its UI on
+  first `willBecomeActive` keyed on `presentationStyle` (Messages dedicates a
+  VC instance per visible bubble, `.transcript`, separate from the drawer
+  instance). The bubble (`TranscriptBubbleView`) shows title + per-question
+  result lines (a proportional green/red bar for yes/no) + an
+  "Open · ends in 2 hr · 5 people responded" footer (relative deadline
+  computed at render — no ticking timer in the transcript, per Apple's
+  guidance). `contentSizeThatFits` returns a fixed 148pt; >2 questions
+  collapse into "+N more" so the fixed height never clips mid-row.
+- **`SummaryStore`** — process-level cache (20s TTL) + in-flight coalescing
+  shared by every transcript instance AND the Phase 1 expanded summary view
+  (which migrated onto the `/summary` endpoint, retiring its
+  poll + N-results fan-out). Stale-on-error: a bubble re-render that fails
+  serves the last summary rather than an error state.
+- **Read-only by design**: the bubble's SwiftUI tree is hit-testing-disabled
+  (+ `isUserInteractionEnabled = false` on the hosting view), so a tap falls
+  through to Messages → extension opens expanded → the Phase 1 summary view.
+  Phase 3 adds the inline vote buttons.
+- **Private-group bubbles render WITHOUT redeeming the invite** — supersedes
+  this phase's original "redeem before fetching" sketch, which assumed the
+  bubble would use the visibility-aware fetch. The summary endpoint is
+  identity-free, so there's no 404 to recover from, and redeeming on a
+  passive transcript render would auto-join people to a group because they
+  scrolled past a bubble (membership = home-list entry + notifications —
+  too surprising). Redemption stays on the explicit paths: the
+  `/invite/<token>` web fallback, "Open in WhoeverWants", and Phase 3's
+  vote-time join.
+- Exit criteria: (CI) green canary build. (Owner, device — Simulator works
+  for the inner loop here, unlike Siri) a freshly-sent bubble renders the
+  live summary in the transcript on both sides, updates after a web vote
+  (leave + reopen the conversation re-fetches), the fixed-height bubble looks
+  right for 1-question and 3-question polls, tap still opens the expanded
+  summary, and a no-app recipient still sees the Phase 1 template fallback.
 
 ### Phase 3 — inline voting in the transcript
 

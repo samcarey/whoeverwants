@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
-from algorithms.poll_title import generate_poll_title
+from algorithms.poll_title import _CATEGORY_LABELS, generate_poll_title
 from database import get_db
 from middleware import (
     browser_id_from_request as _browser_id,
@@ -28,6 +28,8 @@ from models import (
     CutoffSuggestionsRequest,
     EditVoteRequest,
     PollResponse,
+    PollSummaryQuestionResponse,
+    PollSummaryResponse,
     SetFollowStateRequest,
     PollVoteItem,
     PlusOneCandidateResponse,
@@ -49,6 +51,7 @@ from services.groups import (
     NIL_UUID,
     _is_uuid_like,
     add_group_admin,
+    group_display_name,
     group_name_phrase,
     require_uuid,
 )
@@ -1355,6 +1358,175 @@ def get_poll(short_id: str, request: Request):
         voter_data = _compute_poll_voter_data(conn, str(row["id"]))
         viewer_user_id = _caller_user_id(conn, request)
     return _row_to_poll(row, question_rows, voter_data, viewer_user_id=viewer_user_id)
+
+
+# ---------------------------------------------------------------------------
+# iMessage bubble summary (Phase 2 of docs/imessage-extension-plan.md)
+# ---------------------------------------------------------------------------
+
+# Categories the per-question label NEVER surfaces, mirroring the FE's
+# getQuestionLabel (lib/questionListUtils.ts): yes_no / limited_supply (the
+# title IS the prompt/item — the "Yes/No is a CATEGORY, not display text"
+# rule), custom (no built-in label), and time/showtime (labeled by question
+# TYPE below, since the Time bubble stores category="custom"). Everything
+# else resolves through the auto-title's _CATEGORY_LABELS so there's no
+# fourth label map to keep in lockstep.
+_SUMMARY_LABEL_EXCLUDED = {"yes_no", "yes/no", "custom", "limited_supply"}
+
+
+def _summary_question_label(question_row: dict, multi: bool) -> str | None:
+    """Mirrors getQuestionSectionTitle (lib/questionListUtils.ts): the
+    "<Label> for <Context>" disambiguator shown above a question's result
+    line in multi-question polls, either half optional. Single-question
+    polls return None — the poll title IS the question."""
+    if not multi:
+        return None
+    details = (question_row.get("details") or "").strip() or None
+    qtype = question_row.get("question_type")
+    if qtype == "time":
+        type_label = "Time"
+    elif qtype == "showtime":
+        type_label = "Showtime"
+    elif qtype in ("yes_no", "limited_supply"):
+        type_label = None
+    else:
+        cat = (question_row.get("category") or "").strip().lower()
+        type_label = (
+            None if cat in _SUMMARY_LABEL_EXCLUDED else _CATEGORY_LABELS.get(cat)
+        )
+    if type_label and details:
+        return f"{type_label} for {details}"
+    return details or type_label
+
+
+def _summarize_question(
+    question_row: dict, votes: list[dict], poll_is_closed: bool, multi: bool
+) -> PollSummaryQuestionResponse:
+    """One question's compact result line. The wording matches what the
+    Phase 1 extension rendered client-side ("Yes 2 · No 1", "1/3 claimed",
+    "Winner:"/"Leading:", "No votes yet") so migrating the bubble onto this
+    endpoint changed the transport, not the copy."""
+    results = _compute_results(
+        dict(question_row),
+        votes,
+        include_tentative_time_options=False,
+    )
+    qtype = question_row["question_type"]
+    if qtype == "yes_no":
+        text = (
+            f"Yes {results.yes_count or 0} · No {results.no_count or 0}"
+            if results.total_votes > 0
+            else "No votes yet"
+        )
+    elif qtype == "limited_supply":
+        secured = results.secured_count or 0
+        text = (
+            f"{secured}/{results.supply_count} claimed"
+            if results.supply_count
+            else f"{secured} claimed"
+        )
+    elif results.time_event_cancelled:
+        text = "Event's off"
+    elif results.winner:
+        pretty = (
+            _format_slot_label(results.winner)
+            if qtype in ("time", "showtime")
+            else results.winner
+        )
+        text = f"{'Winner' if poll_is_closed else 'Leading'}: {pretty}"
+    elif results.total_votes > 0:
+        n = results.total_votes
+        text = f"{n} response{'' if n == 1 else 's'}"
+    else:
+        text = "No votes yet"
+    return PollSummaryQuestionResponse(
+        id=str(question_row["id"]),
+        label=_summary_question_label(question_row, multi),
+        question_type=qtype,
+        result_text=text,
+        total_votes=results.total_votes,
+        yes_count=results.yes_count,
+        no_count=results.no_count,
+        secured_count=results.secured_count,
+        supply_count=results.supply_count,
+    )
+
+
+@router.get("/{short_id}/summary", response_model=PollSummaryResponse)
+def get_poll_summary(short_id: str):
+    """Identity-free compact summary for the iMessage live transcript bubble
+    (Phase 2, docs/imessage-extension-plan.md). One tiny round-trip replaces
+    the Phase 1 fan-out (visibility-blind poll read + N per-question results
+    calls) — several live bubbles re-rendering in one conversation can't
+    afford N+1 each.
+
+    Deliberately PUBLIC, like /preview: a bubble in a Messages thread is a
+    deliberate capability share (owner decision B), and a transcript instance
+    may have no identity at all (recipient installed but never opened the
+    app). Exposes only render-necessary aggregates — never voter identities
+    or ballots. NO membership write either: passively scrolling past a bubble
+    must not auto-join the viewer; joining stays on the explicit
+    open-in-app / invite-redeem / vote paths.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            f"{_SELECT_POLLS_WITH_GROUP} WHERE polls.short_id = %(short_id)s",
+            {"short_id": short_id},
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Poll not found")
+        poll_id = str(row["id"])
+        question_rows = _fetch_questions(conn, poll_id)
+        vd = _compute_poll_voter_data(conn, poll_id)
+        # Name multiplicity counts people, not names — mirrors the FE's
+        # namedVoterCount (components/VoterList.tsx).
+        named = sum(max(1, vd.voter_name_counts.get(n, 1)) for n in vd.voter_names)
+        group_name = (
+            group_display_name(
+                conn, str(row["group_id"]), override=row.get("group_title")
+            )
+            if row.get("group_id")
+            else None
+        )
+        is_closed = bool(row.get("is_closed"))
+        multi = len(question_rows) > 1
+        # One batched votes fetch for the whole poll (vs per-question) — the
+        # bubble render path is hotter than the per-poll-close path the
+        # sibling _question_decision_label serves.
+        votes_by_question: dict[str, list[dict]] = {}
+        for v in conn.execute(
+            """
+            SELECT v.* FROM votes v
+            JOIN questions q ON v.question_id = q.id
+            WHERE q.poll_id = %(mid)s
+            """,
+            {"mid": poll_id},
+        ).fetchall():
+            votes_by_question.setdefault(str(v["question_id"]), []).append(dict(v))
+        questions = [
+            _summarize_question(
+                dict(q), votes_by_question.get(str(q["id"]), []), is_closed, multi
+            )
+            for q in question_rows
+        ]
+        # The poll's OWN name, not the group-title override — same rule as the
+        # detail-page header and the bubble's caption at insert time.
+        title = _poll_own_title(row, question_rows)
+    deadline = row.get("response_deadline")
+    return PollSummaryResponse(
+        poll_id=poll_id,
+        short_id=row.get("short_id"),
+        title=title,
+        group_name=group_name,
+        is_closed=is_closed,
+        # Microseconds stripped: the Swift consumer parses with
+        # ISO8601DateFormatter, which rejects 6-digit fractional seconds.
+        response_deadline=(
+            deadline.replace(microsecond=0).isoformat() if deadline else None
+        ),
+        respondent_count=named + vd.anonymous_count,
+        questions=questions,
+    )
 
 
 # ---------------------------------------------------------------------------

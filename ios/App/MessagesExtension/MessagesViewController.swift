@@ -2,23 +2,41 @@ import Messages
 import SwiftUI
 import UIKit
 
-// Phase 1 of docs/imessage-extension-plan.md — share a poll from the Messages
-// drawer (template layout; the live transcript bubble is Phase 2).
+// Phases 1 + 2 of docs/imessage-extension-plan.md — share a poll from the
+// Messages drawer (Phase 1) + the live read-only transcript bubble (Phase 2).
 //
 // What this does:
 //   • Compact/expanded drawer view lists the user's recent polls (the same
 //     `POST /api/groups/mine` fetch Siri's PollEntity.fetchAll uses), read with
 //     the App-Group-bridged identity. No identity → "open the app first" state.
-//   • Tapping a poll inserts an MSMessage (MSMessageTemplateLayout: icon, poll
-//     title caption, group subcaption) whose url is the canonical
-//     /g/<group>/p/<poll> for public groups, or a freshly-minted poll-scoped
-//     /invite/<token> for private groups (owner decision B — the bubble doubles
-//     as a revocable capability token; recipients auto-join like an invite link).
+//   • Tapping a poll inserts an MSMessage whose layout is an
+//     MSMessageLiveLayout wrapping the Phase 1 MSMessageTemplateLayout as its
+//     alternate (icon, poll title caption, group subcaption) — recipients WITH
+//     the app render the live transcript bubble; everyone else (no app, macOS,
+//     SMS) gets the unchanged template fallback. The message url is the
+//     canonical /g/<group>/p/<poll> for public groups, or a freshly-minted
+//     poll-scoped /invite/<token> for private groups (owner decision B — the
+//     bubble doubles as a revocable capability token; recipients auto-join
+//     like an invite link).
+//   • The transcript bubble (presentationStyle == .transcript, one dedicated
+//     VC instance per visible bubble) renders title + live result lines (a
+//     proportional bar for yes/no) + open/closed status + deadline +
+//     respondent count, fetched from the identity-free
+//     GET /api/polls/<short>/summary through a process-level cache
+//     (SummaryStore) so several bubbles re-rendering in one conversation
+//     coalesce into one round-trip. Read-only by design (Phase 3 adds
+//     voting): the SwiftUI tree is hit-testing-disabled, so a tap falls
+//     through to Messages, which opens the extension expanded → the summary
+//     view below. Rendering NEVER redeems the embedded invite token — the
+//     summary endpoint is identity-free, and joining a group because you
+//     scrolled past a bubble would surprise; redemption stays on the explicit
+//     open-in-app / web paths.
 //   • Tapping a sent bubble (recipient WITH the app) opens the extension
 //     expanded with `conversation.selectedMessage` set → a native poll summary
 //     with live results + "Open in WhoeverWants" (extensionContext.open is
 //     famously finicky from Messages extensions, so Copy Link is the always-
-//     available fallback and the open failure path copies too).
+//     available fallback and the open failure path copies too). The summary
+//     consumes the same /summary endpoint + SummaryStore as the bubble.
 //
 // Architectural notes:
 //   • The extension is a SEPARATE target and process. It cannot import
@@ -92,19 +110,35 @@ struct SharablePoll: Identifiable {
     let isClosed: Bool
 }
 
+// Parsed GET /api/polls/<short>/summary — the server renders the label +
+// result_text (shared helpers with the push-notification copy), the counts
+// ride along for the yes/no bar (and Phase 3's inline voting).
 struct QuestionSummary: Identifiable {
     let id: String            // question uuid
     let label: String?        // disambiguator in multi-question polls
     let type: String          // question_type
-    var resultText: String?   // filled by the per-question results fetch
+    let resultText: String?   // server-rendered one-line result
+    let yesCount: Int?
+    let noCount: Int?
 }
 
 struct PollSummary {
     let title: String
     let groupName: String?
-    let isClosed: Bool
+    let isClosedFlag: Bool    // server is_closed; display closed-ness via isClosed
+    let responseDeadline: Date?
     let respondentCount: Int
     let questions: [QuestionSummary]
+
+    // Mirrors the FE's isPollOpen: a passed deadline reads as closed even
+    // before the server's per-minute tick flips is_closed. Computed at
+    // RENDER (not parse) so a cached summary stays honest across the
+    // crossing.
+    var isClosed: Bool {
+        if isClosedFlag { return true }
+        if let deadline = responseDeadline { return deadline <= Date() }
+        return false
+    }
 }
 
 // MARK: - API
@@ -227,165 +261,86 @@ private enum PollAPI {
         return nil
     }
 
-    // Poll summary for the recipient's expanded view. GET /api/polls/<short>
-    // and GET /api/questions/<id>/results are identity-free server-side (the
-    // poll read is documented as visibility-blind), which is what lets a
-    // recipient who isn't (yet) a group member see what they were sent —
-    // acceptable under decision B (a bubble IS a deliberate capability share),
-    // but note this aggregates per-question fetches client-side; Phase 2's
-    // transcript bubble wants a single tiny server summary endpoint, and when
-    // that lands this should consume it instead (see the plan doc).
+    // Poll summary for the transcript bubble AND the recipient's expanded
+    // view — ONE identity-free round-trip to GET /api/polls/<short>/summary
+    // (Phase 2; replaced the Phase 1 poll-read + per-question results
+    // fan-out). The server renders labels / winners / slot formatting with
+    // the same helpers as the push-notification copy, so nothing here can
+    // drift from it. Callers go through SummaryStore (cache + coalescing),
+    // never call this directly from a view.
     static func fetchSummary(shortId: String) async throws -> PollSummary {
-        guard let url = URL(string: apiBase + "/api/polls/\(shortId)") else { throw URLError(.badURL) }
+        guard let url = URL(string: apiBase + "/api/polls/\(shortId)/summary") else { throw URLError(.badURL) }
         let (data, response) = try await URLSession.shared.data(for: jsonRequest(url: url, method: "GET", browserId: nil))
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw URLError(.badServerResponse)
         }
-        let isClosed = (obj["is_closed"] as? Bool) ?? false
-        let questionObjs = (obj["questions"] as? [[String: Any]]) ?? []
-        let title = nonEmpty(questionObjs.first?["title"] as? String)
-            ?? nonEmpty(obj["title"] as? String) ?? "Poll"
-        // Respondent count honors name multiplicity (two voters who share a
-        // name are two people) — mirrors namedVoterCount in
-        // components/VoterList.tsx.
-        let voterNames = (obj["voter_names"] as? [String]) ?? []
-        let nameCounts = (obj["voter_name_counts"] as? [String: Int]) ?? [:]
-        let namedCount = voterNames.reduce(0) { $0 + max(1, nameCounts[$1] ?? 1) }
-        let anonymous = (obj["anonymous_count"] as? Int) ?? 0
-        let multi = questionObjs.count > 1
-        var questions: [QuestionSummary] = questionObjs.compactMap { q in
+        let questions: [QuestionSummary] = ((obj["questions"] as? [[String: Any]]) ?? []).compactMap { q in
             guard let qid = nonEmpty(q["id"] as? String) else { return nil }
-            let type = (q["question_type"] as? String) ?? "yes_no"
-            // Per-question titles repeat the wrapper title in multi-question
-            // polls, so the disambiguator mirrors the web's
-            // getQuestionSectionTitle: "<Label> for <Context>", either half
-            // optional (label is nil for yes_no/limited_supply per the
-            // "Yes/No is a category, not display text" rule).
-            let label: String? = {
-                guard multi else { return nil }
-                let details = nonEmpty(q["details"] as? String)
-                let typeLabel = questionLabel(type: type, category: q["category"] as? String)
-                if let t = typeLabel, let d = details { return "\(t) for \(d)" }
-                return details ?? typeLabel
-            }()
-            return QuestionSummary(id: qid, label: label, type: type, resultText: nil)
-        }
-        // Live results per question (identity-free), fetched CONCURRENTLY so
-        // the summary's latency is one round-trip, not the sum. Capped — the
-        // summary is a glance, not a ballot.
-        let resultTexts = await withTaskGroup(of: (String, String?).self) { group -> [String: String] in
-            for q in questions.prefix(4) {
-                group.addTask {
-                    (q.id, await fetchResultText(questionId: q.id, type: q.type, pollIsClosed: isClosed))
-                }
-            }
-            var out: [String: String] = [:]
-            for await (qid, text) in group {
-                if let text = text { out[qid] = text }
-            }
-            return out
-        }
-        for i in questions.indices {
-            questions[i].resultText = resultTexts[questions[i].id]
+            return QuestionSummary(
+                id: qid,
+                label: nonEmpty(q["label"] as? String),
+                type: (q["question_type"] as? String) ?? "yes_no",
+                resultText: nonEmpty(q["result_text"] as? String),
+                yesCount: q["yes_count"] as? Int,
+                noCount: q["no_count"] as? Int
+            )
         }
         return PollSummary(
-            title: title,
-            groupName: nonEmpty(obj["group_title"] as? String),
-            isClosed: isClosed,
-            respondentCount: namedCount + anonymous,
+            title: nonEmpty(obj["title"] as? String) ?? "Poll",
+            groupName: nonEmpty(obj["group_name"] as? String),
+            isClosedFlag: (obj["is_closed"] as? Bool) ?? false,
+            responseDeadline: parseISODate(nonEmpty(obj["response_deadline"] as? String)),
+            respondentCount: (obj["respondent_count"] as? Int) ?? 0,
             questions: questions
         )
     }
 
-    // Built-in category labels — mirror labelForCategory's _CATEGORY_LABELS
-    // (app/create-poll/createPollHelpers.ts) + the server's copy in
-    // server/algorithms/poll_title.py. Keep all three in lockstep when adding
-    // a built-in category.
-    private static let categoryLabels: [String: String] = [
-        "restaurant": "Restaurant",
-        "movie": "Movie",
-        "video_game": "Video Game",
-        "videogame": "Video Game",
-        "location": "Place",
-        "time": "Time",
-        "showtime": "Showtime",
-    ]
-
-    // Mirrors getQuestionLabel (lib/questionListUtils.ts): nil for yes_no (the
-    // documented "Yes/No is a CATEGORY, not display text" rule) and
-    // limited_supply (the title IS the item); "Time"/"Showtime" by type; else
-    // the built-in category label, nil for custom categories.
-    private static func questionLabel(type: String, category: String?) -> String? {
-        switch type {
-        case "yes_no", "limited_supply":
-            return nil
-        case "time":
-            return "Time"
-        case "showtime":
-            return "Showtime"
-        default:
-            return category.flatMap { categoryLabels[$0] }
-        }
+    // The endpoint strips microseconds server-side specifically so the strict
+    // ISO8601DateFormatter parses it ("2026-06-20T19:00:00+00:00").
+    // Configured once and only read afterwards → safe as a static.
+    private static let isoParser = ISO8601DateFormatter()
+    private static func parseISODate(_ s: String?) -> Date? {
+        s.flatMap { isoParser.date(from: $0) }
     }
+}
 
-    private static func fetchResultText(questionId: String, type: String, pollIsClosed: Bool) async -> String? {
-        guard let url = URL(string: apiBase + "/api/questions/\(questionId)/results"),
-              let (data, response) = try? await URLSession.shared.data(for: jsonRequest(url: url, method: "GET", browserId: nil)),
-              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              let r = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        let totalVotes = (r["total_votes"] as? Int) ?? 0
-        switch type {
-        case "yes_no":
-            guard totalVotes > 0 else { return "No votes yet" }
-            return "Yes \((r["yes_count"] as? Int) ?? 0) · No \((r["no_count"] as? Int) ?? 0)"
-        case "limited_supply":
-            let secured = (r["secured_count"] as? Int) ?? 0
-            if let supply = r["supply_count"] as? Int { return "\(secured)/\(supply) claimed" }
-            return "\(secured) claimed"
-        default:
-            if let winner = nonEmpty(r["winner"] as? String) {
-                let pretty = type == "time" || type == "showtime" ? prettySlot(winner) : winner
-                return pollIsClosed ? "Winner: \(pretty)" : "Leading: \(pretty)"
-            }
-            guard totalVotes > 0 else { return "No votes yet" }
-            return "\(totalVotes) \(totalVotes == 1 ? "response" : "responses")"
-        }
-    }
+// MARK: - Summary cache (process-level)
 
-    // DateFormatter allocation is expensive; both are configured once and only
-    // read afterwards (thread-safe post-iOS-7), so hoist as statics.
-    private static let slotParser: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd HH:mm"
-        return f
-    }()
-    private static let slotDayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "E MMM d"
-        return f
-    }()
+// Shared by every transcript bubble instance AND the expanded summary view.
+// Messages hosts several live transcript instances in one extension process
+// and tears them down aggressively (scroll away + back = a fresh instance),
+// so re-renders must not refetch every time and two bubbles for the same poll
+// must share one in-flight request. @MainActor reentrancy is the coalescing
+// mechanism: callers awaiting the same Task interleave at the suspension
+// point and all see `inFlight`.
+@MainActor
+final class SummaryStore {
+    static let shared = SummaryStore()
 
-    // Time/showtime winners are slot keys ("2026-06-20 19:00-21:00"); render
-    // the start as "Sat Jun 20, 7 PM" — the same shape the server's
-    // _format_slot_label (server/routers/polls.py) uses for push-notification
-    // outcomes, so the bubble summary and the close push agree. Falls through
-    // to the raw key on any parse miss.
-    private static func prettySlot(_ slotKey: String) -> String {
-        guard slotKey.count >= 16, let date = slotParser.date(from: String(slotKey.prefix(16))) else {
-            return slotKey
+    private var cache: [String: (summary: PollSummary, fetchedAt: Date)] = [:]
+    private var inFlight: [String: Task<PollSummary, Error>] = [:]
+
+    func summary(shortId: String, maxAge: TimeInterval = 20) async throws -> PollSummary {
+        if let hit = cache[shortId], Date().timeIntervalSince(hit.fetchedAt) < maxAge {
+            return hit.summary
         }
-        let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
-        let hour = comps.hour ?? 0
-        let minute = comps.minute ?? 0
-        let period = hour < 12 ? "AM" : "PM"
-        let hour12 = hour % 12 == 0 ? 12 : hour % 12
-        let minuteStr = minute != 0 ? String(format: ":%02d", minute) : ""
-        return "\(slotDayFormatter.string(from: date)), \(hour12)\(minuteStr) \(period)"
+        if let task = inFlight[shortId] {
+            return try await task.value
+        }
+        let task = Task { try await PollAPI.fetchSummary(shortId: shortId) }
+        inFlight[shortId] = task
+        defer { inFlight[shortId] = nil }
+        do {
+            let summary = try await task.value
+            cache[shortId] = (summary, Date())
+            return summary
+        } catch {
+            // A slightly-stale summary beats an error state for a passive
+            // bubble in the transcript.
+            if let hit = cache[shortId] { return hit.summary }
+            throw error
+        }
     }
 }
 
@@ -499,7 +454,7 @@ final class ExtensionModel: ObservableObject {
         summary = .loading(url)
         Task {
             do {
-                let s = try await PollAPI.fetchSummary(shortId: shortId)
+                let s = try await SummaryStore.shared.summary(shortId: shortId)
                 // The user may have navigated back to the picker mid-fetch.
                 if case .loading(let pending)? = summary, pending == url {
                     summary = .loaded(s, url)
@@ -544,17 +499,68 @@ final class ExtensionModel: ObservableObject {
     }
 }
 
+// MARK: - Transcript bubble view model (Phase 2)
+
+// One per transcript VC instance (Messages creates a dedicated instance per
+// visible bubble). Stateless beyond the fetched summary — transcript
+// instances are torn down aggressively, so all reuse lives in SummaryStore.
+@MainActor
+final class TranscriptBubbleModel: ObservableObject {
+    enum State {
+        case loading
+        case loaded(PollSummary)
+        case unavailable   // unparseable url / fetch failed → static fallback
+    }
+
+    @Published var state: State = .loading
+
+    func load(messageURL: URL?) {
+        guard let url = messageURL,
+              let shortId = PollAPI.pollShortId(fromMessageURL: url) else {
+            state = .unavailable
+            return
+        }
+        Task {
+            do {
+                state = .loaded(try await SummaryStore.shared.summary(shortId: shortId))
+            } catch {
+                state = .unavailable
+            }
+        }
+    }
+}
+
 // MARK: - Messages app view controller
 
 class MessagesViewController: MSMessagesAppViewController {
 
-    private let model = ExtensionModel()
+    // Lazy so a transcript instance never allocates the drawer model (and
+    // vice versa) — each VC instance only ever serves ONE role: Messages
+    // dedicates an instance per live transcript bubble (always .transcript)
+    // and a separate one to the drawer (compact/expanded, never .transcript).
+    private lazy var model = ExtensionModel()
+    private lazy var bubbleModel = TranscriptBubbleModel()
+    private var hasMountedUI = false
 
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        model.host = self
+    // The UI is mounted on FIRST activation, not viewDidLoad — the role
+    // (drawer vs transcript bubble) is keyed on presentationStyle, which is
+    // only reliably set by the time willBecomeActive fires.
+    private func mountUIIfNeeded() {
+        guard !hasMountedUI else { return }
+        hasMountedUI = true
+        let controller: UIViewController
+        if presentationStyle == .transcript {
+            let hosting = UIHostingController(rootView: TranscriptBubbleView(model: bubbleModel))
+            // Read-only in Phase 2: with hit-testing off, a tap on the bubble
+            // falls through to Messages, which opens the extension expanded
+            // (the summary view) — the same flow as tapping a template bubble.
+            hosting.view.isUserInteractionEnabled = false
+            controller = hosting
+        } else {
+            model.host = self
+            controller = UIHostingController(rootView: RootView(model: model))
+        }
         // Retained via view-controller containment (addChild) — no property needed.
-        let controller = UIHostingController(rootView: RootView(model: model))
         controller.view.backgroundColor = .clear
         addChild(controller)
         controller.view.translatesAutoresizingMaskIntoConstraints = false
@@ -568,17 +574,31 @@ class MessagesViewController: MSMessagesAppViewController {
         controller.didMove(toParent: self)
     }
 
-    // Fires on every activation: drawer open (selectedMessage nil → picker) AND
-    // cold bubble tap (selectedMessage set → summary).
+    // Fires on every activation: transcript bubble render (presentationStyle
+    // == .transcript), drawer open (selectedMessage nil → picker), AND cold
+    // bubble tap (selectedMessage set → summary).
     override func willBecomeActive(with conversation: MSConversation) {
         super.willBecomeActive(with: conversation)
-        model.activate(selectedMessageURL: conversation.selectedMessage?.url)
+        mountUIIfNeeded()
+        if presentationStyle == .transcript {
+            bubbleModel.load(messageURL: conversation.selectedMessage?.url)
+        } else {
+            model.activate(selectedMessageURL: conversation.selectedMessage?.url)
+        }
+    }
+
+    // Only consulted for transcript (live layout) instances. Fixed compact
+    // height per the plan — content lays out top-aligned within it, never
+    // scrolls. Messages passes the maximum bubble size as `size`.
+    override func contentSizeThatFits(_ size: CGSize) -> CGSize {
+        CGSize(width: size.width, height: TranscriptBubbleView.bubbleHeight)
     }
 
     // Fires when the user taps one of our bubbles while the extension is
     // already active (the warm path; cold taps arrive via willBecomeActive).
     override func didSelect(_ message: MSMessage, conversation: MSConversation) {
         super.didSelect(message, conversation: conversation)
+        guard presentationStyle != .transcript else { return }
         if let url = message.url {
             model.showSummary(for: url)
         }
@@ -593,11 +613,14 @@ class MessagesViewController: MSMessagesAppViewController {
             return
         }
         let message = MSMessage(session: MSSession())
-        let layout = MSMessageTemplateLayout()
-        layout.image = Self.shareImage
-        layout.caption = caption
-        layout.subcaption = subcaption
-        message.layout = layout
+        let template = MSMessageTemplateLayout()
+        template.image = Self.shareImage
+        template.caption = caption
+        template.subcaption = subcaption
+        // Phase 2: live transcript bubble for recipients WITH the app; the
+        // Phase 1 template stays as the alternate, so no-app / macOS / SMS
+        // recipients see exactly what they saw before this change.
+        message.layout = MSMessageLiveLayout(alternateLayout: template)
         message.url = url
         message.summaryText = caption
         conversation.insert(message) { [weak self] error in
@@ -895,5 +918,148 @@ private struct CenteredMessage: View {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Transcript bubble (Phase 2, read-only)
+
+struct TranscriptBubbleView: View {
+    // contentSizeThatFits returns this fixed compact height (per the plan: no
+    // scrolling inside a bubble; the question count isn't knowable at sizing
+    // time). The layout below is budgeted to fit the worst case: a 2-line
+    // title + two question rows + the status footer.
+    static let bubbleHeight: CGFloat = 148
+
+    @ObservedObject var model: TranscriptBubbleModel
+
+    var body: some View {
+        content
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color(.systemBackground))
+            // Belt-and-braces with the hosting view's isUserInteractionEnabled
+            // = false: taps fall through to Messages → the expanded summary.
+            .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.state {
+        case .loading:
+            HStack(spacing: 10) {
+                Text("👋")
+                ProgressView()
+            }
+        case .unavailable:
+            // Static fallback — the tap-through to the expanded summary still
+            // works (it has its own retry + Open/Copy affordances).
+            VStack(alignment: .leading, spacing: 4) {
+                Text("👋 WhoeverWants poll")
+                    .font(.subheadline.weight(.semibold))
+                Text("Tap to view")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        case .loaded(let summary):
+            loaded(summary)
+        }
+    }
+
+    private func loaded(_ summary: PollSummary) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(summary.title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+
+            // Up to 2 question rows; extras collapse into "+N more" so the
+            // fixed-height bubble never clips mid-row.
+            ForEach(summary.questions.prefix(2)) { q in
+                VStack(alignment: .leading, spacing: 2) {
+                    if let label = q.label {
+                        Text(label)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    if q.type == "yes_no", let yes = q.yesCount, let no = q.noCount, yes + no > 0 {
+                        YesNoBar(yes: yes, no: no)
+                    } else if let text = q.resultText {
+                        Text(text)
+                            .font(.footnote)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            if summary.questions.count > 2 {
+                Text("+\(summary.questions.count - 2) more")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            Text(footerText(summary))
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    // "Open · ends in 2 hr. · 5 responded" / "Closed · 8 responded". Computed
+    // at render — transcript instances are recreated whenever the bubble
+    // scrolls back into view, so a static relative string stays fresh enough
+    // without a ticking timer (which Apple's transcript guidance discourages).
+    private func footerText(_ summary: PollSummary) -> String {
+        var parts: [String] = []
+        if summary.isClosed {
+            parts.append("Closed")
+        } else if let deadline = summary.responseDeadline, deadline > Date() {
+            let rel = Self.relativeFormatter.localizedString(for: deadline, relativeTo: Date())
+            parts.append("Open · ends \(rel)")
+        } else {
+            parts.append("Open")
+        }
+        if summary.respondentCount > 0 {
+            let word = summary.respondentCount == 1 ? "person" : "people"
+            parts.append("\(summary.respondentCount) \(word) responded")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .short
+        return f
+    }()
+}
+
+// Proportional Yes (green) / No (red) split — the "live result bar" the plan
+// calls for. Only rendered when at least one yes/no vote exists (the caller
+// gates on yes + no > 0); each cast side keeps a minimum visible sliver.
+private struct YesNoBar: View {
+    let yes: Int
+    let no: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            GeometryReader { geo in
+                HStack(spacing: yes > 0 && no > 0 ? 2 : 0) {
+                    if yes > 0 {
+                        Capsule()
+                            .fill(Color.green.opacity(0.75))
+                            .frame(width: max(6, geo.size.width * CGFloat(yes) / CGFloat(yes + no)))
+                    }
+                    if no > 0 {
+                        Capsule().fill(Color.red.opacity(0.65))
+                    }
+                }
+            }
+            .frame(height: 8)
+            Text("Yes \(yes) · No \(no)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize()
+        }
     }
 }
