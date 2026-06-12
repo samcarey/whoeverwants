@@ -344,6 +344,13 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
 
       {isOpen && (
         <>
+          {/* TODO: this modal mode renders `position: fixed` inline (not via
+              ModalPortal), so a transformed/contained/will-change ancestor
+              would trap it — the same latent bug TimeGridModal had on the poll
+              detail page (whose swipe wrapper has a permanent
+              `will-change: transform`). Not currently mounted under such an
+              ancestor (inline mode is what create-poll uses), but wrap in
+              ModalPortal if modal mode ever returns to a ballot surface. */}
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black bg-opacity-50 z-40"

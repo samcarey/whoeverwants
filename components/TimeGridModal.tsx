@@ -186,10 +186,9 @@ export default function TimeGridModal({
   // the touchmove-prevent effect runs).
   return (
     <ModalPortal>
-      {isOpen ? (
+      {isOpen && (
       <div
         ref={backdropRef}
-        data-modal
         className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50"
         onClick={handleCancel}
         style={{ touchAction: 'none' }}
@@ -259,7 +258,7 @@ export default function TimeGridModal({
           </div>
         </div>
       </div>
-      ) : null}
+      )}
     </ModalPortal>
   );
 }
