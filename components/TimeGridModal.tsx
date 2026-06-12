@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import ModalPortal from './ModalPortal';
 import TimeMinMaxCounter from './TimeMinMaxCounter';
 import { timeToMinutes, formatDurationLabel } from '@/lib/timeUtils';
 import { useBodyScrollLock } from '@/lib/useBodyScrollLock';
@@ -137,8 +138,6 @@ export default function TimeGridModal({
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   const handleApply = () => {
     onApply(localMinTime, localMaxTime);
     onClose();
@@ -174,78 +173,93 @@ export default function TimeGridModal({
 
   const isBelowMinDuration = minDurationMinutes != null && minDurationMinutes > 0 && durationMinutes > 0 && durationMinutes < minDurationMinutes;
 
+  // Portaled to body so `position: fixed` is genuinely viewport-relative.
+  // The poll detail page's swipe wrapper carries a permanent
+  // `will-change: transform`, which (per spec) makes it the containing block
+  // for fixed descendants — rendered inline there, this modal's `inset-0` box
+  // spanned the FULL page-content height and the modal could land below the
+  // visible screen once the availability form grew (split slots). The portal
+  // escapes any transformed/contained ancestor; z-[70] clears the create-poll
+  // bottom sheet (z-60) since the portal also leaves that stacking context.
+  // ModalPortal stays mounted across open/close (it defers children by one
+  // commit, so mounting it fresh on open would leave backdropRef null when
+  // the touchmove-prevent effect runs).
   return (
-    <div
-      ref={backdropRef}
-      data-modal
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center pb-[25vh] sm:pb-0 sm:pt-20 bg-black/50"
-      onClick={handleCancel}
-      style={{ touchAction: 'none' }}
-    >
+    <ModalPortal>
+      {isOpen ? (
       <div
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-lg w-full mx-4 flex flex-col"
-        onClick={(e) => e.stopPropagation()}
+        ref={backdropRef}
+        data-modal
+        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50"
+        onClick={handleCancel}
+        style={{ touchAction: 'none' }}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 pt-2">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Time Window</h3>
-          <button
-            onClick={handleApply}
-            className="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          >
-            <svg className="w-10 h-10 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4" />
-              <circle cx="12" cy="12" r="10" strokeWidth={1.5} />
-            </svg>
-          </button>
-        </div>
-
-        {/* Duration bar */}
-        {durationMinutes > 0 && (
-          <div className="px-3 pt-1 flex flex-col items-center gap-0.5">
-            <div
-              className={`h-7 rounded-full flex items-center justify-center ${
-                isBelowMinDuration
-                  ? 'bg-red-100 dark:bg-red-900/40'
-                  : 'bg-blue-100 dark:bg-blue-900/40'
-              } ${transitionsEnabled ? 'transition-all duration-200' : ''}`}
-              style={{ width: `${widthPct}%` }}
+        <div
+          className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-lg w-full mx-4 flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 pt-2">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Time Window</h3>
+            <button
+              onClick={handleApply}
+              className="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             >
-              <span className={`text-xs font-medium whitespace-nowrap ${
+              <svg className="w-10 h-10 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4" />
+                <circle cx="12" cy="12" r="10" strokeWidth={1.5} />
+              </svg>
+            </button>
+          </div>
+
+          {/* Duration bar */}
+          {durationMinutes > 0 && (
+            <div className="px-3 pt-1 flex flex-col items-center gap-0.5">
+              <div
+                className={`h-7 rounded-full flex items-center justify-center ${
+                  isBelowMinDuration
+                    ? 'bg-red-100 dark:bg-red-900/40'
+                    : 'bg-blue-100 dark:bg-blue-900/40'
+                } ${transitionsEnabled ? 'transition-all duration-200' : ''}`}
+                style={{ width: `${widthPct}%` }}
+              >
+                <span className={`text-xs font-medium whitespace-nowrap ${
+                  isBelowMinDuration
+                    ? 'text-red-600 dark:text-red-400'
+                    : 'text-blue-600 dark:text-blue-400'
+                }`}>
+                  {durationLabel}
+                </span>
+              </div>
+              <span className={`text-xs font-medium ${
                 isBelowMinDuration
                   ? 'text-red-600 dark:text-red-400'
-                  : 'text-blue-600 dark:text-blue-400'
+                  : crossesMidnight
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-transparent'
               }`}>
-                {durationLabel}
+                {isBelowMinDuration
+                  ? `Minimum ${formatDurationLabel(minDurationMinutes!)}`
+                  : 'Crosses midnight (+1 day)'}
               </span>
             </div>
-            <span className={`text-xs font-medium ${
-              isBelowMinDuration
-                ? 'text-red-600 dark:text-red-400'
-                : crossesMidnight
-                  ? 'text-amber-600 dark:text-amber-400'
-                  : 'text-transparent'
-            }`}>
-              {isBelowMinDuration
-                ? `Minimum ${formatDurationLabel(minDurationMinutes!)}`
-                : 'Crosses midnight (+1 day)'}
-            </span>
-          </div>
-        )}
+          )}
 
-        {/* Time selector */}
-        <div className="px-3 pb-3">
-          <TimeMinMaxCounter
-            minValue={localMinTime}
-            maxValue={localMaxTime}
-            onMinChange={handleMinChange}
-            onMaxChange={handleMaxChange}
-            increment={15}
-            constraintMin={constraintMin}
-            constraintMax={constraintMax}
-          />
+          {/* Time selector */}
+          <div className="px-3 pb-3">
+            <TimeMinMaxCounter
+              minValue={localMinTime}
+              maxValue={localMaxTime}
+              onMinChange={handleMinChange}
+              onMaxChange={handleMaxChange}
+              increment={15}
+              constraintMin={constraintMin}
+              constraintMax={constraintMax}
+            />
+          </div>
         </div>
       </div>
-    </div>
+      ) : null}
+    </ModalPortal>
   );
 }
