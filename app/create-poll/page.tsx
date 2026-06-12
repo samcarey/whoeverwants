@@ -538,12 +538,10 @@ export function CreateQuestionContent() {
   const [recurrence, setRecurrence] = useState<RecurrenceRule>(DEFAULT_RECURRENCE);
   const [recurrenceStart] = useState(() => formatRecurrenceDateISO(new Date()));
   const [details, setDetails] = useState("");
-  const detailsRef = useRef<HTMLTextAreaElement>(null);
   // Callback ref: size the Notes textarea to its content the moment it
   // attaches (ModalPortal mounts it after open), so it opens at one line for
   // an empty draft yet grows to fit restored/duplicated multi-line content.
   const setDetailsEl = useCallback((el: HTMLTextAreaElement | null) => {
-    detailsRef.current = el;
     if (el) autoSizeDetailsTextarea(el);
   }, []);
   const [category, setCategory] = useState<string>('custom');
