@@ -930,6 +930,14 @@ struct TranscriptBubbleView: View {
     // title + two question rows + the status footer.
     static let bubbleHeight: CGFloat = 148
 
+    // Messages overlays the extension's APP ICON on the live bubble's
+    // top-left corner (the OS draws it — we don't render it and can't move
+    // it). Device-verified: without this inset the badge covers the title's
+    // first characters. Only the first-line region is overlapped (~35pt past
+    // the content edge), so the title indents clear of it while the rows
+    // below keep the full width.
+    private static let iconBadgeClearance: CGFloat = 44
+
     @ObservedObject var model: TranscriptBubbleModel
 
     var body: some View {
@@ -946,16 +954,17 @@ struct TranscriptBubbleView: View {
     private var content: some View {
         switch model.state {
         case .loading:
-            HStack(spacing: 10) {
-                Text("👋")
-                ProgressView()
-            }
+            ProgressView()
+                .padding(.leading, Self.iconBadgeClearance)
         case .unavailable:
             // Static fallback — the tap-through to the expanded summary still
-            // works (it has its own retry + Open/Copy affordances).
+            // works (it has its own retry + Open/Copy affordances). No 👋
+            // glyph of our own: the OS already badges the bubble with the
+            // app icon.
             VStack(alignment: .leading, spacing: 4) {
-                Text("👋 WhoeverWants poll")
+                Text("WhoeverWants poll")
                     .font(.subheadline.weight(.semibold))
+                    .padding(.leading, Self.iconBadgeClearance)
                 Text("Tap to view")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -971,6 +980,7 @@ struct TranscriptBubbleView: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
+                .padding(.leading, Self.iconBadgeClearance)
 
             // Up to 2 question rows; extras collapse into "+N more" so the
             // fixed-height bubble never clips mid-row.
