@@ -1064,7 +1064,7 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 > non-members; creator-only privacy toggle on /info. F = group join
 > requests (migration 115) — signed-in non-members request access
 > via the /info-not-found page, creators approve/deny from a /info
-> "Pending requests" section, push notification fans out to every
+> "Pending Join Requests" section, push notification fans out to every
 > browser the creator's signed in on. G = invite links (migration
 > 116) — creators mint shareable URLs (`/invite/<token>`); raw token
 > + URL surfaced once at create time and persisted as sha256 hash;

@@ -309,7 +309,7 @@ the original session for the rationale.
 | C | OAuth (Apple, Google) | web + Capacitor flows, ID-token verify, account merge on shared email | A |
 | D | Passkey | WebAuthn server + browser; iOS native plugin | A; can ship after E/F if flaky |
 | E | Group privacy | `groups.privacy`, `groups.creator_user_id`, visibility filter, sign-in nudge | A, B |
-| F | Join requests (shipped) | `group_join_requests` table (migration 115), request/approve/deny endpoints, push notification fan-out to creator's `user_browsers`, /info "Pending requests" creator section, "Request to join" CTA on signed-in 404 page | E |
+| F | Join requests (shipped) | `group_join_requests` table (migration 115), request/approve/deny endpoints, push notification fan-out to creator's `user_browsers`, /info "Pending Join Requests" creator section, "Request to join" CTA on signed-in 404 page | E |
 | G | Invite links (shipped) | `group_invites` table (migration 116), creator-side create/list/revoke endpoints, anonymous-allowed `/invite/<token>` landing page that auto-redeems for signed-in viewers, `InviteLinksSection` on /info | E |
 | H | ~~Per-vote anonymity~~ | **NOT PLANNED.** Anonymity flags on votes + read-time filter were originally designed but retired. Anonymous participation is "leave the voter name blank"; no per-vote on/off toggle. | — |
 | I | Polish (partial — **shipped**) | linked-identities display, **add recovery email** (migration 118: `magic_link_tokens.user_id`; `POST /api/auth/recovery-email/{request,verify}`), **delete account** (`DELETE /api/auth/me`), sign out (Phase A). Still deferred: retire `creator_secret`; "claim an anonymous-created group". | A–G |

@@ -200,7 +200,7 @@ export default function JoinRequestsSection({
   return (
     <section className={className}>
       <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
-        Pending requests
+        Pending Join Requests
       </h2>
       {error && (
         <p
