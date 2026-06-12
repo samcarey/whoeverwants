@@ -1,0 +1,173 @@
+"""Tests for GET /api/polls/{short_id}/summary — the identity-free compact
+summary powering the iMessage live transcript bubble (Phase 2 of
+docs/imessage-extension-plan.md)."""
+
+import uuid
+
+from tests.conftest import (
+    close_poll,
+    create_poll,
+    group_members_for,
+    yes_no_question,
+)
+
+
+def _vote_yes_no(client, poll, voter_name, choice, *, question_id=None, browser_id=None):
+    body = {
+        "voter_name": voter_name,
+        "items": [
+            {
+                "question_id": question_id or poll["questions"][0]["id"],
+                "vote_type": "yes_no",
+                "yes_no_choice": choice,
+            }
+        ],
+    }
+    headers = {"X-Browser-Id": browser_id or str(uuid.uuid4())}
+    resp = client.post(f"/api/polls/{poll['id']}/votes", json=body, headers=headers)
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def _summary(client, poll, **kwargs):
+    resp = client.get(f"/api/polls/{poll['short_id']}/summary", **kwargs)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+class TestPollSummary:
+    def test_unknown_short_id_404(self, client):
+        resp = client.get("/api/polls/zzzzzzzz/summary")
+        assert resp.status_code == 404
+
+    def test_yes_no_counts_and_result_text(self, client):
+        poll = create_poll(client, title="Pizza night?")
+        _vote_yes_no(client, poll, "Ann", "yes")
+        _vote_yes_no(client, poll, "Bob", "yes")
+        _vote_yes_no(client, poll, "Cara", "no")
+        s = _summary(client, poll)
+        assert s["poll_id"] == poll["id"]
+        assert s["short_id"] == poll["short_id"]
+        assert s["title"] == "Pizza night?"
+        assert s["is_closed"] is False
+        assert s["respondent_count"] == 3
+        (q,) = s["questions"]
+        assert q["question_type"] == "yes_no"
+        assert q["yes_count"] == 2
+        assert q["no_count"] == 1
+        assert q["result_text"] == "Yes 2 · No 1"
+        # Single-question polls carry no disambiguator label.
+        assert q["label"] is None
+
+    def test_no_votes_yet(self, client):
+        poll = create_poll(client)
+        s = _summary(client, poll)
+        assert s["respondent_count"] == 0
+        assert s["questions"][0]["result_text"] == "No votes yet"
+
+    def test_identity_free_and_no_membership_write(self, client):
+        """The endpoint needs no identity headers AND must not auto-join the
+        caller (a transcript bubble render is passive, not a visit)."""
+        poll = create_poll(client)
+        before = set(group_members_for(poll["group_id"]))
+        resp = client.get(f"/api/polls/{poll['short_id']}/summary")
+        assert resp.status_code == 200
+        assert set(group_members_for(poll["group_id"])) == before
+
+    def test_multi_question_labels(self, client):
+        poll = create_poll(
+            client,
+            questions=[
+                yes_no_question(context="Up for it?"),
+                {
+                    "question_type": "ranked_choice",
+                    "category": "restaurant",
+                    "context": "Dinner",
+                    "options": ["Thai", "Sushi"],
+                },
+            ],
+        )
+        s = _summary(client, poll)
+        labels = {q["question_type"]: q["label"] for q in s["questions"]}
+        # yes_no label is the typed context alone (the "Yes/No is a category,
+        # not display text" rule); the ranked question gets "<Label> for <Ctx>".
+        assert labels["yes_no"] == "Up for it?"
+        assert labels["ranked_choice"] == "Restaurant for Dinner"
+
+    def test_closed_ranked_choice_winner(self, client):
+        poll = create_poll(
+            client,
+            questions=[
+                {
+                    "question_type": "ranked_choice",
+                    "category": "custom",
+                    "options": ["Thai", "Sushi"],
+                }
+            ],
+        )
+        qid = poll["questions"][0]["id"]
+        body = {
+            "voter_name": "Ann",
+            "items": [
+                {
+                    "question_id": qid,
+                    "vote_type": "ranked_choice",
+                    "ranked_choices": ["Thai", "Sushi"],
+                }
+            ],
+        }
+        resp = client.post(
+            f"/api/polls/{poll['id']}/votes",
+            json=body,
+            headers={"X-Browser-Id": str(uuid.uuid4())},
+        )
+        assert resp.status_code == 201, resp.text
+        s_open = _summary(client, poll)
+        assert s_open["questions"][0]["result_text"] == "Leading: Thai"
+        assert close_poll(client, poll).status_code == 200
+        s_closed = _summary(client, poll)
+        assert s_closed["is_closed"] is True
+        assert s_closed["questions"][0]["result_text"] == "Winner: Thai"
+
+    def test_limited_supply_claimed_line(self, client):
+        poll = create_poll(
+            client,
+            title="2 spare tickets",
+            questions=[
+                {
+                    "question_type": "limited_supply",
+                    "category": "custom",
+                    "supply_count": 2,
+                }
+            ],
+        )
+        qid = poll["questions"][0]["id"]
+        resp = client.post(
+            f"/api/polls/{poll['id']}/votes",
+            json={
+                "voter_name": "Ann",
+                "items": [{"question_id": qid, "vote_type": "limited_supply"}],
+            },
+            headers={"X-Browser-Id": str(uuid.uuid4())},
+        )
+        assert resp.status_code == 201, resp.text
+        s = _summary(client, poll)
+        q = s["questions"][0]
+        assert q["result_text"] == "1/2 claimed"
+        assert q["secured_count"] == 1
+        assert q["supply_count"] == 2
+
+    def test_group_name_falls_back_to_participants(self, client):
+        """Groups without a title override resolve to the participant-names
+        display name (group_display_name), not null."""
+        poll = create_poll(client, creator_name="Sam")
+        s = _summary(client, poll)
+        assert s["group_name"] == "Sam"
+
+    def test_response_deadline_has_no_microseconds(self, client):
+        """The Swift consumer parses with ISO8601DateFormatter, which rejects
+        6-digit fractional seconds — the endpoint strips them."""
+        poll = create_poll(client, response_deadline="2030-01-01T18:30:00.123456+00:00")
+        s = _summary(client, poll)
+        assert s["response_deadline"] is not None
+        assert "." not in s["response_deadline"]
