@@ -67,9 +67,16 @@ export function GroupLoading({ label = "Loading group..." }: { label?: string })
  *     will be notified."; on 404 show "Group not found."; on 401
  *     (token expired mid-tap) show a re-sign-in nudge.
  */
+/** Mirrors `MESSAGE_MAX_CHARS` in `server/services/join_requests.py` —
+ *  the server truncates anything longer, so the FE caps input at the
+ *  same length to keep what the user typed and what the admins see
+ *  identical. */
+const JOIN_REQUEST_MESSAGE_MAX = 500;
+
 export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
   const router = useRouter();
   const [session, setSession] = useState<SessionUser | null>(null);
+  const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<
     | { kind: "idle" }
@@ -153,7 +160,7 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
     if (!routeId || submitting) return;
     setSubmitting(true);
     setStatus({ kind: "idle" });
-    apiCreateGroupJoinRequest(routeId, null)
+    apiCreateGroupJoinRequest(routeId, message.trim() || null)
       .then((result) => {
         if (result.status === "already_member") {
           setStatus({
@@ -229,6 +236,26 @@ export function GroupNotFound({ routeId }: { routeId?: string } = {}) {
           </button>
           {canRequest && !requestSent && (
             <div className="mt-4">
+              {/* Optional note shown to the group's admins next to the
+                  pending request on /info ("hi, it's Alice from work").
+                  `text-left` is load-bearing: the page wrapper is
+                  text-center and text-align cascades into form fields.
+                  Height via CSS (no `rows` attr) per the textarea-sizing
+                  pitfalls; `block` kills the inline-block descender gap. */}
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onBlur={() => {
+                  const trimmed = message.trim();
+                  if (trimmed !== message) setMessage(trimmed);
+                }}
+                disabled={submitting}
+                maxLength={JOIN_REQUEST_MESSAGE_MAX}
+                placeholder="Add a note so they know who you are (optional)"
+                aria-label="Optional message to send with your request"
+                className="block w-full mb-3 px-3 py-2 text-sm text-left bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:opacity-50"
+                style={{ height: "76px" }}
+              />
               <button
                 type="button"
                 onClick={requestAccess}

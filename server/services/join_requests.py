@@ -32,6 +32,14 @@ from services.groups import backdate_membership_for_user
 
 logger = logging.getLogger(__name__)
 
+# Cap on the requester's optional message. The FE textarea enforces the
+# same limit (`JOIN_REQUEST_MESSAGE_MAX` in components/GroupLoadState.tsx
+# — keep in lockstep); raw-API callers get silently truncated rather
+# than 400'd, matching the `_sanitize_plus_one_names` trim-and-bound
+# convention. The column is unbounded TEXT, so this is the only guard
+# against megabyte messages rendered verbatim on the admins' /info page.
+MESSAGE_MAX_CHARS = 500
+
 
 @dataclass
 class JoinRequestSummary:
@@ -72,7 +80,7 @@ def create_join_request(
     don't want a re-fire on every "polite re-request" tap. Phase I can
     add an explicit "edit my message" action if anyone asks.
     """
-    msg = (message or "").strip() or None
+    msg = (message or "").strip()[:MESSAGE_MAX_CHARS].rstrip() or None
     # Attempt INSERT; on conflict, SELECT the existing row. Two-step is
     # the cleanest way to express "first writer wins, everyone else
     # reads" in postgres without a RAISE-and-recover dance.
