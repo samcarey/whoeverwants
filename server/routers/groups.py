@@ -1329,6 +1329,19 @@ def create_group_join_request(
             if requester_email
             else "Someone wants to join"
         )
+        # Surface the requester's optional note on line 2 so the admin has
+        # context before tapping in. Capped at 120 chars, mirroring
+        # `_poll_decision_summary`'s push-body convention; the full text
+        # lives on /info. `summary.message` is the freshly-inserted row's
+        # message here — the fan-out is gated on `is_new`, so it can't be
+        # a stale already-pending message.
+        if summary.message:
+            snippet = (
+                summary.message
+                if len(summary.message) <= 120
+                else summary.message[:119].rstrip() + "…"
+            )
+            body_text = f'{body_text}: "{snippet}"'
         background_tasks.add_task(
             fan_out_join_request,
             group_id,

@@ -255,6 +255,81 @@ def test_create_join_request_new_returns_pending(
     assert body["request"]["requester_email"] == remail
 
 
+def test_create_join_request_message_truncated_to_cap(
+    client, creator_browser, requester_browser
+):
+    """The optional message is capped at MESSAGE_MAX_CHARS server-side
+    (the FE textarea enforces the same limit; raw-API callers get
+    silently truncated, not 400'd). The column is unbounded TEXT, so
+    this is the only guard against megabyte messages rendered verbatim
+    on the admins' /info page."""
+    from services.join_requests import MESSAGE_MAX_CHARS
+
+    ctoken, _, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+
+    rtoken, _, _ = _sign_in(client, requester_browser)
+    resp = client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": "x" * (MESSAGE_MAX_CHARS + 100)},
+        headers=_bearer_headers(requester_browser, rtoken),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "pending"
+    assert body["request"]["message"] == "x" * MESSAGE_MAX_CHARS
+
+
+def test_join_request_push_body_includes_message(
+    client, creator_browser, requester_browser, monkeypatch
+):
+    """When the requester includes a message, the admins' push body
+    carries it on line 2 ('<email> wants to join: "<note>"') so they
+    have context before tapping into /info. A message longer than 120
+    chars is snipped with an ellipsis — push bodies stay short.
+    Monkeypatches the fan-out at its router-side import site (delivery
+    needs a real subscription; the payload is the testable contract)."""
+    import routers.groups as groups_router
+
+    captured: list[dict] = []
+
+    def fake_fan_out(group_id, admin_user_ids, payload):
+        captured.append(payload)
+
+    monkeypatch.setattr(groups_router, "fan_out_join_request", fake_fan_out)
+
+    ctoken, _, _ = _sign_in(client, creator_browser)
+    group = _create_private_group(client, creator_browser, ctoken)
+
+    rtoken, _, remail = _sign_in(client, requester_browser)
+    resp = client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": "Hi, it's Alice from the climbing gym"},
+        headers=_bearer_headers(requester_browser, rtoken),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "pending"
+
+    assert len(captured) == 1
+    assert (
+        captured[0]["body"]
+        == f'{remail} wants to join: "Hi, it\'s Alice from the climbing gym"'
+    )
+
+    # Long message → 119 chars kept + ellipsis in the push body (the
+    # full text still lands on /info via the stored row).
+    long_browser = str(uuid.uuid4())
+    ltoken, _, lemail = _sign_in(client, long_browser)
+    resp = client.post(
+        f"/api/groups/{group['id']}/join-requests",
+        json={"message": "y" * 300},
+        headers=_bearer_headers(long_browser, ltoken),
+    )
+    assert resp.status_code == 200, resp.text
+    assert len(captured) == 2
+    assert captured[1]["body"] == f'{lemail} wants to join: "{"y" * 119}…"'
+
+
 def test_create_join_request_repeat_returns_already_pending(
     client, creator_browser, requester_browser
 ):
