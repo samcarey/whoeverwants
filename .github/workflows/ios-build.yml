@@ -329,22 +329,38 @@ jobs:
         run: |
           set -euo pipefail
           BUNDLE_ID="${{ steps.bundle.outputs.bundle_id }}"
+          # The Messages app extension's bundle id MUST be prefixed by the host
+          # app's bundle id, so it's derived per-tier (the committed project
+          # carries com.whoeverwants.app.MessagesExtension).
+          EXT_BUNDLE_ID="${BUNDLE_ID}.MessagesExtension"
           PBX="ios/App/App.xcodeproj/project.pbxproj"
           # Automatic signing ignores command-line PRODUCT_BUNDLE_IDENTIFIER
           # overrides, so we patch the project file directly. Every build
           # starts from git state, so the patch doesn't persist.
-          BEFORE=$(grep -c 'PRODUCT_BUNDLE_IDENTIFIER = com\.whoeverwants\.app' "$PBX" || true)
+          #
+          # Two targets now: App (com.whoeverwants.app, 2 configs) and
+          # MessagesExtension (com.whoeverwants.app.MessagesExtension, 2 configs).
+          # The ext id contains the app id as a prefix, so rewrite the LONGER
+          # (ext) string FIRST with an anchored `;` so the shorter app-id sed
+          # can't clobber the `.MessagesExtension` suffix. A single greedy
+          # `com\.whoeverwants\.app[^;]*;` sed would collide both onto one id.
+          APP_BEFORE=$(grep -c 'PRODUCT_BUNDLE_IDENTIFIER = com\.whoeverwants\.app;' "$PBX" || true)
+          EXT_BEFORE=$(grep -c 'PRODUCT_BUNDLE_IDENTIFIER = com\.whoeverwants\.app\.MessagesExtension;' "$PBX" || true)
           sed -i.bak -E \
-            "s|PRODUCT_BUNDLE_IDENTIFIER = com\.whoeverwants\.app[^;]*;|PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};|g" \
+            "s|PRODUCT_BUNDLE_IDENTIFIER = com\.whoeverwants\.app\.MessagesExtension;|PRODUCT_BUNDLE_IDENTIFIER = ${EXT_BUNDLE_ID};|g" \
+            "$PBX"
+          sed -i -E \
+            "s|PRODUCT_BUNDLE_IDENTIFIER = com\.whoeverwants\.app;|PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};|g" \
             "$PBX"
           rm -f "$PBX.bak"
-          AFTER=$(grep -c "PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};" "$PBX" || true)
-          if [[ "$BEFORE" -lt 2 || "$AFTER" != "$BEFORE" ]]; then
-            echo "::error::pbxproj patch mismatch (expected $BEFORE matches pre-sed; got $AFTER post-sed)"
+          APP_AFTER=$(grep -c "PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};" "$PBX" || true)
+          EXT_AFTER=$(grep -c "PRODUCT_BUNDLE_IDENTIFIER = ${EXT_BUNDLE_ID};" "$PBX" || true)
+          if [[ "$APP_BEFORE" != 2 || "$EXT_BEFORE" != 2 || "$APP_AFTER" != 2 || "$EXT_AFTER" != 2 ]]; then
+            echo "::error::pbxproj bundle-id patch mismatch (app $APP_BEFORE->$APP_AFTER, ext $EXT_BEFORE->$EXT_AFTER; each must be 2)"
             grep PRODUCT_BUNDLE_IDENTIFIER "$PBX"
             exit 1
           fi
-          echo "Patched $AFTER bundle ID occurrence(s) to $BUNDLE_ID"
+          echo "Patched App -> ${BUNDLE_ID} (x2), MessagesExtension -> ${EXT_BUNDLE_ID} (x2)"
 
       - name: Scope associated-domains entitlement to the tier host
         run: |
@@ -458,7 +474,6 @@ jobs:
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           BUILD_NUMBER: ${{ steps.build_number.outputs.build_number }}
-          BUNDLE_ID: ${{ steps.bundle.outputs.bundle_id }}
         run: |
           set -euo pipefail
           mkdir -p build
@@ -488,7 +503,6 @@ jobs:
             -authenticationKeyIssuerID "${{ steps.apikey.outputs.issuer_id }}" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             clean archive > build/xcodebuild-archive.log 2>&1 || {
               echo "::error::Archive failed — tail of log:"
               tail -100 build/xcodebuild-archive.log
