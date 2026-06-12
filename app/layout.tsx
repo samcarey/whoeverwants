@@ -9,6 +9,7 @@ import { SlideOverlayHost } from "@/lib/slideOverlay";
 import HomeBackdropHost from "@/components/HomeBackdropHost";
 import GroupBackdropHost from "@/components/GroupBackdropHost";
 import PollBackdropHost from "@/components/PollBackdropHost";
+import SettingsBackdropHost from "@/components/SettingsBackdropHost";
 import CreateGroupButtonHost from "@/components/CreateGroupButtonHost";
 import RecoveryReminderHost from "@/components/RecoveryReminderHost";
 import { PersistentCreatePollHost } from "@/components/PersistentCreatePollHost";
@@ -157,6 +158,11 @@ export default function RootLayout({
         {/* Persistent poll-detail backdrop for the poll-info→poll-detail
             swipe-back gesture — see components/PollBackdropHost.tsx. */}
         <PollBackdropHost />
+
+        {/* Persistent settings backdrop for the settings-edit→settings
+            swipe-back gesture — see components/SettingsBackdropHost.tsx.
+            (The settings→home swipe reuses HomeBackdropHost above.) */}
+        <SettingsBackdropHost />
 
         {/* Single persistent "+ Group" button instance for the home page
             and the group→home swipe-back gesture window. Mounted at layout

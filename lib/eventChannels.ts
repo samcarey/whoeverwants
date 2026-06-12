@@ -201,3 +201,16 @@ export interface PollBackdropShowDetail {
  *  detail route's mount effect (so the backdrop dismisses itself once the
  *  real poll detail page has rendered through it). */
 export const HIDE_POLL_BACKDROP_EVENT = 'poll-backdrop:hide';
+
+/** Fired by the settings EDIT page's (/settings/edit) swipe-back gesture when
+ *  motion is recognized AND when it commits to navigation.
+ *  SettingsBackdropHost (in app/layout.tsx) mounts a body-level portal
+ *  showing the main settings page underneath the editor. Mirrors the
+ *  group/poll backdrop architecture. (The main settings page's own
+ *  swipe-back reveals HOME, so it reuses SHOW/HIDE_HOME_BACKDROP_EVENT.) */
+export const SHOW_SETTINGS_BACKDROP_EVENT = 'settings-backdrop:show';
+
+/** Fired by snap-back / cancel paths in the settings edit page AND by the
+ *  settings route's mount effect (so the backdrop dismisses itself once the
+ *  real settings page has rendered through it). */
+export const HIDE_SETTINGS_BACKDROP_EVENT = 'settings-backdrop:hide';

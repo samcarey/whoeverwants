@@ -92,6 +92,15 @@ export default function Home() {
       badge.style.transform = '';
       badge.style.transition = '';
     }
+    // The settings page's swipe-back transforms #header-portal (its
+    // floating back/Edit buttons live there); on commit the transform
+    // lingers on the persistent portal node — reset it here, same as the
+    // commit badge above (mirrors GroupPageInner).
+    const headerPortal = document.getElementById('header-portal');
+    if (headerPortal) {
+      headerPortal.style.transform = '';
+      headerPortal.style.transition = '';
+    }
     // On snap-back/cancel paths GroupPage clears these directly; on
     // commit, GroupPage has unmounted by the time we land here, so this
     // is the last place that can clear the scrollbar lock.
