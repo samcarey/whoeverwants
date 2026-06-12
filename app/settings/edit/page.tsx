@@ -18,6 +18,11 @@ import {
 } from "@/lib/api";
 import { usePageReady } from "@/lib/usePageReady";
 import { navigateWithTransition } from "@/lib/viewTransitions";
+import { useSwipeBackGesture, useHeaderPortalRef } from "@/lib/useSwipeBackGesture";
+import {
+  SHOW_SETTINGS_BACKDROP_EVENT,
+  HIDE_SETTINGS_BACKDROP_EVENT,
+} from "@/lib/eventChannels";
 import { detectAndSaveUserLocation, GeolocationDeniedError } from "@/lib/geolocation";
 import CompactNameField from "@/components/CompactNameField";
 import InitialBubble from "@/components/InitialBubble";
@@ -130,6 +135,29 @@ export default function SettingsEditPage() {
     navigateWithTransition(router, "/settings", "back");
   };
 
+  // Swipe-back → /settings (mirrors the group/poll info pages). The
+  // settings backdrop renders the main settings page behind this one
+  // during the drag; on commit we navigate directly with router.push (the
+  // backdrop is already showing the destination). The header chrome is the
+  // HeaderPortal-floated back/Save buttons in the body-level
+  // `#header-portal` node, so that node is the gesture's "header"
+  // transform target — the buttons slide with the page (see app/layout.tsx).
+  //
+  // The gesture is DISABLED while changes are staged (`hasUnsavedChanges`):
+  // the back button routes those through the "Discard your changes?"
+  // confirmation, and a swipe can't stop mid-gesture to ask — silently
+  // discarding a cropped photo / typed name would be data loss. With
+  // changes staged the handlers simply aren't attached, so the drag
+  // scrolls/no-ops like any non-swipe page.
+  const headerPortalRef = useHeaderPortalRef();
+  const { swipeWrapperRef, touchHandlers } = useSwipeBackGesture({
+    headerRef: headerPortalRef,
+    showBackdrop: () => window.dispatchEvent(new Event(SHOW_SETTINGS_BACKDROP_EVENT)),
+    hideBackdrop: () => window.dispatchEvent(new Event(HIDE_SETTINGS_BACKDROP_EVENT)),
+    onCommit: () => router.push("/settings"),
+  });
+  const swipeHandlers = hasUnsavedChanges ? {} : touchHandlers;
+
   const handleBack = () => {
     if (hasUnsavedChanges) {
       setShowDiscardConfirm(true);
@@ -236,6 +264,32 @@ export default function SettingsEditPage() {
         </button>
       </HeaderPortal>
 
+      {/* z-index:1 + opaque background keeps the settings backdrop hidden
+          behind the page until the swipe moves the wrapper sideways. The
+          negative horizontal margins cancel the template wrapper's `px-4`
+          (1rem) PLUS the outer safe-area padding so the background paints
+          all the way to the screen edges (same as the info pages); the
+          inner div re-applies the inset so the content doesn't move. */}
+      <div
+        ref={swipeWrapperRef}
+        {...swipeHandlers}
+        className="touch-pan-y"
+        style={{
+          willChange: "transform",
+          position: "relative",
+          zIndex: 1,
+          background: "var(--background)",
+          minHeight: "100dvh",
+          marginLeft: "calc(-1rem - max(0.35rem, env(safe-area-inset-left, 0px)))",
+          marginRight: "calc(-1rem - max(0.35rem, env(safe-area-inset-right, 0px)))",
+        }}
+      >
+      <div
+        style={{
+          paddingLeft: "calc(1rem + max(0.35rem, env(safe-area-inset-left, 0px)))",
+          paddingRight: "calc(1rem + max(0.35rem, env(safe-area-inset-right, 0px)))",
+        }}
+      >
       <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1.05rem)" }}>
         {/* Avatar + badges — camera badge opens the file picker; X badge stages
             an image removal (only shown when an image is displayed). Both badges
@@ -360,6 +414,8 @@ export default function SettingsEditPage() {
             {message.text}
           </div>
         )}
+      </div>
+      </div>
       </div>
 
       {pickedFile && (

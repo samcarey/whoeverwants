@@ -45,7 +45,7 @@ import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { isGroupRootView, normalizePath } from "./questionId";
-import { getRememberedScroll, groupScrollKey } from "./scrollMemory";
+import { getRememberedScroll, groupScrollKey, pollScrollKey } from "./scrollMemory";
 import {
   SLIDE_TO_GROUP_EVENT,
   SLIDE_OVERLAY_GROUP_ACTIVE_EVENT,
@@ -153,6 +153,11 @@ export function slideToPollDetail({
     direction,
     useHistoryBack,
     kind: { type: 'pollDetail', groupId, pollShortId },
+    // Pre-position the overlay's cards wrapper to the poll's saved scroll
+    // (set when the user left the detail page for /info or the group), so
+    // the slide-in shows the position the real route will restore instead
+    // of top-of-page with a snap on unmount. Undefined for a fresh poll.
+    overlayCardsOffset: getRememberedScroll(pollScrollKey(pollShortId)),
   });
 }
 
@@ -343,11 +348,17 @@ function renderForKind(
     case 'groupScheduled':
       return <ScheduledView key={kind.groupId} groupId={kind.groupId} />;
     case 'pollDetail':
+      // `inOverlay` keeps this transient instance from scrolling the
+      // document (the still-mounted source page) — the real route owns
+      // window scroll; the overlay shows the right position via the
+      // cards-wrapper `overlayCardsOffset` transform.
       return (
         <PollDetailView
           key={`${kind.groupId}/${kind.pollShortId}`}
           groupId={kind.groupId}
           pollShortId={kind.pollShortId}
+          overlayCardsOffset={overlayCardsOffset}
+          inOverlay
         />
       );
     case 'pollInfo':

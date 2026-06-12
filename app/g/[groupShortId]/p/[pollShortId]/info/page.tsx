@@ -27,6 +27,12 @@ import type { Poll, Question } from "@/lib/types";
 import { hasAppHistory } from "@/lib/viewTransitions";
 import { slideToPollDetail } from "@/lib/slideOverlay";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
+import { useSwipeBackGesture } from "@/lib/useSwipeBackGesture";
+import {
+  SHOW_POLL_BACKDROP_EVENT,
+  HIDE_POLL_BACKDROP_EVENT,
+  type PollBackdropShowDetail,
+} from "@/lib/eventChannels";
 import {
   isInSuggestionPhase,
   isInTimeAvailabilityPhase,
@@ -136,6 +142,7 @@ export function PollInfoView({ groupId, pollShortId }: PollInfoViewProps) {
       poll={poll}
       setPoll={setPoll}
       groupId={groupId}
+      pollShortId={pollShortId}
       onBack={goBack}
     />
   );
@@ -173,14 +180,37 @@ interface InfoProps {
   poll: Poll;
   setPoll: React.Dispatch<React.SetStateAction<Poll | null>>;
   groupId: string;
+  /** The route's poll ref (short_id or uuid) — used for the backdrop +
+   *  commit URL so they match the current route exactly. */
+  pollShortId: string;
   onBack: () => void;
 }
 
-function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
+function Info({ poll, setPoll, groupId, pollShortId, onBack }: InfoProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
   const myUserImageUrl = useMyUserImageUrl();
+
+  // Swipe-back → poll detail (mirrors the poll detail page's swipe to the
+  // group root). PollBackdropHost renders the poll detail page behind this
+  // one during the drag; on commit we navigate directly with router.push —
+  // the backdrop is already showing the destination, so navigation just
+  // commits the URL.
+  const { swipeWrapperRef, touchHandlers } = useSwipeBackGesture({
+    headerRef,
+    showBackdrop: () => {
+      window.dispatchEvent(
+        new CustomEvent<PollBackdropShowDetail>(SHOW_POLL_BACKDROP_EVENT, {
+          detail: { groupId, pollShortId },
+        }),
+      );
+    },
+    hideBackdrop: () => {
+      window.dispatchEvent(new Event(HIDE_POLL_BACKDROP_EVENT));
+    },
+    onCommit: () => router.push(`/g/${groupId}/p/${pollShortId}`),
+  });
 
   const anchor: Question | undefined = poll.questions[0];
   const isClosed = !!poll.is_closed;
@@ -222,10 +252,9 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
   // Per-person voter roster (account-deduped) so each respondent is one row +
   // long-pressable to their profile. Same shape as the group members roster.
   // Null until loaded; fall back to poll.voter_names (no-flash, no long-press).
-  const pollShortId = poll.short_id;
+  // The endpoint resolves the route's poll ref as short_id OR uuid.
   const [roster, setRoster] = useState<GroupRoster | null>(null);
   useEffect(() => {
-    if (!pollShortId) return;
     let cancelled = false;
     apiGetGroupPollVoters(groupId, pollShortId)
       .then((r) => {
@@ -319,7 +348,33 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
     <>
       <GroupHeader headerRef={headerRef} title={title} onBack={onBack} />
 
-      <div style={{ paddingTop: `calc(${headerHeight}px + 1rem)` }}>
+      {/* z-index:1 + opaque background keeps the poll-detail backdrop hidden
+          behind the page until the swipe moves the wrapper sideways. The
+          negative horizontal margins cancel the template wrapper's `px-4`
+          (1rem) PLUS the outer safe-area padding so the background paints all
+          the way to the screen edges (same as PollDetail's swipeWrapper); the
+          inner div re-applies the inset so the content doesn't move. */}
+      <div
+        ref={swipeWrapperRef}
+        {...touchHandlers}
+        className="touch-pan-y"
+        style={{
+          willChange: "transform",
+          position: "relative",
+          zIndex: 1,
+          background: "var(--background)",
+          minHeight: "100dvh",
+          marginLeft: "calc(-1rem - max(0.35rem, env(safe-area-inset-left, 0px)))",
+          marginRight: "calc(-1rem - max(0.35rem, env(safe-area-inset-right, 0px)))",
+        }}
+      >
+      <div
+        style={{
+          paddingTop: `calc(${headerHeight}px + 1rem)`,
+          paddingLeft: "calc(1rem + max(0.35rem, env(safe-area-inset-left, 0px)))",
+          paddingRight: "calc(1rem + max(0.35rem, env(safe-area-inset-right, 0px)))",
+        }}
+      >
         <section className="mb-6">
           <h2 className="px-1 mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
             Actions
@@ -461,6 +516,7 @@ function Info({ poll, setPoll, groupId, onBack }: InfoProps) {
             </ul>
           )}
         </section>
+      </div>
       </div>
 
       {pendingCopy && (

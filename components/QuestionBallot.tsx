@@ -185,7 +185,14 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const [existingSuggestions, setExistingSuggestions] = useState<string[]>([]);
   const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasVoted, setHasVoted] = useState(false);
+  // Seeded from localStorage so a voted user's FIRST commit renders the
+  // post-vote view (summary / edit affordance) instead of one frame of the
+  // active ballot that then swaps — same no-flicker rationale as the
+  // cache-seeded questionResults below. The big restore effect still runs
+  // and re-derives everything from the authoritative fetch.
+  const [hasVoted, setHasVoted] = useState(
+    () => typeof window !== 'undefined' && hasVotedOnQuestion(question.id),
+  );
   const [voteError, setVoteError] = useState<string | null>(null);
   const [questionResults, setQuestionResults] = useState<QuestionResults | null>(() => {
     // Initialize from cache so the first render shows results immediately
@@ -205,7 +212,18 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const [isCreator, setIsCreator] = useState(false);
   const [showVoteConfirmModal, setShowVoteConfirmModal] = useState(false);
   const [userVoteId, setUserVoteId] = useState<string | null>(null);
-  const [userVoteData, setUserVoteData] = useState<any>(null);
+  // Seeded from the votes cache (when warm) so the voted-user summary view
+  // ("Your ranking" / abstained badge) paints on the first commit instead of
+  // appearing a beat later when fetchVoteData resolves — the async gap reads
+  // as a flicker when this page mounts over a settled backdrop/overlay
+  // instance during a swipe-back or slide handoff. The restore effect's
+  // fetch still runs and overwrites with the authoritative row.
+  const [userVoteData, setUserVoteData] = useState<any>(() => {
+    if (typeof window === 'undefined') return null;
+    const voteId = getStoredVoteId(question.id);
+    if (!voteId) return null;
+    return getCachedVotes(question.id)?.find((v) => v.id === voteId) ?? null;
+  });
   const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
   const [isEditingVote, setIsEditingVote] = useState(false); // For suggestion editing
   const [isEditingRanking, setIsEditingRanking] = useState(false); // For ranking editing (independent)
@@ -528,7 +546,14 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
         [shuffledOptions[i], shuffledOptions[j]] = [shuffledOptions[j], shuffledOptions[i]];
       }
 
-      setRankedChoices(shuffledOptions);
+      // Functional update so this can't clobber a ranking RankableOptions
+      // already reported: since it seeds its list synchronously, its mount
+      // notify (onRankingChange → setRankedChoices) is queued BEFORE this
+      // effect runs (child effects fire first), but this closure still sees
+      // the initial []. Deferring to non-empty prev keeps the child's order —
+      // it is the displayed order, so overwriting it here would make the
+      // submitted ranking diverge from what the user sees.
+      setRankedChoices(prev => (prev.length > 0 ? prev : shuffledOptions));
       setOptionsInitialized(true);
     }
   }, [question.question_type, question.options, optionsInitialized, hasVoted, rankedChoices.length]);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getUserName, getUserLocation, type UserLocation } from "@/lib/userProfile";
 import {
@@ -26,6 +26,18 @@ import AddSignInOptionsModal from "@/components/AddSignInOptionsModal";
 import MergeAccountModal from "@/components/MergeAccountModal";
 import { usePageReady } from "@/lib/usePageReady";
 import { navigateWithTransition } from "@/lib/viewTransitions";
+import { useLongPress } from "@/lib/useLongPress";
+import { isAppHydrated } from "@/lib/hydration";
+import {
+  useSwipeBackGesture,
+  useHeaderPortalRef,
+  resetSwipeBackChrome,
+} from "@/lib/useSwipeBackGesture";
+import {
+  SHOW_HOME_BACKDROP_EVENT,
+  HIDE_HOME_BACKDROP_EVENT,
+  HIDE_SETTINGS_BACKDROP_EVENT,
+} from "@/lib/eventChannels";
 import HeaderPortal from "@/components/HeaderPortal";
 import InitialBubble from "@/components/InitialBubble";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
@@ -78,18 +90,59 @@ const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; icon
   },
 ];
 
-export default function SettingsPage() {
+// Module-level mirrors of the async-fetched passkey surfaces, so a REMOUNT of
+// this page (notably the real route mounting over the settled
+// SettingsBackdropHost instance after an edit→settings swipe-back commit)
+// paints the passkeys section on its first commit instead of flashing
+// "Loading…" / hiding the section while the fetches re-resolve. Same
+// no-first-commit-gap rationale as the RankableOptions sync seed — see the
+// swipe-back handoff note in CLAUDE.md. Updated on every successful fetch;
+// `cachedPasskeys` is cleared on sign-out so the next sign-in can't flash the
+// previous account's list.
+let cachedPasskeys: PasskeySummary[] | null = null;
+let cachedPasskeyServerEnabled: boolean | null = null;
+let cachedPlatformAuthAvailable: boolean | null = null;
+
+interface SettingsViewProps {
+  /** True when mounted inside SettingsBackdropHost (the edit→settings
+   *  swipe-back backdrop) rather than as the real route. Gates the
+   *  page-ready signal and swaps the HeaderPortal buttons for inline
+   *  fixed buttons (the portal node belongs to — and is transformed
+   *  with — the page being swiped on top). */
+  inOverlay?: boolean;
+}
+
+/** Prop-driven view exposed so SettingsBackdropHost can render this page
+ *  underneath /settings/edit during its swipe-back gesture. The default
+ *  route export below wraps it with the backdrop-dismissal mount effect. */
+export function SettingsView({ inOverlay = false }: SettingsViewProps) {
   const router = useRouter();
-  usePageReady(true);
-  const [name, setName] = useState("");
-  const [savedLocation, setSavedLocation] = useState<UserLocation | null>(null);
-  const [theme, setTheme] = useState<ThemePreference>("system");
-  // App-icon badge model. Init to defaults (SSR-safe); pulled from the
-  // effective settings (account when signed in, else localStorage) on mount
-  // and whenever the signed-in identity changes.
-  const [badge, setBadge] = useState<BadgeSettings>(DEFAULT_BADGE_SETTINGS);
+  usePageReady(!inOverlay);
+  // Seed every localStorage-backed state synchronously on post-hydration
+  // mounts so the first commit paints the settled UI (no effect-pass
+  // flicker — visible on swipe-back handoffs where this page mounts over
+  // an already-settled backdrop). During the app's initial hydration the
+  // seeds stay at the SSR-parity defaults and the mount effects populate
+  // them, exactly as before (eager reads there would diverge from the
+  // server-rendered HTML).
+  const seeded = typeof window !== "undefined" && isAppHydrated();
+  const [name, setName] = useState(() => (seeded ? getUserName() ?? "" : ""));
+  const [savedLocation, setSavedLocation] = useState<UserLocation | null>(
+    () => (seeded ? getUserLocation() : null),
+  );
+  const [theme, setTheme] = useState<ThemePreference>(
+    () => (seeded ? getStoredTheme() : "system"),
+  );
+  // App-icon badge model. Pulled from the effective settings (account when
+  // signed in, else localStorage) and re-read whenever the signed-in
+  // identity changes.
+  const [badge, setBadge] = useState<BadgeSettings>(
+    () => (seeded ? getEffectiveBadgeSettings() : DEFAULT_BADGE_SETTINGS),
+  );
   // "Remind me to vote" preference. Same init/sync model as the badge settings.
-  const [voteReminder, setVoteReminder] = useState<VoteReminder>(DEFAULT_VOTE_REMINDER);
+  const [voteReminder, setVoteReminder] = useState<VoteReminder>(
+    () => (seeded ? getEffectiveVoteReminder() : DEFAULT_VOTE_REMINDER),
+  );
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   // Read-only display of the current profile image. Editing (upload /
@@ -98,11 +151,13 @@ export default function SettingsPage() {
   // updates on sign-in).
   const serverImageUrl = useMyUserImageUrl();
 
-  // Initialize null for SSR parity (no localStorage on the server); the
-  // mount effect below seeds from the cached profile, then apiGetMe()
-  // refreshes. Eager `useState(() => getCurrentUser())` produces a
-  // hydration mismatch when signed in.
-  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
+  // Null during the initial hydration render for SSR parity (an eager
+  // `useState(() => getCurrentUser())` there produces a hydration mismatch
+  // when signed in); seeded from the cached profile on post-hydration
+  // mounts via the `seeded` gate, then apiGetMe() refreshes either way.
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(
+    () => (seeded ? getCurrentUser() : null),
+  );
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [signOutInFlight, setSignOutInFlight] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
@@ -133,14 +188,27 @@ export default function SettingsPage() {
   // passkeySupported(). Platform-authenticator availability is async
   // and used to gate the "Add passkey" affordance — registration
   // requires a real authenticator.
-  const [passkeys, setPasskeys] = useState<PasskeySummary[] | null>(null);
-  const [passkeyServerEnabled, setPasskeyServerEnabled] = useState<boolean | null>(null);
-  const [platformAuthAvailable, setPlatformAuthAvailable] = useState<boolean | null>(null);
+  const [passkeys, setPasskeys] = useState<PasskeySummary[] | null>(
+    () => (seeded ? cachedPasskeys : null),
+  );
+  const [passkeyServerEnabled, setPasskeyServerEnabled] = useState<boolean | null>(
+    () => (seeded ? cachedPasskeyServerEnabled : null),
+  );
+  const [platformAuthAvailable, setPlatformAuthAvailable] = useState<boolean | null>(
+    () => (seeded ? cachedPlatformAuthAvailable : null),
+  );
   const [passkeyRegisterInFlight, setPasskeyRegisterInFlight] = useState(false);
   const [passkeyDeletePending, setPasskeyDeletePending] = useState<string | null>(null);
   // The passkey the user has tapped "Remove" on, awaiting confirmation.
   const [passkeyToDelete, setPasskeyToDelete] = useState<PasskeySummary | null>(null);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
+
+  // Single write path for the passkeys list so the module-level mirror
+  // (which seeds the next mount's first commit) can't drift from state.
+  const updatePasskeys = (v: PasskeySummary[] | null) => {
+    cachedPasskeys = v;
+    setPasskeys(v);
+  };
 
   // Name + reference location are read-only here (edited on /settings/edit).
   // Reflect localStorage on mount and on every session change: sign-in
@@ -160,14 +228,19 @@ export default function SettingsPage() {
 
   // Refresh from the server on mount — catches server-side revocation
   // (different device signed out, account deleted, session expired).
+  // The backdrop instance skips every server fetch in this component
+  // (`inOverlay` gates below): it lives for less than a second under a
+  // swipe gesture and displays purely from the seeded caches; the real
+  // route re-fetches moments later anyway.
   useEffect(() => {
+    if (inOverlay) return;
     apiGetMe()
       .then((user) => setCurrentUser(user))
       .catch(() => {
         // Treat as "not signed in" for the network-blip case; the
         // cached value still drives the optimistic display.
       });
-  }, []);
+  }, [inOverlay]);
 
   // Close the add-sign-in modal whenever the signed-in identity changes
   // (sign-out, or sign-in as a different user) so it doesn't linger over
@@ -221,32 +294,40 @@ export default function SettingsPage() {
   // checking on mount means the "Add passkey" button is correctly
   // hidden / shown by the time it's relevant.
   useEffect(() => {
+    if (inOverlay) return; // backdrop displays from the seeded caches
     apiGetAuthProviders()
-      .then((p) => setPasskeyServerEnabled(p.passkey))
+      .then((p) => {
+        cachedPasskeyServerEnabled = p.passkey;
+        setPasskeyServerEnabled(p.passkey);
+      })
       .catch(() => setPasskeyServerEnabled(false));
-    platformPasskeySupported().then(setPlatformAuthAvailable);
-  }, []);
+    platformPasskeySupported().then((v) => {
+      cachedPlatformAuthAvailable = v;
+      setPlatformAuthAvailable(v);
+    });
+  }, [inOverlay]);
 
   // Load the user's existing passkeys whenever sign-in flips to true.
   // Cleared on sign-out (currentUser=null) so a subsequent sign-in
   // doesn't briefly show the previous user's list.
   useEffect(() => {
+    if (inOverlay) return; // backdrop displays from the seeded caches
     if (!currentUser) {
-      setPasskeys(null);
+      updatePasskeys(null);
       return;
     }
     if (!passkeySupported() || passkeyServerEnabled === false) {
-      setPasskeys(null);
+      updatePasskeys(null);
       return;
     }
     apiListPasskeys()
-      .then((r) => setPasskeys(r.passkeys))
+      .then((r) => updatePasskeys(r.passkeys))
       .catch(() => {
         // Network blip → empty list rather than infinite spinner.
         // User can retry via the page refresh.
-        setPasskeys([]);
+        updatePasskeys([]);
       });
-  }, [currentUser, passkeyServerEnabled]);
+  }, [inOverlay, currentUser, passkeyServerEnabled]);
 
   const handleAddPasskey = async () => {
     if (passkeyRegisterInFlight) return;
@@ -257,7 +338,7 @@ export default function SettingsPage() {
       // Refresh the list so the new entry shows up with its
       // server-side timestamps + transports.
       const r = await apiListPasskeys();
-      setPasskeys(r.passkeys);
+      updatePasskeys(r.passkeys);
       // Faint success acknowledgement — re-use the existing message
       // surface for consistency with other settings actions.
       setMessage({
@@ -284,8 +365,8 @@ export default function SettingsPage() {
     // Optimistic remove — server is the source of truth, but a 404
     // (already gone) is the only realistic failure mode and we'd want
     // to remove it from the list anyway.
-    setPasskeys((prev) =>
-      prev ? prev.filter((p) => p.credential_id !== credentialId) : prev
+    updatePasskeys(
+      passkeys ? passkeys.filter((p) => p.credential_id !== credentialId) : passkeys
     );
     try {
       await apiDeletePasskey(credentialId);
@@ -293,7 +374,7 @@ export default function SettingsPage() {
       // Roll back on network failure so the user can retry.
       try {
         const r = await apiListPasskeys();
-        setPasskeys(r.passkeys);
+        updatePasskeys(r.passkeys);
       } catch {
         // ignore
       }
@@ -308,6 +389,7 @@ export default function SettingsPage() {
   useEffect(() => {
     setTheme(getStoredTheme());
 
+    if (inOverlay) return; // backdrop displays from the seeded caches
     // Sync the cached profile with the server. cacheMyUserProfile fires
     // USER_PROFILE_CHANGED_EVENT, so the useMyUserImageUrl hook (and every
     // other avatar surface) refreshes if the account's image changed.
@@ -316,7 +398,7 @@ export default function SettingsPage() {
       .catch(() => {
         // Network blip — the cached value is still authoritative.
       });
-  }, []);
+  }, [inOverlay]);
 
   const selectedTheme = THEME_OPTIONS.find((o) => o.value === theme);
 
@@ -325,31 +407,97 @@ export default function SettingsPage() {
     saveTheme(next);
   };
 
+  // Long-press the title to open the commit-info modal (the affordance the
+  // template's settings title carried before the title moved in here).
+  const { props: longPressProps } = useLongPress(() =>
+    window.dispatchEvent(new Event('openCommitInfo'))
+  );
+
+  // Swipe-back → home (mirrors the group info page's gesture). The home
+  // backdrop (cached GroupList + home chrome) renders behind this page
+  // during the drag; on commit we navigate directly with router.push (the
+  // backdrop is already showing home). The header chrome is the
+  // HeaderPortal-floated back/Edit buttons in the body-level
+  // `#header-portal` node, so that node is the gesture's "header"
+  // transform target — the buttons slide with the page (see app/layout.tsx
+  // for why the portal's fixed/zero-height styling makes that safe).
+  const headerPortalRef = useHeaderPortalRef();
+  const { swipeWrapperRef, touchHandlers } = useSwipeBackGesture({
+    headerRef: headerPortalRef,
+    showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
+    hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
+    onCommit: () => router.push("/"),
+  });
+
+  // Floating opaque-bubble buttons. On the real route they're portaled into
+  // #header-portal (outside .responsive-scaling-container so position:fixed
+  // is viewport-relative on desktop — mirrors the /info page). Inside the
+  // settings BACKDROP they render inline instead: the portal node belongs
+  // to the page being swiped on top (it's that gesture's transform target),
+  // so portaled copies would overlap the editor's buttons AND slide with
+  // them; inline, the backdrop's contain:strict box anchors them correctly.
+  const headerButtons = (
+    <>
+      <button
+        onClick={() => navigateWithTransition(router, '/', 'back')}
+        className="fixed left-3 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70"
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+        aria-label="Go back"
+      >
+        <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
+      <button
+        onClick={() => navigateWithTransition(router, '/settings/edit', 'forward')}
+        className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70 text-blue-600 dark:text-blue-400 text-sm font-medium"
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
+        aria-label="Edit profile"
+      >
+        Edit
+      </button>
+    </>
+  );
+
   return (
-    <div className="question-content">
-      {/* Floating opaque-bubble buttons portaled outside .responsive-scaling-container
-       *  so position:fixed is viewport-relative on desktop. Back navigates home;
-       *  Edit opens /settings/edit (image / name / location). Mirrors the /info page. */}
-      <HeaderPortal>
-        <button
-          onClick={() => navigateWithTransition(router, '/', 'back')}
-          className="fixed left-3 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70"
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
-          aria-label="Go back"
-        >
-          <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <button
-          onClick={() => navigateWithTransition(router, '/settings/edit', 'forward')}
-          className="fixed right-3 z-30 h-10 px-4 flex items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 active:opacity-70 text-blue-600 dark:text-blue-400 text-sm font-medium"
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
-          aria-label="Edit profile"
-        >
-          Edit
-        </button>
-      </HeaderPortal>
+    <>
+      {inOverlay ? headerButtons : <HeaderPortal>{headerButtons}</HeaderPortal>}
+
+      {/* z-index:1 + opaque background keeps the home backdrop hidden behind
+          the page until the swipe moves the wrapper sideways. The negative
+          horizontal margins cancel the template wrapper's `px-4` (1rem) PLUS
+          the outer safe-area padding so the background paints all the way to
+          the screen edges (same as the info pages); the inner div re-applies
+          the inset so the content doesn't move. */}
+      <div
+        ref={swipeWrapperRef}
+        {...touchHandlers}
+        className="touch-pan-y"
+        style={{
+          willChange: "transform",
+          position: "relative",
+          zIndex: 1,
+          background: "var(--background)",
+          minHeight: "100dvh",
+          marginLeft: "calc(-1rem - max(0.35rem, env(safe-area-inset-left, 0px)))",
+          marginRight: "calc(-1rem - max(0.35rem, env(safe-area-inset-right, 0px)))",
+        }}
+      >
+      <div
+        style={{
+          paddingLeft: "calc(1rem + max(0.35rem, env(safe-area-inset-left, 0px)))",
+          paddingRight: "calc(1rem + max(0.35rem, env(safe-area-inset-right, 0px)))",
+        }}
+      >
+      {/* Page title — the saved name when set, else "Settings". Lives inside
+          the swipe wrapper (NOT the template) so it slides with the page. */}
+      <div className="max-w-4xl mx-auto px-16 pb-1 page-title-safe-top">
+        <h1 className="text-2xl font-bold text-center break-words select-none" {...longPressProps}>
+          {name.trim() || 'Settings'}
+        </h1>
+      </div>
+
+      <div className="question-content pt-0.5">
 
       {/* Profile — read-only avatar (the name is the header title). The card
           below holds reference location + theme. Editing the photo / name /
@@ -785,8 +933,28 @@ export default function SettingsPage() {
         isOpen={addSignInOpen}
         onClose={() => setAddSignInOpen(false)}
       />
-    </div>
+      </div>
+      </div>
+      </div>
+    </>
   );
+}
+
+/** Default route export. Dismisses the edit→settings swipe-back backdrop on
+ *  mount (mirrors GroupPageInner / PollDetailPageInner): the backdrop
+ *  persists across the router.push that commits the swipe so there's no
+ *  blank frame between the editor's unmount and this page's first paint;
+ *  once we render, tell the host to unmount. The editor has already
+ *  unmounted by this point, so this is the last place that can reset the
+ *  commit-badge / #header-portal transforms and the scrollbar lock. */
+export default function SettingsPage() {
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    resetSwipeBackChrome();
+    window.dispatchEvent(new Event(HIDE_SETTINGS_BACKDROP_EVENT));
+  }, []);
+
+  return <SettingsView />;
 }
 
 // The user's id is a UUID, which is already hexadecimal — the "hex

@@ -1,8 +1,9 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { hasAppHistory } from "@/lib/viewTransitions";
+import { useSwipeBackGesture, useHeaderPortalRef } from "@/lib/useSwipeBackGesture";
 import {
   slideToGroupRoot,
   slideToGroupEditTitle,
@@ -20,7 +21,10 @@ import type { GroupRoster, AnonymousMember } from "@/lib/api";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import {
   GROUP_MEMBERS_CHANGED_EVENT,
+  SHOW_GROUP_BACKDROP_EVENT,
+  HIDE_GROUP_BACKDROP_EVENT,
   type GroupMembersChangedDetail,
+  type GroupBackdropShowDetail,
 } from "@/lib/eventChannels";
 import GroupAvatar from "@/components/GroupAvatar";
 import GroupShareButton from "@/components/GroupShareButton";
@@ -85,7 +89,33 @@ export function GroupInfoView({ groupId }: { groupId: string }) {
 }
 
 function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; groupId: string }) {
+  const router = useRouter();
   const myUserImageUrl = useMyUserImageUrl();
+
+  // Swipe-back → group root (mirrors the poll detail / scheduled pages).
+  // This page's header chrome is the HeaderPortal-floated back/Edit buttons
+  // in the body-level `#header-portal` node, so that node is the gesture's
+  // "header" transform target — the buttons slide with the page (the portal
+  // div is fixed, zero-height, full-width at the viewport top, so a
+  // transform on it moves its fixed children without repositioning them;
+  // see app/layout.tsx). The group backdrop renders the group root behind
+  // the page during the drag; on commit we navigate directly with
+  // router.push (the backdrop is already showing the group).
+  const headerPortalRef = useHeaderPortalRef();
+  const { swipeWrapperRef, touchHandlers } = useSwipeBackGesture({
+    headerRef: headerPortalRef,
+    showBackdrop: () => {
+      window.dispatchEvent(
+        new CustomEvent<GroupBackdropShowDetail>(SHOW_GROUP_BACKDROP_EVENT, {
+          detail: { groupId },
+        }),
+      );
+    },
+    hideBackdrop: () => {
+      window.dispatchEvent(new Event(HIDE_GROUP_BACKDROP_EVENT));
+    },
+    onCommit: () => router.push(`/g/${groupId}`),
+  });
   // Mirror GroupPrivacySection's session-tracking pattern: seed from
   // the localStorage-cached profile on mount, then subscribe to live
   // session changes so the JoinRequestsSection mounts/unmounts the
@@ -279,6 +309,33 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
         )}
       </HeaderPortal>
 
+      {/* z-index:1 + opaque background keeps the group backdrop hidden
+          behind the page until the swipe moves the wrapper sideways. The
+          negative horizontal margins cancel the template wrapper's `px-4`
+          (1rem) PLUS the outer safe-area padding so the background paints
+          all the way to the screen edges (same as PollDetail's
+          swipeWrapper); the inner div re-applies the inset so the content
+          doesn't move. */}
+      <div
+        ref={swipeWrapperRef}
+        {...touchHandlers}
+        className="touch-pan-y"
+        style={{
+          willChange: "transform",
+          position: "relative",
+          zIndex: 1,
+          background: "var(--background)",
+          minHeight: "100dvh",
+          marginLeft: "calc(-1rem - max(0.35rem, env(safe-area-inset-left, 0px)))",
+          marginRight: "calc(-1rem - max(0.35rem, env(safe-area-inset-right, 0px)))",
+        }}
+      >
+      <div
+        style={{
+          paddingLeft: "calc(1rem + max(0.35rem, env(safe-area-inset-left, 0px)))",
+          paddingRight: "calc(1rem + max(0.35rem, env(safe-area-inset-right, 0px)))",
+        }}
+      >
       <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1.05rem)' }}>
         <div className="flex flex-col items-center text-center mb-[3.2px]">
           <div className="relative inline-block">
@@ -428,6 +485,8 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
             )}
           </ul>
         </div>
+      </div>
+      </div>
       </div>
 
       {actionsFor && (

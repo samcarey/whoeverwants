@@ -25,7 +25,6 @@ import {
   loadSavedRanking,
   saveRanking,
   shuffleArray,
-  createRankedOptions,
   type RankableOption,
 } from './rankable/storage';
 
@@ -39,6 +38,97 @@ export {
   getTierRange,
   tierRanks,
 };
+
+interface InitialRankingState {
+  mainList: RankableOption[];
+  noPreferenceList: RankableOption[];
+  linkedPairs: Set<string>;
+  /** False only server-side (no window) — the init effect then populates on
+   *  mount exactly as it did before the sync seed existed. */
+  initialized: boolean;
+}
+
+/** Compute the initial main / no-preference lists SYNCHRONOUSLY so the very
+ *  first commit paints the full ballot. This mirrors the init effect below
+ *  byte-for-byte (initialRanking → saved state → shuffle). The effect-based
+ *  init alone left a one-frame gap with no list rendered — invisible on a
+ *  plain load, but a visible flicker when this page is the destination of a
+ *  swipe-back handoff (the backdrop instance underneath was already showing
+ *  the settled list, then the real route mounted over it list-less for a
+ *  frame). */
+function buildInitialRankingState(args: {
+  options: string[];
+  initialRanking?: string[];
+  initialTiers?: string[][];
+  newOptions?: string[];
+  storageKey?: string;
+  preserveOrder: boolean;
+  totalItemHeight: number;
+}): InitialRankingState {
+  const { options, initialRanking, initialTiers, newOptions, storageKey, preserveOrder, totalItemHeight } = args;
+  if (typeof window === 'undefined') {
+    return { mainList: [], noPreferenceList: [], linkedPairs: new Set(), initialized: false };
+  }
+
+  if (initialRanking && initialRanking.length > 0) {
+    // Edit mode: seed from the provided ranking; leftovers go to
+    // no-preference with newly-added options sorted to the top.
+    const rankedOptions = initialRanking.map((text, index) => ({
+      id: `option-${options.indexOf(text)}`,
+      text,
+      top: index * totalItemHeight,
+    }));
+    const isNew = (opt: string) => !!(newOptions && newOptions.includes(opt));
+    const remaining = options.filter((opt) => !initialRanking.includes(opt));
+    const remainingOptions = [
+      ...remaining.filter(isNew),
+      ...remaining.filter((opt) => !isNew(opt)),
+    ];
+    const noPreferenceOptions = remainingOptions.map((text, index) => ({
+      id: `option-${options.indexOf(text)}`,
+      text,
+      top: index * totalItemHeight,
+    }));
+    const linked = new Set<string>();
+    if (initialTiers && initialTiers.length > 0) {
+      const textToId = new Map<string, string>();
+      rankedOptions.forEach((opt) => textToId.set(opt.text, opt.id));
+      for (const tier of initialTiers) {
+        if (tier.length < 2) continue;
+        for (let i = 0; i < tier.length - 1; i++) {
+          const id1 = textToId.get(tier[i]);
+          const id2 = textToId.get(tier[i + 1]);
+          if (id1 && id2) linked.add(pairKey(id1, id2));
+        }
+      }
+    }
+    return { mainList: rankedOptions, noPreferenceList: noPreferenceOptions, linkedPairs: linked, initialized: true };
+  }
+
+  const savedState = loadSavedRanking(storageKey, options);
+  if (savedState) {
+    return {
+      mainList: savedState.mainList.map((item, index) => ({ ...item, top: index * totalItemHeight })),
+      noPreferenceList: savedState.noPreferenceList.map((item, index) => ({ ...item, top: index * totalItemHeight })),
+      linkedPairs: new Set(Array.isArray(savedState.linkedPairs) ? savedState.linkedPairs : []),
+      initialized: true,
+    };
+  }
+
+  // Fresh ballot: randomized order to prevent position bias, unless
+  // preserveOrder (time slots have a natural chronological order).
+  const orderedOptions = preserveOrder ? options : shuffleArray(options);
+  return {
+    mainList: orderedOptions.map((text, index) => ({
+      id: `option-${index}`,
+      text,
+      top: index * totalItemHeight,
+    })),
+    noPreferenceList: [],
+    linkedPairs: new Set(),
+    initialized: true,
+  };
+}
 
 interface RankableOptionsProps {
   options: string[];
@@ -76,13 +166,30 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     [storageKey],
   );
 
-  // State management - separate lists for main ranking and no preference
-  const [mainList, setMainList] = useState<RankableOption[]>([]);
-  const [noPreferenceList, setNoPreferenceList] = useState<RankableOption[]>([]);
+  // Configuration — taller items for location entries (two-line layout).
+  // Computed before state so the synchronous seed below can position items.
+  const hasLocationOptions = optionsMetadata && Object.values(optionsMetadata).some(m => isLocationEntry(m));
+  const itemHeight = hasLocationOptions ? 72 : 56;
+  const gapSize = 8;
+  const totalItemHeight = itemHeight + gapSize;
+  // Inside grouped (multi-item) tier cards rows abut directly with no gap,
+  // just a divider line between them. This keeps tied options looking tightly
+  // coupled compared to the normal inter-card gap.
+  const groupedGapSize = 0;
+  const groupedStepSize = itemHeight + groupedGapSize; // = itemHeight when gap is 0
+
+  // State management - separate lists for main ranking and no preference.
+  // Seeded synchronously (lazy initializer, runs once per mount) so the first
+  // commit paints the full list — see buildInitialRankingState.
+  const [initialState] = useState<InitialRankingState>(() =>
+    buildInitialRankingState({ options, initialRanking, initialTiers, newOptions, storageKey, preserveOrder, totalItemHeight }),
+  );
+  const [mainList, setMainList] = useState<RankableOption[]>(initialState.mainList);
+  const [noPreferenceList, setNoPreferenceList] = useState<RankableOption[]>(initialState.noPreferenceList);
   // Linked pairs for equal/tied ranking. Keys are canonical pairKey(id1, id2)
   // strings. Two main-list items at adjacent visual positions are considered
   // grouped (tied) if their pair is in this set.
-  const [linkedPairs, setLinkedPairs] = useState<Set<string>>(() => new Set());
+  const [linkedPairs, setLinkedPairs] = useState<Set<string>>(initialState.linkedPairs);
   const [dragState, setDragState] = useState({
     isDragging: false,
     draggedId: null as string | null,
@@ -99,22 +206,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     mousePosition: { x: 0, y: 0 }
   });
 
-  // Dynamic container heights for drag preview
-  const [containerHeights, setContainerHeights] = useState({
-    main: 0,
-    noPreference: 0
-  });
-
-  // Configuration — taller items for location entries (two-line layout)
-  const hasLocationOptions = optionsMetadata && Object.values(optionsMetadata).some(m => isLocationEntry(m));
-  const itemHeight = hasLocationOptions ? 72 : 56;
-  const gapSize = 8;
-  const totalItemHeight = itemHeight + gapSize;
-  // Inside grouped (multi-item) tier cards rows abut directly with no gap,
-  // just a divider line between them. This keeps tied options looking tightly
-  // coupled compared to the normal inter-card gap.
-  const groupedGapSize = 0;
-  const groupedStepSize = itemHeight + groupedGapSize; // = itemHeight when gap is 0
+  // Dynamic container heights for drag preview. Seeded with the no-drag
+  // base heights (pure math from the seeded list lengths — same formula as
+  // calculateContainerHeights) so the first commit doesn't paint a
+  // zero-height container around the absolutely-positioned items.
+  const [containerHeights, setContainerHeights] = useState(() => ({
+    main: Math.max(initialState.mainList.length * totalItemHeight - gapSize, totalItemHeight),
+    noPreference: Math.max(initialState.noPreferenceList.length * totalItemHeight - gapSize, totalItemHeight),
+  }));
 
   // DOM Refs
   const mainContainerRef = useRef<HTMLDivElement>(null);
@@ -662,7 +761,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
   // Track if component has mounted
   const hasMountedRef = useRef(false);
-  const previousOptionsRef = useRef<string[]>([]);
+  // Seeded with the props the synchronous initializer consumed, so the init
+  // effect below sees "no change" on mount and doesn't redo (and re-randomize)
+  // the seed. When the seed didn't run (SSR), the empty/undefined values make
+  // the effect populate on mount exactly as before.
+  const previousOptionsRef = useRef<string[]>(initialState.initialized ? options : []);
   
   // Notify parent component when the main list OR tier structure changes.
   // We send both the flat order AND the tiered structure; the backend IRV
@@ -677,7 +780,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   }, [mainList, linkedPairs, onRankingChange]);
 
   // Track previous initialRanking to detect changes
-  const previousInitialRankingRef = useRef<string[] | undefined>(undefined);
+  const previousInitialRankingRef = useRef<string[] | undefined>(
+    initialState.initialized ? initialRanking : undefined,
+  );
 
   // Initialize positions on mount and when options or initialRanking change
   useEffect(() => {
@@ -1641,6 +1746,20 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       {dragState.isDragging && renderDraggedItem()}
     </div>
   );
+
+  // When the synchronous seed ran (every client mount), render the real
+  // interface on the FIRST commit — the ClientOnlyDragDrop mounted-flag +
+  // extra-rAF wrapper otherwise shows its "Loading interactive ranking
+  // interface..." fallback for 1-2 frames, which reads as the ballot
+  // flickering when this page mounts over a settled backdrop/overlay
+  // instance during a swipe-back handoff. The wrapper's hydration-safety
+  // role is moot in practice: ballots only mount client-side after the
+  // poll resolves from cache/fetch (the SSR HTML is always a loading
+  // frame), so this subtree is never hydrated against server HTML. The
+  // wrapper is kept only for the un-seeded SSR render path.
+  if (initialState.initialized) {
+    return renderRankableInterface();
+  }
 
   return (
     <ClientOnlyDragDrop

@@ -9,8 +9,7 @@ import { navigateWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
-import { getUserName } from '@/lib/userProfile';
-import { SESSION_CHANGED_EVENT } from '@/lib/session';
+import { markAppHydrated } from '@/lib/hydration';
 
 // `CreateQuestionContent` (the bubble-bar + create-poll-modal owner) is
 // mounted in `app/layout.tsx` via `<PersistentCreatePollHost />` so it
@@ -53,6 +52,10 @@ function TemplateInner({ children }: AppTemplateProps) {
   // Set mounted state for portal rendering + install client log forwarder on dev sites
   useEffect(() => {
     setIsMounted(true);
+    // The app's initial hydration is committed by the time this effect runs —
+    // from here on, pages may seed useState initializers from localStorage
+    // (see lib/hydration.ts; consumed by /settings for flicker-free mounts).
+    markAppHydrated();
     installClientLogForwarder();
 
     // Reload on ChunkLoadError — stale cached chunks after a new deploy.
@@ -105,19 +108,6 @@ function TemplateInner({ children }: AppTemplateProps) {
       window.removeEventListener('pageTitleChange', handleTitleChange as EventListener);
     };
   }, []);
-
-  // Settings header title: the saved account/display name when set, else
-  // "Settings". Init null (SSR parity → "Settings" on the first paint), then
-  // read getUserName() on mount + on every session change (sign-in/out). Name
-  // edits happen on /settings/edit, which navigates back here and remounts the
-  // template, so the on-mount read picks those up too.
-  const [settingsName, setSettingsName] = useState<string | null>(null);
-  useEffect(() => {
-    const update = () => setSettingsName(getUserName()?.trim() || null);
-    update();
-    window.addEventListener(SESSION_CHANGED_EVENT, update);
-    return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
-  }, [pathname]);
 
   // Hide the settings gear on the home page when GroupList enters
   // bulk-forget selection mode — the cancel (X) button portals into the
@@ -197,15 +187,9 @@ function TemplateInner({ children }: AppTemplateProps) {
              fixed header (z-20). */}
         {isMounted && <div id="commit-badge-portal" className="fixed left-0 right-0 z-30 pwa-badge-top"></div>}
 
-        {isSettingsPage && (
-          <div
-            className="max-w-4xl mx-auto px-16 pb-1 page-title-safe-top"
-          >
-            <h1 className="text-2xl font-bold text-center break-words select-none" {...longPressProps}>
-              {settingsName || 'Settings'}
-            </h1>
-          </div>
-        )}
+        {/* The settings title now lives inside app/settings/page.tsx (within
+            its swipe-back wrapper, so it slides with the page during the
+            settings→home gesture). */}
 
         {pathname === '/' && (
           <div
@@ -243,7 +227,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         )}
 
         <div
-          className={`max-w-4xl mx-auto ${(pathname === '/' || isGroupLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isGroupLikePage ? '' : (isSettingsPage || pathname === '/') ? 'pt-0.5 pb-6' : 'pb-6'}`}
+          className={`max-w-4xl mx-auto ${(pathname === '/' || isGroupLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isGroupLikePage ? '' : pathname === '/' ? 'pt-0.5 pb-6' : 'pb-6'}`}
           style={pathname === '/'
             // Home reserves enough room for the new group button to clear the
             // last card.

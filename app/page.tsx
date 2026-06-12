@@ -5,7 +5,7 @@ import type { GroupSummary, Poll } from "@/lib/types";
 import { getCachedEmptyGroups, getMyGroups } from "@/lib/simpleQuestionQueries";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { HIDE_HOME_BACKDROP_EVENT, POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
-import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
+import { resetSwipeBackChrome } from "@/lib/useSwipeBackGesture";
 import { usePageReady } from "@/lib/usePageReady";
 import { HOME_SCROLL_KEY, getRememberedScroll, clearGroupScroll } from "@/lib/scrollMemory";
 import { clearGroupTabs } from "@/lib/groupTabMemory";
@@ -87,15 +87,12 @@ export default function Home() {
   // into the same paint pass.
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
-    const badge = document.getElementById('commit-badge-portal');
-    if (badge) {
-      badge.style.transform = '';
-      badge.style.transition = '';
-    }
-    // On snap-back/cancel paths GroupPage clears these directly; on
-    // commit, GroupPage has unmounted by the time we land here, so this
-    // is the last place that can clear the scrollbar lock.
-    setSwipeScrollbarLock(false);
+    // Covers both swipe sources that land here: group→home (badge
+    // transform + scrollbar lock) and settings→home (those plus the
+    // #header-portal transform — the settings back/Edit buttons live
+    // there). On snap-back/cancel the source page clears these directly;
+    // on commit it has unmounted by the time we land here.
+    resetSwipeBackChrome();
     window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
   }, []);
 
