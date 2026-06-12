@@ -397,6 +397,9 @@ private enum NativeIdentityKeychain {
 // hardened than the Keychain, and name + browser id are enough for an attributed
 // create — X-Browser-Id resolves to the account). MUST match the
 // com.apple.security.application-groups entitlement.
+// MIRRORED (read side) as BridgedIdentity in
+// MessagesExtension/MessagesViewController.swift — keep suite name + keys in
+// lockstep (the extension is a separate target and can't import this file).
 private enum NativeIdentityAppGroup {
     static let suiteName = "group.com.whoeverwants.siri"
     static let nameKey = "display_name"
@@ -510,6 +513,10 @@ public class NativeIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
 // prod build (`com.whoeverwants.app`) the bare hosts. Mirrors CAP_ENV /
 // capacitor.config.ts. Used by both the Phase 1 deep-link host (FE) and the
 // Phase 3 headless API host.
+// MIRRORED (with QuickPollService.apiBase + whoeverwantsFEHost, and the
+// /api/groups/mine parse in PollEntity.fetchAll) in
+// MessagesExtension/MessagesViewController.swift — keep in lockstep when a
+// tier/host changes (the extension is a separate target, can't import this).
 private func whoeverwantsIsCanaryBundle() -> Bool {
     Bundle.main.bundleIdentifier == "com.whoeverwants.app.latest"
 }

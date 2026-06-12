@@ -15,10 +15,11 @@
 #   gem install xcodeproj
 #   ruby scripts/ios/add-messages-extension.rb
 #
-# Phase 0 deliberately gives the extension NO custom entitlements (no App Group,
-# no keychain group) so automatic signing can self-provision the new bundle ids
-# (com.whoeverwants.app[.latest].MessagesExtension) with zero manual Apple
-# Developer portal steps. The App Group identity bridge is a Phase 1 concern.
+# Phase 0 deliberately gave the extension NO custom entitlements so automatic
+# signing could self-provision the new bundle ids with zero manual portal steps.
+# Phase 1 added MessagesExtension.entitlements (the App Group identity bridge),
+# which requires the one-time manual "App Groups" capability registration on
+# com.whoeverwants.app[.latest].MessagesExtension in the Apple Developer portal.
 
 require "xcodeproj"
 
@@ -45,6 +46,7 @@ group = project.main_group.new_group(EXT_NAME, EXT_NAME)
 swift_ref = group.new_reference("MessagesViewController.swift")
 assets_ref = group.new_reference("Assets.xcassets")
 group.new_reference("Info.plist") # referenced for the project navigator; not in a build phase
+group.new_reference("MessagesExtension.entitlements") # navigator only; wired via CODE_SIGN_ENTITLEMENTS
 
 ext.add_file_references([swift_ref])
 ext.resources_build_phase.add_file_reference(assets_ref)
@@ -57,6 +59,7 @@ settings = {
   "SWIFT_VERSION" => "5.0",
   "TARGETED_DEVICE_FAMILY" => "1,2",
   "CODE_SIGN_STYLE" => "Automatic",
+  "CODE_SIGN_ENTITLEMENTS" => "#{EXT_NAME}/#{EXT_NAME}.entitlements",
   "GENERATE_INFOPLIST_FILE" => "NO",
   "ASSETCATALOG_COMPILER_APPICON_NAME" => "iMessage App Icon",
   "MARKETING_VERSION" => "1.0",

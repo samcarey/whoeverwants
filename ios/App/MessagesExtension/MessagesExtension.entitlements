@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Group: the bridged-identity channel shared with the host app
+	     (NativeIdentityAppGroup in AppDelegate.swift mirrors the display name +
+	     browser id here on every session change; the extension — a SEPARATE
+	     process, like the headless Siri intent — reads them to authenticate its
+	     poll fetches). Same group on BOTH tiers, so no per-tier scoping step in
+	     ios-build.yml is needed (unlike associated-domains on the host app).
+	     PREREQUISITE (one-time, manual — DONE June 2026 for both tiers): the
+	     "App Groups" capability is registered + this group assigned on
+	     com.whoeverwants.app.MessagesExtension
+	     AND com.whoeverwants.app.latest.MessagesExtension in the Apple Developer
+	     portal — automatic signing does NOT auto-create App Groups (same caveat
+	     as the host app's App.entitlements). On a future App ID (a third tier),
+	     repeat that step or the archive fails at provisioning with
+	     "Provisioning profile ... doesn't match the entitlements file's value
+	     for the com.apple.security.application-groups entitlement". -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.whoeverwants.siri</string>
+	</array>
+</dict>
+</plist>
