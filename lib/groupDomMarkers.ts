@@ -12,6 +12,14 @@
  *  per-question follow-up chain; the group is now the addressable unit. */
 export const GROUP_ID_ATTR = 'data-group-id';
 
+/** `<body data-explore="1">` is set by the /explore page on mount. The
+ *  create-poll component reads it to (a) flag the create request as an
+ *  explore poll (`req.explore = true`, server files it into the per-user
+ *  explore group), and (b) source the "recent polls" suggestion rows from
+ *  the explore cache instead of the home/group accessible cache — keeping
+ *  explore polls and group polls out of each other's suggestions. */
+export const EXPLORE_ATTR = 'data-explore';
+
 /** Portal target rendered by the group page (and the empty `/g/`
  *  placeholder) where CreateQuestionContent portals the always-on
  *  create-poll search bar. Rendered INSIDE the page content (GroupContent /

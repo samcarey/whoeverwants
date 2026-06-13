@@ -40,6 +40,12 @@ export interface PollFailedDetail {
   placeholderId: string;
 }
 
+/** Fired by the create-poll component after an /explore poll is created
+ *  (the explore page isn't a group page, so it doesn't ride the
+ *  POLL_PENDING/HYDRATED group-state flow). The /explore page listens and
+ *  re-fetches its feed so the new poll appears at the top. */
+export const EXPLORE_POLL_CHANGED_EVENT = 'explorePollChanged';
+
 /** Fired by GroupList when bulk-forget selection mode toggles on the home
  *  page. The template listens to hide the upper-left settings gear so the
  *  cancel (X) button portalled into the same slot owns the hit area. */

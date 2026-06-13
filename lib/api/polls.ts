@@ -78,6 +78,10 @@ export interface CreatePollParams {
   // anchor and the server's cron tick materializes future instances. Shape
   // mirrors lib/recurrence.ts RecurrenceRule + a `start` (YYYY-MM-DD).
   recurrence?: import("@/lib/recurrence").RecurrenceRule | null;
+  /** Explore feed (migration 143): when true the server files the poll into
+   *  the caller's per-user explore group (minted lazily, privacy='explore')
+   *  regardless of `group_id`, so it surfaces only at /explore. */
+  explore?: boolean;
   questions: CreateQuestionParams[];
 }
 

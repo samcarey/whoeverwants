@@ -430,6 +430,11 @@ class CreatePollRequest(BaseModel):
     #   {frequency, interval, weekdays, monthlyMode, end, start}
     # (mirrors lib/recurrence.ts / services/recurrence.py). None = runs once.
     recurrence: dict | None = None
+    # Explore feed (migration 143): when true, the poll is filed into the
+    # caller's per-user "explore group" (minted lazily, privacy='explore')
+    # regardless of `group_id`, so it surfaces only at /explore and never on
+    # home. See services/groups.get_or_create_explore_group.
+    explore: bool = False
     questions: list[CreateQuestionRequest] = Field(..., min_length=1)
 
 

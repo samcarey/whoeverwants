@@ -30,7 +30,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from services.groups import load_user_visibility
+from services.groups import explore_group_ids, load_user_visibility
 
 logger = logging.getLogger(__name__)
 
@@ -124,10 +124,16 @@ def load_category_options(
     user_id: str | None,
     category: str,
     group_id: str | None,
+    explore: bool = False,
 ) -> CategoryOptions:
     """Previously-referenced options for `category`, scoped to `group_id` and
     (separately) to every group the caller can see. `general` excludes any label
-    already in `group` so the FE can concatenate the two without repeats."""
+    already in `group` so the FE can concatenate the two without repeats.
+
+    `explore` isolates the surfaces (migration 143): the cross-group `general`
+    scope excludes 'explore'-privacy groups for a regular request, and
+    restricts to them for an /explore request — so explore-poll option history
+    doesn't leak into regular groups' autocomplete priming, and vice versa."""
     category = (category or "").strip()
     if not category:
         return CategoryOptions(group=[], general=[])
@@ -138,6 +144,11 @@ def load_category_options(
 
     visibility = load_user_visibility(conn, browser_id, user_id=user_id)
     visible_gids = list(visibility.joined_by_group.keys())
+    explore_set = explore_group_ids(conn, visible_gids)
+    if explore:
+        visible_gids = [g for g in visible_gids if g in explore_set]
+    else:
+        visible_gids = [g for g in visible_gids if g not in explore_set]
     general_entries = _query(conn, category, visible_gids)
 
     group_labels = {e.label.lower() for e in group_entries}

@@ -26,6 +26,7 @@
 import type { GroupSummary, Poll } from "@/lib/types";
 import {
   cacheAccessiblePolls,
+  cacheExplorePolls,
   cacheGroupSummary,
   cachePoll,
   cacheQuestionResults,
@@ -186,6 +187,43 @@ export async function apiGetMyEmptyGroups(): Promise<GroupSummary[]> {
     return Array.isArray(data) ? data.map(toGroupSummary) : [];
   } catch {
     return [];
+  }
+}
+
+export interface ExploreFeed {
+  /** The caller's explore group summary, or null until they create their
+   *  first explore poll. */
+  group: GroupSummary | null;
+  /** The caller's own explore polls, newest-first. */
+  polls: Poll[];
+}
+
+/** The /explore feed: the caller's own explore-feed polls (newest-first),
+ *  plus their explore group summary. Caches the polls into the SEPARATE
+ *  explore cache (never the accessible cache, so they don't leak to home),
+ *  and mirrors inline per-question results into the per-question cache.
+ *  Returns an empty feed on failure (the page renders its create bar
+ *  regardless). */
+export async function apiGetExplore(): Promise<ExploreFeed> {
+  try {
+    const data = await groupFetch<any>('/explore', { method: 'POST' });
+    const rawPolls: any[] = Array.isArray(data?.polls) ? data.polls : [];
+    const polls = rawPolls.map((d) => {
+      const poll = toPoll(d);
+      const sub = Array.isArray(d.questions) ? d.questions : [];
+      for (let i = 0; i < sub.length; i++) {
+        if (sub[i]?.results) {
+          const results = toQuestionResults(sub[i].results);
+          cacheQuestionResults(sub[i].id, results);
+          if (poll.questions[i]) poll.questions[i].results = results;
+        }
+      }
+      return poll;
+    });
+    cacheExplorePolls(polls);
+    return { group: data?.group ? toGroupSummary(data.group) : null, polls };
+  } catch {
+    return { group: null, polls: [] };
   }
 }
 

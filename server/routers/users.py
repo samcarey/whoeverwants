@@ -41,10 +41,23 @@ from middleware import user_id_from_request as _user_id
 from services.auth import create_anonymous_user, resolve_actor_user_id
 from services.category_options import load_category_options
 from services.contacts import forget_contact
-from services.groups import require_uuid, resolve_group_id_from_route_id
+from services.groups import (
+    get_group_metadata,
+    require_uuid,
+    resolve_group_id_from_route_id,
+)
 from services.poll_categories import load_category_recency
 from services.profiles import get_profile_card
 from services.validation import validate_user_name
+
+
+def _group_is_explore(conn, group_id: str | None) -> bool:
+    """Whether `group_id` is an explore-feed group (migration 143). Drives the
+    explore/regular isolation of category suggestions."""
+    if not group_id:
+        return False
+    meta = get_group_metadata(conn, group_id)
+    return bool(meta and meta.get("privacy") == "explore")
 
 
 def _caller_user_id(conn, request: Request) -> str | None:
@@ -239,8 +252,9 @@ def get_my_poll_category_history(request: Request, group: str | None = None):
         return PollCategoryHistoryResponse(group=[], general=[])
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, group) if group else None
+        explore = _group_is_explore(conn, group_id)
         recency = load_category_recency(
-            conn, browser_id, user_id=user_id, group_id=group_id
+            conn, browser_id, user_id=user_id, group_id=group_id, explore=explore
         )
     return PollCategoryHistoryResponse(group=recency.group, general=recency.general)
 
@@ -266,12 +280,14 @@ def get_my_category_options(request: Request, category: str, group: str | None =
         return CategoryOptionsResponse(group=[], general=[])
     with get_db() as conn:
         group_id = resolve_group_id_from_route_id(conn, group) if group else None
+        explore = _group_is_explore(conn, group_id)
         result = load_category_options(
             conn,
             browser_id=browser_id,
             user_id=user_id,
             category=category,
             group_id=group_id,
+            explore=explore,
         )
     return CategoryOptionsResponse(
         group=[CategoryOptionEntry(label=e.label, metadata=e.metadata) for e in result.group],
