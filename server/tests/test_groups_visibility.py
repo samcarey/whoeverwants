@@ -414,6 +414,35 @@ class TestMultiBrowserUserVisibility:
         ids = {p["id"] for p in resp.json()}
         assert poll["id"] not in ids
 
+    def test_linked_browser_without_bearer_sees_account_groups(
+        self, client, creator_secret, creator_browser, stranger_browser
+    ):
+        """The iMessage extension + Siri carry ONLY X-Browser-Id, never the
+        bearer — so /mine must resolve the account from the browser→account
+        link, not just the bearer. A browser linked to the account (e.g. a
+        fresh browser id after an app reinstall, re-linked on sign-in) must
+        see the account's groups even with no Authorization header. Pre-fix,
+        load_user_visibility keyed only on the literal browser_id when no
+        bearer was present, so this surfaced an empty list (the reported
+        'no polls yet' in the Messages drawer)."""
+        user_id = _new_user_id()
+        _link_browser_to_user(creator_browser, user_id)
+        _link_browser_to_user(stranger_browser, user_id)
+
+        # Group created + joined on browser A.
+        poll = create_poll(client, creator_secret, browser_id=creator_browser)
+
+        # Browser B is linked to the same account but sends NO bearer — the
+        # extension/Siri shape. It has no group_members row of its own.
+        resp = client.post(
+            "/api/groups/mine",
+            json={"accessible_question_ids": []},
+            headers={"X-Browser-Id": stranger_browser},
+        )
+        assert resp.status_code == 200, resp.text
+        ids = {p["id"] for p in resp.json()}
+        assert poll["id"] in ids
+
     def test_empty_groups_listed_across_linked_browsers(
         self, client, creator_browser, stranger_browser
     ):

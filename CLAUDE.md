@@ -1151,6 +1151,28 @@ linked browser when user_id is set — otherwise tapping "leave" on
 one device just leaves on that device, and the group reappears on
 the next visit from another linked browser.
 
+**The `user_id` fed to `load_user_visibility` MUST be the
+account-aware id (`resolve_actor_user_id(conn, user_id=<bearer>,
+browser_id=<X-Browser-Id>)`), NOT the bearer-only id.** A
+bearer-LESS caller that carries only `X-Browser-Id` — the iMessage
+extension AND Siri, which deliberately don't bridge the bearer (only
+the browser id) — still needs the account expansion, because the
+browser→account link (`user_browsers`) is what makes the surface
+"follow the user." Passing the raw bearer `user_id` (None for these
+callers) keys visibility on the LITERAL browser's direct
+`group_members` rows only, so a fresh browser id (minted on every
+app reinstall) shows an EMPTY group list in the extension/Siri even
+though that browser is linked to the user's account — surfaced as
+"No polls yet" in the Messages drawer (`claude/ios-imessage-polls-missing`,
+June 2026). `/api/groups/mine` already computed the account-aware
+`viewer_user_id` for poll-authorship a few lines later; the fix was
+to compute it FIRST and feed it to `load_user_visibility` (same in
+`/empty`). The create/vote paths were already correct (they route
+through `resolve_actor_user_id`). Regression:
+`test_groups_visibility.py::test_linked_browser_without_bearer_sees_account_groups`.
+Don't "simplify" the reorder back to `user_id=user_id` — it
+re-breaks the extension after any reinstall.
+
 **The `accessible_question_ids` "forget bridge" has been REMOVED.**
 `group_members` is the single source of truth for visibility on
 every tier (anonymous and signed-in alike). "Forget a group" is
