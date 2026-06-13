@@ -1592,10 +1592,16 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
              full timestamp is available via the tooltip on that time. */}
 
         {/* Suppress when the group-page section label already renders
-             question.details (multi-group), or when the auto-title encodes
-             the same context as a "for X" suffix — otherwise the same
-             string shows up twice (once as the title, once as a subtitle). */}
-        {question.details && !partOfPollGroup && question.is_auto_title !== true && <QuestionDetails details={question.details} />}
+             question.details (multi-group), when the auto-title encodes the
+             same context as a "for X" suffix, OR when this is a typed-prompt
+             type (yes_no / limited_supply) whose `details` IS the prompt the
+             user typed — identical to the page title (these forward title →
+             `context` at create time; see detailsIsTypedPrompt in
+             createPollHelpers). In any of these the string would otherwise show
+             up twice: once as the title, once as a subtitle below the ballot. */}
+        {question.details && !partOfPollGroup && question.is_auto_title !== true &&
+          question.question_type !== 'yes_no' && question.question_type !== 'limited_supply' &&
+          <QuestionDetails details={question.details} />}
 
         {/* While voting/suggesting, "Near X" anchors the search radius at the top. */}
         {!resultsShownAbove && referenceLocationBlock}
