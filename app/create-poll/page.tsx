@@ -1211,6 +1211,17 @@ export function CreateQuestionContent() {
     setIsModalOpen(false);
   }, []);
 
+  // Poll-level fields that must be FRESH for each new poll — `applyDraftToState`
+  // only resets the per-question QuestionDraft, so these would otherwise leak
+  // across polls (e.g. a prior session's Notes, restored by loadFormState, or a
+  // stale recurrence silently making the next poll repeat). Distinct from the
+  // carried-over "remembered" fields (voting/suggestion cutoffs, min votes).
+  const resetFreshPollFields = useCallback(() => {
+    setDetails("");
+    setAllowPlusOnes(null);
+    setRecurrence(DEFAULT_RECURRENCE);
+  }, []);
+
   const discardAndClose = useCallback(() => {
     applyDraftToState(emptyDraft());
     resetDayTimeWindowsCache();
@@ -1218,11 +1229,9 @@ export function CreateQuestionContent() {
     setError(null);
     setIsModalOpen(false);
     setDrafts([]);
-    // Back to the type-based default for the next poll.
-    setAllowPlusOnes(null);
-    setRecurrence(DEFAULT_RECURRENCE);
+    resetFreshPollFields();
     setShowDiscardConfirm(false);
-  }, [applyDraftToState, resetDayTimeWindowsCache]);
+  }, [applyDraftToState, resetDayTimeWindowsCache, resetFreshPollFields]);
 
   const handleCloseClick = useCallback(() => {
     if (inlineFormHasContent() || drafts.length > 0) {
@@ -1250,11 +1259,12 @@ export function CreateQuestionContent() {
     const draft: QuestionDraft = { ...base, ...overrides };
     applyDraftToState(draft);
     setCreatorName(getUserName() ?? "");
-    // The search box / bubble bar always start a BRAND-NEW poll, but `details`
-    // (Notes) is poll-level state that `applyDraftToState` doesn't touch — so a
-    // prior session's notes, restored by `loadFormState` on mount, would leak
-    // into the fresh form ("random text in the notes field"). Reset it here.
-    setDetails("");
+    // Starting a brand-new poll (no staged drafts): clear poll-level fields that
+    // applyDraftToState doesn't touch, so a prior session's Notes (restored by
+    // loadFormState) etc. don't leak in ("random text in the notes field").
+    // When drafts exist the user is ADDING a question to a multi-question poll,
+    // so the poll-level config they already set must be preserved.
+    if (drafts.length === 0) resetFreshPollFields();
     setError(null);
     // For yes/no the title IS the question prompt; focus it once the input
     // mounts (see setTitleInputRef) ONLY when no prompt was prefilled. Prime
@@ -1270,7 +1280,7 @@ export function CreateQuestionContent() {
     setSearchFocused(false);
     setSearchQuery("");
     setIsModalOpen(true);
-  }, [applyDraftToState, drafts, primeKeyboard]);
+  }, [applyDraftToState, drafts, primeKeyboard, resetFreshPollFields]);
 
   // Collapse the focused picker back to the bottom pill ("normal group
   // view") without opening anything — wired to the bar's ✕ button.

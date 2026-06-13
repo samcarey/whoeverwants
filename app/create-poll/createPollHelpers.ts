@@ -11,7 +11,10 @@ import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { buildPollMap } from "@/lib/groupUtils";
 import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { DEFAULT_TIME_WINDOW, formatLocalDateISO } from "@/lib/timeUtils";
+import { detailsIsTypedPrompt } from "@/lib/questionListUtils";
 import type { DayTimeWindow, OptionsMetadata, Poll, Question } from "@/lib/types";
+
+export { detailsIsTypedPrompt };
 
 /**
  * Per-question form snapshot. The bottom modal holds a list of these as
@@ -137,18 +140,6 @@ export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice
   if (d.category === 'limited_supply') return 'limited_supply';
   if (d.category === 'showtime') return 'showtime';
   return 'ranked_choice';
-}
-
-/**
- * Types whose `questions.details` holds the user-TYPED prompt / item name
- * (forwarded from the title at create time) rather than a "for X" context.
- * Single source of truth for the forward mapping in draftToQuestionParams
- * (title → API `context`) and the ?duplicate= restore in page.tsx (which
- * must NOT copy details back into the Context field for these types — the
- * typed prompt, like the title, is deliberately retyped on a fresh copy).
- */
-export function detailsIsTypedPrompt(questionType: string): boolean {
-  return questionType === 'yes_no' || questionType === 'limited_supply';
 }
 
 /** The emoji to persist for a draft's category: the trimmed chosen emoji when

@@ -20,6 +20,7 @@ import RankableOptions from "@/components/RankableOptions";
 import { isPollCreatedByViewer, storeSeenQuestionOptions, getSeenQuestionOptions } from "@/lib/browserQuestionAccess";
 import { hasQuestionData } from "@/lib/forgetQuestion";
 import { getUserName, saveUserName } from "@/lib/userProfile";
+import { detailsIsTypedPrompt } from "@/lib/questionListUtils";
 import { isValidUserName } from "@/lib/nameValidation";
 import { usePageTitle } from "@/lib/usePageTitle";
 import QuestionDetails from "@/components/QuestionDetails";
@@ -1595,12 +1596,11 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
              question.details (multi-group), when the auto-title encodes the
              same context as a "for X" suffix, OR when this is a typed-prompt
              type (yes_no / limited_supply) whose `details` IS the prompt the
-             user typed — identical to the page title (these forward title →
-             `context` at create time; see detailsIsTypedPrompt in
-             createPollHelpers). In any of these the string would otherwise show
-             up twice: once as the title, once as a subtitle below the ballot. */}
+             user typed — identical to the page title. In any of these the
+             string would otherwise show up twice: once as the title, once as a
+             subtitle below the ballot. */}
         {question.details && !partOfPollGroup && question.is_auto_title !== true &&
-          question.question_type !== 'yes_no' && question.question_type !== 'limited_supply' &&
+          !detailsIsTypedPrompt(question.question_type) &&
           <QuestionDetails details={question.details} />}
 
         {/* While voting/suggesting, "Near X" anchors the search radius at the top. */}
