@@ -11,64 +11,16 @@ import {
 import {
   SHOW_HOME_BACKDROP_EVENT,
   HIDE_HOME_BACKDROP_EVENT,
+  HIDE_EXPLORE_BACKDROP_EVENT,
   EXPLORE_POLL_CHANGED_EVENT,
 } from "@/lib/eventChannels";
+import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import HeaderPortal from "@/components/HeaderPortal";
 import { apiGetExplore } from "@/lib/api/groups";
 import { getCachedExplorePolls } from "@/lib/questionCache";
 import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
-import type { Poll, Question } from "@/lib/types";
-import { getCategoryIcon, relativeTime } from "@/lib/questionListUtils";
-import { slideToPollDetail } from "@/lib/slideOverlay";
-
-// Mirrors ROW_DIVIDER_CLASS in GroupCardItem (inlined to keep that heavy
-// "use client" component module out of the /explore bundle).
-const ROW_DIVIDER_CLASS = "border-gray-300 dark:border-gray-600";
-
-/** One poll row in the Explore feed. Edge-to-edge rectangle with a bottom
- *  divider, mirroring the group card layout but trimmed: category icon +
- *  title + a muted metadata line. Tapping slides to the poll's detail page
- *  (which renders the full ballot + results). */
-function ExplorePollCard({ poll }: { poll: Poll }) {
-  const anchor: Question | undefined = poll.questions[0];
-  // The poll's OWN title (the wrapper-level question title), NOT poll.title —
-  // the latter resolves to the explore group's "Explore" name override.
-  const title = anchor?.title || poll.title || "Poll";
-  const icon = anchor ? getCategoryIcon(anchor) : "🗳️";
-  const groupRoute = poll.group_short_id ?? poll.group_id ?? null;
-  const pollShort = poll.short_id ?? poll.id;
-  const views = poll.viewed_total ?? 0;
-
-  const onTap = useCallback(() => {
-    if (!groupRoute) return;
-    slideToPollDetail({ groupId: groupRoute, pollShortId: pollShort });
-  }, [groupRoute, pollShort]);
-
-  return (
-    <button
-      type="button"
-      onClick={onTap}
-      className={`block w-full text-left pl-[0.9rem] pr-[0.65rem] pt-3 pb-2 border-b ${ROW_DIVIDER_CLASS} active:bg-gray-100 dark:active:bg-gray-800/60`}
-    >
-      <div className="flex items-start gap-2">
-        <span className="shrink-0 text-lg leading-tight" aria-hidden>{icon}</span>
-        <h3 className="min-w-0 flex-1 text-lg font-medium leading-tight break-words">
-          {title}
-        </h3>
-        <svg className="shrink-0 w-4 h-4 mt-1 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      </div>
-      <div className="mt-1 flex items-baseline gap-1 text-xs text-gray-400 dark:text-gray-500">
-        {poll.creator_name && <span className="truncate shrink min-w-0">{poll.creator_name}</span>}
-        {poll.creator_name && <span aria-hidden>·</span>}
-        <span className="shrink-0">{relativeTime(poll.created_at)}</span>
-        <span aria-hidden>·</span>
-        <span className="shrink-0">{views} {views === 1 ? "View" : "Views"}</span>
-      </div>
-    </button>
-  );
-}
+import type { Poll } from "@/lib/types";
+import { ExploreFeedList } from "@/components/ExploreFeed";
 
 export default function ExplorePage() {
   const router = useRouter();
@@ -89,9 +41,15 @@ export default function ExplorePage() {
   // Mark the page as the explore composing surface so CreateQuestionContent
   // (the persistent bottom create bar) flags new polls as explore polls and
   // scopes its "recent polls" suggestions to the explore feed. Set the group
-  // id once known so category-recency is scoped to the explore group.
+  // id once known so category-recency is scoped to the explore group. Also
+  // dismiss the explore swipe backdrop + release the swipe scrollbar lock on
+  // mount (covers the swipe-commit-from-poll-detail race, where the detail
+  // page unmounts before its snap-back cleanup runs — same pattern as the
+  // group/poll detail mount effects).
   useEffect(() => {
     document.body.setAttribute(EXPLORE_ATTR, "1");
+    window.dispatchEvent(new Event(HIDE_EXPLORE_BACKDROP_EVENT));
+    setSwipeScrollbarLock(false);
     return () => {
       document.body.removeAttribute(EXPLORE_ATTR);
       document.body.removeAttribute(GROUP_ID_ATTR);
@@ -154,8 +112,8 @@ export default function ExplorePage() {
           the page until the swipe moves the wrapper sideways. The negative
           horizontal margins cancel the template wrapper's `px-4` (1rem) PLUS
           the outer safe-area padding so the background paints all the way to
-          the screen edges; the inner div re-applies the inset so the content
-          doesn't move. Mirrors the settings page. */}
+          the screen edges; the inner div re-applies only the safe-area inset
+          so the cards sit edge-to-edge (like the group page). */}
       <div
         ref={swipeWrapperRef}
         {...touchHandlers}
@@ -186,14 +144,7 @@ export default function ExplorePage() {
             </h1>
           </div>
 
-          {/* Top sentinel divider above the first card (matches the group page). */}
-          {sortedPolls.length > 0 && (
-            <div className={`border-t ${ROW_DIVIDER_CLASS}`} />
-          )}
-
-          {sortedPolls.map((poll) => (
-            <ExplorePollCard key={poll.id} poll={poll} />
-          ))}
+          <ExploreFeedList polls={sortedPolls} />
 
           {loaded && sortedPolls.length === 0 && (
             <p className="text-center text-gray-500 dark:text-gray-400 px-6 py-16 leading-relaxed">

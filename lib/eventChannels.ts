@@ -192,6 +192,13 @@ export interface GroupBackdropShowDetail {
  *  has rendered through it). */
 export const HIDE_GROUP_BACKDROP_EVENT = 'group-backdrop:hide';
 
+/** Fired by the poll-detail swipe-back gesture when the poll was opened FROM
+ *  /explore (vs the group page). ExploreBackdropHost mounts a body-level
+ *  portal showing the cached explore feed underneath the poll detail page, so
+ *  a swipe-back reveals /explore and commits there. */
+export const SHOW_EXPLORE_BACKDROP_EVENT = 'explore-backdrop:show';
+export const HIDE_EXPLORE_BACKDROP_EVENT = 'explore-backdrop:hide';
+
 /** Fired by the poll INFO page's swipe-back gesture when motion is recognized
  *  AND when it commits to navigation. PollBackdropHost (in app/layout.tsx)
  *  mounts a body-level portal showing the cached poll DETAIL page underneath

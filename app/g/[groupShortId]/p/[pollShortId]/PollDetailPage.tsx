@@ -30,6 +30,8 @@ import {
   SHOW_GROUP_BACKDROP_EVENT,
   HIDE_GROUP_BACKDROP_EVENT,
   HIDE_POLL_BACKDROP_EVENT,
+  SHOW_EXPLORE_BACKDROP_EVENT,
+  HIDE_EXPLORE_BACKDROP_EVENT,
   type PollHydratedDetail,
   type GroupBackdropShowDetail,
 } from "@/lib/eventChannels";
@@ -52,7 +54,8 @@ import {
 } from "@/lib/questionCache";
 import { getUserName, isCurrentUserName } from "@/lib/userProfile";
 import { markPollViewed } from "@/lib/unread";
-import { hasAppHistory } from "@/lib/viewTransitions";
+import { hasAppHistory, navigateWithTransition } from "@/lib/viewTransitions";
+import { isPollDetailFromExplore } from "@/lib/pollDetailOrigin";
 import {
   getRememberedScroll,
   pollScrollKey,
@@ -219,10 +222,18 @@ export function PollDetailView({ groupId, pollShortId, overlayCardsOffset, inOve
     return () => window.removeEventListener(POLL_HYDRATED_EVENT, handler);
   }, [poll, pollShortId, groupId]);
 
+  // When the poll was opened FROM /explore, back + swipe return to /explore
+  // (with the explore feed backdrop) instead of the explore group's root page.
+  const fromExplore = isPollDetailFromExplore(pollShortId);
+
   const goBack = useCallback(() => {
     rememberCurrentScroll(pollScrollKey(pollShortId));
+    if (fromExplore) {
+      navigateWithTransition(router, "/explore", "back");
+      return;
+    }
     slideToGroupRoot({ groupId, direction: "back", useHistoryBack: hasAppHistory() });
-  }, [groupId, pollShortId]);
+  }, [groupId, pollShortId, fromExplore, router]);
 
   if (loading && !poll) return <SimpleFrame onBack={goBack}><p className="text-gray-600 dark:text-gray-400">Loading poll...</p></SimpleFrame>;
 
@@ -259,6 +270,7 @@ export function PollDetailView({ groupId, pollShortId, overlayCardsOffset, inOve
       groupId={groupId}
       pollShortId={pollShortId}
       onBack={goBack}
+      fromExplore={fromExplore}
       overlayCardsOffset={overlayCardsOffset}
       inOverlay={inOverlay}
     />
@@ -311,11 +323,14 @@ interface PollDetailProps {
   groupId: string;
   pollShortId: string;
   onBack: () => void;
+  /** Opened from /explore → swipe-back reveals the explore feed + commits to
+   *  /explore instead of the group root. */
+  fromExplore?: boolean;
   overlayCardsOffset?: number;
   inOverlay?: boolean;
 }
 
-function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsOffset, inOverlay }: PollDetailProps) {
+function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, fromExplore, overlayCardsOffset, inOverlay }: PollDetailProps) {
   const router = useRouter();
   const scrollKey = pollScrollKey(pollShortId);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([], 80);
@@ -685,6 +700,10 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
   const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
     headerRef,
     showBackdrop: () => {
+      if (fromExplore) {
+        window.dispatchEvent(new Event(SHOW_EXPLORE_BACKDROP_EVENT));
+        return;
+      }
       window.dispatchEvent(
         new CustomEvent<GroupBackdropShowDetail>(SHOW_GROUP_BACKDROP_EVENT, {
           detail: { groupId },
@@ -692,10 +711,12 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, overlayCardsO
       );
     },
     hideBackdrop: () => {
-      window.dispatchEvent(new Event(HIDE_GROUP_BACKDROP_EVENT));
+      window.dispatchEvent(
+        new Event(fromExplore ? HIDE_EXPLORE_BACKDROP_EVENT : HIDE_GROUP_BACKDROP_EVENT),
+      );
     },
     onBeforeCommit: () => rememberCurrentScroll(scrollKey),
-    onCommit: () => router.push(`/g/${groupId}`),
+    onCommit: () => router.push(fromExplore ? "/explore" : `/g/${groupId}`),
   });
 
   const subQuestions = poll.questions;
