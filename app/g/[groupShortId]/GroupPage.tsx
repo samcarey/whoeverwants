@@ -1881,8 +1881,12 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           eliminates the blank frame between router.push commit and home's
           first paint. */}
 
-      {/* z-index:1 + opaque background keeps the home backdrop hidden
+      {/* z-index:2 + opaque background keeps the home backdrop hidden
           behind the page until the swipe moves the wrapper sideways.
+          (z-2, not z-1, so the persistent "+ Group" button can sit at z-1
+          during the group→home swipe-back — above the z-0 home backdrop,
+          below this sliding page — and be revealed as the page slides off
+          rather than popping on top. See CreateGroupButtonHost.)
           Inner cards div keeps its own transform for overlayCardsOffset
           so the two don't conflict across React re-renders. */}
       <div
@@ -1892,7 +1896,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         style={{
           willChange: 'transform',
           position: 'relative',
-          zIndex: 1,
+          zIndex: 2,
           background: 'var(--background)',
           minHeight: restoreMinHeight !== null ? `${restoreMinHeight}px` : '100dvh',
           // Negative horizontal margins cancel the outer template wrapper's

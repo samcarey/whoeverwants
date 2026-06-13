@@ -94,8 +94,14 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
     <>
     <button
       onClick={onClick}
-      className="fixed z-50 h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
+      className="fixed h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
       style={{
+        // z-50 normally (floats above page content). DURING a home-revealing
+        // swipe-back from another page (group / settings / explore), drop to
+        // z-1: that's above the z-0 home backdrop but below the sliding
+        // page's z-2 wrapper, so the button is REVEALED as the page slides
+        // off rather than popping on top at swipe start.
+        zIndex: swipeBackActive && !isHome ? 1 : 50,
         right: "max(1.5rem, env(safe-area-inset-right, 0px))",
         bottom: IS_CAPACITOR_NATIVE ? "2.65rem" : "1.9rem",
         // Pin to a permanent GPU layer so the button's subpixel
