@@ -79,13 +79,21 @@ function hydrateAndCache(data: any[]): Poll[] {
   // the slide, and the restored window.scrollY is clamped to a tiny
   // doc-height. Merging here primes the cache for synchronous reads
   // throughout the group's lifetime.
-  if (polls.length > 0) {
-    const groupIds = new Set<string>();
-    for (const p of polls) if (p.group_id) groupIds.add(p.group_id);
-    const cached = getCachedAccessiblePolls() ?? [];
-    const others = cached.filter((p) => !p.group_id || !groupIds.has(p.group_id));
-    cacheAccessiblePolls([...others, ...polls]);
-  }
+  //
+  // Run unconditionally (even for an empty result): the merge keeps every
+  // cached entry from OTHER groups (so an empty single-group fetch can't
+  // wipe deep-linked groups), and — critically — a `null` cache becomes
+  // `[]`. Without this, a signed-out / groupless user's empty `/mine`
+  // never populated the cache, so it stayed `null` forever and the home
+  // page re-flashed its loading spinner over the empty-state on every
+  // mount (e.g. a swipe-back from /explore or /settings). After the first
+  // successful fetch the cache is a non-null `[]`, so subsequent mounts
+  // render the empty-state synchronously with no spinner.
+  const groupIds = new Set<string>();
+  for (const p of polls) if (p.group_id) groupIds.add(p.group_id);
+  const cached = getCachedAccessiblePolls() ?? [];
+  const others = cached.filter((p) => !p.group_id || !groupIds.has(p.group_id));
+  cacheAccessiblePolls([...others, ...polls]);
   return polls;
 }
 

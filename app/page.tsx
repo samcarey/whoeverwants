@@ -203,13 +203,15 @@ export default function Home() {
   // before surfacing an error, and expose `fetchQuestions` so the error
   // card's "Try again" button can re-run it.
   const fetchQuestions = useCallback(async (opts?: { isRetry?: boolean }) => {
-    // Only show the spinner when there's no cached data to render —
-    // otherwise mounting home (e.g. after a swipe-back from a group) would
-    // flash the GroupList off-screen for one render cycle while the refetch
-    // round-trips, then flash it back when the same data returns from the
-    // cache-warmed endpoint. A manual retry always shows feedback.
-    const hasCached = initialPolls.length > 0 || initialEmptyGroups.length > 0;
-    if (!hasCached || opts?.isRetry) setLoading(true);
+    // Only show the spinner when the cache was COLD at mount (genuine first
+    // load) or on an explicit retry. `initialLoading` is the stable
+    // useState-initializer flag for "accessible-polls cache was null". Don't
+    // key off `initialPolls.length > 0` here: an empty-but-fetched cache
+    // (`[]`, e.g. a signed-out / groupless user) renders the empty-state
+    // synchronously, and re-showing the spinner over it on every mount
+    // refetch (e.g. a swipe-back from /explore or /settings) is the flash
+    // the user sees. A populated cache (GroupList) had the same issue.
+    if (initialLoading || opts?.isRetry) setLoading(true);
     setError(null);
 
     // Delays before attempts 2/3/4 — attempt 1 fires immediately.
@@ -247,7 +249,7 @@ export default function Home() {
     console.error("Unexpected error:", lastError);
     setError("Couldn't load your groups. Check your connection and try again.");
     setLoading(false);
-  }, [initialPolls, initialEmptyGroups]);
+  }, [initialLoading]);
 
   useEffect(() => {
     fetchQuestions();
