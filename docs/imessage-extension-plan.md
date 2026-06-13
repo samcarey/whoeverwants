@@ -7,10 +7,12 @@
 >
 > **Status (June 2026): Phase 0 (target scaffold + CI) shipped via #712;
 > Phase 1 (share-from-drawer) shipped via #713; Phase 2 (live read-only
-> transcript bubble + the identity-free `/summary` endpoint) implemented —
-> see the Phase 2 section for what landed and the on-device verification
-> owed.** Owner decisions are resolved (see "Resolved decisions" at the
-> bottom).
+> transcript bubble + the identity-free `/summary` endpoint) shipped via #715;
+> Phase 3 (INLINE VOTING in the transcript — yes_no Yes/No + limited_supply
+> Claim/Decline, identity-gated, edit-not-duplicate) implemented — see the
+> Phase 3 section for what landed and the on-device verification owed. Phase 3
+> is Swift-only: no server / migration / entitlement / CI change.** Owner
+> decisions are resolved (see "Resolved decisions" at the bottom).
 >
 > **Verdict up front: feasible, and `MSMessageLiveLayout` is the right API** — but
 > this is the project's first *additional Xcode target* (a Messages extension is a
@@ -328,18 +330,69 @@ changes — the bubble is pure code in the existing extension target):
   right for 1-question and 3-question polls, tap still opens the expanded
   summary, and a no-app recipient still sees the Phase 1 template fallback.
 
-### Phase 3 — inline voting in the transcript
+### Phase 3 — inline voting in the transcript (SHIPPED, pending device verification)
 
-- yes_no: Yes / No tap → name-gate check (App Group identity) → POST batch vote →
-  optimistic re-render with fresh results. limited_supply: Claim / Decline, same
-  shape.
-- Nameless/signed-out users: transcript can't take keyboard input — render the
-  buttons disabled with "Set your name in the app to vote" (or tap-through to
-  expanded, which CAN host text entry, and reuse the name-only account mint
-  `POST /api/auth/account/name`).
-- Optional cosmetic: after voting, `conversation.send` a session-keyed update so
-  the bubble bumps in the transcript for others. Skip if it adds chat noise —
-  correctness never depends on it.
+What landed (Swift only in `ios/App/MessagesExtension/MessagesViewController.swift`
+— **NO server, migration, entitlement, CI, or pbxproj change**: `/summary`
+already returns `poll_id` + per-question counts, voting reuses the existing
+atomic batch `POST /api/polls/{id}/votes` + own-vote `GET /api/questions/{id}/votes`
++ the App-Group identity wired in Phase 1):
+- **The transcript SwiftUI tree is now INTERACTIVE.** Phase 2's read-only design
+  (`allowsHitTesting(false)` on the tree + a UIKit `UITapGestureRecognizer` on
+  the VC view to drive `requestPresentationStyle(.expanded)`) is replaced: the
+  recognizer is gone, the hosting view is interactive, and the bubble drives the
+  expand itself — the title / result rows / footer are each wrapped in a plain
+  SwiftUI `Button` calling `model.requestExpand()` (→ `host?.requestPresentationStyle(.expanded)`),
+  while the vote buttons are sibling `Button`s that consume their own taps. Live
+  bubbles still get NO template-style tap-to-open from Messages (device-verified),
+  so an explicit tappable region everywhere is the design — not a fall-through.
+- **Inline voting is gated to a SINGLE-question poll whose one question is
+  `yes_no` (Yes / No) or `limited_supply` (Claim a spot / No thanks).** Closed,
+  multi-question, and other types (ranked / time / showtime — they need
+  ranking / grids / keyboard) stay read-only; tapping opens the expanded summary.
+  `PollSummary.inlineVotableQuestion` is the gate.
+- **Identity-gated on the App-Group name+browserId** (`BridgedIdentity.load()` now
+  returns both — `name` = the batch endpoint's required `voter_name`, `browserId`
+  = `X-Browser-Id`). With identity, buttons are live; without it they render
+  disabled under "Set your name in the app to vote" (a transcript can't take
+  keyboard input — the nameless user taps through to the expanded summary →
+  Open in WhoeverWants → set their name in the app, then come back).
+- **Edit, don't duplicate.** On load (votable + identity) the bubble fetches the
+  viewer's OWN vote via `GET /api/questions/{id}/votes` (ballot-privacy-scoped to
+  their browser) → highlights the current choice + remembers the `vote_id`. A
+  vote sends the batch POST with `vote_id` set (EDIT — the server uses the row's
+  existing vote_type + enforces browser-ownership) or null (INSERT). Re-tapping
+  the current choice is a no-op. On success the bubble force-refreshes the
+  summary (`SummaryStore.refresh`, bypassing the 20s TTL) so the aggregate counts
+  update at once; `myVotes` is updated straight from the POST response.
+- **Vote-time join for free.** The batch endpoint `join_group_for_poll`s the
+  voter, so voting on a private-group bubble auto-joins them (the plan's vote-time
+  join) with no separate invite redeem — voting doesn't gate on visibility
+  server-side (the privacy gate is read-only).
+- **`TranscriptBubbleModel.voting: VotingTarget?`** (the exact `{questionId,
+  yesNoChoice, isAbstain}` being submitted) drives the spinner on the SPECIFIC
+  tapped button + gates re-taps — NOT a "differs from current selection" guess,
+  which would spin both buttons for a first-time voter. A transient POST failure
+  leaves the prior bubble untouched; the buttons re-enable when `voting` clears.
+- **`bubbleHeight` bumped 148 → 168** to fit a vote-button row above the footer
+  (one fixed height serves every shape since votable-ness isn't known
+  synchronously at `contentSizeThatFits` time; read-only bubbles absorb the slack
+  via the Spacer — the owner may tune on device).
+- **No post-vote `MSSession` "bump"** (the plan's optional cosmetic) — skipped: it
+  adds chat noise and correctness never depends on it (other viewers' bubbles
+  refresh on their own ≤20s SummaryStore TTL / re-render; the server is the
+  source of truth).
+- **Deferred (not in this phase):** voting in the EXPANDED summary view (it stays
+  read-only summary + Open/Copy — multi-question + the nameless "set my name here"
+  flow via `POST /api/auth/account/name` route through Open-in-app for now);
+  multi-question inline voting; the name-entry-in-extension account mint.
+- Exit criteria: (CI) green canary build (compiles the interactive tree). (Owner,
+  device — Simulator works for the inner loop) a single-question yes_no/limited_
+  supply bubble shows live vote buttons, tapping Yes/No (or Claim/Decline) records
+  the vote + updates the counts without leaving Messages, a second tap CHANGES
+  (doesn't duplicate) the vote, tapping the title/footer still opens the expanded
+  summary, a nameless viewer sees disabled buttons + the hint, and a private-group
+  bubble vote joins the voter (poll appears in their app afterward).
 
 ### Phase 4 — richer surfaces (only if earlier phases earn it)
 

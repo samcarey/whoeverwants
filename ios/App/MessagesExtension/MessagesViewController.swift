@@ -24,16 +24,33 @@ import UIKit
 //     respondent count, fetched from the identity-free
 //     GET /api/polls/<short>/summary through a process-level cache
 //     (SummaryStore) so several bubbles re-rendering in one conversation
-//     coalesce into one round-trip. Read-only by design (Phase 3 adds
-//     voting): the SwiftUI tree is hit-testing-disabled and the transcript
-//     VC handles the tap itself via requestPresentationStyle(.expanded) —
-//     live bubbles get NO template-style tap-to-open from Messages
-//     (device-verified) — which makes the system open a new expanded
-//     instance with this bubble's message selected → the summary view
-//     below. Rendering NEVER redeems the embedded invite token — the
-//     summary endpoint is identity-free, and joining a group because you
-//     scrolled past a bubble would surprise; redemption stays on the explicit
-//     open-in-app / web paths.
+//     coalesce into one round-trip. Rendering NEVER redeems the embedded
+//     invite token — the summary endpoint is identity-free, and joining a
+//     group because you scrolled past a bubble would surprise; redemption
+//     stays on the explicit open-in-app / web / vote paths.
+//   • Phase 3 — INLINE VOTING in the transcript. A SINGLE-question poll whose
+//     one question is yes_no (Yes / No) or limited_supply (Claim / No thanks)
+//     gets tap-to-vote buttons in the bubble; everything else (closed,
+//     multi-question, ranked/time) stays read-only. The SwiftUI tree is now
+//     INTERACTIVE (no allowsHitTesting(false); the old UIKit tap recognizer
+//     is gone): the vote buttons are SwiftUI Buttons, and the title / results
+//     / footer are wrapped in plain Buttons that requestPresentationStyle(
+//     .expanded) — live bubbles get NO template-style tap-to-open from
+//     Messages (device-verified), so the bubble drives the expand itself.
+//     Voting is identity-gated on the App-Group name+browserId (the
+//     name-required model — a transcript can't take keyboard input, so a
+//     nameless viewer sees disabled buttons + "Set your name in the app to
+//     vote" and taps through to the expanded summary). The bubble fetches the
+//     viewer's OWN vote (GET /api/questions/<id>/votes, ballot-privacy-scoped
+//     to their browser) so it highlights the current choice and EDITS rather
+//     than duplicates on a change; votes go through the atomic batch
+//     POST /api/polls/<id>/votes (which join_group_for_poll's the voter, so a
+//     private-group bubble auto-joins them on vote — the plan's vote-time
+//     join — no separate invite redeem needed). On success the bubble force-
+//     refreshes the summary so the aggregate counts update immediately. No
+//     post-vote MSSession "bump" (skipped per the plan — it adds chat noise
+//     and correctness never depends on it; other viewers' bubbles refresh on
+//     their own ≤20s SummaryStore TTL / re-render).
 //   • Tapping a sent bubble (recipient WITH the app) opens the extension
 //     expanded with `conversation.selectedMessage` set → a native poll summary
 //     with live results + "Open in WhoeverWants" (extensionContext.open is
@@ -87,18 +104,28 @@ private enum BridgedIdentity {
     static let nameKey = "display_name"
     static let browserIdKey = "browser_id"
 
-    // Returns the bridged browser id, gated on a non-empty display NAME — the
-    // same "user has actually used the app" signal Siri's
-    // QuickPollService.loadIdentity gates on (name-required model). The name
-    // itself isn't displayed anywhere here, so only the id is returned.
-    static func loadBrowserId() -> String? {
+    // The bridged name + browser id, present together iff the user has
+    // actually used the app (the name-required model Siri's
+    // QuickPollService.loadIdentity gates on). The name is the `voter_name`
+    // the batch endpoint requires (non-blank), the browser id the
+    // X-Browser-Id that attributes the vote to their account.
+    struct Value {
+        let name: String
+        let browserId: String
+    }
+
+    static func load() -> Value? {
         guard let d = UserDefaults(suiteName: suiteName),
               let name = d.string(forKey: nameKey), !name.isEmpty,
               let browserId = d.string(forKey: browserIdKey), !browserId.isEmpty else {
             return nil
         }
-        return browserId
+        return Value(name: name, browserId: browserId)
     }
+
+    // Browser-id-only convenience for the picker fetch + invite mint, which
+    // don't need the name. Stays gated on a non-empty name via load().
+    static func loadBrowserId() -> String? { load()?.browserId }
 }
 
 // MARK: - Models
@@ -126,6 +153,7 @@ struct QuestionSummary: Identifiable {
 }
 
 struct PollSummary {
+    let pollId: String        // POST target for inline votes (Phase 3)
     let title: String
     let groupName: String?
     let isClosedFlag: Bool    // server is_closed; display closed-ness via isClosed
@@ -142,6 +170,28 @@ struct PollSummary {
         if let deadline = responseDeadline { return deadline <= Date() }
         return false
     }
+
+    // The single question eligible for INLINE transcript voting (Phase 3):
+    // exactly one question, of a tap-votable type (yes_no / limited_supply),
+    // poll still open, poll id present. Multi-question polls and other types
+    // (ranked / time / showtime — they need ranking / grids / keyboard) stay
+    // read-only in the bubble; tapping opens the expanded summary instead.
+    var inlineVotableQuestion: QuestionSummary? {
+        guard !isClosed, !pollId.isEmpty, questions.count == 1,
+              let q = questions.first,
+              q.type == "yes_no" || q.type == "limited_supply" else { return nil }
+        return q
+    }
+}
+
+// The viewer's own vote on a question — fetched (GET /votes) for the
+// selection highlight, returned by the vote POST. `yes_no_choice` is
+// "yes"/"no" for yes_no; `isAbstain` is the decline for limited_supply (and
+// the abstain for yes_no, which the bubble doesn't offer but tolerates).
+struct BubbleVote {
+    let voteId: String
+    let yesNoChoice: String?
+    let isAbstain: Bool
 }
 
 // MARK: - API
@@ -290,12 +340,69 @@ private enum PollAPI {
             )
         }
         return PollSummary(
+            pollId: nonEmpty(obj["poll_id"] as? String) ?? "",
             title: nonEmpty(obj["title"] as? String) ?? "Poll",
             groupName: nonEmpty(obj["group_name"] as? String),
             isClosedFlag: (obj["is_closed"] as? Bool) ?? false,
             responseDeadline: parseISODate(nonEmpty(obj["response_deadline"] as? String)),
             respondentCount: (obj["respondent_count"] as? Int) ?? 0,
             questions: questions
+        )
+    }
+
+    // Inline vote (Phase 3): one item through the atomic batch endpoint, the
+    // same POST /api/polls/{id}/votes every surface uses. EDITS when voteId is
+    // set (no duplicate row; the server uses the existing row's vote_type and
+    // enforces browser-ownership), else INSERTS (vote_type required). The
+    // endpoint join_group_for_poll's the voter, so a private-group bubble
+    // auto-joins them here (the plan's vote-time join). Returns the resulting
+    // row so the bubble can update its selection without a separate re-fetch.
+    static func submitVote(
+        pollId: String, questionId: String, voteId: String?, voteType: String,
+        yesNoChoice: String?, isAbstain: Bool, name: String, browserId: String
+    ) async throws -> BubbleVote {
+        guard let url = URL(string: apiBase + "/api/polls/\(pollId)/votes") else { throw URLError(.badURL) }
+        var item: [String: Any] = ["question_id": questionId, "is_abstain": isAbstain]
+        if let voteId = voteId {
+            item["vote_id"] = voteId       // edit
+        } else {
+            item["vote_type"] = voteType   // insert
+        }
+        if let choice = yesNoChoice { item["yes_no_choice"] = choice }
+        let body: [String: Any] = ["voter_name": name, "items": [item]]
+        let request = jsonRequest(url: url, method: "POST", browserId: browserId, body: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let row = arr.first(where: { ($0["question_id"] as? String) == questionId }) ?? arr.first,
+              let vid = nonEmpty(row["id"] as? String) else {
+            throw URLError(.badServerResponse)
+        }
+        return BubbleVote(
+            voteId: vid,
+            yesNoChoice: nonEmpty(row["yes_no_choice"] as? String),
+            isAbstain: (row["is_abstain"] as? Bool) ?? false
+        )
+    }
+
+    // The caller's OWN vote on a question (GET /api/questions/{id}/votes is
+    // ballot-privacy-scoped to their browser set), so the bubble highlights
+    // the current choice and edits rather than duplicates. Returns nil on any
+    // failure / no prior vote → the bubble just inserts. `.last` = most recent
+    // in the rare legacy multi-row case.
+    static func fetchMyVote(questionId: String, browserId: String) async -> BubbleVote? {
+        guard let url = URL(string: apiBase + "/api/questions/\(questionId)/votes") else { return nil }
+        guard let (data, response) = try? await URLSession.shared.data(
+                for: jsonRequest(url: url, method: "GET", browserId: browserId)),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let row = arr.last, let vid = nonEmpty(row["id"] as? String) else {
+            return nil
+        }
+        return BubbleVote(
+            voteId: vid,
+            yesNoChoice: nonEmpty(row["yes_no_choice"] as? String),
+            isAbstain: (row["is_abstain"] as? Bool) ?? false
         )
     }
 
@@ -344,6 +451,19 @@ final class SummaryStore {
             if let hit = cache[shortId] { return hit.summary }
             throw error
         }
+    }
+
+    // Force a fresh fetch (bypassing the TTL) and update the cache — used
+    // right after the viewer votes so THIS bubble shows the new aggregate
+    // counts immediately. Other bubbles for the same poll pick it up on their
+    // own next render (≤ maxAge TTL).
+    func refresh(shortId: String) async throws -> PollSummary {
+        let task = Task { try await PollAPI.fetchSummary(shortId: shortId) }
+        inFlight[shortId] = task
+        defer { inFlight[shortId] = nil }
+        let summary = try await task.value
+        cache[shortId] = (summary, Date())
+        return summary
     }
 }
 
@@ -515,19 +635,98 @@ final class TranscriptBubbleModel: ObservableObject {
         case unavailable   // unparseable url / fetch failed → static fallback
     }
 
+    // The exact choice being submitted — drives the spinner on the SPECIFIC
+    // tapped button (not both, which a "differs from current selection" guess
+    // would do for a first-time voter) and gates re-taps until it clears.
+    struct VotingTarget: Equatable {
+        let questionId: String
+        let yesNoChoice: String?
+        let isAbstain: Bool
+    }
+
     @Published var state: State = .loading
+    // questionId → the viewer's own vote: drives the selection highlight and
+    // edit-vs-insert. Populated from the own-vote fetch on load + the vote
+    // POST response.
+    @Published var myVotes: [String: BubbleVote] = [:]
+    @Published var voting: VotingTarget?
+
+    // Set by the VC at mount so a bubble tap can requestPresentationStyle.
+    weak var host: MessagesViewController?
+
+    private var shortId: String?
 
     func load(messageURL: URL?) {
         guard let url = messageURL,
-              let shortId = PollAPI.pollShortId(fromMessageURL: url) else {
+              let short = PollAPI.pollShortId(fromMessageURL: url) else {
             state = .unavailable
             return
         }
+        shortId = short
         Task {
             do {
-                state = .loaded(try await SummaryStore.shared.summary(shortId: shortId))
+                let summary = try await SummaryStore.shared.summary(shortId: short)
+                state = .loaded(summary)
+                await loadMyVoteIfVotable(summary)
             } catch {
                 state = .unavailable
+            }
+        }
+    }
+
+    // Fetch the viewer's own vote for the single inline-votable question (only
+    // when there's a bridged identity), so the bubble highlights the current
+    // choice and edits rather than duplicates. No-op for read-only bubbles.
+    private func loadMyVoteIfVotable(_ summary: PollSummary) async {
+        guard let q = summary.inlineVotableQuestion,
+              let id = BridgedIdentity.load() else { return }
+        if let mine = await PollAPI.fetchMyVote(questionId: q.id, browserId: id.browserId) {
+            myVotes[q.id] = mine
+        }
+    }
+
+    // Tap-anywhere-but-a-button → open the expanded summary. Live bubbles get
+    // no template-style tap-to-open from Messages (device-verified), so the
+    // bubble drives the expand itself; .expanded is the only style a
+    // transcript instance may request.
+    func requestExpand() {
+        host?.requestPresentationStyle(.expanded)
+    }
+
+    // yes_no Yes/No (yesNoChoice set, isAbstain false) or limited_supply
+    // Claim (isAbstain false) / Decline (isAbstain true). Edits the viewer's
+    // existing vote when present (no duplicate row), else inserts. Re-tapping
+    // the current choice is a no-op. Force-refreshes the summary on success so
+    // the counts reflect the new vote at once. A transient failure leaves the
+    // prior state untouched (the buttons re-enable when `voting`
+    // clears).
+    func vote(question: QuestionSummary, poll: PollSummary, yesNoChoice: String?, isAbstain: Bool) {
+        guard voting == nil, let id = BridgedIdentity.load() else { return }
+        if let mine = myVotes[question.id],
+           mine.isAbstain == isAbstain, mine.yesNoChoice == yesNoChoice {
+            return
+        }
+        voting = VotingTarget(questionId: question.id, yesNoChoice: yesNoChoice, isAbstain: isAbstain)
+        Task {
+            defer { voting = nil }
+            do {
+                let submitted = try await PollAPI.submitVote(
+                    pollId: poll.pollId,
+                    questionId: question.id,
+                    voteId: myVotes[question.id]?.voteId,
+                    voteType: question.type,
+                    yesNoChoice: yesNoChoice,
+                    isAbstain: isAbstain,
+                    name: id.name,
+                    browserId: id.browserId
+                )
+                myVotes[question.id] = submitted
+                if let short = shortId,
+                   let fresh = try? await SummaryStore.shared.refresh(shortId: short) {
+                    state = .loaded(fresh)
+                }
+            } catch {
+                // Keep the prior bubble; re-taps re-enable via the defer.
             }
         }
     }
@@ -553,22 +752,15 @@ class MessagesViewController: MSMessagesAppViewController {
         hasMountedUI = true
         let controller: UIViewController
         if presentationStyle == .transcript {
-            let hosting = UIHostingController(rootView: TranscriptBubbleView(model: bubbleModel))
-            // Read-only in Phase 2: the SwiftUI tree takes no touches, so the
-            // tap recognizer below (on self.view) receives bubble taps.
-            hosting.view.isUserInteractionEnabled = false
-            controller = hosting
-            // Live-layout bubbles get NO template-style tap-to-open from
-            // Messages (device-verified: an unhandled tap does nothing). The
-            // transcript instance must handle the tap itself: per the docs,
-            // requesting a presentation style from a transcript-style
-            // controller makes the system display a NEW instance in that
-            // style — which activates with this bubble's message selected →
-            // the expanded summary. `.expanded` is the only legal request
-            // from transcript.
-            view.addGestureRecognizer(
-                UITapGestureRecognizer(target: self, action: #selector(transcriptBubbleTapped))
-            )
+            // Phase 3: the SwiftUI tree is now INTERACTIVE (vote buttons must
+            // take taps). The bubble's own plain Buttons drive the
+            // tap-to-expand (requestPresentationStyle(.expanded) via
+            // bubbleModel.host) — live bubbles get NO template-style tap-to-open
+            // from Messages (device-verified), so there's nothing to fall back
+            // to a UIKit recognizer for, and an interactive hosting view would
+            // consume those taps anyway.
+            bubbleModel.host = self
+            controller = UIHostingController(rootView: TranscriptBubbleView(model: bubbleModel))
         } else {
             model.host = self
             controller = UIHostingController(rootView: RootView(model: model))
@@ -585,10 +777,6 @@ class MessagesViewController: MSMessagesAppViewController {
             controller.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         controller.didMove(toParent: self)
-    }
-
-    @objc private func transcriptBubbleTapped() {
-        requestPresentationStyle(.expanded)
     }
 
     // Fires on every activation: transcript bubble render (presentationStyle
@@ -938,14 +1126,16 @@ private struct CenteredMessage: View {
     }
 }
 
-// MARK: - Transcript bubble (Phase 2, read-only)
+// MARK: - Transcript bubble (Phase 3 — inline voting)
 
 struct TranscriptBubbleView: View {
     // contentSizeThatFits returns this fixed compact height (per the plan: no
-    // scrolling inside a bubble; the question count isn't knowable at sizing
-    // time). The layout below is budgeted to fit the worst case: a 2-line
-    // title + two question rows + the status footer.
-    static let bubbleHeight: CGFloat = 148
+    // scrolling inside a bubble; the votable-ness isn't knowable synchronously
+    // at sizing time, so one height serves every shape). Budgeted to fit the
+    // worst case: a 2-line title + result row + a vote-button row + the status
+    // footer. Read-only bubbles absorb the slack via the Spacer. The owner may
+    // tune this on device.
+    static let bubbleHeight: CGFloat = 168
 
     // Messages overlays the extension's APP ICON on the live bubble's
     // top-left corner (the OS draws it — we don't render it and can't move
@@ -962,9 +1152,20 @@ struct TranscriptBubbleView: View {
             .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(.systemBackground))
-            // Read-only: the VC's tap recognizer (not the SwiftUI tree) owns
-            // the tap → requestPresentationStyle(.expanded) → the summary.
-            .allowsHitTesting(false)
+        // Phase 3: the tree is INTERACTIVE — vote buttons take taps; the
+        // title / results / footer are plain Buttons that requestExpand().
+    }
+
+    // Wraps a content region so tapping it opens the expanded summary — the
+    // three non-vote-button regions (unavailable fallback, title+results,
+    // footer) all share this. Live bubbles get no template-style tap-to-open
+    // from Messages (device-verified), so each region carries its own
+    // affordance; the vote buttons are SIBLINGS that consume their own taps.
+    private func expandButton<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        Button(action: { model.requestExpand() }) {
+            content().contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -974,17 +1175,19 @@ struct TranscriptBubbleView: View {
             ProgressView()
                 .padding(.leading, Self.iconBadgeClearance)
         case .unavailable:
-            // Static fallback — the tap-through to the expanded summary still
-            // works (it has its own retry + Open/Copy affordances). No 👋
-            // glyph of our own: the OS already badges the bubble with the
-            // app icon.
-            VStack(alignment: .leading, spacing: 4) {
-                Text("WhoeverWants poll")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.leading, Self.iconBadgeClearance)
-                Text("Tap to view")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            // Static fallback — tapping opens the expanded summary (its own
+            // retry + Open/Copy affordances). No 👋 glyph of our own: the OS
+            // already badges the bubble with the app icon.
+            expandButton {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("WhoeverWants poll")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.leading, Self.iconBadgeClearance)
+                    Text("Tap to view")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         case .loaded(let summary):
             loaded(summary)
@@ -992,44 +1195,60 @@ struct TranscriptBubbleView: View {
     }
 
     private func loaded(_ summary: PollSummary) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(summary.title)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-                .padding(.leading, Self.iconBadgeClearance)
+        let votable = summary.inlineVotableQuestion
+        return VStack(alignment: .leading, spacing: 6) {
+            // Title + result rows — tap opens the expanded summary. (The vote
+            // buttons below are SIBLINGS, not nested, so a button tap votes
+            // while a tap here expands.)
+            expandButton {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(summary.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .padding(.leading, Self.iconBadgeClearance)
 
-            // Up to 2 question rows; extras collapse into "+N more" so the
-            // fixed-height bubble never clips mid-row.
-            ForEach(summary.questions.prefix(2)) { q in
-                VStack(alignment: .leading, spacing: 2) {
-                    if let label = q.label {
-                        Text(label)
+                    // Up to 2 question rows; extras collapse into "+N more" so
+                    // the fixed-height bubble never clips mid-row.
+                    ForEach(summary.questions.prefix(2)) { q in
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let label = q.label {
+                                Text(label)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                            if q.type == "yes_no", let yes = q.yesCount, let no = q.noCount, yes + no > 0 {
+                                YesNoBar(yes: yes, no: no)
+                            } else if let text = q.resultText {
+                                Text(text)
+                                    .font(.footnote)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                    if summary.questions.count > 2 {
+                        Text("+\(summary.questions.count - 2) more")
                             .font(.caption2)
                             .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                    if q.type == "yes_no", let yes = q.yesCount, let no = q.noCount, yes + no > 0 {
-                        YesNoBar(yes: yes, no: no)
-                    } else if let text = q.resultText {
-                        Text(text)
-                            .font(.footnote)
-                            .lineLimit(1)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if summary.questions.count > 2 {
-                Text("+\(summary.questions.count - 2) more")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+
+            if let q = votable {
+                VoteButtonRow(question: q, poll: summary, model: model)
             }
 
             Spacer(minLength: 0)
 
-            Text(footerText(summary))
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
+            expandButton {
+                Text(footerText(summary))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -1088,5 +1307,96 @@ private struct YesNoBar: View {
                 .foregroundColor(.secondary)
                 .fixedSize()
         }
+    }
+}
+
+// Phase 3 inline-vote buttons for a single yes_no / limited_supply question.
+// Identity-gated: with a bridged name+browserId, the buttons are live (the
+// current choice highlighted, a spinner on the in-flight one); without it,
+// they're disabled under a "Set your name in the app to vote" hint (a
+// transcript can't take keyboard input — the user taps through to the
+// expanded summary → Open in WhoeverWants → set their name there).
+private struct VoteButtonRow: View {
+    let question: QuestionSummary
+    let poll: PollSummary
+    @ObservedObject var model: TranscriptBubbleModel
+
+    // Read at render: the user may have set their name in the app between
+    // bubble renders (each transcript instance is short-lived). A UserDefaults
+    // peek is cheap.
+    private var hasIdentity: Bool { BridgedIdentity.load() != nil }
+
+    private var mine: BubbleVote? { model.myVotes[question.id] }
+    private var busy: Bool { model.voting?.questionId == question.id }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                if question.type == "yes_no" {
+                    button(
+                        "Yes", color: .green,
+                        selected: mine?.isAbstain == false && mine?.yesNoChoice == "yes",
+                        yesNoChoice: "yes", isAbstain: false
+                    )
+                    button(
+                        "No", color: .red,
+                        selected: mine?.isAbstain == false && mine?.yesNoChoice == "no",
+                        yesNoChoice: "no", isAbstain: false
+                    )
+                } else {  // limited_supply
+                    button(
+                        // `mine?.isAbstain == false` is false when mine is nil,
+                        // so it already implies a claim exists (parallels the
+                        // `== true` decline check below).
+                        "Claim a spot", color: .green,
+                        selected: mine?.isAbstain == false,
+                        yesNoChoice: nil, isAbstain: false
+                    )
+                    button(
+                        "No thanks", color: .secondary,
+                        selected: mine?.isAbstain == true,
+                        yesNoChoice: nil, isAbstain: true
+                    )
+                }
+            }
+            if !hasIdentity {
+                Text("Set your name in the app to vote")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func button(
+        _ title: String, color: Color, selected: Bool,
+        yesNoChoice: String?, isAbstain: Bool
+    ) -> some View {
+        // Spinner only on the button actually being submitted.
+        let spinning = model.voting == TranscriptBubbleModel.VotingTarget(
+            questionId: question.id, yesNoChoice: yesNoChoice, isAbstain: isAbstain
+        )
+        return Button(action: {
+            model.vote(question: question, poll: poll, yesNoChoice: yesNoChoice, isAbstain: isAbstain)
+        }) {
+            ZStack {
+                if spinning { ProgressView() }
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .opacity(spinning ? 0 : 1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .background(
+                selected ? color.opacity(0.18) : Color(.systemGray6),
+                in: RoundedRectangle(cornerRadius: 9)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9)
+                    .stroke(selected ? color.opacity(0.7) : Color.clear, lineWidth: 1.5)
+            )
+            .foregroundColor(selected ? color : .primary)
+        }
+        .buttonStyle(.plain)
+        .disabled(!hasIdentity || busy)
     }
 }
