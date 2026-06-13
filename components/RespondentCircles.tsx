@@ -45,6 +45,14 @@ const MAX_NAMED = 6;
 
 export const ANONYMOUS_FALLBACK_COLOR = '#9CA3AF';
 
+// New/empty-group placeholder glyph: the "busts in silhouette" emoji reads
+// as "a group of people". Rendered big on the same quiet bounding disc
+// PollAvatar uses, replacing the old solid-gray circle.
+export const GROUP_PLACEHOLDER_EMOJI = '👥';
+// Sized to fill most of the 83-unit bounding disc while leaving a small
+// inset so the (wide) two-figure glyph doesn't kiss the disc edge.
+const GROUP_PLACEHOLDER_EMOJI_SIZE = BOUNDING_RADIUS * 1.45;
+
 const COLORS = [
   '#4F46E5', '#2563EB', '#0891B2', '#0D9488', '#059669',
   '#EA580C', '#DC2626', '#DB2777', '#9333EA', '#7C3AED',
@@ -108,15 +116,35 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
     circles.push({ label: `+${overflow}`, fill: '#6B7280', imageUrl: null });
   }
 
-  // Empty state placeholder: a plain gray circle with NO label. Used by
-  // the home list, group page header, and /info hero for groups that
-  // only contain the current user (filtered out by buildGroups) AND
-  // have no anonymous votes — keeps the avatar slot occupied with a
-  // consistent gray bubble rather than misrepresenting the group as a
-  // single anonymous voter via the legacy "?" fallback.
-  const isPlaceholder = circles.length === 0;
-  if (isPlaceholder) {
-    circles.push({ label: '', fill: ANONYMOUS_FALLBACK_COLOR, imageUrl: null });
+  // Empty state placeholder: groups that only contain the current user
+  // (filtered out by buildGroups) AND have no anonymous votes. Used by the
+  // group page header, /info hero, and /edit-title. Render a big "group of
+  // people" emoji on the same quiet bounding disc PollAvatar uses, rather
+  // than the old solid-gray circle (or the even older "?" fallback that
+  // misrepresented the group as a single anonymous voter).
+  if (circles.length === 0) {
+    return (
+      <div className={`${sizeClassName} aspect-square flex-shrink-0 self-center`}>
+        <svg viewBox="0 0 100 100" className="w-full h-full" aria-hidden="true">
+          <circle
+            cx={50}
+            cy={50}
+            r={BOUNDING_RADIUS}
+            className="fill-gray-50 dark:fill-gray-900"
+          />
+          <text
+            x={50}
+            y={50}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize={GROUP_PLACEHOLDER_EMOJI_SIZE}
+            fontFamily="system-ui, -apple-system, 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif"
+          >
+            {GROUP_PLACEHOLDER_EMOJI}
+          </text>
+        </svg>
+      </div>
+    );
   }
 
   const n = Math.min(circles.length, LAYOUTS.length - 1);
@@ -147,14 +175,12 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
             })}
           </defs>
         )}
-        {!isPlaceholder && (
-          <circle
-            cx={50}
-            cy={50}
-            r={BOUNDING_RADIUS}
-            className="fill-gray-100 dark:fill-gray-800"
-          />
-        )}
+        <circle
+          cx={50}
+          cy={50}
+          r={BOUNDING_RADIUS}
+          className="fill-gray-100 dark:fill-gray-800"
+        />
         {circles.map((circle, i) => {
           const [cx, cy] = layoutCenters[i];
           const r = layoutRadius;
