@@ -38,9 +38,12 @@ These shape every decision below; re-read before changing the plan.
   extension's `MSMessagesAppViewController` with the `.transcript` presentation
   style and shows its view as the message bubble. Interactivity IS allowed in the
   transcript, with hard limits (per Apple's WWDC17 guidance, still current):
-  - **No keyboard input** in transcript style — text entry requires requesting
-    `.expanded` (and `requestPresentationStyle` is itself not callable from a
-    transcript instance; the user taps through instead).
+  - **No keyboard input** in transcript style — text entry requires `.expanded`.
+    A transcript instance MAY call `requestPresentationStyle(.expanded)` (the
+    only legal style from transcript); the system then displays a NEW instance
+    in that style. It must, in fact: unhandled taps on a live bubble do NOT
+    open the extension the way template bubbles do (device-verified in
+    Phase 2).
   - **Simple taps only** — Apple explicitly says stick to button taps; anything
     complex is disorienting inside a scrolling transcript.
   - **Aggressive teardown** — transcript instances are created per-render and
@@ -301,9 +304,13 @@ changes — the bubble is pure code in the existing extension target):
   (which migrated onto the `/summary` endpoint, retiring its
   poll + N-results fan-out). Stale-on-error: a bubble re-render that fails
   serves the last summary rather than an error state.
-- **Read-only by design**: the bubble's SwiftUI tree is hit-testing-disabled
-  (+ `isUserInteractionEnabled = false` on the hosting view), so a tap falls
-  through to Messages → extension opens expanded → the Phase 1 summary view.
+- **Read-only by design; the transcript VC owns the tap.** Live bubbles get
+  no template-style tap-to-open from Messages (device-verified: an unhandled
+  tap did nothing), so the bubble's SwiftUI tree is hit-testing-disabled
+  (+ `isUserInteractionEnabled = false` on the hosting view) and a
+  `UITapGestureRecognizer` on the VC's root view calls
+  `requestPresentationStyle(.expanded)` — the system opens a new expanded
+  instance with the bubble's message selected → the Phase 1 summary view.
   Phase 3 adds the inline vote buttons.
 - **Private-group bubbles render WITHOUT redeeming the invite** — supersedes
   this phase's original "redeem before fetching" sketch, which assumed the

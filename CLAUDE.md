@@ -3359,11 +3359,17 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
     indents its first line by `iconBadgeClearance = 44` and the rows below
     keep the full width. Any future live-bubble layout must keep that corner
     clear.
-  - **The bubble is read-only and hit-testing-disabled** (`allowsHitTesting(false)`
-    + `isUserInteractionEnabled = false` on the hosting view) so a tap falls
-    through to Messages → the extension opens EXPANDED with `selectedMessage`
-    set → the Phase 1 summary view. Phase 3 replaces this with inline vote
-    buttons for yes_no/limited_supply.
+  - **The bubble is read-only; the transcript VC handles its own tap.** Live
+    bubbles get NO template-style tap-to-open from Messages (device-verified:
+    an unhandled tap does nothing — an earlier assumption that it "falls
+    through" was wrong). The SwiftUI tree is hit-testing-disabled
+    (`allowsHitTesting(false)` + `isUserInteractionEnabled = false` on the
+    hosting view) so a `UITapGestureRecognizer` on the VC's root view gets the
+    tap and calls `requestPresentationStyle(.expanded)` — per the docs, a
+    transcript-style controller may request ONLY `.expanded`, and the system
+    then displays a NEW instance in that style, which activates with the
+    bubble's message selected → the Phase 1 summary view. Phase 3 replaces
+    the read-only surface with inline vote buttons for yes_no/limited_supply.
   - **`GET /api/polls/{short_id}/summary` (`get_poll_summary` in
     `routers/polls.py`, model `PollSummaryResponse`)** is identity-free like
     `/preview` (decision B: a bubble is a deliberate capability share) and
