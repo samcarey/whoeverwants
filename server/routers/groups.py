@@ -307,7 +307,22 @@ def get_my_groups(
     user_id = _user_id(request)
 
     with get_db() as conn:
-        visibility = load_user_visibility(conn, browser_id, user_id=user_id)
+        # Resolve the account from the bearer OR the browser→account link, and
+        # build visibility against THAT — so a caller carrying only X-Browser-Id
+        # (the iMessage extension + Siri deliberately don't bridge the bearer)
+        # sees every group their account belongs to, not just groups this exact
+        # browser joined directly. Without it, a fresh browser id (e.g. after an
+        # app reinstall, which mints a new one) shows an empty poll list in
+        # those surfaces even though the browser is linked to the user's
+        # account. This is the same account-aware id used below for poll
+        # authorship; feeding it into load_user_visibility mirrors what the
+        # create/vote paths already do via resolve_actor_user_id.
+        viewer_user_id = resolve_actor_user_id(
+            conn, user_id=user_id, browser_id=browser_id
+        )
+        visibility = load_user_visibility(
+            conn, browser_id, user_id=viewer_user_id
+        )
 
         member_group_ids = list(visibility.joined_by_group.keys())
         candidate_pids = poll_ids_for_group_ids(conn, member_group_ids)
@@ -315,9 +330,6 @@ def get_my_groups(
             return []
 
         visible_pids = filter_visible_polls(conn, candidate_pids, visibility)
-        viewer_user_id = resolve_actor_user_id(
-            conn, user_id=user_id, browser_id=browser_id
-        )
         # Keep the caller's contact list ("people you've encountered") fresh
         # off the home-load path: a decoupled upsert of everyone they
         # currently share a group with, bumping each contact's last_seen_at.
@@ -361,7 +373,14 @@ def get_my_empty_groups(request: Request):
     if not browser_id and not user_id:
         return []
     with get_db() as conn:
-        visibility = load_user_visibility(conn, browser_id, user_id=user_id)
+        # Account-aware via bearer OR browser→account link (see /mine), so a
+        # bearer-less caller (extension / Siri) gets the account's empty groups.
+        viewer_user_id = resolve_actor_user_id(
+            conn, user_id=user_id, browser_id=browser_id
+        )
+        visibility = load_user_visibility(
+            conn, browser_id, user_id=viewer_user_id
+        )
         member_gids = list(visibility.joined_by_group.keys())
         if not member_gids:
             return []
