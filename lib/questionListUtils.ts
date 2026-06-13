@@ -171,3 +171,17 @@ export function getResultBadge(question: Question): ResultBadge {
       return { text: 'Closed', emoji: '🔒', color: 'gray' };
   }
 }
+
+/**
+ * Types whose `questions.details` holds the user-TYPED prompt / item name
+ * (forwarded from the title at create time) rather than a "for X" context.
+ * Single source of truth, consumed by:
+ *  - draftToQuestionParams (title → API `context`) + the ?duplicate= restore
+ *    in create-poll (which must NOT copy details back into the Context field
+ *    for these types — the typed prompt, like the title, is retyped on a copy);
+ *  - QuestionBallot, which suppresses the inner <QuestionDetails> for these
+ *    types so the prompt doesn't render twice (header title + a subtitle).
+ */
+export function detailsIsTypedPrompt(questionType: string): boolean {
+  return questionType === 'yes_no' || questionType === 'limited_supply';
+}

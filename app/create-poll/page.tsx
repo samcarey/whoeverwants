@@ -492,21 +492,25 @@ export function CreateQuestionContent() {
   // iOS device, picking a suggestion from the focused search picker opens the
   // sheet WHILE the soft keyboard is collapsing; during that settle window
   // WebKit can scroll the freshly-mounted sheet scroller (reported as "the
-  // form opens with the Options card at the top"). The scroller mounts inside
-  // <ModalPortal> (deferred commit), so an effect keyed on isModalOpen would
-  // run while the node is still null — use a callback ref (same pattern as
-  // setTitleInputRef) that zeroes scrollTop on attach and re-zeroes any
-  // programmatic scroll for a short window. The pin is interaction-gated:
-  // the user's first touch/wheel/pointerdown disarms it immediately, so a
-  // real scroll gesture is never fought. Doesn't reproduce in headless
-  // Chromium/WebKit — device-only, like the other keyboard-settle races.
+  // form opens with the Options card at the top" AND later "scrolled way past
+  // the bottom"). The scroller mounts inside <ModalPortal> (deferred commit),
+  // so an effect keyed on isModalOpen would run while the node is still null —
+  // use a callback ref (same pattern as setTitleInputRef) that zeroes scrollTop
+  // on attach, re-zeroes any programmatic scroll, AND re-asserts 0 every frame
+  // (rAF) for a short window — the per-frame reassert is needed because setting
+  // scrollTop on the single mid-animation `scroll` event can be ignored. The
+  // pin is interaction-gated: the user's first touch/wheel/pointerdown disarms
+  // it immediately, so a real scroll gesture is never fought. Doesn't reproduce
+  // in headless Chromium/WebKit — device-only, like the other keyboard races.
   const sheetScrollPinCleanupRef = useRef<(() => void) | null>(null);
   const setSheetScrollerRef = useCallback((node: HTMLDivElement | null) => {
     sheetScrollPinCleanupRef.current?.();
     if (!node) return;
     node.scrollTop = 0;
+    let raf = 0;
     const cleanup = () => {
       window.clearTimeout(timer);
+      if (raf) cancelAnimationFrame(raf);
       node.removeEventListener('scroll', onScroll);
       node.removeEventListener('touchstart', cleanup);
       node.removeEventListener('wheel', cleanup);
@@ -518,6 +522,16 @@ export function CreateQuestionContent() {
     const onScroll = () => {
       if (node.scrollTop !== 0) node.scrollTop = 0;
     };
+    // iOS can scroll the freshly-mounted scroller while the search-box keyboard
+    // collapses, and setting scrollTop on the one `scroll` event it fires is
+    // sometimes ignored mid-animation. Re-assert 0 every frame for the armed
+    // window so the form can't open scrolled down; the user's first
+    // touch/wheel/pointerdown disarms it (cleanup) so a real scroll isn't fought.
+    const reassert = () => {
+      if (node.scrollTop !== 0) node.scrollTop = 0;
+      raf = requestAnimationFrame(reassert);
+    };
+    raf = requestAnimationFrame(reassert);
     node.addEventListener('scroll', onScroll);
     node.addEventListener('touchstart', cleanup, { passive: true });
     node.addEventListener('wheel', cleanup, { passive: true });
@@ -1197,6 +1211,17 @@ export function CreateQuestionContent() {
     setIsModalOpen(false);
   }, []);
 
+  // Poll-level fields that must be FRESH for each new poll — `applyDraftToState`
+  // only resets the per-question QuestionDraft, so these would otherwise leak
+  // across polls (e.g. a prior session's Notes, restored by loadFormState, or a
+  // stale recurrence silently making the next poll repeat). Distinct from the
+  // carried-over "remembered" fields (voting/suggestion cutoffs, min votes).
+  const resetFreshPollFields = useCallback(() => {
+    setDetails("");
+    setAllowPlusOnes(null);
+    setRecurrence(DEFAULT_RECURRENCE);
+  }, []);
+
   const discardAndClose = useCallback(() => {
     applyDraftToState(emptyDraft());
     resetDayTimeWindowsCache();
@@ -1204,11 +1229,9 @@ export function CreateQuestionContent() {
     setError(null);
     setIsModalOpen(false);
     setDrafts([]);
-    // Back to the type-based default for the next poll.
-    setAllowPlusOnes(null);
-    setRecurrence(DEFAULT_RECURRENCE);
+    resetFreshPollFields();
     setShowDiscardConfirm(false);
-  }, [applyDraftToState, resetDayTimeWindowsCache]);
+  }, [applyDraftToState, resetDayTimeWindowsCache, resetFreshPollFields]);
 
   const handleCloseClick = useCallback(() => {
     if (inlineFormHasContent() || drafts.length > 0) {
@@ -1236,6 +1259,12 @@ export function CreateQuestionContent() {
     const draft: QuestionDraft = { ...base, ...overrides };
     applyDraftToState(draft);
     setCreatorName(getUserName() ?? "");
+    // Starting a brand-new poll (no staged drafts): clear poll-level fields that
+    // applyDraftToState doesn't touch, so a prior session's Notes (restored by
+    // loadFormState) etc. don't leak in ("random text in the notes field").
+    // When drafts exist the user is ADDING a question to a multi-question poll,
+    // so the poll-level config they already set must be preserved.
+    if (drafts.length === 0) resetFreshPollFields();
     setError(null);
     // For yes/no the title IS the question prompt; focus it once the input
     // mounts (see setTitleInputRef) ONLY when no prompt was prefilled. Prime
@@ -1251,7 +1280,7 @@ export function CreateQuestionContent() {
     setSearchFocused(false);
     setSearchQuery("");
     setIsModalOpen(true);
-  }, [applyDraftToState, drafts, primeKeyboard]);
+  }, [applyDraftToState, drafts, primeKeyboard, resetFreshPollFields]);
 
   // Collapse the focused picker back to the bottom pill ("normal group
   // view") without opening anything — wired to the bar's ✕ button.
