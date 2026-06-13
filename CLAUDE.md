@@ -3266,6 +3266,13 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
 > AND the Phase 1 expanded summary through a process-level `SummaryStore`
 > (20s TTL + in-flight coalescing); full shape + the no-redeem-on-render
 > decision in the plan doc's Phase 2 section; device verification owner-owned.
+> **Phase 3 (INLINE VOTING in the transcript) implemented** on
+> `claude/imessage-extension-phase-2-px2mrm` — **Swift-only, NO server /
+> migration / entitlement / CI / pbxproj change** (`/summary` already returns
+> `poll_id` + per-question counts; voting reuses the atomic batch
+> `POST /api/polls/{id}/votes` + own-vote `GET /api/questions/{id}/votes` + the
+> Phase 1 App-Group identity). Full shape in the plan doc's Phase 3 section;
+> device verification owner-owned.
 > Owner decisions: ship additive (degraded no-app fallback OK); embed a
 > poll-scoped invite token for private-group bubbles (auto-join); v1 inline
 > voting = yes_no + limited_supply only; pursue compose-in-Messages keeping
@@ -3349,7 +3356,8 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
     `willBecomeActive` keyed on presentationStyle (NOT in viewDidLoad — the
     style isn't reliably set there), with the drawer/transcript models `lazy`
     so each instance only allocates its own role's model.
-    `contentSizeThatFits` returns a fixed 148pt (`TranscriptBubbleView.bubbleHeight`);
+    `contentSizeThatFits` returns a fixed `TranscriptBubbleView.bubbleHeight`
+    (148pt in Phase 2; bumped to 168pt in Phase 3 to fit a vote-button row);
     >2 questions collapse into "+N more" so the fixed height never clips.
   - **Messages overlays the extension's APP ICON on the live bubble's
     top-left corner** — the OS draws it, the extension can't remove or move
@@ -3359,17 +3367,18 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
     indents its first line by `iconBadgeClearance = 44` and the rows below
     keep the full width. Any future live-bubble layout must keep that corner
     clear.
-  - **The bubble is read-only; the transcript VC handles its own tap.** Live
-    bubbles get NO template-style tap-to-open from Messages (device-verified:
-    an unhandled tap does nothing — an earlier assumption that it "falls
-    through" was wrong). The SwiftUI tree is hit-testing-disabled
-    (`allowsHitTesting(false)` + `isUserInteractionEnabled = false` on the
-    hosting view) so a `UITapGestureRecognizer` on the VC's root view gets the
-    tap and calls `requestPresentationStyle(.expanded)` — per the docs, a
-    transcript-style controller may request ONLY `.expanded`, and the system
-    then displays a NEW instance in that style, which activates with the
-    bubble's message selected → the Phase 1 summary view. Phase 3 replaces
-    the read-only surface with inline vote buttons for yes_no/limited_supply.
+  - **(Phase 2, SUPERSEDED by Phase 3) The bubble WAS read-only; the
+    transcript VC handled its own tap.** Live bubbles get NO template-style
+    tap-to-open from Messages (device-verified: an unhandled tap does nothing —
+    an earlier assumption that it "falls through" was wrong). Phase 2 made the
+    SwiftUI tree hit-testing-disabled (`allowsHitTesting(false)` +
+    `isUserInteractionEnabled = false` on the hosting view) so a
+    `UITapGestureRecognizer` on the VC's root view got the tap and called
+    `requestPresentationStyle(.expanded)`. **Phase 3 reverses this** (the tree
+    is interactive, the recognizer is gone — see the Phase 3 notes below). The
+    DEVICE FINDING still stands: a transcript-style controller may request ONLY
+    `.expanded`, and the system displays a NEW instance in that style activated
+    with the bubble's message selected → the summary view.
   - **`GET /api/polls/{short_id}/summary` (`get_poll_summary` in
     `routers/polls.py`, model `PollSummaryResponse`)** is identity-free like
     `/preview` (decision B: a bubble is a deliberate capability share) and
@@ -3395,6 +3404,67 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
     would join the viewer to a group because they scrolled past a bubble.
     Redemption stays on the explicit paths (web `/invite/<token>` fallback,
     Open in WhoeverWants, Phase 3 vote-time join).
+- **Phase 3 implementation notes (inline voting — Swift-only, same file):**
+  - **NO server / migration / entitlement / CI / pbxproj change.** `/summary`
+    already returns `poll_id` + per-question `yes_count`/`no_count`/
+    `secured_count`/`supply_count`; voting reuses the atomic batch
+    `POST /api/polls/{id}/votes` + own-vote `GET /api/questions/{id}/votes` + the
+    Phase 1 App-Group identity. The ONLY new summary parse is `PollSummary.pollId`
+    (the POST target); limited_supply uses the server-rendered `result_text`, so
+    no structured-count parse was added.
+  - **The transcript SwiftUI tree is now INTERACTIVE** — Phase 2's
+    `allowsHitTesting(false)` + `isUserInteractionEnabled = false` + the VC's
+    `UITapGestureRecognizer` are all GONE. Vote buttons are SwiftUI `Button`s;
+    the title / result rows / footer are EACH wrapped in a plain
+    `Button { model.requestExpand() }` (→ `host?.requestPresentationStyle(.expanded)`),
+    so every tappable region is explicit — NOT a UIKit fall-through (an
+    interactive hosting view consumes taps, so the old recognizer wouldn't fire
+    anymore). The vote buttons are SIBLINGS of the content Button in the VStack,
+    never nested (SwiftUI forbids Button-in-Button), so a button tap votes while
+    a tap elsewhere expands. **This interaction model is device-only-verifiable**
+    (Simulator works for the inner loop) — if SwiftUI gestures somehow don't fire
+    in a live transcript, that's the finding to address.
+  - **Inline voting is gated to a SINGLE-question poll whose one question is
+    `yes_no` (Yes/No) or `limited_supply` (Claim a spot / No thanks)** —
+    `PollSummary.inlineVotableQuestion` (also requires open + a non-empty pollId).
+    Closed / multi-question / other types (ranked / time / showtime) stay
+    read-only; tapping opens the expanded summary. The expanded summary view
+    itself stays read-only this phase (multi-question + the nameless
+    set-name-here flow route through Open-in-app) — deferred.
+  - **Identity-gated** on the App-Group name+browserId: `BridgedIdentity.load()`
+    now returns BOTH (`name` = the batch endpoint's required `voter_name`,
+    `browserId` = `X-Browser-Id`); `loadBrowserId()` delegates. With identity the
+    buttons are live; without it they render disabled under "Set your name in the
+    app to vote" (a transcript can't take keyboard input — the nameless user taps
+    through to expanded → Open in WhoeverWants → set name in app).
+  - **Edit, don't duplicate.** On load (votable + identity) the bubble fetches the
+    viewer's OWN vote (`PollAPI.fetchMyVote` → `GET /api/questions/{id}/votes`,
+    ballot-privacy-scoped to their browser) into `myVotes[questionId]` → highlights
+    the current choice + remembers the `vote_id`. A vote sends the batch POST with
+    `vote_id` set (EDIT — server uses the row's existing vote_type + enforces
+    browser-ownership) or null (INSERT, `vote_type` required). The bubble votes
+    with the SAME browser_id that cast the original vote, so the edit-path
+    ownership check passes. Re-tapping the current choice is a no-op.
+  - **`TranscriptBubbleModel.voting: VotingTarget?`** (the exact `{questionId,
+    yesNoChoice, isAbstain}` being submitted) drives the spinner on the SPECIFIC
+    tapped button + gates re-taps. NOT a "differs from current selection" guess —
+    that spins BOTH buttons for a first-time voter (neither matches the nil prior
+    selection). On success, `myVotes` is updated straight from the POST response +
+    `SummaryStore.refresh(shortId:)` force-re-fetches (bypassing the 20s TTL) so
+    the aggregate counts update at once. A transient POST failure leaves the prior
+    bubble untouched (buttons re-enable when `voting` clears via `defer`).
+  - **Vote-time join for free** — the batch endpoint `join_group_for_poll`s the
+    voter, so voting on a private-group bubble auto-joins them (the plan's
+    vote-time join); voting doesn't gate on visibility server-side (the privacy
+    gate is read-only), so no separate invite redeem is needed.
+  - **No post-vote `MSSession` "bump"** (the plan's optional cosmetic) — skipped:
+    adds chat noise, correctness never depends on it (the server is the source of
+    truth; other viewers' bubbles refresh on their own ≤20s `SummaryStore` TTL).
+  - **Browser-scoped identity caveat** (same as Siri / Phase 1): the bridged
+    browser_id is per-device, so a user who voted on a DIFFERENT device (no
+    bridged bearer to union accounts) won't have their prior vote found by
+    `fetchMyVote` → a fresh insert → double-count across devices. Rare; accepted
+    for v1, matching the app's own anonymous-browser limitation.
 - **CI wiring (`ios-build.yml`), two load-bearing fixes for a second target:**
   1. The bundle-id sed must patch BOTH targets, **extension-first with anchored
      `;`** (`com\.whoeverwants\.app\.MessagesExtension;` before
