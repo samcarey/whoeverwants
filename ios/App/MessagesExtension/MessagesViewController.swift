@@ -25,9 +25,12 @@ import UIKit
 //     GET /api/polls/<short>/summary through a process-level cache
 //     (SummaryStore) so several bubbles re-rendering in one conversation
 //     coalesce into one round-trip. Read-only by design (Phase 3 adds
-//     voting): the SwiftUI tree is hit-testing-disabled, so a tap falls
-//     through to Messages, which opens the extension expanded → the summary
-//     view below. Rendering NEVER redeems the embedded invite token — the
+//     voting): the SwiftUI tree is hit-testing-disabled and the transcript
+//     VC handles the tap itself via requestPresentationStyle(.expanded) —
+//     live bubbles get NO template-style tap-to-open from Messages
+//     (device-verified) — which makes the system open a new expanded
+//     instance with this bubble's message selected → the summary view
+//     below. Rendering NEVER redeems the embedded invite token — the
 //     summary endpoint is identity-free, and joining a group because you
 //     scrolled past a bubble would surprise; redemption stays on the explicit
 //     open-in-app / web paths.
@@ -551,11 +554,21 @@ class MessagesViewController: MSMessagesAppViewController {
         let controller: UIViewController
         if presentationStyle == .transcript {
             let hosting = UIHostingController(rootView: TranscriptBubbleView(model: bubbleModel))
-            // Read-only in Phase 2: with hit-testing off, a tap on the bubble
-            // falls through to Messages, which opens the extension expanded
-            // (the summary view) — the same flow as tapping a template bubble.
+            // Read-only in Phase 2: the SwiftUI tree takes no touches, so the
+            // tap recognizer below (on self.view) receives bubble taps.
             hosting.view.isUserInteractionEnabled = false
             controller = hosting
+            // Live-layout bubbles get NO template-style tap-to-open from
+            // Messages (device-verified: an unhandled tap does nothing). The
+            // transcript instance must handle the tap itself: per the docs,
+            // requesting a presentation style from a transcript-style
+            // controller makes the system display a NEW instance in that
+            // style — which activates with this bubble's message selected →
+            // the expanded summary. `.expanded` is the only legal request
+            // from transcript.
+            view.addGestureRecognizer(
+                UITapGestureRecognizer(target: self, action: #selector(transcriptBubbleTapped))
+            )
         } else {
             model.host = self
             controller = UIHostingController(rootView: RootView(model: model))
@@ -572,6 +585,10 @@ class MessagesViewController: MSMessagesAppViewController {
             controller.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         controller.didMove(toParent: self)
+    }
+
+    @objc private func transcriptBubbleTapped() {
+        requestPresentationStyle(.expanded)
     }
 
     // Fires on every activation: transcript bubble render (presentationStyle
@@ -945,8 +962,8 @@ struct TranscriptBubbleView: View {
             .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(.systemBackground))
-            // Belt-and-braces with the hosting view's isUserInteractionEnabled
-            // = false: taps fall through to Messages → the expanded summary.
+            // Read-only: the VC's tap recognizer (not the SwiftUI tree) owns
+            // the tap → requestPresentationStyle(.expanded) → the summary.
             .allowsHitTesting(false)
     }
 
