@@ -108,15 +108,28 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
     circles.push({ label: `+${overflow}`, fill: '#6B7280', imageUrl: null });
   }
 
-  // Empty state placeholder: a plain gray circle with NO label. Used by
-  // the home list, group page header, and /info hero for groups that
-  // only contain the current user (filtered out by buildGroups) AND
-  // have no anonymous votes — keeps the avatar slot occupied with a
-  // consistent gray bubble rather than misrepresenting the group as a
-  // single anonymous voter via the legacy "?" fallback.
-  const isPlaceholder = circles.length === 0;
-  if (isPlaceholder) {
-    circles.push({ label: '', fill: ANONYMOUS_FALLBACK_COLOR, imageUrl: null });
+  // Empty state placeholder: a big "multiple people" emoji. Used by the
+  // home list, group page header, and /info hero for groups that only
+  // contain the current user (filtered out by buildGroups) AND have no
+  // anonymous votes — conveys "a group of people" rather than the legacy
+  // gray bubble / "?" fallback that misrepresented the group as a single
+  // anonymous voter.
+  if (circles.length === 0) {
+    return (
+      <div className={`${sizeClassName} aspect-square flex-shrink-0 self-center`}>
+        <svg viewBox="0 0 100 100" className="w-full h-full" aria-hidden="true">
+          <text
+            x={50}
+            y={54}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize={72}
+          >
+            👥
+          </text>
+        </svg>
+      </div>
+    );
   }
 
   const n = Math.min(circles.length, LAYOUTS.length - 1);
@@ -147,14 +160,12 @@ export default function RespondentCircles({ names, anonymousCount, sizeClassName
             })}
           </defs>
         )}
-        {!isPlaceholder && (
-          <circle
-            cx={50}
-            cy={50}
-            r={BOUNDING_RADIUS}
-            className="fill-gray-100 dark:fill-gray-800"
-          />
-        )}
+        <circle
+          cx={50}
+          cy={50}
+          r={BOUNDING_RADIUS}
+          className="fill-gray-100 dark:fill-gray-800"
+        />
         {circles.map((circle, i) => {
           const [cx, cy] = layoutCenters[i];
           const r = layoutRadius;
