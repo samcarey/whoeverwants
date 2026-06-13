@@ -476,7 +476,11 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
         style={{
           willChange: "transform",
           position: "relative",
-          zIndex: 1,
+          // z-2 (not z-1) so the persistent "+ Group" button can sit at z-1
+          // during the swipe-back — above the z-0 home backdrop, below this
+          // sliding page — and be revealed as the page slides off (rather
+          // than popping on top at swipe start). See CreateGroupButtonHost.
+          zIndex: 2,
           background: "var(--background)",
           minHeight: "100dvh",
           marginLeft: "calc(-1rem - max(0.35rem, env(safe-area-inset-left, 0px)))",
