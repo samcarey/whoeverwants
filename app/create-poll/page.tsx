@@ -492,21 +492,25 @@ export function CreateQuestionContent() {
   // iOS device, picking a suggestion from the focused search picker opens the
   // sheet WHILE the soft keyboard is collapsing; during that settle window
   // WebKit can scroll the freshly-mounted sheet scroller (reported as "the
-  // form opens with the Options card at the top"). The scroller mounts inside
-  // <ModalPortal> (deferred commit), so an effect keyed on isModalOpen would
-  // run while the node is still null — use a callback ref (same pattern as
-  // setTitleInputRef) that zeroes scrollTop on attach and re-zeroes any
-  // programmatic scroll for a short window. The pin is interaction-gated:
-  // the user's first touch/wheel/pointerdown disarms it immediately, so a
-  // real scroll gesture is never fought. Doesn't reproduce in headless
-  // Chromium/WebKit — device-only, like the other keyboard-settle races.
+  // form opens with the Options card at the top" AND later "scrolled way past
+  // the bottom"). The scroller mounts inside <ModalPortal> (deferred commit),
+  // so an effect keyed on isModalOpen would run while the node is still null —
+  // use a callback ref (same pattern as setTitleInputRef) that zeroes scrollTop
+  // on attach, re-zeroes any programmatic scroll, AND re-asserts 0 every frame
+  // (rAF) for a short window — the per-frame reassert is needed because setting
+  // scrollTop on the single mid-animation `scroll` event can be ignored. The
+  // pin is interaction-gated: the user's first touch/wheel/pointerdown disarms
+  // it immediately, so a real scroll gesture is never fought. Doesn't reproduce
+  // in headless Chromium/WebKit — device-only, like the other keyboard races.
   const sheetScrollPinCleanupRef = useRef<(() => void) | null>(null);
   const setSheetScrollerRef = useCallback((node: HTMLDivElement | null) => {
     sheetScrollPinCleanupRef.current?.();
     if (!node) return;
     node.scrollTop = 0;
+    let raf = 0;
     const cleanup = () => {
       window.clearTimeout(timer);
+      if (raf) cancelAnimationFrame(raf);
       node.removeEventListener('scroll', onScroll);
       node.removeEventListener('touchstart', cleanup);
       node.removeEventListener('wheel', cleanup);
@@ -518,6 +522,16 @@ export function CreateQuestionContent() {
     const onScroll = () => {
       if (node.scrollTop !== 0) node.scrollTop = 0;
     };
+    // iOS can scroll the freshly-mounted scroller while the search-box keyboard
+    // collapses, and setting scrollTop on the one `scroll` event it fires is
+    // sometimes ignored mid-animation. Re-assert 0 every frame for the armed
+    // window so the form can't open scrolled down; the user's first
+    // touch/wheel/pointerdown disarms it (cleanup) so a real scroll isn't fought.
+    const reassert = () => {
+      if (node.scrollTop !== 0) node.scrollTop = 0;
+      raf = requestAnimationFrame(reassert);
+    };
+    raf = requestAnimationFrame(reassert);
     node.addEventListener('scroll', onScroll);
     node.addEventListener('touchstart', cleanup, { passive: true });
     node.addEventListener('wheel', cleanup, { passive: true });
@@ -1236,6 +1250,11 @@ export function CreateQuestionContent() {
     const draft: QuestionDraft = { ...base, ...overrides };
     applyDraftToState(draft);
     setCreatorName(getUserName() ?? "");
+    // The search box / bubble bar always start a BRAND-NEW poll, but `details`
+    // (Notes) is poll-level state that `applyDraftToState` doesn't touch — so a
+    // prior session's notes, restored by `loadFormState` on mount, would leak
+    // into the fresh form ("random text in the notes field"). Reset it here.
+    setDetails("");
     setError(null);
     // For yes/no the title IS the question prompt; focus it once the input
     // mounts (see setTitleInputRef) ONLY when no prompt was prefilled. Prime
