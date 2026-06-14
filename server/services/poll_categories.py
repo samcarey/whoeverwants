@@ -91,6 +91,7 @@ def load_category_recency(
     *,
     user_id: str | None = None,
     group_id: str | None = None,
+    explore: bool = False,
 ) -> CategoryRecency:
     """Recency-ordered categories for the caller, overall and (optionally)
     scoped to one group.
@@ -100,29 +101,40 @@ def load_category_recency(
     `load_user_visibility`) so the ordering is consistent across the
     user's devices. `MAX(last_created_at)` per category collapses the
     per-browser rows.
+
+    `explore` isolates the two surfaces (migration 143): the cross-group
+    `general` list excludes 'explore'-privacy groups for a regular request
+    (`explore=False`), and restricts to them for an /explore request
+    (`explore=True`) — so explore-poll categories never bleed into a regular
+    group's bubble order, and vice versa.
     """
     if not browser_id and not user_id:
         return CategoryRecency(group=[], general=[])
 
     browser_filter = """
         (
-            browser_id = %(bid)s::uuid
+            pch.browser_id = %(bid)s::uuid
             OR (
                 %(uid)s::uuid IS NOT NULL
-                AND browser_id IN (
+                AND pch.browser_id IN (
                     SELECT browser_id FROM user_browsers
                      WHERE user_id = %(uid)s::uuid
                 )
             )
         )
     """
+    # The general list must not mix explore + regular history in either
+    # direction; a join to groups lets us filter on the group's privacy.
+    explore_filter = "g.privacy = 'explore'" if explore else "g.privacy <> 'explore'"
 
     general_rows = conn.execute(
         f"""
-        SELECT category, MAX(last_created_at) AS recency
-          FROM poll_category_history
+        SELECT pch.category, MAX(pch.last_created_at) AS recency
+          FROM poll_category_history pch
+          JOIN groups g ON g.id = pch.group_id
          WHERE {browser_filter}
-         GROUP BY category
+           AND {explore_filter}
+         GROUP BY pch.category
          ORDER BY recency DESC
         """,
         {"bid": browser_id, "uid": user_id},
@@ -130,13 +142,15 @@ def load_category_recency(
 
     group_rows = []
     if group_id:
+        # Group-scoped: the single group_id already fixes the surface, so no
+        # explore filter is needed here.
         group_rows = conn.execute(
             f"""
-            SELECT category, MAX(last_created_at) AS recency
-              FROM poll_category_history
-             WHERE group_id = %(gid)s::uuid
+            SELECT pch.category, MAX(pch.last_created_at) AS recency
+              FROM poll_category_history pch
+             WHERE pch.group_id = %(gid)s::uuid
                AND {browser_filter}
-             GROUP BY category
+             GROUP BY pch.category
              ORDER BY recency DESC
             """,
             {"bid": browser_id, "uid": user_id, "gid": group_id},

@@ -45,6 +45,13 @@ const cacheById = new Map<string, QuestionCache>();
 // rather than the flat Question[] list.
 let accessiblePollsCache: CacheEntry<Poll[]> | null = null;
 
+// The caller's /explore feed polls — DELIBERATELY SEPARATE from
+// accessiblePollsCache so explore polls never leak into the home/group
+// list (which is built from getCachedAccessiblePolls). Fed by the explore
+// page; read by the create-poll search box's "recent polls" suggestions
+// when the user is composing on /explore.
+let explorePollsCache: CacheEntry<Poll[]> | null = null;
+
 // Per-question results and votes caches
 const resultsCache = new Map<string, CacheEntry<ResultsValue>>();
 const votesCache = new Map<string, CacheEntry<ApiVote[]>>();
@@ -106,6 +113,20 @@ export function cacheAccessiblePolls(polls: Poll[]): void {
 export function updateAccessiblePollsIfFresh(merge: (existing: Poll[]) => Poll[]): void {
   const cached = getCachedAccessiblePolls();
   if (cached) cacheAccessiblePolls(merge(cached));
+}
+
+/** Cache the caller's /explore feed polls (separate from the accessible
+ *  cache — see explorePollsCache). Also warms the per-poll cache. */
+export function cacheExplorePolls(polls: Poll[]): void {
+  explorePollsCache = { value: polls, storedAt: Date.now() };
+  for (const mp of polls) cachePoll(mp);
+}
+
+/** Get the cached /explore feed polls if fresh, else null. */
+export function getCachedExplorePolls(): Poll[] | null {
+  return explorePollsCache && isValid(explorePollsCache)
+    ? explorePollsCache.value
+    : null;
 }
 
 /** Get a question by ID if cached and fresh. */

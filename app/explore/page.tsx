@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePageReady } from "@/lib/usePageReady";
 import { navigateWithTransition } from "@/lib/viewTransitions";
@@ -10,21 +11,71 @@ import {
 import {
   SHOW_HOME_BACKDROP_EVENT,
   HIDE_HOME_BACKDROP_EVENT,
+  HIDE_EXPLORE_BACKDROP_EVENT,
+  EXPLORE_POLL_CHANGED_EVENT,
 } from "@/lib/eventChannels";
+import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import HeaderPortal from "@/components/HeaderPortal";
+import { apiGetExplore } from "@/lib/api/groups";
+import { getCachedExplorePolls } from "@/lib/questionCache";
+import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
+import type { Poll } from "@/lib/types";
+import { ExploreFeedList } from "@/components/ExploreFeed";
 
 export default function ExplorePage() {
   const router = useRouter();
   usePageReady(true);
 
-  // Swipe-back → home (mirrors the settings page's gesture). The home
-  // backdrop (cached GroupList + home chrome) renders behind this page
-  // during the drag; on commit we navigate directly with router.push (the
-  // backdrop is already showing home). The header chrome is the
-  // HeaderPortal-floated back button in the body-level `#header-portal`
-  // node, so that node is the gesture's "header" transform target — the
-  // button slides with the page (see app/layout.tsx for why the portal's
-  // fixed/zero-height styling makes that safe).
+  // Seed from cache for a flicker-free first paint, then refresh.
+  const [polls, setPolls] = useState<Poll[]>(() => getCachedExplorePolls() ?? []);
+  const [loaded, setLoaded] = useState<boolean>(() => getCachedExplorePolls() !== null);
+  const [exploreGroupId, setExploreGroupId] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const feed = await apiGetExplore();
+    setPolls(feed.polls);
+    setExploreGroupId(feed.group?.id ?? null);
+    setLoaded(true);
+  }, []);
+
+  // Mark the page as the explore composing surface so CreateQuestionContent
+  // (the persistent bottom create bar) flags new polls as explore polls and
+  // scopes its "recent polls" suggestions to the explore feed. Set the group
+  // id once known so category-recency is scoped to the explore group. Also
+  // dismiss the explore swipe backdrop + release the swipe scrollbar lock on
+  // mount (covers the swipe-commit-from-poll-detail race, where the detail
+  // page unmounts before its snap-back cleanup runs — same pattern as the
+  // group/poll detail mount effects).
+  useEffect(() => {
+    document.body.setAttribute(EXPLORE_ATTR, "1");
+    window.dispatchEvent(new Event(HIDE_EXPLORE_BACKDROP_EVENT));
+    setSwipeScrollbarLock(false);
+    return () => {
+      document.body.removeAttribute(EXPLORE_ATTR);
+      document.body.removeAttribute(GROUP_ID_ATTR);
+    };
+  }, []);
+  useEffect(() => {
+    if (exploreGroupId) document.body.setAttribute(GROUP_ID_ATTR, exploreGroupId);
+    else document.body.removeAttribute(GROUP_ID_ATTR);
+  }, [exploreGroupId]);
+
+  // Initial fetch + refresh on create / tab re-show.
+  useEffect(() => {
+    void refresh();
+    const onChanged = () => void refresh();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    window.addEventListener(EXPLORE_POLL_CHANGED_EVENT, onChanged);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener(EXPLORE_POLL_CHANGED_EVENT, onChanged);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refresh]);
+
+  // Swipe-back → home (mirrors the settings page's gesture).
   const headerPortalRef = useHeaderPortalRef();
   const { swipeWrapperRef, touchHandlers } = useSwipeBackGesture({
     headerRef: headerPortalRef,
@@ -33,9 +84,6 @@ export default function ExplorePage() {
     onCommit: () => router.push("/"),
   });
 
-  // Floating opaque-bubble back button, portaled into #header-portal
-  // (outside .responsive-scaling-container so position:fixed is
-  // viewport-relative on desktop — same as the settings / info pages).
   const backButton = (
     <button
       onClick={() => navigateWithTransition(router, "/", "back")}
@@ -53,12 +101,12 @@ export default function ExplorePage() {
     <>
       <HeaderPortal>{backButton}</HeaderPortal>
 
-      {/* z-index:1 + opaque background keeps the home backdrop hidden behind
+      {/* z-index:2 + opaque background keeps the home backdrop hidden behind
           the page until the swipe moves the wrapper sideways. The negative
           horizontal margins cancel the template wrapper's `px-4` (1rem) PLUS
           the outer safe-area padding so the background paints all the way to
-          the screen edges; the inner div re-applies the inset so the content
-          doesn't move. Mirrors the settings page. */}
+          the screen edges; the inner div re-applies only the safe-area inset
+          so the cards sit edge-to-edge (like the group page). */}
       <div
         ref={swipeWrapperRef}
         {...touchHandlers}
@@ -66,10 +114,6 @@ export default function ExplorePage() {
         style={{
           willChange: "transform",
           position: "relative",
-          // z-2 (not z-1) so the persistent "+ Group" button can sit at z-1
-          // during the swipe-back — above the z-0 home backdrop, below this
-          // sliding page — and be revealed as the page slides off (rather
-          // than popping on top at swipe start). See CreateGroupButtonHost.
           zIndex: 2,
           background: "var(--background)",
           minHeight: "100dvh",
@@ -79,23 +123,35 @@ export default function ExplorePage() {
       >
         <div
           style={{
-            paddingLeft: "calc(1rem + max(0.35rem, env(safe-area-inset-left, 0px)))",
-            paddingRight: "calc(1rem + max(0.35rem, env(safe-area-inset-right, 0px)))",
+            paddingLeft: "max(0.35rem, env(safe-area-inset-left, 0px))",
+            paddingRight: "max(0.35rem, env(safe-area-inset-right, 0px))",
+            // Reserve room for the floating create bar so the last card clears it.
+            paddingBottom: `var(${PANEL_HEIGHT_VAR}, 80px)`,
           }}
         >
           {/* Page title — "Explore". Lives inside the swipe wrapper (NOT the
               template) so it slides with the page during the back gesture. */}
-          <div className="max-w-4xl mx-auto px-16 pb-1 page-title-safe-top">
+          <div className="max-w-4xl mx-auto px-16 pb-2 page-title-safe-top">
             <h1 className="text-2xl font-bold text-center break-words select-none">
               Explore
             </h1>
           </div>
 
-          <div className="question-content pt-0.5">
-            <p className="text-center text-gray-500 dark:text-gray-400 py-16">
-              This page is coming soon!
+          <ExploreFeedList polls={polls} />
+
+          {loaded && polls.length === 0 && (
+            <p className="text-center text-gray-500 dark:text-gray-400 px-6 py-16 leading-relaxed">
+              Post anything here — a question, a poll, a plan.
+              <br />
+              For now, only you can see what you create.
             </p>
-          </div>
+          )}
+
+          {/* Portal target for the always-on create bar (the bottom plus
+              button + text box). Rendered INSIDE the page content so the
+              fixed bar inherits the page's transform during the swipe-back.
+              See DRAFT_POLL_PORTAL_ID. */}
+          <div id={DRAFT_POLL_PORTAL_ID} className="relative z-40" />
         </div>
       </div>
     </>

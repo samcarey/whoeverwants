@@ -51,6 +51,7 @@ from services.groups import (
     NIL_UUID,
     _is_uuid_like,
     add_group_admin,
+    get_or_create_explore_group,
     group_display_name,
     group_name_phrase,
     require_uuid,
@@ -1177,6 +1178,15 @@ def create_poll(
         # name and bound to this browser, so close/reopen/cutoff can
         # authorize against it later without a secret.
         creator_user_id = _resolve_or_create_creator(conn, request, req.creator_name)
+        # Explore feed (migration 143): file the poll into the caller's own
+        # explore group (minted lazily on the first explore poll). Overrides
+        # any `group_id` the request carried — the explore group is resolved
+        # by creator, not by id — and clears `group_title` so the FE's
+        # auto-title can't rename the shared explore group. `_insert_poll`
+        # then resolves this existing group, leaving its privacy='explore'.
+        if req.explore:
+            req.group_id = get_or_create_explore_group(conn, creator_user_id)
+            req.group_title = None
         # Group privacy (Phase E) keys on GENUINE sign-in, not the auto-account
         # — anonymous-created groups must stay public so URL-sharing works.
         signed_in_user_id = _user_id(request)

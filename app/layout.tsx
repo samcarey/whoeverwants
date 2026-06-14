@@ -9,6 +9,7 @@ import { SlideOverlayHost } from "@/lib/slideOverlay";
 import HomeBackdropHost from "@/components/HomeBackdropHost";
 import GroupBackdropHost from "@/components/GroupBackdropHost";
 import PollBackdropHost from "@/components/PollBackdropHost";
+import ExploreBackdropHost from "@/components/ExploreBackdropHost";
 import SettingsBackdropHost from "@/components/SettingsBackdropHost";
 import CreateGroupButtonHost from "@/components/CreateGroupButtonHost";
 import RecoveryReminderHost from "@/components/RecoveryReminderHost";
@@ -158,6 +159,11 @@ export default function RootLayout({
         {/* Persistent poll-detail backdrop for the poll-info→poll-detail
             swipe-back gesture — see components/PollBackdropHost.tsx. */}
         <PollBackdropHost />
+
+        {/* Persistent explore backdrop for the poll-detail→/explore
+            swipe-back (when the poll was opened from /explore) — see
+            components/ExploreBackdropHost.tsx. */}
+        <ExploreBackdropHost />
 
         {/* Persistent settings backdrop for the settings-edit→settings
             swipe-back gesture — see components/SettingsBackdropHost.tsx.

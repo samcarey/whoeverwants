@@ -198,7 +198,9 @@ def grant_group_membership_inline(
     """
     if not browser_id:
         return
-    if privacy == "private":
+    # 'explore' is members-only too (see migration 143) — a visit to an
+    # explore group's URL must NOT auto-join a stranger, same as 'private'.
+    if is_members_only_privacy(privacy):
         return
     conn.execute(
         """
@@ -725,7 +727,9 @@ def resolve_group_for_visit(
         return None
     meta = get_group_metadata(conn, group_id)
     privacy = meta["privacy"] if meta else "public"
-    if privacy == "private":
+    # 'explore' groups are members-only (the per-user explore feed), so they
+    # gate the same way as 'private' — no inline auto-join for visitors.
+    if is_members_only_privacy(privacy):
         if not is_caller_member_of_group(
             conn, group_id, browser_id=browser_id, user_id=user_id
         ):
@@ -1004,6 +1008,74 @@ def poll_ids_for_group_ids(conn, group_ids: list[str]) -> list[str]:
         {"ids": group_ids},
     ).fetchall()
     return [str(r["id"]) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Explore feed (the per-user "explore group").
+#
+# An explore poll lives in a real `groups` row marked `privacy='explore'`,
+# owned by the creator (`creator_user_id`). One such group per account. It
+# behaves like a private group for visibility (members-only, no auto-join)
+# but is additionally excluded from the home surfaces (`/mine`, `/empty`) and
+# from regular category suggestions. See migration 143.
+# ---------------------------------------------------------------------------
+
+EXPLORE_PRIVACY = "explore"
+
+
+def is_members_only_privacy(privacy: str | None) -> bool:
+    """Privacies that are visible only to explicit members — no auto-join on a
+    URL visit, 404 to strangers. 'private' (Phase E) and 'explore' (the
+    per-user explore feed, migration 143) both qualify. Single source of truth
+    for the read-boundary gates."""
+    return privacy in ("private", EXPLORE_PRIVACY)
+
+
+def find_explore_group(conn, user_id: str | None) -> str | None:
+    """Return the caller's explore group_id, or None if they don't have one
+    yet (no account, or never created an explore poll)."""
+    if not user_id:
+        return None
+    row = conn.execute(
+        "SELECT id FROM groups"
+        " WHERE creator_user_id = %(uid)s::uuid AND privacy = %(p)s"
+        " ORDER BY created_at ASC LIMIT 1",
+        {"uid": user_id, "p": EXPLORE_PRIVACY},
+    ).fetchone()
+    return str(row["id"]) if row else None
+
+
+def get_or_create_explore_group(conn, user_id: str) -> str:
+    """Resolve (or mint) the account's single explore group and return its id.
+
+    Mints with `privacy='explore'`, the account as `creator_user_id` + admin
+    #1. Membership is written separately by the create/list paths (the create
+    path's post-commit `join_group` covers it), so the creator can open the
+    group's poll detail pages (members-only, like a private group)."""
+    existing = find_explore_group(conn, user_id)
+    if existing:
+        return existing
+    row = conn.execute(
+        "INSERT INTO groups (title, privacy, creator_user_id)"
+        " VALUES (%(title)s, %(p)s, %(uid)s) RETURNING id",
+        {"title": "Explore", "p": EXPLORE_PRIVACY, "uid": user_id},
+    ).fetchone()
+    group_id = str(row["id"])
+    add_group_admin(conn, group_id, user_id)
+    return group_id
+
+
+def explore_group_ids(conn, group_ids: list[str]) -> set[str]:
+    """Return the subset of `group_ids` that are explore groups. Used to keep
+    explore groups out of the home list and out of cross-group suggestions."""
+    if not group_ids:
+        return set()
+    rows = conn.execute(
+        "SELECT id FROM groups"
+        " WHERE id = ANY(%(ids)s::uuid[]) AND privacy = %(p)s",
+        {"ids": group_ids, "p": EXPLORE_PRIVACY},
+    ).fetchall()
+    return {str(r["id"]) for r in rows}
 
 
 def resolve_group_id_from_route_id(conn, route_id: str) -> str | None:

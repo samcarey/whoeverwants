@@ -49,6 +49,7 @@ export {
   apiGetGroupPoll,
   apiCreateGroup,
   apiGetMyEmptyGroups,
+  apiGetExplore,
   apiGetGroupSummary,
   apiGetGroupPreview,
   apiLeaveGroup,
@@ -81,6 +82,7 @@ export type {
   GroupMember,
   AnonymousMember,
   GroupRoster,
+  ExploreFeed,
 } from "./groups";
 
 export {

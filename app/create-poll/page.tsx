@@ -56,16 +56,17 @@ import { enterAdvancesFocus } from "@/lib/formNavigation";
 import { haptic } from "@/lib/haptics";
 import { isValidUserName, validateUserName } from "@/lib/nameValidation";
 import * as questionBackTarget from "@/lib/questionBackTarget";
-import { cachePoll, getCachedAccessiblePolls, getCachedGroupIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
+import { cacheExplorePolls, cachePoll, getCachedAccessiblePolls, getCachedExplorePolls, getCachedGroupIdForQuestion, invalidatePoll, updateAccessiblePollsIfFresh } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
   POLL_FAILED_EVENT,
+  EXPLORE_POLL_CHANGED_EVENT,
   type PollPendingDetail,
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID, GROUP_ID_ATTR, PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
 import {
   pollLookup,
   shortenOption,
@@ -1664,7 +1665,15 @@ export function CreateQuestionContent() {
       setRecentEntries((prev) => (prev.length ? [] : prev));
       return;
     }
-    const polls = [...(getCachedAccessiblePolls() ?? [])].sort(
+    // On /explore, recent-poll suggestions come from the explore feed (kept
+    // in a separate cache so explore polls and group polls never appear in
+    // each other's suggestions). Read the marker synchronously at focus time
+    // (when this runs) — no need for reactive state, the value can't change
+    // without a navigation that also re-mounts the surface.
+    const onExplore = typeof document !== 'undefined'
+      && document.body.getAttribute(EXPLORE_ATTR) === '1';
+    const source = onExplore ? getCachedExplorePolls() : getCachedAccessiblePolls();
+    const polls = [...(source ?? [])].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
     const seen = new Set<string>();
@@ -2156,6 +2165,12 @@ export function CreateQuestionContent() {
       // attribute can be stale (the group route's cleanup is a useEffect
       // return that React/HMR/view-transitions can delay).
       const onEmptyGroup = typeof window !== 'undefined' && /^\/g\/?$/.test(window.location.pathname);
+      // Composing on /explore: the server files the poll into the caller's
+      // per-user explore group (the `explore` request flag); we skip the
+      // group-state placeholder/POLL_PENDING flow (no group page is mounted)
+      // and refresh the explore feed instead.
+      const onExplore = typeof document !== 'undefined'
+        && document.body.getAttribute(EXPLORE_ATTR) === '1';
       const bodyGroupId = !onEmptyGroup && typeof document !== 'undefined'
         ? document.body.getAttribute(GROUP_ID_ATTR)
         : null;
@@ -2254,7 +2269,11 @@ export function CreateQuestionContent() {
         : baseDetails;
       const detailsForRequest = detailsWithRecurrence || null;
 
-      const placeholderPoll = synthesizePlaceholderPoll(effectiveDrafts, {
+      // The optimistic placeholder + POLL_PENDING flow is a group-page
+      // concern (it swaps placeholder → real card in the destination group
+      // list). The /explore feed isn't a group page, so skip it entirely
+      // there — the explore page just re-fetches on EXPLORE_POLL_CHANGED.
+      const placeholderPoll = onExplore ? null : synthesizePlaceholderPoll(effectiveDrafts, {
         wrapperTitle,
         responseDeadline,
         groupId: effectiveGroupId ?? null,
@@ -2264,24 +2283,26 @@ export function CreateQuestionContent() {
         allowPlusOnes: effectiveAllowPlusOnes,
       });
 
-      // For new-root submissions on /g/ (the empty placeholder), the
-      // destination GroupContent mounts with the placeholder in cache.
-      // For follow-ups, the current group page is already rendering and
-      // takes the placeholder via POLL_PENDING_EVENT inline.
-      // Cache the placeholder so destination group render can find it.
-      cachePoll(placeholderPoll);
-      updateAccessiblePollsIfFresh(existing => [
-        ...existing.filter(p => p.id !== placeholderPoll.id),
-        placeholderPoll,
-      ]);
+      if (placeholderPoll) {
+        // For new-root submissions on /g/ (the empty placeholder), the
+        // destination GroupContent mounts with the placeholder in cache.
+        // For follow-ups, the current group page is already rendering and
+        // takes the placeholder via POLL_PENDING_EVENT inline.
+        // Cache the placeholder so destination group render can find it.
+        cachePoll(placeholderPoll);
+        updateAccessiblePollsIfFresh(existing => [
+          ...existing.filter(p => p.id !== placeholderPoll.id),
+          placeholderPoll,
+        ]);
 
-      // Dispatch the placeholder so the destination group inserts the card
-      // immediately.
-      window.dispatchEvent(
-        new CustomEvent<PollPendingDetail>(POLL_PENDING_EVENT, {
-          detail: { poll: placeholderPoll },
-        }),
-      );
+        // Dispatch the placeholder so the destination group inserts the card
+        // immediately.
+        window.dispatchEvent(
+          new CustomEvent<PollPendingDetail>(POLL_PENDING_EVENT, {
+            detail: { poll: placeholderPoll },
+          }),
+        );
+      }
 
       // Clear staged drafts immediately so the in-card list resets to the
       // empty inline form for the user's next poll.
@@ -2310,7 +2331,10 @@ export function CreateQuestionContent() {
           response_deadline: responseDeadline,
           prephase_deadline: prephaseDeadlineIso,
           prephase_deadline_minutes: prephaseDeadlineIso ? null : prephaseMinutes != null ? Math.round(prephaseMinutes) : null,
-          group_id: requestGroupId,
+          // Explore polls are filed into the caller's explore group server-side
+          // (the `explore` flag); the request group_id is irrelevant there.
+          group_id: onExplore ? null : requestGroupId,
+          explore: onExplore,
           title: wrapperTitle,
           context: null,
           details: detailsForRequest,
@@ -2338,14 +2362,17 @@ export function CreateQuestionContent() {
         // group, with the form cleared and seemingly nothing to retry. The
         // POLL_FAILED listener on the group page removes the placeholder
         // from group state; here we evict it from cache and restore the
-        // staged drafts so the user can edit and resubmit.
-        invalidatePoll(placeholderPoll.id);
-        updateAccessiblePollsIfFresh(existing => existing.filter(p => p.id !== placeholderPoll.id));
-        window.dispatchEvent(
-          new CustomEvent<PollFailedDetail>(POLL_FAILED_EVENT, {
-            detail: { placeholderId: placeholderPoll.id },
-          }),
-        );
+        // staged drafts so the user can edit and resubmit. (No placeholder
+        // on the explore path — nothing to clean up there.)
+        if (placeholderPoll) {
+          invalidatePoll(placeholderPoll.id);
+          updateAccessiblePollsIfFresh(existing => existing.filter(p => p.id !== placeholderPoll.id));
+          window.dispatchEvent(
+            new CustomEvent<PollFailedDetail>(POLL_FAILED_EVENT, {
+              detail: { placeholderId: placeholderPoll.id },
+            }),
+          );
+        }
         return;
       }
 
@@ -2376,20 +2403,36 @@ export function CreateQuestionContent() {
       // Scheduled page reads to enumerate upcoming auto-opening instances.
       cachePoll(createdPoll);
 
-      updateAccessiblePollsIfFresh(existing => [
-        ...existing.filter(p => p.id !== placeholderPoll.id && p.id !== createdPoll.id),
-        createdPoll,
-      ]);
-      window.dispatchEvent(
-        new CustomEvent<PollHydratedDetail>(POLL_HYDRATED_EVENT, {
-          detail: { placeholderId: placeholderPoll.id, poll: createdPoll },
-        }),
-      );
-
       // The server just recorded this poll's categories — refetch the
       // recency ordering so the bubble bar reflects the new most-recent
       // category on the next render.
       setCategoryRefreshTick((t) => t + 1);
+
+      if (onExplore) {
+        // Explore feed: keep the new poll OUT of the accessible cache (so it
+        // never appears on home), merge it into the separate explore cache
+        // (so the create box's "recent polls" updates), and tell the
+        // /explore page to re-fetch. The modal is already closed; we stay on
+        // /explore rather than navigating to the poll detail.
+        cacheExplorePolls([
+          createdPoll,
+          ...(getCachedExplorePolls() ?? []).filter(p => p.id !== createdPoll.id),
+        ]);
+        window.dispatchEvent(new Event(EXPLORE_POLL_CHANGED_EVENT));
+        return;
+      }
+
+      updateAccessiblePollsIfFresh(existing => [
+        ...existing.filter(p => placeholderPoll && p.id !== placeholderPoll.id && p.id !== createdPoll.id),
+        createdPoll,
+      ]);
+      if (placeholderPoll) {
+        window.dispatchEvent(
+          new CustomEvent<PollHydratedDetail>(POLL_HYDRATED_EVENT, {
+            detail: { placeholderId: placeholderPoll.id, poll: createdPoll },
+          }),
+        );
+      }
 
       // Land on the new poll's detail page. The cache is hot from the
       // just-completed POLL_HYDRATED so the destination mounts instantly.

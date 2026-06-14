@@ -74,9 +74,12 @@ from services.groups import (
     boot_member,
     boot_member_by_browser,
     claim_group as _claim_group_row,
+    explore_group_ids,
     filter_visible_polls,
+    find_explore_group,
     get_group_metadata,
     grant_group_membership_inline,
+    is_members_only_privacy,
     group_admin_user_ids,
     group_name_phrase,
     is_caller_admin,
@@ -132,6 +135,16 @@ class GroupSummary(BaseModel):
     # `get_my_empty_groups` compute real values; the create path is
     # genuinely poll-less so it keeps the False default.
     has_polls: bool = False
+
+
+class ExploreResponse(BaseModel):
+    """The /explore feed for the caller. `group` is the caller's explore group
+    summary (None until they've created their first explore poll); `polls` is
+    every poll in it, newest-first. For now this is just the caller's own
+    explore polls — "anyone can see anything" visibility is a future change."""
+
+    group: GroupSummary | None = None
+    polls: list[PollResponse] = Field(default_factory=list)
 
 
 class UpdateGroupPrivacyRequest(BaseModel):
@@ -262,9 +275,11 @@ def require_group_read_access(
     if not group_id:
         raise HTTPException(status_code=404, detail="Group not found")
     meta = get_group_metadata(conn, group_id)
+    # 'explore' groups (the per-user explore feed) are members-only, same as
+    # 'private' — strangers must not read an explore group's chrome/roster.
     if (
         meta
-        and meta["privacy"] == "private"
+        and is_members_only_privacy(meta["privacy"])
         and not is_caller_member_of_group(
             conn, group_id, browser_id=browser_id, user_id=user_id
         )
@@ -325,6 +340,11 @@ def get_my_groups(
         )
 
         member_group_ids = list(visibility.joined_by_group.keys())
+        # The per-user explore feed lives in 'explore'-privacy groups the
+        # creator is a member of — keep those out of the home list (they're
+        # surfaced only at /explore via POST /api/groups/explore).
+        explore_ids = explore_group_ids(conn, member_group_ids)
+        member_group_ids = [g for g in member_group_ids if g not in explore_ids]
         candidate_pids = poll_ids_for_group_ids(conn, member_group_ids)
         if not candidate_pids:
             return []
@@ -382,6 +402,9 @@ def get_my_empty_groups(request: Request):
             conn, browser_id, user_id=viewer_user_id
         )
         member_gids = list(visibility.joined_by_group.keys())
+        # Exclude the explore feed's group(s) — they never show on home.
+        explore_ids = explore_group_ids(conn, member_gids)
+        member_gids = [g for g in member_gids if g not in explore_ids]
         if not member_gids:
             return []
 
@@ -413,6 +436,43 @@ def get_my_empty_groups(request: Request):
             _row_to_group_summary(r, has_polls=str(r["id"]) in groups_with_polls)
             for r in rows
         ]
+
+
+@router.post("/explore", response_model=ExploreResponse)
+def get_explore_feed(request: Request):
+    """The caller's /explore feed: their own explore-feed polls, newest-first.
+
+    Visibility is intentionally limited to polls the caller created — the
+    explore feed is a 'global group' in spirit, but for now it only surfaces
+    the user's own explore polls. An anonymous caller with no account yet (no
+    explore group) gets an empty feed; the group is minted lazily on their
+    first explore poll create (POST /api/polls with `explore: true`).
+    """
+    browser_id = _browser_id(request)
+    user_id = _user_id(request)
+    if not browser_id and not user_id:
+        return ExploreResponse()
+    with get_db() as conn:
+        viewer_user_id = resolve_actor_user_id(
+            conn, user_id=user_id, browser_id=browser_id
+        )
+        explore_gid = find_explore_group(conn, viewer_user_id)
+        if not explore_gid:
+            return ExploreResponse()
+        summary_row = conn.execute(
+            f"SELECT {_GROUP_SUMMARY_COLUMNS} FROM groups WHERE id = %(g)s::uuid",
+            {"g": explore_gid},
+        ).fetchone()
+        pids = poll_ids_for_group_ids(conn, [explore_gid])
+        polls = polls_for_poll_ids(
+            conn, pids, include_results=True,
+            viewer_user_id=viewer_user_id, viewer_browser_id=browser_id,
+        )
+        return ExploreResponse(
+            group=_row_to_group_summary(summary_row, has_polls=bool(pids))
+            if summary_row else None,
+            polls=polls,
+        )
 
 
 def _row_to_group_summary(row, has_polls: bool = False) -> GroupSummary:

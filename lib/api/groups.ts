@@ -26,6 +26,7 @@
 import type { GroupSummary, Poll } from "@/lib/types";
 import {
   cacheAccessiblePolls,
+  cacheExplorePolls,
   cacheGroupSummary,
   cachePoll,
   cacheQuestionResults,
@@ -50,26 +51,29 @@ function toGroupSummary(data: any): GroupSummary {
   };
 }
 
-function hydrateAndCache(data: any[]): Poll[] {
-  const polls = data.map((d) => {
-    const poll = toPoll(d);
-    cachePoll(poll);
-    // Mirror inline per-question results so apiGetQuestionResults hits
-    // the per-question results cache without a late re-fetch (matching
-    // apiGetAccessibleQuestions's behavior).
-    const sub = Array.isArray(d.questions) ? d.questions : [];
-    for (let i = 0; i < sub.length; i++) {
-      const subData = sub[i];
-      if (subData?.results) {
-        const results = toQuestionResults(subData.results);
-        cacheQuestionResults(subData.id, results);
-        if (poll.questions[i]) {
-          poll.questions[i].results = results;
-        }
+/** Map one raw poll payload → Poll, caching it + mirroring inline per-question
+ *  results into the per-question results cache (so apiGetQuestionResults hits
+ *  cache without a late re-fetch). Does NOT touch the accessible/explore list
+ *  caches — the caller owns which list this poll belongs to. */
+function toPollWithResults(d: any): Poll {
+  const poll = toPoll(d);
+  cachePoll(poll);
+  const sub = Array.isArray(d.questions) ? d.questions : [];
+  for (let i = 0; i < sub.length; i++) {
+    const subData = sub[i];
+    if (subData?.results) {
+      const results = toQuestionResults(subData.results);
+      cacheQuestionResults(subData.id, results);
+      if (poll.questions[i]) {
+        poll.questions[i].results = results;
       }
     }
-    return poll;
-  });
+  }
+  return poll;
+}
+
+function hydrateAndCache(data: any[]): Poll[] {
+  const polls = data.map(toPollWithResults);
   // Merge into the accessible-polls cache (replace entries with the same
   // group_id, keep entries from other groups). Without this, a user who
   // lands directly on `/g/<id>` (deep-link, share, etc.) has the per-poll
@@ -186,6 +190,32 @@ export async function apiGetMyEmptyGroups(): Promise<GroupSummary[]> {
     return Array.isArray(data) ? data.map(toGroupSummary) : [];
   } catch {
     return [];
+  }
+}
+
+export interface ExploreFeed {
+  /** The caller's explore group summary, or null until they create their
+   *  first explore poll. */
+  group: GroupSummary | null;
+  /** The caller's own explore polls, newest-first. */
+  polls: Poll[];
+}
+
+/** The /explore feed: the caller's own explore-feed polls (newest-first),
+ *  plus their explore group summary. Caches the polls into the SEPARATE
+ *  explore cache (never the accessible cache, so they don't leak to home),
+ *  and mirrors inline per-question results into the per-question cache.
+ *  Returns an empty feed on failure (the page renders its create bar
+ *  regardless). */
+export async function apiGetExplore(): Promise<ExploreFeed> {
+  try {
+    const data = await groupFetch<any>('/explore', { method: 'POST' });
+    const rawPolls: any[] = Array.isArray(data?.polls) ? data.polls : [];
+    const polls = rawPolls.map(toPollWithResults);
+    cacheExplorePolls(polls);
+    return { group: data?.group ? toGroupSummary(data.group) : null, polls };
+  } catch {
+    return { group: null, polls: [] };
   }
 }
 

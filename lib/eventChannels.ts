@@ -40,6 +40,12 @@ export interface PollFailedDetail {
   placeholderId: string;
 }
 
+/** Fired by the create-poll component after an /explore poll is created
+ *  (the explore page isn't a group page, so it doesn't ride the
+ *  POLL_PENDING/HYDRATED group-state flow). The /explore page listens and
+ *  re-fetches its feed so the new poll appears at the top. */
+export const EXPLORE_POLL_CHANGED_EVENT = 'explorePollChanged';
+
 /** Fired by GroupList when bulk-forget selection mode toggles on the home
  *  page. The template listens to hide the upper-left settings gear so the
  *  cancel (X) button portalled into the same slot owns the hit area. */
@@ -185,6 +191,13 @@ export interface GroupBackdropShowDetail {
  *  mount effect (so the backdrop dismisses itself once the real group page
  *  has rendered through it). */
 export const HIDE_GROUP_BACKDROP_EVENT = 'group-backdrop:hide';
+
+/** Fired by the poll-detail swipe-back gesture when the poll was opened FROM
+ *  /explore (vs the group page). ExploreBackdropHost mounts a body-level
+ *  portal showing the cached explore feed underneath the poll detail page, so
+ *  a swipe-back reveals /explore and commits there. */
+export const SHOW_EXPLORE_BACKDROP_EVENT = 'explore-backdrop:show';
+export const HIDE_EXPLORE_BACKDROP_EVENT = 'explore-backdrop:hide';
 
 /** Fired by the poll INFO page's swipe-back gesture when motion is recognized
  *  AND when it commits to navigation. PollBackdropHost (in app/layout.tsx)
