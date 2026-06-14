@@ -1510,10 +1510,9 @@ private struct BallotQuestionRow: View {
     let poll: PollSummary
     let canVote: Bool
 
-    private var mine: BubbleVote? { model.ballotVotes[question.id] }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let mine = model.ballotVotes[question.id]
+        return VStack(alignment: .leading, spacing: 6) {
             if let label = question.label {
                 Text(label)
                     .font(.caption)
