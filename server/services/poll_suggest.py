@@ -239,7 +239,7 @@ _SYSTEM_PROMPT = (
     "and the user's own poll history.\n\n"
     "A poll is built from STRUCTURED FIELDS; the app auto-generates the displayed "
     "title from those fields, so you output ONLY the fields.\n\n"
-    "Output ONLY a JSON array (no prose, no markdown fences) of up to "
+    "Output ONLY a JSON array (no prose, no markdown fences) of 4 to "
     f"{MAX_SUGGESTIONS} objects, each:\n"
     '{\n'
     '  "category": one of [yes_no, restaurant, location, movie, video_game, time, limited_supply, custom],\n'
@@ -257,17 +257,21 @@ _SYSTEM_PROMPT = (
     "- limited_supply: first-come claim for limited spots/items. title = what's claimed.\n"
     "- custom: any other choice; options = the choices, context = the subject.\n\n"
     "RULES:\n"
-    "- TAILOR to this group + user. Mirror what they actually do: a foodie group "
-    "→ lean into food/place/time decisions; a work team → yes/no calls + "
-    "scheduling; a gaming group → games + game nights. It is GOOD to suggest "
-    "several polls of the SAME kind when that fits the group — do NOT just output "
-    "one of every category.\n"
+    f"- Return 4 to {MAX_SUGGESTIONS} suggestions. LEAD with the group's + user's "
+    "dominant decision types: MOST suggestions should match what they do most "
+    "often, then add 1-2 natural adjacent ideas. A foodie group → mostly "
+    "food/place/time; a work team → mostly yes/no calls + scheduling; a gaming "
+    "group → mostly games + game nights. It is GOOD to suggest several polls of "
+    "the SAME kind — do NOT just output one of every category.\n"
     "- Predict what comes NEXT. NEVER repeat, rephrase, or reuse the title, "
     "options, or subject of a poll already listed.\n"
     "- options must be SPECIFIC, real, named choices that fit this group (actual "
-    "restaurant / movie / game names) — NEVER generic categories, genres, or "
-    'filler like "Action, Comedy, Drama" or "Option 1". If you cannot name 2+ '
-    "specific fitting options, OMIT options and let the group suggest them.\n"
+    "restaurant / movie / game names like \"Chipotle\", \"Dune: Part Two\", "
+    '"Mario Kart 8") — NEVER generic words, genres, or filler like "Action, '
+    'Comedy, Drama", "Sushi Place", "Italian Restaurant", "Pizzeria Pizza", or '
+    '"Option 1". Do NOT lightly reword an existing poll\'s options. If you cannot '
+    "name 2+ specific real options that fit, OMIT options and let the group "
+    "suggest them — an omitted-options poll is better than a generic one.\n"
     "- context is the short real subject this poll is for; leave it out rather "
     "than inventing an unrelated one. Do not pair a context with an unrelated "
     "category.\n"
@@ -293,8 +297,8 @@ def _build_user_message(ctx: HistoryContext) -> str:
         f"{group_block}\n\n"
         "THIS USER'S RECENT POLLS (across their groups):\n"
         f"{user_block}\n\n"
-        f"Suggest up to {MAX_SUGGESTIONS} polls this user might create next in "
-        "this group. Output only the JSON array."
+        f"Suggest 4 to {MAX_SUGGESTIONS} polls this user might create next in this "
+        "group, leading with their dominant decision types. Output only the JSON array."
     )
 
 
