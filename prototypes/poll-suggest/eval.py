@@ -47,10 +47,10 @@ def build_context(scenario: dict) -> poll_suggest.HistoryContext:
     ctx = poll_suggest.HistoryContext()
     for r in scenario["group_polls"]:
         ctx.group_lines.append(poll_suggest._poll_line(r))
-        ctx.existing_signatures.add(poll_suggest._row_signature(r))
+        ctx.existing_signatures.update(poll_suggest._row_signatures(r))
     for r in scenario["user_polls"]:
         ctx.user_lines.append(poll_suggest._poll_line(r))
-        ctx.existing_signatures.add(poll_suggest._row_signature(r))
+        ctx.existing_signatures.update(poll_suggest._row_signatures(r))
     return ctx
 
 

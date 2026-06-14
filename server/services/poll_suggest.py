@@ -146,12 +146,31 @@ def _signature(category: str | None, title: str, options: list[str], context: st
     )
 
 
-def _row_signature(row: dict) -> str:
+def _options_signature(category: str | None, options: list[str]) -> str | None:
+    """A SECONDARY dedup key on (category + sorted options), ignoring context, so
+    a suggestion that echoes an existing poll's option list is dropped even when
+    the LLM attached a different/empty context (the common echo failure)."""
+    opts = "|".join(sorted(o.strip().lower() for o in options if o.strip()))
+    if not opts:
+        return None
+    return f"opts::{(category or '').strip().lower()}::{opts}"
+
+
+def _signatures_for(category: str | None, title: str, options: list[str], context: str) -> list[str]:
+    """The full signature plus the options-only signature (when present)."""
+    sigs = [_signature(category, title, options, context)]
+    opt_sig = _options_signature(category, options)
+    if opt_sig:
+        sigs.append(opt_sig)
+    return sigs
+
+
+def _row_signatures(row: dict) -> list[str]:
     opts = row.get("options")
     opt_list = [str(o) for o in opts] if isinstance(opts, list) else []
     qtype = row.get("question_type")
     category = "time" if qtype == "time" else (row.get("category") or "custom")
-    return _signature(
+    return _signatures_for(
         category,
         (row.get("title") or "").strip(),
         opt_list,
@@ -203,10 +222,10 @@ def gather_history(conn, user_id: str, group_id: str) -> HistoryContext | None:
 
     for r in group_rows:
         ctx.group_lines.append(_poll_line(r))
-        ctx.existing_signatures.add(_row_signature(r))
+        ctx.existing_signatures.update(_row_signatures(r))
     for r in user_rows:
         ctx.user_lines.append(_poll_line(r))
-        ctx.existing_signatures.add(_row_signature(r))
+        ctx.existing_signatures.update(_row_signatures(r))
 
     return ctx
 
@@ -215,10 +234,9 @@ def gather_history(conn, user_id: str, group_id: str) -> HistoryContext | None:
 
 _SYSTEM_PROMPT = (
     "You are the suggestion engine for WhoeverWants, a group decision-making "
-    "app. People create POLLS to decide things together (where to eat, what to "
-    "watch, yes/no calls, scheduling, claiming limited spots). Predict the NEXT "
-    "polls a specific user is likely to want to create in a specific group, "
-    "based on the group's recent polls and the user's own poll history.\n\n"
+    "app. People create POLLS to decide things together. Predict the NEXT polls "
+    "THIS user is likely to create in THIS group, from the group's recent polls "
+    "and the user's own poll history.\n\n"
     "A poll is built from STRUCTURED FIELDS; the app auto-generates the displayed "
     "title from those fields, so you output ONLY the fields.\n\n"
     "Output ONLY a JSON array (no prose, no markdown fences) of up to "
@@ -226,26 +244,34 @@ _SYSTEM_PROMPT = (
     '{\n'
     '  "category": one of [yes_no, restaurant, location, movie, video_game, time, limited_supply, custom],\n'
     '  "title": string,    // REQUIRED for yes_no (the yes/no question, ending in "?") and limited_supply (what is being claimed). Omit for others.\n'
-    '  "options": [string], // OPTIONAL 2-6 ballot choices for restaurant/location/movie/video_game/custom. Omit to let the group suggest options.\n'
-    '  "context": string    // OPTIONAL short subject the poll is "for" (e.g. "Friday dinner", "team offsite"). Under 40 characters.\n'
+    '  "options": [string], // OPTIONAL 2-6 SPECIFIC named choices for restaurant/location/movie/video_game/custom. Omit to let the group suggest options.\n'
+    '  "context": string    // OPTIONAL short real subject the poll is "for" (e.g. "Friday dinner"). Under 40 characters.\n'
     "}\n\n"
     "CATEGORY MEANINGS:\n"
     "- yes_no: one yes-or-no decision. title = the question.\n"
-    "- restaurant: pick a place to eat. options = restaurant names.\n"
+    "- restaurant: pick a place to eat. options = real restaurant names.\n"
     "- location: pick a place/venue (not food).\n"
-    "- movie: pick a movie to watch.\n"
-    "- video_game: pick a game to play.\n"
+    "- movie: pick a movie to watch. options = real movie titles.\n"
+    "- video_game: pick a game to play. options = real game titles.\n"
     "- time: schedule when to meet. context = what the event is.\n"
     "- limited_supply: first-come claim for limited spots/items. title = what's claimed.\n"
     "- custom: any other choice; options = the choices, context = the subject.\n\n"
     "RULES:\n"
-    "- Make each suggestion DISTINCT from the others AND from the polls already "
-    "listed. Predict what comes NEXT; do not repeat existing polls.\n"
-    "- Tailor to the observed patterns: if the user keeps making restaurant "
-    "polls, suggest a fresh restaurant decision; if the group plans events, "
-    "suggest the natural follow-up.\n"
-    "- Keep titles/contexts natural and concise, the way a real person types.\n"
-    "- Use real, plausible option values. It is fine to omit options entirely.\n"
+    "- TAILOR to this group + user. Mirror what they actually do: a foodie group "
+    "→ lean into food/place/time decisions; a work team → yes/no calls + "
+    "scheduling; a gaming group → games + game nights. It is GOOD to suggest "
+    "several polls of the SAME kind when that fits the group — do NOT just output "
+    "one of every category.\n"
+    "- Predict what comes NEXT. NEVER repeat, rephrase, or reuse the title, "
+    "options, or subject of a poll already listed.\n"
+    "- options must be SPECIFIC, real, named choices that fit this group (actual "
+    "restaurant / movie / game names) — NEVER generic categories, genres, or "
+    'filler like "Action, Comedy, Drama" or "Option 1". If you cannot name 2+ '
+    "specific fitting options, OMIT options and let the group suggest them.\n"
+    "- context is the short real subject this poll is for; leave it out rather "
+    "than inventing an unrelated one. Do not pair a context with an unrelated "
+    "category.\n"
+    "- Keep everything natural and concise, the way a real person types.\n"
     "- Output STRICTLY the JSON array and nothing else."
 )
 
@@ -362,15 +388,15 @@ def filter_and_dedup(raw: list, existing: set[str]) -> list[dict]:
         cleaned = validate_suggestion(obj)
         if not cleaned:
             continue
-        sig = _signature(
+        sigs = _signatures_for(
             cleaned.get("category"),
             cleaned.get("title", ""),
             cleaned.get("options", []),
             cleaned.get("context", ""),
         )
-        if sig in seen:
+        if any(s in seen for s in sigs):
             continue
-        seen.add(sig)
+        seen.update(sigs)
         out.append(cleaned)
         if len(out) >= MAX_SUGGESTIONS:
             break
