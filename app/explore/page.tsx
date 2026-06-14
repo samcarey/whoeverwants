@@ -97,9 +97,29 @@ export default function ExplorePage() {
     </button>
   );
 
+  // Fixed top bar holding the "Explore" title — always pinned to the top while
+  // the feed scrolls beneath it. Rendered via HeaderPortal (the #header-portal
+  // node), which is a swipe-back transform target, so the bar slides with the
+  // page during the back gesture. Sits below the z-30 back button.
+  const topBar = (
+    <div
+      className="fixed left-0 right-0 top-0 z-20 bg-background border-b border-gray-200 dark:border-gray-700"
+      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+    >
+      <div className="h-14 flex items-center justify-center px-16">
+        <h1 className="text-2xl font-bold text-center break-words select-none">
+          Explore
+        </h1>
+      </div>
+    </div>
+  );
+
   return (
     <>
-      <HeaderPortal>{backButton}</HeaderPortal>
+      <HeaderPortal>
+        {topBar}
+        {backButton}
+      </HeaderPortal>
 
       {/* z-index:2 + opaque background keeps the home backdrop hidden behind
           the page until the swipe moves the wrapper sideways. The negative
@@ -125,18 +145,12 @@ export default function ExplorePage() {
           style={{
             paddingLeft: "max(0.35rem, env(safe-area-inset-left, 0px))",
             paddingRight: "max(0.35rem, env(safe-area-inset-right, 0px))",
+            // Clear the fixed top bar (safe-area inset + the h-14 row).
+            paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)",
             // Reserve room for the floating create bar so the last card clears it.
             paddingBottom: `var(${PANEL_HEIGHT_VAR}, 80px)`,
           }}
         >
-          {/* Page title — "Explore". Lives inside the swipe wrapper (NOT the
-              template) so it slides with the page during the back gesture. */}
-          <div className="max-w-4xl mx-auto px-16 pb-2 page-title-safe-top">
-            <h1 className="text-2xl font-bold text-center break-words select-none">
-              Explore
-            </h1>
-          </div>
-
           <ExploreFeedList polls={polls} />
 
           {loaded && polls.length === 0 && (
