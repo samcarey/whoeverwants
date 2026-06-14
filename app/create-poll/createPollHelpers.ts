@@ -434,7 +434,7 @@ export function draftTitleSegments(d: TitleDraft): TitleSegment[] {
  * — no leading icon. Defined as the joined text of `draftTitleSegments` so
  * the annotated suggestion rows can never disagree with the real title.
  */
-export function deriveDraftTitle(d: QuestionDraft): string {
+export function deriveDraftTitle(d: TitleDraft): string {
   return draftTitleSegments(d).map(s => s.text).join('');
 }
 
