@@ -43,13 +43,21 @@ export function ExploreTitleBar({ fixed = false }: { fixed?: boolean }) {
   );
 }
 
+// Indentation step per variant generation (the spine grows away from the
+// trunk; deeper variants sit further right).
+const INDENT_STEP_REM = 1.25;
+
 export function ExplorePollCard({
   poll,
   interactive = true,
+  indent = 0,
 }: {
   poll: Poll;
   /** false → a read-only snapshot row (the swipe backdrop): no tap, no hit area. */
   interactive?: boolean;
+  /** Variant depth from the trunk (0 = trunk, ≥1 = spawned variant). Drives the
+   *  left indentation that visualizes the evolution spine. */
+  indent?: number;
 }) {
   const anchor: Question | undefined = poll.questions[0];
   // The poll's OWN title (the wrapper-level question title), NOT poll.title —
@@ -88,8 +96,22 @@ export function ExplorePollCard({
       onClick={interactive ? onTap : undefined}
       tabIndex={interactive ? 0 : -1}
       aria-hidden={interactive ? undefined : true}
-      className={`block w-full text-left pl-[0.9rem] pr-[0.65rem] py-1.5 border-b ${EXPLORE_ROW_DIVIDER} ${interactive ? "active:bg-gray-100 dark:active:bg-gray-800/60" : "pointer-events-none"}`}
+      style={{
+        paddingLeft:
+          indent > 0
+            ? `calc(0.9rem + ${indent * INDENT_STEP_REM}rem)`
+            : "0.9rem",
+      }}
+      className={`relative block w-full text-left pr-[0.65rem] py-1.5 border-b ${EXPLORE_ROW_DIVIDER} ${interactive ? "active:bg-gray-100 dark:active:bg-gray-800/60" : "pointer-events-none"}`}
     >
+      {/* Thin guide in the indentation channel so the spine reads as a tree. */}
+      {indent > 0 && (
+        <span
+          aria-hidden
+          className="absolute inset-y-0 w-px bg-gray-200 dark:bg-gray-700"
+          style={{ left: `calc(0.9rem + ${(indent - 0.5) * INDENT_STEP_REM}rem)` }}
+        />
+      )}
       <div className="flex items-baseline gap-2">
         <span
           className="shrink-0 tabular-nums text-sm font-semibold text-gray-400 dark:text-gray-500"
@@ -101,7 +123,9 @@ export function ExplorePollCard({
           className={`min-w-0 flex-1 text-base leading-snug break-words ${
             opened
               ? "font-normal text-gray-400 dark:text-gray-500"
-              : "font-medium text-gray-900 dark:text-gray-100"
+              : indent === 0
+                ? "font-semibold text-gray-900 dark:text-gray-100"
+                : "font-medium text-gray-900 dark:text-gray-100"
           }`}
         >
           {title}
@@ -111,10 +135,49 @@ export function ExplorePollCard({
   );
 }
 
-/** The full feed list (top sentinel divider + cards), sorted newest-first —
- *  the single source of truth for explore ordering, so callers (the page +
- *  the swipe backdrop) pass `polls` unsorted. Returns null when empty so the
- *  caller can render its own empty-state copy. */
+type SpineRow = { poll: Poll; indent: number };
+
+/** Group polls into evolution spines and order each as up-chain (deepest at
+ *  top) → trunk → down-chain, indenting by variant generation. Spines are
+ *  ordered newest-trunk-first. A plain (non-variant) poll is a one-row spine. */
+export function buildSpines(polls: Poll[]): SpineRow[] {
+  const rootKey = (p: Poll) => p.variant_root_id ?? p.id;
+  const byRoot = new Map<string, Poll[]>();
+  for (const p of polls) {
+    const k = rootKey(p);
+    const arr = byRoot.get(k);
+    if (arr) arr.push(p);
+    else byRoot.set(k, [p]);
+  }
+  const gen = (p: Poll) => p.variant_generation ?? 0;
+  const built: { time: number; rows: SpineRow[] }[] = [];
+  for (const members of byRoot.values()) {
+    const trunk =
+      members.find((p) => gen(p) === 0 || !p.variant_parent_id) ??
+      [...members].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      )[0];
+    const chain = (dir: "up" | "down") =>
+      members
+        .filter((p) => p.variant_direction === dir)
+        .sort((a, b) => gen(a) - gen(b));
+    const up = chain("up");
+    const down = chain("down");
+    const rows: SpineRow[] = [];
+    for (let i = up.length - 1; i >= 0; i--) rows.push({ poll: up[i], indent: gen(up[i]) });
+    rows.push({ poll: trunk, indent: 0 });
+    for (const p of down) rows.push({ poll: p, indent: gen(p) });
+    built.push({ time: new Date(trunk.created_at).getTime(), rows });
+  }
+  built.sort((a, b) => b.time - a.time);
+  return built.flatMap((s) => s.rows);
+}
+
+/** The full feed list (top sentinel divider + cards), grouped into evolution
+ *  spines (each trunk with its variants growing above/below it, newest trunk
+ *  first) — the single source of truth for explore ordering, so callers (the
+ *  page + the swipe backdrop) pass `polls` unsorted. Returns null when empty so
+ *  the caller can render its own empty-state copy. */
 export function ExploreFeedList({
   polls,
   interactive = true,
@@ -131,18 +194,18 @@ export function ExploreFeedList({
     return () => window.removeEventListener(POLL_VIEWED_CHANGED_EVENT, onViewed);
   }, []);
 
-  const sorted = useMemo(
-    () => [...polls].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    ),
-    [polls],
-  );
-  if (sorted.length === 0) return null;
+  const rows = useMemo(() => buildSpines(polls), [polls]);
+  if (rows.length === 0) return null;
   return (
     <>
       <div className={`border-t ${EXPLORE_ROW_DIVIDER}`} />
-      {sorted.map((poll) => (
-        <ExplorePollCard key={poll.id} poll={poll} interactive={interactive} />
+      {rows.map(({ poll, indent }) => (
+        <ExplorePollCard
+          key={poll.id}
+          poll={poll}
+          indent={indent}
+          interactive={interactive}
+        />
       ))}
     </>
   );

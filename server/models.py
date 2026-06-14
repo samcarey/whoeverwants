@@ -542,6 +542,16 @@ class PollResponse(BaseModel):
     recurrence_skip_dates: list[str] = Field(default_factory=list)
     recurrence_until: str | None = None
     recurrence_anchor_id: str | None = None
+    # Variant evolution (migration 144, /explore feed). A user-submitted explore
+    # poll is the trunk of a binary "spine"; it spawns LLM-generated yes/no
+    # variants that grow above (direction 'up') and below ('down') it, deepening
+    # as they accrue votes. These let the FE render the spine with indentation
+    # (`variant_generation`) grouped by trunk (`variant_root_id ?? id`). All
+    # NULL/0 for ordinary (non-explore) polls. See services/poll_variants.py.
+    variant_parent_id: str | None = None
+    variant_root_id: str | None = None
+    variant_direction: str | None = None
+    variant_generation: int = 0
     questions: list[QuestionResponse]
     # Poll-level voter aggregates (Phase 3.2).
     # Per CLAUDE.md → "Addressability paradigm", poll-scoped data lives

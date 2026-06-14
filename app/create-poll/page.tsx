@@ -1390,6 +1390,26 @@ export function CreateQuestionContent() {
     return () => observer.disconnect();
   }, []);
 
+  // Whether the create surface is composing on /explore (the page sets the
+  // body marker on mount). For now the explore feed only accepts yes/no polls,
+  // so this gates the suggestion list to a single yes/no interpretation.
+  // Observed (not read once) since the layout-persistent host outlives the
+  // /explore navigation.
+  const [isExplore, setIsExplore] = useState(false);
+  useEffect(() => {
+    const read = () => {
+      const v = document.body.getAttribute(EXPLORE_ATTR) === '1';
+      setIsExplore((prev) => (prev === v ? prev : v));
+    };
+    const observer = new MutationObserver(read);
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: [EXPLORE_ATTR],
+    });
+    read();
+    return () => observer.disconnect();
+  }, []);
+
   // Recency ordering for the category bubbles. `categoryRefreshTick` is
   // bumped after a successful create so the just-used category floats to
   // the front without a navigation. Failures leave the previous order
@@ -1557,6 +1577,32 @@ export function CreateQuestionContent() {
       }
     };
 
+    // Recently-posted poll titles are filtered by the typed subject's tokens —
+    // spliced in just ABOVE the primary (nearest-bar) row so a reusable past
+    // poll is prominent without overriding the parsed default. Defined here so
+    // both the /explore and normal paths share it.
+    const tokens = subject.toLowerCase().split(/[\s,]+/).filter(Boolean);
+    const matchesTokens = (text: string) => {
+      if (!tokens.length) return true;
+      const words = text.toLowerCase().split(/[\s,]+/).filter(Boolean);
+      return tokens.every((t) => words.some((w) => w.startsWith(t)));
+    };
+    const recentRows = () =>
+      recentEntries.filter((e) => matchesTokens(e.titleText)).map((e) => display(e.key, e.icon, e.overrides));
+
+    // On /explore the feed only accepts yes/no polls (the variant-evolution
+    // system reads + rewrites a single yes/no prompt). Collapse the suggestion
+    // list to the one yes/no interpretation of the typed text so whatever the
+    // user creates here is a yes/no poll, plus any recent (yes/no) explore
+    // polls below.
+    if (isExplore) {
+      const yesno = toDisplay({ kind: 'yes_no', subject: raw, context, primary: true });
+      const base = yesno ? [yesno] : [];
+      const recents = recentRows();
+      if (recents.length && base.length) base.splice(base.length - 1, 0, ...recents);
+      return base;
+    }
+
     const planned = planPollSuggestions(searchQuery, {
       categoryOrder: orderedBubbleEntries.map((e) => e.value),
       now: new Date(),
@@ -1564,20 +1610,11 @@ export function CreateQuestionContent() {
     });
     const list = planned.map(toDisplay).filter((r): r is NonNullable<typeof r> => !!r);
 
-    // Recently-posted poll titles (annotated), filtered by the typed subject's
-    // tokens — spliced in just ABOVE the planner's primary (nearest-bar) row so
-    // a reusable past poll is prominent without overriding the parsed default.
-    const tokens = subject.toLowerCase().split(/[\s,]+/).filter(Boolean);
-    const matchesTokens = (text: string) => {
-      if (!tokens.length) return true;
-      const words = text.toLowerCase().split(/[\s,]+/).filter(Boolean);
-      return tokens.every((t) => words.some((w) => w.startsWith(t)));
-    };
-    const recents = recentEntries.filter((e) => matchesTokens(e.titleText)).map((e) => display(e.key, e.icon, e.overrides));
+    const recents = recentRows();
     if (recents.length && list.length) list.splice(list.length - 1, 0, ...recents);
 
     return list;
-  }, [searchQuery, orderedBubbleEntries, recentEntries, aiCategory]);
+  }, [searchQuery, orderedBubbleEntries, recentEntries, aiCategory, isExplore]);
 
   // Debounced on-device classify of the typed subject → aiCategory. Warms the
   // model on focus (idempotent — the warm call short-circuits once loading) so
@@ -2739,7 +2776,7 @@ export function CreateQuestionContent() {
             // tap: without it, mousedown blurs the input → searchFocused flips
             // false before click, so the ✕ tap would run the + branch.
             onMouseDown={(e) => e.preventDefault()}
-            onClick={searchFocused ? dismissSearch : () => chooseSuggestion({ category: 'custom' })}
+            onClick={searchFocused ? dismissSearch : () => chooseSuggestion({ category: isExplore ? 'yes_no' : 'custom' })}
             aria-label={searchFocused ? 'Cancel' : 'New poll'}
             disabled={isLoading}
             className="w-[42.24px] h-[42.24px] shrink-0 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 shadow-lg text-gray-500 dark:text-gray-400 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"

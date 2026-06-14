@@ -48,6 +48,7 @@ from services.contacts import (
 )
 from services.invites import issue_invite
 from services.groups import (
+    EXPLORE_PRIVACY,
     NIL_UUID,
     _is_uuid_like,
     add_group_admin,
@@ -58,6 +59,7 @@ from services.groups import (
 )
 from services.memberships import join_group, join_group_for_poll
 from services.poll_categories import record_poll_categories
+from services.poll_variants import spawn_variants
 from services.push import (
     fan_out_new_poll,
     fan_out_phase_transition,
@@ -156,6 +158,18 @@ def _recurrence_skip_list(value) -> list[str]:
 def _validate_request(req: CreatePollRequest) -> None:
     if not req.questions:
         raise HTTPException(status_code=400, detail="At least one question is required")
+
+    # Explore feed (migration 144): for now the evolution system only handles
+    # yes/no questions — a poll posted to /explore must be exactly one yes/no
+    # question. The variant spawner reads + rewrites that single prompt.
+    if req.explore and (
+        len(req.questions) != 1
+        or req.questions[0].question_type != QuestionType.yes_no
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Explore polls must be a single yes/no question",
+        )
 
     time_count = sum(1 for sp in req.questions if sp.question_type == QuestionType.time)
     if time_count > 1:
@@ -702,6 +716,14 @@ def _row_to_poll(
         recurrence_anchor_id=(
             str(row["recurrence_anchor_id"]) if row.get("recurrence_anchor_id") else None
         ),
+        variant_parent_id=(
+            str(row["variant_parent_id"]) if row.get("variant_parent_id") else None
+        ),
+        variant_root_id=(
+            str(row["variant_root_id"]) if row.get("variant_root_id") else None
+        ),
+        variant_direction=row.get("variant_direction"),
+        variant_generation=row.get("variant_generation") or 0,
         questions=[_row_to_question(sp) for sp in question_rows],
         voter_names=vd.voter_names,
         anonymous_count=vd.anonymous_count,
@@ -1323,6 +1345,14 @@ def create_poll(
                 "tag": f"new-poll-{poll_row.get('id')}",
             },
         )
+
+    # Explore feed (migration 144): a yes/no poll posted to /explore is the
+    # trunk of an evolution spine — spawn its 2 LLM-generated variants (one
+    # 'up', one 'down') after the response. Decoupled (BackgroundTask): the LLM
+    # call can take seconds and must never block the creator's create. No-op for
+    # ordinary polls; the spawner re-checks eligibility against the committed row.
+    if req.explore:
+        background_tasks.add_task(spawn_variants, str(poll_row["id"]))
 
     # The caller is the creator, so viewer_is_creator is true. Voter data is
     # empty for a plain create, or the creator's seeded-suggestion roster when
@@ -1968,7 +1998,10 @@ def submit_poll_votes(
 
     with get_db() as conn:
         poll_row = conn.execute(
-            "SELECT id, is_closed, allow_plus_ones FROM polls WHERE id = %(id)s",
+            "SELECT p.id, p.is_closed, p.allow_plus_ones, p.variant_spawned, "
+            "t.privacy AS group_privacy "
+            "FROM polls p LEFT JOIN groups t ON p.group_id = t.id "
+            "WHERE p.id = %(id)s",
             {"id": poll_id},
         ).fetchone()
         if not poll_row:
@@ -2059,6 +2092,17 @@ def submit_poll_votes(
         background_tasks.add_task(
             fan_out_to_user, notif_group_id, notif_user_id, payload
         )
+
+    # Explore feed (migration 144): a not-yet-spawned poll in an explore group
+    # may now have crossed the vote threshold and should spawn its next variant.
+    # The spawner re-checks all eligibility (variant vs trunk, threshold, depth)
+    # and is a no-op otherwise; gate the scheduling on the cheap flags so a
+    # normal-group vote never queues the task.
+    if (
+        poll_row.get("group_privacy") == EXPLORE_PRIVACY
+        and not poll_row.get("variant_spawned")
+    ):
+        background_tasks.add_task(spawn_variants, poll_id)
 
     return [_row_to_vote(r) for r in result_rows]
 
