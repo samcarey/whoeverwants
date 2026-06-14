@@ -406,6 +406,7 @@ cmd_upsert() {
     --name "$container" \
     --restart unless-stopped \
     --network "$DEVBOX_NET" \
+    --add-host host.docker.internal:host-gateway \
     -p "127.0.0.1:${port}:3000" \
     -v "${volume}:/repo" \
     -e BRANCH="$branch" \
@@ -414,6 +415,8 @@ cmd_upsert() {
     -e DATABASE_URL="postgresql://${DB_USER}:${pg_password}@${DB_CONTAINER}:5432/${db_name}" \
     -e PYTHON_API_URL="http://localhost:8000" \
     -e DISABLE_RATE_LIMIT=1 \
+    -e POLL_VARIANT_LLM_URL="${POLL_VARIANT_LLM_URL:-http://host.docker.internal:11434/v1/chat/completions}" \
+    -e POLL_VARIANT_LLM_MODEL="${POLL_VARIANT_LLM_MODEL:-nous-hermes2:10.7b}" \
     -e PORT=3000 \
     -e API_PORT=8000 \
     --label "whoeverwants-dev=true" \

@@ -294,6 +294,15 @@ export interface Poll {
   recurrence_skip_dates?: string[];
   recurrence_until?: string | null;
   recurrence_anchor_id?: string | null;
+  // Variant evolution (migration 144, /explore feed). A user-submitted explore
+  // poll is the trunk of a binary spine; spawned yes/no variants grow above
+  // ('up') and below ('down') it. The explore feed groups a spine by
+  // `variant_root_id ?? id` and indents each card by `variant_generation`
+  // (0 = trunk). All null/0 for ordinary polls.
+  variant_parent_id?: string | null;
+  variant_root_id?: string | null;
+  variant_direction?: "up" | "down" | null;
+  variant_generation?: number;
   questions: Question[];
   // Poll-level voter aggregates (Phase 3.2). Use these instead of
   // iterating questions — see CLAUDE.md → "Addressability paradigm".
