@@ -316,7 +316,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   const [soloAdmin, setSoloAdmin] = useState(() => {
     if (typeof window === "undefined" || !maybeSoloGroup) return false;
     const cached = getCachedGroupRoster(groupId);
-    return cached ? rosterIsSolo(cached) : false;
+    return cached !== null && rosterIsSolo(cached);
   });
   // This effect mirrors the /info roster-refresh wiring
   // (app/g/[groupShortId]/info/page.tsx) — keep the two in lockstep;
