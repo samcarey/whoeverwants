@@ -121,6 +121,8 @@ def _poll_line(row: dict) -> str:
         label = "Time"
     elif qtype == "limited_supply":
         label = "Limited Supply"
+    elif qtype == "yes_no":
+        label = "Yes/No"
     title = (row.get("title") or "").strip()
     details = (row.get("details") or "").strip()
     # For yes_no / limited_supply the per-question `details` IS the real prompt /
