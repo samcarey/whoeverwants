@@ -79,6 +79,7 @@ from services.groups import (
     find_explore_group,
     get_group_metadata,
     grant_group_membership_inline,
+    is_members_only_privacy,
     group_admin_user_ids,
     group_name_phrase,
     is_caller_admin,
@@ -278,7 +279,7 @@ def require_group_read_access(
     # 'private' — strangers must not read an explore group's chrome/roster.
     if (
         meta
-        and meta["privacy"] in ("private", "explore")
+        and is_members_only_privacy(meta["privacy"])
         and not is_caller_member_of_group(
             conn, group_id, browser_id=browser_id, user_id=user_id
         )

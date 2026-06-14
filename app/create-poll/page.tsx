@@ -1428,21 +1428,15 @@ export function CreateQuestionContent() {
   // we observe the attribute rather than reading it once. Cleared to null
   // on the empty `/g/` placeholder (group page removes the attribute).
   const [currentGroupId, setCurrentGroupId] = useState<string | null>(null);
-  // Whether we're composing on the /explore feed (the page sets
-  // `<body data-explore="1">`). Drives the explore-poll create flag + the
-  // explore-scoped "recent polls" suggestions.
-  const [isExplore, setIsExplore] = useState(false);
   useEffect(() => {
     const read = () => {
       const value = document.body.getAttribute(GROUP_ID_ATTR);
       setCurrentGroupId((prev) => (prev === value ? prev : value));
-      const explore = document.body.getAttribute(EXPLORE_ATTR) === '1';
-      setIsExplore((prev) => (prev === explore ? prev : explore));
     };
     const observer = new MutationObserver(read);
     observer.observe(document.body, {
       attributes: true,
-      attributeFilter: [GROUP_ID_ATTR, EXPLORE_ATTR],
+      attributeFilter: [GROUP_ID_ATTR],
     });
     read();
     return () => observer.disconnect();
@@ -1673,8 +1667,12 @@ export function CreateQuestionContent() {
     }
     // On /explore, recent-poll suggestions come from the explore feed (kept
     // in a separate cache so explore polls and group polls never appear in
-    // each other's suggestions).
-    const source = isExplore ? getCachedExplorePolls() : getCachedAccessiblePolls();
+    // each other's suggestions). Read the marker synchronously at focus time
+    // (when this runs) — no need for reactive state, the value can't change
+    // without a navigation that also re-mounts the surface.
+    const onExplore = typeof document !== 'undefined'
+      && document.body.getAttribute(EXPLORE_ATTR) === '1';
+    const source = onExplore ? getCachedExplorePolls() : getCachedAccessiblePolls();
     const polls = [...(source ?? [])].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
@@ -1691,7 +1689,7 @@ export function CreateQuestionContent() {
     }
     entries.reverse();
     setRecentEntries(entries);
-  }, [searchFocused, isExplore]);
+  }, [searchFocused]);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {

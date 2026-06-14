@@ -200,7 +200,7 @@ def grant_group_membership_inline(
         return
     # 'explore' is members-only too (see migration 143) — a visit to an
     # explore group's URL must NOT auto-join a stranger, same as 'private'.
-    if privacy in ("private", "explore"):
+    if is_members_only_privacy(privacy):
         return
     conn.execute(
         """
@@ -729,7 +729,7 @@ def resolve_group_for_visit(
     privacy = meta["privacy"] if meta else "public"
     # 'explore' groups are members-only (the per-user explore feed), so they
     # gate the same way as 'private' — no inline auto-join for visitors.
-    if privacy in ("private", "explore"):
+    if is_members_only_privacy(privacy):
         if not is_caller_member_of_group(
             conn, group_id, browser_id=browser_id, user_id=user_id
         ):
@@ -1021,6 +1021,14 @@ def poll_ids_for_group_ids(conn, group_ids: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 EXPLORE_PRIVACY = "explore"
+
+
+def is_members_only_privacy(privacy: str | None) -> bool:
+    """Privacies that are visible only to explicit members — no auto-join on a
+    URL visit, 404 to strangers. 'private' (Phase E) and 'explore' (the
+    per-user explore feed, migration 143) both qualify. Single source of truth
+    for the read-boundary gates."""
+    return privacy in ("private", EXPLORE_PRIVACY)
 
 
 def find_explore_group(conn, user_id: str | None) -> str | None:

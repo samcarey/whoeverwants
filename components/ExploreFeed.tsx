@@ -9,7 +9,7 @@
  * back + swipe return to /explore (see lib/pollDetailOrigin).
  */
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import type { Poll, Question } from "@/lib/types";
 import { getCategoryIcon, relativeTime } from "@/lib/questionListUtils";
 import { slideToPollDetail } from "@/lib/slideOverlay";
@@ -72,8 +72,10 @@ export function ExplorePollCard({
   );
 }
 
-/** The full feed list (top sentinel divider + cards). Returns null when empty
- *  so the caller can render its own empty-state copy. */
+/** The full feed list (top sentinel divider + cards), sorted newest-first —
+ *  the single source of truth for explore ordering, so callers (the page +
+ *  the swipe backdrop) pass `polls` unsorted. Returns null when empty so the
+ *  caller can render its own empty-state copy. */
 export function ExploreFeedList({
   polls,
   interactive = true,
@@ -81,11 +83,17 @@ export function ExploreFeedList({
   polls: Poll[];
   interactive?: boolean;
 }) {
-  if (polls.length === 0) return null;
+  const sorted = useMemo(
+    () => [...polls].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    ),
+    [polls],
+  );
+  if (sorted.length === 0) return null;
   return (
     <>
       <div className={`border-t ${EXPLORE_ROW_DIVIDER}`} />
-      {polls.map((poll) => (
+      {sorted.map((poll) => (
         <ExplorePollCard key={poll.id} poll={poll} interactive={interactive} />
       ))}
     </>

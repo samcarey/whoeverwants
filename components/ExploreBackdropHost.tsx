@@ -34,9 +34,8 @@ export default function ExploreBackdropHost(): React.ReactElement | null {
 
   if (!shown || typeof document === "undefined") return null;
 
-  const polls = [...(getCachedExplorePolls() ?? [])].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  );
+  // ExploreFeedList sorts newest-first internally (single source of truth).
+  const polls = getCachedExplorePolls() ?? [];
 
   return createPortal(
     <div className="font-[family-name:var(--font-geist-sans)]">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePageReady } from "@/lib/usePageReady";
 import { navigateWithTransition } from "@/lib/viewTransitions";
@@ -75,13 +75,6 @@ export default function ExplorePage() {
     };
   }, [refresh]);
 
-  const sortedPolls = useMemo(
-    () => [...polls].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    ),
-    [polls],
-  );
-
   // Swipe-back → home (mirrors the settings page's gesture).
   const headerPortalRef = useHeaderPortalRef();
   const { swipeWrapperRef, touchHandlers } = useSwipeBackGesture({
@@ -144,9 +137,9 @@ export default function ExplorePage() {
             </h1>
           </div>
 
-          <ExploreFeedList polls={sortedPolls} />
+          <ExploreFeedList polls={polls} />
 
-          {loaded && sortedPolls.length === 0 && (
+          {loaded && polls.length === 0 && (
             <p className="text-center text-gray-500 dark:text-gray-400 px-6 py-16 leading-relaxed">
               Post anything here — a question, a poll, a plan.
               <br />
