@@ -332,6 +332,12 @@ def compute_badge_count(
       no vote/abstain by ANY of the caller's devices on the poll's questions.
     - unread: a notification event the caller hasn't seen on ANY device since —
       never-viewed (new), or (gated) a transition / close after the last view.
+      Auto-aged ("done", migration 142) polls are EXCLUDED — the app files them
+      in the in-app "Old" section, so a persistent badge counting them is the
+      bug this guard fixes (a pile of closed-but-never-opened polls the user
+      can't find as to-dos yet drove the icon number up). To-do mode needs no
+      analog: auto_aged_at is set only on closed polls, which to-do already
+      excludes via `is_closed = false`.
     """
     # No usable identity → 0 without touching the DB. The RFC 4122 nil UUID is
     # never a real browser (a device that ever sends it must not inherit a
@@ -345,7 +351,9 @@ def compute_badge_count(
     # Gap 1: polls the caller has ✕'d ('old') are silenced everywhere — they
     # contribute to neither the to-do nor the unread badge. `bids` is already
     # the account union, so this suppression is account-aware (ignore on one
-    # device clears the badge on the others).
+    # device clears the badge on the others). Auto-aged ('done') polls are ALSO
+    # excluded from the unread badge — see the auto_aged_at clause in that
+    # branch below.
     from services.follow_state import old_poll_ids_for_browsers
 
     old = list(old_poll_ids_for_browsers(conn, bids))
@@ -384,6 +392,22 @@ def compute_badge_count(
             ) seen ON TRUE
            WHERE gm.browser_id = ANY(%(bids)s::uuid[])
              AND p.id <> ALL(%(old)s::uuid[])
+             -- Auto-aged into Old (migration 142) → filed away in the in-app
+             -- "Old" section, so it must not drive the badge either. Excluded
+             -- UNLESS the viewer re-added it (a follow row newer than
+             -- auto_aged_at puts it back in Relevant). Mirrors the
+             -- `effective_follow_states` recency rule the in-app classification
+             -- uses; the poll-CLOSED push intentionally does NOT (it keys on
+             -- explicit ✕ via `_NOT_IGNORED`, so the outcome still notifies).
+             AND NOT (
+               p.auto_aged_at IS NOT NULL
+               AND COALESCE((
+                 SELECT pfs.updated_at FROM poll_follow_state pfs
+                  WHERE pfs.poll_id = p.id
+                    AND pfs.browser_id = ANY(%(bids)s::uuid[])
+                  ORDER BY pfs.updated_at DESC LIMIT 1
+               ), '-infinity'::timestamptz) < p.auto_aged_at
+             )
              -- Closed-before-join filter (mirrors filter_visible_polls): a poll
              -- closed before this member joined is hidden in the app, so it must
              -- not inflate the badge. updated_at is the close_at proxy; gm.joined_at

@@ -131,6 +131,53 @@ def test_closed_before_join_poll_does_not_inflate_unread_badge(client):
     assert _badge(client, bid, None, todo_mode=True) == 0
 
 
+def _close_and_auto_age(poll_id):
+    """Close the poll AND stamp auto_aged_at (migration 142) — i.e. a "done"
+    poll the app files into the in-app "Old" section for everyone. The member
+    joined at NOW() before the close, so the close-proxy updated_at >= joined_at
+    and the closed-before-join filter does NOT hide it; the auto-age guard is
+    what must keep it out of the badge."""
+    with psycopg.connect(TEST_DB_URL) as conn:
+        conn.execute(
+            "UPDATE polls SET is_closed = true, close_reason = 'manual', "
+            "auto_aged_at = NOW() WHERE id = %s",
+            (poll_id,),
+        )
+        conn.commit()
+
+
+def test_auto_aged_poll_does_not_inflate_unread_badge(client):
+    """A poll auto-aged into Old (migration 142) is filed in the in-app "Old"
+    section, so it must NOT drive the unread app-badge — even though it was never
+    viewed. Regression for the iOS badge reading e.g. 29 with no findable to-dos:
+    a pile of closed-but-never-opened polls the user can't see (they're in Old)
+    kept inflating the icon number, because the badge's Old-suppression only
+    covered explicit ✕, not auto-aging."""
+    bid = str(uuid.uuid4())
+    creator = str(uuid.uuid4())
+
+    poll = create_poll(client, browser_id=creator)
+    group_id = poll["group_id"]
+    _add_member(group_id, bid)
+
+    # Open, never-viewed poll → unread badge counts it.
+    assert _badge(client, bid, None, todo_mode=False) == 1
+
+    # Closed + auto-aged → filed in Old, excluded from the unread badge.
+    _close_and_auto_age(poll["id"])
+    assert _badge(client, bid, None, todo_mode=False) == 0
+
+    # Re-add it (green +): a follow row newer than auto_aged_at returns it to
+    # Relevant, so the still-never-viewed poll counts again.
+    resp = client.post(
+        f"/api/polls/{poll['id']}/follow-state",
+        headers=_bid_headers(bid),
+        json={"state": "new"},
+    )
+    assert resp.status_code == 204, resp.text
+    assert _badge(client, bid, None, todo_mode=False) == 1
+
+
 def test_vote_on_one_device_clears_todo_badge_on_another(client):
     email = f"badge-{uuid.uuid4().hex[:8]}@example.com"
     bid_a, bid_b = str(uuid.uuid4()), str(uuid.uuid4())
