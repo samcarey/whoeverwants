@@ -55,8 +55,9 @@ _SYSTEM_PROMPT = (
     "the others: change the angle, scope, stakes, or the specific decision "
     "being asked. Do NOT just swap synonyms or rephrase the same question.\n"
     "- Stay on the same broad topic so they read as siblings, not random.\n"
-    "- Each must be answerable with yes or no, end with a question mark, and be "
-    "under 100 characters.\n"
+    "- Each must be answerable with a plain YES or NO (NOT an either/or or "
+    "multiple-choice question), end with a question mark, and be under 100 "
+    "characters.\n"
     "- Output ONLY a JSON array of strings (the questions). No prose, no keys."
 )
 
@@ -93,16 +94,15 @@ def _extract_titles(content: str) -> list[str]:
     return out
 
 
-def generate_variant_titles(
-    base_title: str, count: int, *, avoid: list[str] | None = None
-) -> list[str]:
-    """Return up to `count` NEW yes/no question titles derived from `base_title`,
-    each meaningfully distinct from it, from each other, and from `avoid` (the
-    poll's existing lineage). Returns [] on any failure / when unconfigured —
-    the caller treats [] as "don't spawn this round"."""
-    if not is_configured() or count <= 0:
-        return []
-    avoid = [a for a in (avoid or []) if a]
+# How many LLM round-trips to make per spawn while topping up to `count`. Small
+# local models (nous-hermes2) sometimes return fewer titles than asked, so we
+# re-ask (feeding what we have into `avoid`) until we reach `count` or run out
+# of attempts. Cheap: spawning runs in a background task.
+_MAX_ATTEMPTS = 3
+
+
+def _one_call(base_title: str, want: int, avoid: list[str]) -> list[str]:
+    """One LLM round-trip asking for `want` new yes/no titles. [] on failure."""
     user_lines = [f"Original question: {base_title}"]
     if avoid:
         user_lines.append(
@@ -110,8 +110,8 @@ def generate_variant_titles(
             + "\n".join(f"- {a}" for a in avoid)
         )
     user_lines.append(
-        f"Write {count} new, meaningfully different yes/no question"
-        f"{'s' if count != 1 else ''}."
+        f"Write {want} new, meaningfully different yes/no question"
+        f"{'s' if want != 1 else ''}."
     )
     payload = {
         "model": _LLM_MODEL,
@@ -139,8 +139,34 @@ def generate_variant_titles(
     except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
         log.warning("[variant_llm] generation failed: %s", exc)
         return []
-    titles = _extract_titles(content)
-    # Drop any that collide with the original or the avoid set (case-insensitive).
+    return _extract_titles(content)
+
+
+def generate_variant_titles(
+    base_title: str, count: int, *, avoid: list[str] | None = None
+) -> list[str]:
+    """Return up to `count` NEW yes/no question titles derived from `base_title`,
+    each meaningfully distinct from it, from each other, and from `avoid` (the
+    poll's existing lineage). Re-asks the model (topping up) until it reaches
+    `count` or exhausts `_MAX_ATTEMPTS`, since small local models often return
+    fewer than requested. Returns [] on total failure / when unconfigured — the
+    caller treats [] as "don't spawn this round"."""
+    if not is_configured() or count <= 0:
+        return []
+    avoid = [a for a in (avoid or []) if a]
     blocked = {base_title.strip().lower(), *(a.strip().lower() for a in avoid)}
-    titles = [t for t in titles if t.lower() not in blocked]
-    return titles[:count]
+    collected: list[str] = []
+    for _ in range(_MAX_ATTEMPTS):
+        remaining = count - len(collected)
+        if remaining <= 0:
+            break
+        # Feed what we already have into `avoid` so the re-ask doesn't repeat it.
+        got = _one_call(base_title, remaining, avoid + collected)
+        for t in got:
+            key = t.lower()
+            if key not in blocked:
+                blocked.add(key)
+                collected.append(t)
+        if not got:
+            break  # hard failure — don't burn the remaining attempts
+    return collected[:count]
