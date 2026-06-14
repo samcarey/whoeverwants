@@ -416,8 +416,8 @@ cmd_upsert() {
     -e PYTHON_API_URL="http://localhost:8000" \
     -e DISABLE_RATE_LIMIT=1 \
     -e POLL_VARIANT_LLM_URL="${POLL_VARIANT_LLM_URL:-http://host.docker.internal:11434/v1/chat/completions}" \
-    -e POLL_VARIANT_LLM_MODEL="${POLL_VARIANT_LLM_MODEL:-nous-hermes2:10.7b}" \
-    -e POLL_SUGGEST_LLM_MODEL="${POLL_SUGGEST_LLM_MODEL:-qwen2.5:14b}" \
+    -e POLL_VARIANT_LLM_MODEL="${POLL_VARIANT_LLM_MODEL:-qwen3:14b}" \
+    -e POLL_SUGGEST_LLM_MODEL="${POLL_SUGGEST_LLM_MODEL:-}" \
     -e PORT=3000 \
     -e API_PORT=8000 \
     --label "whoeverwants-dev=true" \

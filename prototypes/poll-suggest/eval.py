@@ -17,7 +17,7 @@ Run inside a per-branch dev container (Ollama reachable via host.docker.internal
 Or against canary's Ollama route from anywhere with the bearer:
 
     POLL_VARIANT_LLM_URL=https://ollama.dev.whoeverwants.com/v1/chat/completions \\
-    POLL_VARIANT_LLM_MODEL=nous-hermes2:10.7b \\
+    POLL_VARIANT_LLM_MODEL=qwen3:14b \\
     POLL_VARIANT_LLM_API_KEY=<token> \\
     uv run python prototypes/poll-suggest/eval.py
 
