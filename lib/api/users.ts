@@ -102,6 +102,44 @@ export async function apiGetCategoryOptions(
   return { group: norm(data.group), general: norm(data.general) };
 }
 
+/** One AI-predicted poll the caller might create next, as STRUCTURED draft
+ *  fields (NOT a title — the FE re-derives the title from these, same as every
+ *  poll). `title` is the typed prompt for yes_no / item for limited_supply;
+ *  `options` is a fixed ballot list for choice categories; `context` is the
+ *  short "for X" subject. */
+export interface PollSuggestion {
+  category: string;
+  title?: string;
+  options?: string[];
+  context?: string;
+}
+
+/** Cached, per-(user, group) AI-predicted next polls for the create-poll box.
+ *  Empty until the server has generated them (it does so on poll-create and on
+ *  a stale/missing read). Tolerant: returns an empty list on any failure — the
+ *  box must still work from its deterministic heuristic suggestions. */
+export async function apiGetPollSuggestions(
+  groupRouteId?: string | null,
+): Promise<{ suggestions: PollSuggestion[]; generatedAt: string | null }> {
+  const qs = groupRouteId ? `?group=${encodeURIComponent(groupRouteId)}` : '';
+  const data = await userFetch<any>(`/me/poll-suggestions${qs}`);
+  const arr = Array.isArray(data.suggestions) ? data.suggestions : [];
+  const suggestions: PollSuggestion[] = arr
+    .filter((s: any) => s && typeof s.category === 'string')
+    .map((s: any) => ({
+      category: s.category as string,
+      title: typeof s.title === 'string' ? s.title : undefined,
+      options: Array.isArray(s.options)
+        ? (s.options.filter((o: any) => typeof o === 'string') as string[])
+        : undefined,
+      context: typeof s.context === 'string' ? s.context : undefined,
+    }));
+  return {
+    suggestions,
+    generatedAt: (data.generated_at ?? null) as string | null,
+  };
+}
+
 /** A group the caller shares with the profiled user. `routeId` builds the
  *  `/g/<routeId>` link; `name` is the group's display name (may be null). */
 export interface SharedGroupSummary {

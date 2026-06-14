@@ -135,6 +135,26 @@ export function warmAiCategoryClassifier(): void {
   void ensureReady().catch(() => {});
 }
 
+/**
+ * Embed texts into mean-pooled UNIT vectors using the SAME loaded model as
+ * classifyCategory (so callers share the one ~30 MB download). Returns null on
+ * any failure — SSR, disabled host, model not yet loaded, or error — so callers
+ * fail open (no re-ranking, the box behaves normally). Used by lib/aiSuggestionRank
+ * to fine-tune the AI poll-suggestion list against the typed query in real time.
+ */
+export async function embedTexts(texts: string[]): Promise<number[][] | null> {
+  if (!isAiCategoryClassifyEnabled() || texts.length === 0) return null;
+  const ready = await withTimeout(ensureReady(), MODEL_LOAD_TIMEOUT_MS);
+  if (!ready) return null;
+  // A small batch (query + a handful of candidate titles) — allow a little more
+  // than the single-query cap since it embeds several texts at once.
+  const vecs = await withTimeout(
+    ready.extractor(texts, { pooling: "mean", normalize: true }).then((o) => o.tolist()),
+    INFER_TIMEOUT_MS * 4,
+  );
+  return vecs ?? null;
+}
+
 // ── Query classification ──────────────────────────────────────────────────────
 const dot = (a: number[], b: number[]) => {
   let s = 0;

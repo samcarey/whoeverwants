@@ -31,7 +31,7 @@ from __future__ import annotations
 import base64
 import binascii
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -47,6 +47,11 @@ from services.groups import (
     resolve_group_id_from_route_id,
 )
 from services.poll_categories import load_category_recency
+from services.poll_suggest import (
+    is_stale as _suggestions_stale,
+    load_cached_suggestions,
+    refresh_poll_suggestions,
+)
 from services.profiles import get_profile_card
 from services.validation import validate_user_name
 
@@ -159,6 +164,28 @@ class CategoryOptionsResponse(BaseModel):
 
     group: list[CategoryOptionEntry]
     general: list[CategoryOptionEntry]
+
+
+class PollSuggestionEntry(BaseModel):
+    """One AI-predicted poll the caller might create next. STRUCTURED fields, not
+    a title — the FE re-derives the displayed title from them (same as every
+    poll). `title` is the typed prompt for yes_no / the item for limited_supply;
+    `options` is a fixed ballot list (>= 2) for choice categories; `context` is
+    the short "for X" subject."""
+
+    category: str
+    title: str | None = None
+    options: list[str] | None = None
+    context: str | None = None
+
+
+class PollSuggestionsResponse(BaseModel):
+    """Returned by `GET /api/users/me/poll-suggestions`. The cached, per-(user,
+    group) list of predicted next polls + when it was generated (null when none
+    cached yet — the read schedules a background generation in that case)."""
+
+    suggestions: list[PollSuggestionEntry]
+    generated_at: str | None = None
 
 
 # Mirrors `MAX_IMAGE_BYTES` in routers/groups.py. 5 MiB is well above the
@@ -292,6 +319,40 @@ def get_my_category_options(request: Request, category: str, group: str | None =
     return CategoryOptionsResponse(
         group=[CategoryOptionEntry(label=e.label, metadata=e.metadata) for e in result.group],
         general=[CategoryOptionEntry(label=e.label, metadata=e.metadata) for e in result.general],
+    )
+
+
+@router.get("/me/poll-suggestions", response_model=PollSuggestionsResponse)
+def get_my_poll_suggestions(
+    request: Request, background_tasks: BackgroundTasks, group: str | None = None
+):
+    """AI-predicted next polls for the caller in `group` (the `/g/<routeId>`
+    route id), tailored per (user, group) by an LLM from the group's + the
+    caller's poll history.
+
+    Returns the cached list (empty when none generated yet). When the cache is
+    missing or stale, schedules a background regeneration so the NEXT open is
+    ready — the create-poll box falls back to its deterministic heuristic
+    suggestions in the meantime, and re-ranks/filters this list in real time
+    with the on-device model as the user types.
+
+    Tolerant by design: anonymous request, no account, unresolvable group, or no
+    history all return an empty list — the box must still work. Explore groups
+    return empty (they have the variant feed instead)."""
+    browser_id = _browser_id(request)
+    with get_db() as conn:
+        user_id = _caller_user_id(conn, request)
+        group_id = resolve_group_id_from_route_id(conn, group) if group else None
+        if not user_id or not group_id or _group_is_explore(conn, group_id):
+            return PollSuggestionsResponse(suggestions=[], generated_at=None)
+        cached = load_cached_suggestions(conn, user_id, group_id)
+    if _suggestions_stale(cached):
+        background_tasks.add_task(refresh_poll_suggestions, user_id, group_id)
+    if cached is None:
+        return PollSuggestionsResponse(suggestions=[], generated_at=None)
+    return PollSuggestionsResponse(
+        suggestions=[PollSuggestionEntry(**s) for s in cached.suggestions],
+        generated_at=cached.generated_at.isoformat() if cached.generated_at else None,
     )
 
 

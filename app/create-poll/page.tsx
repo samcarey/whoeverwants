@@ -8,8 +8,10 @@ import {
   apiFindDuplicateQuestion,
   apiGetPollCategoryHistory,
   apiGetCategoryOptions,
+  apiGetPollSuggestions,
   CategoryOptionEntry,
   CreateQuestionParams,
+  type PollSuggestion,
 } from "@/lib/api";
 import type { Poll, OptionsMetadata, Question } from "@/lib/types";
 import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isAutocompleteCategory, isLocationLikeCategory } from "@/components/TypeFieldInput";
@@ -24,6 +26,7 @@ import { bestEmojiMatch, splitLeadingEmoji } from "@/lib/emojiData";
 import { parseForContext } from "@/lib/pollTextParse";
 import { planPollSuggestions, type PlannedRow } from "@/lib/pollSuggestions";
 import { classifyCategory, warmAiCategoryClassifier, isAiCategoryClassifyEnabled, type AiCategory } from "@/lib/aiCategoryClassify";
+import { scoreSuggestions } from "@/lib/aiSuggestionRank";
 import OptionsInput from "@/components/OptionsInput";
 import KeyboardSuggestionPicker from "@/components/KeyboardSuggestionPicker";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
@@ -89,6 +92,7 @@ import {
   anyDraftHasSuggestion,
   anyDraftIsRankedChoice,
   sharedDraftContext,
+  suggestionToOverrides,
   synthesizePlaceholderPoll,
 } from "./createPollHelpers";
 export const dynamic = 'force-dynamic';
@@ -361,6 +365,24 @@ function pollToRecentEntry(poll: Poll): RecentEntry | null {
   return { key: `recent:${poll.id}`, icon: getCategoryIcon(q), overrides, titleText };
 }
 
+// AI suggestion → renderable entry (icon + overrides + annotated title), mirroring
+// RecentEntry so the box renders it through the same `display()` path. `idx`
+// disambiguates the key (suggestions have no stable id). The icon is the
+// category's built-in glyph (custom → ✏️); selecting the row prefills the draft
+// and the title auto-generates from its fields, exactly as the spec requires.
+function suggestionToEntry(s: PollSuggestion, idx: number): RecentEntry | null {
+  const overrides = suggestionToOverrides(s);
+  if (!overrides) return null;
+  const titleText = overridesToSegments(overrides).map((seg) => seg.text).join('');
+  if (!titleText.trim()) return null;
+  const icon = getBuiltInType(s.category)?.icon ?? '✏️';
+  return { key: `ai:${idx}:${titleText.toLowerCase()}`, icon, overrides, titleText };
+}
+
+// A typed-query AI suggestion below this cosine similarity to the query is hidden
+// (the on-device model judged it off-topic for what the user is typing).
+const AI_SUGGESTION_MIN_SCORE = 0.22;
+
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
@@ -613,6 +635,14 @@ export function CreateQuestionContent() {
   // cache when the search picker opens, offered as "create one like this"
   // suggestions at the bottom of the list.
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
+  // AI-predicted next polls (structured), fetched per group from the server LLM
+  // cache. Shown prominently when the box is empty ("ready to go"); re-ranked +
+  // filtered by the typed query via the on-device model when typing.
+  const [pollSuggestions, setPollSuggestions] = useState<PollSuggestion[]>([]);
+  // Cosine scores of the AI suggestions vs the typed query (aligned to aiEntries),
+  // or null when the on-device model hasn't scored them (empty query / loading /
+  // unavailable) → the box falls back to server order + token filtering.
+  const [aiScores, setAiScores] = useState<number[] | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   // The focused picker's full-screen keyboard-aware layout (visual-viewport
   // tracking + bottom-anchored list + auto-scroll) lives in
@@ -1438,6 +1468,17 @@ export function CreateQuestionContent() {
     [bubbleRecency],
   );
 
+  // AI-predicted next polls → renderable entries (index 0 = the LLM's top pick).
+  // Built once per fetched suggestion list; consumed by searchSuggestions (empty
+  // box) + the scoring effect (typed box). Invalid suggestions are dropped.
+  const aiEntries = useMemo<RecentEntry[]>(
+    () =>
+      pollSuggestions
+        .map((s, i) => suggestionToEntry(s, i))
+        .filter((e): e is RecentEntry => e !== null),
+    [pollSuggestions],
+  );
+
   // Previously-referenced options for the current autocomplete category,
   // surfaced above live search results in the options field. Fetched in the
   // background the moment the form opens for an autocomplete category (before
@@ -1590,11 +1631,32 @@ export function CreateQuestionContent() {
     const recentRows = () =>
       recentEntries.filter((e) => matchesTokens(e.titleText)).map((e) => display(e.key, e.icon, e.overrides));
 
+    // AI-predicted next polls (server LLM), ordered top→bottom = bottom nearest
+    // the bar. EMPTY box: server order reversed so the LLM's top pick is nearest
+    // the bar (the "ready to go" headline). TYPED box: re-ranked + filtered by the
+    // on-device model's cosine scores (best nearest the bar, off-topic dropped);
+    // before scores land (model loading), token-filter as a no-AI fallback.
+    const aiRows = (typed: boolean) => {
+      if (!aiEntries.length) return [] as ReturnType<typeof display>[];
+      if (!typed) {
+        return [...aiEntries].reverse().map((e) => display(e.key, e.icon, e.overrides));
+      }
+      let ranked = aiEntries.map((e, i) => ({ e, score: aiScores ? aiScores[i] : null }));
+      if (aiScores) {
+        ranked = ranked
+          .filter((x) => (x.score ?? 0) >= AI_SUGGESTION_MIN_SCORE)
+          .sort((a, b) => (a.score! - b.score!)); // ascending → best last (nearest bar)
+      } else {
+        ranked = ranked.filter((x) => matchesTokens(x.e.titleText));
+      }
+      return ranked.map((x) => display(x.e.key, x.e.icon, x.e.overrides));
+    };
+
     // On /explore the feed only accepts yes/no polls (the variant-evolution
     // system reads + rewrites a single yes/no prompt). Collapse the suggestion
     // list to the one yes/no interpretation of the typed text so whatever the
     // user creates here is a yes/no poll, plus any recent (yes/no) explore
-    // polls below.
+    // polls below. (No AI suggestions on /explore — they're a normal-group feature.)
     if (isExplore) {
       const yesno = toDisplay({ kind: 'yes_no', subject: raw, context, primary: true });
       const base = yesno ? [yesno] : [];
@@ -1610,11 +1672,20 @@ export function CreateQuestionContent() {
     });
     const list = planned.map(toDisplay).filter((r): r is NonNullable<typeof r> => !!r);
 
-    const recents = recentRows();
-    if (recents.length && list.length) list.splice(list.length - 1, 0, ...recents);
+    // Empty box: the AI predictions ARE the headline — append them after the
+    // category menu so the top prediction sits nearest the bar, "ready to go".
+    if (!raw) {
+      return [...list, ...aiRows(false)];
+    }
+
+    // Typed box: parsed interpretation stays nearest the bar (the user is typing
+    // a specific thing); matching AI predictions + reusable recents slot just
+    // above it (AI above recents).
+    const inserts = [...aiRows(true), ...recentRows()];
+    if (inserts.length && list.length) list.splice(list.length - 1, 0, ...inserts);
 
     return list;
-  }, [searchQuery, orderedBubbleEntries, recentEntries, aiCategory, isExplore]);
+  }, [searchQuery, orderedBubbleEntries, recentEntries, aiCategory, isExplore, aiEntries, aiScores]);
 
   // Debounced on-device classify of the typed subject → aiCategory. Warms the
   // model on focus (idempotent — the warm call short-circuits once loading) so
@@ -1675,6 +1746,65 @@ export function CreateQuestionContent() {
     entries.reverse();
     setRecentEntries(entries);
   }, [searchFocused]);
+
+  // Fetch the AI-predicted next polls for the current group (prefetched on group
+  // change so they're cached + ready before the box is even focused). Refetched
+  // after this user creates a poll (categoryRefreshTick), which is also when the
+  // server regenerates them. Skipped on /explore (it has the variant feed). The
+  // GET also schedules a server-side regen when the cache is stale/missing, so a
+  // first-time open primes the next one. Failures leave the list empty — the box
+  // still works from its deterministic heuristic suggestions.
+  useEffect(() => {
+    if (isExplore || !currentGroupId) {
+      setPollSuggestions((prev) => (prev.length ? [] : prev));
+      return;
+    }
+    let ignore = false;
+    apiGetPollSuggestions(currentGroupId)
+      .then((r) => { if (!ignore) setPollSuggestions(r.suggestions); })
+      .catch(() => {});
+    return () => { ignore = true; };
+  }, [currentGroupId, isExplore, categoryRefreshTick]);
+
+  // Real-time fine-tune (the spec's "use the local model to adjust/filter the
+  // list as the user types"): debounced cosine scoring of the AI suggestions vs
+  // the typed subject. searchSuggestions reorders + filters by these scores;
+  // null (empty query / loading / unavailable) → server order + token fallback.
+  useEffect(() => {
+    if (!searchFocused || aiEntries.length === 0) {
+      setAiScores(null);
+      return;
+    }
+    const { rest } = splitLeadingEmoji(searchQuery.trim());
+    const subject = parseForContext(rest).subject.trim();
+    if (!subject) {
+      setAiScores(null);
+      return;
+    }
+    let cancelled = false;
+    const titles = aiEntries.map((e) => e.titleText);
+    const t = setTimeout(() => {
+      scoreSuggestions(subject, titles)
+        .then((scores) => { if (!cancelled) setAiScores(scores); })
+        .catch(() => { if (!cancelled) setAiScores(null); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [searchQuery, searchFocused, aiEntries]);
+
+  // EAGERLY load the ~30 MB on-device model on mount (idle-scheduled so it never
+  // competes with first paint), rather than only on first box focus — so it's
+  // ready to re-rank suggestions the instant the user starts typing. Idempotent;
+  // gated + fully fail-safe inside warmAiCategoryClassifier.
+  useEffect(() => {
+    if (!isAiCategoryClassifyEnabled()) return;
+    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
+    if (typeof w.requestIdleCallback === 'function') {
+      w.requestIdleCallback(() => warmAiCategoryClassifier());
+    } else {
+      const t = setTimeout(() => warmAiCategoryClassifier(), 1200);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {

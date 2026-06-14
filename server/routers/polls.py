@@ -59,6 +59,7 @@ from services.groups import (
 )
 from services.memberships import join_group, join_group_for_poll
 from services.poll_categories import record_poll_categories
+from services.poll_suggest import refresh_poll_suggestions
 from services.poll_variants import spawn_variants
 from services.push import (
     fan_out_new_poll,
@@ -1353,6 +1354,14 @@ def create_poll(
     # ordinary polls; the spawner re-checks eligibility against the committed row.
     if req.explore:
         background_tasks.add_task(spawn_variants, str(poll_row["id"]))
+
+    # AI poll suggestions (migration 145): regenerate the creator's predicted
+    # next polls for this group so they're cached + ready the next time they open
+    # the new-poll box. Non-explore only (explore has the variant feed instead);
+    # decoupled BackgroundTask because it makes a slow LLM call. No-op when the
+    # LLM is unconfigured (is_configured() short-circuit inside).
+    if group_id and not req.explore and creator_user_id:
+        background_tasks.add_task(refresh_poll_suggestions, creator_user_id, group_id)
 
     # The caller is the creator, so viewer_is_creator is true. Voter data is
     # empty for a plain create, or the creator's seeded-suggestion roster when

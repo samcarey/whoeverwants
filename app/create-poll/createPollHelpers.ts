@@ -7,6 +7,7 @@
  * `lib/`.
  */
 import { CreatePollParams, CreateQuestionParams } from "@/lib/api";
+import type { PollSuggestion } from "@/lib/api/users";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { buildPollMap } from "@/lib/groupUtils";
 import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
@@ -902,3 +903,23 @@ export const DEV_DEADLINE_OPTIONS = [
   { value: "10sec", label: "10 sec", minutes: 1/6 },
   ...BASE_DEADLINE_OPTIONS,
 ];
+
+// Map a structured AI poll suggestion (the server LLM's predicted next poll)
+// into draft overrides — the SAME per-type mapping the recent-poll reuse path
+// uses, so a suggestion prefills the form and auto-derives its title identically.
+// Returns null when the suggestion can't form a usable draft (e.g. a yes_no /
+// limited_supply with no title). Kept pure (no React) so it's unit-tested.
+export function suggestionToOverrides(s: PollSuggestion): Partial<QuestionDraft> | null {
+  const category = s.category;
+  const context = (s.context ?? '').trim();
+  if (category === 'yes_no' || category === 'limited_supply') {
+    const title = (s.title ?? '').trim();
+    if (!title) return null;
+    return { category, title, isAutoTitle: false };
+  }
+  if (category === 'time') return { category: 'time', forField: context };
+  const opts = (s.options ?? []).filter((o) => o && o.trim());
+  return opts.length >= 2
+    ? { category, options: opts, collectSuggestions: false, forField: context }
+    : { category, forField: context, collectSuggestions: true };
+}
