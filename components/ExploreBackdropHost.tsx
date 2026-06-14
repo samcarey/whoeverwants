@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ExploreFeedList } from "@/components/ExploreFeed";
+import { ExploreFeedList, ExploreTitleBar } from "@/components/ExploreFeed";
 import { getCachedExplorePolls } from "@/lib/questionCache";
 import { PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
 import {
@@ -57,19 +57,9 @@ export default function ExploreBackdropHost(): React.ReactElement | null {
           contain: "strict",
         }}
       >
-        {/* Mirror the live page's fixed top bar. The backdrop is shown at
-            scroll 0 during the swipe, so an in-flow bar at the top reads
-            identically to the page's fixed bar. */}
-        <div
-          className="bg-background border-b border-gray-200 dark:border-gray-700"
-          style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
-        >
-          <div className="h-14 flex items-center justify-center px-16">
-            <h1 className="text-2xl font-bold text-center break-words select-none">
-              Explore
-            </h1>
-          </div>
-        </div>
+        {/* In-flow title bar (shown at scroll 0 during the swipe, so it reads
+            identically to the live page's fixed bar). */}
+        <ExploreTitleBar />
         <ExploreFeedList polls={polls} interactive={false} />
       </div>
     </div>,

@@ -20,6 +20,29 @@ import { getPollViewedAt, POLL_VIEWED_CHANGED_EVENT } from "@/lib/unread";
 // "use client" component module out of the /explore bundle).
 export const EXPLORE_ROW_DIVIDER = "border-gray-300 dark:border-gray-600";
 
+/**
+ * The "Explore" title bar — shared by the live page and the swipe-back backdrop
+ * so the two can't drift. `fixed` pins it to the viewport top (the live page,
+ * rendered into #header-portal so it slides with the back gesture); unfixed it
+ * sits in-flow at the top of the contained backdrop snapshot, which reads the
+ * same at scroll 0. The h-14 row height matches the live page's content
+ * paddingTop (3.5rem + safe-area).
+ */
+export function ExploreTitleBar({ fixed = false }: { fixed?: boolean }) {
+  return (
+    <div
+      className={`${fixed ? "fixed left-0 right-0 top-0 z-20 " : ""}bg-background border-b border-gray-200 dark:border-gray-700`}
+      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+    >
+      <div className="h-14 flex items-center justify-center px-16">
+        <h1 className="text-2xl font-bold text-center break-words select-none">
+          Explore
+        </h1>
+      </div>
+    </div>
+  );
+}
+
 export function ExplorePollCard({
   poll,
   interactive = true,

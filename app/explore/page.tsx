@@ -20,7 +20,7 @@ import { apiGetExplore } from "@/lib/api/groups";
 import { getCachedExplorePolls } from "@/lib/questionCache";
 import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
 import type { Poll } from "@/lib/types";
-import { ExploreFeedList } from "@/components/ExploreFeed";
+import { ExploreFeedList, ExploreTitleBar } from "@/components/ExploreFeed";
 
 export default function ExplorePage() {
   const router = useRouter();
@@ -97,27 +97,14 @@ export default function ExplorePage() {
     </button>
   );
 
-  // Fixed top bar holding the "Explore" title — always pinned to the top while
-  // the feed scrolls beneath it. Rendered via HeaderPortal (the #header-portal
-  // node), which is a swipe-back transform target, so the bar slides with the
-  // page during the back gesture. Sits below the z-30 back button.
-  const topBar = (
-    <div
-      className="fixed left-0 right-0 top-0 z-20 bg-background border-b border-gray-200 dark:border-gray-700"
-      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
-    >
-      <div className="h-14 flex items-center justify-center px-16">
-        <h1 className="text-2xl font-bold text-center break-words select-none">
-          Explore
-        </h1>
-      </div>
-    </div>
-  );
-
   return (
     <>
+      {/* Fixed top bar (ExploreTitleBar fixed) pinned to the viewport top while
+          the feed scrolls beneath. Rendered via HeaderPortal (the #header-portal
+          node, a swipe-back transform target) so it slides with the page during
+          the back gesture. Sits below the z-30 back button. */}
       <HeaderPortal>
-        {topBar}
+        <ExploreTitleBar fixed />
         {backButton}
       </HeaderPortal>
 
