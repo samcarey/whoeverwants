@@ -69,8 +69,6 @@ import {
 import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
 import {
   pollLookup,
-  shortenOption,
-  shortenLocation,
   validateRankedChoiceOptions,
   BASE_DEADLINE_OPTIONS,
   FRACTIONAL_CUTOFF_OPTIONS,
@@ -79,6 +77,8 @@ import {
   type QuestionDraft,
   type TitleSegment,
   draftTitleSegments,
+  deriveDraftTitle,
+  draftPollPreview,
   emptyDraft,
   draftDbQuestionType,
   draftToQuestionParams,
@@ -627,81 +627,29 @@ export function CreateQuestionContent() {
 
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
-    const builtIn = getBuiltInType(category);
-    const limit = 40;
-    const catLabel = builtIn?.label || (category !== 'custom' ? category : 'one');
-    const trimmedFor = forField.trim();
-    const forSuffix = trimmedFor ? ` for ${trimmedFor}` : '';
-
-    const joinWithOr = (items: string[]) => {
-      if (items.length === 2) return `${items[0]} or ${items[1]}?`;
-      return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}?`;
-    };
-    const buildTitle = (items: string[]) => {
-      const included = [items[0]];
-      for (let i = 1; i < items.length; i++) {
-        const isLast = i === items.length - 1;
-        const candidate = isLast
-          ? joinWithOr([...included, items[i]])
-          : `${[...included, items[i]].join(', ')}, or ...?`;
-        if (candidate.length > limit && included.length >= 2) break;
-        included.push(items[i]);
-      }
-      const allFit = included.length === items.length;
-      const text = allFit
-        ? joinWithOr(included)
-        : `${included.join(', ')}, or ...?`;
-      return { text, allFit };
-    };
-    const buildFromOptions = (filled: string[], fallback: string) => {
-      if (filled.length === 0) return fallback;
-      if (filled.length === 1) return filled[0];
-      const full = buildTitle(filled);
-      if (full.allFit) return full.text;
-      return `Which ${catLabel}?`;
-    };
-
-    const appendFor = (base: string) => {
-      if (!forSuffix || !base) return base;
-      // Insert " for X" before trailing "?" if present
-      if (base.endsWith('?')) return base.slice(0, -1) + forSuffix + '?';
-      return base + forSuffix;
-    };
-
-    if (questionType === 'question') {
-      if (category === 'yes_no') {
-        return '';
-      }
-      // limited_supply: the title is the user-typed item name (isAutoTitle is
-      // false), so there's nothing to auto-generate.
-      if (category === 'limited_supply') {
-        return '';
-      }
-      if (category === 'time') {
-        return appendFor("Time?");
-      }
-      // showtime: "Showtime for {Film}" — the film name is in forField.
-      if (category === 'showtime') {
-        return appendFor("Showtime?");
-      }
-      const shorten = isLocationLikeCategory(category) ? shortenLocation : shortenOption;
-      // Suggestion polls are titled by category, not by the typed options
-      // (those are just the creator's initial suggestions), so ignore them.
-      const filled = collectSuggestions ? [] : options.filter(o => o.trim()).map(shorten);
-      if (filled.length === 0) {
-        // Suggestion mode (no options) — use category name as title
-        const prefix = category === 'location' ? 'Place'
-          : builtIn?.label || (category !== 'custom' ? category : '');
-        if (prefix) return appendFor(prefix + '?');
-        // No category but has "for" field → "Options for X?"
-        if (forSuffix) return `Options${forSuffix}?`;
-        return '';
-      }
-      return appendFor(buildFromOptions(filled, 'Quick Vote'));
+    // yes_no / limited_supply: the title IS the user-typed prompt / item name
+    // (isAutoTitle is false), so there's nothing to auto-generate.
+    if (category === 'yes_no' || category === 'limited_supply') return '';
+    // A blank custom draft (no category, options, or context) has no meaningful
+    // title yet — return '' so the form shows the placeholder hint instead of a
+    // generic "Suggestions".
+    if (category === 'custom' && forField.trim() === '' && !options.some(o => o.trim() !== '')) {
+      return '';
     }
-
-    // time
-    return appendFor("Time?");
+    // SINGLE SOURCE OF TRUTH: the live preview is derived from the SAME
+    // generator the poll-search suggestion rows use (draftTitleSegments). This
+    // guarantees the preview can never diverge from the suggestion the user
+    // tapped — and, since the submit handler sends this exact title to the
+    // server (see `wrapperTitle` in handleSubmitClick), from the final posted
+    // title either.
+    return draftTitleSegments({
+      questionType,
+      title: '',
+      category,
+      forField,
+      options,
+      collectSuggestions,
+    }).map(s => s.text).join('');
   }, [questionType, category, options, forField, collectSuggestions]);
 
   // Auto-update title when form fields change (if user hasn't manually edited)
@@ -2194,20 +2142,33 @@ export function CreateQuestionContent() {
           ? new Date(Date.now() + Math.round(prephaseMinutes) * 60 * 1000).toISOString()
           : null);
 
-      // Wrapper title rule: when there's exactly one staged question and the
-      // user typed its title (yes_no questions, where the prompt IS the
-      // title), use that as the wrapper title. Otherwise send null and let
-      // the server auto-generate from question categories + poll context.
-      // The standalone wrapper-title input was removed when the form moved
-      // inline; users can override the title later via /g/<id>/edit-title.
+      // Wrapper title rule: ALWAYS send the title the FE computed (the exact
+      // string shown in the live preview / suggestion row), never null. The
+      // server used to regenerate auto-titles via `generate_poll_title`, but
+      // that diverged from the FE preview (e.g. a custom-category suggestion
+      // poll previewed as "Options for Bog" yet posted as "Ranked Choice for
+      // Bog", because the server falls back to the question_type label for a
+      // category-less question). Sending the FE title makes the FE the single
+      // source of truth so the posted title can never diverge from what the
+      // user saw. Per-arity source matches the placeholder card
+      // (`synthesizePlaceholderPoll`): single → `deriveDraftTitle` (the
+      // suggestion-row generator), multi → `draftPollPreview` (the combined
+      // title). Users can still override later via /g/<id>/edit-title.
       const onlyDraft = effectiveDrafts.length === 1 ? effectiveDrafts[0] : null;
-      // yes_no prompts get a trailing "?" (so the title reads as a question,
-      // matching the suggestion-row display); limited_supply item names don't.
-      const wrapperTitle = onlyDraft && !onlyDraft.isAutoTitle
-        ? (draftDbQuestionType(onlyDraft) === 'yes_no'
-            ? yesNoTitleText(onlyDraft.title)
-            : onlyDraft.title.trim())
-        : null;
+      const wrapperTitle = onlyDraft
+        ? (!onlyDraft.isAutoTitle
+            // yes_no prompts get a trailing "?" so the title reads as a
+            // question (matching the suggestion-row display); limited_supply
+            // item names don't.
+            ? (draftDbQuestionType(onlyDraft) === 'yes_no'
+                ? yesNoTitleText(onlyDraft.title)
+                : onlyDraft.title.trim())
+            // Auto-title: send the previewed title verbatim (`onlyDraft.title`
+            // is kept in sync with the preview), falling back to a freshly
+            // derived title for the blank-custom case where the preview is the
+            // hint placeholder rather than a real title.
+            : (onlyDraft.title.trim() || deriveDraftTitle(onlyDraft)))
+        : draftPollPreview(effectiveDrafts, '').title;
 
       const questionsForRequest: CreateQuestionParams[] =
         effectiveDrafts.map(d => draftToQuestionParams(d, prephaseMinutes));
