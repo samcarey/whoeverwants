@@ -257,7 +257,7 @@ _SYSTEM_PROMPT = (
     "- limited_supply: first-come claim for limited spots/items. title = what's claimed.\n"
     "- custom: any other choice; options = the choices, context = the subject.\n\n"
     "RULES:\n"
-    f"- Return 4 to {MAX_SUGGESTIONS} suggestions. LEAD with the group's + user's "
+    f"- You MUST return at least 4 suggestions (up to {MAX_SUGGESTIONS}). LEAD with the group's + user's "
     "dominant decision types: MOST suggestions should match what they do most "
     "often, then add 1-2 natural adjacent ideas. A foodie group → mostly "
     "food/place/time; a work team → mostly yes/no calls + scheduling; a gaming "
@@ -276,7 +276,20 @@ _SYSTEM_PROMPT = (
     "than inventing an unrelated one. Do not pair a context with an unrelated "
     "category.\n"
     "- Keep everything natural and concise, the way a real person types.\n"
-    "- Output STRICTLY the JSON array and nothing else."
+    "- Output STRICTLY the JSON array and nothing else.\n\n"
+    "EXAMPLE (illustrative only — base YOUR output on the history below; never "
+    "copy these):\n"
+    "If the history were a book club that picks books + schedules meetings, a good "
+    "output is:\n"
+    '[{"category":"custom","context":"next book pick","options":["Tomorrow, and '
+    'Tomorrow, and Tomorrow","The Covenant of Water","Demon Copperhead"]},'
+    '{"category":"time","context":"book club meeting"},'
+    '{"category":"yes_no","title":"Should we switch to meeting monthly?"},'
+    '{"category":"restaurant","context":"dinner after book club"},'
+    '{"category":"location","context":"next meeting spot"}]\n'
+    "Note it leads with the group's dominant type (book picks), names SPECIFIC "
+    "real options there, and OMITS options on the rest rather than inventing "
+    "generic ones."
 )
 
 
