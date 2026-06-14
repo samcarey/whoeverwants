@@ -14,7 +14,7 @@
  * is what the template reads to decide visibility.
  */
 
-export const EXPLORE_PARAM = "explore";
+const EXPLORE_PARAM = "explore";
 const STORAGE_KEY = "whoeverwants_explore_button";
 
 /** Fired whenever the stored intent OR the URL param presence changes, so the

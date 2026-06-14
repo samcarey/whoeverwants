@@ -50,23 +50,27 @@ function TemplateInner({ children }: AppTemplateProps) {
     sessionStorage.setItem(NAV_COUNT_KEY, String(count));
   }, [pathname]);
 
-  // Re-apply the persistent `?explore=1` param after every route change
-  // (navigation strips it). The Experimental-tab toggle's stored intent
-  // drives this; the param's presence is what gates the Explore globe below.
+  // The upper-right Explore globe is gated on a persistent `?explore=1` param
+  // (toggled in the Experimental tab). `showExplore` mirrors the param's
+  // presence; effect-seeded (not lazy-init) to keep SSR/hydration in lockstep —
+  // a one-frame flash on this experimental opt-in is fine.
+  const [showExplore, setShowExplore] = useState(false);
+
+  // Re-apply the param after every route change (navigation strips query
+  // params) and refresh `showExplore`. `syncExploreParam` re-adds/strips it to
+  // match the stored intent, dispatching EXPLORE_BUTTON_CHANGED_EVENT on a flip.
   useEffect(() => {
     syncExploreParam();
+    setShowExplore(exploreParamPresent());
   }, [pathname]);
 
-  // Mirror the explore-param presence into state so the upper-right globe
-  // shows/hides reactively. Effect-seeded (not lazy-init) to keep SSR/hydration
-  // in lockstep — a one-frame flash on this experimental opt-in is fine.
-  const [showExplore, setShowExplore] = useState(false);
+  // Toggle-driven changes (from the modal) fire the event; listener registered
+  // once, not per-navigation (the effect above covers navigation).
   useEffect(() => {
     const update = () => setShowExplore(exploreParamPresent());
-    update();
     window.addEventListener(EXPLORE_BUTTON_CHANGED_EVENT, update);
     return () => window.removeEventListener(EXPLORE_BUTTON_CHANGED_EVENT, update);
-  }, [pathname]);
+  }, []);
 
   // Set mounted state for portal rendering + install client log forwarder on dev sites
   useEffect(() => {
