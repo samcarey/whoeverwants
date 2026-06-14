@@ -3289,13 +3289,32 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
 > AND the Phase 1 expanded summary through a process-level `SummaryStore`
 > (20s TTL + in-flight coalescing); full shape + the no-redeem-on-render
 > decision in the plan doc's Phase 2 section; device verification owner-owned.
-> **Phase 3 (INLINE VOTING in the transcript) implemented** on
-> `claude/imessage-extension-phase-2-px2mrm` — **Swift-only, NO server /
+> **Phase 3 (INLINE VOTING in the transcript) SHIPPED** via #718 —
+> **Swift-only, NO server /
 > migration / entitlement / CI / pbxproj change** (`/summary` already returns
 > `poll_id` + per-question counts; voting reuses the atomic batch
 > `POST /api/polls/{id}/votes` + own-vote `GET /api/questions/{id}/votes` + the
 > Phase 1 App-Group identity). Full shape in the plan doc's Phase 3 section;
-> device verification owner-owned.
+> device verification owner-owned. **Phase 4 COMPOSE-A-POLL-IN-MESSAGES
+> (decision D) implemented** on `claude/imessage-integration-plan-b52mln` —
+> a "New poll" drawer entry opens an expanded text field; the typed prompt is
+> parsed LOCALLY by the **shared `PollTextParser` (now compiled into the
+> extension target — the documented pure-Foundation-shared-file precedent, one
+> minimal pbxproj change adding a PBXBuildFile that reuses the App-target file
+> ref; bundle-id sed count unaffected, parser parity harness untouched)** with
+> a live preview; **options/yes-no → headless create** (`PollAPI.createPoll`
+> mirrors `QuickPollService.createPoll`: POST `/api/polls`, App-Group identity,
+> no bearer → PUBLIC group) then inserts the fresh poll's bubble; **category →
+> "Open WhoeverWants to finish"** via the SAME `?create=1&category=…&for=…`
+> deep link Siri uses (the composer can't collect time windows / suggestions /
+> reference location). iOS 16+ (the parser is gated there); all New-poll entry
+> points behind `#available`, with `#available` as the SOLE branch condition so
+> the result builder erases the iOS-16-only `ComposeView` type. **Swift-only
+> EXCEPT the one pbxproj change; no server / migration / entitlement / CI-logic
+> change.** Full shape in the plan doc's Phase 4 section; device verification
+> owner-owned (Simulator works for the inner loop). The remaining "Phase 5"
+> richer-ballot half (expanded ranked/time ballots or a WKWebView) stays gated
+> on earning it.
 > Owner decisions: ship additive (degraded no-app fallback OK); embed a
 > poll-scoped invite token for private-group bubbles (auto-join); v1 inline
 > voting = yes_no + limited_supply only; pursue compose-in-Messages keeping
@@ -3488,6 +3507,66 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
     bridged bearer to union accounts) won't have their prior vote found by
     `fetchMyVote` → a fresh insert → double-count across devices. Rare; accepted
     for v1, matching the app's own anonymous-browser limitation.
+- **Phase 4 implementation notes (compose-a-poll-in-Messages — Swift + ONE pbxproj change):**
+  - **NO server / migration / entitlement / CI-logic change.** Reuses POST
+    `/api/polls` (the same create the FE + Siri use) + the Phase 1 App-Group
+    identity. The ONLY non-Swift change: `PollTextParser.swift` is compiled into
+    the extension target (one PBXBuildFile in `project.pbxproj` reusing the
+    existing App-target file ref). No new file + no new target → the `ios-build.yml`
+    bundle-id sed count is unaffected (still app×2 + ext×2, asserted by the step),
+    and the parity harness (`scripts/ios/test-parser.sh`, compiles the file
+    standalone) is untouched.
+  - **`scripts/ios/add-messages-extension.rb` is now idempotent end-to-end** — it
+    finds-or-creates the target (was an early `exit 0` when it existed), THEN
+    idempotently ensures the shared parser ref is in the extension's Sources
+    phase. Re-running it on the committed project adds only the parser build file.
+    Run on Linux (`gem install xcodeproj`); the result is committed (CI never runs
+    the gem).
+  - **The shared parser, NOT a duplicate.** This is the documented precedent the
+    extension's own header comment calls out ("If a THIRD copy of the polls fetch
+    ever appears, extract a shared pure-Foundation file compiled into both targets
+    — the PollTextParser.swift precedent"). The parser carries the JS↔Swift parity
+    contract (`tests/fixtures/poll-parse-cases.json`), so a copy would rot — share
+    it. (The tier/identity/fetch helpers stay duplicated; only the parser is
+    shared.)
+  - **`PollAPI.createPoll(parsed:name:browserId:)` mirrors
+    `QuickPollService.createPoll`** (AppDelegate.swift — keep in lockstep): builds
+    the single question from the parsed decision (`.options` → fixed-options
+    ranked_choice, `winner_method:"consensus"`, the "for X" tail as `context`;
+    `.yesNo` → yes/no whose prompt is both title + context), POSTs with
+    `creator_name` + X-Browser-Id (no bearer bridged), and parses the
+    `PollResponse` into a `SharablePoll` (questions[0].title over the display
+    title). **No bearer → the new group is PUBLIC** (`_resolve_or_create_group`
+    keys privacy on the SIGNED-IN user only, None here), so the inserted bubble
+    uses the canonical URL with no invite mint — exactly the Siri headless-create
+    behavior. `createPoll` + `optionsTitle`/`yesNoTitle` are iOS 16 (the parser).
+  - **`.category` → open the app, not headless.** A category poll needs the create
+    form (time windows / suggestions / reference location), so `createFromCompose`
+    routes it to `PollAPI.createCategoryURL` (mirrors `whoeverwantsCreatePollURL`:
+    `/g/?create=1&category=…&for=…`, no literal title so the web auto-titles
+    "<Category> for <context>") via `extensionContext.open` (copy-link fallback).
+    Same fork as Siri Phase 3's `.category` deep link. The button label flips to
+    "Open WhoeverWants to finish" so it's announced up front.
+  - **iOS 16 gating, result-builder-safe.** The parser is `@available(iOS 16.0, *)`,
+    so `ComposeView`/`ComposePreview`/`createFromCompose`/`PollAPI.createPoll` are
+    too; every "New poll" entry point is behind `#available(iOS 16.0, *)`, and the
+    `RootView` routing puts `#available` as the SOLE condition of its branch
+    (`if model.composing { if #available { ComposeView } else { Picker } }`) — a
+    MIXED boolean+availability condition (`if composing, #available`) is NOT
+    guaranteed to trigger the builder's `buildLimitedAvailability` type erasure for
+    the iOS-16-only `ComposeView` type. iOS 15 keeps the prior empty-state guidance,
+    no composer (additive).
+  - **Compose state lives on `ExtensionModel`** (`composing` bool + `ComposeState`
+    enum, Equatable for the `.creating` spinner compare); `activate` preserves an
+    in-progress compose session across a Messages background/foreground (the no-URL
+    branch returns early while `composing`) and a bubble tap (selectedMessage)
+    supersedes it (`composing = false`). On successful insert, `composing` resets so
+    a reopen lands on the picker; on insert failure (poll already created) it
+    reloads the picker so the new poll is re-shareable from the list.
+  - **Device-only-verifiable** like every native phase (Simulator works for the
+    inner loop): keyboard focus timing in an extension + `extensionContext.open`
+    from Messages are the on-device unknowns. Not unit-testable in the JS suite, not
+    demoable on the dev server.
 - **CI wiring (`ios-build.yml`), two load-bearing fixes for a second target:**
   1. The bundle-id sed must patch BOTH targets, **extension-first with anchored
      `;`** (`com\.whoeverwants\.app\.MessagesExtension;` before

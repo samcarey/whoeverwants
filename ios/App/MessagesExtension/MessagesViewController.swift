@@ -57,6 +57,22 @@ import UIKit
 //     famously finicky from Messages extensions, so Copy Link is the always-
 //     available fallback and the open failure path copies too). The summary
 //     consumes the same /summary endpoint + SummaryStore as the bubble.
+//   • Phase 4 — COMPOSE a poll without leaving Messages. The drawer's "New
+//     poll" entry (and the empty state's CTA) opens an expanded text field
+//     (keyboard needs .expanded); the typed prompt is parsed LOCALLY by the
+//     shared PollTextParser (now compiled into this target — the precedent for
+//     a pure-Foundation file shared with the App target) into the same poll
+//     shape the in-app search box's top suggestion would make, with a live
+//     preview. options / yes-no polls are created HEADLESSLY (POST /api/polls
+//     with the App-Group identity, mirroring QuickPollService — so the new
+//     poll lands in a PUBLIC group, no bearer bridged) and the fresh poll's
+//     bubble is inserted into the conversation immediately. category polls
+//     (restaurant / time / …) can't be finished in a transcript (they need
+//     time windows / suggestions / a reference location), so they route to the
+//     in-app create form via the same `?create=1&category=…&for=…` deep link
+//     Siri uses — the in-app create path stays exposed (owner constraint:
+//     the composer is additive, never the only way). iOS 16+ (the parser is
+//     gated there); the New-poll entry points are all behind #available.
 //
 // Architectural notes:
 //   • The extension is a SEPARATE target and process. It cannot import
@@ -406,6 +422,78 @@ private enum PollAPI {
         )
     }
 
+    // Phase 4 — headless create from the in-Messages composer. Mirrors
+    // QuickPollService.createPoll (AppDelegate.swift — keep in lockstep): POST
+    // /api/polls with creator_name + an explicit title + the single question the
+    // parser decided, identified by X-Browser-Id (no bearer is bridged, exactly
+    // like the Siri headless create — so the new poll lands in a PUBLIC group,
+    // shareable by canonical URL with no invite mint). Returns a SharablePoll
+    // built from the PollResponse so the composer can immediately insert its
+    // bubble. `.category` never reaches here — the composer routes it to the
+    // create-form deep link (those polls need time windows / suggestions /
+    // reference location the transcript can't collect).
+    @available(iOS 16.0, *)
+    static func createPoll(parsed: PollTextParser.Parsed, name: String, browserId: String?) async throws -> SharablePoll {
+        guard let url = URL(string: apiBase + "/api/polls") else { throw URLError(.badURL) }
+        var question: [String: Any]
+        let title: String
+        switch parsed.kind {
+        case .options:
+            question = [
+                "question_type": "ranked_choice",
+                "options": parsed.options,
+                "winner_method": "consensus",
+            ]
+            if !parsed.context.isEmpty { question["context"] = parsed.context }
+            title = PollTextParser.optionsTitle(parsed.options, context: parsed.context)
+        case .yesNo, .category:
+            question = ["question_type": "yes_no", "context": parsed.prompt]
+            title = PollTextParser.yesNoTitle(parsed.prompt)
+        }
+        let body: [String: Any] = ["creator_name": name, "title": title, "questions": [question]]
+        let request = jsonRequest(url: url, method: "POST", browserId: browserId, body: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let uuid = nonEmpty(obj["id"] as? String),
+              let shortId = nonEmpty(obj["short_id"] as? String) else {
+            throw URLError(.badServerResponse)
+        }
+        // Same parse as fetchMyPolls (questions[0].title over the display title,
+        // which may carry the group-name override).
+        let questions = obj["questions"] as? [[String: Any]]
+        let pollTitle = nonEmpty(questions?.first?["title"] as? String)
+            ?? nonEmpty(obj["title"] as? String) ?? title
+        return SharablePoll(
+            id: uuid,
+            shortId: shortId,
+            title: pollTitle,
+            groupShortId: nonEmpty(obj["group_short_id"] as? String),
+            groupName: nonEmpty(obj["group_title"] as? String),
+            groupIsPrivate: (obj["group_privacy"] as? String) == "private",
+            isClosed: (obj["is_closed"] as? Bool) ?? false
+        )
+    }
+
+    // Deep link to the in-app create form for a `.category` poll (the composer
+    // can't finish these — they need the form). Mirrors
+    // whoeverwantsCreatePollURL(path:category:context:) (AppDelegate.swift): no
+    // literal title, so the web auto-titles "<Category> for <context>".
+    static func createCategoryURL(category: String, context: String) -> URL? {
+        var c = URLComponents()
+        c.scheme = "https"
+        c.host = feHost
+        c.path = "/g/"
+        var items = [
+            URLQueryItem(name: "create", value: "1"),
+            URLQueryItem(name: "category", value: category),
+        ]
+        let ctx = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !ctx.isEmpty { items.append(URLQueryItem(name: "for", value: ctx)) }
+        c.queryItems = items
+        return c.url
+    }
+
     // The endpoint strips microseconds server-side specifically so the strict
     // ISO8601DateFormatter parses it ("2026-06-20T19:00:00+00:00").
     // Configured once and only read afterwards → safe as a static.
@@ -485,8 +573,19 @@ final class ExtensionModel: ObservableObject {
         case failed(URL)
     }
 
+    // Phase 4 compose flow (expanded view; keyboard needs .expanded). Editing →
+    // (creating → editing-on-error) → inserted+dismissed. Equatable so the view
+    // can compare against `.creating` for the in-flight button spinner.
+    enum ComposeState: Equatable {
+        case editing
+        case creating
+        case error(String)
+    }
+
     @Published var pickerState: PickerState = .loading
     @Published var summary: SummaryState?    // non-nil → summary mode (a bubble was tapped)
+    @Published var composing = false         // true → compose mode (supersedes picker)
+    @Published var composeState: ComposeState = .editing
     @Published var insertingPollId: String?  // row spinner while minting/inserting
     @Published var toast: String?
 
@@ -500,10 +599,18 @@ final class ExtensionModel: ObservableObject {
     private var toastDismissTask: Task<Void, Never>?
 
     // Called on every willBecomeActive: route to the summary (a bubble was
-    // tapped → selectedMessage is set) or the picker (drawer opened normally).
+    // tapped → selectedMessage is set), preserve an in-progress compose session
+    // across a background/foreground round-trip, or load the picker.
     func activate(selectedMessageURL: URL?) {
         if let url = selectedMessageURL {
+            // A bubble tap supersedes any compose session.
+            composing = false
             showSummary(for: url)
+        } else if composing {
+            // Stay in compose — don't wipe the user's typed prompt. (Presentation
+            // transitions don't fire willBecomeActive; this only guards an actual
+            // Messages background/foreground while composing.)
+            return
         } else {
             summary = nil
             loadPickerIfStale()
@@ -593,6 +700,95 @@ final class ExtensionModel: ObservableObject {
     func dismissSummary() {
         summary = nil
         loadPickerIfStale()
+    }
+
+    // MARK: Compose (Phase 4 — create a poll without leaving Messages)
+
+    // Enter compose mode. A text field needs keyboard input, which is only
+    // allowed in .expanded (never compact/transcript), so request it.
+    func startCompose() {
+        summary = nil
+        composeState = .editing
+        composing = true
+        host?.requestPresentationStyle(.expanded)
+    }
+
+    func exitCompose() {
+        composing = false
+        composeState = .editing
+        loadPickerIfStale()
+    }
+
+    // Parse the typed prompt LOCALLY (the shared PollTextParser — same decision
+    // the in-app search box's top suggestion makes), then:
+    //   • .category → can't headlessly create (needs the form's time windows /
+    //     suggestions / reference location) → open the prefilled create form in
+    //     the app, same fork as Siri's `.category` deep link. The user finishes
+    //     there and shares from the drawer.
+    //   • .options / .yesNo → create HEADLESSLY (POST /api/polls with the
+    //     App-Group identity) and insert the fresh poll's bubble into the
+    //     conversation. The "killer demo": make + share a poll without leaving
+    //     the chat.
+    // Identity is re-checked here (the picker's New-poll entry is only shown once
+    // there's a bridged identity, but a defensive guard costs nothing).
+    @available(iOS 16.0, *)
+    func createFromCompose(text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, composeState != .creating else { return }
+        guard let identity = BridgedIdentity.load() else {
+            composeState = .error("Open WhoeverWants and set your name to create a poll.")
+            return
+        }
+        let parsed = PollTextParser.decide(trimmed)
+        if parsed.kind == .category, let category = parsed.category {
+            openCategoryForm(category: category, context: parsed.context)
+            return
+        }
+        composeState = .creating
+        Task {
+            do {
+                let poll = try await PollAPI.createPoll(
+                    parsed: parsed, name: identity.name, browserId: identity.browserId
+                )
+                // Public group (no bearer bridged) → canonical URL; shareURL
+                // handles the private case defensively (a fresh headless create
+                // is always public, so it falls straight through).
+                let url = await shareURL(for: poll)
+                host?.insertPollMessage(caption: poll.title, subcaption: poll.groupName, url: url) { [weak self] ok in
+                    if ok {
+                        // insertPollMessage dismissed the drawer; reset so a
+                        // reopen lands on the picker, not a stale compose.
+                        self?.composing = false
+                        self?.composeState = .editing
+                    } else {
+                        // The poll exists — let the user re-share it from the list.
+                        self?.composeState = .error("Created the poll, but couldn't add it to the message. Share it from the list below.")
+                        self?.composing = false
+                        self?.reloadPicker()
+                    }
+                }
+            } catch {
+                composeState = .error("Couldn't create the poll. Check your connection and try again.")
+            }
+        }
+    }
+
+    // Open the in-app create form prefilled to the detected category + context
+    // (`.category` polls finish in the WebView). extensionContext.open is
+    // known-finicky from Messages extensions, so fall back to copying the link.
+    private func openCategoryForm(category: String, context: String) {
+        guard let url = PollAPI.createCategoryURL(category: category, context: context) else {
+            composeState = .error("Couldn't build the create link. Try making this poll in the app.")
+            return
+        }
+        host?.openURL(url) { [weak self] ok in
+            if ok {
+                self?.exitCompose()
+            } else {
+                UIPasteboard.general.url = url
+                self?.composeState = .error("Couldn't open the app — link copied. Paste it in Safari to finish.")
+            }
+        }
     }
 
     // "Open in WhoeverWants": extensionContext.open is known-finicky from
@@ -878,11 +1074,7 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if let summary = model.summary {
-                SummaryView(model: model, state: summary)
-            } else {
-                PickerView(model: model)
-            }
+            content
             if let toast = model.toast {
                 Text(toast)
                     .font(.footnote)
@@ -891,6 +1083,26 @@ struct RootView: View {
                     .background(Color(.systemGray5), in: Capsule())
                     .padding(.bottom, 12)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if model.composing {
+            // #available is the SOLE condition of its branch so the result
+            // builder applies buildLimitedAvailability to the iOS-16-only
+            // ComposeView type (a mixed boolean+availability condition isn't
+            // guaranteed to). The else is unreachable — the New-poll entry
+            // points are themselves iOS-16-gated — but the builder needs it.
+            if #available(iOS 16.0, *) {
+                ComposeView(model: model)
+            } else {
+                PickerView(model: model)
+            }
+        } else if let summary = model.summary {
+            SummaryView(model: model, state: summary)
+        } else {
+            PickerView(model: model)
         }
     }
 }
@@ -916,12 +1128,36 @@ private struct PickerView: View {
                 retryLabel: "Check again"
             ) { model.reloadPicker() }
         case .empty:
-            CenteredMessage(
-                emoji: "🗳️",
-                title: "No polls yet",
-                detail: "Create a poll in WhoeverWants and it'll show up here to share.",
-                retryLabel: "Refresh"
-            ) { model.reloadPicker() }
+            // With the composer (iOS 16+) the empty state is a create CTA, not a
+            // dead end — make a poll right here. Older iOS falls back to the
+            // "create in the app" guidance.
+            if #available(iOS 16.0, *) {
+                VStack(spacing: 8) {
+                    Text("🗳️").font(.system(size: 40))
+                    Text("No polls yet").font(.headline)
+                    Text("Make your first poll and share it without leaving Messages.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button(action: { model.startCompose() }) {
+                        Label("New poll", systemImage: "square.and.pencil")
+                            .font(.body.weight(.medium))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 4)
+                    Button("Refresh") { model.reloadPicker() }
+                        .buttonStyle(.bordered)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                CenteredMessage(
+                    emoji: "🗳️",
+                    title: "No polls yet",
+                    detail: "Create a poll in WhoeverWants and it'll show up here to share.",
+                    retryLabel: "Refresh"
+                ) { model.reloadPicker() }
+            }
         case .error:
             CenteredMessage(
                 emoji: "📡",
@@ -931,6 +1167,16 @@ private struct PickerView: View {
             ) { model.reloadPicker() }
         case .loaded(let polls):
             List {
+                if #available(iOS 16.0, *) {
+                    Section {
+                        Button(action: { model.startCompose() }) {
+                            Label("New poll", systemImage: "square.and.pencil")
+                                .font(.body.weight(.medium))
+                                .foregroundColor(.accentColor)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 Section(header: Text("Share a poll")) {
                     ForEach(polls) { poll in
                         PollRow(
@@ -1123,6 +1369,134 @@ private struct CenteredMessage: View {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Compose a poll (Phase 4 — create without leaving Messages)
+
+// Expanded-presentation text field → PollTextParser.decide → headless create
+// (options / yes-no) or "open the app to finish" (category). The live preview
+// teaches the box's grammar the same way the in-app search box does: "A, B, or
+// C" → pick-one; "should we…" → yes/no; "movie for friday" → a category poll
+// that opens the app. iOS 16+ (the shared parser is gated there); the New-poll
+// entry points are all behind `#available(iOS 16.0, *)`, so this never mounts
+// on iOS 15.
+@available(iOS 16.0, *)
+private struct ComposeView: View {
+    @ObservedObject var model: ExtensionModel
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    private var parsed: PollTextParser.Parsed? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : PollTextParser.decide(t)
+    }
+
+    private var creating: Bool { model.composeState == .creating }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: { model.exitCompose() }) {
+                Label("Share a poll", systemImage: "chevron.left")
+                    .font(.subheadline)
+            }
+            .padding(.horizontal)
+            .padding(.top, 12)
+            .disabled(creating)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Ask a question")
+                        .font(.title3.weight(.semibold))
+
+                    TextField("Pizza, tacos, or sushi?", text: $text, axis: .vertical)
+                        .lineLimit(1...4)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focused)
+                        .disabled(creating)
+
+                    if let parsed {
+                        ComposePreview(parsed: parsed)
+                    }
+
+                    actionButton
+
+                    if case .error(let message) = model.composeState {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundColor(.red)
+                    }
+
+                    Text("Tip: list choices like “A, B, or C” for a pick-one poll, or ask a yes/no question.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+            }
+        }
+        .onAppear { focused = true }
+    }
+
+    private var actionButton: some View {
+        // `.category` polls can't be finished headlessly — the button opens the
+        // app instead, and the label says so up front (not a surprise tap).
+        let isCategory = parsed?.kind == .category
+        let label = isCategory ? "Open WhoeverWants to finish" : "Create & add to message"
+        return Button(action: { model.createFromCompose(text: text) }) {
+            ZStack {
+                if creating { ProgressView() }
+                Text(label)
+                    .font(.body.weight(.medium))
+                    .opacity(creating ? 0 : 1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(parsed == nil || creating)
+    }
+}
+
+// Live "what poll will this make" preview, mirroring the web search box's top
+// suggestion. The category-label map matches the parser's CategoryDef labels
+// (location → "Place", not "Location").
+@available(iOS 16.0, *)
+private struct ComposePreview: View {
+    let parsed: PollTextParser.Parsed
+
+    private static let categoryLabels: [String: String] = [
+        "restaurant": "Restaurant", "movie": "Movie", "video_game": "Video Game",
+        "time": "Time", "location": "Place", "showtime": "Showtime",
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            switch parsed.kind {
+            case .options:
+                row("Pick one", systemImage: "list.bullet")
+                Text(PollTextParser.optionsTitle(parsed.options, context: parsed.context))
+                    .font(.subheadline)
+            case .yesNo:
+                row("Yes / No", systemImage: "checkmark.circle")
+                Text(PollTextParser.yesNoTitle(parsed.prompt))
+                    .font(.subheadline)
+            case .category:
+                let name = parsed.category.flatMap { Self.categoryLabels[$0] } ?? "Custom"
+                row("\(name) poll", systemImage: "arrow.up.forward.app")
+                Text("Opens WhoeverWants to add details, then share it from the list.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func row(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption.weight(.medium))
+            .foregroundColor(.secondary)
     }
 }
 
