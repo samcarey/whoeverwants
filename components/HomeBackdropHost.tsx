@@ -35,6 +35,7 @@ import { getCachedEmptyGroups } from "@/lib/simpleQuestionQueries";
 import { getRememberedScroll, HOME_SCROLL_KEY } from "@/lib/scrollMemory";
 import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
 import { getCachedSessionUser } from "@/lib/session";
+import { isExploreButtonEnabled } from "@/lib/exploreButtonFlag";
 
 export default function HomeBackdropHost(): React.ReactElement | null {
   const visible = useHomeBackdropActive();
@@ -48,6 +49,13 @@ export default function HomeBackdropHost(): React.ReactElement | null {
   const cachedEmptyGroups = getCachedEmptyGroups() ?? [];
   const isEmpty = cachedPolls.length === 0 && cachedEmptyGroups.length === 0;
   const signedIn = !!getCachedSessionUser();
+  // Mirror the real globe's gating (stored intent === the param the real
+  // button reads, since syncExploreParam keeps them in lockstep). Without
+  // this gate the backdrop always painted the globe, so a home-revealing
+  // transition showed it for the duration of the slide and then dropped it
+  // when the flag-off real home committed (the reported "shown until the
+  // transition completes then disappears" flicker).
+  const showExplore = isExploreButtonEnabled();
 
   return createPortal(
     // Wrap in a div carrying the Geist sans font-family. The portal target
@@ -125,7 +133,10 @@ export default function HomeBackdropHost(): React.ReactElement | null {
             </span>
             {/* Mirror the explore globe (upper-right) so a swipe-back from
                 /explore reveals a home that already has it — no pop-in on
-                commit. Decorative; the real button lives in template.tsx. */}
+                commit. Decorative; the real button lives in template.tsx.
+                Gated on the same explore flag so a flag-off home doesn't
+                flash the globe through the transition. */}
+            {showExplore && (
             <span
               aria-hidden="true"
               className="absolute top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full"
@@ -147,6 +158,7 @@ export default function HomeBackdropHost(): React.ReactElement | null {
                 />
               </svg>
             </span>
+            )}
             <h1 className="text-2xl font-bold mb-1 select-none">Whoever Wants</h1>
           </div>
           <div className="h-7 flex items-center justify-center mb-1" />
