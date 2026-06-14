@@ -203,6 +203,10 @@ struct QuestionSummary: Identifiable {
     let resultText: String?   // server-rendered one-line result
     let yesCount: Int?
     let noCount: Int?
+    // Candidate list for the expanded ranked ballot (Phase 5) — server
+    // surfaces it only for ranked_choice with finalized options; nil for
+    // every other type and for a ranked poll still in its suggestion phase.
+    let options: [String]?
 }
 
 struct PollSummary {
@@ -245,6 +249,9 @@ struct BubbleVote {
     let voteId: String
     let yesNoChoice: String?
     let isAbstain: Bool
+    // The viewer's existing ranking, so the expanded ranked ballot (Phase 5)
+    // restores their order on edit. nil for non-ranked votes.
+    let rankedChoices: [String]?
 }
 
 // The exact choice being submitted — drives the spinner on the SPECIFIC tapped
@@ -264,6 +271,9 @@ private enum PollAPI {
     // Treat empty strings as absent — the API can return "" for an unset
     // override, which should never surface as a title / id / group.
     static func nonEmpty(_ s: String?) -> String? { s.flatMap { $0.isEmpty ? nil : $0 } }
+    // Array sibling — an empty array (e.g. options on a non-ranked question) is
+    // "absent" the same way an empty string is.
+    static func nonEmpty(_ a: [String]?) -> [String]? { a.flatMap { $0.isEmpty ? nil : $0 } }
 
     private static func jsonRequest(url: URL, method: String, browserId: String?, body: [String: Any]? = nil) -> URLRequest {
         var request = URLRequest(url: url)
@@ -400,7 +410,8 @@ private enum PollAPI {
                 type: (q["question_type"] as? String) ?? "yes_no",
                 resultText: nonEmpty(q["result_text"] as? String),
                 yesCount: q["yes_count"] as? Int,
-                noCount: q["no_count"] as? Int
+                noCount: q["no_count"] as? Int,
+                options: nonEmpty(q["options"] as? [String])
             )
         }
         return PollSummary(
@@ -423,7 +434,8 @@ private enum PollAPI {
     // row so the bubble can update its selection without a separate re-fetch.
     static func submitVote(
         pollId: String, questionId: String, voteId: String?, voteType: String,
-        yesNoChoice: String?, isAbstain: Bool, name: String, browserId: String
+        yesNoChoice: String?, isAbstain: Bool, rankedChoices: [String]? = nil,
+        name: String, browserId: String
     ) async throws -> BubbleVote {
         guard let url = URL(string: apiBase + "/api/polls/\(pollId)/votes") else { throw URLError(.badURL) }
         var item: [String: Any] = ["question_id": questionId, "is_abstain": isAbstain]
@@ -433,6 +445,10 @@ private enum PollAPI {
             item["vote_type"] = voteType   // insert
         }
         if let choice = yesNoChoice { item["yes_no_choice"] = choice }
+        // Strict ranking only (no tiers/equal rankings — the transcript can't
+        // express them); the server treats a missing ranked_choice_tiers as
+        // singleton tiers from this flat list.
+        if let ranked = rankedChoices { item["ranked_choices"] = ranked }
         let body: [String: Any] = ["voter_name": name, "items": [item]]
         let request = jsonRequest(url: url, method: "POST", browserId: browserId, body: body)
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -445,7 +461,8 @@ private enum PollAPI {
         return BubbleVote(
             voteId: vid,
             yesNoChoice: nonEmpty(row["yes_no_choice"] as? String),
-            isAbstain: (row["is_abstain"] as? Bool) ?? false
+            isAbstain: (row["is_abstain"] as? Bool) ?? false,
+            rankedChoices: nonEmpty(row["ranked_choices"] as? [String])
         )
     }
 
@@ -466,7 +483,8 @@ private enum PollAPI {
         return BubbleVote(
             voteId: vid,
             yesNoChoice: nonEmpty(row["yes_no_choice"] as? String),
-            isAbstain: (row["is_abstain"] as? Bool) ?? false
+            isAbstain: (row["is_abstain"] as? Bool) ?? false,
+            rankedChoices: nonEmpty(row["ranked_choices"] as? [String])
         )
     }
 
@@ -646,6 +664,12 @@ final class ExtensionModel: ObservableObject {
     @Published var ballotVotes: [String: BubbleVote] = [:]
     @Published var ballotVoting: VotingTarget?
     @Published var ballotName: String = ""
+    // Per-question working ranking for the expanded ranked ballot (Phase 5).
+    // questionId → ordered option texts (best first). Built up by tapping
+    // options in order; seeded from the viewer's existing vote on load, so an
+    // edit starts from their prior order. Submitted explicitly (ranking isn't a
+    // single tap), unlike yes_no/limited_supply which submit on tap.
+    @Published var ballotRankOrder: [String: [String]] = [:]
 
     weak var host: MessagesViewController?
 
@@ -744,6 +768,7 @@ final class ExtensionModel: ObservableObject {
         // (empty → a nameless recipient types one before voting).
         ballotVotes = [:]
         ballotVoting = nil
+        ballotRankOrder = [:]
         ballotName = BridgedIdentity.load()?.name ?? ""
         Task {
             do {
@@ -769,12 +794,22 @@ final class ExtensionModel: ObservableObject {
     // MARK: Expanded-view ballot
 
     // A question the expanded ballot can submit inline: yes_no / limited_supply
-    // on an open poll (decision C — ranked / time / showtime need ranking /
-    // grids / keyboard and stay read-only + "Open in app"). Unlike the
-    // transcript's single-question `inlineVotableQuestion`, this is per-question,
-    // so a multi-question poll gets a vote row for each tap-votable question.
+    // (tap → submit) OR ranked_choice with ≥2 finalized options (tap-to-rank →
+    // explicit submit — Phase 5). The expanded view uniquely allows ranking
+    // because it isn't a scrolling transcript; the transcript bubble stays
+    // yes_no/limited_supply only (decision C). Time / showtime still need
+    // grids and stay read-only + "Open in app". A ranked poll in its suggestion
+    // phase has no finalized options (options nil) → not yet rankable here.
+    // Unlike the transcript's single-question `inlineVotableQuestion`, this is
+    // per-question, so a multi-question poll gets a vote row for each votable
+    // question.
     static func isBallotVotable(_ q: QuestionSummary, poll: PollSummary) -> Bool {
-        !poll.isClosed && (q.type == "yes_no" || q.type == "limited_supply")
+        guard !poll.isClosed else { return false }
+        switch q.type {
+        case "yes_no", "limited_supply": return true
+        case "ranked_choice": return (q.options?.count ?? 0) >= 2
+        default: return false
+        }
     }
 
     // Fetch the viewer's existing vote for each votable question (only when a
@@ -789,7 +824,17 @@ final class ExtensionModel: ObservableObject {
                 group.addTask { (q.id, await PollAPI.fetchMyVote(questionId: q.id, browserId: browserId)) }
             }
             for await (qid, vote) in group {
-                if let vote = vote { ballotVotes[qid] = vote }
+                if let vote = vote {
+                    ballotVotes[qid] = vote
+                    // Seed the ranked ballot's working order from the existing
+                    // vote (filtered to options still on the ballot) so an edit
+                    // starts from the viewer's prior ranking.
+                    if let ranked = vote.rankedChoices,
+                       let opts = summary.questions.first(where: { $0.id == qid })?.options {
+                        let valid = Set(opts)
+                        ballotRankOrder[qid] = ranked.filter { valid.contains($0) }
+                    }
+                }
             }
         }
     }
@@ -832,6 +877,61 @@ final class ExtensionModel: ObservableObject {
                 }
             } catch {
                 // Keep the prior ballot; re-taps re-enable via the defer.
+            }
+        }
+    }
+
+    // Toggle an option in the working ranking (Phase 5): tap an unranked option
+    // to append it (it becomes the next preference), tap a ranked one to remove
+    // it (the rest renumber implicitly). No-op while a submit is in flight.
+    func toggleRank(questionId: String, option: String) {
+        guard ballotVoting == nil else { return }
+        var order = ballotRankOrder[questionId] ?? []
+        if let idx = order.firstIndex(of: option) {
+            order.remove(at: idx)
+        } else {
+            order.append(option)
+        }
+        ballotRankOrder[questionId] = order
+    }
+
+    // Submit the working ranking through the same atomic batch endpoint
+    // (vote_type "ranked_choice"; ranked_choices = the ordered list). Edits when
+    // a prior vote exists (no duplicate); no-op when the order is empty or
+    // unchanged. Mirrors voteInBallot's gating + live refresh; `ballotVoting`
+    // (yesNoChoice nil) drives the submit-button spinner + re-tap gate.
+    func submitRanking(question: QuestionSummary, poll: PollSummary) {
+        guard ballotVoting == nil else { return }
+        let name = ballotName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let order = ballotRankOrder[question.id] ?? []
+        guard !name.isEmpty, !order.isEmpty,
+              let browserId = BridgedIdentity.browserIdUnchecked() else { return }
+        if let mine = ballotVotes[question.id], mine.rankedChoices == order { return }
+        ballotVoting = VotingTarget(questionId: question.id, yesNoChoice: nil, isAbstain: false)
+        BridgedIdentity.rememberName(name)
+        Task {
+            defer { ballotVoting = nil }
+            do {
+                let submitted = try await PollAPI.submitVote(
+                    pollId: poll.pollId,
+                    questionId: question.id,
+                    voteId: ballotVotes[question.id]?.voteId,
+                    voteType: "ranked_choice",
+                    yesNoChoice: nil,
+                    isAbstain: false,
+                    rankedChoices: order,
+                    name: name,
+                    browserId: browserId
+                )
+                ballotVotes[question.id] = submitted
+                ballotRankOrder[question.id] = submitted.rankedChoices ?? order
+                if case .loaded(_, let url)? = summary,
+                   let short = PollAPI.pollShortId(fromMessageURL: url),
+                   let fresh = try? await SummaryStore.shared.refresh(shortId: short) {
+                    summary = .loaded(fresh, url)
+                }
+            } catch {
+                // Keep the prior ranking; re-submit re-enables via the defer.
             }
         }
     }
@@ -1521,24 +1621,84 @@ private struct BallotQuestionRow: View {
             Text(question.resultText ?? "—")
                 .font(.body)
             if ExtensionModel.isBallotVotable(question, poll: poll) {
-                HStack(spacing: 8) {
-                    if question.type == "yes_no" {
-                        choice("Yes", .green,
-                               selected: mine?.isAbstain == false && mine?.yesNoChoice == "yes",
-                               yesNoChoice: "yes", isAbstain: false)
-                        choice("No", .red,
-                               selected: mine?.isAbstain == false && mine?.yesNoChoice == "no",
-                               yesNoChoice: "no", isAbstain: false)
-                    } else {  // limited_supply
-                        choice("Claim a spot", .green,
-                               selected: mine?.isAbstain == false,
-                               yesNoChoice: nil, isAbstain: false)
-                        choice("No thanks", .secondary,
-                               selected: mine?.isAbstain == true,
-                               yesNoChoice: nil, isAbstain: true)
+                if question.type == "ranked_choice" {
+                    rankedSection
+                } else {
+                    HStack(spacing: 8) {
+                        if question.type == "yes_no" {
+                            choice("Yes", .green,
+                                   selected: mine?.isAbstain == false && mine?.yesNoChoice == "yes",
+                                   yesNoChoice: "yes", isAbstain: false)
+                            choice("No", .red,
+                                   selected: mine?.isAbstain == false && mine?.yesNoChoice == "no",
+                                   yesNoChoice: "no", isAbstain: false)
+                        } else {  // limited_supply
+                            choice("Claim a spot", .green,
+                                   selected: mine?.isAbstain == false,
+                                   yesNoChoice: nil, isAbstain: false)
+                            choice("No thanks", .secondary,
+                                   selected: mine?.isAbstain == true,
+                                   yesNoChoice: nil, isAbstain: true)
+                        }
                     }
                 }
             }
+        }
+    }
+
+    // Tap-to-rank ballot: tap options in preference order (each shows its rank
+    // number), tap again to remove. An explicit Submit applies the order (ranking
+    // isn't a single tap, unlike yes_no/limited_supply). Strict ranking only — no
+    // tiers (the bubble is a "simple taps" surface per Apple's live-layout rules).
+    @ViewBuilder private var rankedSection: some View {
+        let order = model.ballotRankOrder[question.id] ?? []
+        let spinning = model.ballotVoting == VotingTarget(
+            questionId: question.id, yesNoChoice: nil, isAbstain: false
+        )
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Tap to rank in order")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            ForEach(question.options ?? [], id: \.self) { opt in
+                let rank = order.firstIndex(of: opt).map { $0 + 1 }
+                Button(action: {
+                    model.toggleRank(questionId: question.id, option: opt)
+                }) {
+                    HStack(spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .strokeBorder(rank != nil ? Color.accentColor : Color(.systemGray3), lineWidth: 1.5)
+                                .background(Circle().fill(rank != nil ? Color.accentColor : Color.clear))
+                                .frame(width: 22, height: 22)
+                            if let rank = rank {
+                                Text("\(rank)")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        Text(opt)
+                            .font(.body)
+                            .foregroundColor(.primary)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canVote || model.ballotVoting != nil)
+            }
+            Button(action: { model.submitRanking(question: question, poll: poll) }) {
+                HStack(spacing: 6) {
+                    if spinning { ProgressView().controlSize(.small) }
+                    Text(model.ballotVotes[question.id] == nil ? "Submit ranking" : "Update ranking")
+                        .font(.subheadline.weight(.medium))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canVote || model.ballotVoting != nil || order.isEmpty)
+            .padding(.top, 2)
         }
     }
 
