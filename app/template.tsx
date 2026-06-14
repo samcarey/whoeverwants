@@ -10,6 +10,7 @@ import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questio
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
 import { markAppHydrated } from '@/lib/hydration';
+import { EXPLORE_BUTTON_CHANGED_EVENT, exploreParamPresent, syncExploreParam } from '@/lib/exploreButtonFlag';
 
 // `CreateQuestionContent` (the bubble-bar + create-poll-modal owner) is
 // mounted in `app/layout.tsx` via `<PersistentCreatePollHost />` so it
@@ -48,6 +49,28 @@ function TemplateInner({ children }: AppTemplateProps) {
     const count = parseInt(sessionStorage.getItem(NAV_COUNT_KEY) || '0', 10) + 1;
     sessionStorage.setItem(NAV_COUNT_KEY, String(count));
   }, [pathname]);
+
+  // The upper-right Explore globe is gated on a persistent `?explore=1` param
+  // (toggled in the Experimental tab). `showExplore` mirrors the param's
+  // presence; effect-seeded (not lazy-init) to keep SSR/hydration in lockstep —
+  // a one-frame flash on this experimental opt-in is fine.
+  const [showExplore, setShowExplore] = useState(false);
+
+  // Re-apply the param after every route change (navigation strips query
+  // params) and refresh `showExplore`. `syncExploreParam` re-adds/strips it to
+  // match the stored intent, dispatching EXPLORE_BUTTON_CHANGED_EVENT on a flip.
+  useEffect(() => {
+    syncExploreParam();
+    setShowExplore(exploreParamPresent());
+  }, [pathname]);
+
+  // Toggle-driven changes (from the modal) fire the event; listener registered
+  // once, not per-navigation (the effect above covers navigation).
+  useEffect(() => {
+    const update = () => setShowExplore(exploreParamPresent());
+    window.addEventListener(EXPLORE_BUTTON_CHANGED_EVENT, update);
+    return () => window.removeEventListener(EXPLORE_BUTTON_CHANGED_EVENT, update);
+  }, []);
 
   // Set mounted state for portal rendering + install client log forwarder on dev sites
   useEffect(() => {
@@ -223,8 +246,9 @@ function TemplateInner({ children }: AppTemplateProps) {
                   upper-right edge, same coloring + sizing. A lat/lon
                   wireframe globe (Heroicons globe-alt). Hidden during
                   bulk-forget selection mode (the trashcan portals into the
-                  same upper-right slot). */}
-              {!homeSelectionMode && (
+                  same upper-right slot). Gated on the persistent `?explore=1`
+                  param (toggled in the Experimental tab) — hidden by default. */}
+              {!homeSelectionMode && showExplore && (
               <button
                 onClick={() => navigateWithTransition(router, '/explore', 'forward')}
                 {...prefetchOnHover('/explore')}

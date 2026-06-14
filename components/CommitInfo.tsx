@@ -3,6 +3,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLongPress } from '@/lib/useLongPress';
 import { createPortal } from 'react-dom';
+import SliderSwitch from '@/components/SliderSwitch';
+import {
+  EXPLORE_BUTTON_CHANGED_EVENT,
+  isExploreButtonEnabled,
+  setExploreButtonEnabled,
+} from '@/lib/exploreButtonFlag';
 
 interface CommitData {
   sha: string;
@@ -90,7 +96,8 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [commitData, setCommitData] = useState<CommitData | null>(null);
   const [relativeTime, setRelativeTime] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'build' | 'logs'>('build');
+  const [activeTab, setActiveTab] = useState<'build' | 'logs' | 'experimental'>('build');
+  const [exploreButtonOn, setExploreButtonOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [copyLabel, setCopyLabel] = useState('Copy All Logs');
@@ -195,6 +202,15 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
     return () => window.removeEventListener('__console_log', handleLog);
   }, []);
 
+  // Seed the Explore Button toggle from its stored intent and keep it in sync
+  // (the param can also be flipped from another tab / by the URL sync).
+  useEffect(() => {
+    const update = () => setExploreButtonOn(isExploreButtonEnabled());
+    update();
+    window.addEventListener(EXPLORE_BUTTON_CHANGED_EVENT, update);
+    return () => window.removeEventListener(EXPLORE_BUTTON_CHANGED_EVENT, update);
+  }, []);
+
   // Auto-scroll logs to bottom when new entries arrive
   useEffect(() => {
     if (activeTab === 'logs' && logsEndRef.current) {
@@ -268,6 +284,16 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
               >
                 Logs
               </button>
+              <button
+                className={`flex-1 py-1.5 text-center text-xs cursor-pointer border-b-2 transition-colors select-none ${
+                  activeTab === 'experimental'
+                    ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 border-transparent'
+                }`}
+                onClick={() => setActiveTab('experimental')}
+              >
+                Experimental
+              </button>
             </div>
 
             {/* Build Info tab */}
@@ -337,6 +363,23 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
                 >
                   {copyLabel}
                 </button>
+              </div>
+            )}
+
+            {/* Experimental tab */}
+            {activeTab === 'experimental' && (
+              <div className="overflow-y-auto">
+                <div
+                  className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+                  onClick={() => setExploreButtonEnabled(!exploreButtonOn)}
+                >
+                  <span className="text-sm text-gray-800 dark:text-gray-200">Explore Button</span>
+                  <SliderSwitch
+                    checked={exploreButtonOn}
+                    onChange={setExploreButtonEnabled}
+                    aria-label="Explore Button"
+                  />
+                </div>
               </div>
             )}
 
