@@ -104,14 +104,21 @@ export function ExplorePollCard({
       }}
       className={`relative block w-full text-left pr-[0.65rem] py-1.5 border-b ${EXPLORE_ROW_DIVIDER} ${interactive ? "active:bg-gray-100 dark:active:bg-gray-800/60" : "pointer-events-none"}`}
     >
-      {/* Thin guide in the indentation channel so the spine reads as a tree. */}
-      {indent > 0 && (
-        <span
-          aria-hidden
-          className="absolute inset-y-0 w-px bg-gray-200 dark:bg-gray-700"
-          style={{ left: `calc(0.9rem + ${(indent - 0.5) * INDENT_STEP_REM}rem)` }}
-        />
-      )}
+      {/* Thin guides in the indentation channels so the spine reads as a tree.
+       *  One rail per ancestor level (not just this row's own channel), so the
+       *  shallower rails are SHARED across every row in a chain and form a
+       *  continuous vertical line converging toward the trunk — a single
+       *  per-row tick at (indent-0.5) would sit at a different x each
+       *  generation and never connect. */}
+      {indent > 0 &&
+        Array.from({ length: indent }, (_, i) => i + 1).map((level) => (
+          <span
+            key={level}
+            aria-hidden
+            className="absolute inset-y-0 w-px bg-gray-200 dark:bg-gray-700"
+            style={{ left: `calc(0.9rem + ${(level - 0.5) * INDENT_STEP_REM}rem)` }}
+          />
+        ))}
       <div className="flex items-baseline gap-2">
         <span
           className="shrink-0 tabular-nums text-sm font-semibold text-gray-400 dark:text-gray-500"
