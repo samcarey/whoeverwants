@@ -90,6 +90,7 @@ export {
   apiGetUserProfileCard,
   apiGetPollCategoryHistory,
   apiGetCategoryOptions,
+  apiGetPollSuggestions,
   apiUploadMyUserImage,
   apiDeleteMyUserImage,
   buildUserImageUrl,
@@ -105,6 +106,7 @@ export type {
   SharedGroupSummary,
   PollCategoryHistory,
   CategoryOptionEntry,
+  PollSuggestion,
 } from "./users";
 
 export {
