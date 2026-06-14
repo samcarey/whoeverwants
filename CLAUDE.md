@@ -3312,7 +3312,24 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
 > the result builder erases the iOS-16-only `ComposeView` type. **Swift-only
 > EXCEPT the one pbxproj change; no server / migration / entitlement / CI-logic
 > change.** Full shape in the plan doc's Phase 4 section; device verification
-> owner-owned (Simulator works for the inner loop). The remaining "Phase 5"
+> owner-owned (Simulator works for the inner loop). **EXPANDED-VIEW BALLOT
+> (deferred Phase 3/4 item) implemented** on `claude/imessage-integration-plan-z5wtsj`
+> — the tapped-bubble summary (`SummaryView`) is now an inline ballot: a vote
+> row per OPEN `yes_no`/`limited_supply` question (per-question via
+> `ExtensionModel.isBallotVotable`, so MULTI-question polls work, unlike the
+> transcript's single-question gate), edit-not-duplicate via the own-vote fetch,
+> live summary refresh on vote — all reusing the batch `POST /api/polls/{id}/votes`
+> + the App-Group identity (NO server/migration/entitlement/CI/pbxproj change).
+> **In-extension name entry** (the keyboard works in `.expanded`): a recipient
+> with a bridged browser id but no name gets a `TextField` → the typed name is
+> the vote's `voter_name` + `BridgedIdentity.rememberName` mirrors it into the
+> App Group (NOT a `POST /api/auth/account/name` mint — that bearer-less path
+> would orphan an existing browser-tied account via `create_name_only_account`;
+> caveat: the app's `NativeIdentitySync` clears the App-Group name on next
+> launch if the app has no name, so a fully-nameless app user may re-type). A
+> never-opened-the-app recipient (no bridged browser id) gets "Open WhoeverWants
+> once to vote here." Shared `VoteChoiceButton` + top-level `VotingTarget`
+> extracted so transcript + expanded can't drift. The remaining "Phase 5"
 > richer-ballot half (expanded ranked/time ballots or a WKWebView) stays gated
 > on earning it.
 > Owner decisions: ship additive (degraded no-app fallback OK); embed a

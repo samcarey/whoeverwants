@@ -2,8 +2,12 @@ import Messages
 import SwiftUI
 import UIKit
 
-// Phases 1 + 2 of docs/imessage-extension-plan.md — share a poll from the
-// Messages drawer (Phase 1) + the live read-only transcript bubble (Phase 2).
+// Phases 1–4 of docs/imessage-extension-plan.md — share a poll from the
+// Messages drawer (Phase 1), the live transcript bubble (Phase 2) with inline
+// voting (Phase 3), compose-in-Messages (Phase 4), plus the expanded-view
+// ballot (the deferred Phase 3/4 item: vote on ANY votable question — including
+// multi-question polls — from the tapped-bubble summary, with name entry, since
+// .expanded takes keyboard input the transcript can't).
 //
 // What this does:
 //   • Compact/expanded drawer view lists the user's recent polls (the same
@@ -56,7 +60,14 @@ import UIKit
 //     with live results + "Open in WhoeverWants" (extensionContext.open is
 //     famously finicky from Messages extensions, so Copy Link is the always-
 //     available fallback and the open failure path copies too). The summary
-//     consumes the same /summary endpoint + SummaryStore as the bubble.
+//     consumes the same /summary endpoint + SummaryStore as the bubble. It is
+//     also an INLINE BALLOT: each open yes_no / limited_supply question (decision
+//     C) — across multi-question polls too — gets vote buttons, edit-not-
+//     duplicate via the viewer's own-vote fetch, just like the transcript. A
+//     nameless recipient (browser id bridged, no name) gets a name field (the
+//     keyboard works in .expanded), so they vote without leaving Messages; a
+//     never-opened-the-app recipient (no browser id) is guided to open it once.
+//     Voting force-refreshes the summary so the read-only result lines update.
 //   • Phase 4 — COMPOSE a poll without leaving Messages. The drawer's "New
 //     poll" entry (and the empty state's CTA) opens an expanded text field
 //     (keyboard needs .expanded); the typed prompt is parsed LOCALLY by the
@@ -142,6 +153,32 @@ private enum BridgedIdentity {
     // Browser-id-only convenience for the picker fetch + invite mint, which
     // don't need the name. Stays gated on a non-empty name via load().
     static func loadBrowserId() -> String? { load()?.browserId }
+
+    // The bridged browser id WITHOUT the name gate. The expanded-view ballot
+    // (reached by tapping a received bubble) lets a recipient who has USED the
+    // app — so a browser id is bridged — but never set a name TYPE one and
+    // vote, since .expanded allows keyboard input (the transcript doesn't).
+    // load()/loadBrowserId() keep the name gate for the picker + invite mint,
+    // which need a usable named account.
+    static func browserIdUnchecked() -> String? {
+        guard let d = UserDefaults(suiteName: suiteName),
+              let browserId = d.string(forKey: browserIdKey), !browserId.isEmpty else {
+            return nil
+        }
+        return browserId
+    }
+
+    // Persist a name typed in the expanded ballot so the next bubble render /
+    // transcript vote on this device doesn't re-prompt. Best-effort LOCAL
+    // mirror only: the app stays the source of truth and re-syncs its own name
+    // on next launch via NativeIdentitySync (which CLEARS this if the app has
+    // no name set — so a fully-nameless app user may have to re-type later;
+    // accepted for v1).
+    static func rememberName(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let d = UserDefaults(suiteName: suiteName) else { return }
+        d.set(trimmed, forKey: nameKey)
+    }
 }
 
 // MARK: - Models
@@ -206,6 +243,17 @@ struct PollSummary {
 // the abstain for yes_no, which the bubble doesn't offer but tolerates).
 struct BubbleVote {
     let voteId: String
+    let yesNoChoice: String?
+    let isAbstain: Bool
+}
+
+// The exact choice being submitted — drives the spinner on the SPECIFIC tapped
+// button (not both, which a "differs from current selection" guess would do for
+// a first-time voter) and gates re-taps until it clears. Shared by the
+// transcript bubble (single votable question) AND the expanded-view ballot
+// (per-question across multi-question polls).
+struct VotingTarget: Equatable {
+    let questionId: String
     let yesNoChoice: String?
     let isAbstain: Bool
 }
@@ -589,6 +637,16 @@ final class ExtensionModel: ObservableObject {
     @Published var insertingPollId: String?  // row spinner while minting/inserting
     @Published var toast: String?
 
+    // Expanded-view ballot (vote from the summary without leaving Messages —
+    // the deferred Phase 3/4 item that .expanded uniquely enables, since it
+    // takes keyboard input). Per-question votes drive the selection highlight +
+    // edit-vs-insert; `ballotVoting` is the in-flight choice (spinner + re-tap
+    // gate); `ballotName` is the voter_name (seeded from the bridged name, or
+    // typed by a nameless recipient). Reset + seeded when a summary opens.
+    @Published var ballotVotes: [String: BubbleVote] = [:]
+    @Published var ballotVoting: VotingTarget?
+    @Published var ballotName: String = ""
+
     weak var host: MessagesViewController?
 
     private var lastFetch: Date?
@@ -682,12 +740,18 @@ final class ExtensionModel: ObservableObject {
             return
         }
         summary = .loading(url)
+        // Fresh ballot per poll; seed the name field from the bridged name
+        // (empty → a nameless recipient types one before voting).
+        ballotVotes = [:]
+        ballotVoting = nil
+        ballotName = BridgedIdentity.load()?.name ?? ""
         Task {
             do {
                 let s = try await SummaryStore.shared.summary(shortId: shortId)
                 // The user may have navigated back to the picker mid-fetch.
                 if case .loading(let pending)? = summary, pending == url {
                     summary = .loaded(s, url)
+                    await loadBallotVotes(s)
                 }
             } catch {
                 if case .loading(let pending)? = summary, pending == url {
@@ -700,6 +764,76 @@ final class ExtensionModel: ObservableObject {
     func dismissSummary() {
         summary = nil
         loadPickerIfStale()
+    }
+
+    // MARK: Expanded-view ballot
+
+    // A question the expanded ballot can submit inline: yes_no / limited_supply
+    // on an open poll (decision C — ranked / time / showtime need ranking /
+    // grids / keyboard and stay read-only + "Open in app"). Unlike the
+    // transcript's single-question `inlineVotableQuestion`, this is per-question,
+    // so a multi-question poll gets a vote row for each tap-votable question.
+    static func isBallotVotable(_ q: QuestionSummary, poll: PollSummary) -> Bool {
+        !poll.isClosed && (q.type == "yes_no" || q.type == "limited_supply")
+    }
+
+    // Fetch the viewer's existing vote for each votable question (only when a
+    // browser id is bridged), so the ballot highlights current choices and edits
+    // rather than duplicates. Concurrent; best-effort (a miss → the row inserts).
+    private func loadBallotVotes(_ summary: PollSummary) async {
+        guard let browserId = BridgedIdentity.browserIdUnchecked() else { return }
+        let votable = summary.questions.filter { Self.isBallotVotable($0, poll: summary) }
+        guard !votable.isEmpty else { return }
+        await withTaskGroup(of: (String, BubbleVote?).self) { group in
+            for q in votable {
+                group.addTask { (q.id, await PollAPI.fetchMyVote(questionId: q.id, browserId: browserId)) }
+            }
+            for await (qid, vote) in group {
+                if let vote = vote { ballotVotes[qid] = vote }
+            }
+        }
+    }
+
+    // Submit one question's choice through the atomic batch endpoint (same path
+    // as the transcript + every other surface). Edits when a prior vote exists
+    // (no duplicate row), else inserts. Re-tapping the current choice is a no-op.
+    // On success, force-refreshes the summary so the read-only result lines +
+    // respondent count reflect the new vote, and remembers a freshly-typed name
+    // so the next bubble doesn't re-prompt. A transient failure leaves the prior
+    // state untouched (the buttons re-enable when `ballotVoting` clears).
+    func voteInBallot(question: QuestionSummary, poll: PollSummary, yesNoChoice: String?, isAbstain: Bool) {
+        guard ballotVoting == nil else { return }
+        let name = ballotName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let browserId = BridgedIdentity.browserIdUnchecked() else { return }
+        if let mine = ballotVotes[question.id],
+           mine.isAbstain == isAbstain, mine.yesNoChoice == yesNoChoice {
+            return
+        }
+        ballotVoting = VotingTarget(questionId: question.id, yesNoChoice: yesNoChoice, isAbstain: isAbstain)
+        BridgedIdentity.rememberName(name)
+        Task {
+            defer { ballotVoting = nil }
+            do {
+                let submitted = try await PollAPI.submitVote(
+                    pollId: poll.pollId,
+                    questionId: question.id,
+                    voteId: ballotVotes[question.id]?.voteId,
+                    voteType: question.type,
+                    yesNoChoice: yesNoChoice,
+                    isAbstain: isAbstain,
+                    name: name,
+                    browserId: browserId
+                )
+                ballotVotes[question.id] = submitted
+                if case .loaded(_, let url)? = summary,
+                   let short = PollAPI.pollShortId(fromMessageURL: url),
+                   let fresh = try? await SummaryStore.shared.refresh(shortId: short) {
+                    summary = .loaded(fresh, url)
+                }
+            } catch {
+                // Keep the prior ballot; re-taps re-enable via the defer.
+            }
+        }
     }
 
     // MARK: Compose (Phase 4 — create a poll without leaving Messages)
@@ -829,15 +963,6 @@ final class TranscriptBubbleModel: ObservableObject {
         case loading
         case loaded(PollSummary)
         case unavailable   // unparseable url / fetch failed → static fallback
-    }
-
-    // The exact choice being submitted — drives the spinner on the SPECIFIC
-    // tapped button (not both, which a "differs from current selection" guess
-    // would do for a first-time voter) and gates re-taps until it clears.
-    struct VotingTarget: Equatable {
-        let questionId: String
-        let yesNoChoice: String?
-        let isAbstain: Bool
     }
 
     @Published var state: State = .loading
@@ -1279,57 +1404,79 @@ private struct SummaryView: View {
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .loaded(let summary, let url):
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(summary.title)
-                                .font(.title3.weight(.semibold))
-                            HStack(spacing: 6) {
-                                if let group = summary.groupName {
-                                    Text(group)
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                                Text(summary.isClosed ? "Closed" : "Open")
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 2)
-                                    .background(
-                                        (summary.isClosed ? Color(.systemGray5) : Color.green.opacity(0.15)),
-                                        in: Capsule()
-                                    )
-                                    .foregroundColor(summary.isClosed ? .secondary : .green)
-                            }
-                        }
+                loadedBody(summary: summary, url: url)
+            }
+        }
+    }
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(summary.questions) { q in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    if let label = q.label {
-                                        Text(label)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Text(q.resultText ?? "—")
-                                        .font(.body)
-                                }
-                            }
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+    private func loadedBody(summary: PollSummary, url: URL) -> some View {
+        // Inline voting (decision C) is yes_no / limited_supply on an open poll;
+        // the expanded view adds two things the transcript can't: multi-question
+        // polls (a row per votable question) and name entry (the keyboard works
+        // here). A recipient who's never opened the app has no bridged browser
+        // id, so the vote can't attribute to them — guide them to open it once.
+        let hasVotable = summary.questions.contains { ExtensionModel.isBallotVotable($0, poll: summary) }
+        let hasBrowserId = BridgedIdentity.browserIdUnchecked() != nil
+        let bridgedName = BridgedIdentity.load()?.name
+        let nameFilled = !model.ballotName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let canVote = hasVotable && hasBrowserId && nameFilled
 
-                        if summary.respondentCount > 0 {
-                            Text("\(summary.respondentCount) \(summary.respondentCount == 1 ? "person has" : "people have") responded")
-                                .font(.footnote)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(summary.title)
+                        .font(.title3.weight(.semibold))
+                    HStack(spacing: 6) {
+                        if let group = summary.groupName {
+                            Text(group)
+                                .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
-
-                        openButtons(url: url)
+                        Text(summary.isClosed ? "Closed" : "Open")
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(
+                                (summary.isClosed ? Color(.systemGray5) : Color.green.opacity(0.15)),
+                                in: Capsule()
+                            )
+                            .foregroundColor(summary.isClosed ? .secondary : .green)
                     }
-                    .padding()
                 }
+
+                if hasVotable && !hasBrowserId {
+                    Text("Open WhoeverWants once to vote here.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                } else if hasVotable && bridgedName == nil {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Your name")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("Name or alias", text: $model.ballotName)
+                            .textFieldStyle(.roundedBorder)
+                            .submitLabel(.done)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(summary.questions) { q in
+                        BallotQuestionRow(model: model, question: q, poll: summary, canVote: canVote)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+
+                if summary.respondentCount > 0 {
+                    Text("\(summary.respondentCount) \(summary.respondentCount == 1 ? "person has" : "people have") responded")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+
+                openButtons(url: url)
             }
+            .padding()
         }
     }
 
@@ -1349,6 +1496,63 @@ private struct SummaryView: View {
             }
             .buttonStyle(.bordered)
         }
+    }
+}
+
+// One question's row in the expanded ballot: label + server-rendered result +
+// (for an open yes_no/limited_supply question) inline vote buttons. Other types
+// and closed polls render the result only. `canVote` folds the poll-level gates
+// (browser id present + name filled) computed once in SummaryView; the buttons
+// stay disabled while another submit is in flight (`model.ballotVoting`).
+private struct BallotQuestionRow: View {
+    @ObservedObject var model: ExtensionModel
+    let question: QuestionSummary
+    let poll: PollSummary
+    let canVote: Bool
+
+    var body: some View {
+        let mine = model.ballotVotes[question.id]
+        return VStack(alignment: .leading, spacing: 6) {
+            if let label = question.label {
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Text(question.resultText ?? "—")
+                .font(.body)
+            if ExtensionModel.isBallotVotable(question, poll: poll) {
+                HStack(spacing: 8) {
+                    if question.type == "yes_no" {
+                        choice("Yes", .green,
+                               selected: mine?.isAbstain == false && mine?.yesNoChoice == "yes",
+                               yesNoChoice: "yes", isAbstain: false)
+                        choice("No", .red,
+                               selected: mine?.isAbstain == false && mine?.yesNoChoice == "no",
+                               yesNoChoice: "no", isAbstain: false)
+                    } else {  // limited_supply
+                        choice("Claim a spot", .green,
+                               selected: mine?.isAbstain == false,
+                               yesNoChoice: nil, isAbstain: false)
+                        choice("No thanks", .secondary,
+                               selected: mine?.isAbstain == true,
+                               yesNoChoice: nil, isAbstain: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func choice(_ title: String, _ color: Color, selected: Bool, yesNoChoice: String?, isAbstain: Bool) -> some View {
+        VoteChoiceButton(
+            title: title, color: color, selected: selected,
+            spinning: model.ballotVoting == VotingTarget(
+                questionId: question.id, yesNoChoice: yesNoChoice, isAbstain: isAbstain
+            ),
+            disabled: !canVote || model.ballotVoting != nil,
+            action: {
+                model.voteInBallot(question: question, poll: poll, yesNoChoice: yesNoChoice, isAbstain: isAbstain)
+            }
+        )
     }
 }
 
@@ -1750,12 +1954,33 @@ private struct VoteButtonRow: View {
         yesNoChoice: String?, isAbstain: Bool
     ) -> some View {
         // Spinner only on the button actually being submitted.
-        let spinning = model.voting == TranscriptBubbleModel.VotingTarget(
+        let spinning = model.voting == VotingTarget(
             questionId: question.id, yesNoChoice: yesNoChoice, isAbstain: isAbstain
         )
-        return Button(action: {
-            model.vote(question: question, poll: poll, yesNoChoice: yesNoChoice, isAbstain: isAbstain)
-        }) {
+        return VoteChoiceButton(
+            title: title, color: color, selected: selected, spinning: spinning,
+            disabled: !hasIdentity || busy,
+            action: {
+                model.vote(question: question, poll: poll, yesNoChoice: yesNoChoice, isAbstain: isAbstain)
+            }
+        )
+    }
+}
+
+// Shared presentational vote button — the tuned pill used by BOTH the transcript
+// VoteButtonRow and the expanded BallotQuestionRow. `selected` tints + outlines
+// the current choice; `spinning` shows the in-flight indicator on the one being
+// submitted; `disabled` covers the no-identity / busy gates the callers compute.
+private struct VoteChoiceButton: View {
+    let title: String
+    let color: Color
+    let selected: Bool
+    let spinning: Bool
+    let disabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
             ZStack {
                 if spinning { ProgressView() }
                 Text(title)
@@ -1775,6 +2000,6 @@ private struct VoteButtonRow: View {
             .foregroundColor(selected ? color : .primary)
         }
         .buttonStyle(.plain)
-        .disabled(!hasIdentity || busy)
+        .disabled(disabled)
     }
 }
