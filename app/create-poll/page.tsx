@@ -637,19 +637,19 @@ export function CreateQuestionContent() {
       return '';
     }
     // SINGLE SOURCE OF TRUTH: the live preview is derived from the SAME
-    // generator the poll-search suggestion rows use (draftTitleSegments). This
-    // guarantees the preview can never diverge from the suggestion the user
-    // tapped — and, since the submit handler sends this exact title to the
-    // server (see `wrapperTitle` in handleSubmitClick), from the final posted
-    // title either.
-    return draftTitleSegments({
+    // generator the poll-search suggestion rows use (deriveDraftTitle →
+    // draftTitleSegments). This guarantees the preview can never diverge from
+    // the suggestion the user tapped — and, since the submit handler sends this
+    // exact title to the server (see `wrapperTitle` in handleSubmitClick), from
+    // the final posted title either.
+    return deriveDraftTitle({
       questionType,
       title: '',
       category,
       forField,
       options,
       collectSuggestions,
-    }).map(s => s.text).join('');
+    });
   }, [questionType, category, options, forField, collectSuggestions]);
 
   // Auto-update title when form fields change (if user hasn't manually edited)
