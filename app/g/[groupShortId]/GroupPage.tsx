@@ -9,7 +9,8 @@ import { buildEmptyGroup, buildGroupFromPollDown, buildGroupSyncFromCache, build
 // POLL_QUERY_PARAM is still used by `GroupPageInner` to redirect legacy
 // `?p=<pollShort>` URLs to the new `/g/<group>/p/<pollShort>` route.
 import { mergePollListPreservingIdentity, mergeQuestionResultsMap } from "@/lib/groupRefresh";
-import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupMembers, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiCancelRecurrence, apiGetPollById, apiGetPollByShortId, apiSetPollFollowState, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetQuestionResults, apiGetGroupByRouteId, apiGetGroupMembers, getCachedGroupRoster, apiGetGroupSummary, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiCutoffPollSuggestions, apiCancelRecurrence, apiGetPollById, apiGetPollByShortId, apiSetPollFollowState, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
+import type { GroupRoster } from "@/lib/api";
 import RecurrenceCancelSheet from "@/components/RecurrenceCancelSheet";
 import { formatLocalDateISO as formatRecurrenceDateISO } from "@/lib/recurrence";
 import type { Poll } from "@/lib/types";
@@ -177,6 +178,16 @@ function rebuildGroupFromCacheOrPrev(
   return rebuilt;
 }
 
+/** The viewer is the group's admin AND its only member — the precondition for
+ *  the solo-group "Add People" / "Create Invite Link" CTAs. Shared between the
+ *  synchronous cache-seed and the roster-fetch effect so the two can't drift. */
+function rosterIsSolo(roster: GroupRoster): boolean {
+  return (
+    roster.viewer_is_admin &&
+    roster.members.length + roster.anonymous_count <= 1
+  );
+}
+
 interface GroupContentProps {
   groupId: string;
   /** Visual offset (px) for the cards-wrapper transform, used by
@@ -296,7 +307,17 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     !!group &&
     group.participantNames.length === 0 &&
     group.anonymousRespondentCount === 0;
-  const [soloAdmin, setSoloAdmin] = useState(false);
+  // Seed synchronously from the last-resolved roster (if any) so the CTAs are
+  // already present on the FIRST commit — both on a fresh mount with a warm
+  // roster cache (no flash-in after the slide) AND at the slide-overlay
+  // handoff, where a fresh second instance would otherwise render
+  // soloAdmin=false and visibly drop the CTAs until its own fetch resolved
+  // (the reported "appear → disappear → reappear" iOS flicker).
+  const [soloAdmin, setSoloAdmin] = useState(() => {
+    if (typeof window === "undefined" || !maybeSoloGroup) return false;
+    const cached = getCachedGroupRoster(groupId);
+    return cached !== null && rosterIsSolo(cached);
+  });
   // This effect mirrors the /info roster-refresh wiring
   // (app/g/[groupShortId]/info/page.tsx) — keep the two in lockstep;
   // extract a shared useGroupRoster hook if a 3rd copy appears.
@@ -316,9 +337,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       apiGetGroupMembers(groupId)
         .then((roster) => {
           if (cancelled) return;
-          const solo =
-            roster.viewer_is_admin &&
-            roster.members.length + roster.anonymous_count <= 1;
+          const solo = rosterIsSolo(roster);
           knownNotSolo = !solo;
           setSoloAdmin(solo);
         })

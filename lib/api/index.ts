@@ -67,6 +67,7 @@ export {
   apiGetGroupInvitableAccounts,
   apiAddGroupMembers,
   apiGetGroupMembers,
+  getCachedGroupRoster,
   apiGetGroupPollVoters,
   apiPromoteGroupAdmin,
   apiBootGroupMember,

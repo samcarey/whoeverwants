@@ -723,6 +723,28 @@ export interface GroupRoster {
   viewer_is_admin: boolean;
 }
 
+/** Last successfully-resolved roster per routeId, so a caller can render
+ *  membership-derived chrome (e.g. the group page's solo-admin "Add People" /
+ *  "Create Invite Link" CTAs) on its FIRST commit instead of flashing it in
+ *  after the async /members GET resolves. The slide-overlay handoff mounts
+ *  GroupContent twice in quick succession; without a synchronous seed the
+ *  second (real-route) instance starts from no-roster and the CTAs visibly
+ *  disappear-then-reappear at the overlay→route handoff. Bounded LRU so a
+ *  long-lived PWA session that visits many groups can't grow it forever. */
+const ROSTER_CACHE_MAX = 50;
+const groupRosterCache = new Map<string, GroupRoster>();
+function cacheGroupRoster(routeId: string, roster: GroupRoster): void {
+  groupRosterCache.delete(routeId); // re-insert at the end (most-recent)
+  groupRosterCache.set(routeId, roster);
+  if (groupRosterCache.size > ROSTER_CACHE_MAX) {
+    const oldest = groupRosterCache.keys().next().value;
+    if (oldest !== undefined) groupRosterCache.delete(oldest);
+  }
+}
+export function getCachedGroupRoster(routeId: string): GroupRoster | null {
+  return groupRosterCache.get(routeId) ?? null;
+}
+
 /** The group's ACTUAL roster from `group_members` — named members plus a
  *  rolled-up anonymous count. Distinct from `Group.participantNames`, which
  *  only reflects poll creators/voters (so a just-approved member who hasn't
@@ -730,17 +752,19 @@ export interface GroupRoster {
  *  an empty roster). In-flight coalesced: the slide-overlay handoff mounts
  *  GroupContent (and /info) twice in quick succession, and both instances
  *  fetch the roster — without coalescing every navigation would fire two
- *  identical /members GETs. */
+ *  identical /members GETs. Every successful resolution also updates
+ *  `groupRosterCache` (see `getCachedGroupRoster`). */
 const groupMembersInFlight = new Map<string, Promise<GroupRoster>>();
 export async function apiGetGroupMembers(
   routeId: string,
 ): Promise<GroupRoster> {
   return coalesced(groupMembersInFlight, routeId, null, async () => {
+    let roster: GroupRoster;
     try {
       const data = await groupFetch<any>(
         `/${encodeURIComponent(routeId)}/members`,
       );
-      return {
+      roster = {
         members: Array.isArray(data?.members)
           ? (data.members as any[]).map((m) => ({
               name: m.name,
@@ -759,10 +783,13 @@ export async function apiGetGroupMembers(
       };
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
-        return EMPTY_ROSTER;
+        roster = EMPTY_ROSTER;
+      } else {
+        throw err;
       }
-      throw err;
     }
+    cacheGroupRoster(routeId, roster);
+    return roster;
   });
 }
 
