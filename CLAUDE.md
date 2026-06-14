@@ -3329,9 +3329,25 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
 > launch if the app has no name, so a fully-nameless app user may re-type). A
 > never-opened-the-app recipient (no bridged browser id) gets "Open WhoeverWants
 > once to vote here." Shared `VoteChoiceButton` + top-level `VotingTarget`
-> extracted so transcript + expanded can't drift. The remaining "Phase 5"
-> richer-ballot half (expanded ranked/time ballots or a WKWebView) stays gated
-> on earning it.
+> extracted so transcript + expanded can't drift.
+> **Phase 5 FIRST INCREMENT — native RANKED-CHOICE expanded ballot** implemented
+> on `claude/imessage-integration-plan-hgt316`: the tapped-bubble summary now
+> lets a recipient RANK a ranked_choice question inline (per-question, so a
+> multi-question poll mixes yes/no + ranked rows). ONE additive server field
+> (`PollSummaryQuestionResponse.options`, surfaced by `_summarize_question` ONLY
+> for ranked_choice with finalized options — null for other types / a ranked
+> poll still in its suggestion phase, which stays read-only; options text only,
+> no metadata) + Swift only (`QuestionSummary.options`, `BubbleVote.rankedChoices`
+> for edit-restore, `submitVote(rankedChoices:)` → `vote_type:"ranked_choice"` +
+> `ranked_choices` through the SAME atomic batch endpoint, STRICT ranking no
+> tiers; `ExtensionModel.ballotRankOrder` working-order + `toggleRank` /
+> `submitRanking`; `BallotQuestionRow.rankedSection` tap-to-rank-with-badges +
+> explicit Submit/Update). NO migration / entitlement / CI / pbxproj change.
+> Transcript inline voting stays yes_no/limited_supply only (a scrolling
+> transcript is the wrong place to build an order). Tests:
+> `server/tests/test_poll_summary.py`. The remaining "Phase 5" halves (expanded
+> TIME/showtime ballots or a WKWebView for every-type-at-once) stay gated on
+> earning it.
 > Owner decisions: ship additive (degraded no-app fallback OK); embed a
 > poll-scoped invite token for private-group bubbles (auto-join); v1 inline
 > voting = yes_no + limited_supply only; pursue compose-in-Messages keeping

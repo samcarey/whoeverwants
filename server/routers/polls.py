@@ -1488,6 +1488,12 @@ def _summarize_question(
         text = f"{n} response{'' if n == 1 else 's'}"
     else:
         text = "No votes yet"
+    # Surface the candidate list ONLY for ranked_choice with finalized options
+    # — the iMessage expanded ballot ranks them (Phase 5). A ranked poll still
+    # in its suggestion phase has options=None, which the bubble reads as
+    # not-yet-rankable (read-only). Plain text, no metadata.
+    opts = question_row.get("options")
+    options = list(opts) if qtype == "ranked_choice" and opts else None
     return PollSummaryQuestionResponse(
         id=str(question_row["id"]),
         label=_summary_question_label(question_row, multi),
@@ -1498,6 +1504,7 @@ def _summarize_question(
         no_count=results.no_count,
         secured_count=results.secured_count,
         supply_count=results.supply_count,
+        options=options,
     )
 
 

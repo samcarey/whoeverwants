@@ -614,6 +614,12 @@ class PollSummaryQuestionResponse(BaseModel):
     no_count: int | None = None
     secured_count: int | None = None
     supply_count: int | None = None
+    # The candidate list to rank, surfaced ONLY for ranked_choice questions
+    # whose options are finalized (null otherwise, and null for a ranked poll
+    # still in its suggestion phase). Drives the iMessage expanded-view ranked
+    # ballot (docs/imessage-extension-plan.md Phase 5); other surfaces ignore
+    # it. Options text only — no metadata (the bubble renders plain labels).
+    options: list[str] | None = None
 
 
 class PollSummaryResponse(BaseModel):

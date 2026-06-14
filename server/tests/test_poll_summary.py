@@ -124,10 +124,33 @@ class TestPollSummary:
         assert resp.status_code == 201, resp.text
         s_open = _summary(client, poll)
         assert s_open["questions"][0]["result_text"] == "Leading: Thai"
+        # The expanded ranked ballot (Phase 5) needs the candidate list.
+        assert s_open["questions"][0]["options"] == ["Thai", "Sushi"]
         assert close_poll(client, poll).status_code == 200
         s_closed = _summary(client, poll)
         assert s_closed["is_closed"] is True
         assert s_closed["questions"][0]["result_text"] == "Winner: Thai"
+
+    def test_options_only_surfaced_for_ranked_choice(self, client):
+        """`options` rides only ranked_choice questions (the ballot ranks
+        them); yes_no / limited_supply leave it null so the bubble never tries
+        to rank a two-button question."""
+        poll = create_poll(
+            client,
+            questions=[
+                yes_no_question(context="Up for it?"),
+                {
+                    "question_type": "ranked_choice",
+                    "category": "custom",
+                    "context": "Dinner",
+                    "options": ["Thai", "Sushi", "Pizza"],
+                },
+            ],
+        )
+        s = _summary(client, poll)
+        by_type = {q["question_type"]: q for q in s["questions"]}
+        assert by_type["yes_no"]["options"] is None
+        assert by_type["ranked_choice"]["options"] == ["Thai", "Sushi", "Pizza"]
 
     def test_limited_supply_claimed_line(self, client):
         poll = create_poll(

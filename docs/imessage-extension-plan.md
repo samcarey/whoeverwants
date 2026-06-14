@@ -20,8 +20,11 @@
 > ballot** (vote on any yes_no/limited_supply question — including
 > multi-question polls — from the tapped-bubble summary, with in-extension name
 > entry) is now implemented (Swift-only, no server/migration change) — see the
-> "Expanded-view ballot" section.** Owner decisions are resolved (see "Resolved
-> decisions" at the bottom).
+> "Expanded-view ballot" section. Phase 5's FIRST increment — a native
+> RANKED-CHOICE ballot in the expanded view (one additive server field +
+> Swift tap-to-rank UI) — is implemented; the time/showtime + WKWebView halves
+> stay gated. See the Phase 5 section.** Owner decisions are resolved (see
+> "Resolved decisions" at the bottom).
 >
 > **Verdict up front: feasible, and `MSMessageLiveLayout` is the right API** — but
 > this is the project's first *additional Xcode target* (a Messages extension is a
@@ -522,12 +525,52 @@ What landed:
 
 ### Phase 5 — richer surfaces (only if earlier phases earn it)
 
-- Expanded-presentation ballots for ranked/time polls (native), OR a WKWebView in
-  expanded style loading the poll detail page with the session injected via
-  `WKUserScript` (localStorage seed from the App Group identity) — prototype
-  before committing; memory + auth-injection complexity are both real. (This is
-  the remaining half of the original "Phase 4" — the compose half shipped above;
-  this richer-ballot half is still gated on earning it.)
+**Native ranked-choice expanded ballot — SHIPPED, pending device verification.**
+The first Phase 5 increment (owner-greenlit). The expanded summary view's ballot
+(`SummaryView` → `BallotQuestionRow`) now lets a recipient RANK a ranked_choice
+question inline, alongside the existing yes_no/limited_supply rows. Per-question,
+so a multi-question poll can mix a yes/no row and a ranked row. What landed:
+- **Server (one additive field, no migration):** `PollSummaryQuestionResponse`
+  gains `options: list[str] | None`, populated by `_summarize_question`
+  (`routers/polls.py`) ONLY for `ranked_choice` questions with finalized
+  `options` (null for every other type AND for a ranked poll still in its
+  suggestion phase — which therefore stays read-only in the bubble). Options
+  text only, no `options_metadata` (the bubble renders plain labels). Tests:
+  `test_poll_summary.py` (`test_options_only_surfaced_for_ranked_choice` +
+  the ranked-winner test now asserts `options`).
+- **Swift (all in `MessagesViewController.swift`, no entitlement/CI/pbxproj
+  change):** `QuestionSummary.options` parsed from `/summary`; `BubbleVote`
+  gains `rankedChoices` (parsed from the own-vote GET + the POST response) so an
+  edit restores the viewer's prior order; `submitVote` gains a defaulted
+  `rankedChoices:` param sending `vote_type:"ranked_choice"` + `ranked_choices`
+  through the SAME atomic batch endpoint (strict ranking, NO tiers — the bubble
+  is a "simple taps" surface, and the server treats a missing
+  `ranked_choice_tiers` as singleton tiers). `ExtensionModel.isBallotVotable`
+  extends to ranked (open + ≥2 options); `ballotRankOrder` (per-question working
+  order, seeded from the existing vote in `loadBallotVotes`, reset in
+  `showSummary`) drives a tap-to-rank UI (`rankedSection` in `BallotQuestionRow`:
+  tap an option to append it in preference order with its rank badge, tap again
+  to remove) + an explicit Submit/Update button (`submitRanking` — ranking isn't
+  a single tap; edit-not-duplicate + live `SummaryStore.refresh`, mirroring
+  `voteInBallot`). `VotingTarget(questionId, nil, false)` drives the submit
+  spinner + re-tap gate (no collision — a question is ranked XOR
+  limited_supply). Transcript inline voting stays yes_no/limited_supply only
+  (decision C — a scrolling transcript is the wrong place to build up an order).
+- Exit criteria: (CI) green canary build (compiles the ranked ballot). (Owner,
+  device — Simulator works for the inner loop) tapping a bubble for a
+  ranked_choice poll shows the candidate list; tapping options builds a numbered
+  ranking; Submit records the vote + updates the result line; a second pass
+  Updates (doesn't duplicate); a closed or suggestion-phase ranked poll stays
+  read-only; multi-question polls mixing yes/no + ranked show both row types.
+
+**Still gated (not yet earned):**
+- Expanded-presentation ballots for **time/showtime** polls (native) — the
+  availability/preference grid is heavy even in-app; deferred until the bubble
+  proves worth it on device.
+- A **WKWebView** in expanded style loading the poll detail page with the
+  session injected via `WKUserScript` (localStorage seed from the App Group
+  identity) — would unlock every type at once, but prototype before committing;
+  memory + auth-injection complexity are both real.
 
 ## Resolved decisions (owner, June 2026)
 
