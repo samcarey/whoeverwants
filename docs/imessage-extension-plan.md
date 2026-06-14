@@ -9,10 +9,15 @@
 > Phase 1 (share-from-drawer) shipped via #713; Phase 2 (live read-only
 > transcript bubble + the identity-free `/summary` endpoint) shipped via #715;
 > Phase 3 (INLINE VOTING in the transcript — yes_no Yes/No + limited_supply
-> Claim/Decline, identity-gated, edit-not-duplicate) implemented — see the
-> Phase 3 section for what landed and the on-device verification owed. Phase 3
-> is Swift-only: no server / migration / entitlement / CI change.** Owner
-> decisions are resolved (see "Resolved decisions" at the bottom).
+> Claim/Decline, identity-gated, edit-not-duplicate) shipped via #718;
+> Phase 4 COMPOSE-A-POLL-IN-MESSAGES (decision D — a "New poll" composer in the
+> drawer: typed prompt → shared `PollTextParser` → headless create for
+> options/yes-no, "open the app to finish" for category) implemented — see the
+> Phase 4 section for what landed and the on-device verification owed. Phase 4
+> is Swift-only EXCEPT one pbxproj change (the shared `PollTextParser.swift`
+> compiled into the extension target — the documented precedent): no server /
+> migration / entitlement / CI-logic change.** Owner decisions are resolved
+> (see "Resolved decisions" at the bottom).
 >
 > **Verdict up front: feasible, and `MSMessageLiveLayout` is the right API** — but
 > this is the project's first *additional Xcode target* (a Messages extension is a
@@ -394,21 +399,68 @@ atomic batch `POST /api/polls/{id}/votes` + own-vote `GET /api/questions/{id}/vo
   summary, a nameless viewer sees disabled buttons + the hint, and a private-group
   bubble vote joins the voter (poll appears in their app afterward).
 
-### Phase 4 — richer surfaces (only if earlier phases earn it)
+### Phase 4 — compose-a-poll-in-Messages (decision D, SHIPPED, pending device verification)
+
+What landed (Swift in `ios/App/MessagesExtension/MessagesViewController.swift` +
+ONE pbxproj change; **no server / migration / entitlement / CI-logic change**):
+- **The shared `PollTextParser.swift` is now compiled into the extension target**
+  (the documented "pure-Foundation file shared with the App target" precedent —
+  it carries the JS↔Swift parity contract, so a duplicate would rot). Added to
+  the extension's Sources phase idempotently by `scripts/ios/add-messages-extension.rb`
+  (which now finds-or-creates the target, then ensures the parser ref); the
+  committed `project.pbxproj` gains exactly one PBXBuildFile reusing the existing
+  App-target file ref. No new file + no new target → the bundle-id sed count in
+  `ios-build.yml` is unaffected (still app×2 + ext×2), and the parser parity
+  harness (`scripts/ios/test-parser.sh`, compiles the file standalone) is
+  untouched.
+- **"New poll" entry in the drawer** (a row above "Share a poll" in the loaded
+  list AND the primary CTA in the empty state). Tapping it requests `.expanded`
+  (a text field needs the keyboard, only allowed in expanded — never
+  compact/transcript) and shows `ComposeView`: a text field + a LIVE preview of
+  the poll the prompt would make (the same `PollTextParser.decide` the in-app
+  search box's top suggestion uses) + a create button.
+- **options / yes-no → headless create.** `PollAPI.createPoll` mirrors
+  `QuickPollService.createPoll` (POST `/api/polls`, App-Group identity, no bearer
+  bridged → the new poll lands in a PUBLIC group) and returns a `SharablePoll`,
+  whose bubble is inserted into the conversation immediately — the killer demo:
+  make + share a poll without leaving the chat. The created poll's bubble is the
+  same `MSMessageLiveLayout` insert as Phase 1/2 (canonical URL, no invite mint
+  since the group is public).
+- **category → "Open WhoeverWants to finish."** A `.category` poll (restaurant /
+  time / movie / …) can't be finished in a transcript — it needs the form's time
+  windows / suggestion entry / reference location — so the button label changes
+  to "Open WhoeverWants to finish" (announced up front, not a surprise tap) and
+  opens the in-app create form prefilled via the SAME `?create=1&category=…&for=…`
+  deep link Siri's `.category` fallback uses (`PollAPI.createCategoryURL` mirrors
+  `whoeverwantsCreatePollURL`). The in-app create path stays exposed (owner
+  constraint: the composer is additive, never the only way).
+- **iOS 16+ (the parser is gated there).** All New-poll entry points + the
+  `ComposeView`/`ComposePreview` + the create method are behind
+  `#available(iOS 16.0, *)`; iOS 15 users keep the prior empty-state guidance and
+  no composer (additive). The RootView routing puts `#available` as the SOLE
+  condition of its branch so the result builder applies `buildLimitedAvailability`
+  to the iOS-16-only `ComposeView` type.
+- **Identity:** re-checked at create time (name + browserId from the App Group);
+  the New-poll entry only appears once a bridged identity exists (the picker's
+  `.needsApp` state precedes it), so the create's name-gate is defensive. A
+  compose session is preserved across a Messages background/foreground (the
+  `activate` no-URL branch returns early while `composing`), and a bubble tap
+  (selectedMessage) supersedes it.
+- Exit criteria: (CI) green canary build (compiles the parser into the ext +
+  the compose tree). (Owner, device — Simulator works for the inner loop) the
+  drawer shows "New poll", typing "pizza, tacos, or sushi" previews a pick-one
+  and creates+inserts it, a "should we…" prompt makes a yes/no, a "movie for
+  friday" prompt opens the app's create form, and the inserted bubble behaves
+  like any other (live results, Phase 3 inline voting).
+
+### Phase 5 — richer surfaces (only if earlier phases earn it)
 
 - Expanded-presentation ballots for ranked/time polls (native), OR a WKWebView in
   expanded style loading the poll detail page with the session injected via
   `WKUserScript` (localStorage seed from the App Group identity) — prototype
-  before committing; memory + auth-injection complexity are both real.
-- **Compose-a-new-poll inside Messages (decision D — pursue it).** Expanded view
-  text field → `PollTextParser.decide` → headless create (the `QuickPollService`
-  flow) → insert the bubble for the fresh poll. "Create and share a poll without
-  leaving the conversation" is the killer demo. **Constraint (owner): the
-  in-app create path must stay exposed** — the Messages composer is purely
-  additive, never the only way to make a poll. In practice the extension's text
-  field only handles the parser-headless-creatable types (yes_no, options,
-  category-deep-link); anything richer ("Open in WhoeverWants to finish") routes
-  to the in-app create flow, same fork as Siri Phase 3's `.category` deep link.
+  before committing; memory + auth-injection complexity are both real. (This is
+  the remaining half of the original "Phase 4" — the compose half shipped above;
+  this richer-ballot half is still gated on earning it.)
 
 ## Resolved decisions (owner, June 2026)
 

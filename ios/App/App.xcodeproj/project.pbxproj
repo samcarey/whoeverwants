@@ -17,6 +17,7 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		7A0117EA2F1D000000000002 /* PollTextParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0117EA2F1D000000000001 /* PollTextParser.swift */; };
+		AA0CCC64EE32101B84C84830 /* PollTextParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0117EA2F1D000000000001 /* PollTextParser.swift */; };
 		AD37D19D2A5E9E1DB47AB76E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E9ECE4DD63EE9AC4A596887C /* Assets.xcassets */; };
 		AF9FAA69C2F1844B6E71C409 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F554A87FA2F92653C6C17A88 /* Foundation.framework */; };
 		E64315A804417C57E01F45BE /* MessagesViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA00B0D750BEB2329C980CD9 /* MessagesViewController.swift */; };
@@ -272,6 +273,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E64315A804417C57E01F45BE /* MessagesViewController.swift in Sources */,
+				AA0CCC64EE32101B84C84830 /* PollTextParser.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
