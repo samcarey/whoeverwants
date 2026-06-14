@@ -156,7 +156,9 @@ export async function embedTexts(texts: string[]): Promise<number[][] | null> {
 }
 
 // ── Query classification ──────────────────────────────────────────────────────
-const dot = (a: number[], b: number[]) => {
+// Vectors are unit-normalized (pooling: mean, normalize: true), so cosine == dot.
+// Exported so lib/aiSuggestionRank can reuse the one implementation.
+export const cosine = (a: number[], b: number[]): number => {
   let s = 0;
   for (let i = 0; i < a.length; i++) s += a[i] * b[i];
   return s;
@@ -199,7 +201,7 @@ export async function classifyCategory(subject: string): Promise<AiCategory | nu
   let best: AiCategory | null = null;
   for (const [cat, protos] of Object.entries(ready.protoByCat)) {
     let s = -Infinity;
-    for (const pv of protos) s = Math.max(s, dot(embedded, pv));
+    for (const pv of protos) s = Math.max(s, cosine(embedded, pv));
     if (!best || s > best.score) best = { category: cat, score: s };
   }
   const result = best && best.score >= AI_CATEGORY_MIN_SCORE ? best : null;

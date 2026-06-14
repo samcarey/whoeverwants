@@ -445,16 +445,6 @@ def generate_from_history(ctx: HistoryContext) -> list[dict]:
     return filter_and_dedup(raw, ctx.existing_signatures)
 
 
-def generate_suggestions(conn, user_id: str, group_id: str) -> list[dict]:
-    """Convenience for eval/tests: gather history + generate in one call on the
-    given connection. The production background path uses the split
-    gather/generate/store so the slow LLM call doesn't hold a pooled conn."""
-    ctx = gather_history(conn, user_id, group_id)
-    if ctx is None:
-        return []
-    return generate_from_history(ctx)
-
-
 # ── Cache read/write ──────────────────────────────────────────────────────────
 
 

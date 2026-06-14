@@ -9,19 +9,12 @@
 // loaded, error) → the box falls back to server order + token filtering. Nothing
 // here can break the box.
 
-import { embedTexts, isAiCategoryClassifyEnabled } from "./aiCategoryClassify";
+import { cosine, embedTexts, isAiCategoryClassifyEnabled } from "./aiCategoryClassify";
 
 // Candidate (suggestion title) embeddings are cached by text so re-ranking on
 // each keystroke only re-embeds the (changing) query, not the stable candidates.
 const candidateCache = new Map<string, number[]>();
 const CANDIDATE_CACHE_MAX = 300;
-
-// Vectors are unit-normalized, so cosine == dot product.
-function cosine(a: number[], b: number[]): number {
-  let s = 0;
-  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
-  return s;
-}
 
 /**
  * Cosine similarity of `query` to each candidate in `texts`, aligned to `texts`,
