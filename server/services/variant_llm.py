@@ -101,8 +101,13 @@ def _extract_titles(content: str) -> list[str]:
 _MAX_ATTEMPTS = 3
 
 
-def _one_call(base_title: str, want: int, avoid: list[str]) -> list[str]:
-    """One LLM round-trip asking for `want` new yes/no titles. [] on failure."""
+def _one_call(base_title: str, want: int, avoid: list[str]) -> list[str] | None:
+    """One LLM round-trip asking for `want` new yes/no titles.
+
+    Returns the parsed titles on success (possibly `[]` when the model replied
+    but nothing parsed — a flaky-but-up endpoint), or `None` on a HARD failure
+    (HTTP >= 400, connection error, malformed JSON). The caller retries on `[]`
+    but bails on `None`, so a down endpoint isn't hammered for every attempt."""
     user_lines = [f"Original question: {base_title}"]
     if avoid:
         user_lines.append(
@@ -133,12 +138,12 @@ def _one_call(base_title: str, want: int, avoid: list[str]) -> list[str]:
                 resp.status_code,
                 resp.text[:300],
             )
-            return []
+            return None
         data = resp.json()
         content = data["choices"][0]["message"]["content"]
     except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
         log.warning("[variant_llm] generation failed: %s", exc)
-        return []
+        return None
     return _extract_titles(content)
 
 
@@ -162,11 +167,15 @@ def generate_variant_titles(
             break
         # Feed what we already have into `avoid` so the re-ask doesn't repeat it.
         got = _one_call(base_title, remaining, avoid + collected)
+        if got is None:
+            break  # hard failure (endpoint down/erroring) — don't hammer it
         for t in got:
             key = t.lower()
             if key not in blocked:
                 blocked.add(key)
                 collected.append(t)
-        if not got:
-            break  # hard failure — don't burn the remaining attempts
+        # got == [] means the model replied but nothing parsed — a transient
+        # flake on small local models (nous-hermes2). Keep trying the remaining
+        # attempts rather than aborting, so the create-time spawn rarely ends up
+        # empty (it otherwise only retries when someone next votes on the poll).
     return collected[:count]
