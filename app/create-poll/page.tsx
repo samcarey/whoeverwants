@@ -2776,7 +2776,7 @@ export function CreateQuestionContent() {
             // tap: without it, mousedown blurs the input → searchFocused flips
             // false before click, so the ✕ tap would run the + branch.
             onMouseDown={(e) => e.preventDefault()}
-            onClick={searchFocused ? dismissSearch : () => chooseSuggestion({ category: 'custom' })}
+            onClick={searchFocused ? dismissSearch : () => chooseSuggestion({ category: isExplore ? 'yes_no' : 'custom' })}
             aria-label={searchFocused ? 'Cancel' : 'New poll'}
             disabled={isLoading}
             className="w-[42.24px] h-[42.24px] shrink-0 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 shadow-lg text-gray-500 dark:text-gray-400 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"
