@@ -111,12 +111,12 @@ export function ExplorePollCard({
        *  per-row tick at (indent-0.5) would sit at a different x each
        *  generation and never connect. */}
       {indent > 0 &&
-        Array.from({ length: indent }, (_, i) => i + 1).map((level) => (
+        Array.from({ length: indent }, (_, i) => (
           <span
-            key={level}
+            key={i}
             aria-hidden
             className="absolute inset-y-0 w-px bg-gray-200 dark:bg-gray-700"
-            style={{ left: `calc(0.9rem + ${(level - 0.5) * INDENT_STEP_REM}rem)` }}
+            style={{ left: `calc(0.9rem + ${(i + 0.5) * INDENT_STEP_REM}rem)` }}
           />
         ))}
       <div className="flex items-baseline gap-2">
