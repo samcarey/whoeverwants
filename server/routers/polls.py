@@ -48,6 +48,7 @@ from services.contacts import (
 )
 from services.invites import issue_invite
 from services.groups import (
+    EXPLORE_PRIVACY,
     NIL_UUID,
     _is_uuid_like,
     add_group_admin,
@@ -2098,7 +2099,7 @@ def submit_poll_votes(
     # and is a no-op otherwise; gate the scheduling on the cheap flags so a
     # normal-group vote never queues the task.
     if (
-        poll_row.get("group_privacy") == "explore"
+        poll_row.get("group_privacy") == EXPLORE_PRIVACY
         and not poll_row.get("variant_spawned")
     ):
         background_tasks.add_task(spawn_variants, poll_id)
