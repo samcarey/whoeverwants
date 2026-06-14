@@ -115,6 +115,28 @@ def test_filter_caps_to_max():
     assert len(out) == poll_suggest.MAX_SUGGESTIONS
 
 
+# ── _poll_line ─────────────────────────────────────────────────────────────────
+
+
+def test_poll_line_prefers_prompt_for_yes_no():
+    # yes_no's real prompt lives in details (title is often the generic "Question?").
+    line = poll_suggest._poll_line(
+        {"question_type": "yes_no", "title": "Question?", "details": "Standup at 9?"}
+    )
+    assert "Standup at 9?" in line and "[Yes/No]" in line
+    # Other types show the title (auto-title) + options.
+    line2 = poll_suggest._poll_line(
+        {
+            "question_type": "ranked_choice",
+            "category": "restaurant",
+            "title": "Restaurant for lunch",
+            "details": "lunch",
+            "options": ["Chipotle", "Sweetgreen"],
+        }
+    )
+    assert "[Restaurant]" in line2 and "Chipotle" in line2
+
+
 # ── _extract_json_array ────────────────────────────────────────────────────────
 
 

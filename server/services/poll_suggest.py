@@ -123,7 +123,13 @@ def _poll_line(row: dict) -> str:
         label = "Limited Supply"
     title = (row.get("title") or "").strip()
     details = (row.get("details") or "").strip()
-    subject = title or details or "(untitled)"
+    # For yes_no / limited_supply the per-question `details` IS the real prompt /
+    # item (the generic title is often just "Question?"), so prefer it; for other
+    # types the title is the meaningful auto-title and details is the "for X".
+    if qtype in ("yes_no", "limited_supply"):
+        subject = details or title or "(untitled)"
+    else:
+        subject = title or details or "(untitled)"
     line = f'- [{label}] "{subject[:80]}"'
     opts = row.get("options")
     if isinstance(opts, list) and opts:
