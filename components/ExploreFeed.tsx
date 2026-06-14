@@ -3,17 +3,18 @@
 /**
  * Shared rendering for the /explore feed's poll list, used by BOTH the page
  * (`app/explore/page.tsx`) and the swipe-back snapshot (`ExploreBackdropHost`).
- * Each poll is an edge-to-edge rectangle with a bottom divider — a trimmed
- * version of the group card (icon + title + muted metadata). Tapping slides to
- * the poll's detail page; the detail page is marked as explore-origin so its
- * back + swipe return to /explore (see lib/pollDetailOrigin).
+ * Each poll is a compact edge-to-edge row with a bottom divider: vote count +
+ * title only (no icon, no metadata). The title is a strong color until this
+ * device opens the poll, then faded. Tapping slides to the poll's detail page;
+ * the detail page is marked as explore-origin so its back + swipe return to
+ * /explore (see lib/pollDetailOrigin).
  */
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Poll, Question } from "@/lib/types";
-import { getCategoryIcon, relativeTime } from "@/lib/questionListUtils";
 import { slideToPollDetail } from "@/lib/slideOverlay";
 import { markPollDetailFromExplore } from "@/lib/pollDetailOrigin";
+import { getPollViewedAt, POLL_VIEWED_CHANGED_EVENT } from "@/lib/unread";
 
 // Mirrors ROW_DIVIDER_CLASS in GroupCardItem (inlined to keep that heavy
 // "use client" component module out of the /explore bundle).
@@ -31,10 +32,24 @@ export function ExplorePollCard({
   // The poll's OWN title (the wrapper-level question title), NOT poll.title —
   // the latter resolves to the explore group's "Explore" name override.
   const title = anchor?.title || poll.title || "Poll";
-  const icon = anchor ? getCategoryIcon(anchor) : "🗳️";
   const groupRoute = poll.group_short_id ?? poll.group_id ?? null;
   const pollShort = poll.short_id ?? poll.id;
-  const views = poll.viewed_total ?? 0;
+
+  // Vote count = distinct voters (named, with multiplicity) + anonymous.
+  // Inlined rather than importing namedVoterCount from VoterList so the heavy
+  // VoterList module stays out of the /explore bundle (see ROW_DIVIDER note).
+  const votes = useMemo(() => {
+    const counts = poll.voter_name_counts;
+    const named = (poll.voter_names ?? []).reduce(
+      (sum, n) => sum + (counts?.[n] ?? 1),
+      0,
+    );
+    return named + (poll.anonymous_count ?? 0);
+  }, [poll.voter_names, poll.voter_name_counts, poll.anonymous_count]);
+
+  // Opened = this device has viewed the poll detail page. Strong title when
+  // unopened, faded once opened. Re-renders via the tick from ExploreFeedList.
+  const opened = getPollViewedAt(poll.id) > 0;
 
   const onTap = useCallback(() => {
     if (!groupRoute) return;
@@ -50,23 +65,24 @@ export function ExplorePollCard({
       onClick={interactive ? onTap : undefined}
       tabIndex={interactive ? 0 : -1}
       aria-hidden={interactive ? undefined : true}
-      className={`block w-full text-left pl-[0.9rem] pr-[0.65rem] pt-3 pb-2 border-b ${EXPLORE_ROW_DIVIDER} ${interactive ? "active:bg-gray-100 dark:active:bg-gray-800/60" : "pointer-events-none"}`}
+      className={`block w-full text-left pl-[0.9rem] pr-[0.65rem] py-1.5 border-b ${EXPLORE_ROW_DIVIDER} ${interactive ? "active:bg-gray-100 dark:active:bg-gray-800/60" : "pointer-events-none"}`}
     >
-      <div className="flex items-start gap-2">
-        <span className="shrink-0 text-lg leading-tight" aria-hidden>{icon}</span>
-        <h3 className="min-w-0 flex-1 text-lg font-medium leading-tight break-words">
+      <div className="flex items-baseline gap-2">
+        <span
+          className="shrink-0 tabular-nums text-sm font-semibold text-gray-400 dark:text-gray-500"
+          aria-label={`${votes} ${votes === 1 ? "vote" : "votes"}`}
+        >
+          {votes}
+        </span>
+        <h3
+          className={`min-w-0 flex-1 text-base leading-snug break-words ${
+            opened
+              ? "font-normal text-gray-400 dark:text-gray-500"
+              : "font-medium text-gray-900 dark:text-gray-100"
+          }`}
+        >
           {title}
         </h3>
-        <svg className="shrink-0 w-4 h-4 mt-1 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      </div>
-      <div className="mt-1 flex items-baseline gap-1 text-xs text-gray-400 dark:text-gray-500">
-        {poll.creator_name && <span className="truncate shrink min-w-0">{poll.creator_name}</span>}
-        {poll.creator_name && <span aria-hidden>·</span>}
-        <span className="shrink-0">{relativeTime(poll.created_at)}</span>
-        <span aria-hidden>·</span>
-        <span className="shrink-0">{views} {views === 1 ? "View" : "Views"}</span>
       </div>
     </button>
   );
@@ -83,6 +99,15 @@ export function ExploreFeedList({
   polls: Poll[];
   interactive?: boolean;
 }) {
+  // Bump on every poll-view so the cards' opened/faded title state re-renders
+  // when returning from a poll detail page (markPollViewed fires the event).
+  const [, setViewedTick] = useState(0);
+  useEffect(() => {
+    const onViewed = () => setViewedTick((t) => t + 1);
+    window.addEventListener(POLL_VIEWED_CHANGED_EVENT, onViewed);
+    return () => window.removeEventListener(POLL_VIEWED_CHANGED_EVENT, onViewed);
+  }, []);
+
   const sorted = useMemo(
     () => [...polls].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
