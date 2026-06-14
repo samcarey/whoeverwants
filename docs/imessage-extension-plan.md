@@ -16,8 +16,12 @@
 > Phase 4 section for what landed and the on-device verification owed. Phase 4
 > is Swift-only EXCEPT one pbxproj change (the shared `PollTextParser.swift`
 > compiled into the extension target — the documented precedent): no server /
-> migration / entitlement / CI-logic change.** Owner decisions are resolved
-> (see "Resolved decisions" at the bottom).
+> migration / entitlement / CI-logic change. The deferred **expanded-view
+> ballot** (vote on any yes_no/limited_supply question — including
+> multi-question polls — from the tapped-bubble summary, with in-extension name
+> entry) is now implemented (Swift-only, no server/migration change) — see the
+> "Expanded-view ballot" section.** Owner decisions are resolved (see "Resolved
+> decisions" at the bottom).
 >
 > **Verdict up front: feasible, and `MSMessageLiveLayout` is the right API** — but
 > this is the project's first *additional Xcode target* (a Messages extension is a
@@ -387,10 +391,12 @@ atomic batch `POST /api/polls/{id}/votes` + own-vote `GET /api/questions/{id}/vo
   adds chat noise and correctness never depends on it (other viewers' bubbles
   refresh on their own ≤20s SummaryStore TTL / re-render; the server is the
   source of truth).
-- **Deferred (not in this phase):** voting in the EXPANDED summary view (it stays
-  read-only summary + Open/Copy — multi-question + the nameless "set my name here"
-  flow via `POST /api/auth/account/name` route through Open-in-app for now);
-  multi-question inline voting; the name-entry-in-extension account mint.
+- **Deferred (not in this phase) — NOW SHIPPED in the "Expanded-view ballot"
+  section below:** voting in the EXPANDED summary view, multi-question inline
+  voting, and in-extension name entry for nameless recipients. (The one piece
+  still NOT done: a true account *mint* via `POST /api/auth/account/name` — the
+  expanded ballot uses the typed name as `voter_name` + remembers it in the App
+  Group instead; see that section for why.)
 - Exit criteria: (CI) green canary build (compiles the interactive tree). (Owner,
   device — Simulator works for the inner loop) a single-question yes_no/limited_
   supply bubble shows live vote buttons, tapping Yes/No (or Claim/Decline) records
@@ -452,6 +458,67 @@ ONE pbxproj change; **no server / migration / entitlement / CI-logic change**):
   and creates+inserts it, a "should we…" prompt makes a yes/no, a "movie for
   friday" prompt opens the app's create form, and the inserted bubble behaves
   like any other (live results, Phase 3 inline voting).
+
+### Expanded-view ballot (deferred Phase 3/4 item, SHIPPED, pending device verification)
+
+Make the tapped-bubble expanded summary (`SummaryView`) an INTERACTIVE ballot —
+the natural home for the things the transcript can't do, because `.expanded` is
+the one presentation style that takes keyboard input. All Swift in
+`ios/App/MessagesExtension/MessagesViewController.swift`; **no server, migration,
+entitlement, CI, or pbxproj change** (reuses `/summary`, the atomic batch
+`POST /api/polls/{id}/votes`, the own-vote `GET /api/questions/{id}/votes`, and
+the Phase 1 App-Group identity).
+
+What landed:
+- **Per-question vote rows in the summary.** Each open `yes_no` (Yes / No) or
+  `limited_supply` (Claim / No thanks) question renders inline vote buttons
+  (decision C — ranked / time / showtime stay read-only result lines + "Open in
+  app"). Unlike the transcript's single-question gate
+  (`PollSummary.inlineVotableQuestion`), this is **per-question**
+  (`ExtensionModel.isBallotVotable`), so a **multi-question** poll gets a vote
+  row for each tap-votable question, each submitted independently through the
+  batch endpoint (the endpoint already supports per-item subsets — the in-app
+  wrapper stages subsets too).
+- **In-extension name entry.** A recipient who has USED the app (browser id
+  bridged) but never set a name gets a `TextField` (the keyboard works in
+  `.expanded`); the typed name becomes the vote's `voter_name`. A recipient who
+  has NEVER opened the app (no bridged browser id) can't attribute a vote, so the
+  buttons disable under "Open WhoeverWants once to vote here." When a bridged
+  name exists, no field shows and the buttons are live directly.
+- **NO account mint — typed name is `voter_name` + remembered in the App Group.**
+  Deliberately NOT calling `POST /api/auth/account/name`: that endpoint, for a
+  bearer-less caller (the extension never bridges the bearer), ALWAYS routes to
+  `create_name_only_account`, which mints a NEW account and re-points the browser
+  via `link_browser_to_user` — orphaning any existing browser-tied account (no
+  merge on that path). So instead the typed name rides the vote as `voter_name`
+  (exactly how anonymous web voting attributes), and `BridgedIdentity.rememberName`
+  writes `display_name` into the App Group so the next bubble/transcript vote on
+  this device doesn't re-prompt. Caveat: the app's `NativeIdentitySync` clears
+  that key on next launch if the app itself has no name set, so a fully-nameless
+  app user may have to re-type later — accepted for v1. (A clean account-set would
+  need a bearer-less "set name on the browser's existing-or-new account without
+  duplicating" server path, which doesn't exist yet — out of scope.)
+- **Edit-not-duplicate + live refresh, mirroring the transcript.** On load, the
+  ballot fetches the viewer's own vote per votable question (concurrent
+  `withTaskGroup`, only when a browser id is bridged) → highlights current
+  choices + remembers `vote_id` for edits. A vote force-refreshes the summary
+  (`SummaryStore.refresh`) so the read-only result lines + respondent count
+  update at once. `ballotVoting: VotingTarget?` drives the per-button spinner +
+  re-tap gate; a transient failure leaves the prior ballot untouched.
+- **Shared `VoteChoiceButton`.** The tuned pill (selected tint/outline, in-flight
+  spinner, disabled gate) was extracted from the transcript's `VoteButtonRow` so
+  the transcript + expanded ballot can't drift; `VotingTarget` was lifted to a
+  top-level struct shared by both. State lives on `ExtensionModel`
+  (`ballotVotes` / `ballotVoting` / `ballotName`), reset + name-seeded in
+  `showSummary`.
+- **The sender reaches it too** — tapping their own sent bubble opens the same
+  summary, so the composer→share→vote loop closes without leaving Messages.
+- Exit criteria: (CI) green canary build. (Owner, device — Simulator works for
+  the inner loop) tapping a bubble for a multi-question yes_no/limited_supply
+  poll shows a vote row per question; voting updates counts in place; a second
+  tap edits (doesn't duplicate); a nameless-but-app-used recipient can type a
+  name and vote; a never-opened-the-app recipient sees the "open once" guidance;
+  ranked/time questions stay read-only with Open-in-app.
 
 ### Phase 5 — richer surfaces (only if earlier phases earn it)
 
