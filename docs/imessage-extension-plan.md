@@ -22,8 +22,12 @@
 > entry) is now implemented (Swift-only, no server/migration change) — see the
 > "Expanded-view ballot" section. Phase 5's FIRST increment — a native
 > RANKED-CHOICE ballot in the expanded view (one additive server field +
-> Swift tap-to-rank UI) — is implemented; the time/showtime + WKWebView halves
-> stay gated. See the Phase 5 section.** Owner decisions are resolved (see
+> Swift tap-to-rank UI) — is implemented; the SECOND increment — a native
+> TIME/SHOWTIME want/neutral/can't ballot in the expanded view (one more
+> additive `slots` field + Swift tap-to-cycle UI) — is now implemented too, so
+> the expanded view covers native voting for every type except a
+> still-collecting-availability time poll. Only the WKWebView half stays gated.
+> See the Phase 5 section.** Owner decisions are resolved (see
 > "Resolved decisions" at the bottom).
 >
 > **Verdict up front: feasible, and `MSMessageLiveLayout` is the right API** — but
@@ -563,10 +567,53 @@ so a multi-question poll can mix a yes/no row and a ranked row. What landed:
   Updates (doesn't duplicate); a closed or suggestion-phase ranked poll stays
   read-only; multi-question polls mixing yes/no + ranked show both row types.
 
+**Native time/showtime expanded ballot — SHIPPED, pending device verification.**
+The second Phase 5 increment (owner-greenlit). The expanded summary's ballot now
+lets a recipient mark **want / neutral / can't** on a finalized `time` or
+`showtime` question, alongside the yes_no/limited_supply/ranked rows — so the
+expanded view now covers native voting for EVERY question type except a
+still-collecting-availability time poll (read-only by design). Per-question, so a
+multi-question poll mixes any of the row types. What landed:
+- **Server (one additive field, no migration):** `PollSummaryQuestionResponse`
+  gains `slots: list[PollSummarySlot] | None` (`PollSummarySlot = {key, label}`),
+  populated by `_summarize_question` (`routers/polls.py`) ONLY for finalized
+  `time` / `showtime` questions — null for every other type, for a time poll
+  still collecting availability (`options=None` → read-only), and for a cancelled
+  "event's off" poll. `key` is the `liked_slots`/`disliked_slots` payload value;
+  `label` is `_format_slot_label(key)` server-rendered (the Swift slot-label
+  mirror was deleted in Phase 2, so the label MUST come from the server). A new
+  `slots` field — NOT reusing `options` — because a slot's display label differs
+  from its vote-payload key (ranked options are both). Tests:
+  `test_poll_summary.py::TestSummarySlots`.
+- **Swift (all in `MessagesViewController.swift`, no entitlement/CI/pbxproj
+  change):** `QuestionSummary.slots` (parsed from `/summary` into a `SlotSummary
+  {key,label}`); `BubbleVote` gains `likedSlots`/`dislikedSlots` (restore the
+  viewer's marks on edit) PLUS opaque `voterDayTimeWindows`/`voterDuration`/
+  `voterMinParticipants` (a `[[String:Any]]`/`[String:Any]`/`Int` passthrough —
+  the server DIRECT-WRITES these on a time edit, NOT COALESCE, so a preference
+  edit MUST re-send the voter's stored availability or it clobbers it + the
+  winner's slot-availability headcount). `submitVote` gains defaulted
+  `likedSlots`/`dislikedSlots`/availability params sending `vote_type:"time"`/
+  `"showtime"` through the SAME atomic batch endpoint. A shared
+  `BubbleVote.parse(row)` factory now backs both the own-vote GET and the POST
+  response (they share the VoteResponse shape) so the parse can't drift.
+  `ExtensionModel.isBallotVotable` extends to `time`/`showtime` (open + ≥1 slot);
+  `ballotSlots` (questionId → slotKey → `.like`/`.dislike`, absent = neutral;
+  seeded from the existing vote in `loadBallotVotes`, reset in `showSummary`)
+  drives a tap-to-cycle UI (`slotSection` in `BallotQuestionRow`: tap a slot to
+  cycle neutral → want → can't, 👍/👎 indicator) + an explicit Submit/Update
+  (`submitSlots` — preferences aren't a single tap; edit-not-duplicate + live
+  `SummaryStore.refresh`). Transcript inline voting stays yes_no/limited_supply
+  only (decision C — a scrolling transcript is the wrong place for a slot grid).
+- Exit criteria: (CI) green canary build (compiles the slot ballot). (Owner,
+  device — Simulator works for the inner loop) tapping a bubble for a finalized
+  time / showtime poll shows the candidate slots; tapping cycles want/can't/skip;
+  Submit records the vote + updates the "Leading:" line; a second pass Updates
+  (doesn't duplicate) AND preserves any in-app-submitted availability; a time
+  poll still collecting availability stays read-only; multi-question polls mixing
+  types show each row.
+
 **Still gated (not yet earned):**
-- Expanded-presentation ballots for **time/showtime** polls (native) — the
-  availability/preference grid is heavy even in-app; deferred until the bubble
-  proves worth it on device.
 - A **WKWebView** in expanded style loading the poll detail page with the
   session injected via `WKUserScript` (localStorage seed from the App Group
   identity) — would unlock every type at once, but prototype before committing;

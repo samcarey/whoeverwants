@@ -207,7 +207,26 @@ struct QuestionSummary: Identifiable {
     // surfaces it only for ranked_choice with finalized options; nil for
     // every other type and for a ranked poll still in its suggestion phase.
     let options: [String]?
+    // Candidate slots for the expanded time/showtime want/neutral/can't ballot
+    // (Phase 5) — server surfaces them (key + friendly label) only for finalized
+    // time / showtime questions; nil for every other type, for a time poll still
+    // collecting availability, and for a cancelled event.
+    let slots: [SlotSummary]?
 }
+
+// A time/showtime candidate slot: `key` is the liked_slots/disliked_slots
+// payload value, `label` is the server-rendered friendly form the bubble shows.
+struct SlotSummary: Identifiable {
+    let key: String
+    let label: String
+    var id: String { key }
+}
+
+// A slot's want/can't mark in the expanded ballot. Absent = neutral; tapping a
+// slot cycles neutral → want → can't → neutral (mirrors the web TimeSlotBubbles
+// / ShowtimeBubbles tri-state). like → liked_slots ("want"), dislike →
+// disliked_slots ("can't attend").
+enum SlotChoice: Equatable { case like, dislike }
 
 struct PollSummary {
     let pollId: String        // POST target for inline votes (Phase 3)
@@ -252,6 +271,38 @@ struct BubbleVote {
     // The viewer's existing ranking, so the expanded ranked ballot (Phase 5)
     // restores their order on edit. nil for non-ranked votes.
     let rankedChoices: [String]?
+    // The viewer's existing time/showtime marks, so the want/can't ballot
+    // restores them on edit. Raw arrays (NOT nonEmpty'd) — an empty array is a
+    // meaningful "marked nothing" state, distinct from nil = no slot vote.
+    let likedSlots: [String]?
+    let dislikedSlots: [String]?
+    // The voter's in-app time availability, captured opaquely so a preference
+    // EDIT from the bubble re-sends it verbatim — the server direct-writes these
+    // columns on a time edit (NOT COALESCE), so omitting them clobbers the
+    // voter's availability and the winner's slot-availability headcount. nil for
+    // showtime and for a bubble-only voter who never submitted availability.
+    let voterDayTimeWindows: [[String: Any]]?
+    let voterDuration: [String: Any]?
+    let voterMinParticipants: Int?
+}
+
+extension BubbleVote {
+    // Single parser for a VoteResponse-shaped row (own-vote GET + batch POST
+    // both return this shape) so the two callsites can't drift.
+    static func parse(_ row: [String: Any]) -> BubbleVote? {
+        guard let vid = PollAPI.nonEmpty(row["id"] as? String) else { return nil }
+        return BubbleVote(
+            voteId: vid,
+            yesNoChoice: PollAPI.nonEmpty(row["yes_no_choice"] as? String),
+            isAbstain: (row["is_abstain"] as? Bool) ?? false,
+            rankedChoices: PollAPI.nonEmpty(row["ranked_choices"] as? [String]),
+            likedSlots: row["liked_slots"] as? [String],
+            dislikedSlots: row["disliked_slots"] as? [String],
+            voterDayTimeWindows: row["voter_day_time_windows"] as? [[String: Any]],
+            voterDuration: row["voter_duration"] as? [String: Any],
+            voterMinParticipants: row["voter_min_participants"] as? Int
+        )
+    }
 }
 
 // The exact choice being submitted — drives the spinner on the SPECIFIC tapped
@@ -404,6 +455,10 @@ private enum PollAPI {
         }
         let questions: [QuestionSummary] = ((obj["questions"] as? [[String: Any]]) ?? []).compactMap { q in
             guard let qid = nonEmpty(q["id"] as? String) else { return nil }
+            let slots = (q["slots"] as? [[String: Any]])?.compactMap { s -> SlotSummary? in
+                guard let key = nonEmpty(s["key"] as? String) else { return nil }
+                return SlotSummary(key: key, label: nonEmpty(s["label"] as? String) ?? key)
+            }
             return QuestionSummary(
                 id: qid,
                 label: nonEmpty(q["label"] as? String),
@@ -411,7 +466,8 @@ private enum PollAPI {
                 resultText: nonEmpty(q["result_text"] as? String),
                 yesCount: q["yes_count"] as? Int,
                 noCount: q["no_count"] as? Int,
-                options: nonEmpty(q["options"] as? [String])
+                options: nonEmpty(q["options"] as? [String]),
+                slots: (slots?.isEmpty ?? true) ? nil : slots
             )
         }
         return PollSummary(
@@ -435,6 +491,9 @@ private enum PollAPI {
     static func submitVote(
         pollId: String, questionId: String, voteId: String?, voteType: String,
         yesNoChoice: String?, isAbstain: Bool, rankedChoices: [String]? = nil,
+        likedSlots: [String]? = nil, dislikedSlots: [String]? = nil,
+        voterDayTimeWindows: [[String: Any]]? = nil, voterDuration: [String: Any]? = nil,
+        voterMinParticipants: Int? = nil,
         name: String, browserId: String
     ) async throws -> BubbleVote {
         guard let url = URL(string: apiBase + "/api/polls/\(pollId)/votes") else { throw URLError(.badURL) }
@@ -449,21 +508,23 @@ private enum PollAPI {
         // express them); the server treats a missing ranked_choice_tiers as
         // singleton tiers from this flat list.
         if let ranked = rankedChoices { item["ranked_choices"] = ranked }
+        // Time/showtime want/can't. Re-send the captured availability on a time
+        // edit so the server's direct-write doesn't NULL it (see BubbleVote).
+        if let liked = likedSlots { item["liked_slots"] = liked }
+        if let disliked = dislikedSlots { item["disliked_slots"] = disliked }
+        if let w = voterDayTimeWindows { item["voter_day_time_windows"] = w }
+        if let d = voterDuration { item["voter_duration"] = d }
+        if let m = voterMinParticipants { item["voter_min_participants"] = m }
         let body: [String: Any] = ["voter_name": name, "items": [item]]
         let request = jsonRequest(url: url, method: "POST", browserId: browserId, body: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
               let row = arr.first(where: { ($0["question_id"] as? String) == questionId }) ?? arr.first,
-              let vid = nonEmpty(row["id"] as? String) else {
+              let vote = BubbleVote.parse(row) else {
             throw URLError(.badServerResponse)
         }
-        return BubbleVote(
-            voteId: vid,
-            yesNoChoice: nonEmpty(row["yes_no_choice"] as? String),
-            isAbstain: (row["is_abstain"] as? Bool) ?? false,
-            rankedChoices: nonEmpty(row["ranked_choices"] as? [String])
-        )
+        return vote
     }
 
     // The caller's OWN vote on a question (GET /api/questions/{id}/votes is
@@ -477,15 +538,10 @@ private enum PollAPI {
                 for: jsonRequest(url: url, method: "GET", browserId: browserId)),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-              let row = arr.last, let vid = nonEmpty(row["id"] as? String) else {
+              let row = arr.last else {
             return nil
         }
-        return BubbleVote(
-            voteId: vid,
-            yesNoChoice: nonEmpty(row["yes_no_choice"] as? String),
-            isAbstain: (row["is_abstain"] as? Bool) ?? false,
-            rankedChoices: nonEmpty(row["ranked_choices"] as? [String])
-        )
+        return BubbleVote.parse(row)
     }
 
     // Phase 4 — headless create from the in-Messages composer. Mirrors
@@ -670,6 +726,11 @@ final class ExtensionModel: ObservableObject {
     // edit starts from their prior order. Submitted explicitly (ranking isn't a
     // single tap), unlike yes_no/limited_supply which submit on tap.
     @Published var ballotRankOrder: [String: [String]] = [:]
+    // Per-question want/can't marks for the expanded time/showtime ballot
+    // (Phase 5). questionId → slotKey → choice (absent = neutral). Seeded from
+    // the viewer's existing liked/disliked on load; submitted explicitly
+    // (preferences aren't a single tap), like the ranked ballot.
+    @Published var ballotSlots: [String: [String: SlotChoice]] = [:]
 
     weak var host: MessagesViewController?
 
@@ -769,6 +830,7 @@ final class ExtensionModel: ObservableObject {
         ballotVotes = [:]
         ballotVoting = nil
         ballotRankOrder = [:]
+        ballotSlots = [:]
         ballotName = BridgedIdentity.load()?.name ?? ""
         Task {
             do {
@@ -808,6 +870,9 @@ final class ExtensionModel: ObservableObject {
         switch q.type {
         case "yes_no", "limited_supply": return true
         case "ranked_choice": return (q.options?.count ?? 0) >= 2
+        // Finalized time/showtime → tri-state want/can't over the slots. A time
+        // poll still collecting availability has no slots (nil) → read-only.
+        case "time", "showtime": return (q.slots?.count ?? 0) >= 1
         default: return false
         }
     }
@@ -826,13 +891,23 @@ final class ExtensionModel: ObservableObject {
             for await (qid, vote) in group {
                 if let vote = vote {
                     ballotVotes[qid] = vote
+                    let q = summary.questions.first(where: { $0.id == qid })
                     // Seed the ranked ballot's working order from the existing
                     // vote (filtered to options still on the ballot) so an edit
                     // starts from the viewer's prior ranking.
-                    if let ranked = vote.rankedChoices,
-                       let opts = summary.questions.first(where: { $0.id == qid })?.options {
+                    if let ranked = vote.rankedChoices, let opts = q?.options {
                         let valid = Set(opts)
                         ballotRankOrder[qid] = ranked.filter { valid.contains($0) }
+                    }
+                    // Seed the time/showtime marks from the existing liked/disliked
+                    // (filtered to slots still on the ballot), restoring the
+                    // viewer's want/can't on edit.
+                    if let slots = q?.slots {
+                        let valid = Set(slots.map { $0.key })
+                        var marks: [String: SlotChoice] = [:]
+                        for k in (vote.likedSlots ?? []) where valid.contains(k) { marks[k] = .like }
+                        for k in (vote.dislikedSlots ?? []) where valid.contains(k) { marks[k] = .dislike }
+                        if !marks.isEmpty { ballotSlots[qid] = marks }
                     }
                 }
             }
@@ -932,6 +1007,73 @@ final class ExtensionModel: ObservableObject {
                 }
             } catch {
                 // Keep the prior ranking; re-submit re-enables via the defer.
+            }
+        }
+    }
+
+    // Cycle a slot's mark in the working time/showtime ballot (Phase 5):
+    // neutral → want → can't → neutral (mirrors the web tri-state). No-op while
+    // a submit is in flight.
+    func cycleSlot(questionId: String, slotKey: String) {
+        guard ballotVoting == nil else { return }
+        var marks = ballotSlots[questionId] ?? [:]
+        switch marks[slotKey] {
+        case nil: marks[slotKey] = .like
+        case .like: marks[slotKey] = .dislike
+        case .dislike: marks[slotKey] = nil
+        }
+        ballotSlots[questionId] = marks
+    }
+
+    // Submit the working want/can't marks through the same atomic batch endpoint
+    // (vote_type "time"/"showtime"; liked_slots = want, disliked_slots = can't).
+    // Edits when a prior vote exists (no duplicate); no-op when nothing is marked
+    // or the marks are unchanged. On a TIME edit, re-sends the captured
+    // availability so the server's direct-write doesn't NULL it (see BubbleVote).
+    // Mirrors submitRanking's gating + live refresh.
+    func submitSlots(question: QuestionSummary, poll: PollSummary) {
+        guard ballotVoting == nil else { return }
+        let name = ballotName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let marks = ballotSlots[question.id] ?? [:]
+        let liked = marks.filter { $0.value == .like }.map { $0.key }.sorted()
+        let disliked = marks.filter { $0.value == .dislike }.map { $0.key }.sorted()
+        guard !name.isEmpty, !(liked.isEmpty && disliked.isEmpty),
+              let browserId = BridgedIdentity.browserIdUnchecked() else { return }
+        if let mine = ballotVotes[question.id],
+           Set(mine.likedSlots ?? []) == Set(liked),
+           Set(mine.dislikedSlots ?? []) == Set(disliked) {
+            return
+        }
+        ballotVoting = VotingTarget(questionId: question.id, yesNoChoice: nil, isAbstain: false)
+        BridgedIdentity.rememberName(name)
+        Task {
+            defer { ballotVoting = nil }
+            do {
+                let existing = ballotVotes[question.id]
+                let isTime = question.type == "time"
+                let submitted = try await PollAPI.submitVote(
+                    pollId: poll.pollId,
+                    questionId: question.id,
+                    voteId: existing?.voteId,
+                    voteType: question.type,
+                    yesNoChoice: nil,
+                    isAbstain: false,
+                    likedSlots: liked,
+                    dislikedSlots: disliked,
+                    voterDayTimeWindows: isTime ? existing?.voterDayTimeWindows : nil,
+                    voterDuration: isTime ? existing?.voterDuration : nil,
+                    voterMinParticipants: isTime ? existing?.voterMinParticipants : nil,
+                    name: name,
+                    browserId: browserId
+                )
+                ballotVotes[question.id] = submitted
+                if case .loaded(_, let url)? = summary,
+                   let short = PollAPI.pollShortId(fromMessageURL: url),
+                   let fresh = try? await SummaryStore.shared.refresh(shortId: short) {
+                    summary = .loaded(fresh, url)
+                }
+            } catch {
+                // Keep the prior marks; re-submit re-enables via the defer.
             }
         }
     }
@@ -1623,6 +1765,8 @@ private struct BallotQuestionRow: View {
             if ExtensionModel.isBallotVotable(question, poll: poll) {
                 if question.type == "ranked_choice" {
                     rankedSection
+                } else if question.type == "time" || question.type == "showtime" {
+                    slotSection
                 } else {
                     HStack(spacing: 8) {
                         if question.type == "yes_no" {
@@ -1700,6 +1844,67 @@ private struct BallotQuestionRow: View {
             .disabled(!canVote || model.ballotVoting != nil || order.isEmpty)
             .padding(.top, 2)
         }
+    }
+
+    // Tap-to-mark ballot for time/showtime: tap a slot to cycle want → can't →
+    // skip (👍 / 👎 / blank); an explicit Submit applies the set (preferences
+    // aren't a single tap, like ranking). want → liked_slots, can't →
+    // disliked_slots; on a time edit the stored availability rides along
+    // unchanged (model.submitSlots).
+    @ViewBuilder private var slotSection: some View {
+        let marks = model.ballotSlots[question.id] ?? [:]
+        let hasMark = !marks.isEmpty
+        let spinning = model.ballotVoting == VotingTarget(
+            questionId: question.id, yesNoChoice: nil, isAbstain: false
+        )
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Tap to mark 👍 want · 👎 can't")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            ForEach(question.slots ?? []) { slot in
+                Button(action: {
+                    model.cycleSlot(questionId: question.id, slotKey: slot.key)
+                }) {
+                    HStack(spacing: 8) {
+                        slotIndicator(marks[slot.key])
+                        Text(slot.label)
+                            .font(.body)
+                            .foregroundColor(.primary)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canVote || model.ballotVoting != nil)
+            }
+            Button(action: { model.submitSlots(question: question, poll: poll) }) {
+                HStack(spacing: 6) {
+                    if spinning { ProgressView().controlSize(.small) }
+                    Text(model.ballotVotes[question.id] == nil ? "Submit" : "Update")
+                        .font(.subheadline.weight(.medium))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canVote || model.ballotVoting != nil || !hasMark)
+            .padding(.top, 2)
+        }
+    }
+
+    private func slotIndicator(_ choice: SlotChoice?) -> some View {
+        let symbol: String
+        let color: Color
+        switch choice {
+        case .like: symbol = "hand.thumbsup.fill"; color = .green
+        case .dislike: symbol = "hand.thumbsdown.fill"; color = .red
+        case nil: symbol = "circle"; color = Color(.systemGray3)
+        }
+        return Image(systemName: symbol)
+            .font(.system(size: 20))
+            .foregroundColor(color)
+            .frame(width: 24, height: 24)
     }
 
     private func choice(_ title: String, _ color: Color, selected: Bool, yesNoChoice: String?, isAbstain: Bool) -> some View {
