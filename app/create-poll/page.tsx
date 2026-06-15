@@ -521,10 +521,20 @@ export function CreateQuestionContent() {
   // use a callback ref (same pattern as setTitleInputRef) that zeroes scrollTop
   // on attach, re-zeroes any programmatic scroll, AND re-asserts 0 every frame
   // (rAF) for a short window — the per-frame reassert is needed because setting
-  // scrollTop on the single mid-animation `scroll` event can be ignored. The
-  // pin is interaction-gated: the user's first touch/wheel/pointerdown disarms
-  // it immediately, so a real scroll gesture is never fought. Doesn't reproduce
-  // in headless Chromium/WebKit — device-only, like the other keyboard races.
+  // scrollTop on the single mid-animation `scroll` event can be ignored.
+  //
+  // The pin is disarmed by a genuine SCROLL gesture (touchmove / wheel /
+  // keydown) — NOT by a tap (touchstart / pointerdown). This is load-bearing:
+  // when the user taps a suggestion to open the sheet, iOS replays a synthetic
+  // pointer/touch sequence AND the sheet slides up under the release point, so
+  // a `touchstart`/`pointerdown` disarm fired on the freshly-mounted scroller
+  // within ~1 frame of mount — killing the rAF reassert before the keyboard-
+  // collapse scroll settled (the bug the #721 rAF "fix" couldn't hold for the
+  // yes/no-suggestion path). A tap (the opening phantom, or tapping a form
+  // field) never scrolls, so it must not release the pin; a real scroll always
+  // involves a drag/wheel/arrow-key, which still disarms immediately so a
+  // deliberate scroll is never fought. Doesn't reproduce in headless
+  // Chromium/WebKit — device-only, like the other keyboard races.
   const sheetScrollPinCleanupRef = useRef<(() => void) | null>(null);
   const setSheetScrollerRef = useCallback((node: HTMLDivElement | null) => {
     sheetScrollPinCleanupRef.current?.();
@@ -535,11 +545,11 @@ export function CreateQuestionContent() {
       window.clearTimeout(timer);
       if (raf) cancelAnimationFrame(raf);
       node.removeEventListener('scroll', onScroll);
-      node.removeEventListener('touchstart', cleanup);
+      node.removeEventListener('touchmove', cleanup);
       node.removeEventListener('wheel', cleanup);
-      node.removeEventListener('pointerdown', cleanup);
+      node.removeEventListener('keydown', cleanup);
       // Always the current pin when this fires — every trigger (timer,
-      // interaction listeners, next ref attach) detaches on first run.
+      // scroll-intent listeners, next ref attach) detaches on first run.
       sheetScrollPinCleanupRef.current = null;
     };
     const onScroll = () => {
@@ -548,17 +558,17 @@ export function CreateQuestionContent() {
     // iOS can scroll the freshly-mounted scroller while the search-box keyboard
     // collapses, and setting scrollTop on the one `scroll` event it fires is
     // sometimes ignored mid-animation. Re-assert 0 every frame for the armed
-    // window so the form can't open scrolled down; the user's first
-    // touch/wheel/pointerdown disarms it (cleanup) so a real scroll isn't fought.
+    // window so the form can't open scrolled down; the user's first scroll
+    // gesture (touchmove/wheel/keydown) disarms it so a real scroll isn't fought.
     const reassert = () => {
       if (node.scrollTop !== 0) node.scrollTop = 0;
       raf = requestAnimationFrame(reassert);
     };
     raf = requestAnimationFrame(reassert);
     node.addEventListener('scroll', onScroll);
-    node.addEventListener('touchstart', cleanup, { passive: true });
+    node.addEventListener('touchmove', cleanup, { passive: true });
     node.addEventListener('wheel', cleanup, { passive: true });
-    node.addEventListener('pointerdown', cleanup, { passive: true });
+    node.addEventListener('keydown', cleanup, { passive: true });
     const timer = window.setTimeout(cleanup, SHEET_SCROLL_PIN_MS);
     sheetScrollPinCleanupRef.current = cleanup;
   }, []);
