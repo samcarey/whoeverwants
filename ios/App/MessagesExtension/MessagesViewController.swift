@@ -196,7 +196,7 @@ struct SharablePoll: Identifiable {
 // Parsed GET /api/polls/<short>/summary — the server renders the label +
 // result_text (shared helpers with the push-notification copy), the counts
 // ride along for the yes/no bar (and Phase 3's inline voting).
-struct QuestionSummary: Identifiable {
+struct QuestionSummary: Identifiable, Equatable {
     let id: String            // question uuid
     let label: String?        // disambiguator in multi-question polls
     let type: String          // question_type
@@ -216,7 +216,7 @@ struct QuestionSummary: Identifiable {
 
 // A time/showtime candidate slot: `key` is the liked_slots/disliked_slots
 // payload value, `label` is the server-rendered friendly form the bubble shows.
-struct SlotSummary: Identifiable {
+struct SlotSummary: Identifiable, Equatable {
     let key: String
     let label: String
     var id: String { key }
@@ -228,7 +228,7 @@ struct SlotSummary: Identifiable {
 // disliked_slots ("can't attend").
 enum SlotChoice: Equatable { case like, dislike }
 
-struct PollSummary {
+struct PollSummary: Equatable {
     let pollId: String        // POST target for inline votes (Phase 3)
     let title: String
     let groupName: String?
@@ -627,6 +627,15 @@ private enum PollAPI {
 
 // MARK: - Summary cache (process-level)
 
+extension Notification.Name {
+    // Posted whenever a poll's cached summary changes (after a vote force-refresh).
+    // Every live TranscriptBubbleModel observes it and re-syncs from the shared
+    // cache, so a vote on one bubble updates EVERY other bubble for the same poll
+    // in this process at once — the send-to-self case where both the sender- and
+    // receiver-side bubbles are visible simultaneously. userInfo["shortId"].
+    static let pollSummaryRefreshed = Notification.Name("whoeverwants.pollSummaryRefreshed")
+}
+
 // Shared by every transcript bubble instance AND the expanded summary view.
 // Messages hosts several live transcript instances in one extension process
 // and tears them down aggressively (scroll away + back = a fresh instance),
@@ -663,17 +672,49 @@ final class SummaryStore {
         }
     }
 
-    // Force a fresh fetch (bypassing the TTL) and update the cache — used
-    // right after the viewer votes so THIS bubble shows the new aggregate
-    // counts immediately. Other bubbles for the same poll pick it up on their
-    // own next render (≤ maxAge TTL).
-    func refresh(shortId: String) async throws -> PollSummary {
+    // The fetch + inFlight-coalescing-handle + cache-write that `refresh` and
+    // `poll` share. Each caller owns the parts that differ (whether to coalesce
+    // onto an existing inFlight, whether to post `.pollSummaryRefreshed`, and
+    // throws-vs-swallow), which are load-bearing — so they stay at the call
+    // site rather than behind flags here.
+    private func fetchAndCache(shortId: String) async throws -> PollSummary {
         let task = Task { try await PollAPI.fetchSummary(shortId: shortId) }
         inFlight[shortId] = task
         defer { inFlight[shortId] = nil }
         let summary = try await task.value
         cache[shortId] = (summary, Date())
         return summary
+    }
+
+    // Force a fresh fetch (bypassing the TTL) and update the cache — used
+    // right after the viewer votes so THIS bubble shows the new aggregate
+    // counts immediately. Posts `.pollSummaryRefreshed` so every OTHER live
+    // bubble for the same poll re-syncs from the now-fresh cache at once
+    // (without it, an untouched-but-visible bubble — e.g. the other side of a
+    // send-to-self chat — kept its stale state until the app was refreshed,
+    // since the TTL alone never triggers a re-fetch). Deliberately does NOT
+    // coalesce onto an in-flight fetch — the voter's feedback must include the
+    // vote they just POSTed, so it always starts fresh.
+    func refresh(shortId: String) async throws -> PollSummary {
+        let summary = try await fetchAndCache(shortId: shortId)
+        NotificationCenter.default.post(
+            name: .pollSummaryRefreshed, object: nil, userInfo: ["shortId": shortId])
+        return summary
+    }
+
+    // Background poll (each visible bubble drives this on a timer) so OTHER
+    // people's votes — cast on a different device, which can't reach this
+    // process via NotificationCenter — surface within the poll interval. Unlike
+    // `refresh` it COALESCES onto any in-flight fetch (same-poll sibling bubbles
+    // polling on overlapping ticks share one request) and does NOT post
+    // `.pollSummaryRefreshed`: each visible bubble owns its own poll loop and
+    // updates only its own count display, so this never re-fetches the viewer's
+    // own vote (which only changes when THEY vote — handled by the vote path).
+    // Non-throwing: a passive background tick swallows transient errors.
+    @discardableResult
+    func poll(shortId: String) async -> PollSummary? {
+        if let task = inFlight[shortId] { return try? await task.value }
+        return try? await fetchAndCache(shortId: shortId)
     }
 }
 
@@ -1218,6 +1259,70 @@ final class TranscriptBubbleModel: ObservableObject {
     weak var host: MessagesViewController?
 
     private var shortId: String?
+    private var refreshObserver: NSObjectProtocol?
+    private var pollTask: Task<Void, Never>?
+
+    // How often a visible bubble re-fetches the summary so OTHER people's votes
+    // (cross-device — no NotificationCenter reach) appear. 3s reads as "live"
+    // while staring at a chat; well under the server's 120 GET/min/IP limit even
+    // with several visible poll bubbles (and same-poll bubbles coalesce).
+    private static let pollInterval: TimeInterval = 3
+
+    init() {
+        // Re-sync when ANY bubble (this one or another for the same poll, in
+        // this process) commits a vote and force-refreshes the shared cache.
+        // The String is extracted in the non-isolated block, then a
+        // `Task { @MainActor }` hops onto the actor (back-deploys to iOS 15,
+        // unlike MainActor.assumeIsolated which is iOS 17+).
+        refreshObserver = NotificationCenter.default.addObserver(
+            forName: .pollSummaryRefreshed, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let short = note.userInfo?["shortId"] as? String else { return }
+            Task { @MainActor in self?.syncFromCache(shortId: short) }
+        }
+    }
+
+    deinit {
+        if let refreshObserver { NotificationCenter.default.removeObserver(refreshObserver) }
+        pollTask?.cancel()
+    }
+
+    // Re-fetch the summary every pollInterval while this bubble is alive, so
+    // votes cast by other participants on other devices surface without the user
+    // refreshing the app. Scoped to the instance's lifetime (Messages tears a
+    // transcript bubble down when it scrolls off / the process suspends), and
+    // stops once the poll is closed (no further votes can change it). Updates
+    // only this bubble's count display — own-vote sync stays on the vote path.
+    private func startPolling() {
+        guard pollTask == nil, let short = shortId else { return }
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(Self.pollInterval * 1_000_000_000))
+                if Task.isCancelled { break }
+                guard let self else { break }
+                if case .loaded(let s) = self.state, s.isClosed { break }
+                guard let fresh = await SummaryStore.shared.poll(shortId: short) else { continue }
+                // Only fire @Published when something actually changed, so an
+                // idle bubble doesn't re-render every tick.
+                if case .loaded(let cur) = self.state, cur == fresh { continue }
+                self.state = .loaded(fresh)
+            }
+        }
+    }
+
+    // Pull the (already force-refreshed) summary out of the shared cache and
+    // re-load the viewer's own vote, so an untouched-but-visible bubble reflects
+    // a vote cast on a sibling bubble immediately. `summary()` hits the warm
+    // cache (no network) since the voter just refreshed it; the own-vote re-load
+    // keeps the selection highlight in sync (the same identity voted on both).
+    private func syncFromCache(shortId short: String) {
+        guard short == shortId else { return }
+        Task {
+            guard let fresh = try? await SummaryStore.shared.summary(shortId: short) else { return }
+            state = .loaded(fresh)
+            await loadMyVoteIfVotable(fresh)
+        }
+    }
 
     func load(messageURL: URL?) {
         guard let url = messageURL,
@@ -1231,6 +1336,7 @@ final class TranscriptBubbleModel: ObservableObject {
                 let summary = try await SummaryStore.shared.summary(shortId: short)
                 state = .loaded(summary)
                 await loadMyVoteIfVotable(summary)
+                if !summary.isClosed { startPolling() }
             } catch {
                 state = .unavailable
             }
