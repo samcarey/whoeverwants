@@ -437,10 +437,13 @@ export default function AutocompleteInput({
           src={richImageUrl}
           alt=""
           draggable={false}
-          className="absolute left-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded object-cover pointer-events-none"
+          className="absolute left-2.5 top-0 w-5 h-5 rounded object-cover pointer-events-none"
         />
       )}
-      <span className={`block truncate ${value ? '' : 'text-gray-400 dark:text-gray-500'}`}>
+      {/* Wrap (break-words) instead of truncating so long restaurant/location
+          values stay fully readable and left-justified rather than clipping off
+          the right edge. */}
+      <span className={`block break-words ${value ? '' : 'text-gray-400 dark:text-gray-500'}`}>
         {/* NBSP keeps the button's height stable when empty (matches an empty input). */}
         {value || placeholder || ' '}
       </span>
