@@ -150,7 +150,7 @@ export default function OptionsInput({
     (referenceLatitude === undefined || referenceLongitude === undefined);
   const inputClassName = (isDuplicate: boolean) =>
     variant === 'compact'
-      ? `flex-1 min-w-0 bg-transparent text-sm text-right focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
+      ? `flex-1 min-w-0 bg-transparent text-sm text-left focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
           isDuplicate
             ? 'text-red-700 dark:text-red-300'
             : 'text-gray-500 dark:text-gray-500'
@@ -165,7 +165,7 @@ export default function OptionsInput({
     ? "divide-y divide-gray-200 dark:divide-gray-700"
     : "space-y-2";
   const rowItemClassName = variant === 'compact'
-    ? "flex items-center gap-2 py-3"
+    ? "flex items-start gap-2 py-3"
     : "flex items-start gap-2";
 
   return (
