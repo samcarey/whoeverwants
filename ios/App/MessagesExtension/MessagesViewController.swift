@@ -672,19 +672,31 @@ final class SummaryStore {
         }
     }
 
+    // The fetch + inFlight-coalescing-handle + cache-write that `refresh` and
+    // `poll` share. Each caller owns the parts that differ (whether to coalesce
+    // onto an existing inFlight, whether to post `.pollSummaryRefreshed`, and
+    // throws-vs-swallow), which are load-bearing — so they stay at the call
+    // site rather than behind flags here.
+    private func fetchAndCache(shortId: String) async throws -> PollSummary {
+        let task = Task { try await PollAPI.fetchSummary(shortId: shortId) }
+        inFlight[shortId] = task
+        defer { inFlight[shortId] = nil }
+        let summary = try await task.value
+        cache[shortId] = (summary, Date())
+        return summary
+    }
+
     // Force a fresh fetch (bypassing the TTL) and update the cache — used
     // right after the viewer votes so THIS bubble shows the new aggregate
     // counts immediately. Posts `.pollSummaryRefreshed` so every OTHER live
     // bubble for the same poll re-syncs from the now-fresh cache at once
     // (without it, an untouched-but-visible bubble — e.g. the other side of a
     // send-to-self chat — kept its stale state until the app was refreshed,
-    // since the TTL alone never triggers a re-fetch).
+    // since the TTL alone never triggers a re-fetch). Deliberately does NOT
+    // coalesce onto an in-flight fetch — the voter's feedback must include the
+    // vote they just POSTed, so it always starts fresh.
     func refresh(shortId: String) async throws -> PollSummary {
-        let task = Task { try await PollAPI.fetchSummary(shortId: shortId) }
-        inFlight[shortId] = task
-        defer { inFlight[shortId] = nil }
-        let summary = try await task.value
-        cache[shortId] = (summary, Date())
+        let summary = try await fetchAndCache(shortId: shortId)
         NotificationCenter.default.post(
             name: .pollSummaryRefreshed, object: nil, userInfo: ["shortId": shortId])
         return summary
@@ -702,12 +714,7 @@ final class SummaryStore {
     @discardableResult
     func poll(shortId: String) async -> PollSummary? {
         if let task = inFlight[shortId] { return try? await task.value }
-        let task = Task { try await PollAPI.fetchSummary(shortId: shortId) }
-        inFlight[shortId] = task
-        defer { inFlight[shortId] = nil }
-        guard let summary = try? await task.value else { return nil }
-        cache[shortId] = (summary, Date())
-        return summary
+        return try? await fetchAndCache(shortId: shortId)
     }
 }
 
