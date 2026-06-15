@@ -3453,16 +3453,19 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
       alignment:.topLeading).background(systemBackground)` that makes the SENT
       transcript bubble correct (there the host gives it exactly `bubbleHeight`).
     - **The lever on the staged-balloon SIZE is the `shareImage` ASPECT, not the
-      live view's internal layout.** `shareImage` is WIDE-SHORT (600×336,
-      ~1.79:1 ≈ full-width × `bubbleHeight`) precisely so the staged balloon
-      isn't square. It's also the no-app/SMS/macOS fallback bubble image (a wide
-      👋 reads fine there). If a future change needs the staged balloon a
-      different height, change this image's aspect.
-    - **Device-only-verifiable** (Simulator can't reliably reproduce input-field
+      live view's internal layout (DEVICE-CONFIRMED).** `shareImage` is
+      WIDE-SHORT (600×336, ~1.79:1 ≈ full-width × `bubbleHeight`) precisely so
+      the staged balloon isn't square — verified on device (#744): the square
+      300×300 image gave a square balloon with a big grey band below the
+      content-tall live view; the wide-short image shrank the balloon to the
+      content height and the staged preview now matches the sent bubble. It's
+      also the no-app/SMS/macOS fallback bubble image (a wide 👋 reads fine
+      there). If a future change needs the staged balloon a different height,
+      change this image's aspect.
+    - **Device-CONFIRMED (#744)** — Simulator can't reproduce input-field
       preview sizing; the SENT transcript bubble is always fine, so screenshots
-      of the STAGED preview are the only signal). The image-aspect theory was
-      still unconfirmed at the time of writing — confirm on a fresh Latest
-      TestFlight build before treating it as settled.
+      of the STAGED preview are the only signal. The revert + wide-short image
+      together fixed it on a real device.
   - **Messages overlays the extension's APP ICON on the live bubble's
     top-left corner** — the OS draws it, the extension can't remove or move
     it, and it doesn't show in any non-device mockup (device-found: it
