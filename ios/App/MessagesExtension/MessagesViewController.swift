@@ -2098,10 +2098,32 @@ struct TranscriptBubbleView: View {
     @ObservedObject var model: TranscriptBubbleModel
 
     var body: some View {
-        content
-            .padding(12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color(.systemBackground))
+        // The transcript hands this view exactly `bubbleHeight` (via the host's
+        // contentSizeThatFits), but the INPUT-FIELD compose preview — the staged
+        // bubble shown before the user taps send — IGNORES that and gives the
+        // live layout a much taller (≈square) region. With the content
+        // top-pinned + a trailing Spacer, that left the title clipped above the
+        // balloon's top edge and a big blank area below (device report).
+        //
+        // Fix: clamp the content to `bubbleHeight` and CENTER that fixed-height
+        // block vertically in whatever region we're given. An over-tall preview
+        // then gets balanced top/bottom margins (no clip) instead of a top crop,
+        // while the exact-height transcript is byte-for-byte unchanged — geo
+        // height == bubbleHeight there, so the clamp is a no-op and centering has
+        // nothing to center. The white background is painted over the FULL region
+        // (not just the clamped block) so a stretched preview reads as one clean
+        // card rather than our content floating over the balloon's grey.
+        GeometryReader { geo in
+            content
+                .padding(12)
+                .frame(
+                    width: geo.size.width,
+                    height: min(geo.size.height, Self.bubbleHeight),
+                    alignment: .topLeading
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .background(Color(.systemBackground))
+        }
         // Phase 3: the tree is INTERACTIVE — vote buttons take taps; the
         // title / results / footer are plain Buttons that requestExpand().
     }
