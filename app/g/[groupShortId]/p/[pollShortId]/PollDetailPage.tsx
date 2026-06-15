@@ -442,20 +442,24 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, fromExplore, 
   const plusOnesPrefilledRef = useRef(false);
   const seededDiscoveryRef = useRef(false);
   useEffect(() => {
-    if (!poll.allow_plus_ones) return;
     let cancelled = false;
-    apiGetPlusOneCandidates(poll.id)
-      .then((cands) => {
-        if (!cancelled) setPlusOneCandidates(cands);
-      })
-      .catch(() => { /* freeform entry still works without candidates */ });
+    // Plus-ones-specific: the represented-account candidate list (only meaningful
+    // when the poll allows plus-ones).
+    if (poll.allow_plus_ones) {
+      apiGetPlusOneCandidates(poll.id)
+        .then((cands) => {
+          if (!cancelled) setPlusOneCandidates(cands);
+        })
+        .catch(() => { /* freeform entry still works without candidates */ });
+    }
 
     (async () => {
       for (const sp of poll.questions) {
         if (isPendingPollId(sp.id)) continue;
         const localVoteId = getStoredVoteId(sp.id);
-        // Prefill the freeform plus-ones list once from the viewer's own vote.
-        if (localVoteId && !plusOnesPrefilledRef.current) {
+        // Plus-ones-specific: prefill the freeform list once from the viewer's
+        // own vote.
+        if (poll.allow_plus_ones && localVoteId && !plusOnesPrefilledRef.current) {
           const votes = await apiGetVotes(sp.id).catch(() => null);
           if (cancelled) return;
           const mine = votes?.find((v) => v.id === localVoteId);
@@ -464,8 +468,14 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, fromExplore, 
             plusOnesPrefilledRef.current = true;
           }
         }
-        // Discover a seeded vote: no local id but the server returns a vote for
-        // me (it can only be mine) → adopt it so the existing edit flow works.
+        // Recover an own-vote cast on ANOTHER surface — the iMessage extension
+        // (a separate process that never writes this WebView's localStorage), or
+        // another device under the same account: no local id, but the server
+        // returns a vote for me (ballot privacy scopes /votes to the caller's own
+        // rows, so any returned row is mine) → adopt it so the ballot shows as
+        // answered + the edit flow works instead of letting me double-vote. Runs
+        // for EVERY poll, not just plus-ones ones (the extension can vote on any
+        // poll type), which is why this is no longer gated on `allow_plus_ones`.
         if (!localVoteId && !seededDiscoveryRef.current) {
           const votes = await apiGetVotes(sp.id).catch(() => null);
           if (cancelled) return;
