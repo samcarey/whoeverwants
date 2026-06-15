@@ -65,23 +65,49 @@ export async function apiGetBadgeCount(settings: {
   return res?.count ?? 0;
 }
 
+// Last-resolved per-group `notify_new_poll` pref, so NotificationSettingsCard
+// can seed its toggle SYNCHRONOUSLY on its FIRST commit instead of flashing
+// OFF and then sliding ON once the async GET resolves (visible during the
+// slide-overlay transition into /info). Bounded LRU like `groupRosterCache`;
+// no TTL — the card always refetches on mount and corrects any staleness, the
+// seed just prevents the initial-load animation. `getCachedGroupNotificationPref`
+// returns null on a cold cache (first-ever visit), where a one-time animation
+// is unavoidable.
+const PREF_CACHE_MAX = 50;
+const groupNotificationPrefCache = new Map<string, boolean>();
+function cacheGroupNotificationPref(routeId: string, value: boolean): void {
+  groupNotificationPrefCache.delete(routeId); // re-insert at the end (most-recent)
+  groupNotificationPrefCache.set(routeId, value);
+  if (groupNotificationPrefCache.size > PREF_CACHE_MAX) {
+    const oldest = groupNotificationPrefCache.keys().next().value;
+    if (oldest !== undefined) groupNotificationPrefCache.delete(oldest);
+  }
+}
+export function getCachedGroupNotificationPref(routeId: string): boolean | null {
+  return groupNotificationPrefCache.get(routeId) ?? null;
+}
+
 export async function apiGetGroupNotificationPref(
   routeId: string,
 ): Promise<GroupNotificationPreference> {
-  return notificationsFetch<GroupNotificationPreference>(
+  const pref = await notificationsFetch<GroupNotificationPreference>(
     `/groups/${encodeURIComponent(routeId)}`,
   );
+  cacheGroupNotificationPref(routeId, pref.notify_new_poll);
+  return pref;
 }
 
 export async function apiSetGroupNotificationPref(
   routeId: string,
   notify_new_poll: boolean,
 ): Promise<GroupNotificationPreference> {
-  return notificationsFetch<GroupNotificationPreference>(
+  const pref = await notificationsFetch<GroupNotificationPreference>(
     `/groups/${encodeURIComponent(routeId)}`,
     {
       method: "PUT",
       body: JSON.stringify({ notify_new_poll }),
     },
   );
+  cacheGroupNotificationPref(routeId, pref.notify_new_poll);
+  return pref;
 }

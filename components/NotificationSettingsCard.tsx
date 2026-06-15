@@ -39,6 +39,7 @@ import { useEffect, useState } from "react";
 import {
   apiGetGroupNotificationPref,
   apiSetGroupNotificationPref,
+  getCachedGroupNotificationPref,
 } from "@/lib/api/notifications";
 import {
   detectPushCapability,
@@ -59,7 +60,13 @@ export default function NotificationSettingsCard({ groupRouteId, className = "mt
   const [capability, setCapability] = useState<PushCapability | null>(null);
   const [iosPermission, setIosPermission] =
     useState<CapacitorPushPermission | null>(null);
-  const [enabled, setEnabled] = useState<boolean | null>(null);
+  // Seed from the last-resolved pref so the toggle renders at its final
+  // position on the FIRST commit (no OFF→ON slide during the transition into
+  // /info). Null on a cold cache (first-ever visit); the effect below
+  // refetches + corrects on every mount regardless.
+  const [enabled, setEnabled] = useState<boolean | null>(() =>
+    typeof window === "undefined" ? null : getCachedGroupNotificationPref(groupRouteId),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

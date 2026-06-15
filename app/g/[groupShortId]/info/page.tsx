@@ -13,6 +13,7 @@ import { useGroup } from "@/lib/useGroup";
 import { nameCount } from "@/lib/groupUtils";
 import {
   apiGetGroupMembers,
+  getCachedGroupRoster,
   apiPromoteGroupAdmin,
   apiBootGroupMember,
   apiBootGroupAnonymous,
@@ -164,7 +165,14 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
   // only you). `rosterTick` re-fetches after an approval + on tab refocus.
   const currentUserName = getUserName()?.trim() || null;
   const viewerLabel = currentUserName ?? "You";
-  const [roster, setRoster] = useState<GroupRoster | null>(null);
+  // Seed from the last-resolved roster so `viewerIsAdmin` (and the admin chrome
+  // it gates — the Edit/Add-people buttons, privacy switch, join requests, and
+  // the InviteLinksSection) is correct on the FIRST commit instead of popping
+  // in after the async /members GET resolves mid-slide. Cold cache (first-ever
+  // visit) → null → participant-name fallback for one tick, as before.
+  const [roster, setRoster] = useState<GroupRoster | null>(() =>
+    typeof window === "undefined" ? null : getCachedGroupRoster(groupId),
+  );
   const [rosterTick, setRosterTick] = useState(0);
   const viewerIsAdmin = roster?.viewer_is_admin ?? false;
 

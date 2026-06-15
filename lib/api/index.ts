@@ -63,6 +63,7 @@ export {
   apiDecideGroupJoinRequest,
   apiCreateGroupInvite,
   apiListGroupInvites,
+  getCachedGroupInvites,
   apiRevokeGroupInvite,
   apiGetGroupInvitableAccounts,
   apiAddGroupMembers,
