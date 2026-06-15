@@ -124,6 +124,38 @@ private let feHost: String =
 private let apiBase: String =
     isCanaryBundle ? "https://api.latest.whoeverwants.com" : "https://api.whoeverwants.com"
 
+// TEMPORARY DIAGNOSTIC (remove once the staged-preview first-paint clip is
+// solved). The staged compose preview renders the live bubble clipped/too-high
+// on first tap but correctly after an app-focus swap, and it's device-only —
+// not reproducible in Simulator or from the sandbox. This posts geometry +
+// lifecycle traces to /api/client-logs (which mirrors to `docker compose logs
+// api`, so it's readable cross-worker via grep IMSGDIAG) so the next fix is
+// data-driven. `activation` is bumped per willBecomeActive so first-tap (a1)
+// vs app-switch-return (a2) can be diffed. Fire-and-forget; failures ignored.
+private enum BubbleDiag {
+    static var activation = 0
+    static func log(_ msg: String) {
+        guard let url = URL(string: apiBase + "/api/client-logs") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "logs": [[
+                "level": "warn",
+                "message": "IMSGDIAG a\(activation) \(msg)",
+                "timestamp": ISO8601DateFormatter().string(from: Date()),
+                "userAgent": "imsg-ext",
+            ]],
+            "sessionId": "imsg-diag",
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        URLSession.shared.dataTask(with: req).resume()
+    }
+    static func rect(_ r: CGRect) -> String {
+        String(format: "(%.0f,%.0f %.0fx%.0f)", r.minX, r.minY, r.width, r.height)
+    }
+}
+
 // MARK: - Bridged identity (App Group reader; writer is NativeIdentityPlugin)
 
 private enum BridgedIdentity {
@@ -1240,9 +1272,12 @@ final class TranscriptBubbleModel: ObservableObject {
         }
         shortId = short
         Task { @MainActor in
+            let t0 = Date()
             do {
                 let summary = try await SummaryStore.shared.summary(shortId: short)
+                let ms = Int(Date().timeIntervalSince(t0) * 1000)
                 pendingSummary = summary
+                BubbleDiag.log("model.summaryReady in\(ms)ms frameReady=\(frameReady) -> \(frameReady ? "present" : "hold")")
                 if frameReady { state = .loaded(summary) }
                 await loadMyVoteIfVotable(summary)
             } catch {
@@ -1259,6 +1294,7 @@ final class TranscriptBubbleModel: ObservableObject {
     // bounds, so it produces no further layout pass.
     @MainActor func frameDidLayout() {
         frameReady = true
+        BubbleDiag.log("model.frameDidLayout hasPending=\(pendingSummary != nil)")
         if let summary = pendingSummary { state = .loaded(summary) }
     }
 
@@ -1374,10 +1410,37 @@ class MessagesViewController: MSMessagesAppViewController {
         super.willBecomeActive(with: conversation)
         mountUIIfNeeded()
         if presentationStyle == .transcript {
+            BubbleDiag.activation += 1
+            BubbleDiag.log("willBecomeActive \(bubbleGeom())")
             bubbleModel.load(messageURL: conversation.selectedMessage?.url)
         } else {
             model.activate(selectedMessageURL: conversation.selectedMessage?.url)
         }
+    }
+
+    override func didBecomeActive(with conversation: MSConversation) {
+        super.didBecomeActive(with: conversation)
+        if presentationStyle == .transcript { BubbleDiag.log("didBecomeActive \(bubbleGeom())") }
+    }
+
+    // TEMPORARY DIAGNOSTIC helper (remove with BubbleDiag). VC-level geometry at
+    // a lifecycle point — the most accessible signal for "content too high /
+    // clipped": if frame/window/safeArea differ between first-tap (a1) and the
+    // app-switch return (a2), that's the cause; if identical, the difference is
+    // inside SwiftUI/Messages rendering (the content's own global frame, logged
+    // separately from TranscriptBubbleView, then tells us where it actually sat).
+    private func bubbleGeom() -> String {
+        let s = view.safeAreaInsets
+        let win = view.window?.frame ?? .zero
+        let st: String
+        switch bubbleModel.state {
+        case .loading: st = "loading"
+        case .loaded: st = "loaded"
+        case .unavailable: st = "unavail"
+        }
+        return "style=\(presentationStyle.rawValue) bounds=\(BubbleDiag.rect(view.bounds)) "
+            + "frame=\(BubbleDiag.rect(view.frame)) win=\(BubbleDiag.rect(win)) "
+            + "safeTop=\(Int(s.top)) safeBot=\(Int(s.bottom)) state=\(st)"
     }
 
     // Only consulted for transcript (live layout) instances. Fixed compact
@@ -1400,7 +1463,9 @@ class MessagesViewController: MSMessagesAppViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard presentationStyle == .transcript else { return }
-        if view.bounds.height > 0, view.bounds != lastBubbleBounds {
+        let changed = view.bounds != lastBubbleBounds
+        BubbleDiag.log("viewDidLayoutSubviews changed=\(changed) \(bubbleGeom())")
+        if view.bounds.height > 0, changed {
             lastBubbleBounds = view.bounds
             bubbleModel.frameDidLayout()
         }
@@ -2155,6 +2220,22 @@ struct TranscriptBubbleView: View {
             .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(.systemBackground))
+            // TEMPORARY DIAGNOSTIC (remove with BubbleDiag): report where the
+            // content actually sits on screen (global coords) on first paint and
+            // on every change. This is the direct "is it clipped / too high"
+            // signal — compare a1 (first tap) vs a2 (app-switch return). A
+            // .background GeometryReader doesn't affect layout/sizing.
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear {
+                            BubbleDiag.log("content.onAppear global=\(BubbleDiag.rect(geo.frame(in: .global))) size=\(BubbleDiag.rect(CGRect(origin: .zero, size: geo.size)))")
+                        }
+                        .onChange(of: geo.frame(in: .global)) { f in
+                            BubbleDiag.log("content.frameChange global=\(BubbleDiag.rect(f))")
+                        }
+                }
+            )
         // Phase 3: the tree is INTERACTIVE — vote buttons take taps; the
         // title / results / footer are plain Buttons that requestExpand().
     }
