@@ -365,6 +365,12 @@ def _insert_poll(
             response_dt = datetime.fromisoformat(
                 req.response_deadline.replace("Z", "+00:00")
             )
+            # TODO (pre-existing, surfaced June 2026): a tz-NAIVE
+            # response_deadline (no offset/Z) parses to a naive response_dt and
+            # the comparison below raises "can't compare offset-naive and
+            # offset-aware datetimes" → 500. The FE always sends tz-aware, so
+            # this is latent (only a raw/malformed API caller hits it). If
+            # hardening: coerce response_dt to UTC when tzinfo is None.
             if prephase_deadline >= response_dt:
                 prephase_deadline = response_dt - timedelta(minutes=1)
     # "Plus one/more": default ON for polls with a time question (the common
