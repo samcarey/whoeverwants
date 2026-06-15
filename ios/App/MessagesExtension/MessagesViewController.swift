@@ -627,6 +627,15 @@ private enum PollAPI {
 
 // MARK: - Summary cache (process-level)
 
+extension Notification.Name {
+    // Posted whenever a poll's cached summary changes (after a vote force-refresh).
+    // Every live TranscriptBubbleModel observes it and re-syncs from the shared
+    // cache, so a vote on one bubble updates EVERY other bubble for the same poll
+    // in this process at once — the send-to-self case where both the sender- and
+    // receiver-side bubbles are visible simultaneously. userInfo["shortId"].
+    static let pollSummaryRefreshed = Notification.Name("whoeverwants.pollSummaryRefreshed")
+}
+
 // Shared by every transcript bubble instance AND the expanded summary view.
 // Messages hosts several live transcript instances in one extension process
 // and tears them down aggressively (scroll away + back = a fresh instance),
@@ -665,14 +674,19 @@ final class SummaryStore {
 
     // Force a fresh fetch (bypassing the TTL) and update the cache — used
     // right after the viewer votes so THIS bubble shows the new aggregate
-    // counts immediately. Other bubbles for the same poll pick it up on their
-    // own next render (≤ maxAge TTL).
+    // counts immediately. Posts `.pollSummaryRefreshed` so every OTHER live
+    // bubble for the same poll re-syncs from the now-fresh cache at once
+    // (without it, an untouched-but-visible bubble — e.g. the other side of a
+    // send-to-self chat — kept its stale state until the app was refreshed,
+    // since the TTL alone never triggers a re-fetch).
     func refresh(shortId: String) async throws -> PollSummary {
         let task = Task { try await PollAPI.fetchSummary(shortId: shortId) }
         inFlight[shortId] = task
         defer { inFlight[shortId] = nil }
         let summary = try await task.value
         cache[shortId] = (summary, Date())
+        NotificationCenter.default.post(
+            name: .pollSummaryRefreshed, object: nil, userInfo: ["shortId": shortId])
         return summary
     }
 }
@@ -1218,6 +1232,39 @@ final class TranscriptBubbleModel: ObservableObject {
     weak var host: MessagesViewController?
 
     private var shortId: String?
+    private var refreshObserver: NSObjectProtocol?
+
+    init() {
+        // Re-sync when ANY bubble (this one or another for the same poll, in
+        // this process) commits a vote and force-refreshes the shared cache.
+        // The String is extracted in the non-isolated block, then a
+        // `Task { @MainActor }` hops onto the actor (back-deploys to iOS 15,
+        // unlike MainActor.assumeIsolated which is iOS 17+).
+        refreshObserver = NotificationCenter.default.addObserver(
+            forName: .pollSummaryRefreshed, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let short = note.userInfo?["shortId"] as? String else { return }
+            Task { @MainActor in self?.syncFromCache(shortId: short) }
+        }
+    }
+
+    deinit {
+        if let refreshObserver { NotificationCenter.default.removeObserver(refreshObserver) }
+    }
+
+    // Pull the (already force-refreshed) summary out of the shared cache and
+    // re-load the viewer's own vote, so an untouched-but-visible bubble reflects
+    // a vote cast on a sibling bubble immediately. `summary()` hits the warm
+    // cache (no network) since the voter just refreshed it; the own-vote re-load
+    // keeps the selection highlight in sync (the same identity voted on both).
+    private func syncFromCache(shortId short: String) {
+        guard short == shortId else { return }
+        Task {
+            guard let fresh = try? await SummaryStore.shared.summary(shortId: short) else { return }
+            state = .loaded(fresh)
+            await loadMyVoteIfVotable(fresh)
+        }
+    }
 
     func load(messageURL: URL?) {
         guard let url = messageURL,
