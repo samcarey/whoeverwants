@@ -84,7 +84,6 @@ export default function InviteLinksSection({
   // previously-existing rows don't.
   const [invites, setInvites] = useState<GroupInvite[] | null>(null);
   const [freshUrls, setFreshUrls] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [revokingIds, setRevokingIds] = useState<Set<string>>(new Set());
@@ -107,7 +106,6 @@ export default function InviteLinksSection({
       return;
     }
     let cancelled = false;
-    setLoading(true);
     setError(null);
     // The group page's "Create Invite Link" CTA mints the invite (and starts
     // the in-gesture clipboard write) BEFORE sliding here; adopt the stashed
@@ -151,9 +149,6 @@ export default function InviteLinksSection({
           return;
         }
         setError(errorMessage(e, "Failed to load invites"));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -247,10 +242,14 @@ export default function InviteLinksSection({
     }
   };
 
-  if (!enabled || loading) return null;
+  if (!enabled) return null;
 
-  // Always render the create button when the section is enabled —
-  // empty list is the common starting state.
+  // Render the section chrome (header + create button) as soon as the viewer
+  // is an admin — don't gate it on the in-flight `apiListGroupInvites` fetch,
+  // or the whole section pops in mid-slide once the GET resolves (the reported
+  // "invite links section appears after transition"). The existing-invites
+  // list (`invites === null` while loading → empty) fills in below when it
+  // lands; the common case (no existing invites) needs no data at all.
   const list = invites ?? [];
 
   return (
