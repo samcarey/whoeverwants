@@ -30,6 +30,7 @@ from models import (
     PollResponse,
     PollSummaryQuestionResponse,
     PollSummaryResponse,
+    PollSummarySlot,
     SetFollowStateRequest,
     PollVoteItem,
     PlusOneCandidateResponse,
@@ -364,6 +365,12 @@ def _insert_poll(
             response_dt = datetime.fromisoformat(
                 req.response_deadline.replace("Z", "+00:00")
             )
+            # TODO (pre-existing, surfaced June 2026): a tz-NAIVE
+            # response_deadline (no offset/Z) parses to a naive response_dt and
+            # the comparison below raises "can't compare offset-naive and
+            # offset-aware datetimes" → 500. The FE always sends tz-aware, so
+            # this is latent (only a raw/malformed API caller hits it). If
+            # hardening: coerce response_dt to UTC when tzinfo is None.
             if prephase_deadline >= response_dt:
                 prephase_deadline = response_dt - timedelta(minutes=1)
     # "Plus one/more": default ON for polls with a time question (the common
@@ -1494,6 +1501,16 @@ def _summarize_question(
     # not-yet-rankable (read-only). Plain text, no metadata.
     opts = question_row.get("options")
     options = list(opts) if qtype == "ranked_choice" and opts else None
+    # Time/showtime: surface the finalized slots (key + friendly label) for the
+    # expanded want/neutral/can't ballot (Phase 5). A time poll still collecting
+    # availability has options=None (read-only); a cancelled event surfaces none
+    # (the bubble shows "Event's off"). Showtime slots are pre-finalized at
+    # create. Both slot-key shapes format through _format_slot_label.
+    slots = (
+        [PollSummarySlot(key=k, label=_format_slot_label(k)) for k in opts]
+        if qtype in ("time", "showtime") and opts and not results.time_event_cancelled
+        else None
+    )
     return PollSummaryQuestionResponse(
         id=str(question_row["id"]),
         label=_summary_question_label(question_row, multi),
@@ -1505,6 +1522,7 @@ def _summarize_question(
         secured_count=results.secured_count,
         supply_count=results.supply_count,
         options=options,
+        slots=slots,
     )
 
 

@@ -592,6 +592,15 @@ class PollResponse(BaseModel):
     initial_suggestion_vote_ids: dict[str, str] | None = None
 
 
+class PollSummarySlot(BaseModel):
+    """One time/showtime candidate slot for the iMessage expanded ballot:
+    `key` is what the vote payload references (liked_slots / disliked_slots),
+    `label` is the friendly _format_slot_label form the bubble renders."""
+
+    key: str
+    label: str
+
+
 class PollSummaryQuestionResponse(BaseModel):
     """One question's compact result line for the iMessage bubble summary
     (GET /api/polls/{short_id}/summary). `result_text` is server-rendered so
@@ -620,6 +629,15 @@ class PollSummaryQuestionResponse(BaseModel):
     # ballot (docs/imessage-extension-plan.md Phase 5); other surfaces ignore
     # it. Options text only — no metadata (the bubble renders plain labels).
     options: list[str] | None = None
+    # Time/showtime candidate slots, surfaced ONLY for finalized time / showtime
+    # questions (null for every other type, for a time poll still collecting
+    # availability — options=None → read-only — and for a cancelled "event's
+    # off" poll). Each carries the slot KEY (the liked_slots/disliked_slots
+    # value the vote payload references) plus the server-rendered LABEL the
+    # bubble displays (key formatting lives server-side; the Swift slot-label
+    # mirror was deleted in Phase 2). Drives the iMessage expanded-view
+    # want/neutral/can't ballot (docs/imessage-extension-plan.md Phase 5).
+    slots: list[PollSummarySlot] | None = None
 
 
 class PollSummaryResponse(BaseModel):

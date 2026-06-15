@@ -3345,9 +3345,35 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
 > explicit Submit/Update). NO migration / entitlement / CI / pbxproj change.
 > Transcript inline voting stays yes_no/limited_supply only (a scrolling
 > transcript is the wrong place to build an order). Tests:
-> `server/tests/test_poll_summary.py`. The remaining "Phase 5" halves (expanded
-> TIME/showtime ballots or a WKWebView for every-type-at-once) stay gated on
-> earning it.
+> `server/tests/test_poll_summary.py`.
+> **Phase 5 SECOND INCREMENT — native TIME/SHOWTIME expanded ballot** implemented
+> on `claude/imessage-integration-plan-u347uv`: the tapped-bubble summary now lets
+> a recipient mark **want / neutral / can't** on a finalized `time` / `showtime`
+> question (per-question, so a multi-question poll mixes any row types) — so the
+> expanded view covers native voting for every type except a still-collecting-
+> availability time poll (read-only by design). ONE additive server field
+> (`PollSummaryQuestionResponse.slots: list[PollSummarySlot]` = `{key,label}`,
+> surfaced by `_summarize_question` ONLY for finalized time/showtime — null for
+> other types, an availability-phase time poll (`options=None`), and a cancelled
+> event; `label` = `_format_slot_label(key)` server-rendered since the Swift
+> slot-label mirror was deleted in Phase 2; a NEW field, not reusing `options`,
+> because a slot's display label ≠ its vote-payload key) + Swift only
+> (`QuestionSummary.slots`; `BubbleVote` gains `likedSlots`/`dislikedSlots` for
+> edit-restore PLUS opaque `voterDayTimeWindows`/`voterDuration`/
+> `voterMinParticipants` passthrough — the server DIRECT-WRITES these on a time
+> edit, NOT COALESCE, so a preference edit must re-send the voter's stored
+> availability or it clobbers it + the winner headcount; a shared
+> `BubbleVote.parse(row)` now backs both the own-vote GET + the POST response;
+> `submitVote` gains defaulted slot/availability params → `vote_type:"time"`/
+> `"showtime"` through the SAME atomic batch endpoint; `isBallotVotable` extends
+> to time/showtime (open + ≥1 slot); `ballotSlots` (questionId→slotKey→
+> `.like`/`.dislike`, absent = neutral) + `cycleSlot`/`submitSlots`;
+> `BallotQuestionRow.slotSection` tap-to-cycle 👍/👎 + explicit Submit/Update).
+> NO migration / entitlement / CI / pbxproj change. Transcript inline voting
+> stays yes_no/limited_supply only (a scrolling transcript is the wrong place for
+> a slot grid). Tests: `server/tests/test_poll_summary.py::TestSummarySlots`.
+> The remaining "Phase 5" half (a WKWebView for every-type-at-once) stays gated
+> on earning it.
 > Owner decisions: ship additive (degraded no-app fallback OK); embed a
 > poll-scoped invite token for private-group bubbles (auto-join); v1 inline
 > voting = yes_no + limited_supply only; pursue compose-in-Messages keeping

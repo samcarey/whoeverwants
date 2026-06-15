@@ -3,6 +3,7 @@ summary powering the iMessage live transcript bubble (Phase 2 of
 docs/imessage-extension-plan.md)."""
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from tests.conftest import (
     close_poll,
@@ -10,6 +11,14 @@ from tests.conftest import (
     group_members_for,
     yes_no_question,
 )
+
+
+def _future_date(days: int = 3) -> str:
+    return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+def _future_iso(hours: int = 72) -> str:
+    return (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
 
 
 def _vote_yes_no(client, poll, voter_name, choice, *, question_id=None, browser_id=None):
@@ -194,3 +203,120 @@ class TestPollSummary:
         s = _summary(client, poll)
         assert s["response_deadline"] is not None
         assert "." not in s["response_deadline"]
+
+
+class TestSummarySlots:
+    """`slots` (key + friendly label) rides finalized time / showtime questions
+    so the iMessage expanded want/neutral/can't ballot can render + submit
+    (Phase 5). The Swift slot-label mirror was deleted in Phase 2, so the label
+    MUST come from the server."""
+
+    def test_finalized_time_surfaces_slots_only_for_time(self, client):
+        d1, d2 = _future_date(3), _future_date(4)
+        # A no-availability time question finalizes its slots at create, so the
+        # poll opens straight into the preference ballot — exactly the bubble's
+        # votable state. Paired with a yes_no question to prove slots ride only
+        # the time question.
+        body = {
+            "creator_name": "Host",
+            "response_deadline": _future_iso(),
+            "questions": [
+                {"question_type": "yes_no", "context": "Bring snacks?"},
+                {
+                    "question_type": "time",
+                    "category": "time",
+                    "day_time_windows": [
+                        {"day": d1, "windows": [{"min": "18:00", "max": "20:00"}]},
+                        {"day": d2, "windows": [{"min": "18:00", "max": "20:00"}]},
+                    ],
+                    "duration_window": {
+                        "minValue": 2, "maxValue": 2,
+                        "minEnabled": True, "maxEnabled": True,
+                    },
+                },
+            ],
+        }
+        resp = client.post("/api/polls", json=body)
+        assert resp.status_code == 201, resp.text
+        s = _summary(client, resp.json())
+        by_type = {q["question_type"]: q for q in s["questions"]}
+        assert by_type["yes_no"]["slots"] is None
+        time_slots = by_type["time"]["slots"]
+        assert [x["key"] for x in time_slots] == [
+            f"{d1} 18:00-20:00",
+            f"{d2} 18:00-20:00",
+        ]
+        # Server renders a friendly label distinct from the raw key.
+        assert all(x["label"] and x["label"] != x["key"] for x in time_slots)
+
+    def test_time_in_availability_phase_has_no_slots(self, client):
+        d = _future_date(3)
+        body = {
+            "creator_name": "Host",
+            "response_deadline": _future_iso(),
+            "prephase_deadline_minutes": 120,
+            "questions": [
+                {
+                    "question_type": "time",
+                    "category": "time",
+                    "suggestion_deadline_minutes": 120,
+                    "day_time_windows": [
+                        {"day": d, "windows": [{"min": "18:00", "max": "20:00"}]}
+                    ],
+                    "duration_window": {
+                        "minValue": 2, "maxValue": 2,
+                        "minEnabled": True, "maxEnabled": True,
+                    },
+                }
+            ],
+        }
+        resp = client.post("/api/polls", json=body)
+        assert resp.status_code == 201, resp.text
+        s = _summary(client, resp.json())
+        # Still collecting availability (options unfinalized) → read-only bubble.
+        assert s["questions"][0]["slots"] is None
+
+    def test_showtime_surfaces_slots_and_vote_updates_result(self, client):
+        keys = ["2026-06-20 19:10-21:56", "2026-06-20 21:30-23:56"]
+        body = {
+            "creator_name": "Host",
+            "response_deadline": _future_iso(),
+            "questions": [
+                {
+                    "question_type": "showtime",
+                    "category": "showtime",
+                    "context": "Dune: Part Two",
+                    "is_auto_title": True,
+                    "options": keys,
+                    "options_metadata": {
+                        keys[0]: {"cinema_name": "Alamo", "format": "70mm"},
+                        keys[1]: {"cinema_name": "Alamo", "format": "Digital"},
+                    },
+                }
+            ],
+        }
+        resp = client.post("/api/polls", json=body)
+        assert resp.status_code == 201, resp.text
+        poll = resp.json()
+        qid = poll["questions"][0]["id"]
+        s = _summary(client, poll)
+        slots = s["questions"][0]["slots"]
+        assert [x["key"] for x in slots] == keys
+        assert all(x["label"] and x["label"] != x["key"] for x in slots)
+        # A want vote moves the "Leading:" line (same path the bubble vote uses).
+        vote = client.post(
+            f"/api/polls/{poll['id']}/votes",
+            json={
+                "voter_name": "Voter",
+                "items": [{
+                    "question_id": qid,
+                    "vote_type": "showtime",
+                    "liked_slots": [keys[1]],
+                    "disliked_slots": [keys[0]],
+                }],
+            },
+            headers={"X-Browser-Id": str(uuid.uuid4())},
+        )
+        assert vote.status_code == 201, vote.text
+        s2 = _summary(client, poll)
+        assert s2["questions"][0]["result_text"].startswith("Leading:")
