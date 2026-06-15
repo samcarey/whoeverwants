@@ -3437,22 +3437,32 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
     `contentSizeThatFits` returns a fixed `TranscriptBubbleView.bubbleHeight`
     (148pt in Phase 2; bumped to 168pt in Phase 3 to fit a vote-button row);
     >2 questions collapse into "+N more" so the fixed height never clips.
-  - **The INPUT-FIELD compose preview (the staged bubble before send) IGNORES
-    `contentSizeThatFits` and hands the live view a much taller, ≈square
-    region.** The transcript honors `bubbleHeight`, but the pre-send preview
-    does not — so `TranscriptBubbleView` must NOT assume it owns exactly
-    `bubbleHeight`. Its `body` wraps `content` in a `GeometryReader`, clamps it
-    to `min(geo.height, bubbleHeight)`, and CENTERS that fixed-height block in
-    the full region (white background painted over the whole region, not just
-    the block). Without this the content was top-pinned + trailing-`Spacer`'d,
-    so the over-tall preview clipped the title above the balloon top and left a
-    big blank below (device report: "preview too high, top cut off, blank at
-    bottom"; sent bubble was fine). The clamp+center is a no-op on the
-    transcript (`geo == bubbleHeight` there), so it can't regress the
-    already-correct sent bubble. Device-only-verifiable (Simulator can't
-    reliably reproduce input-field preview sizing). Any future live-bubble
-    layout must stay resilient to a taller-than-`bubbleHeight` region — don't
-    re-introduce a top-pin + Spacer that assumes the exact height.
+  - **The INPUT-FIELD compose preview (the staged bubble before send) does NOT
+    honor `contentSizeThatFits`. It sizes the live view to its SwiftUI INTRINSIC
+    content height and top-aligns it inside a balloon reserved from the
+    `MSMessageTemplateLayout` (alternate) IMAGE aspect — so a SQUARE
+    (300×300) `shareImage` made the staged balloon ≈square, leaving a big grey
+    band below the content-tall live view (device reports).** Two hard-won
+    findings here:
+    - **DON'T wrap the bubble body in a `GeometryReader` to "clamp + center"
+      it.** `GeometryReader` has NO intrinsic size, so in the intrinsic-sizing
+      context the compose preview uses it collapses the view — the footer fell
+      off the bottom into the grey while the top un-clipped (a shipped-then-
+      reverted regression, #741 → reverted). The bubble body stays the plain
+      `content.padding(12).frame(maxWidth:.infinity, maxHeight:.infinity,
+      alignment:.topLeading).background(systemBackground)` that makes the SENT
+      transcript bubble correct (there the host gives it exactly `bubbleHeight`).
+    - **The lever on the staged-balloon SIZE is the `shareImage` ASPECT, not the
+      live view's internal layout.** `shareImage` is WIDE-SHORT (600×336,
+      ~1.79:1 ≈ full-width × `bubbleHeight`) precisely so the staged balloon
+      isn't square. It's also the no-app/SMS/macOS fallback bubble image (a wide
+      👋 reads fine there). If a future change needs the staged balloon a
+      different height, change this image's aspect.
+    - **Device-only-verifiable** (Simulator can't reliably reproduce input-field
+      preview sizing; the SENT transcript bubble is always fine, so screenshots
+      of the STAGED preview are the only signal). The image-aspect theory was
+      still unconfirmed at the time of writing — confirm on a fresh Latest
+      TestFlight build before treating it as settled.
   - **Messages overlays the extension's APP ICON on the live bubble's
     top-left corner** — the OS draws it, the extension can't remove or move
     it, and it doesn't show in any non-device mockup (device-found: it
