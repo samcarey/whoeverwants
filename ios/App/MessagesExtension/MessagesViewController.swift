@@ -1752,6 +1752,13 @@ private struct BallotQuestionRow: View {
     let poll: PollSummary
     let canVote: Bool
 
+    // The in-flight sentinel for an explicit-Submit ballot (ranked / time /
+    // showtime — a question is exactly one of these, so yesNoChoice nil +
+    // isAbstain false never collides with a yes_no/limited_supply target).
+    private var submitTarget: VotingTarget {
+        VotingTarget(questionId: question.id, yesNoChoice: nil, isAbstain: false)
+    }
+
     var body: some View {
         let mine = model.ballotVotes[question.id]
         return VStack(alignment: .leading, spacing: 6) {
@@ -1796,9 +1803,7 @@ private struct BallotQuestionRow: View {
     // tiers (the bubble is a "simple taps" surface per Apple's live-layout rules).
     @ViewBuilder private var rankedSection: some View {
         let order = model.ballotRankOrder[question.id] ?? []
-        let spinning = model.ballotVoting == VotingTarget(
-            questionId: question.id, yesNoChoice: nil, isAbstain: false
-        )
+        let spinning = model.ballotVoting == submitTarget
         VStack(alignment: .leading, spacing: 6) {
             Text("Tap to rank in order")
                 .font(.caption)
@@ -1854,9 +1859,7 @@ private struct BallotQuestionRow: View {
     @ViewBuilder private var slotSection: some View {
         let marks = model.ballotSlots[question.id] ?? [:]
         let hasMark = !marks.isEmpty
-        let spinning = model.ballotVoting == VotingTarget(
-            questionId: question.id, yesNoChoice: nil, isAbstain: false
-        )
+        let spinning = model.ballotVoting == submitTarget
         VStack(alignment: .leading, spacing: 6) {
             Text("Tap to mark 👍 want · 👎 can't")
                 .font(.caption)
