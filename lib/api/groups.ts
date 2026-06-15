@@ -591,6 +591,26 @@ export interface CreateGroupInviteOptions {
   expires_in_hours?: number | null;
 }
 
+// Last-resolved active invite LIST per routeId (token/url stripped — same
+// token-less shape the list endpoint returns), so InviteLinksSection can seed
+// its rows SYNCHRONOUSLY on the first commit instead of having the list grow
+// in after the async GET resolves (visible expanding mid/after the slide into
+// /info). Bounded LRU, no TTL — kept consistent across list/create/revoke
+// below; the section also refetches on every mount and corrects any staleness.
+const INVITE_CACHE_MAX = 50;
+const groupInvitesCache = new Map<string, GroupInvite[]>();
+function cacheGroupInvites(routeId: string, list: GroupInvite[]): void {
+  groupInvitesCache.delete(routeId); // re-insert at the end (most-recent)
+  groupInvitesCache.set(routeId, list);
+  if (groupInvitesCache.size > INVITE_CACHE_MAX) {
+    const oldest = groupInvitesCache.keys().next().value;
+    if (oldest !== undefined) groupInvitesCache.delete(oldest);
+  }
+}
+export function getCachedGroupInvites(routeId: string): GroupInvite[] | null {
+  return groupInvitesCache.get(routeId) ?? null;
+}
+
 export async function apiCreateGroupInvite(
   routeId: string,
   options: CreateGroupInviteOptions = {},
@@ -608,7 +628,14 @@ export async function apiCreateGroupInvite(
       body: JSON.stringify(body),
     },
   );
-  return data as GroupInvite;
+  const invite = data as GroupInvite;
+  // Mirror the new row into the cached list (token/url stripped — the cache
+  // holds the token-less list shape; the raw URL stays session-only via the
+  // component's freshUrls map) so a revisit seeds it without a pop.
+  const cached = groupInvitesCache.get(routeId);
+  const listShape: GroupInvite = { ...invite, token: null, url: null };
+  cacheGroupInvites(routeId, cached ? [listShape, ...cached] : [listShape]);
+  return invite;
 }
 
 export async function apiListGroupInvites(
@@ -617,7 +644,9 @@ export async function apiListGroupInvites(
   const data = await groupFetch<any[]>(
     `/${encodeURIComponent(routeId)}/invites`,
   );
-  return Array.isArray(data) ? (data as GroupInvite[]) : [];
+  const list = Array.isArray(data) ? (data as GroupInvite[]) : [];
+  cacheGroupInvites(routeId, list);
+  return list;
 }
 
 export async function apiRevokeGroupInvite(
@@ -628,6 +657,8 @@ export async function apiRevokeGroupInvite(
     `/${encodeURIComponent(routeId)}/invites/${encodeURIComponent(inviteId)}`,
     { method: 'DELETE' },
   );
+  const cached = groupInvitesCache.get(routeId);
+  if (cached) cacheGroupInvites(routeId, cached.filter((i) => i.id !== inviteId));
 }
 
 /**

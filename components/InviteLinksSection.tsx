@@ -41,6 +41,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ApiError,
   apiListGroupInvites,
+  getCachedGroupInvites,
   apiRevokeGroupInvite,
 } from "@/lib/api";
 import type { GroupInvite } from "@/lib/api";
@@ -82,7 +83,16 @@ export default function InviteLinksSection({
   // we still have its raw URL". The merger below the JSX overlays
   // them so freshly-minted rows show a Copy button while
   // previously-existing rows don't.
-  const [invites, setInvites] = useState<GroupInvite[] | null>(null);
+  // Seed the rows from the last-resolved list so they render in their final
+  // state on the first commit instead of growing in after the async GET
+  // resolves mid-slide. Cold cache → null → empty until the fetch lands.
+  // (Seeded rows carry no `url`, so they show mode·usage·age + Revoke and no
+  // Copy button — same as any non-session-minted list row.)
+  const [invites, setInvites] = useState<GroupInvite[] | null>(() =>
+    enabled && typeof window !== "undefined"
+      ? getCachedGroupInvites(groupId)
+      : null,
+  );
   const [freshUrls, setFreshUrls] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
