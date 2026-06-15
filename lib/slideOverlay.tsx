@@ -45,10 +45,12 @@ import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { isGroupRootView, normalizePath } from "./questionId";
+import { resetSwipeBackChrome } from "./useSwipeBackGesture";
 import { getRememberedScroll, groupScrollKey, pollScrollKey } from "./scrollMemory";
 import {
   SLIDE_TO_GROUP_EVENT,
   SLIDE_OVERLAY_GROUP_ACTIVE_EVENT,
+  HIDE_HOME_BACKDROP_EVENT,
   type SlideToGroupDetail,
   type SlideOverlayGroupActiveDetail,
   type SlideOverlayKind,
@@ -399,6 +401,21 @@ export function SlideOverlayHost(): React.ReactElement | null {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<SlideToGroupDetail>).detail;
       if (!detail) return;
+      // Dismiss any orphaned home backdrop. The home backdrop is a transient
+      // cover for the group→home swipe-back commit window, dismissed when the
+      // home page mounts. If that commit's router.push('/') is superseded by
+      // another navigation (e.g. tapping the group title into /info), home
+      // never mounts and the backdrop is stranded visible (FAB shows; it
+      // paints through any page lacking an opaque wrapper, e.g. /edit-title).
+      // No legitimate group→home transition ever fires a slide event (the
+      // swipe uses the gesture; the back button uses view-transitions), so a
+      // slide starting while the backdrop is up unambiguously means it's
+      // orphaned — HIDE is a no-op when it isn't. Mirror home's own mount
+      // cleanup (resetSwipeBackChrome + HIDE) so a stranded swipe transform on
+      // the persistent portals + the scrollbar lock are cleared too; both are
+      // no-ops when no swipe was interrupted.
+      resetSwipeBackChrome();
+      window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT));
       clearUnmountTimer();
       pushedRef.current = false;
       setState({ ...detail, phase: "enter" });
