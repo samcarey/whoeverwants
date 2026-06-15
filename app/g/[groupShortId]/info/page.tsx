@@ -269,17 +269,13 @@ function Info({ group, groupId }: { group: import("@/lib/groupUtils").Group; gro
     totalCount = membersList.length;
   }
 
-  // Hero + title also surface the viewer in the solo case so the page
-  // doesn't render a gray placeholder + "New Group" fallback for a
-  // single-member group. Gated on a real name — we'd rather not invent a
-  // group name from "You".
-  const showViewerInHero =
-    group.participantNames.length === 0 &&
-    group.anonymousRespondentCount === 0 &&
-    currentUserName !== null;
-  const heroNames = showViewerInHero ? [currentUserName] : group.participantNames;
-  const displayTitle =
-    showViewerInHero && !group.groupTitleOverride ? currentUserName : group.title;
+  // Hero + title read straight from the group (same source the root page and
+  // top bar use) so a solo new group reads "New Group" + the placeholder
+  // avatar everywhere — never the creator's own name. (We used to surface the
+  // viewer in the solo case, which made the info page disagree with the rest
+  // of the app.)
+  const heroNames = group.participantNames;
+  const displayTitle = group.title;
 
   return (
     <>
