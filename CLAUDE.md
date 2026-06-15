@@ -3466,6 +3466,29 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
       preview sizing; the SENT transcript bubble is always fine, so screenshots
       of the STAGED preview are the only signal. The revert + wide-short image
       together fixed it on a real device.
+    - **First-paint layout race (separate from the balloon ASPECT above) —
+      fixed EVENT-DRIVEN, not with a timer.** On the FIRST tap the staged
+      preview paints content into a not-yet-settled frame (content too high,
+      clipped at top); switching apps + back shows a spinner then renders
+      correctly. Cause: `SummaryStore` returns SYNCHRONOUSLY from cache (the
+      drawer warmed it when the poll was picked), so `TranscriptBubbleModel.load`
+      flips `.loading → .loaded` during `willBecomeActive` — BEFORE any layout —
+      and the content paints into a not-yet-laid-out frame and never re-renders
+      when it settles. The background→foreground path works only because it
+      re-runs the `loading → loaded` render into the now-settled frame (it's the
+      RE-RENDER that fixes it, not elapsed time). So gate presentation on an
+      actual layout event, deterministically: `load` holds the fetched summary
+      in `pendingSummary` and only sets `.loaded` once `frameReady`;
+      `MessagesViewController.viewDidLayoutSubviews` calls
+      `bubbleModel.frameDidLayout()` on every real bounds change (guarded by
+      `lastBubbleBounds`), which sets `frameReady` + (re)presents the summary —
+      first call reveals the held-back cache hit, later calls re-render into the
+      settled frame so the final layout always wins. Re-emitting same-size
+      content can't loop (identical content → identical bounds → no further
+      pass). `load`'s Task is `@MainActor` so `state`/`myVotes`/`pendingSummary`
+      mutate on main. A guessed `Task.sleep` floor was tried first and
+      rejected as fragile — don't reintroduce a timing constant here; tie the
+      reveal to the layout event. Device-only-verifiable.
   - **Messages overlays the extension's APP ICON on the live bubble's
     top-left corner** — the OS draws it, the extension can't remove or move
     it, and it doesn't show in any non-device mockup (device-found: it

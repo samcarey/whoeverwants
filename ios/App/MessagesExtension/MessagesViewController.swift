@@ -1218,6 +1218,19 @@ final class TranscriptBubbleModel: ObservableObject {
     weak var host: MessagesViewController?
 
     private var shortId: String?
+    // The staged compose preview only renders correctly when the content's
+    // loading→loaded render happens AFTER the host view has a real, laid-out
+    // frame. On first activation a cache-hit summary (the drawer warmed
+    // SummaryStore when the poll was picked) flips .loaded during
+    // willBecomeActive — before any layout — so the content paints into a
+    // not-yet-settled frame (too high, clipped) and never re-renders when the
+    // frame settles. (A background→foreground reload fixes it only because it
+    // re-runs the loading→loaded render into the now-settled frame.) So gate
+    // presentation on an actual layout event instead of a guessed delay: hold
+    // the fetched summary until the VC reports its first laid-out frame, and
+    // re-present on every later frame change so the settled frame always wins.
+    private var pendingSummary: PollSummary?
+    private var frameReady = false
 
     func load(messageURL: URL?) {
         guard let url = messageURL,
@@ -1226,15 +1239,27 @@ final class TranscriptBubbleModel: ObservableObject {
             return
         }
         shortId = short
-        Task {
+        Task { @MainActor in
             do {
                 let summary = try await SummaryStore.shared.summary(shortId: short)
-                state = .loaded(summary)
+                pendingSummary = summary
+                if frameReady { state = .loaded(summary) }
                 await loadMyVoteIfVotable(summary)
             } catch {
                 state = .unavailable
             }
         }
+    }
+
+    // Called by the host VC from `viewDidLayoutSubviews` on every real frame
+    // change (deterministic — no timer). (Re)presents the loaded content into
+    // the current frame; the FIRST call reveals a cache-hit summary that was
+    // held back, later calls re-render into a settled frame. Re-emitting the
+    // same-size content can't loop: identical content lays out to the same
+    // bounds, so it produces no further layout pass.
+    @MainActor func frameDidLayout() {
+        frameReady = true
+        if let summary = pendingSummary { state = .loaded(summary) }
     }
 
     // Fetch the viewer's own vote for the single inline-votable question (only
@@ -1360,6 +1385,25 @@ class MessagesViewController: MSMessagesAppViewController {
     // scrolls. Messages passes the maximum bubble size as `size`.
     override func contentSizeThatFits(_ size: CGSize) -> CGSize {
         CGSize(width: size.width, height: TranscriptBubbleView.bubbleHeight)
+    }
+
+    // The frame the live bubble (incl. the staged compose preview) is laid out
+    // into. A cache-hit summary can flip the model to `.loaded` during
+    // willBecomeActive — before any layout — so the content would paint into a
+    // not-yet-settled frame and not re-render when it settles. Notify the model
+    // on every real frame change so it (re-)presents content into the current
+    // frame: the FIRST notification reveals the held-back cache-hit summary,
+    // later ones re-render into the settled frame. Event-driven, no guessed
+    // delay. Bounds-changed guard keeps it to actual layout changes (and avoids
+    // re-emitting identical content on every routine pass).
+    private var lastBubbleBounds: CGRect = .zero
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard presentationStyle == .transcript else { return }
+        if view.bounds.height > 0, view.bounds != lastBubbleBounds {
+            lastBubbleBounds = view.bounds
+            bubbleModel.frameDidLayout()
+        }
     }
 
     // Fires when the user taps one of our bubbles while the extension is
