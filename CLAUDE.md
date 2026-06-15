@@ -2572,13 +2572,16 @@ different FE origin, extend the allowlist.
 >     a poll yet was invisible — on an empty group the roster only ever
 >     showed the viewer (the reported "approved Bob, list still says Sam"
 >     symptom). See the dedicated "Group Member Roster" section below for
->     the endpoint + refresh wiring. The HERO AVATAR + TITLE still use
->     `participantNames` (unchanged) — they surface the viewer in the
->     solo-member case so the page doesn't fall through to a gray
->     placeholder circle + "New Group" title; gated on a real localStorage
->     name (we don't invent a group name from "You"). `showViewerInHero`
->     in `app/g/[groupShortId]/info/page.tsx` is the predicate
->     (`participantNames.length === 0 && anonymousRespondentCount === 0 && currentUserName !== null`).
+>     the endpoint + refresh wiring. The HERO AVATAR + TITLE read straight
+>     from the group (`group.participantNames` + `group.title`, the SAME
+>     source the root page + top bar use), so a solo new group reads "New
+>     Group" + the 👥 placeholder avatar everywhere. **The earlier
+>     `showViewerInHero` special-case (which surfaced the creator's own name
+>     as the hero title in the solo case) was REMOVED** — it made the info
+>     page disagree with the rest of the app (reported: a brand-new group
+>     showed "New Group" on the home/top bar but "Sam" on the info page).
+>     Don't reintroduce a viewer-surfacing fallback here; a solo group having
+>     no invented name is the intended consistent state.
 >
 > The legacy `/g/` empty placeholder route still exists as the home
 > new group button's fallback on API failure — kept so a network blip during
