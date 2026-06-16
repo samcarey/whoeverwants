@@ -1554,6 +1554,9 @@ export function CreateQuestionContent() {
     icon: string;
     segments: SuggestionSegment[];
     overrides: Partial<QuestionDraft>;
+    // Right-edge monochrome glyph hint: 'ai' → sparkles (LLM-predicted),
+    // 'recent' → timer (a previously-used poll), undefined → nothing.
+    source?: 'ai' | 'recent';
   }>>(() => {
     // ORDERING + which-rows is decided by the pure planner (lib/pollSuggestions),
     // the single source of truth shared with the committed scoring harness — so
@@ -1638,8 +1641,14 @@ export function CreateQuestionContent() {
       const words = text.toLowerCase().split(/[\s,]+/).filter(Boolean);
       return tokens.every((t) => words.some((w) => w.startsWith(t)));
     };
+    // Build a display row from a RecentEntry, tagged with its source so the
+    // render can draw the right-edge glyph (sparkles for AI, clock for recents).
+    const tagged = (e: RecentEntry, source: 'ai' | 'recent') =>
+      ({ ...display(e.key, e.icon, e.overrides), source });
     const recentRows = () =>
-      recentEntries.filter((e) => matchesTokens(e.titleText)).map((e) => display(e.key, e.icon, e.overrides));
+      recentEntries
+        .filter((e) => matchesTokens(e.titleText))
+        .map((e) => tagged(e, 'recent'));
 
     // AI-predicted next polls (server LLM), ordered top→bottom = bottom nearest
     // the bar. EMPTY box: server order reversed so the LLM's top pick is nearest
@@ -1647,9 +1656,9 @@ export function CreateQuestionContent() {
     // on-device model's cosine scores (best nearest the bar, off-topic dropped);
     // before scores land (model loading), token-filter as a no-AI fallback.
     const aiRows = (typed: boolean) => {
-      if (!aiEntries.length) return [] as ReturnType<typeof display>[];
+      if (!aiEntries.length) return [] as ReturnType<typeof tagged>[];
       if (!typed) {
-        return [...aiEntries].reverse().map((e) => display(e.key, e.icon, e.overrides));
+        return [...aiEntries].reverse().map((e) => tagged(e, 'ai'));
       }
       let ranked = aiEntries.map((e, i) => ({ e, score: aiScores ? aiScores[i] : null }));
       if (aiScores) {
@@ -1659,7 +1668,7 @@ export function CreateQuestionContent() {
       } else {
         ranked = ranked.filter((x) => matchesTokens(x.e.titleText));
       }
-      return ranked.map((x) => display(x.e.key, x.e.icon, x.e.overrides));
+      return ranked.map((x) => tagged(x.e, 'ai'));
     };
 
     // On /explore the feed only accepts yes/no polls (the variant-evolution
@@ -2901,6 +2910,25 @@ export function CreateQuestionContent() {
                 )
               )}
             </span>
+            {/* Right-edge monochrome source hint: sparkles = AI-predicted,
+                clock = a previously-used poll. Others get nothing. The text
+                span above is flex-1, so this shrink-0 glyph pins to the right. */}
+            {s.source && (
+              <span
+                className={`shrink-0 text-gray-400 dark:text-gray-500 ${hasLabel ? 'pt-3' : ''}`}
+                aria-hidden
+              >
+                {s.source === 'ai' ? (
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                  </svg>
+                )}
+              </span>
+            )}
           </button>
         );
       })}
