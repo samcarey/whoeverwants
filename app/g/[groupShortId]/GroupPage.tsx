@@ -964,32 +964,23 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     if (typeof document === 'undefined') return;
 
     const HOME_WARM_INTERVAL_MS = 15000;
-    let cancelled = false;
-    let timerId: ReturnType<typeof setTimeout> | null = null;
 
     const warm = () => {
-      if (cancelled || document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== 'visible') return;
       void getMyGroups().catch(() => {});
     };
 
-    const scheduleNext = () => {
-      if (cancelled) return;
-      timerId = setTimeout(() => {
-        warm();
-        scheduleNext();
-      }, HOME_WARM_INTERVAL_MS);
-    };
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && !cancelled) warm();
-    };
-
+    // A plain interval is fine here (unlike the awaited 5s refresh above,
+    // which uses recursive setTimeout to avoid piling up overlapping
+    // fetches): `getMyGroups()` is fire-and-forget AND in-flight-coalesced,
+    // so a slow response can't stack up. A late resolution after unmount
+    // only writes the global cache — never component state.
+    const intervalId = setInterval(warm, HOME_WARM_INTERVAL_MS);
+    const onVisibilityChange = () => warm();
     document.addEventListener('visibilitychange', onVisibilityChange);
-    scheduleNext();
 
     return () => {
-      cancelled = true;
-      if (timerId !== null) clearTimeout(timerId);
+      clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
