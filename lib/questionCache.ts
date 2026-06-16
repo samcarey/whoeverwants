@@ -150,6 +150,23 @@ export function getCachedAccessiblePolls(): Poll[] | null {
     : null;
 }
 
+/** Get the cached accessible polls list IGNORING TTL freshness — returns
+ *  the value whenever the cache reference is present (null only when the
+ *  cache was never populated OR was explicitly cleared via
+ *  `invalidateAccessibleQuestions`). Used by `hydrateAndCache` to preserve
+ *  OTHER groups' entries when a single-group refresh lands after the TTL
+ *  has lapsed: without this, sitting on a group page past the 60s TTL lets
+ *  the recurring 5s group refresh overwrite the cache with only the current
+ *  group, so the home backdrop (and the home-page synchronous init) show
+ *  just that one group on slide-back until a fresh `/mine` fetch lands.
+ *  Staleness is acceptable here — the home page always re-fetches `/mine`
+ *  on mount, so any momentarily-stale other-group entry is corrected within
+ *  the same render. An EXPLICIT clear still drops everything (the reference
+ *  is null, not merely expired), so forget/leave are respected. */
+export function peekAccessiblePolls(): Poll[] | null {
+  return accessiblePollsCache ? accessiblePollsCache.value : null;
+}
+
 /** Flat questions accessor for callsites that just need every accessible question
  *  (e.g. the prefetcher). Returns null when the poll cache is cold. */
 export function getCachedAccessibleQuestions(): Question[] | null {
