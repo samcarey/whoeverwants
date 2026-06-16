@@ -32,6 +32,7 @@ import {
   cacheQuestionResults,
   getCachedAccessiblePolls,
   getCachedGroupSummary,
+  peekAccessiblePolls,
   invalidateAccessibleQuestions,
   invalidateGroupSummary,
   invalidatePoll,
@@ -95,7 +96,13 @@ function hydrateAndCache(data: any[]): Poll[] {
   // render the empty-state synchronously with no spinner.
   const groupIds = new Set<string>();
   for (const p of polls) if (p.group_id) groupIds.add(p.group_id);
-  const cached = getCachedAccessiblePolls() ?? [];
+  // Preserve OTHER groups' entries from the RAW cache (ignoring TTL): a
+  // single-group refresh (the group page's recurring 5s `apiGetGroupByRouteId`)
+  // must never evict the rest of the home list just because the accessible
+  // cache's 60s TTL lapsed while the user sat on the group. `peekAccessiblePolls`
+  // returns null only when the cache was explicitly cleared (forget/leave),
+  // so those still drop other groups correctly. See the helper's doc comment.
+  const cached = peekAccessiblePolls() ?? [];
   const others = cached.filter((p) => !p.group_id || !groupIds.has(p.group_id));
   cacheAccessiblePolls([...others, ...polls]);
   return polls;

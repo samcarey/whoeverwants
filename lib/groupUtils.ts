@@ -484,19 +484,51 @@ export function buildEmptyGroup(summary: GroupSummary): Group {
  * Sort groups:
  * 1. Groups with unvoted open polls first, sorted by soonest deadline
  * 2. Groups without unvoted polls, sorted by most recent activity
+ *
+ * The comparator is TOTALLY deterministic — it never returns 0 for two
+ * distinct groups. This is load-bearing: `buildGroups` derives the input
+ * array order from the `polls` argument's iteration order
+ * (`groupPollsByGroup(...).values()`), and that array order differs between
+ * sources — the `/mine` server order (what the home page renders directly
+ * from `setPolls`) vs the in-memory `accessiblePollsCache` order (what the
+ * swipe-back backdrop + the home page's synchronous init read). The
+ * single-group 5s refresh's `hydrateAndCache` shoves the current group's
+ * polls to the END of the cached array, so the cache order and the `/mine`
+ * order diverge for any groups that TIE on the primary keys (e.g. every
+ * group with no deadline). A stable sort would then leak that array-order
+ * difference into the displayed order, and home's mount `/mine` fetch would
+ * visibly re-sort the list a beat after the back transition lands. The
+ * `latestActivityMs` + group-identity tiebreaks make the order a pure
+ * function of the group set, so the backdrop, the home first paint, and the
+ * home post-fetch all agree regardless of which array order they were built
+ * from — no reshuffle after the transition.
  */
+function groupSortKey(g: Group): string {
+  return g.rootPollId ?? g.groupId ?? g.groupShortId ?? '';
+}
+
 function sortGroups(groups: Group[]): Group[] {
   return groups.sort((a, b) => {
-    if (a.unvotedCount > 0 && b.unvotedCount === 0) return -1;
-    if (a.unvotedCount === 0 && b.unvotedCount > 0) return 1;
+    const aUnvoted = a.unvotedCount > 0;
+    const bUnvoted = b.unvotedCount > 0;
+    if (aUnvoted !== bUnvoted) return aUnvoted ? -1 : 1;
 
-    if (a.unvotedCount > 0 && b.unvotedCount > 0) {
+    // Within the unvoted bucket, soonest deadline first.
+    if (aUnvoted) {
       const aDeadline = a.soonestUnvotedDeadlineMs ?? Infinity;
       const bDeadline = b.soonestUnvotedDeadlineMs ?? Infinity;
-      return aDeadline - bDeadline;
+      if (aDeadline !== bDeadline) return aDeadline - bDeadline;
     }
 
-    return b.latestActivityMs - a.latestActivityMs;
+    // Most recent activity first (primary for the no-unvoted bucket; a
+    // tiebreak within the unvoted bucket when deadlines match / are absent).
+    if (a.latestActivityMs !== b.latestActivityMs) {
+      return b.latestActivityMs - a.latestActivityMs;
+    }
+
+    // Final deterministic tiebreak on a stable group identity, so the order
+    // can never depend on the input array order.
+    return groupSortKey(a).localeCompare(groupSortKey(b));
   });
 }
 

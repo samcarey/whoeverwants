@@ -936,6 +936,56 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, !!group, error]);
 
+  // ===================================================================
+  // Keep the WHOLE home list warm while viewing a group, so a swipe-back
+  // reveals the home list already in its FINAL order — no post-transition
+  // reshuffle.
+  //
+  // The 5s refresh above only keeps the CURRENT group fresh. The OTHER
+  // groups' ordering inputs (a new poll from another member, a deadline
+  // passing, others' activity bumping `latestActivityMs`) go stale while
+  // you sit on one group — so the swipe-back backdrop (HomeBackdropHost)
+  // and the home page's synchronous cache-init paint a STALE order, which
+  // the home page's mount `/mine` fetch then re-sorts a beat later. That
+  // late re-sort is the visible "order changed after the transition".
+  //
+  // `getMyGroups()` refreshes BOTH caches the backdrop + home-init read
+  // (`accessiblePollsCache` via `/mine` and the empty-groups cache via
+  // `/empty`), so by swipe time the cached order already equals the order
+  // home settles on. Throttled (HOME_WARM_INTERVAL_MS) — ordering doesn't
+  // need second-level freshness and `/mine` is heavier than one group;
+  // visibility re-show warms immediately. Decoupled + best-effort: it only
+  // writes caches (never the group page's own state) and swallows errors,
+  // so a failure can't disturb the live group view. `getMyGroups`'
+  // in-flight coalescing dedupes against the home page's own fetch.
+  // ===================================================================
+  useEffect(() => {
+    if (!group || error) return;
+    if (typeof document === 'undefined') return;
+
+    const HOME_WARM_INTERVAL_MS = 15000;
+
+    const warm = () => {
+      if (document.visibilityState !== 'visible') return;
+      void getMyGroups().catch(() => {});
+    };
+
+    // A plain interval is fine here (unlike the awaited 5s refresh above,
+    // which uses recursive setTimeout to avoid piling up overlapping
+    // fetches): `getMyGroups()` is fire-and-forget AND in-flight-coalesced,
+    // so a slow response can't stack up. A late resolution after unmount
+    // only writes the global cache — never component state.
+    const intervalId = setInterval(warm, HOME_WARM_INTERVAL_MS);
+    const onVisibilityChange = () => warm();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, !!group, error]);
+
   // Measure the fixed group header so we can apply matching padding-top on the scroll list
   // (the header is position:fixed and out of flow, so the list doesn't naturally reserve space).
   // Re-measure when `group` flips loaded — the header is rendered behind a

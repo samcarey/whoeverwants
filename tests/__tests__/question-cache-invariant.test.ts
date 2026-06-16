@@ -4,7 +4,7 @@
  * navigation" for the back-nav scroll regression this prevents.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   cacheAccessiblePolls,
   cachePoll,
@@ -13,6 +13,7 @@ import {
   invalidateAccessibleQuestions,
   invalidatePoll,
   invalidateQuestion,
+  peekAccessiblePolls,
 } from '@/lib/questionCache';
 import type { Poll } from '@/lib/types';
 
@@ -103,5 +104,44 @@ describe('questionCache field-level vs shape-level invariant', () => {
     invalidateAccessibleQuestions();
 
     expect(getCachedAccessiblePolls()).toBeNull();
+  });
+});
+
+describe('peekAccessiblePolls (TTL-ignoring read for hydrateAndCache merge)', () => {
+  beforeEach(() => {
+    invalidateAccessibleQuestions();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns the cached value even after the TTL has lapsed', () => {
+    vi.useFakeTimers();
+    cacheAccessiblePolls([buildPoll('p1', ['q1'])]);
+
+    // Advance past the 60s accessible-polls TTL.
+    vi.advanceTimersByTime(61_000);
+
+    // The TTL-gated getter treats the entry as gone…
+    expect(getCachedAccessiblePolls()).toBeNull();
+    // …but the raw peek still returns it, so a single-group refresh that
+    // lands after the TTL lapse (the group page's recurring 5s
+    // apiGetGroupByRouteId) can preserve OTHER groups instead of evicting
+    // them — the home-backdrop "only one group" regression this fixes.
+    expect(peekAccessiblePolls()).toHaveLength(1);
+    expect(peekAccessiblePolls()?.[0].id).toBe('p1');
+  });
+
+  it('returns null after an explicit clear (forget/leave respected)', () => {
+    cacheAccessiblePolls([buildPoll('p1', ['q1'])]);
+    expect(peekAccessiblePolls()).toHaveLength(1);
+
+    invalidateAccessibleQuestions();
+
+    // Explicit clear nulls the reference (not merely expires it), so the
+    // peek drops everything — a single-group refresh after forget/leave
+    // correctly rebuilds the cache with only the current group.
+    expect(peekAccessiblePolls()).toBeNull();
   });
 });
