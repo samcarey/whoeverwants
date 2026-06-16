@@ -3467,40 +3467,38 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
       preview sizing; the SENT transcript bubble is always fine, so screenshots
       of the STAGED preview are the only signal. The revert + wide-short image
       together fixed it on a real device.
-    - **First-paint layout race (separate from the balloon ASPECT above):** on
-      the FIRST tap the staged preview painted the live bubble clipped/too-high;
-      an app-focus swap reliably fixed it. **Device-diagnosed via a temporary
-      `IMSGDIAG` client-log probe** (a `.background(GeometryReader)` that logged
-      the content's GLOBAL frame to `/api/client-logs`, since removed): the
-      bubble is composited at a **NEGATIVE global origin** (e.g. `(-44,-22)` —
-      above the bubble's top edge, that IS the clip) and bounced through
+    - **First-paint staged-preview clip — ACCEPTED as a Messages-framework
+      limitation; do NOT spend more cycles on it.** On the FIRST tap the staged
+      compose preview paints the live bubble clipped/too-high; an app-focus swap
+      (resign→become active) reliably fixes it. Intermittent, device-ONLY (never
+      reproduces in Simulator or headless). **Device-diagnosed via a temporary
+      `IMSGDIAG` client-log probe** (a `.background(GeometryReader)` that POSTed
+      the content's GLOBAL frame to `/api/client-logs`, since removed): the live
+      view is composited at a **NEGATIVE global origin** (e.g. `(-44,-22)` — above
+      the bubble's top edge, which IS the visible clip) and bounced through
       transient sizes during Messages' entrance animation before settling to
       `(0,0)`. SwiftUI paints the loaded content into that off-screen frame and
-      does NOT reliably re-lay-it-out when it lands (only a full app-switch
-      re-render did). **Current attempt (UNVERIFIED — five prior SwiftUI-side
-      fixes all failed on device; evidence increasingly points at the OS-drawn
-      Messages BALLOON MASK clipping a correctly-positioned live view, which the
-      extension can't control):** `TranscriptBubbleView` (a) HOLDS the loaded
-      content behind the spinner until a `frameSettled` `@State` latches (a
-      `.background(GeometryReader)` → `settleIfOnScreen` on the first NON-negative
-      origin + ~full-height frame), AND (b) `.id(frameSettled)`s the content so
-      the reveal is a FULL subtree rebuild (new identity → laid out from scratch
-      into the settled frame, the closest mechanical analog to the app-switch),
-      not a content swap that can reuse the stale off-screen geometry. The
-      GeometryReader stays on the stable outer chain so the @State latch survives
-      the rebuild. **Approaches CONFIRMED FAILED on device — do NOT re-try
-      blind:** (1) `Task.sleep` minimum-loading FLOOR (fragile magic number); (2)
-      event-driven re-present on a `viewDidLayoutSubviews` BOUNDS change (size
-      never captured the negative-ORIGIN clip); (3) OBSERVING the global frame to
-      nudge a re-render after revealing; (4) HOLDING the reveal behind a
-      non-negative-origin settle gate (content-swap within stable identity). If
-      the `.id()`-rebuild attempt ALSO fails, stop chasing it from SwiftUI — the
-      remaining levers are OS-level (the only knobs are `contentSizeThatFits` and
-      the alternate-layout image ASPECT, already tuned in #744) and the glitch
-      should be ACCEPTED as a Messages-framework limitation. **Device-only-
-      verifiable, and the bug is INTERMITTENT, so "didn't reproduce" isn't proof
-      of a fix.** Cosmetic pre-send-preview only — the SENT transcript bubble +
-      voting are unaffected.
+      does NOT reliably re-lay-it-out when the frame lands — only a full
+      app-switch re-render does. **SIX SwiftUI-side fixes were built + tested on
+      device and ALL FAILED — do NOT re-attempt any of them:** (1) `Task.sleep`
+      minimum-loading FLOOR before `.loaded` (fragile magic number); (2)
+      event-driven re-present gated on a `viewDidLayoutSubviews` BOUNDS change
+      (size never captured the negative-ORIGIN clip); (3) OBSERVING the content's
+      global frame to nudge a re-render after revealing; (4) HOLDING the reveal
+      behind the spinner until a non-negative-origin settle latch (content swap
+      within a stable view identity); (5) the same hold gated on a ~full-height
+      settle; (6) `.id(frameSettled)` to force a FULL subtree teardown+rebuild
+      into the settled frame (the closest mechanical analog to the app-switch).
+      The consistent failure across all six is conclusive: **the clip is the
+      OS-drawn Messages BALLOON MASK on the staged preview, not the SwiftUI
+      content's position — and the extension cannot control that mask.** The only
+      remaining levers are OS-level (`contentSizeThatFits` height + the
+      alternate-layout image ASPECT, already tuned in #744 to make the staged
+      balloon SIZE and the SENT bubble correct). **This is cosmetic — the SENT
+      transcript bubble + inline voting are unaffected, and the preview
+      self-corrects on app-switch.** If a future iOS/SwiftUI release changes the
+      staged-preview compositing, this could be revisited, but treat it as a
+      known limitation, not an open bug.
   - **Messages overlays the extension's APP ICON on the live bubble's
     top-left corner** — the OS draws it, the extension can't remove or move
     it, and it doesn't show in any non-device mockup (device-found: it
