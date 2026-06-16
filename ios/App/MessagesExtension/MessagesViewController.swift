@@ -2216,30 +2216,39 @@ struct TranscriptBubbleView: View {
     // bubble's top edge — the "too high, cut off" state) and bounced through
     // transient sizes during Messages' entrance animation; the loaded poll
     // content paints into that off-screen frame and SwiftUI does NOT reliably
-    // re-lay-it-out when the frame lands (device-diagnosed via the content's
-    // global frame: it starts e.g. (-44,-22) then moves to (0,0)). Only a full
-    // app-switch re-render fixed it. So HOLD the loaded content behind the
-    // spinner until the frame reaches a non-negative origin, then reveal it —
-    // top-pinned content in an on-screen frame can't clip above the top, and the
-    // SENT transcript bubble starts on-screen so it settles immediately.
+    // re-lay-it-out when the frame lands. Only a full app-switch re-render fixed
+    // it. So (a) HOLD the loaded content behind the spinner until the frame is
+    // settled on screen, AND (b) `.id(frameSettled)` the content so the reveal
+    // is a FULL subtree rebuild — torn down + rebuilt from scratch into the
+    // settled frame (mechanically what the app-switch does), not a content swap
+    // within a stable identity that can reuse the stale off-screen geometry.
     @State private var frameSettled = false
 
-    // Latch once the bubble is on screen with a real size. Non-negative origin
-    // is the load-bearing check (the clip is a negative origin); we never
-    // un-latch — the entrance only moves the bubble ON screen, and a later size
-    // bounce re-lays-out the already-visible top-pinned content without clipping.
+    // Latch once the bubble is on screen AT ~FULL HEIGHT (non-negative origin +
+    // near-settled size), so it can't fire on a transient small/off-screen frame
+    // mid-entrance. Never un-latched — the entrance only moves the bubble ON
+    // screen; a later size bounce re-lays-out the already-rebuilt top-pinned
+    // content without clipping.
     private func settleIfOnScreen(_ f: CGRect) {
-        if !frameSettled, f.minX >= 0, f.minY >= 0, f.width > 1, f.height > 1 {
+        if !frameSettled, f.minX >= 0, f.minY >= 0, f.width > 1,
+           f.height >= TranscriptBubbleView.bubbleHeight - 8 {
             frameSettled = true
         }
     }
 
     var body: some View {
         content
+            // Full rebuild of the content subtree when the frame settles (see
+            // `frameSettled`): a new identity forces SwiftUI to lay it out from
+            // scratch into the settled frame instead of reusing the stale
+            // entrance-frame geometry — closest analog to the app-switch fix.
+            .id(frameSettled)
             .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(.systemBackground))
-            // Observe the live global frame to drive the settle latch. A
+            // Observe the live global frame to drive the settle latch. Attached
+            // to the stable outer chain (NOT inside the .id'd content), so it
+            // keeps firing across the rebuild and the @State latch persists. A
             // .background GeometryReader doesn't affect layout/sizing. onAppear
             // catches the already-settled case (sent transcript: no change to
             // fire onChange), onChange catches the entrance settle.
