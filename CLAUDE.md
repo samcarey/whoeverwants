@@ -3467,6 +3467,33 @@ Full phased plan: `docs/siri-integration-plan.md` (working order 1 → 2 → 3 �
       preview sizing; the SENT transcript bubble is always fine, so screenshots
       of the STAGED preview are the only signal. The revert + wide-short image
       together fixed it on a real device.
+    - **First-paint layout race (separate from the balloon ASPECT above):** on
+      the FIRST tap the staged preview painted the live bubble clipped/too-high;
+      an app-focus swap reliably fixed it. **Device-diagnosed via a temporary
+      `IMSGDIAG` client-log probe** (a `.background(GeometryReader)` that logged
+      the content's GLOBAL frame to `/api/client-logs`, since removed): the
+      bubble is composited at a **NEGATIVE global origin** (e.g. `(-44,-22)` —
+      above the bubble's top edge, that IS the clip) and bounced through
+      transient sizes during Messages' entrance animation before settling to
+      `(0,0)`. SwiftUI paints the loaded content into that off-screen frame and
+      does NOT reliably re-lay-it-out when it lands (only a full app-switch
+      re-render did). **Fix:** `TranscriptBubbleView` HOLDS the loaded content
+      behind the spinner until a `frameSettled` `@State` latches — set by a
+      `.background(GeometryReader)` (`onAppear` + `onChange(of:
+      geo.frame(in: .global))` → `settleIfOnScreen`) the first time the frame has
+      a NON-NEGATIVE origin + real size. Non-negative origin is the load-bearing
+      check; never un-latched (the entrance only moves the bubble ON screen, and
+      a later size bounce re-lays-out the already-visible top-pinned content
+      without clipping); the SENT transcript bubble starts on-screen so it
+      latches immediately. **Approaches that FAILED — do NOT re-try blind:** (1)
+      a `Task.sleep` minimum-loading FLOOR (fragile magic number); (2) gating on
+      a `viewDidLayoutSubviews` BOUNDS change (size never captured the
+      negative-ORIGIN clip); (3) merely OBSERVING the global frame to nudge a
+      re-render after revealing (raced — fixed it once, then it came back). The
+      winning move is to gate the REVEAL on the settled on-screen frame, not to
+      re-render after revealing. **Device-only-verifiable, and the bug is
+      INTERMITTENT, so "didn't reproduce" isn't proof of a fix.** Cosmetic
+      pre-send-preview only — the SENT transcript bubble + voting are unaffected.
   - **Messages overlays the extension's APP ICON on the live bubble's
     top-left corner** — the OS draws it, the extension can't remove or move
     it, and it doesn't show in any non-device mockup (device-found: it

@@ -2211,12 +2211,45 @@ struct TranscriptBubbleView: View {
     private static let iconBadgeClearance: CGFloat = 44
 
     @ObservedObject var model: TranscriptBubbleModel
+    // Latched true once the live bubble's frame is settled ON SCREEN. The staged
+    // compose preview is composited at a NEGATIVE global origin (above the
+    // bubble's top edge — the "too high, cut off" state) and bounced through
+    // transient sizes during Messages' entrance animation; the loaded poll
+    // content paints into that off-screen frame and SwiftUI does NOT reliably
+    // re-lay-it-out when the frame lands (device-diagnosed via the content's
+    // global frame: it starts e.g. (-44,-22) then moves to (0,0)). Only a full
+    // app-switch re-render fixed it. So HOLD the loaded content behind the
+    // spinner until the frame reaches a non-negative origin, then reveal it —
+    // top-pinned content in an on-screen frame can't clip above the top, and the
+    // SENT transcript bubble starts on-screen so it settles immediately.
+    @State private var frameSettled = false
+
+    // Latch once the bubble is on screen with a real size. Non-negative origin
+    // is the load-bearing check (the clip is a negative origin); we never
+    // un-latch — the entrance only moves the bubble ON screen, and a later size
+    // bounce re-lays-out the already-visible top-pinned content without clipping.
+    private func settleIfOnScreen(_ f: CGRect) {
+        if !frameSettled, f.minX >= 0, f.minY >= 0, f.width > 1, f.height > 1 {
+            frameSettled = true
+        }
+    }
 
     var body: some View {
         content
             .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(.systemBackground))
+            // Observe the live global frame to drive the settle latch. A
+            // .background GeometryReader doesn't affect layout/sizing. onAppear
+            // catches the already-settled case (sent transcript: no change to
+            // fire onChange), onChange catches the entrance settle.
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { settleIfOnScreen(geo.frame(in: .global)) }
+                        .onChange(of: geo.frame(in: .global)) { settleIfOnScreen($0) }
+                }
+            )
         // Phase 3: the tree is INTERACTIVE — vote buttons take taps; the
         // title / results / footer are plain Buttons that requestExpand().
     }
@@ -2255,7 +2288,15 @@ struct TranscriptBubbleView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         case .loaded(let summary):
-            loaded(summary)
+            // Hold behind the spinner until the bubble's frame has settled on
+            // screen (see `frameSettled`), so the poll content never first-paints
+            // into the off-screen / clipped entrance frame of the staged preview.
+            if frameSettled {
+                loaded(summary)
+            } else {
+                ProgressView()
+                    .padding(.leading, Self.iconBadgeClearance)
+            }
         }
     }
 
