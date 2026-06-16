@@ -438,6 +438,7 @@ def generate_from_history(ctx: HistoryContext) -> list[dict]:
         _build_user_message(ctx),
         model=llm_client.suggest_model(),
         temperature=0.8,
+        timeout=llm_client.suggest_timeout(),
     )
     if not content:
         return []
