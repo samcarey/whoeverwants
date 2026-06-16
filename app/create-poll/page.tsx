@@ -1641,22 +1641,24 @@ export function CreateQuestionContent() {
       const words = text.toLowerCase().split(/[\s,]+/).filter(Boolean);
       return tokens.every((t) => words.some((w) => w.startsWith(t)));
     };
+    // Build a display row from a RecentEntry, tagged with its source so the
+    // render can draw the right-edge glyph (sparkles for AI, clock for recents).
+    const tagged = (e: RecentEntry, source: 'ai' | 'recent') =>
+      ({ ...display(e.key, e.icon, e.overrides), source });
     const recentRows = () =>
       recentEntries
         .filter((e) => matchesTokens(e.titleText))
-        .map((e) => ({ ...display(e.key, e.icon, e.overrides), source: 'recent' as const }));
+        .map((e) => tagged(e, 'recent'));
 
     // AI-predicted next polls (server LLM), ordered top→bottom = bottom nearest
     // the bar. EMPTY box: server order reversed so the LLM's top pick is nearest
     // the bar (the "ready to go" headline). TYPED box: re-ranked + filtered by the
     // on-device model's cosine scores (best nearest the bar, off-topic dropped);
     // before scores land (model loading), token-filter as a no-AI fallback.
-    const aiRow = (e: { key: string; icon: string; overrides: Partial<QuestionDraft> }) =>
-      ({ ...display(e.key, e.icon, e.overrides), source: 'ai' as const });
     const aiRows = (typed: boolean) => {
-      if (!aiEntries.length) return [] as ReturnType<typeof aiRow>[];
+      if (!aiEntries.length) return [] as ReturnType<typeof tagged>[];
       if (!typed) {
-        return [...aiEntries].reverse().map(aiRow);
+        return [...aiEntries].reverse().map((e) => tagged(e, 'ai'));
       }
       let ranked = aiEntries.map((e, i) => ({ e, score: aiScores ? aiScores[i] : null }));
       if (aiScores) {
@@ -1666,7 +1668,7 @@ export function CreateQuestionContent() {
       } else {
         ranked = ranked.filter((x) => matchesTokens(x.e.titleText));
       }
-      return ranked.map((x) => aiRow(x.e));
+      return ranked.map((x) => tagged(x.e, 'ai'));
     };
 
     // On /explore the feed only accepts yes/no polls (the variant-evolution
