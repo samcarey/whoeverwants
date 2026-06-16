@@ -34,6 +34,12 @@ export function isLocationEntry(metadata: OptionMetadataEntry | null | undefined
   return !!metadata.infoUrl?.includes("openstreetmap.org");
 }
 
+/** Detect rich place metadata of either kind (restaurant or location). These
+ * render as a 2-line name/address card whose long address must truncate. */
+export function isPlaceEntry(metadata: OptionMetadataEntry | null | undefined): boolean {
+  return isRestaurantEntry(metadata) || isLocationEntry(metadata);
+}
+
 /** Extract the place name from metadata or parse from Nominatim display_name. */
 function getLocationName(text: string, metadata: OptionMetadataEntry): string {
   if (metadata.name) return metadata.name;

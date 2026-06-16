@@ -1,7 +1,7 @@
 "use client";
 
 import type { OptionsMetadata } from "@/lib/types";
-import OptionLabel, { isLocationEntry } from "./OptionLabel";
+import OptionLabel, { isPlaceEntry } from "./OptionLabel";
 
 interface Suggestion {
   option: string;
@@ -46,7 +46,11 @@ export default function SuggestionsList({
     a.option.localeCompare(b.option)
   );
 
-  const isLocationQuestion = suggestions.some(n => isLocationEntry(optionsMetadata?.[n.option]));
+  // Restaurants AND locations both carry rich place metadata (icon + name + a
+  // long address that must truncate). Route either through the full-width
+  // stacked-row layout below; the centered-pill layout is content-sized
+  // (inline-flex, no width constraint) so its address can't truncate.
+  const isPlaceQuestion = suggestions.some(n => isPlaceEntry(optionsMetadata?.[n.option]));
 
   return (
     <div className={className}>
@@ -75,7 +79,7 @@ export default function SuggestionsList({
         </div>
       </div>
 
-      {isLocationQuestion ? (
+      {isPlaceQuestion ? (
         <div className="space-y-2 overflow-hidden">
           {sortedSuggestions.map((suggestion, index) => {
             const isUserSuggestion = userSuggestions.includes(suggestion.option);
