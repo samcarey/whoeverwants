@@ -15,7 +15,6 @@ import CreateGroupButtonHost from "@/components/CreateGroupButtonHost";
 import RecoveryReminderHost from "@/components/RecoveryReminderHost";
 import { PersistentCreatePollHost } from "@/components/PersistentCreatePollHost";
 import { UniversalLinksHandler } from "@/components/UniversalLinksHandler";
-import { ClipboardLinkPrompt } from "@/components/ClipboardLinkPrompt";
 import { PushAutoRegister } from "@/components/PushAutoRegister";
 import { NativeIdentityHost } from "@/components/NativeIdentityHost";
 import UserProfileModalHost from "@/components/UserProfileModalHost";
@@ -199,14 +198,6 @@ export default function RootLayout({
             per route and would tear it down). */}
         <UniversalLinksHandler />
 
-        {/* iOS clipboard-link prompt — on app activation (cold launch or
-            foreground from background), checks the system clipboard for
-            an https://whoeverwants.com/... URL and surfaces a
-            confirmation modal to open it inside the app. Inert on
-            non-native platforms. Lives in the layout so the listener
-            survives client-side route changes (same reason as
-            UniversalLinksHandler above). */}
-        <ClipboardLinkPrompt />
         <PushAutoRegister />
 
         {/* iOS native identity bridge — mirrors the WebView's session token /

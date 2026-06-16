@@ -121,12 +121,11 @@ class MainViewController: CAPBridgeViewController {
     // Capacitor pattern (capacitorjs.com/docs/ios/custom-code: override
     // `capacitorDidLoad()` + `bridge?.registerPluginInstance(...)`).
     //
-    // Before this, ClipboardUrl / AppBadge / NativeIdentity all silently failed to
+    // Before this, AppBadge / NativeIdentity all silently failed to
     // register — none was ever device-confirmed — and every JS call to them
     // rejected (swallowed by best-effort `catch {}`s on the JS side). MainViewController
     // is the storyboard's root VC (Main.storyboard customClass), so this override runs.
     override open func capacitorDidLoad() {
-        bridge?.registerPluginInstance(ClipboardUrlPlugin())
         bridge?.registerPluginInstance(AppBadgePlugin())
         bridge?.registerPluginInstance(NativeIdentityPlugin())
     }
@@ -201,50 +200,17 @@ extension WKWebView {
     }
 }
 
-// Custom Capacitor plugin: peek at a copied web URL WITHOUT triggering iOS's
-// "Pasted from <app>" banner. `Clipboard.read()` (UIPasteboard.general.string)
-// forces that banner on every read, before JS can inspect the content. iOS 16's
-// pasteboard *detection* API (`detectValues`) is privacy-preserving: it returns
-// the matched URL silently, so JS can check the domain and only surface our own
-// "open link?" modal for actual whoeverwants links. On iOS < 16 detectValues is
-// unavailable, so we report `supported: false` and JS skips the auto-check
-// entirely rather than fall back to a banner-triggering read.
-//
-// Colocated in AppDelegate.swift for the same reason MainViewController is:
-// a new .swift file means hand-patching project.pbxproj in the headless CI
-// build. App-target plugins are NOT auto-discovered (only CocoaPods/SPM-packaged
-// plugins are), so this class is registered by hand in
-// MainViewController.capacitorDidLoad().
-@objc(ClipboardUrlPlugin)
-public class ClipboardUrlPlugin: CAPPlugin, CAPBridgedPlugin {
-    public let identifier = "ClipboardUrlPlugin"
-    public let jsName = "ClipboardUrl"
-    public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "detectUrl", returnType: CAPPluginReturnPromise)
-    ]
-
-    @objc func detectUrl(_ call: CAPPluginCall) {
-        if #available(iOS 16.0, *) {
-            UIPasteboard.general.detectValues(for: [.probableWebURL]) { result in
-                var resolved: String? = nil
-                if case .success(let values) = result {
-                    if let url = values[.probableWebURL] as? URL {
-                        resolved = url.absoluteString
-                    } else if let str = values[.probableWebURL] as? String {
-                        resolved = str
-                    }
-                }
-                if let urlString = resolved {
-                    call.resolve(["supported": true, "url": urlString])
-                } else {
-                    call.resolve(["supported": true])
-                }
-            }
-        } else {
-            call.resolve(["supported": false])
-        }
-    }
-}
+// NOTE: A `ClipboardUrlPlugin` used to live here — it auto-read the clipboard on
+// every app activation to detect a copied whoeverwants link and offer to open it.
+// It was REMOVED (June 2026): the assumption that iOS 16's `detectValues(for:)`
+// reads the clipboard silently is FALSE. Only `detectPatterns(for:)` is silent,
+// and it returns only generic content-type flags (a probable web URL exists) —
+// never the value/host — so there is NO way to tell whether the copied URL is our
+// domain without calling `detectValues` / reading the string, which fires iOS's
+// "Allow Paste" permission prompt. The feature therefore prompted on every
+// foreground and could not be made domain-targeted + silent. Tapped
+// whoeverwants.com links still open the app via universal links. Don't reintroduce
+// an auto clipboard read.
 
 // Custom Capacitor plugin: set the iOS app-icon badge number from the WebView.
 // The Web Badging API (`navigator.setAppBadge` / `clearAppBadge`) is NOT exposed
@@ -257,7 +223,7 @@ public class ClipboardUrlPlugin: CAPPlugin, CAPBridgedPlugin {
 // computes the true count server-side and applies it here.
 //
 // Colocated in AppDelegate.swift for the same reason MainViewController /
-// ClipboardUrlPlugin are: a new .swift file means hand-patching project.pbxproj
+// NativeIdentityPlugin are: a new .swift file means hand-patching project.pbxproj
 // in the headless CI build. App-target plugins are NOT auto-discovered (only
 // CocoaPods/SPM-packaged plugins are), so this class is registered by hand in
 // MainViewController.capacitorDidLoad().
@@ -427,7 +393,7 @@ private enum NativeIdentityAppGroup {
 // `getIdentity` lets native code (and an on-device round-trip check) read it back.
 //
 // Colocated in AppDelegate.swift for the same reason MainViewController /
-// ClipboardUrlPlugin / AppBadgePlugin are: a new .swift file means hand-patching
+// AppBadgePlugin are: a new .swift file means hand-patching
 // project.pbxproj in the headless CI build. App-target plugins are NOT
 // auto-discovered (only CocoaPods/SPM-packaged plugins are), so this class is
 // registered by hand in MainViewController.capacitorDidLoad() — that explicit
