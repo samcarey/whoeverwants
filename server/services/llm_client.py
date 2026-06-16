@@ -16,6 +16,13 @@ Config (env vars, read at module load):
                               suggestions (falls back to POLL_VARIANT_LLM_MODEL),
                               so the suggestion feature can run a larger/better
                               model than variant evolution without re-plumbing.
+    POLL_SUGGEST_LLM_TIMEOUT  OPTIONAL per-feature request timeout for poll
+                              suggestions (defaults to max(variant timeout, 300)).
+                              The suggestion prompt is large and qwen3:14b runs
+                              with thinking ON (load-bearing for quality — see
+                              CLAUDE.md), so a realistic call takes ~120s+ and
+                              the 120s variant timeout cuts it off. The call is a
+                              BackgroundTask, so a generous timeout blocks no one.
 
 Graceful degradation (like RESEND_API_KEY / TMDB_API_KEY): when the URL/model
 are unset, `is_configured()` is false and callers skip the feature.
@@ -44,6 +51,12 @@ try:
     _LLM_TIMEOUT = float(os.environ.get("POLL_VARIANT_LLM_TIMEOUT", "60"))
 except ValueError:
     _LLM_TIMEOUT = 60.0
+try:
+    _SUGGEST_TIMEOUT = float(os.environ.get("POLL_SUGGEST_LLM_TIMEOUT", "").strip())
+except ValueError:
+    # The suggestion prompt + thinking-mode reasoning take ~120s+; give it
+    # comfortable headroom over the (shorter) variant timeout by default.
+    _SUGGEST_TIMEOUT = max(_LLM_TIMEOUT, 300.0)
 
 
 def is_configured() -> bool:
@@ -54,6 +67,12 @@ def is_configured() -> bool:
 def suggest_model() -> str:
     """The model id to use for poll-suggestion generation (override or default)."""
     return _SUGGEST_MODEL
+
+
+def suggest_timeout() -> float:
+    """Request timeout (seconds) for poll-suggestion generation. Larger than the
+    variant timeout because the suggestion prompt is big and the model thinks."""
+    return _SUGGEST_TIMEOUT
 
 
 def chat(
