@@ -418,6 +418,8 @@ cmd_upsert() {
     -e POLL_VARIANT_LLM_URL="${POLL_VARIANT_LLM_URL:-http://host.docker.internal:11434/v1/chat/completions}" \
     -e POLL_VARIANT_LLM_MODEL="${POLL_VARIANT_LLM_MODEL:-qwen3:14b}" \
     -e POLL_SUGGEST_LLM_MODEL="${POLL_SUGGEST_LLM_MODEL:-}" \
+    -e TMDB_API_KEY="${TMDB_API_KEY:-}" \
+    -e RAWG_API_KEY="${RAWG_API_KEY:-}" \
     -e PORT=3000 \
     -e API_PORT=8000 \
     --label "whoeverwants-dev=true" \
