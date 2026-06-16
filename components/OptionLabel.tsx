@@ -41,7 +41,7 @@ function getLocationName(text: string, metadata: OptionMetadataEntry): string {
   return commaIdx >= 0 ? text.slice(0, commaIdx) : text;
 }
 
-function getAddressFromLabel(label: string, name: string): string {
+export function getAddressFromLabel(label: string, name: string): string {
   if (label.startsWith(name + ", ")) {
     return label.slice(name.length + 2);
   }

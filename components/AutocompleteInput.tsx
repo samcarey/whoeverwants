@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, apiSearchRestaurants, type SearchResult } from "@/lib/api";
 import type { QuestionCategory, OptionMetadataEntry } from "@/lib/types";
-import { formatDistance, StarRating } from "./OptionLabel";
+import { formatDistance, StarRating, getAddressFromLabel } from "./OptionLabel";
 import { advanceFormFocus } from "@/lib/formNavigation";
 import KeyboardSuggestionPicker from "./KeyboardSuggestionPicker";
 import { useKeyboardPrimer } from "@/lib/useKeyboardPrimer";
@@ -89,13 +89,20 @@ const attributionFor = (category: string) =>
 /** The rich inner content of one search-result row (name / rating / distance /
  *  cuisine, or label / description). Shared by the overlay rows. */
 function ResultRowContent({ result }: { result: SearchResult }) {
+  const name = result.name;
+  // Second line is always the ADDRESS (matching OptionLabel + the selected
+  // chip). Prefer the server-provided address; fall back to stripping the name
+  // prefix off the label. Cuisine is intentionally not surfaced here — for
+  // same-name chains (five "Burger King"s) it's redundant with the name and
+  // hides the only disambiguator the user needs: the address.
+  const address = name ? (result.address ?? getAddressFromLabel(result.label, name)) : undefined;
   return (
     <div className="min-w-0 flex-1 pointer-events-none select-none">
-      {result.name ? (
+      {name ? (
         <>
           <div className="flex items-baseline gap-1.5">
             <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-              {result.name}
+              {name}
             </span>
             {result.rating !== undefined && (
               <span className="text-xs flex-shrink-0">
@@ -108,20 +115,9 @@ function ResultRowContent({ result }: { result: SearchResult }) {
               </span>
             )}
           </div>
-          {result.cuisine ? (
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                {result.cuisine}
-              </span>
-              {result.priceLevel && (
-                <span className="text-xs text-green-600 dark:text-green-400 whitespace-nowrap flex-shrink-0">
-                  {result.priceLevel}
-                </span>
-              )}
-            </div>
-          ) : (
+          {address && (
             <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-              {result.label.startsWith(result.name + ', ') ? result.label.slice(result.name.length + 2) : result.label}
+              {address}
             </div>
           )}
         </>
