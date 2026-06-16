@@ -7,7 +7,7 @@ import { ApiRankedChoiceRound } from "@/lib/api";
 import { isPollDetailView } from "@/lib/questionId";
 import { outcomeExplainer } from "@/lib/outcomeExplainer";
 import OutcomeInfoButton from "@/components/OutcomeInfoButton";
-import OptionLabel, { isLocationEntry, isRestaurantEntry } from "./OptionLabel";
+import OptionLabel, { isPlaceEntry } from "./OptionLabel";
 
 interface CompactRankedChoiceResultsProps {
   results: QuestionResults;
@@ -476,7 +476,7 @@ export default function CompactRankedChoiceResults({ results, isQuestionClosed, 
                       <div className="min-w-0 flex-1">
                         <div className="min-w-0 overflow-hidden">
                           <div className={`leading-tight ${
-                            isLocationEntry(optionsMetadata?.[candidate.name]) || isRestaurantEntry(optionsMetadata?.[candidate.name])
+                            isPlaceEntry(optionsMetadata?.[candidate.name])
                               ? 'overflow-hidden'
                               : 'line-clamp-2'
                           } ${
@@ -607,7 +607,7 @@ function ConsensusResults({
               >
                 <div
                   className={`leading-tight ${
-                    isLocationEntry(optionsMetadata?.[name]) || isRestaurantEntry(optionsMetadata?.[name])
+                    isPlaceEntry(optionsMetadata?.[name])
                       ? "overflow-hidden"
                       : "line-clamp-2"
                   } ${

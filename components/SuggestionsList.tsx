@@ -1,7 +1,7 @@
 "use client";
 
 import type { OptionsMetadata } from "@/lib/types";
-import OptionLabel, { isLocationEntry, isRestaurantEntry } from "./OptionLabel";
+import OptionLabel, { isPlaceEntry } from "./OptionLabel";
 
 interface Suggestion {
   option: string;
@@ -50,10 +50,7 @@ export default function SuggestionsList({
   // long address that must truncate). Route either through the full-width
   // stacked-row layout below; the centered-pill layout is content-sized
   // (inline-flex, no width constraint) so its address can't truncate.
-  const isPlaceQuestion = suggestions.some(n => {
-    const m = optionsMetadata?.[n.option];
-    return isRestaurantEntry(m) || isLocationEntry(m);
-  });
+  const isPlaceQuestion = suggestions.some(n => isPlaceEntry(optionsMetadata?.[n.option]));
 
   return (
     <div className={className}>
