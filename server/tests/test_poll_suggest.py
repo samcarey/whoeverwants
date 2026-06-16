@@ -67,6 +67,76 @@ def test_validate_options_ignored_for_yes_no():
     assert ok == {"category": "yes_no", "title": "Pizza tonight?"}
 
 
+def _known(category, *pairs):
+    """Build a known_options map: category -> {lower label: CategoryOption}."""
+    from services.category_options import CategoryOption
+
+    return {
+        category: {
+            label.lower(): CategoryOption(label=label, metadata=meta)
+            for label, meta in pairs
+        }
+    }
+
+
+def test_grounding_keeps_only_history_options_and_attaches_metadata():
+    known = _known(
+        "movie",
+        ("Dune: Part Two", {"imageUrl": "https://img/dune.jpg", "infoUrl": "https://tmdb/1"}),
+        ("Oppenheimer", {"imageUrl": "https://img/opp.jpg"}),
+    )
+    out = poll_suggest.validate_suggestion(
+        # LLM proposes a real-but-unseen title ("Barbie") + casing drift; only the
+        # two previously-referenced ones survive, with canonical casing + DB ref.
+        {"category": "movie", "options": ["dune: part two", "Barbie", "OPPENHEIMER"], "context": "movie night"},
+        known,
+    )
+    assert out is not None
+    assert out["options"] == ["Dune: Part Two", "Oppenheimer"]
+    assert out["options_metadata"] == {
+        "Dune: Part Two": {"imageUrl": "https://img/dune.jpg", "infoUrl": "https://tmdb/1"},
+        "Oppenheimer": {"imageUrl": "https://img/opp.jpg"},
+    }
+    assert out.get("context") == "movie night"
+
+
+def test_grounding_drops_options_when_fewer_than_two_known():
+    known = _known("restaurant", ("Chipotle", {"address": "1 Main St"}))
+    out = poll_suggest.validate_suggestion(
+        {"category": "restaurant", "options": ["Chipotle", "Olive Garden"], "context": "team dinner"},
+        known,
+    )
+    # Only one survives the gate -> not enough for a fixed-option ballot -> the
+    # suggestion collapses to category + context (open-to-suggest), never invents.
+    assert out == {"category": "restaurant", "context": "team dinner"}
+
+
+def test_grounding_drops_all_unknown_options_but_keeps_known_without_metadata():
+    out = poll_suggest.validate_suggestion(
+        {"category": "video_game", "options": ["Halo", "Fortnite"]},
+        _known("video_game"),  # empty history for this category
+    )
+    assert out == {"category": "video_game"}
+    # Options with no stored metadata are still kept (real/previously used) but
+    # contribute no options_metadata.
+    out2 = poll_suggest.validate_suggestion(
+        {"category": "video_game", "options": ["Mario Kart 8", "Splatoon 3"]},
+        _known("video_game", ("Mario Kart 8", None), ("Splatoon 3", None)),
+    )
+    assert out2 is not None
+    assert out2["options"] == ["Mario Kart 8", "Splatoon 3"]
+    assert "options_metadata" not in out2
+
+
+def test_grounding_skipped_when_known_options_none():
+    # Back-compat: callers that don't pass a gate keep any valid option list.
+    out = poll_suggest.validate_suggestion(
+        {"category": "movie", "options": ["Anything", "Goes"]}, None
+    )
+    assert out is not None
+    assert out["options"] == ["Anything", "Goes"]
+
+
 def test_validate_category_aliases_and_unknown():
     assert poll_suggest.validate_suggestion(
         {"category": "Video Game", "options": ["Mario Kart", "Smash"]}

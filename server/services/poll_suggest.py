@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 
 from database import get_db
 from services import llm_client
+from services.category_options import CategoryOption, load_known_options_by_category
 
 log = logging.getLogger("poll_suggest")
 
@@ -96,6 +97,10 @@ class HistoryContext:
     group_lines: list[str] = field(default_factory=list)
     user_lines: list[str] = field(default_factory=list)
     existing_signatures: set[str] = field(default_factory=set)
+    # category -> {lowercased label: previously-referenced option (with metadata)}.
+    # The gate for LLM-proposed specific options: only keep ones already used by
+    # this group/user, and attach their stored DB ref.
+    known_options: dict[str, dict[str, CategoryOption]] = field(default_factory=dict)
 
 
 @dataclass
@@ -235,6 +240,12 @@ def gather_history(conn, user_id: str, group_id: str) -> HistoryContext | None:
         ctx.user_lines.append(_poll_line(r))
         ctx.existing_signatures.update(_row_signatures(r))
 
+    # Real, previously-referenced options per catalog category — the only source
+    # of specific options the suggestions are allowed to show (with their DB ref).
+    ctx.known_options = load_known_options_by_category(
+        conn, group_id=group_id, user_id=user_id, categories=_OPTIONS_OK
+    )
+
     return ctx
 
 
@@ -277,9 +288,13 @@ _SYSTEM_PROMPT = (
     "restaurant / movie / game names like \"Chipotle\", \"Dune: Part Two\", "
     '"Mario Kart 8") — NEVER generic words, genres, or filler like "Action, '
     'Comedy, Drama", "Sushi Place", "Italian Restaurant", "Pizzeria Pizza", or '
-    '"Option 1". Do NOT lightly reword an existing poll\'s options. If you cannot '
-    "name 2+ specific real options that fit, OMIT options and let the group "
-    "suggest them — an omitted-options poll is better than a generic one.\n"
+    '"Option 1". Do NOT lightly reword an existing poll\'s options. PREFER reusing '
+    "the EXACT option names that appear in the history below — a specific option "
+    "is only shown to the user when this group has referenced it before, so any "
+    "option NOT already in the history will be dropped. If you cannot name 2+ "
+    "specific options that the group has used before and that fit, OMIT options "
+    "and let the group suggest them — an omitted-options poll is better than a "
+    "generic one.\n"
     "- context is the short real subject this poll is for; leave it out rather "
     "than inventing an unrelated one. Do not pair a context with an unrelated "
     "category.\n"
@@ -357,10 +372,19 @@ def _clean_str(value, limit: int) -> str:
     return " ".join(value.split()).strip()[:limit].strip()
 
 
-def validate_suggestion(obj) -> dict | None:
+def validate_suggestion(
+    obj, known_options: dict[str, dict[str, CategoryOption]] | None = None
+) -> dict | None:
     """Deterministically validate + normalize ONE raw LLM suggestion object into
-    the stored/wire shape `{category, title?, options?, context?}`, or None when
-    it's unusable. This is the server-side filter; the FE mirrors the shape."""
+    the stored/wire shape `{category, title?, options?, options_metadata?,
+    context?}`, or None when it's unusable. This is the server-side filter; the
+    FE mirrors the shape.
+
+    `known_options` (category -> {lower label: CategoryOption}) GATES specific
+    options to reality: when provided, an LLM-proposed option is kept ONLY if it
+    matches a previously-referenced option for that category, and it inherits
+    that option's stored DB ref (favicon / poster / coords). When None (unit
+    tests / callers that don't ground), any valid option list is kept as-is."""
     if not isinstance(obj, dict):
         return None
     raw_cat = _clean_str(obj.get("category"), 40).lower()
@@ -372,20 +396,36 @@ def validate_suggestion(obj) -> dict | None:
     context = _clean_str(obj.get("context"), _CONTEXT_MAX)
 
     options: list[str] = []
+    options_metadata: dict = {}
     raw_opts = obj.get("options")
     if category in _OPTIONS_OK and isinstance(raw_opts, list):
+        known = known_options.get(category) if known_options is not None else None
         seen: set[str] = set()
         for o in raw_opts:
             label = _clean_str(o, _OPTION_MAX)
+            if not label:
+                continue
+            if known is not None:
+                # Ground to history: drop anything not previously referenced, and
+                # adopt the stored casing + DB metadata for what survives.
+                entry = known.get(label.lower())
+                if entry is None:
+                    continue
+                label = entry.label
+                if entry.metadata:
+                    options_metadata[label] = entry.metadata
             key = label.lower()
-            if label and key not in seen:
-                seen.add(key)
-                options.append(label)
+            if key in seen:
+                continue
+            seen.add(key)
+            options.append(label)
             if len(options) >= _MAX_OPTIONS:
                 break
-        # A fixed-option poll needs >= 2; otherwise treat as suggestion-collection.
+        # A fixed-option poll needs >= 2; otherwise treat as suggestion-collection
+        # (category + maybe context only — never invent specifics).
         if len(options) < 2:
             options = []
+            options_metadata = {}
 
     if category in _TITLE_REQUIRED and not title:
         return None
@@ -399,18 +439,25 @@ def validate_suggestion(obj) -> dict | None:
         out["title"] = title
     if options:
         out["options"] = options
+    if options_metadata:
+        out["options_metadata"] = {k: v for k, v in options_metadata.items() if k in options}
     if context:
         out["context"] = context
     return out
 
 
-def filter_and_dedup(raw: list, existing: set[str]) -> list[dict]:
-    """Validate every raw suggestion, drop duplicates (of each other AND of
-    existing polls), cap to MAX_SUGGESTIONS."""
+def filter_and_dedup(
+    raw: list,
+    existing: set[str],
+    known_options: dict[str, dict[str, CategoryOption]] | None = None,
+) -> list[dict]:
+    """Validate every raw suggestion (grounding options to `known_options`),
+    drop duplicates (of each other AND of existing polls), cap to
+    MAX_SUGGESTIONS."""
     out: list[dict] = []
     seen = set(existing)
     for obj in raw:
-        cleaned = validate_suggestion(obj)
+        cleaned = validate_suggestion(obj, known_options)
         if not cleaned:
             continue
         sigs = _signatures_for(
@@ -443,7 +490,7 @@ def generate_from_history(ctx: HistoryContext) -> list[dict]:
     if not content:
         return []
     raw = _extract_json_array(content)
-    return filter_and_dedup(raw, ctx.existing_signatures)
+    return filter_and_dedup(raw, ctx.existing_signatures, ctx.known_options)
 
 
 # ── Cache read/write ──────────────────────────────────────────────────────────

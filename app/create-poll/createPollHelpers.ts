@@ -919,7 +919,24 @@ export function suggestionToOverrides(s: PollSuggestion): Partial<QuestionDraft>
   }
   if (category === 'time') return { category: 'time', forField: context };
   const opts = (s.options ?? []).filter((o) => o && o.trim());
-  return opts.length >= 2
-    ? { category, options: opts, collectSuggestions: false, forField: context }
-    : { category, forField: context, collectSuggestions: true };
+  if (opts.length < 2) {
+    return { category, forField: context, collectSuggestions: true };
+  }
+  // Restore the DB ref (favicon / poster / coords) the original pick carried,
+  // scoped to the options actually kept.
+  const meta: OptionsMetadata = {};
+  if (s.optionsMetadata) {
+    for (const o of opts) {
+      const m = s.optionsMetadata[o];
+      if (m && typeof m === 'object') meta[o] = m as OptionsMetadata[string];
+    }
+  }
+  const draft: Partial<QuestionDraft> = {
+    category,
+    options: opts,
+    collectSuggestions: false,
+    forField: context,
+  };
+  if (Object.keys(meta).length > 0) draft.optionsMetadata = meta;
+  return draft;
 }

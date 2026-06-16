@@ -157,3 +157,41 @@ def load_category_options(
     ][:_RETURN_LIMIT]
 
     return CategoryOptions(group=group_entries, general=general_filtered)
+
+
+def load_known_options_by_category(
+    conn,
+    *,
+    group_id: str | None,
+    user_id: str | None,
+    categories,
+) -> dict[str, dict[str, CategoryOption]]:
+    """For each category in `categories`, the options previously *referenced*
+    (as ballot options OR suggestions) in this group OR any group the user can
+    see, keyed by LOWERCASED label, carrying best-available `options_metadata`.
+
+    This is the gate for AI poll suggestions: an LLM-proposed specific option
+    (a restaurant / movie / game / place / custom choice) is only shown when it
+    matches one of these known options, and it inherits the stored DB ref
+    (favicon / poster / coords / address). Explore groups are excluded (the
+    same isolation as `load_category_options`); suggestions are a normal-group
+    feature. Tolerant — missing inputs yield empty maps."""
+    gids: list[str] = []
+    if group_id:
+        gids.append(group_id)
+    visibility = load_user_visibility(conn, None, user_id=user_id)
+    for g in visibility.joined_by_group.keys():
+        if g not in gids:
+            gids.append(g)
+    if gids:
+        explore_set = explore_group_ids(conn, gids)
+        gids = [g for g in gids if g not in explore_set]
+
+    out: dict[str, dict[str, CategoryOption]] = {}
+    for category in categories:
+        cat = (category or "").strip()
+        if not cat or not gids:
+            out[category] = {}
+            continue
+        out[category] = {e.label.lower(): e for e in _query(conn, cat, gids)}
+    return out

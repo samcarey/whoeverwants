@@ -176,6 +176,10 @@ class PollSuggestionEntry(BaseModel):
     category: str
     title: str | None = None
     options: list[str] | None = None
+    # Per-option DB ref (favicon / poster / coords / address) for options that
+    # were previously referenced in the group — keyed by option label. Lets the
+    # prefilled form render the rich chip the original pick had.
+    options_metadata: dict | None = None
     context: str | None = None
 
 
