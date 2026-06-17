@@ -67,6 +67,25 @@ def test_validate_options_ignored_for_yes_no():
     assert ok == {"category": "yes_no", "title": "Pizza tonight?"}
 
 
+def test_yes_no_rejects_choice_titles():
+    # A "pick / which / choose / or" decision is a choice poll, not a yes_no.
+    for bad in [
+        "Summer Movie Night Pick?",
+        "Which restaurant for dinner?",
+        "Tacos or sushi?",
+        "Choose a game for tonight",
+        "Dune vs Oppenheimer?",
+    ]:
+        assert poll_suggest.validate_suggestion({"category": "yes_no", "title": bad}) is None, bad
+
+
+def test_yes_no_keeps_genuine_yes_no_titles():
+    # Elliptical yes/no prompts have no choice markers — must NOT be rejected.
+    for good in ["Pizza tonight?", "Offsite in Q3?", "Should we book the cabin?", "Order more snacks?"]:
+        out = poll_suggest.validate_suggestion({"category": "yes_no", "title": good})
+        assert out == {"category": "yes_no", "title": good}, good
+
+
 def _known(category, *pairs):
     """Build a known_options map: category -> {lower label: CategoryOption}."""
     from services.category_options import CategoryOption

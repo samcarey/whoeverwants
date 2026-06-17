@@ -91,6 +91,14 @@ _OPTION_MAX = 80
 _CONTEXT_MAX = 60
 _MAX_OPTIONS = 8
 
+# A yes_no poll must be answerable strictly "yes" or "no". These markers signal a
+# CHOICE among options ("Movie night pick?", "Tacos or sushi?", "Which game?") —
+# which is a movie/restaurant/custom poll, not a yes_no. We reject such a yes_no
+# rather than try to reclassify it (we don't know the options). Deliberately
+# narrow + high-precision: it must NOT fire on legit elliptical yes/no prompts
+# like "Pizza tonight?" or "Offsite in Q3?" (no choice markers).
+_YESNO_CHOICE_RE = re.compile(r"\b(which|pick|picks|choose|choosing|vs|versus|or)\b", re.I)
+
 
 @dataclass
 class HistoryContext:
@@ -267,7 +275,11 @@ _SYSTEM_PROMPT = (
     '  "context": string    // OPTIONAL short real subject the poll is "for" (e.g. "Friday dinner"). Under 40 characters.\n'
     "}\n\n"
     "CATEGORY MEANINGS:\n"
-    "- yes_no: one yes-or-no decision. title = the question.\n"
+    "- yes_no: a single decision answerable strictly YES or NO (e.g. \"Should we "
+    "meet Friday?\", \"Book the cabin?\"). title = that yes/no question. NEVER use "
+    "yes_no for a 'which / pick / choose' decision — picking a movie, place, game, "
+    "or any option set is a movie/restaurant/location/video_game/custom poll, not "
+    "a yes_no.\n"
     "- restaurant: pick a place to eat. options = real restaurant names.\n"
     "- location: pick a place/venue (not food).\n"
     "- movie: pick a movie to watch. options = real movie titles.\n"
@@ -295,6 +307,10 @@ _SYSTEM_PROMPT = (
     "specific options that the group has used before and that fit, OMIT options "
     "and let the group suggest them — an omitted-options poll is better than a "
     "generic one.\n"
+    "- A yes_no title MUST be answerable with yes or no. If the decision is to "
+    "PICK among options (a movie, a place, a game — anything with choices), use "
+    "that category (or custom) WITH options; NEVER phrase it as a yes_no like "
+    '"Movie night pick?" or "Tacos or sushi?".\n'
     "- context is the short real subject this poll is for; leave it out rather "
     "than inventing an unrelated one. Do not pair a context with an unrelated "
     "category.\n"
@@ -428,6 +444,11 @@ def validate_suggestion(
             options_metadata = {}
 
     if category in _TITLE_REQUIRED and not title:
+        return None
+    # yes_no is ONLY for a yes-or-no question; a "which/pick/choose/or" decision
+    # is a choice poll, not a yes_no — drop it so the LLM can't emit nonsense like
+    # "Movie night pick?" as a yes_no.
+    if category == "yes_no" and _YESNO_CHOICE_RE.search(title):
         return None
     # For non-title categories, a stray title is noise — drop it (the title is
     # auto-generated from category + context + options).
