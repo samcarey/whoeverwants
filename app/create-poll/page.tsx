@@ -509,6 +509,24 @@ export function CreateQuestionContent() {
     // Safety net in case the real input never claims focus.
     window.setTimeout(removeKeyboardPrimer, 1500);
   }, [removeKeyboardPrimer]);
+  // Reliably drop the iOS soft keyboard. Blurs the live active element (more
+  // robust than a possibly-stale input ref) synchronously AND on the next two
+  // frames — a single blur fired mid-tap-gesture is sometimes ignored by WebKit,
+  // and re-blurring a frame later (once the gesture's microtasks settle) lands.
+  // Only ever called when the form should open WITHOUT the keyboard, so blurring
+  // the next active element can't steal focus from anything the user wants.
+  const dismissSoftKeyboard = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    const blur = () => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && typeof el.blur === 'function') el.blur();
+    };
+    blur();
+    requestAnimationFrame(() => {
+      blur();
+      requestAnimationFrame(blur);
+    });
+  }, []);
   const setTitleInputRef = useCallback((node: HTMLInputElement | null) => {
     titleInputRef.current = node;
     if (node && shouldFocusTitleRef.current) {
@@ -1276,15 +1294,26 @@ export function CreateQuestionContent() {
     // survives the async mount of the real input.
     const focusTitle = draft.category === 'yes_no' && !draft.title.trim();
     shouldFocusTitleRef.current = focusTitle;
-    if (focusTitle) primeKeyboard();
-    // Collapse the search bar (and dismiss its keyboard) so the modal opens
-    // over a clean group view and we're back to the unfocused pill when it
-    // closes. Clearing the query keeps the next picker open fresh.
+    if (focusTitle) {
+      primeKeyboard();
+    } else {
+      // Reliably dismiss the soft keyboard. The suggestion rows keep the search
+      // input focused through the tap (onMouseDown preventDefault), so a single
+      // synchronous blur() — fired mid-gesture as the modal mounts — is
+      // intermittently ignored on iOS, leaving the keyboard up over a form with
+      // nothing focused (reported). Blur the actual active element now AND on the
+      // next frame, after the tap's microtasks settle. Skipped for focusTitle,
+      // where primeKeyboard deliberately keeps the keyboard up for the title.
+      dismissSoftKeyboard();
+    }
+    // Collapse the search bar so the modal opens over a clean group view and
+    // we're back to the unfocused pill when it closes. Clearing the query keeps
+    // the next picker open fresh.
     searchInputRef.current?.blur();
     setSearchFocused(false);
     setSearchQuery("");
     setIsModalOpen(true);
-  }, [applyDraftToState, drafts, primeKeyboard, resetFreshPollFields]);
+  }, [applyDraftToState, drafts, primeKeyboard, dismissSoftKeyboard, resetFreshPollFields]);
 
   // Collapse the focused picker back to the bottom pill ("normal group
   // view") without opening anything — wired to the bar's ✕ button.
