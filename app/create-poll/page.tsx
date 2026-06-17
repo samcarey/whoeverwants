@@ -115,8 +115,15 @@ function autoSizeDetailsTextarea(el: HTMLTextAreaElement) {
 // How long the new-poll sheet body's open-at-top scroll pin stays armed
 // (see setSheetScrollerRef). Sized to outlast the iOS soft-keyboard collapse
 // (~250-400ms) + the sheet's 300ms slide-up with margin; the user's first
-// touch/wheel disarms it earlier, so the window never fights a real scroll.
-const SHEET_SCROLL_PIN_MS = 800;
+// touch/wheel AFTER the grace window disarms it, so it never fights a real scroll.
+const SHEET_SCROLL_PIN_MS = 1200;
+// The disarm listeners (touchmove/wheel/keydown) are attached only AFTER this
+// grace delay. The SAME physical tap that opens the sheet replays a synthetic
+// touchstart+touchmove onto the freshly-mounted scroller (the picker unmounts +
+// the sheet slides up under the still-down finger), which would otherwise disarm
+// the pin within a frame or two — before the keyboard-collapse scroll settles.
+// Must comfortably outlast that collapse; a deliberate scroll after it still disarms.
+const SHEET_SCROLL_PIN_GRACE_MS = 550;
 
 // Order matches the dropdown inside the modal so muscle memory carries over.
 // The leading "New" button (rendered separately at the start of the row)
@@ -502,6 +509,24 @@ export function CreateQuestionContent() {
     // Safety net in case the real input never claims focus.
     window.setTimeout(removeKeyboardPrimer, 1500);
   }, [removeKeyboardPrimer]);
+  // Reliably drop the iOS soft keyboard. Blurs the live active element (more
+  // robust than a possibly-stale input ref) synchronously AND on the next two
+  // frames — a single blur fired mid-tap-gesture is sometimes ignored by WebKit,
+  // and re-blurring a frame later (once the gesture's microtasks settle) lands.
+  // Only ever called when the form should open WITHOUT the keyboard, so blurring
+  // the next active element can't steal focus from anything the user wants.
+  const dismissSoftKeyboard = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    const blur = () => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && typeof el.blur === 'function') el.blur();
+    };
+    blur();
+    requestAnimationFrame(() => {
+      blur();
+      requestAnimationFrame(blur);
+    });
+  }, []);
   const setTitleInputRef = useCallback((node: HTMLInputElement | null) => {
     titleInputRef.current = node;
     if (node && shouldFocusTitleRef.current) {
@@ -524,25 +549,30 @@ export function CreateQuestionContent() {
   // scrollTop on the single mid-animation `scroll` event can be ignored.
   //
   // The pin is disarmed by a genuine SCROLL gesture (touchmove / wheel /
-  // keydown) — NOT by a tap (touchstart / pointerdown). This is load-bearing:
-  // when the user taps a suggestion to open the sheet, iOS replays a synthetic
-  // pointer/touch sequence AND the sheet slides up under the release point, so
-  // a `touchstart`/`pointerdown` disarm fired on the freshly-mounted scroller
-  // within ~1 frame of mount — killing the rAF reassert before the keyboard-
-  // collapse scroll settled (the bug the #721 rAF "fix" couldn't hold for the
-  // yes/no-suggestion path). A tap (the opening phantom, or tapping a form
-  // field) never scrolls, so it must not release the pin; a real scroll always
-  // involves a drag/wheel/arrow-key, which still disarms immediately so a
-  // deliberate scroll is never fought. Doesn't reproduce in headless
-  // Chromium/WebKit — device-only, like the other keyboard races.
+  // keydown) — NOT by a tap (touchstart / pointerdown), and NOT until after a
+  // grace window (SHEET_SCROLL_PIN_GRACE_MS). This is load-bearing: when the
+  // user taps a suggestion to open the sheet, iOS replays a synthetic
+  // touchstart+touchmove sequence onto the freshly-mounted scroller (the picker
+  // unmounts + the sheet slides up under the still-down finger) within a frame
+  // or two of mount. #740 stopped disarming on `touchstart`/`pointerdown`, but
+  // the SAME gesture's retargeted `touchmove` still slipped through and killed
+  // the rAF reassert before the keyboard-collapse scroll settled — so the form
+  // re-opened scrolled down. Deferring the disarm listeners past the collapse
+  // window means that opening-gesture touchmove can't disarm at all; a real
+  // scroll AFTER the grace window still disarms so a deliberate scroll is never
+  // fought. Doesn't reproduce in headless Chromium/WebKit — device-only, like
+  // the other keyboard races.
   const sheetScrollPinCleanupRef = useRef<(() => void) | null>(null);
   const setSheetScrollerRef = useCallback((node: HTMLDivElement | null) => {
     sheetScrollPinCleanupRef.current?.();
     if (!node) return;
     node.scrollTop = 0;
     let raf = 0;
+    let timer = 0;
+    let armTimer = 0;
     const cleanup = () => {
       window.clearTimeout(timer);
+      window.clearTimeout(armTimer);
       if (raf) cancelAnimationFrame(raf);
       node.removeEventListener('scroll', onScroll);
       node.removeEventListener('touchmove', cleanup);
@@ -558,18 +588,21 @@ export function CreateQuestionContent() {
     // iOS can scroll the freshly-mounted scroller while the search-box keyboard
     // collapses, and setting scrollTop on the one `scroll` event it fires is
     // sometimes ignored mid-animation. Re-assert 0 every frame for the armed
-    // window so the form can't open scrolled down; the user's first scroll
-    // gesture (touchmove/wheel/keydown) disarms it so a real scroll isn't fought.
+    // window so the form can't open scrolled down.
     const reassert = () => {
       if (node.scrollTop !== 0) node.scrollTop = 0;
       raf = requestAnimationFrame(reassert);
     };
     raf = requestAnimationFrame(reassert);
     node.addEventListener('scroll', onScroll);
-    node.addEventListener('touchmove', cleanup, { passive: true });
-    node.addEventListener('wheel', cleanup, { passive: true });
-    node.addEventListener('keydown', cleanup, { passive: true });
-    const timer = window.setTimeout(cleanup, SHEET_SCROLL_PIN_MS);
+    // Defer the disarm listeners past the keyboard-collapse + opening-gesture
+    // window so the tap that opened the sheet can't disarm the pin (see above).
+    armTimer = window.setTimeout(() => {
+      node.addEventListener('touchmove', cleanup, { passive: true });
+      node.addEventListener('wheel', cleanup, { passive: true });
+      node.addEventListener('keydown', cleanup, { passive: true });
+    }, SHEET_SCROLL_PIN_GRACE_MS);
+    timer = window.setTimeout(cleanup, SHEET_SCROLL_PIN_MS);
     sheetScrollPinCleanupRef.current = cleanup;
   }, []);
 
@@ -1261,15 +1294,26 @@ export function CreateQuestionContent() {
     // survives the async mount of the real input.
     const focusTitle = draft.category === 'yes_no' && !draft.title.trim();
     shouldFocusTitleRef.current = focusTitle;
-    if (focusTitle) primeKeyboard();
-    // Collapse the search bar (and dismiss its keyboard) so the modal opens
-    // over a clean group view and we're back to the unfocused pill when it
-    // closes. Clearing the query keeps the next picker open fresh.
+    if (focusTitle) {
+      primeKeyboard();
+    } else {
+      // Reliably dismiss the soft keyboard. The suggestion rows keep the search
+      // input focused through the tap (onMouseDown preventDefault), so a single
+      // synchronous blur() — fired mid-gesture as the modal mounts — is
+      // intermittently ignored on iOS, leaving the keyboard up over a form with
+      // nothing focused (reported). Blur the actual active element now AND on the
+      // next frame, after the tap's microtasks settle. Skipped for focusTitle,
+      // where primeKeyboard deliberately keeps the keyboard up for the title.
+      dismissSoftKeyboard();
+    }
+    // Collapse the search bar so the modal opens over a clean group view and
+    // we're back to the unfocused pill when it closes. Clearing the query keeps
+    // the next picker open fresh.
     searchInputRef.current?.blur();
     setSearchFocused(false);
     setSearchQuery("");
     setIsModalOpen(true);
-  }, [applyDraftToState, drafts, primeKeyboard, resetFreshPollFields]);
+  }, [applyDraftToState, drafts, primeKeyboard, dismissSoftKeyboard, resetFreshPollFields]);
 
   // Collapse the focused picker back to the bottom pill ("normal group
   // view") without opening anything — wired to the bar's ✕ button.
