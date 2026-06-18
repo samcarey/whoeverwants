@@ -1358,6 +1358,18 @@ export function CreateQuestionContent() {
     openModalWithDraft(overrides);
   }, [openModalWithDraft]);
 
+  // While the box is focused, mark the body so the rest of the app's fixed
+  // chrome (the group/explore top bar) is non-interactive. The content area
+  // (polls, CTAs) is covered by the scrim in `searchBox`; the top bar paints
+  // above that scrim's stacking context, so it's disabled here via CSS.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const body = document.body;
+    if (searchFocused) body.setAttribute('data-poll-search-open', '');
+    else body.removeAttribute('data-poll-search-open');
+    return () => body.removeAttribute('data-poll-search-open');
+  }, [searchFocused]);
+
   // Read showDiscardConfirm via a ref inside the Escape handler so toggling
   // the inner confirm dialog doesn't tear down + rebuild the body-position
   // lock on every open/close.
@@ -2951,7 +2963,23 @@ export function CreateQuestionContent() {
   });
 
   const searchBox = (
-    <div className="px-3 py-2">
+    <>
+      {/* While focused, a transparent scrim captures taps on the rest of the
+          page (polls, CTAs, the area behind the top bar) so the background is
+          non-interactive — tapping it dismisses the search. The fixed top bar
+          is disabled separately via the body[data-poll-search-open] rule (it
+          paints above this scrim's stacking context). `fixed inset-0` is
+          trapped to the swipe wrapper's will-change:transform box, covering the
+          content area; z-40 sits below the box (z-50) and above the polls. */}
+      {searchFocused && (
+        <div
+          className="fixed inset-0 z-40"
+          aria-hidden
+          onPointerDown={() => searchInputRef.current?.blur()}
+        />
+      )}
+      {/* When focused, elevate the pill + dropdown above the scrim (z-50). */}
+      <div className={`px-3 py-2 relative ${searchFocused ? 'z-50' : ''}`}>
       {/* `relative` anchors the absolute dropdown directly below the pill. */}
       <div ref={searchPillRef} className="relative">
         {/* The real inline input pill — full width, stays in place when
@@ -2987,7 +3015,8 @@ export function CreateQuestionContent() {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 
   return (

@@ -55,6 +55,18 @@
   color-scheme: dark;
 }
 
+/* While the inline create-poll box is focused (CreateQuestionContent sets
+   data-poll-search-open on <body>), make the fixed top-bar chrome
+   non-interactive. The content area (polls, CTAs) is covered by the box's own
+   tap-catching scrim; the top bar paints above that scrim's stacking context,
+   so it's disabled here instead. Covers the group header, the explore/header
+   portal bar, and the dev commit badge. */
+body[data-poll-search-open] [data-group-header],
+body[data-poll-search-open] #header-portal,
+body[data-poll-search-open] #commit-badge-portal {
+  pointer-events: none;
+}
+
 html {
   background: var(--background);
   /* Disable scroll anchoring. The home page's typing animation replaces the
