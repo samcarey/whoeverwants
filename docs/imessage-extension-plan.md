@@ -12,8 +12,10 @@
 > Claim/Decline, identity-gated, edit-not-duplicate) shipped via #718;
 > Phase 4 COMPOSE-A-POLL-IN-MESSAGES (decision D — a "New poll" composer in the
 > drawer: typed prompt → shared `PollTextParser` → headless create for
-> options/yes-no, "open the app to finish" for category) implemented — see the
-> Phase 4 section for what landed and the on-device verification owed. Phase 4
+> options/yes-no, "open the app to finish" for category) implemented and
+> DEVICE-VERIFIED June 2026 for the yes/no-create + category→open-app paths
+> (the multi-option pick-one headless path not yet separately exercised) — see
+> the Phase 4 section. Phase 4
 > is Swift-only EXCEPT one pbxproj change (the shared `PollTextParser.swift`
 > compiled into the extension target — the documented precedent): no server /
 > migration / entitlement / CI-logic change. The deferred **expanded-view
@@ -412,7 +414,7 @@ atomic batch `POST /api/polls/{id}/votes` + own-vote `GET /api/questions/{id}/vo
   summary, a nameless viewer sees disabled buttons + the hint, and a private-group
   bubble vote joins the voter (poll appears in their app afterward).
 
-### Phase 4 — compose-a-poll-in-Messages (decision D, SHIPPED, pending device verification)
+### Phase 4 — compose-a-poll-in-Messages (decision D, SHIPPED; yes/no create + category→open-app DEVICE-VERIFIED June 2026)
 
 What landed (Swift in `ios/App/MessagesExtension/MessagesViewController.swift` +
 ONE pbxproj change; **no server / migration / entitlement / CI-logic change**):
@@ -459,6 +461,16 @@ ONE pbxproj change; **no server / migration / entitlement / CI-logic change**):
   compose session is preserved across a Messages background/foreground (the
   `activate` no-URL branch returns early while `composing`), and a bubble tap
   (selectedMessage) supersedes it.
+- **Device-verified (owner, June 2026):** typing a prompt in the iMessage
+  composer creates a **yes/no poll headlessly** and inserts its bubble without
+  leaving Messages, and typing a **category-type prompt opens the app to the
+  prefilled create form** (the `?create=1&category=…&for=…` deep link). So both
+  compose paths — headless create for yes/no AND the "open the app to finish"
+  fallback for category — are confirmed on a real device. (Not yet separately
+  confirmed: the **multi-option pick-one** headless path, e.g.
+  "pizza, tacos, or sushi" → a fixed-options ranked_choice — the `decidePoll`
+  options branch; expected to work since it shares `PollAPI.createPoll` with the
+  yes/no path, but the owner hasn't called it out as exercised yet.)
 - Exit criteria: (CI) green canary build (compiles the parser into the ext +
   the compose tree). (Owner, device — Simulator works for the inner loop) the
   drawer shows "New poll", typing "pizza, tacos, or sushi" previews a pick-one
