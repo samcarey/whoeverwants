@@ -176,16 +176,13 @@ def load_known_options_by_category(
     (favicon / poster / coords / address). Explore groups are excluded (the
     same isolation as `load_category_options`); suggestions are a normal-group
     feature. Tolerant — missing inputs yield empty maps."""
-    gids: list[str] = []
+    # Membership is a set (order is irrelevant — _query reorders by recency).
+    gid_set: set[str] = set(load_user_visibility(conn, None, user_id=user_id).joined_by_group.keys())
     if group_id:
-        gids.append(group_id)
-    visibility = load_user_visibility(conn, None, user_id=user_id)
-    for g in visibility.joined_by_group.keys():
-        if g not in gids:
-            gids.append(g)
-    if gids:
-        explore_set = explore_group_ids(conn, gids)
-        gids = [g for g in gids if g not in explore_set]
+        gid_set.add(group_id)
+    if gid_set:
+        gid_set -= explore_group_ids(conn, list(gid_set))
+    gids = list(gid_set)
 
     out: dict[str, dict[str, CategoryOption]] = {}
     for category in categories:

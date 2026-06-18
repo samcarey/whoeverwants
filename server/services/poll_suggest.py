@@ -391,20 +391,23 @@ def validate_suggestion(
             label = _clean_str(o, _OPTION_MAX)
             if not label:
                 continue
+            entry = None
             if known is not None:
                 # Ground to history: drop anything not previously referenced, and
-                # adopt the stored casing + DB metadata for what survives.
+                # adopt the stored casing for what survives.
                 entry = known.get(label.lower())
                 if entry is None:
                     continue
                 label = entry.label
-                if entry.metadata:
-                    options_metadata[label] = entry.metadata
             key = label.lower()
             if key in seen:
                 continue
             seen.add(key)
             options.append(label)
+            # Metadata only for options actually kept (added after the dedup check),
+            # so out["options_metadata"] can't carry an orphan key.
+            if entry is not None and entry.metadata:
+                options_metadata[label] = entry.metadata
             if len(options) >= _MAX_OPTIONS:
                 break
         # A fixed-option poll needs >= 2; otherwise treat as suggestion-collection
@@ -431,7 +434,7 @@ def validate_suggestion(
     if options:
         out["options"] = options
     if options_metadata:
-        out["options_metadata"] = {k: v for k, v in options_metadata.items() if k in options}
+        out["options_metadata"] = options_metadata
     if context:
         out["context"] = context
     return out
