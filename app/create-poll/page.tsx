@@ -1317,11 +1317,17 @@ export function CreateQuestionContent() {
 
   // Collapse the focused picker back to the bottom pill ("normal group
   // view") without opening anything — wired to the bar's ✕ button.
+  // Route the blur through dismissSoftKeyboard (blur the live activeElement +
+  // re-blur on the next two frames) instead of a single searchInputRef blur:
+  // the ✕ tap fires mid-gesture (the button preventDefaults mousedown so the
+  // input keeps focus through the tap), and a lone synchronous blur is
+  // intermittently ignored by iOS WebKit — leaving the keyboard up after the
+  // picker collapsed. The multi-frame re-blur is what reliably drops it.
   const dismissSearch = useCallback(() => {
-    searchInputRef.current?.blur();
+    dismissSoftKeyboard();
     setSearchFocused(false);
     setSearchQuery("");
-  }, []);
+  }, [dismissSoftKeyboard]);
 
   // Pick a poll suggestion from the focused picker. Collapses the picker,
   // then either opens the form (valid name) or stashes a retry thunk and
