@@ -28,7 +28,6 @@ import { planPollSuggestions, type PlannedRow } from "@/lib/pollSuggestions";
 import { classifyCategory, warmAiCategoryClassifier, isAiCategoryClassifyEnabled, type AiCategory } from "@/lib/aiCategoryClassify";
 import { scoreSuggestions } from "@/lib/aiSuggestionRank";
 import OptionsInput from "@/components/OptionsInput";
-import KeyboardSuggestionPicker from "@/components/KeyboardSuggestionPicker";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import ScoringAlgorithmField from "@/components/ScoringAlgorithmField";
@@ -664,10 +663,10 @@ export function CreateQuestionContent() {
   // category.
   const [pendingSearchAction, setPendingSearchAction] = useState<(() => void) | null>(null);
 
-  // --- Poll-creation search affordance (inline pill + focused overlay) ----
-  // `searchFocused` = the full-screen keyboard-aware picker is open (see
-  // `searchTrigger` / `searchOverlay`). The unfocused pill is an inline
-  // trigger in the group scroll. `searchQuery` filters the category rows.
+  // --- Poll-creation search box (inline input + dropdown) ----------------
+  // `searchFocused` = the inline box is focused, so its suggestions dropdown
+  // is shown directly below it (see `searchBox`). The box stays in place; the
+  // page is still visible around it. `searchQuery` filters the category rows.
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   // On-device embedding category hint (augment, never block): a confident result
@@ -687,13 +686,13 @@ export function CreateQuestionContent() {
   // unavailable) → the box falls back to server order + token filtering.
   const [aiScores, setAiScores] = useState<number[] | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  // The unfocused create-poll pill is now an inline TRIGGER (a button in the
-  // group scroll, under "Scheduled"); tapping it opens a body-portalled
-  // full-screen <KeyboardSuggestionPicker> whose real <input> mounts async.
-  // `shouldFocusSearchRef` + `setSearchInputRef` transfer focus to it on mount
-  // and drop the keyboard primer, so iOS keeps the keyboard up across the
-  // handoff (mirrors setTitleInputRef for the modal title).
-  const shouldFocusSearchRef = useRef(false);
+  // The create-poll box is a real inline <input> living in the group scroll
+  // (under "Scheduled"). Focusing it stays IN PLACE — the page is still
+  // visible around it — and the suggestions render as a dropdown directly
+  // below the pill. `searchPillRef` anchors that dropdown; its max height is
+  // computed so it ends just above the soft keyboard.
+  const searchPillRef = useRef<HTMLDivElement | null>(null);
+  const [searchDropdownMaxHeight, setSearchDropdownMaxHeight] = useState(320);
 
   // A ranked_choice question is a "suggestion poll" when the creator left the
   // "Collect Suggestions before Vote" toggle on — regardless of whether they
@@ -1317,42 +1316,34 @@ export function CreateQuestionContent() {
     setIsModalOpen(true);
   }, [applyDraftToState, drafts, primeKeyboard, dismissSoftKeyboard, resetFreshPollFields]);
 
-  // Collapse the focused picker back to the bottom pill ("normal group
-  // view") without opening anything — wired to the bar's ✕ button.
-  // Route the blur through dismissSoftKeyboard (blur the live activeElement +
-  // re-blur on the next two frames) instead of a single searchInputRef blur:
-  // the ✕ tap fires mid-gesture (the button preventDefaults mousedown so the
-  // input keeps focus through the tap), and a lone synchronous blur is
-  // intermittently ignored by iOS WebKit — leaving the keyboard up after the
-  // picker collapsed. The multi-frame re-blur is what reliably drops it.
-  const dismissSearch = useCallback(() => {
-    dismissSoftKeyboard();
-    setSearchFocused(false);
-    setSearchQuery("");
-  }, [dismissSoftKeyboard]);
-
-  // Callback ref for the focused overlay's real <input>: focus it on mount and
-  // drop the keyboard primer so iOS keeps the keyboard up across the trigger →
-  // overlay handoff (parallels setTitleInputRef for the modal title).
-  const setSearchInputRef = useCallback((node: HTMLInputElement | null) => {
-    searchInputRef.current = node;
-    if (node && shouldFocusSearchRef.current) {
-      shouldFocusSearchRef.current = false;
-      node.focus({ preventScroll: true });
-      removeKeyboardPrimer();
-    }
-  }, [removeKeyboardPrimer]);
-
-  // Tapping the inline create-poll pill: claim the iOS keyboard synchronously
-  // (still inside the tap) so it survives the async mount of the overlay input,
-  // then open the full-screen picker. The overlay's input focuses on mount via
-  // setSearchInputRef.
-  const openSearchOverlay = useCallback(() => {
-    if (isLoading) return;
-    shouldFocusSearchRef.current = true;
-    primeKeyboard();
-    setSearchFocused(true);
-  }, [isLoading, primeKeyboard]);
+  // While the box is focused, bound the suggestions dropdown so its bottom
+  // ends just above the soft keyboard (the box stays put; only the dropdown is
+  // sized to the visible gap below it). visualViewport gives the above-keyboard
+  // region; the pill's rect gives where the dropdown starts.
+  useEffect(() => {
+    if (!searchFocused) return;
+    const vp = typeof window !== 'undefined' ? window.visualViewport : null;
+    const recompute = () => {
+      const rect = searchPillRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const keyboardTop = vp ? vp.offsetTop + vp.height : window.innerHeight;
+      // 8px dropdown gap + 12px breathing room above the keyboard.
+      setSearchDropdownMaxHeight(Math.max(140, keyboardTop - rect.bottom - 20));
+    };
+    recompute();
+    // Re-measure as the keyboard animates in (visualViewport settles a few
+    // frames later) and on any subsequent viewport change.
+    const raf = requestAnimationFrame(recompute);
+    const t = window.setTimeout(recompute, 350);
+    vp?.addEventListener('resize', recompute);
+    vp?.addEventListener('scroll', recompute);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+      vp?.removeEventListener('resize', recompute);
+      vp?.removeEventListener('scroll', recompute);
+    };
+  }, [searchFocused]);
 
   // Pick a poll suggestion from the focused picker. Collapses the picker,
   // then either opens the form (valid name) or stashes a retry thunk and
@@ -1378,14 +1369,14 @@ export function CreateQuestionContent() {
   // `position: fixed` on body (vs. `overflow: hidden`) is required to
   // block iOS pull-to-refresh from bypassing the lock.
   //
-  // Also lock while the bottom search bar is focused: focusing the input
-  // raises the soft keyboard / shrinks the visual viewport, which scrolls
-  // the underlying group page even though the picker is `position: fixed`.
-  // The lock snapshots `scrollY` on engage and restores it on release, so
-  // opening + cancelling the picker leaves the group's scroll untouched.
-  // `locked` stays true across the focus → modal-open transition
-  // (searchFocused flips false as isModalOpen flips true in the same
-  // batch), so the snapshot carries through without a teardown/flicker.
+  // Also lock while the inline search box is focused: pinning the page (vs
+  // letting iOS auto-scroll the focused input into view) is what keeps the box
+  // exactly where it is, with the dropdown anchored below it. The lock
+  // snapshots `scrollY` on engage and restores it on release, so opening +
+  // cancelling leaves the group's scroll untouched. `locked` stays true across
+  // the focus → modal-open transition (searchFocused flips false as isModalOpen
+  // flips true in the same batch), so the snapshot carries through without a
+  // teardown/flicker.
   useBodyScrollLock(isModalOpen || searchFocused, false);
 
   // Escape closes the sheet (preserving state). Skip when the inner
@@ -2875,206 +2866,133 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
-  // The poll-creation search affordance. The UNFOCUSED state is an inline
-  // pill (a ➕ button + a text-box-styled button) that lives in normal flow
-  // at the top of the group scroll, under "Scheduled" — it scrolls with the
-  // content and rides the swipe/slide transforms for free. Tapping the text
-  // box primes the keyboard and opens a body-portalled full-screen picker
-  // (the FOCUSED overlay) whose real <input> mounts async; focus transfers
-  // via setSearchInputRef. Selecting a row opens the new-poll form prefilled
-  // with that category.
-  //
-  // The focused overlay MUST be body-portalled (not toggled in place on the
-  // inline trigger): the inline trigger lives inside the group page's swipe
-  // wrapper, whose permanent `will-change: transform` makes it the containing
-  // block for any `position: fixed` descendant — a focused picker rendered
-  // there would be trapped to the (full-content-tall) wrapper instead of the
-  // viewport. Splitting trigger (inline) from overlay (body-portal) is the
-  // same pattern AutocompleteInput uses for this exact component.
+  // The poll-creation search box. A real inline <input> that lives in normal
+  // flow at the top of the group scroll (under "Scheduled") — it scrolls with
+  // the content and rides the swipe/slide transforms for free. Focusing it
+  // keeps it IN PLACE (the page stays visible around it) and renders the
+  // suggestions as a dropdown directly BELOW the pill, bounded above the soft
+  // keyboard. Selecting a row opens the new-poll form prefilled with that
+  // category. (No body-portalled overlay: the input never needs to be
+  // viewport-fixed above the keyboard, since it sits near the top of the page,
+  // so there's no `will-change: transform` containing-block conflict.)
   const SEARCH_ROW_CLASS =
-    "w-full flex items-center gap-[11.2px] pl-[14px] pr-5 py-[1.75px] text-left min-h-[0.4375rem] active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
+    "w-full flex items-center gap-[11.2px] pl-[14px] pr-5 py-1.5 text-left active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
 
-  // Inline trigger: rendered into every #draft-poll-portal (the group scroll).
-  const searchTrigger = (
-    <div className="px-3 py-2">
-      <div className="flex items-center gap-2">
-        {/* ➕ opens a blank new poll directly (no keyboard picker). */}
-        <button
-          type="button"
-          onClick={() => chooseSuggestion({ category: isExplore ? 'yes_no' : 'custom' })}
-          aria-label="New poll"
-          disabled={isLoading}
-          className="w-[42.24px] h-[42.24px] shrink-0 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 text-gray-500 dark:text-gray-400 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"
+  // searchSuggestions is ordered best-LAST; reverse it so the best match is
+  // FIRST — i.e. topmost in the dropdown, nearest the box above it.
+  const searchDropdownRows = [...searchSuggestions].reverse().map((s) => {
+    // Rows with an annotation label reserve `pt-3` above BOTH the icon and the
+    // text so the label has room AND the two stay vertically centered.
+    const hasLabel = s.segments.some((seg) => seg.label);
+    return (
+      <button
+        key={s.key}
+        type="button"
+        // onMouseDown preventDefault keeps the input focused through the tap so
+        // the click lands reliably before onBlur closes the dropdown.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => chooseSuggestion(s.overrides)}
+        disabled={isLoading}
+        className={SEARCH_ROW_CLASS}
+        aria-label={`Create poll: ${s.segments.map((seg) => seg.text).join('')}`}
+      >
+        <span
+          className={`w-7 text-center text-2xl leading-none shrink-0 ${hasLabel ? 'pt-3' : ''}`}
+          aria-hidden
         >
-          <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden="true">
-            <path strokeLinecap="round" d="M12 5v14M5 12h14" />
-          </svg>
-        </button>
-        {/* Text box — a button styled like the focused input; tapping it
-            opens the keyboard picker (where the real input lives). */}
-        <button
-          type="button"
-          onClick={openSearchOverlay}
-          aria-label="Create a poll"
-          disabled={isLoading}
-          className="flex-1 min-w-0 flex items-center h-[42.24px] rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4 text-left disabled:opacity-50"
+          {s.icon}
+        </span>
+        <span
+          className={`relative flex-1 min-w-0 overflow-hidden whitespace-nowrap text-base ${hasLabel ? 'pt-3' : ''}`}
         >
-          <span className="flex-1 min-w-0 truncate text-base text-gray-400 dark:text-gray-500">
-            Create a poll…
-          </span>
-        </button>
-      </div>
-    </div>
-  );
-
-  // Focused full-screen overlay: body-portalled so it escapes the swipe
-  // wrapper's containing block and the fixed header (z-[85] covers both).
-  const searchOverlay = searchFocused
-    ? createPortal(
-    <KeyboardSuggestionPicker
-      focused
-      // Keep the box at the top (where the inline pill is) when focused and
-      // drop the suggestions BELOW it. searchSuggestions is ordered best-LAST
-      // (for the default bottom-anchor "nearest the bar"); reverse it so the
-      // best match is FIRST — i.e. topmost, nearest the bar which now sits
-      // above the list.
-      anchor="top"
-      zClassName="z-[85]"
-      scrollSignal={searchSuggestions}
-      rows={[...searchSuggestions].reverse().map((s) => {
-        // Rows with an annotation label reserve `pt-3` above BOTH the icon
-        // and the text so the label has room AND the two stay vertically
-        // centered against each other (matched box heights).
-        const hasLabel = s.segments.some((seg) => seg.label);
-        return (
-          <button
-            key={s.key}
-            type="button"
-            // onMouseDown preventDefault keeps the input focused through the
-            // tap so the click lands reliably before chooseSuggestion blurs it.
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => chooseSuggestion(s.overrides)}
-            disabled={isLoading}
-            className={SEARCH_ROW_CLASS}
-            aria-label={`Create poll: ${s.segments.map((seg) => seg.text).join('')}`}
-          >
-            <span
-              className={`w-7 text-center text-2xl leading-none shrink-0 ${
-                hasLabel ? 'pt-3' : ''
-              }`}
-              aria-hidden
-            >
-              {s.icon}
-            </span>
-            <span
-              className={`relative flex-1 min-w-0 overflow-hidden whitespace-nowrap text-base ${
-                hasLabel ? 'pt-3' : ''
-              }`}
-            >
-              {s.segments.map((seg, i) =>
-                seg.colorBorder ? (
-                  // `pt-3` on the wrapper reserves room above the text for the
-                  // label; `bottom-full` keeps the label inside that zone so
-                  // the wrapper's overflow-hidden (which clips long text on
-                  // the right) doesn't also clip it. The label is optional —
-                  // unlabelled-but-underlined segments (2nd+ options) skip it.
-                  <span key={i} className="relative inline-block align-baseline">
-                    {seg.label && (
-                      <span
-                        className={`absolute left-0 bottom-full translate-y-[1.368px] text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
-                        aria-hidden
-                      >
-                        {seg.label}
-                      </span>
-                    )}
-                    <span className={`border-b-2 ${seg.colorBorder}`}>{seg.text}</span>
-                  </span>
-                ) : (
+          {s.segments.map((seg, i) =>
+            seg.colorBorder ? (
+              <span key={i} className="relative inline-block align-baseline">
+                {seg.label && (
                   <span
-                    key={i}
-                    className={seg.muted ? 'text-gray-400 dark:text-gray-500' : (seg.colorText || undefined)}
+                    className={`absolute left-0 bottom-full translate-y-[1.368px] text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
+                    aria-hidden
                   >
-                    {seg.text}
+                    {seg.label}
                   </span>
-                )
-              )}
-            </span>
-            {/* Right-edge monochrome source hint: sparkles = AI-predicted,
-                clock = a previously-used poll. Others get nothing. The text
-                span above is flex-1, so this shrink-0 glyph pins to the right. */}
-            {s.source && (
-              <span
-                className={`shrink-0 text-gray-400 dark:text-gray-500 ${hasLabel ? 'pt-3' : ''}`}
-                aria-hidden
-              >
-                {s.source === 'ai' ? (
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                  </svg>
                 )}
+                <span className={`border-b-2 ${seg.colorBorder}`}>{seg.text}</span>
               </span>
-            )}
-          </button>
-        );
-      })}
-    >
-        <div className="flex items-center gap-2">
-          {/* ✕ collapses the focused picker back to the inline pill. */}
-          <button
-            type="button"
-            // preventDefault keeps the input focused through the tap so the
-            // click lands reliably before onBlur fires.
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={dismissSearch}
-            aria-label="Cancel"
-            disabled={isLoading}
-            className="w-[42.24px] h-[42.24px] shrink-0 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 text-gray-500 dark:text-gray-400 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"
+            ) : (
+              <span
+                key={i}
+                className={seg.muted ? 'text-gray-400 dark:text-gray-500' : (seg.colorText || undefined)}
+              >
+                {seg.text}
+              </span>
+            )
+          )}
+        </span>
+        {/* Right-edge monochrome source hint: sparkles = AI-predicted, clock =
+            a previously-used poll. Others get nothing. */}
+        {s.source && (
+          <span
+            className={`shrink-0 text-gray-400 dark:text-gray-500 ${hasLabel ? 'pt-3' : ''}`}
+            aria-hidden
           >
-            <svg className="w-5 h-5 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-          {/* Text box — to the right of the button, no inner + symbol. */}
-          <div className="flex-1 min-w-0 flex items-center h-[42.24px] rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4">
+            {s.source === 'ai' ? (
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            )}
+          </span>
+        )}
+      </button>
+    );
+  });
+
+  const searchBox = (
+    <div className="px-3 py-2">
+      {/* `relative` anchors the absolute dropdown directly below the pill. */}
+      <div ref={searchPillRef} className="relative">
+        {/* The real inline input pill — full width, stays in place when
+            focused. Tapping outside (blur) closes the dropdown. */}
+        <div className="flex items-center h-[42.24px] rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4">
           <input
-            ref={setSearchInputRef}
+            ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setSearchFocused(true)}
-            // Just collapse on blur (unmounting the input dismisses the iOS
-            // keyboard). NOT dismissSearch here — its multi-frame re-blur would
-            // fight the modal-title primeKeyboard() on the focus-title path.
+            // Collapse on blur (closes the dropdown + dismisses the keyboard).
             onBlur={() => setSearchFocused(false)}
             disabled={isLoading}
             placeholder="Create a poll…"
             aria-label="Create a poll"
             enterKeyHint="search"
-            // `line-height: normal` (the font's natural metrics) — NOT
-            // Tailwind's `text-base` 1.5rem line-height nor `leading-none`.
-            // iOS Safari draws the caret on the font's natural ascent/descent;
-            // forcing a custom line-height makes the caret and the text use
-            // different metrics, so the caret sat below the placeholder. With
-            // `normal` they share metrics and align (default-input behavior).
-            // The row's items-center keeps the input vertically centered.
+            // `line-height: normal` keeps the iOS caret aligned with the text
+            // (a custom line-height splits the caret/text metrics).
             style={{ lineHeight: 'normal' }}
             className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
           />
-          </div>
         </div>
-    </KeyboardSuggestionPicker>,
-        document.body,
-      )
-    : null;
+        {/* Suggestions dropdown — directly below the box, overlaying the polls
+            beneath (bg-background + border, no shadow) so the rest of the page
+            stays visible around it. Bounded above the keyboard. */}
+        {searchFocused && searchDropdownRows.length > 0 && (
+          <div
+            className="absolute left-0 right-0 top-full mt-2 z-50 overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background py-1"
+            style={{ maxHeight: searchDropdownMaxHeight }}
+          >
+            {searchDropdownRows}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="question-content">
-      {draftPollPortals.map(({ key, target }) => createPortal(searchTrigger, target, key))}
-      {searchOverlay}
+      {draftPollPortals.map(({ key, target }) => createPortal(searchBox, target, key))}
 
       {/* New-poll bottom sheet — slides up from the bottom edge. Top half
           holds the question form; bottom half holds poll-level settings
