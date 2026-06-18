@@ -2966,8 +2966,8 @@ export function CreateQuestionContent() {
             // Collapse on blur (closes the dropdown + dismisses the keyboard).
             onBlur={() => setSearchFocused(false)}
             disabled={isLoading}
-            placeholder="Create a poll…"
-            aria-label="Create a poll"
+            placeholder="Ask a question…"
+            aria-label="Ask a question"
             enterKeyHint="search"
             // `line-height: normal` keeps the iOS caret aligned with the text
             // (a custom line-height splits the caret/text metrics).
