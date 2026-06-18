@@ -1358,12 +1358,13 @@ export function CreateQuestionContent() {
     openModalWithDraft(overrides);
   }, [openModalWithDraft]);
 
-  // While the box is focused, make the rest of the app's FIXED top-bar chrome
-  // non-interactive (the content area — polls, CTAs — is covered by the scrim
-  // in `searchBox`, but the top bar paints above that scrim's stacking
-  // context, so it can't be reached by the scrim). Inline pointer-events
-  // survives React re-renders: React only reconciles the style keys it owns
-  // (paddingTop on the group header), never the pointer-events we add here.
+  // While the box is focused, dim + disable the app's FIXED top-bar chrome.
+  // The content area (polls, CTAs) is covered by the dimmed scrim in
+  // `searchBox`, but the top bar paints above that scrim's stacking context,
+  // so it can't be reached by the scrim — dim it here (opacity) to match the
+  // scrim's dim and disable its taps (pointer-events). Inline styles survive
+  // React re-renders: React only reconciles the style keys it owns (paddingTop
+  // on the group header), never the pointer-events/opacity/transition we add.
   // Covers the group header, the explore/header-portal bar, and the dev badge.
   useEffect(() => {
     if (typeof document === 'undefined' || !searchFocused) return;
@@ -1372,8 +1373,18 @@ export function CreateQuestionContent() {
         '[data-group-header], #header-portal, #commit-badge-portal',
       ),
     );
-    els.forEach((el) => { el.style.pointerEvents = 'none'; });
-    return () => { els.forEach((el) => { el.style.pointerEvents = ''; }); };
+    els.forEach((el) => {
+      el.style.pointerEvents = 'none';
+      el.style.opacity = '0.5';
+      el.style.transition = 'opacity 150ms ease-out';
+    });
+    return () => {
+      els.forEach((el) => {
+        el.style.pointerEvents = '';
+        el.style.opacity = '';
+        el.style.transition = '';
+      });
+    };
   }, [searchFocused]);
 
   // Read showDiscardConfirm via a ref inside the Escape handler so toggling
@@ -2970,16 +2981,17 @@ export function CreateQuestionContent() {
 
   const searchBox = (
     <>
-      {/* While focused, a transparent scrim captures taps on the rest of the
-          page (polls, CTAs, the area behind the top bar) so the background is
-          non-interactive — tapping it dismisses the search. The fixed top bar
-          is disabled separately via the body[data-poll-search-open] rule (it
-          paints above this scrim's stacking context). `fixed inset-0` is
-          trapped to the swipe wrapper's will-change:transform box, covering the
-          content area; z-40 sits below the box (z-50) and above the polls. */}
+      {/* While focused, a slightly-dimmed scrim covers the rest of the page
+          (polls, CTAs, the area behind the top bar) so the background reads as
+          backgrounded + non-interactive — tapping it dismisses the search. The
+          fixed top bar paints above this scrim's stacking context, so it's
+          dimmed + disabled separately in the JS effect above. `fixed inset-0`
+          is trapped to the swipe wrapper's will-change:transform box, covering
+          the content area; z-40 sits below the box (z-50) and above the
+          polls. */}
       {searchFocused && (
         <div
-          className="fixed inset-0 z-40"
+          className="fixed inset-0 z-40 bg-black/20"
           aria-hidden
           onPointerDown={() => searchInputRef.current?.blur()}
         />
