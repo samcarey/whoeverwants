@@ -2021,11 +2021,21 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
+        {/* New-poll create box — inline at the top of the scroll, above the
+            To Do section. CreateQuestionContent (root layout) portals the
+            search input into this target; focusing it drops a suggestions
+            dropdown below it. Living inline in the cards wrapper means it
+            scrolls with the content and rides the swipe/slide transforms for
+            free. The min-height reserves the input's height (42.24px + py-2)
+            so content below doesn't jump when CreateQuestionContent portals
+            the input in a frame after this empty div mounts. */}
+        <div id={DRAFT_POLL_PORTAL_ID} style={{ minHeight: '3.64rem' }} />
+
         {/* Solo-group CTAs — the creator is the only member, so surface the
-            two ways to bring people in, ABOVE the new-poll pill. Subtle tinted
-            pills (hemisphere sides via rounded-full), distinct hues so the two
-            actions read apart. ("Scheduled" moved into the header's right
-            end as a timer button.) */}
+            two ways to bring people in, UNDERNEATH the new-poll box. Subtle
+            tinted pills (hemisphere sides via rounded-full), distinct hues so
+            the two actions read apart. ("Scheduled" moved into the header's
+            right end as a timer button.) */}
         {soloAdmin && (
           <div className="flex justify-center gap-2.5 px-[0.9rem] pt-1.5 pb-2.5">
             <button
@@ -2052,17 +2062,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
             </button>
           </div>
         )}
-
-        {/* New-poll create pill — inline at the top of the scroll, above the
-            To Do section (and below the solo CTAs). CreateQuestionContent
-            (root layout) portals the ➕ + search pill into this target; tapping
-            the pill opens a body-portalled full-screen keyboard picker.
-            Living inline in the cards wrapper means it scrolls with the
-            content and rides the swipe/slide transforms for free. The
-            min-height reserves the pill's height (42.24px + py-2) so content
-            below doesn't jump when CreateQuestionContent portals the pill in a
-            frame after this empty div mounts. */}
-        <div id={DRAFT_POLL_PORTAL_ID} style={{ minHeight: '3.64rem' }} />
 
         {/* Gap 1: the three follow/ignore lists (To Do · New · Old) rendered
             inline in order, each headed by a label with a divider line under
