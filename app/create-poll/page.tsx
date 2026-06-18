@@ -2933,9 +2933,15 @@ export function CreateQuestionContent() {
     ? createPortal(
     <KeyboardSuggestionPicker
       focused
+      // Keep the box at the top (where the inline pill is) when focused and
+      // drop the suggestions BELOW it. searchSuggestions is ordered best-LAST
+      // (for the default bottom-anchor "nearest the bar"); reverse it so the
+      // best match is FIRST — i.e. topmost, nearest the bar which now sits
+      // above the list.
+      anchor="top"
       zClassName="z-[85]"
       scrollSignal={searchSuggestions}
-      rows={searchSuggestions.map((s) => {
+      rows={[...searchSuggestions].reverse().map((s) => {
         // Rows with an annotation label reserve `pt-3` above BOTH the icon
         // and the text so the label has room AND the two stay vertically
         // centered against each other (matched box heights).

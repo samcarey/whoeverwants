@@ -27,10 +27,18 @@ interface KeyboardSuggestionPickerProps {
   /** Ref to the bottom input-bar wrapper (e.g. to measure its collapsed height). */
   barRef?: React.Ref<HTMLDivElement>;
   /**
-   * Bump whenever the rows change so the list re-pins to the bottom (the
-   * bottom-anchored list keeps the best match in view as suggestions shift).
+   * Bump whenever the rows change so the list re-pins (the list keeps the
+   * best match in view as suggestions shift).
    */
   scrollSignal?: unknown;
+  /**
+   * Layout direction. `"bottom"` (default): the input bar sits at the BOTTOM
+   * (just above the keyboard) with rows bottom-anchored above it (render the
+   * most-relevant row LAST). `"top"`: the input bar stays at the TOP (where
+   * the inline trigger was — it doesn't jump down to the keyboard) with rows
+   * top-anchored BELOW it (render the most-relevant row FIRST).
+   */
+  anchor?: "top" | "bottom";
 }
 
 /**
@@ -56,7 +64,9 @@ export default function KeyboardSuggestionPicker({
   zClassName = "z-40",
   barRef,
   scrollSignal,
+  anchor = "bottom",
 }: KeyboardSuggestionPickerProps) {
+  const isTop = anchor === "top";
   const [vv, setVv] = useState<{ height: number; offsetTop: number }>({
     height: 0,
     offsetTop: 0,
@@ -80,15 +90,16 @@ export default function KeyboardSuggestionPicker({
     };
   }, [focused]);
 
-  // Keep the bottom of the bottom-anchored list (best match, nearest the bar)
-  // in view: on focus, as the suggestion set changes, and as the keyboard
-  // animates in (visual-viewport height shifts the overflow).
+  // Keep the best match (nearest the bar) in view: on focus, as the suggestion
+  // set changes, and as the keyboard animates in (visual-viewport height shifts
+  // the overflow). Bottom-anchor → pin to the bottom (bar is below); top-anchor
+  // → pin to the top (bar is above).
   useEffect(() => {
     if (!focused) return;
     const el = listRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [focused, vv.height, vv.offsetTop, scrollSignal]);
+    el.scrollTop = isTop ? 0 : el.scrollHeight;
+  }, [focused, isTop, vv.height, vv.offsetTop, scrollSignal]);
 
   // iOS Safari: while the keyboard is open, a drag the suggestion list can't
   // consume (no overflow, or already at the edge in the drag direction) pans
@@ -147,6 +158,47 @@ export default function KeyboardSuggestionPicker({
     };
   }, [focused]);
 
+  const list = focused && (
+    <div
+      ref={listRef}
+      className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-background flex flex-col"
+      // Bottom-anchor: clear the notch / status bar in standalone PWA
+      // (viewport-fit=cover) where the visible viewport top sits under it.
+      // Top-anchor: the bar above already carries that inset, so the list
+      // starts flush under it.
+      style={isTop ? undefined : { paddingTop: "env(safe-area-inset-top, 0px)" }}
+    >
+      {/* Bottom-anchor: `mt-auto` stacks rows up from just above the bar (and
+          collapses to 0 on overflow so the top stays scrollable). Top-anchor:
+          rows stack down from just below the bar (natural order). */}
+      <div className={isTop ? undefined : "mt-auto"}>{rows}</div>
+    </div>
+  );
+
+  const bar = (
+    <div
+      ref={barRef}
+      className={`shrink-0 px-3 ${focused ? "bg-background" : ""}`}
+      style={
+        focused
+          ? isTop
+            ? {
+                // Top-anchor bar sits at the very top, so it owns the notch
+                // inset; the list below needs none.
+                paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.5rem)",
+                paddingBottom: "0.5rem",
+              }
+            : { paddingTop: "0.5rem", paddingBottom: "0.5rem" }
+          : {
+              paddingTop: "0.5rem",
+              paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.5rem)",
+            }
+      }
+    >
+      {children}
+    </div>
+  );
+
   return (
     <div
       ref={rootRef}
@@ -159,31 +211,17 @@ export default function KeyboardSuggestionPicker({
           : { bottom: 0 }
       }
     >
-      {focused && (
-        <div
-          ref={listRef}
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-background flex flex-col"
-          // Clear the notch / status bar in standalone PWA (viewport-fit=cover),
-          // where the visible viewport top sits under it. 0px elsewhere.
-          style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
-        >
-          {/* `mt-auto` bottom-anchors the rows: with spare room they stack up
-              from just above the bar; once they overflow it collapses to 0 so
-              the top stays scrollable. */}
-          <div className="mt-auto">{rows}</div>
-        </div>
+      {isTop ? (
+        <>
+          {bar}
+          {list}
+        </>
+      ) : (
+        <>
+          {list}
+          {bar}
+        </>
       )}
-      <div
-        ref={barRef}
-        className={`shrink-0 px-3 pt-2 ${focused ? "bg-background" : ""}`}
-        style={
-          focused
-            ? { paddingBottom: "0.5rem" }
-            : { paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.5rem)" }
-        }
-      >
-        {children}
-      </div>
     </div>
   );
 }
