@@ -180,18 +180,16 @@ def test_validate_trims_and_bounds():
 # ── filter_and_dedup ───────────────────────────────────────────────────────────
 
 
-def test_filter_dedups_within_batch_and_against_existing():
-    existing = {
-        poll_suggest._signature("restaurant", "", [], "lunch"),
-    }
+def test_filter_dedups_within_batch_only_not_against_history():
+    # History dedup is OFF — only a byte-identical repeat within THIS response is
+    # collapsed; reusing options/subjects from past polls is allowed.
     raw = [
-        {"category": "restaurant", "context": "lunch"},  # dup of existing → dropped
         {"category": "yes_no", "title": "Friday offsite?"},
-        {"category": "yes_no", "title": "Friday offsite?"},  # dup within batch
+        {"category": "yes_no", "title": "Friday offsite?"},  # exact dup within batch
         {"category": "movie", "options": ["Dune", "Barbie"]},
         "garbage",  # invalid → dropped
     ]
-    out = poll_suggest.filter_and_dedup(raw, existing)
+    out = poll_suggest.filter_and_dedup(raw)
     assert out == [
         {"category": "yes_no", "title": "Friday offsite?"},
         {"category": "movie", "options": ["Dune", "Barbie"]},
@@ -200,7 +198,7 @@ def test_filter_dedups_within_batch_and_against_existing():
 
 def test_filter_caps_to_max():
     raw = [{"category": "yes_no", "title": f"Question {i}?"} for i in range(20)]
-    out = poll_suggest.filter_and_dedup(raw, set())
+    out = poll_suggest.filter_and_dedup(raw)
     assert len(out) == poll_suggest.MAX_SUGGESTIONS
 
 
@@ -333,7 +331,6 @@ def test_cache_round_trip_and_gather(client, browser_id):
         assert ctx is not None
         # The created poll shows up in both the group + user history.
         assert any("Standup at 9?" in line for line in ctx.group_lines)
-        assert ctx.existing_signatures
 
         suggestions = [{"category": "restaurant", "context": "team lunch"}]
         poll_suggest.store_suggestions(conn, user_id, group_id, suggestions)

@@ -104,7 +104,6 @@ _YESNO_CHOICE_RE = re.compile(r"\b(which|pick|picks|choose|choosing|vs|versus|or
 class HistoryContext:
     group_lines: list[str] = field(default_factory=list)
     user_lines: list[str] = field(default_factory=list)
-    existing_signatures: set[str] = field(default_factory=set)
     # category -> {lowercased label: previously-referenced option (with metadata)}.
     # The gate for LLM-proposed specific options: only keep ones already used by
     # this group/user, and attach their stored DB ref.
@@ -155,7 +154,10 @@ def _poll_line(row: dict) -> str:
 
 
 def _signature(category: str | None, title: str, options: list[str], context: str) -> str:
-    """Normalized identity for dedup: same category + options + title + context."""
+    """Normalized identity for within-a-response dedup: same category + options +
+    title + context. History dedup is intentionally disabled (a suggestion may
+    reuse a past poll's real options — that's the point of grounding); this only
+    stops one response from listing the byte-identical poll twice."""
     opt_sig = "|".join(sorted(o.strip().lower() for o in options if o.strip()))
     return "::".join(
         [
@@ -164,38 +166,6 @@ def _signature(category: str | None, title: str, options: list[str], context: st
             context.strip().lower(),
             opt_sig,
         ]
-    )
-
-
-def _options_signature(category: str | None, options: list[str]) -> str | None:
-    """A SECONDARY dedup key on (category + sorted options), ignoring context, so
-    a suggestion that echoes an existing poll's option list is dropped even when
-    the LLM attached a different/empty context (the common echo failure)."""
-    opts = "|".join(sorted(o.strip().lower() for o in options if o.strip()))
-    if not opts:
-        return None
-    return f"opts::{(category or '').strip().lower()}::{opts}"
-
-
-def _signatures_for(category: str | None, title: str, options: list[str], context: str) -> list[str]:
-    """The full signature plus the options-only signature (when present)."""
-    sigs = [_signature(category, title, options, context)]
-    opt_sig = _options_signature(category, options)
-    if opt_sig:
-        sigs.append(opt_sig)
-    return sigs
-
-
-def _row_signatures(row: dict) -> list[str]:
-    opts = row.get("options")
-    opt_list = [str(o) for o in opts] if isinstance(opts, list) else []
-    qtype = row.get("question_type")
-    category = "time" if qtype == "time" else (row.get("category") or "custom")
-    return _signatures_for(
-        category,
-        (row.get("title") or "").strip(),
-        opt_list,
-        (row.get("details") or "").strip(),
     )
 
 
@@ -243,10 +213,8 @@ def gather_history(conn, user_id: str, group_id: str) -> HistoryContext | None:
 
     for r in group_rows:
         ctx.group_lines.append(_poll_line(r))
-        ctx.existing_signatures.update(_row_signatures(r))
     for r in user_rows:
         ctx.user_lines.append(_poll_line(r))
-        ctx.existing_signatures.update(_row_signatures(r))
 
     # Real, previously-referenced options per catalog category — the only source
     # of specific options the suggestions are allowed to show (with their DB ref).
@@ -294,8 +262,10 @@ _SYSTEM_PROMPT = (
     "food/place/time; a work team → mostly yes/no calls + scheduling; a gaming "
     "group → mostly games + game nights. It is GOOD to suggest several polls of "
     "the SAME kind — do NOT just output one of every category.\n"
-    "- Predict what comes NEXT. NEVER repeat, rephrase, or reuse the title, "
-    "options, or subject of a poll already listed.\n"
+    "- Predict what comes NEXT. Don't propose the IDENTICAL poll again (same "
+    "title + same options + same subject), but it is GOOD to REUSE the group's "
+    "real option names in a fresh combination or for a new occasion (e.g. pair "
+    "two movies they've each picked before for a new movie night).\n"
     "- options must be SPECIFIC, real, named choices that fit this group (actual "
     "restaurant / movie / game names like \"Chipotle\", \"Dune: Part Two\", "
     '"Mario Kart 8") — NEVER generic words, genres, or filler like "Action, '
@@ -469,27 +439,30 @@ def validate_suggestion(
 
 def filter_and_dedup(
     raw: list,
-    existing: set[str],
     known_options: dict[str, dict[str, CategoryOption]] | None = None,
 ) -> list[dict]:
-    """Validate every raw suggestion (grounding options to `known_options`),
-    drop duplicates (of each other AND of existing polls), cap to
-    MAX_SUGGESTIONS."""
+    """Validate every raw suggestion (grounding options to `known_options`) and
+    cap to MAX_SUGGESTIONS.
+
+    History dedup is DISABLED: a suggestion that reuses a past poll's real
+    options is allowed (surfacing grounded options is the whole point). The only
+    guard kept is within-THIS-response uniqueness, so one list never shows the
+    byte-identical poll twice."""
     out: list[dict] = []
-    seen = set(existing)
+    seen: set[str] = set()
     for obj in raw:
         cleaned = validate_suggestion(obj, known_options)
         if not cleaned:
             continue
-        sigs = _signatures_for(
+        sig = _signature(
             cleaned.get("category"),
             cleaned.get("title", ""),
             cleaned.get("options", []),
             cleaned.get("context", ""),
         )
-        if any(s in seen for s in sigs):
+        if sig in seen:
             continue
-        seen.update(sigs)
+        seen.add(sig)
         out.append(cleaned)
         if len(out) >= MAX_SUGGESTIONS:
             break
@@ -511,7 +484,7 @@ def generate_from_history(ctx: HistoryContext) -> list[dict]:
     if not content:
         return []
     raw = _extract_json_array(content)
-    return filter_and_dedup(raw, ctx.existing_signatures, ctx.known_options)
+    return filter_and_dedup(raw, ctx.known_options)
 
 
 # ── Cache read/write ──────────────────────────────────────────────────────────
