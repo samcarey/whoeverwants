@@ -93,13 +93,15 @@ export default function GroupHeader({
     </svg>
   );
 
-  // The title + optional subtitle stack as a flex-col inside the inner
-  // row so the chevron stays vertically centered next to the whole block.
-  // `line-clamp-2` on the h1 lets the title wrap once before truncating;
-  // the subtitle is single-line and faded.
+  // The title + optional subtitle stack as a flex-col. The block is NOT
+  // `flex-1` (it sizes to content, shrinking only when the title is long
+  // enough to overflow), so the chevron hugs the right edge of the title
+  // text — sitting further left for short titles — instead of being pushed
+  // to the far right of the bar. `items-center` keeps it vertically aligned
+  // with the title.
   const titleBlock = title ? (
     <>
-      <div className="min-w-0 flex-1 flex flex-col">
+      <div className="min-w-0 flex flex-col">
         <h1 className="font-semibold text-lg text-gray-900 dark:text-white line-clamp-2 leading-[1.1]">
           {title}
         </h1>

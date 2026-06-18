@@ -1920,6 +1920,27 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           navigateWithTransition(router, '/', 'back');
         }}
         backIconVariant="menu"
+        // "Scheduled" lives in the header's right end as a timer icon +
+        // chevron (opens the recurring-poll-instances subroute). Shown only
+        // when the group has polls (mirrors the old inline link's gate).
+        rightSlot={showFollowTabs ? (
+          <button
+            type="button"
+            onClick={() => {
+              rememberCurrentScroll(groupScrollKey(groupId));
+              slideToGroupScheduled({ groupId });
+            }}
+            className="self-stretch py-2 pl-1 pr-3 flex items-center gap-0.5 text-gray-500 dark:text-gray-400 active:opacity-70"
+            aria-label="View scheduled polls"
+          >
+            <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        ) : undefined}
       />
 
       {/* paddingTop reserves space for the fixed header above. The card
@@ -2000,41 +2021,11 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
-        {/* "Scheduled ›" — inline at the very top of the scroll, right-
-            justified, just above the To Do section. Opens the group's
-            Scheduled subroute listing upcoming recurring-poll instances. */}
-        {showFollowTabs && (
-          <button
-            type="button"
-            onClick={() => {
-              rememberCurrentScroll(groupScrollKey(groupId));
-              slideToGroupScheduled({ groupId });
-            }}
-            className="w-full flex items-center justify-end gap-0.5 pr-[0.65rem] py-0 leading-none text-[15px] font-medium text-gray-500 dark:text-gray-400 active:opacity-70"
-            aria-label="View scheduled polls"
-          >
-            Scheduled
-            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        )}
-
-        {/* New-poll create pill — inline at the top of the scroll, under the
-            "Scheduled" link and above the To Do section. CreateQuestionContent
-            (root layout) portals the ➕ + search pill into this target; tapping
-            the pill opens a body-portalled full-screen keyboard picker.
-            Living inline in the cards wrapper means it scrolls with the
-            content and rides the swipe/slide transforms for free. The
-            min-height reserves the pill's height (42.24px + py-2) so content
-            below doesn't jump when CreateQuestionContent portals the pill in a
-            frame after this empty div mounts. */}
-        <div id={DRAFT_POLL_PORTAL_ID} style={{ minHeight: '3.64rem' }} />
-
         {/* Solo-group CTAs — the creator is the only member, so surface the
-            two ways to bring people in, inline under the Scheduled link and
-            above any polls. Subtle tinted pills (hemisphere sides via
-            rounded-full), distinct hues so the two actions read apart. */}
+            two ways to bring people in, ABOVE the new-poll pill. Subtle tinted
+            pills (hemisphere sides via rounded-full), distinct hues so the two
+            actions read apart. ("Scheduled" moved into the header's right
+            end as a timer button.) */}
         {soloAdmin && (
           <div className="flex justify-center gap-2.5 px-[0.9rem] pt-1.5 pb-2.5">
             <button
@@ -2061,6 +2052,17 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
             </button>
           </div>
         )}
+
+        {/* New-poll create pill — inline at the top of the scroll, above the
+            To Do section (and below the solo CTAs). CreateQuestionContent
+            (root layout) portals the ➕ + search pill into this target; tapping
+            the pill opens a body-portalled full-screen keyboard picker.
+            Living inline in the cards wrapper means it scrolls with the
+            content and rides the swipe/slide transforms for free. The
+            min-height reserves the pill's height (42.24px + py-2) so content
+            below doesn't jump when CreateQuestionContent portals the pill in a
+            frame after this empty div mounts. */}
+        <div id={DRAFT_POLL_PORTAL_ID} style={{ minHeight: '3.64rem' }} />
 
         {/* Gap 1: the three follow/ignore lists (To Do · New · Old) rendered
             inline in order, each headed by a label with a divider line under
