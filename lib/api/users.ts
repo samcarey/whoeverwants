@@ -111,6 +111,10 @@ export interface PollSuggestion {
   category: string;
   title?: string;
   options?: string[];
+  /** Per-option DB ref (favicon / poster / coords / address) for options the
+   *  group used before, keyed by option label — flows into the prefilled draft's
+   *  optionsMetadata so the rich chip is restored. */
+  optionsMetadata?: Record<string, unknown>;
   context?: string;
 }
 
@@ -132,6 +136,10 @@ export async function apiGetPollSuggestions(
       options: Array.isArray(s.options)
         ? (s.options.filter((o: any) => typeof o === 'string') as string[])
         : undefined,
+      optionsMetadata:
+        s.options_metadata && typeof s.options_metadata === 'object'
+          ? (s.options_metadata as Record<string, unknown>)
+          : undefined,
       context: typeof s.context === 'string' ? s.context : undefined,
     }));
   return {

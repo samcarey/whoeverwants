@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 
 from database import get_db
 from services import llm_client
+from services.category_options import CategoryOption, load_known_options_by_category
 
 log = logging.getLogger("poll_suggest")
 
@@ -90,12 +91,23 @@ _OPTION_MAX = 80
 _CONTEXT_MAX = 60
 _MAX_OPTIONS = 8
 
+# A yes_no poll must be answerable strictly "yes" or "no". These markers signal a
+# CHOICE among options ("Movie night pick?", "Tacos or sushi?", "Which game?") —
+# which is a movie/restaurant/custom poll, not a yes_no. We reject such a yes_no
+# rather than try to reclassify it (we don't know the options). Deliberately
+# narrow + high-precision: it must NOT fire on legit elliptical yes/no prompts
+# like "Pizza tonight?" or "Offsite in Q3?" (no choice markers).
+_YESNO_CHOICE_RE = re.compile(r"\b(which|pick|picks|choose|choosing|vs|versus|or)\b", re.I)
+
 
 @dataclass
 class HistoryContext:
     group_lines: list[str] = field(default_factory=list)
     user_lines: list[str] = field(default_factory=list)
-    existing_signatures: set[str] = field(default_factory=set)
+    # category -> {lowercased label: previously-referenced option (with metadata)}.
+    # The gate for LLM-proposed specific options: only keep ones already used by
+    # this group/user, and attach their stored DB ref.
+    known_options: dict[str, dict[str, CategoryOption]] = field(default_factory=dict)
 
 
 @dataclass
@@ -142,7 +154,10 @@ def _poll_line(row: dict) -> str:
 
 
 def _signature(category: str | None, title: str, options: list[str], context: str) -> str:
-    """Normalized identity for dedup: same category + options + title + context."""
+    """Normalized identity for within-a-response dedup: same category + options +
+    title + context. History dedup is intentionally disabled (a suggestion may
+    reuse a past poll's real options — that's the point of grounding); this only
+    stops one response from listing the byte-identical poll twice."""
     opt_sig = "|".join(sorted(o.strip().lower() for o in options if o.strip()))
     return "::".join(
         [
@@ -151,38 +166,6 @@ def _signature(category: str | None, title: str, options: list[str], context: st
             context.strip().lower(),
             opt_sig,
         ]
-    )
-
-
-def _options_signature(category: str | None, options: list[str]) -> str | None:
-    """A SECONDARY dedup key on (category + sorted options), ignoring context, so
-    a suggestion that echoes an existing poll's option list is dropped even when
-    the LLM attached a different/empty context (the common echo failure)."""
-    opts = "|".join(sorted(o.strip().lower() for o in options if o.strip()))
-    if not opts:
-        return None
-    return f"opts::{(category or '').strip().lower()}::{opts}"
-
-
-def _signatures_for(category: str | None, title: str, options: list[str], context: str) -> list[str]:
-    """The full signature plus the options-only signature (when present)."""
-    sigs = [_signature(category, title, options, context)]
-    opt_sig = _options_signature(category, options)
-    if opt_sig:
-        sigs.append(opt_sig)
-    return sigs
-
-
-def _row_signatures(row: dict) -> list[str]:
-    opts = row.get("options")
-    opt_list = [str(o) for o in opts] if isinstance(opts, list) else []
-    qtype = row.get("question_type")
-    category = "time" if qtype == "time" else (row.get("category") or "custom")
-    return _signatures_for(
-        category,
-        (row.get("title") or "").strip(),
-        opt_list,
-        (row.get("details") or "").strip(),
     )
 
 
@@ -230,10 +213,14 @@ def gather_history(conn, user_id: str, group_id: str) -> HistoryContext | None:
 
     for r in group_rows:
         ctx.group_lines.append(_poll_line(r))
-        ctx.existing_signatures.update(_row_signatures(r))
     for r in user_rows:
         ctx.user_lines.append(_poll_line(r))
-        ctx.existing_signatures.update(_row_signatures(r))
+
+    # Real, previously-referenced options per catalog category — the only source
+    # of specific options the suggestions are allowed to show (with their DB ref).
+    ctx.known_options = load_known_options_by_category(
+        conn, group_id=group_id, user_id=user_id, categories=_OPTIONS_OK
+    )
 
     return ctx
 
@@ -256,7 +243,11 @@ _SYSTEM_PROMPT = (
     '  "context": string    // OPTIONAL short real subject the poll is "for" (e.g. "Friday dinner"). Under 40 characters.\n'
     "}\n\n"
     "CATEGORY MEANINGS:\n"
-    "- yes_no: one yes-or-no decision. title = the question.\n"
+    "- yes_no: a single decision answerable strictly YES or NO (e.g. \"Should we "
+    "meet Friday?\", \"Book the cabin?\"). title = that yes/no question. NEVER use "
+    "yes_no for a 'which / pick / choose' decision — picking a movie, place, game, "
+    "or any option set is a movie/restaurant/location/video_game/custom poll, not "
+    "a yes_no.\n"
     "- restaurant: pick a place to eat. options = real restaurant names.\n"
     "- location: pick a place/venue (not food).\n"
     "- movie: pick a movie to watch. options = real movie titles.\n"
@@ -271,15 +262,25 @@ _SYSTEM_PROMPT = (
     "food/place/time; a work team → mostly yes/no calls + scheduling; a gaming "
     "group → mostly games + game nights. It is GOOD to suggest several polls of "
     "the SAME kind — do NOT just output one of every category.\n"
-    "- Predict what comes NEXT. NEVER repeat, rephrase, or reuse the title, "
-    "options, or subject of a poll already listed.\n"
+    "- Predict what comes NEXT. Don't propose the IDENTICAL poll again (same "
+    "title + same options + same subject), but it is GOOD to REUSE the group's "
+    "real option names in a fresh combination or for a new occasion (e.g. pair "
+    "two movies they've each picked before for a new movie night).\n"
     "- options must be SPECIFIC, real, named choices that fit this group (actual "
     "restaurant / movie / game names like \"Chipotle\", \"Dune: Part Two\", "
     '"Mario Kart 8") — NEVER generic words, genres, or filler like "Action, '
     'Comedy, Drama", "Sushi Place", "Italian Restaurant", "Pizzeria Pizza", or '
-    '"Option 1". Do NOT lightly reword an existing poll\'s options. If you cannot '
-    "name 2+ specific real options that fit, OMIT options and let the group "
-    "suggest them — an omitted-options poll is better than a generic one.\n"
+    '"Option 1". Do NOT lightly reword an existing poll\'s options. PREFER reusing '
+    "the EXACT option names that appear in the history below — a specific option "
+    "is only shown to the user when this group has referenced it before, so any "
+    "option NOT already in the history will be dropped. If you cannot name 2+ "
+    "specific options that the group has used before and that fit, OMIT options "
+    "and let the group suggest them — an omitted-options poll is better than a "
+    "generic one.\n"
+    "- A yes_no title MUST be answerable with yes or no. If the decision is to "
+    "PICK among options (a movie, a place, a game — anything with choices), use "
+    "that category (or custom) WITH options; NEVER phrase it as a yes_no like "
+    '"Movie night pick?" or "Tacos or sushi?".\n'
     "- context is the short real subject this poll is for; leave it out rather "
     "than inventing an unrelated one. Do not pair a context with an unrelated "
     "category.\n"
@@ -357,10 +358,19 @@ def _clean_str(value, limit: int) -> str:
     return " ".join(value.split()).strip()[:limit].strip()
 
 
-def validate_suggestion(obj) -> dict | None:
+def validate_suggestion(
+    obj, known_options: dict[str, dict[str, CategoryOption]] | None = None
+) -> dict | None:
     """Deterministically validate + normalize ONE raw LLM suggestion object into
-    the stored/wire shape `{category, title?, options?, context?}`, or None when
-    it's unusable. This is the server-side filter; the FE mirrors the shape."""
+    the stored/wire shape `{category, title?, options?, options_metadata?,
+    context?}`, or None when it's unusable. This is the server-side filter; the
+    FE mirrors the shape.
+
+    `known_options` (category -> {lower label: CategoryOption}) GATES specific
+    options to reality: when provided, an LLM-proposed option is kept ONLY if it
+    matches a previously-referenced option for that category, and it inherits
+    that option's stored DB ref (favicon / poster / coords). When None (unit
+    tests / callers that don't ground), any valid option list is kept as-is."""
     if not isinstance(obj, dict):
         return None
     raw_cat = _clean_str(obj.get("category"), 40).lower()
@@ -372,22 +382,46 @@ def validate_suggestion(obj) -> dict | None:
     context = _clean_str(obj.get("context"), _CONTEXT_MAX)
 
     options: list[str] = []
+    options_metadata: dict = {}
     raw_opts = obj.get("options")
     if category in _OPTIONS_OK and isinstance(raw_opts, list):
+        known = known_options.get(category) if known_options is not None else None
         seen: set[str] = set()
         for o in raw_opts:
             label = _clean_str(o, _OPTION_MAX)
+            if not label:
+                continue
+            entry = None
+            if known is not None:
+                # Ground to history: drop anything not previously referenced, and
+                # adopt the stored casing for what survives.
+                entry = known.get(label.lower())
+                if entry is None:
+                    continue
+                label = entry.label
             key = label.lower()
-            if label and key not in seen:
-                seen.add(key)
-                options.append(label)
+            if key in seen:
+                continue
+            seen.add(key)
+            options.append(label)
+            # Metadata only for options actually kept (added after the dedup check),
+            # so out["options_metadata"] can't carry an orphan key.
+            if entry is not None and entry.metadata:
+                options_metadata[label] = entry.metadata
             if len(options) >= _MAX_OPTIONS:
                 break
-        # A fixed-option poll needs >= 2; otherwise treat as suggestion-collection.
+        # A fixed-option poll needs >= 2; otherwise treat as suggestion-collection
+        # (category + maybe context only — never invent specifics).
         if len(options) < 2:
             options = []
+            options_metadata = {}
 
     if category in _TITLE_REQUIRED and not title:
+        return None
+    # yes_no is ONLY for a yes-or-no question; a "which/pick/choose/or" decision
+    # is a choice poll, not a yes_no — drop it so the LLM can't emit nonsense like
+    # "Movie night pick?" as a yes_no.
+    if category == "yes_no" and _YESNO_CHOICE_RE.search(title):
         return None
     # For non-title categories, a stray title is noise — drop it (the title is
     # auto-generated from category + context + options).
@@ -399,29 +433,39 @@ def validate_suggestion(obj) -> dict | None:
         out["title"] = title
     if options:
         out["options"] = options
+    if options_metadata:
+        out["options_metadata"] = options_metadata
     if context:
         out["context"] = context
     return out
 
 
-def filter_and_dedup(raw: list, existing: set[str]) -> list[dict]:
-    """Validate every raw suggestion, drop duplicates (of each other AND of
-    existing polls), cap to MAX_SUGGESTIONS."""
+def filter_and_dedup(
+    raw: list,
+    known_options: dict[str, dict[str, CategoryOption]] | None = None,
+) -> list[dict]:
+    """Validate every raw suggestion (grounding options to `known_options`) and
+    cap to MAX_SUGGESTIONS.
+
+    History dedup is DISABLED: a suggestion that reuses a past poll's real
+    options is allowed (surfacing grounded options is the whole point). The only
+    guard kept is within-THIS-response uniqueness, so one list never shows the
+    byte-identical poll twice."""
     out: list[dict] = []
-    seen = set(existing)
+    seen: set[str] = set()
     for obj in raw:
-        cleaned = validate_suggestion(obj)
+        cleaned = validate_suggestion(obj, known_options)
         if not cleaned:
             continue
-        sigs = _signatures_for(
+        sig = _signature(
             cleaned.get("category"),
             cleaned.get("title", ""),
             cleaned.get("options", []),
             cleaned.get("context", ""),
         )
-        if any(s in seen for s in sigs):
+        if sig in seen:
             continue
-        seen.update(sigs)
+        seen.add(sig)
         out.append(cleaned)
         if len(out) >= MAX_SUGGESTIONS:
             break
@@ -443,7 +487,7 @@ def generate_from_history(ctx: HistoryContext) -> list[dict]:
     if not content:
         return []
     raw = _extract_json_array(content)
-    return filter_and_dedup(raw, ctx.existing_signatures)
+    return filter_and_dedup(raw, ctx.known_options)
 
 
 # ── Cache read/write ──────────────────────────────────────────────────────────

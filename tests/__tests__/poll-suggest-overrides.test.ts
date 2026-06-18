@@ -69,4 +69,33 @@ describe("suggestionToOverrides", () => {
       suggestionToOverrides(s({ category: "custom", options: ["A", "B"], context: "  x  " })),
     ).toEqual({ category: "custom", options: ["A", "B"], collectSuggestions: false, forField: "x" });
   });
+
+  it("restores per-option DB ref (optionsMetadata) for kept options", () => {
+    expect(
+      suggestionToOverrides(
+        s({
+          category: "movie",
+          options: ["Dune", "Barbie"],
+          optionsMetadata: {
+            Dune: { imageUrl: "https://img/dune.jpg", infoUrl: "https://tmdb/1" },
+            // Metadata for an option that isn't kept must be dropped.
+            Oppenheimer: { imageUrl: "https://img/opp.jpg" },
+          },
+          context: "movie night",
+        }),
+      ),
+    ).toEqual({
+      category: "movie",
+      options: ["Dune", "Barbie"],
+      collectSuggestions: false,
+      forField: "movie night",
+      optionsMetadata: { Dune: { imageUrl: "https://img/dune.jpg", infoUrl: "https://tmdb/1" } },
+    });
+  });
+
+  it("omits optionsMetadata when none of the kept options carry a ref", () => {
+    expect(
+      suggestionToOverrides(s({ category: "custom", options: ["A", "B"] })),
+    ).toEqual({ category: "custom", options: ["A", "B"], collectSuggestions: false, forField: "" });
+  });
 });

@@ -67,6 +67,95 @@ def test_validate_options_ignored_for_yes_no():
     assert ok == {"category": "yes_no", "title": "Pizza tonight?"}
 
 
+def test_yes_no_rejects_choice_titles():
+    # A "pick / which / choose / or" decision is a choice poll, not a yes_no.
+    for bad in [
+        "Summer Movie Night Pick?",
+        "Which restaurant for dinner?",
+        "Tacos or sushi?",
+        "Choose a game for tonight",
+        "Dune vs Oppenheimer?",
+    ]:
+        assert poll_suggest.validate_suggestion({"category": "yes_no", "title": bad}) is None, bad
+
+
+def test_yes_no_keeps_genuine_yes_no_titles():
+    # Elliptical yes/no prompts have no choice markers — must NOT be rejected.
+    for good in ["Pizza tonight?", "Offsite in Q3?", "Should we book the cabin?", "Order more snacks?"]:
+        out = poll_suggest.validate_suggestion({"category": "yes_no", "title": good})
+        assert out == {"category": "yes_no", "title": good}, good
+
+
+def _known(category, *pairs):
+    """Build a known_options map: category -> {lower label: CategoryOption}."""
+    from services.category_options import CategoryOption
+
+    return {
+        category: {
+            label.lower(): CategoryOption(label=label, metadata=meta)
+            for label, meta in pairs
+        }
+    }
+
+
+def test_grounding_keeps_only_history_options_and_attaches_metadata():
+    known = _known(
+        "movie",
+        ("Dune: Part Two", {"imageUrl": "https://img/dune.jpg", "infoUrl": "https://tmdb/1"}),
+        ("Oppenheimer", {"imageUrl": "https://img/opp.jpg"}),
+    )
+    out = poll_suggest.validate_suggestion(
+        # LLM proposes a real-but-unseen title ("Barbie") + casing drift; only the
+        # two previously-referenced ones survive, with canonical casing + DB ref.
+        {"category": "movie", "options": ["dune: part two", "Barbie", "OPPENHEIMER"], "context": "movie night"},
+        known,
+    )
+    assert out is not None
+    assert out["options"] == ["Dune: Part Two", "Oppenheimer"]
+    assert out["options_metadata"] == {
+        "Dune: Part Two": {"imageUrl": "https://img/dune.jpg", "infoUrl": "https://tmdb/1"},
+        "Oppenheimer": {"imageUrl": "https://img/opp.jpg"},
+    }
+    assert out.get("context") == "movie night"
+
+
+def test_grounding_drops_options_when_fewer_than_two_known():
+    known = _known("restaurant", ("Chipotle", {"address": "1 Main St"}))
+    out = poll_suggest.validate_suggestion(
+        {"category": "restaurant", "options": ["Chipotle", "Olive Garden"], "context": "team dinner"},
+        known,
+    )
+    # Only one survives the gate -> not enough for a fixed-option ballot -> the
+    # suggestion collapses to category + context (open-to-suggest), never invents.
+    assert out == {"category": "restaurant", "context": "team dinner"}
+
+
+def test_grounding_drops_all_unknown_options_but_keeps_known_without_metadata():
+    out = poll_suggest.validate_suggestion(
+        {"category": "video_game", "options": ["Halo", "Fortnite"]},
+        _known("video_game"),  # empty history for this category
+    )
+    assert out == {"category": "video_game"}
+    # Options with no stored metadata are still kept (real/previously used) but
+    # contribute no options_metadata.
+    out2 = poll_suggest.validate_suggestion(
+        {"category": "video_game", "options": ["Mario Kart 8", "Splatoon 3"]},
+        _known("video_game", ("Mario Kart 8", None), ("Splatoon 3", None)),
+    )
+    assert out2 is not None
+    assert out2["options"] == ["Mario Kart 8", "Splatoon 3"]
+    assert "options_metadata" not in out2
+
+
+def test_grounding_skipped_when_known_options_none():
+    # Back-compat: callers that don't pass a gate keep any valid option list.
+    out = poll_suggest.validate_suggestion(
+        {"category": "movie", "options": ["Anything", "Goes"]}, None
+    )
+    assert out is not None
+    assert out["options"] == ["Anything", "Goes"]
+
+
 def test_validate_category_aliases_and_unknown():
     assert poll_suggest.validate_suggestion(
         {"category": "Video Game", "options": ["Mario Kart", "Smash"]}
@@ -91,18 +180,16 @@ def test_validate_trims_and_bounds():
 # ── filter_and_dedup ───────────────────────────────────────────────────────────
 
 
-def test_filter_dedups_within_batch_and_against_existing():
-    existing = {
-        poll_suggest._signature("restaurant", "", [], "lunch"),
-    }
+def test_filter_dedups_within_batch_only_not_against_history():
+    # History dedup is OFF — only a byte-identical repeat within THIS response is
+    # collapsed; reusing options/subjects from past polls is allowed.
     raw = [
-        {"category": "restaurant", "context": "lunch"},  # dup of existing → dropped
         {"category": "yes_no", "title": "Friday offsite?"},
-        {"category": "yes_no", "title": "Friday offsite?"},  # dup within batch
+        {"category": "yes_no", "title": "Friday offsite?"},  # exact dup within batch
         {"category": "movie", "options": ["Dune", "Barbie"]},
         "garbage",  # invalid → dropped
     ]
-    out = poll_suggest.filter_and_dedup(raw, existing)
+    out = poll_suggest.filter_and_dedup(raw)
     assert out == [
         {"category": "yes_no", "title": "Friday offsite?"},
         {"category": "movie", "options": ["Dune", "Barbie"]},
@@ -111,7 +198,7 @@ def test_filter_dedups_within_batch_and_against_existing():
 
 def test_filter_caps_to_max():
     raw = [{"category": "yes_no", "title": f"Question {i}?"} for i in range(20)]
-    out = poll_suggest.filter_and_dedup(raw, set())
+    out = poll_suggest.filter_and_dedup(raw)
     assert len(out) == poll_suggest.MAX_SUGGESTIONS
 
 
@@ -244,7 +331,6 @@ def test_cache_round_trip_and_gather(client, browser_id):
         assert ctx is not None
         # The created poll shows up in both the group + user history.
         assert any("Standup at 9?" in line for line in ctx.group_lines)
-        assert ctx.existing_signatures
 
         suggestions = [{"category": "restaurant", "context": "team lunch"}]
         poll_suggest.store_suggestions(conn, user_id, group_id, suggestions)
