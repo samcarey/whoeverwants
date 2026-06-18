@@ -1358,16 +1358,22 @@ export function CreateQuestionContent() {
     openModalWithDraft(overrides);
   }, [openModalWithDraft]);
 
-  // While the box is focused, mark the body so the rest of the app's fixed
-  // chrome (the group/explore top bar) is non-interactive. The content area
-  // (polls, CTAs) is covered by the scrim in `searchBox`; the top bar paints
-  // above that scrim's stacking context, so it's disabled here via CSS.
+  // While the box is focused, make the rest of the app's FIXED top-bar chrome
+  // non-interactive (the content area — polls, CTAs — is covered by the scrim
+  // in `searchBox`, but the top bar paints above that scrim's stacking
+  // context, so it can't be reached by the scrim). Inline pointer-events
+  // survives React re-renders: React only reconciles the style keys it owns
+  // (paddingTop on the group header), never the pointer-events we add here.
+  // Covers the group header, the explore/header-portal bar, and the dev badge.
   useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const body = document.body;
-    if (searchFocused) body.setAttribute('data-poll-search-open', '');
-    else body.removeAttribute('data-poll-search-open');
-    return () => body.removeAttribute('data-poll-search-open');
+    if (typeof document === 'undefined' || !searchFocused) return;
+    const els = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-group-header], #header-portal, #commit-badge-portal',
+      ),
+    );
+    els.forEach((el) => { el.style.pointerEvents = 'none'; });
+    return () => { els.forEach((el) => { el.style.pointerEvents = ''; }); };
   }, [searchFocused]);
 
   // Read showDiscardConfirm via a ref inside the Escape handler so toggling
