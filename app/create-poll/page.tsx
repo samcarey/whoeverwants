@@ -1359,13 +1359,18 @@ export function CreateQuestionContent() {
   }, [openModalWithDraft]);
 
   // While the box is focused, dim + disable the app's FIXED top-bar chrome.
-  // The content area (polls, CTAs) is covered by the dimmed scrim in
+  // The content area (polls, CTAs) is covered by the `bg-black/20` scrim in
   // `searchBox`, but the top bar paints above that scrim's stacking context,
-  // so it can't be reached by the scrim — dim it here (opacity) to match the
-  // scrim's dim and disable its taps (pointer-events). Inline styles survive
-  // React re-renders: React only reconciles the style keys it owns (paddingTop
-  // on the group header), never the pointer-events/opacity/transition we add.
-  // Covers the group header, the explore/header-portal bar, and the dev badge.
+  // so it can't be reached by the scrim — dim it here to match. We use
+  // `filter: brightness(0.8)` rather than `opacity` because opacity only fades
+  // the bar's dark text/icons while its white background stays bright (so it
+  // reads brighter than the washed polls); `brightness(0.8)` is mathematically
+  // identical to a 20%-black overlay (compositing black at alpha 0.2 over a
+  // color C yields C*0.8), so the bar darkens EXACTLY like the `bg-black/20`
+  // polls. Inline styles survive React re-renders: React only reconciles the
+  // style keys it owns (paddingTop on the group header), never the
+  // pointer-events/filter/transition we add. Covers the group header, the
+  // explore/header-portal bar, and the dev badge.
   useEffect(() => {
     if (typeof document === 'undefined' || !searchFocused) return;
     const els = Array.from(
@@ -1375,13 +1380,13 @@ export function CreateQuestionContent() {
     );
     els.forEach((el) => {
       el.style.pointerEvents = 'none';
-      el.style.opacity = '0.5';
-      el.style.transition = 'opacity 150ms ease-out';
+      el.style.filter = 'brightness(0.8)';
+      el.style.transition = 'filter 150ms ease-out';
     });
     return () => {
       els.forEach((el) => {
         el.style.pointerEvents = '';
-        el.style.opacity = '';
+        el.style.filter = '';
         el.style.transition = '';
       });
     };
