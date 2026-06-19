@@ -3352,12 +3352,19 @@ export function CreateQuestionContent() {
   // + ↑ send on its row. 2+ drafts → a combined poll-title bubble on top (tap to
   // edit poll-wide settings; ↑ send moves here) over one bubble per question.
   // Tapping a question bubble edits it; × removes it.
+  // onMouseDown preventDefault on every bubble button keeps the search input
+  // focused through the tap. In the composer picker the bubbles live in the
+  // focus-gated rows area, so a tap that blurred the input first would collapse
+  // the picker and unmount the bubble before the click landed — the open/remove
+  // handlers do their own collapse (collapseSearchBox). No-op when not focused.
+  const keepFocus = (e: React.MouseEvent) => e.preventDefault();
   const draftStack = drafts.length > 0 ? (
     <div className="px-3 pt-2 space-y-2">
       {drafts.length > 1 && (
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onMouseDown={keepFocus}
             onClick={openPollEdit}
             disabled={isLoading}
             aria-label="Edit poll settings"
@@ -3378,6 +3385,7 @@ export function CreateQuestionContent() {
             <div className="flex-1 min-w-0 flex items-center rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-4 pr-1">
               <button
                 type="button"
+                onMouseDown={keepFocus}
                 onClick={() => openQuestionEdit(i)}
                 disabled={isLoading}
                 aria-label="Edit question"
@@ -3389,6 +3397,7 @@ export function CreateQuestionContent() {
               </button>
               <button
                 type="button"
+                onMouseDown={keepFocus}
                 onClick={() => removeDraft(i)}
                 disabled={isLoading}
                 aria-label="Remove question"
