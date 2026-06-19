@@ -90,7 +90,14 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
           `relative z-40` keeps the bar's stacking consistent with the group
           page (see GroupContent's portal target for the full rationale).
           CreateQuestionContent (root layout) portals the bar into it. */}
-      <div id={DRAFT_POLL_PORTAL_ID} className="relative z-40" />
+      <div
+        id={DRAFT_POLL_PORTAL_ID}
+        className="relative z-40"
+        // No swipe wrapper / poll list on the empty placeholder, so the portal
+        // (which hosts the search box) is itself the page content the focused
+        // box translates up. See app/create-poll/page.tsx's focus effect.
+        data-poll-page-scroll=""
+      />
     </>
   );
 }

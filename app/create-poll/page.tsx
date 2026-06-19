@@ -718,6 +718,11 @@ export function CreateQuestionContent() {
   // slide-back animation finishes (so we don't leave a permanent
   // `transition: transform` that would lag the swipe-back gesture).
   const chromeSlideTimerRef = useRef<number | null>(null);
+  // Viewport-Y the pill's BOTTOM lands at once the page has slid up. Captured
+  // at focus (stable, independent of the in-flight slide animation) so the
+  // dropdown is sized to its full height immediately instead of growing as the
+  // box rises. Only the keyboard appearing changes the room below it.
+  const pillTargetBottomRef = useRef(0);
   const [searchDropdownMaxHeight, setSearchDropdownMaxHeight] = useState(320);
 
   // A ranked_choice question is a "suggestion poll" when the creator left the
@@ -1350,11 +1355,16 @@ export function CreateQuestionContent() {
     if (!searchFocused) return;
     const vp = typeof window !== 'undefined' ? window.visualViewport : null;
     const recompute = () => {
-      const rect = searchPillRef.current?.getBoundingClientRect();
-      if (!rect) return;
+      // Use the STABLE post-slide pill bottom (captured at focus), not the live
+      // rect — otherwise the height tracks the box mid-rise and the dropdown
+      // visibly grows as the slide completes. With the stable anchor the
+      // dropdown is full-height immediately; only the keyboard sliding in
+      // (which shrinks `keyboardTop`) reduces it, as intended.
+      const bottom = pillTargetBottomRef.current;
+      if (!bottom) return;
       const keyboardTop = vp ? vp.offsetTop + vp.height : window.innerHeight;
       // 8px dropdown gap + 12px breathing room above the keyboard.
-      setSearchDropdownMaxHeight(Math.max(140, keyboardTop - rect.bottom - 20));
+      setSearchDropdownMaxHeight(Math.max(140, keyboardTop - bottom - 20));
     };
     recompute();
     // Re-measure as the keyboard animates in (visualViewport settles a few
@@ -1406,32 +1416,48 @@ export function CreateQuestionContent() {
   // also writes `transform` to the group header).
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const els = Array.from(
+    // Two groups, both translated up by the SAME `searchShift` so the page
+    // moves rigidly:
+    //  - chrome: the fixed top-bar elements — also DIMMED (they paint above
+    //    the scrim so the scrim can't reach them).
+    //  - content: the scrollable page-content wrapper (header-cleared box +
+    //    polls). NOT dimmed — it sits behind the scrim already; translating it
+    //    is what carries the box + poll list up together.
+    const chrome = Array.from(
       document.querySelectorAll<HTMLElement>(
         '[data-group-header], #header-portal, #commit-badge-portal',
       ),
+    );
+    const content = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-poll-page-scroll]'),
     );
     if (chromeSlideTimerRef.current) {
       clearTimeout(chromeSlideTimerRef.current);
       chromeSlideTimerRef.current = null;
     }
     if (searchFocused) {
-      els.forEach((el) => {
+      chrome.forEach((el) => {
         el.style.transition = 'filter 150ms ease-out, transform 250ms ease';
         el.style.pointerEvents = 'none';
         el.style.filter = 'brightness(0.8)';
         el.style.transform = `translateY(-${searchShift}px)`;
       });
+      content.forEach((el) => {
+        el.style.transition = 'transform 250ms ease';
+        el.style.transform = `translateY(-${searchShift}px)`;
+      });
     } else {
       // Animate back (the transition set during focus is still in place), then
       // clear it so a later swipe-back's imperative transform isn't animated.
-      els.forEach((el) => {
-        el.style.pointerEvents = '';
-        el.style.filter = '';
+      [...chrome, ...content].forEach((el) => {
         el.style.transform = '';
       });
+      chrome.forEach((el) => {
+        el.style.pointerEvents = '';
+        el.style.filter = '';
+      });
       chromeSlideTimerRef.current = window.setTimeout(() => {
-        els.forEach((el) => {
+        [...chrome, ...content].forEach((el) => {
           el.style.transition = '';
         });
         chromeSlideTimerRef.current = null;
@@ -3047,26 +3073,23 @@ export function CreateQuestionContent() {
           polls. */}
       {searchFocused && (
         <div
-          className="fixed inset-0 z-40 bg-black/20"
+          className="fixed left-0 right-0 z-40 bg-black/20"
           aria-hidden
+          // The scrim lives inside the page content (its containing block is
+          // the swipe wrapper, which is translated up by `searchShift` while
+          // focused). Extend it far past the viewport top/bottom (vs `inset-0`)
+          // so it still covers the whole screen after that translate — without
+          // this it'd slide up too and leave an undimmed strip at the bottom.
+          style={{ top: '-100vh', bottom: '-100vh' }}
           onPointerDown={() => searchInputRef.current?.blur()}
         />
       )}
-      {/* When focused, elevate the pill + dropdown above the scrim (z-50) and
-          slide them UP by `searchShift` so the pill lands just below the notch.
-          The transition is always present (so the start state is already
-          painted), letting the single commit that sets the transform animate.
-          Only this wrapper rises — the sibling scrim stays put covering the
-          viewport. The top-bar chrome slides up by the same amount via the JS
-          effect above, so the whole page reads as moving up together. */}
-      <div
-        className={`px-3 py-2 relative ${searchFocused ? 'z-50' : ''}`}
-        style={{
-          transform: searchFocused ? `translateY(-${searchShift}px)` : undefined,
-          transition: 'transform 250ms ease',
-          willChange: searchFocused ? 'transform' : undefined,
-        }}
-      >
+      {/* When focused, elevate the pill + dropdown above the scrim (z-50). The
+          pill does NOT carry its own transform — the ENTIRE page content
+          (this box, the polls, and the top-bar chrome) is translated up
+          rigidly by `searchShift` via the JS effect above, so the box reaches
+          the top without moving relative to the rest of the page. */}
+      <div className={`px-3 py-2 relative ${searchFocused ? 'z-50' : ''}`}>
       {/* `relative` anchors the absolute dropdown directly below the pill. */}
       <div ref={searchPillRef} className="relative">
         {/* The real inline input pill — full width, stays in place when
@@ -3078,15 +3101,19 @@ export function CreateQuestionContent() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => {
-              // Measure how far the pill must rise to sit just below the notch
-              // BEFORE the keyboard appears / the page is scroll-locked (the
-              // pill is still at its resting position). The pill + the top-bar
-              // chrome then animate up by this amount, bringing the box to the
-              // top and giving the suggestions the maximum room below. Batched
-              // with setSearchFocused so both land in one render.
+              // Measure how far the page must rise so the pill sits just below
+              // the notch, BEFORE the keyboard appears / the page is
+              // scroll-locked (the pill is still at its resting position). The
+              // whole page content + the top-bar chrome then animate up by this
+              // amount, bringing the box to the top and giving the suggestions
+              // the maximum room below. Batched with setSearchFocused so both
+              // land in one render.
               const rect = searchPillRef.current?.getBoundingClientRect();
-              const target = measureSafeAreaTop() + 4;
+              const target = measureSafeAreaTop() + 4; // where the pill TOP lands
               setSearchShift(rect ? Math.max(0, rect.top - target) : 0);
+              // The pill BOTTOM ends at target + its (transform-invariant)
+              // height — a stable anchor for the dropdown's max height.
+              pillTargetBottomRef.current = rect ? target + rect.height : 0;
               setSearchFocused(true);
             }}
             // Collapse on blur (closes the dropdown + dismisses the keyboard).

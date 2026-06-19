@@ -1979,6 +1979,13 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         ref={swipeWrapperRef}
         {...swipeTouchHandlers}
         className="touch-pan-y"
+        // Marker so the create-poll search box (root layout) can translate the
+        // whole page content up when it's focused, carrying the box + poll list
+        // together (see the focus effect in app/create-poll/page.tsx). The
+        // imperative transform it writes here is safe: `transform` is not in
+        // this element's React style, and the swipe gesture (the only other
+        // imperative transform writer) can't run while the box is focused.
+        data-poll-page-scroll=""
         style={{
           willChange: 'transform',
           position: 'relative',

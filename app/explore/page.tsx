@@ -118,6 +118,9 @@ export default function ExplorePage() {
         ref={swipeWrapperRef}
         {...touchHandlers}
         className="touch-pan-y"
+        // See GroupPage's swipe wrapper: lets the focused create-poll search
+        // box translate the whole feed up rigidly with the top bar.
+        data-poll-page-scroll=""
         style={{
           willChange: "transform",
           position: "relative",
