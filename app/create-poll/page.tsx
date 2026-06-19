@@ -792,6 +792,8 @@ export function CreateQuestionContent() {
   // letting us position the box AND focus it from the same settled commit.
   const setComposeScrollRef = useCallback(
     (node: HTMLDivElement | null) => {
+      // disarm() (NOT endOpen) so a StrictMode/React detach+reattach doesn't
+      // clear the focused-open intent — the box must still land at the top.
       composePinCleanupRef.current?.();
       composeScrollNodeRef.current = node;
       if (!node) return;
@@ -800,8 +802,8 @@ export function CreateQuestionContent() {
       const focused = composeFocusedOpenRef.current;
       // Target: focused open → box at TOP (scrollTop = spacer; dropdown room
       // below, above the keyboard); else → box at BOTTOM (0). Read live so the
-      // measure can refine it.
-      const target = () => (focused ? composeSpacerHeightRef.current : 0);
+      // measure + a mid-window gesture (which flips focused off) refine it.
+      const target = () => (composeFocusedOpenRef.current ? composeSpacerHeightRef.current : 0);
       node.scrollTop = target();
       if (focused) {
         // Position settled at the top — focus the box now so onFocus anchors
@@ -815,15 +817,20 @@ export function CreateQuestionContent() {
       let raf = 0;
       let t = 0;
       let armT = 0;
-      const cleanup = () => {
+      // disarm() just tears down the pin (used on detach — intent preserved);
+      // endOpen() also ends the focused-open intent (real gesture / timeout).
+      const disarm = () => {
         window.clearTimeout(t);
         window.clearTimeout(armT);
         if (raf) cancelAnimationFrame(raf);
-        node.removeEventListener("touchmove", cleanup);
-        node.removeEventListener("wheel", cleanup);
-        node.removeEventListener("keydown", cleanup);
-        composeFocusedOpenRef.current = false;
+        node.removeEventListener("touchmove", endOpen);
+        node.removeEventListener("wheel", endOpen);
+        node.removeEventListener("keydown", endOpen);
         composePinCleanupRef.current = null;
+      };
+      const endOpen = () => {
+        composeFocusedOpenRef.current = false;
+        disarm();
       };
       const reassert = () => {
         const tt = target();
@@ -832,12 +839,12 @@ export function CreateQuestionContent() {
       };
       raf = requestAnimationFrame(reassert);
       armT = window.setTimeout(() => {
-        node.addEventListener("touchmove", cleanup, { passive: true });
-        node.addEventListener("wheel", cleanup, { passive: true });
-        node.addEventListener("keydown", cleanup, { passive: true });
+        node.addEventListener("touchmove", endOpen, { passive: true });
+        node.addEventListener("wheel", endOpen, { passive: true });
+        node.addEventListener("keydown", endOpen, { passive: true });
       }, SHEET_SCROLL_PIN_GRACE_MS);
-      t = window.setTimeout(cleanup, SHEET_SCROLL_PIN_MS);
-      composePinCleanupRef.current = cleanup;
+      t = window.setTimeout(endOpen, SHEET_SCROLL_PIN_MS);
+      composePinCleanupRef.current = disarm;
     },
     [ensureComposeRo, recomputeComposeSpacer, removeKeyboardPrimer],
   );
@@ -859,6 +866,8 @@ export function CreateQuestionContent() {
     if (!isModalOpen) {
       composeRoRef.current?.disconnect();
       composeRoRef.current = null;
+      composePinCleanupRef.current?.();
+      composeFocusedOpenRef.current = false;
       return;
     }
     const onResize = () => recomputeComposeSpacer();
