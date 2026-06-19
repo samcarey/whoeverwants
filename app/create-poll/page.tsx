@@ -132,7 +132,7 @@ const SHEET_SCROLL_PIN_MS = 1200;
 // Must comfortably outlast that collapse; a deliberate scroll after it still disarms.
 const SHEET_SCROLL_PIN_GRACE_MS = 550;
 
-// Duration of the question/poll editor sub-panel slide (must match the inline
+// Duration of the question editor sub-panel slide (must match the inline
 // `transition: transform 300ms` on the sub-panel). After sliding out, editMode
 // flips back to 'compose' so the sub-panel unmounts off-screen.
 const SUB_SLIDE_MS = 300;
@@ -724,40 +724,33 @@ export function CreateQuestionContent() {
   //     suggestion / Siri prefill). ✓ submits the poll; ✕ keeps/discards state.
   //   {question, index} — edit a staged bubble. ✓ commits the draft, ✕ cancels
   //     (the draft is the source of truth, so nothing changes on cancel).
-  //   'poll' — edit poll-wide settings (cutoff, recurrence, notes, …). ✓ keeps
-  //     the edits, ✕ restores the pre-edit snapshot. Neither edit mode sends.
   //   'compose' — the new-poll sheet opened by the "+ Poll" FAB. The body
-  //     hosts the search box (staged-question bubbles above the text box) +
-  //     the inline ↑ send button. No header ✓ in this mode (the ↑ sends).
-  type EditMode = { type: 'compose' } | { type: 'create' } | { type: 'question'; index: number } | { type: 'poll' };
+  //     hosts the search box (staged-question bubbles above the text box),
+  //     the poll-WIDE settings (cutoff, recurrence, notes, …) directly below
+  //     the text box, and the inline ↑ send button. No header ✓ in this mode
+  //     (the ↑ sends). The poll settings are LIVE here — they edit component
+  //     state directly with no separate commit/cancel (there's no submodal).
+  type EditMode = { type: 'compose' } | { type: 'create' } | { type: 'question'; index: number };
   const [editMode, setEditMode] = useState<EditMode | null>(null);
   const isModalOpen = editMode !== null;
-  // Drives the question/poll editor sub-panel's slide: false = off-screen
-  // right, true = slid in over the compose sheet. Toggled false→true on open
-  // and true→false on back/commit (the panel stays mounted through the
-  // slide-out, then editMode flips back to 'compose').
+  // Drives the question editor sub-panel's slide: false = off-screen right,
+  // true = slid in over the compose sheet. Toggled false→true on open and
+  // true→false on back/commit (the panel stays mounted through the slide-out,
+  // then editMode flips back to 'compose').
   const [subSlideIn, setSubSlideIn] = useState(false);
   // The QUESTION form section (category / options / time / per-question
   // settings) shows in 'create' + 'question' edit modes — the modes where the
-  // live form represents a real question. The POLL-settings section shows in
-  // 'create' + 'poll' edit modes. So the inline-form predicates below gate on
-  // showQuestionSection (not bare isModalOpen): in poll-edit the live form is
+  // live form represents a real question. The POLL-settings section
+  // (`pollSettingsSections`) shows in 'create' (inside `formSections`) and in
+  // 'compose' (inline below the search box) — but NOT in 'question' mode, hence
+  // `showPollSection` gates only 'create'. The inline-form predicates below gate
+  // on showQuestionSection (not bare isModalOpen): in compose the live form is
   // stale, so the poll fields must derive from `drafts` alone.
   const showQuestionSection = editMode?.type === 'create' || editMode?.type === 'question';
-  const showPollSection = editMode?.type === 'create' || editMode?.type === 'poll';
+  const showPollSection = editMode?.type === 'create';
   // Inline error for the draft-stack ↑ send path (the modal isn't open then,
   // so a modal-level `error` wouldn't be visible).
   const [sendError, setSendError] = useState<string | null>(null);
-  // Snapshot of the poll-wide fields captured when poll-edit opens; restored on
-  // ✕ so cancelling a poll-settings edit doesn't apply the in-progress changes
-  // (those controls mutate component state directly, unlike the question form,
-  // whose source of truth is the untouched draft).
-  const pollSnapshotRef = useRef<{
-    deadlineOption: string; customDate: string; customTime: string;
-    suggestionCutoff: string; customSuggestionDate: string; customSuggestionTime: string;
-    recurrence: RecurrenceRule; minResponses: number; showPreliminaryResults: boolean;
-    allowPreRanking: boolean; allowPlusOnes: boolean | null; details: string;
-  } | null>(null);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   // When the user taps ↑ send (or, in create mode, ✓ submit) without a saved
   // name, stash a retry thunk and open the AccountGateModal. On save, the thunk
@@ -1285,37 +1278,6 @@ export function CreateQuestionContent() {
     setCollectAvailability(d.collectAvailability ?? true);
   }, []);
 
-  // Capture / restore the poll-wide fields so cancelling a poll-settings edit
-  // (✕ / backdrop / Escape) doesn't apply the in-progress changes. These
-  // controls write component state directly (unlike the question form, whose
-  // source of truth is the untouched draft), so a snapshot is the only way to
-  // revert them.
-  const capturePollSnapshot = useCallback(() => {
-    pollSnapshotRef.current = {
-      deadlineOption, customDate, customTime,
-      suggestionCutoff, customSuggestionDate, customSuggestionTime,
-      recurrence, minResponses, showPreliminaryResults,
-      allowPreRanking, allowPlusOnes, details,
-    };
-  }, [deadlineOption, customDate, customTime, suggestionCutoff, customSuggestionDate, customSuggestionTime, recurrence, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, details]);
-  const restorePollSnapshot = useCallback(() => {
-    const s = pollSnapshotRef.current;
-    if (!s) return;
-    setDeadlineOption(s.deadlineOption);
-    setCustomDate(s.customDate);
-    setCustomTime(s.customTime);
-    setSuggestionCutoff(s.suggestionCutoff);
-    setCustomSuggestionDate(s.customSuggestionDate);
-    setCustomSuggestionTime(s.customSuggestionTime);
-    setRecurrence(s.recurrence);
-    setMinResponses(s.minResponses);
-    setShowPreliminaryResults(s.showPreliminaryResults);
-    setAllowPreRanking(s.allowPreRanking);
-    setAllowPlusOnes(s.allowPlusOnes);
-    setDetails(s.details);
-    pollSnapshotRef.current = null;
-  }, []);
-
   // Poll-level fields that must be FRESH for each new poll — `applyDraftToState`
   // only resets the per-question QuestionDraft, so these would otherwise leak
   // across polls (e.g. a prior session's Notes, restored by loadFormState, or a
@@ -1354,16 +1316,14 @@ export function CreateQuestionContent() {
   }, [applyDraftToState, resetDayTimeWindowsCache, resetFreshPollFields]);
 
   // Cancel the modal WITHOUT applying changes (✕ on an edit form, backdrop, or
-  // Escape). Per the spec: editing a question or the poll and then dismissing
-  // leaves that part of the poll untouched. Question-edit needs no revert (the
-  // draft is the source of truth); poll-edit restores its snapshot. In 'create'
-  // mode there's no staged draft to protect, so this just keeps state (the X
-  // button offers a discard-confirm instead — see handleCloseClick).
+  // Escape). Per the spec: editing a question and then dismissing leaves it
+  // untouched (the draft is the source of truth, so no revert is needed). In
+  // 'create' mode there's no staged draft to protect, so this just keeps state
+  // (the X button offers a discard-confirm instead — see handleCloseClick).
   const cancelModal = useCallback(() => {
-    if (editMode?.type === 'poll') restorePollSnapshot();
     setError(null);
     setEditMode(null);
-  }, [editMode, restorePollSnapshot]);
+  }, []);
 
   const handleCloseClick = useCallback(() => {
     // 'create' mode (duplicate / Siri prefill) with typed content: offer to
@@ -1479,39 +1439,24 @@ export function CreateQuestionContent() {
     slideInSub();
   }, [drafts, applyDraftToState, collapseSearchBox, slideInSub]);
 
-  // Tap the combined poll-title bubble → slide in the poll-wide settings.
-  // A snapshot is captured so ← can revert.
-  const openPollEdit = useCallback(() => {
-    capturePollSnapshot();
-    setError(null);
-    collapseSearchBox();
-    setEditMode({ type: 'poll' });
-    slideInSub();
-  }, [capturePollSnapshot, collapseSearchBox, slideInSub]);
-
-  // Close the editor sub-panel and slide it back to the compose sheet.
-  //   commit=true  → validate (question) / keep (poll) the edits, write back.
-  //   commit=false → discard: question is untouched; poll restores its snapshot.
+  // Close the question editor sub-panel and slide it back to the compose sheet.
+  //   commit=true  → validate the edits and write the draft back.
+  //   commit=false → discard (the draft is untouched, so nothing to revert).
   // A failing question validation surfaces the error and stays open (no slide).
   // The panel stays mounted through the slide-out, then editMode → 'compose'.
   const closeSubEdit = useCallback((commit: boolean) => {
     const mode = editMode;
-    if (mode?.type === 'question') {
-      if (commit) {
-        const subErr = getCurrentQuestionFormError();
-        if (subErr) { setError(subErr); return; }
-        const updated = readCurrentDraft();
-        setDrafts((prev) => prev.map((d, i) => (i === mode.index ? updated : d)));
-        setSendError(null);
-      }
-    } else if (mode?.type === 'poll') {
-      if (commit) pollSnapshotRef.current = null;
-      else restorePollSnapshot();
+    if (mode?.type === 'question' && commit) {
+      const subErr = getCurrentQuestionFormError();
+      if (subErr) { setError(subErr); return; }
+      const updated = readCurrentDraft();
+      setDrafts((prev) => prev.map((d, i) => (i === mode.index ? updated : d)));
+      setSendError(null);
     }
     setError(null);
     setSubSlideIn(false);
     window.setTimeout(() => setEditMode({ type: 'compose' }), SUB_SLIDE_MS);
-  }, [editMode, getCurrentQuestionFormError, readCurrentDraft, restorePollSnapshot]);
+  }, [editMode, getCurrentQuestionFormError, readCurrentDraft]);
 
   // Swipe-to-go-back on the editor sub-panel. The panel's resting transform is
   // React-state-driven (subSlideIn → translateX(0|100%)); during a drag we
@@ -1631,7 +1576,7 @@ export function CreateQuestionContent() {
   // box inside it is covered by isModalOpen.
   useBodyScrollLock(isModalOpen, false);
 
-  // Escape: when the question/poll editor sub-panel is open, slide it back
+  // Escape: when the question editor sub-panel is open, slide it back
   // (discarding); otherwise close the sheet. Skip when the inner
   // ConfirmationModal is open — its own document-level Escape handler runs
   // too, and we don't want one Escape to dismiss both.
@@ -1639,7 +1584,7 @@ export function CreateQuestionContent() {
     if (!isModalOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || showDiscardConfirmRef.current) return;
-      if (editMode?.type === 'question' || editMode?.type === 'poll') closeSubEdit(false);
+      if (editMode?.type === 'question') closeSubEdit(false);
       else cancelModal();
     };
     document.addEventListener('keydown', handleEsc);
@@ -2883,8 +2828,8 @@ export function CreateQuestionContent() {
 
   // The BASE sheet header's upper-right action: send the staged poll
   // (compose) or submit the in-progress form (legacy create mode). The
-  // question/poll sub-editors have their OWN ✓ (→ closeSubEdit), so this
-  // only ever fires while the base panel is showing.
+  // question sub-editor has its OWN ✓ (→ closeSubEdit), so this only ever
+  // fires while the base panel is showing.
   const handleModalCheck = (e: React.MouseEvent) => {
     if (editMode?.type === 'create') handleSubmitClick(e);
     else if (editMode?.type === 'compose') handleSendPoll();
@@ -3178,29 +3123,25 @@ export function CreateQuestionContent() {
     );
   });
 
-  // Combined poll title — shown on the draft-stack poll bubble AND the
-  // poll-edit modal header. Memoized so this layout-level component (which
-  // re-renders on many unrelated events) recomputes it only when drafts change.
+  // Combined poll title — shown as a heading above the question bubbles when a
+  // multi-question poll is staged. Memoized so this layout-level component
+  // (which re-renders on many unrelated events) recomputes it only when drafts
+  // change.
   const pollPreviewTitle = useMemo(() => draftPollPreview(drafts, '').title, [drafts]);
 
   // Staged-draft bubbles, rendered above the search input. 2+ drafts → a
-  // combined poll-title bubble on top (tap to edit poll-wide settings) over one
-  // bubble per question. Tapping a question bubble edits it; × removes it. The
-  // poll is sent via the ↑ button in the sheet's upper-right corner.
+  // combined poll-title heading on top (read-only — poll-wide settings live
+  // inline below the search box, not in a submodal) over one bubble per
+  // question. Tapping a question bubble edits it; × removes it. The poll is
+  // sent via the ↑ button in the sheet's upper-right corner.
   const draftStack = drafts.length > 0 ? (
     <div className="pt-2 space-y-2">
       {drafts.length > 1 && (
-        <button
-          type="button"
-          onClick={openPollEdit}
-          disabled={isLoading}
-          aria-label="Edit poll settings"
-          className="block w-full text-left rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-4 py-2.5 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"
-        >
-          <span className="block truncate text-base font-semibold">
+        <div className="px-1 pt-1">
+          <span className="block truncate text-base font-semibold text-gray-700 dark:text-gray-300">
             {pollPreviewTitle}
           </span>
-        </button>
+        </div>
       )}
       {drafts.map((d, i) => {
         const segs = annotateSegments(draftTitleSegments(d));
@@ -3300,10 +3241,10 @@ export function CreateQuestionContent() {
   const showPollFab =
     isClient && !swipeBackActive && (isGroupRootView(pathname) || pathname === "/explore");
 
-  const isSubEdit = editMode?.type === 'question' || editMode?.type === 'poll';
-  // The base sheet shows compose (search box) for the FAB flow and for the
-  // question / poll editors (which slide in OVER it); only the create-prefill
-  // flow shows the full form as the base.
+  const isSubEdit = editMode?.type === 'question';
+  // The base sheet shows compose (search box + inline poll settings) for the
+  // FAB flow and for the question editor (which slides in OVER it); only the
+  // create-prefill flow shows the full form as the base.
   const baseIsCompose = editMode?.type !== 'create';
 
   const errorBlock = error ? (
@@ -3312,17 +3253,149 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
-  // Question / poll form sections — rendered in the create-prefill sheet (base)
-  // and in the slide-in sub-panel (question / poll edit). Internally gated on
-  // showQuestionSection / showPollSection so each mode shows the right parts
-  // (create: both; question: the question form; poll: the settings). Built only
-  // when actually shown (null in compose / when closed) to avoid constructing
-  // the whole form tree on every render of this layout-level component.
+  // Poll-WIDE settings (voting cutoff, recurrence, prephase cutoff, plus-ones,
+  // …) + Notes. Rendered in TWO places: inline in the 'compose' base body
+  // (directly below the search box — the main-modal home for these settings,
+  // no submodal) and inside `formSections` for the 'create' prefill flow. The
+  // poll predicates (pollHasPrephase / pollHasRankedChoice / pollIsLimitedSupply
+  // / effectiveAllowPlusOnes) derive from the staged `drafts` in compose mode
+  // (showQuestionSection is false there). Built only when the modal is open to
+  // avoid constructing the tree on every render of this layout-level component.
+  const pollSettingsSections = isModalOpen ? (
+    <>
+                <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+                  <form
+                    onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    className="divide-y divide-gray-200 dark:divide-gray-700"
+                  >
+                    <VotingCutoffField
+                      label={pollIsLimitedSupply ? 'Claiming Cutoff' : 'Voting Cutoff'}
+                      deadlineOption={deadlineOption}
+                      setDeadlineOption={setDeadlineOption}
+                      customDate={customDate}
+                      setCustomDate={setCustomDate}
+                      customTime={customTime}
+                      setCustomTime={setCustomTime}
+                      isLoading={isLoading}
+                      isClient={isClient}
+                    />
+
+                    {/* Recurrence (prototype): how often this poll re-runs.
+                        Poll-level, always available. */}
+                    <RecurrenceField
+                      start={recurrenceStart}
+                      value={recurrence}
+                      setValue={setRecurrence}
+                      disabled={isLoading}
+                    />
+
+                    {pollHasPrephase && suggestionCutoffField}
+
+                    {/* Min votes to show preliminary results — poll-WIDE (the
+                        scoring algorithm + time gates are per-question and live
+                        in the question section above). */}
+                    {pollHasRankedChoice && (
+                      <CompactMinResponsesField
+                        value={minResponses}
+                        setValue={(val) => {
+                          setMinResponses(val);
+                          saveUserMinResponses(val);
+                        }}
+                        showPreliminary={showPreliminaryResults}
+                        setShowPreliminary={setShowPreliminaryResults}
+                        disabled={isLoading}
+                      />
+                    )}
+
+                    {pollHasPrephase && (
+                      <div
+                        className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+                        onClick={() => { if (!isLoading) setAllowPreRanking(!allowPreRanking); }}
+                      >
+                        <span className="text-base font-normal">
+                          Allow voting before options are finalized
+                        </span>
+                        <SliderSwitch
+                          checked={allowPreRanking}
+                          onChange={setAllowPreRanking}
+                          disabled={isLoading}
+                          aria-label="Allow voting before options are finalized"
+                        />
+                      </div>
+                    )}
+
+                    {/* "Plus one/more": let one person answer on behalf of
+                        several. Defaults ON for time polls, OFF otherwise.
+                        Limited-supply polls say "claiming" instead of
+                        "voting". */}
+                    {(() => {
+                      const plusOnesLabel = pollIsLimitedSupply
+                        ? 'Allow claiming for others (plus-ones)'
+                        : 'Allow voting for others (plus-ones)';
+                      return (
+                        <div
+                          className="flex items-center justify-between gap-3 h-12 cursor-pointer"
+                          onClick={() => { if (!isLoading) setAllowPlusOnes(!effectiveAllowPlusOnes); }}
+                        >
+                          <span className="text-base font-normal">{plusOnesLabel}</span>
+                          <SliderSwitch
+                            checked={effectiveAllowPlusOnes}
+                            onChange={(next) => setAllowPlusOnes(next)}
+                            disabled={isLoading}
+                            aria-label={plusOnesLabel}
+                          />
+                        </div>
+                      );
+                    })()}
+
+                  </form>
+                </section>
+
+                {/* Notes card — sits at the bottom, after poll settings.
+                    The label is rendered as an external left-justified
+                    header above the card. The textarea is always visible
+                    (no collapse/expand) and auto-grows up to ~5 rows. */}
+                <div>
+                  <label
+                    htmlFor="details"
+                    className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1"
+                  >
+                    Notes
+                  </label>
+                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+                    <textarea
+                      ref={setDetailsEl}
+                      id="details"
+                      value={details}
+                      onChange={(e) => {
+                        setDetails(e.target.value);
+                        autoSizeDetailsTextarea(e.target);
+                      }}
+                      onBlur={() => {
+                        const trimmed = details.trim();
+                        if (trimmed !== details) setDetails(trimmed);
+                      }}
+                      disabled={isLoading}
+                      rows={1}
+                      className="block w-full bg-transparent text-base py-3 text-gray-500 dark:text-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none"
+                    />
+                  </section>
+                </div>
+    </>
+  ) : null;
+
+  // Question form sections — rendered in the create-prefill sheet (base) and in
+  // the slide-in sub-panel (question edit). create additionally appends the
+  // poll settings via `showPollSection && pollSettingsSections`; question mode
+  // shows just the question form. Built only when actually shown (null in
+  // compose / when closed) to avoid constructing the whole form tree on every
+  // render of this layout-level component.
   const formSections = (editMode?.type === 'create' || isSubEdit) ? (
     <>
-                {showQuestionSection ? (
-                  // Question header: emoji + this question's (live) title preview.
-                  <div className="text-center px-2 pt-1 break-words min-h-8 flex items-center justify-center gap-2">
+                {/* Question header: emoji + this question's (live) title preview.
+                    formSections only renders in create / question modes, so the
+                    question form is always shown here. */}
+                <div className="text-center px-2 pt-1 break-words min-h-8 flex items-center justify-center gap-2">
                     {category !== 'yes_no' && (
                       <button
                         type="button"
@@ -3349,17 +3422,6 @@ export function CreateQuestionContent() {
                       </span>
                     )}
                   </div>
-                ) : (
-                  // Poll-settings header: the combined poll title (read-only).
-                  <div className="text-center px-2 pt-1 break-words min-h-8 flex items-center justify-center">
-                    <span
-                      className="text-xl font-bold leading-7 text-blue-600 dark:text-blue-400"
-                      style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
-                    >
-                      {pollPreviewTitle}
-                    </span>
-                  </div>
-                )}
 
                 {showQuestionSection && (<>
 
@@ -3651,127 +3713,10 @@ export function CreateQuestionContent() {
                 </>)}
 
                 {/* Poll-WIDE settings card (voting cutoff, recurrence, …) +
-                    Notes — shown in 'create' + 'poll' edit modes. */}
-                {showPollSection && (<>
-                <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
-                  <form
-                    onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    className="divide-y divide-gray-200 dark:divide-gray-700"
-                  >
-                    <VotingCutoffField
-                      label={pollIsLimitedSupply ? 'Claiming Cutoff' : 'Voting Cutoff'}
-                      deadlineOption={deadlineOption}
-                      setDeadlineOption={setDeadlineOption}
-                      customDate={customDate}
-                      setCustomDate={setCustomDate}
-                      customTime={customTime}
-                      setCustomTime={setCustomTime}
-                      isLoading={isLoading}
-                      isClient={isClient}
-                    />
-
-                    {/* Recurrence (prototype): how often this poll re-runs.
-                        Poll-level, always available. */}
-                    <RecurrenceField
-                      start={recurrenceStart}
-                      value={recurrence}
-                      setValue={setRecurrence}
-                      disabled={isLoading}
-                    />
-
-                    {pollHasPrephase && suggestionCutoffField}
-
-                    {/* Min votes to show preliminary results — poll-WIDE (the
-                        scoring algorithm + time gates are per-question and live
-                        in the question section above). */}
-                    {pollHasRankedChoice && (
-                      <CompactMinResponsesField
-                        value={minResponses}
-                        setValue={(val) => {
-                          setMinResponses(val);
-                          saveUserMinResponses(val);
-                        }}
-                        showPreliminary={showPreliminaryResults}
-                        setShowPreliminary={setShowPreliminaryResults}
-                        disabled={isLoading}
-                      />
-                    )}
-
-                    {pollHasPrephase && (
-                      <div
-                        className="flex items-center justify-between gap-3 h-12 cursor-pointer"
-                        onClick={() => { if (!isLoading) setAllowPreRanking(!allowPreRanking); }}
-                      >
-                        <span className="text-base font-normal">
-                          Allow voting before options are finalized
-                        </span>
-                        <SliderSwitch
-                          checked={allowPreRanking}
-                          onChange={setAllowPreRanking}
-                          disabled={isLoading}
-                          aria-label="Allow voting before options are finalized"
-                        />
-                      </div>
-                    )}
-
-                    {/* "Plus one/more": let one person answer on behalf of
-                        several. Defaults ON for time polls, OFF otherwise.
-                        Limited-supply polls say "claiming" instead of
-                        "voting". */}
-                    {(() => {
-                      const plusOnesLabel = pollIsLimitedSupply
-                        ? 'Allow claiming for others (plus-ones)'
-                        : 'Allow voting for others (plus-ones)';
-                      return (
-                        <div
-                          className="flex items-center justify-between gap-3 h-12 cursor-pointer"
-                          onClick={() => { if (!isLoading) setAllowPlusOnes(!effectiveAllowPlusOnes); }}
-                        >
-                          <span className="text-base font-normal">{plusOnesLabel}</span>
-                          <SliderSwitch
-                            checked={effectiveAllowPlusOnes}
-                            onChange={(next) => setAllowPlusOnes(next)}
-                            disabled={isLoading}
-                            aria-label={plusOnesLabel}
-                          />
-                        </div>
-                      );
-                    })()}
-
-                  </form>
-                </section>
-
-                {/* Notes card — sits at the bottom, after poll settings.
-                    The label is rendered as an external left-justified
-                    header above the card. The textarea is always visible
-                    (no collapse/expand) and auto-grows up to ~5 rows. */}
-                <div>
-                  <label
-                    htmlFor="details"
-                    className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1"
-                  >
-                    Notes
-                  </label>
-                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
-                    <textarea
-                      ref={setDetailsEl}
-                      id="details"
-                      value={details}
-                      onChange={(e) => {
-                        setDetails(e.target.value);
-                        autoSizeDetailsTextarea(e.target);
-                      }}
-                      onBlur={() => {
-                        const trimmed = details.trim();
-                        if (trimmed !== details) setDetails(trimmed);
-                      }}
-                      disabled={isLoading}
-                      rows={1}
-                      className="block w-full bg-transparent text-base py-3 text-gray-500 dark:text-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed resize-none"
-                    />
-                  </section>
-                </div>
-                </>)}
+                    Notes — in 'create' mode they render here below the question
+                    form; in 'compose' they render inline below the search box
+                    (see `pollSettingsSections` rendered in the base body). */}
+                {showPollSection && pollSettingsSections}
     </>
   ) : null;
 
@@ -3874,14 +3819,15 @@ export function CreateQuestionContent() {
                 </button>
               </div>
 
-              {/* BASE body: search box (compose) or the full form (create). */}
+              {/* BASE body: compose = search box + the poll-WIDE settings
+                  inline below it (no submodal); create = the full prefill form. */}
               <div ref={setSheetScrollerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
-                {baseIsCompose ? searchBox : formSections}
+                {baseIsCompose ? (<>{searchBox}{pollSettingsSections}</>) : formSections}
                 {errorBlock}
               </div>
 
-              {/* SUB-PANEL: the question / poll editor, slid in from the right
-                  OVER the compose sheet. ← (upper-left) discards + slides back;
+              {/* SUB-PANEL: the question editor, slid in from the right OVER
+                  the compose sheet. ← (upper-left) discards + slides back;
                   ✓ (upper-right) commits + slides back. A rightward swipe on the
                   panel also goes back (discarding), same as ←. */}
               {isSubEdit && (
@@ -3912,7 +3858,7 @@ export function CreateQuestionContent() {
                       </svg>
                     </button>
                     <span className="text-lg font-semibold select-none">
-                      {editMode?.type === 'poll' ? 'Poll Settings' : 'Edit Question'}
+                      Edit Question
                     </span>
                     <button
                       type="button"
