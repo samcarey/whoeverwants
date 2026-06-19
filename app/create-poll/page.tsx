@@ -871,6 +871,28 @@ export function CreateQuestionContent() {
   const pillTargetBottomRef = useRef(0);
   const [searchDropdownMaxHeight, setSearchDropdownMaxHeight] = useState(320);
 
+  // --- Auto-focus the question box (with the soft keyboard) on FAB-open -----
+  // openComposeModal (a real tap) calls primeKeyboard() to claim the iOS
+  // keyboard synchronously; the search input mounts a commit later inside
+  // <ModalPortal>, so this callback ref transfers focus the moment it attaches
+  // and removes the primer — iOS keeps the keyboard up across the move (same
+  // pattern as setTitleInputRef). The flag is set ONLY by openComposeModal, so
+  // returning to compose from the sub-editor doesn't re-pop the keyboard.
+  const shouldFocusSearchRef = useRef(false);
+  const setSearchInputRef = useCallback(
+    (node: HTMLInputElement | null) => {
+      searchInputRef.current = node;
+      if (node && shouldFocusSearchRef.current) {
+        shouldFocusSearchRef.current = false;
+        // focus() synchronously fires onFocus, which raises the box above the
+        // keyboard (scroll-to-top) and anchors the dropdown.
+        node.focus({ preventScroll: true });
+        removeKeyboardPrimer();
+      }
+    },
+    [removeKeyboardPrimer],
+  );
+
   // A ranked_choice question is a "suggestion poll" when the creator left the
   // "Collect Suggestions before Vote" toggle on — regardless of whether they
   // typed any initial options. Drives the poll-level prephase fields.
@@ -1377,9 +1399,14 @@ export function CreateQuestionContent() {
     }
     setError(null);
     setSendError(null);
-    // Seed the spacer so the very first paint is already bottom-anchored
-    // (box at the bottom edge); the callback-ref measure corrects it. ~130px
-    // ≈ header + the question box; the slide-up also masks any residual jump.
+    // Open with the question box focused + the iOS keyboard up. primeKeyboard()
+    // must run synchronously in this tap (the input mounts a commit later); the
+    // search input's callback ref then transfers focus + removes the primer.
+    shouldFocusSearchRef.current = true;
+    primeKeyboard();
+    // Seed the spacer so the very first paint is already bottom-anchored (box
+    // at the bottom edge); the callback-ref measure corrects it. ~130px ≈
+    // header + the question box; the slide-up also masks any residual jump.
     if (typeof window !== "undefined") {
       const vh = window.visualViewport?.height ?? window.innerHeight;
       const seed = Math.max(0, vh - 70 - 130 - drafts.length * 44);
@@ -1387,7 +1414,7 @@ export function CreateQuestionContent() {
       setComposeSpacerHeight(seed);
     }
     setEditMode({ type: 'compose' });
-  }, [drafts.length, applyDraftToState, resetFreshPollFields]);
+  }, [drafts.length, applyDraftToState, resetFreshPollFields, primeKeyboard]);
 
   const discardAndClose = useCallback(() => {
     applyDraftToState(emptyDraft());
@@ -3305,16 +3332,16 @@ export function CreateQuestionContent() {
             stands out against the gray sheet body. */}
         <div className="flex items-center h-[42.24px] rounded-full bg-white dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4">
           <input
-            ref={searchInputRef}
+            ref={setSearchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => {
-              // The box opens at the BOTTOM of the sheet; focusing it would put
-              // it behind the soft keyboard. Expand the sheet (scroll the card
-              // to the top, so the box sits under the sticky header, above the
-              // keyboard) before anchoring the dropdown. Disarm the open-time
-              // scroll pin first so it can't yank back to 0.
+              // The box opens at the BOTTOM of the sheet; focusing it (auto on
+              // open, or a manual tap) would put it behind the soft keyboard.
+              // Raise it to the top (scroll the card up under the sticky header)
+              // so it sits above the keyboard with room for the dropdown below.
+              // Disarm the open-time scroll pin first so it can't yank back to 0.
               const scroll = composeScrollNodeRef.current;
               if (scroll && editMode?.type !== "create") {
                 sheetScrollPinCleanupRef.current?.();
