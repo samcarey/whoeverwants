@@ -30,13 +30,6 @@ export const EXPLORE_ATTR = 'data-explore';
  *  GroupHeader. */
 export const DRAFT_POLL_PORTAL_ID = 'draft-poll-portal';
 
-/** CSS variable on `<html>` holding the create-poll search bar's measured
- *  height, so the group page can reserve matching bottom padding (its last
- *  poll card clears the floating pill). Written by CreateQuestionContent
- *  (which renders + measures the bar). A `:root` default in globals.css
- *  covers the first paint before the bar mounts + measures. */
-export const PANEL_HEIGHT_VAR = '--bubble-bar-panel-height';
-
 /** Marker attribute on the fixed-position group header. Used by code
  *  that needs to scroll to a position just below the header (e.g.
  *  scrolling a newly-inserted draft card to the top of the visible area)

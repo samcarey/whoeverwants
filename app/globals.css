@@ -17,16 +17,6 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  /* CreateQuestionContent (app/create-poll/page.tsx) rewrites this to the
-     measured height of the floating create-poll search bar once it has
-     portaled into the group page's `#draft-poll-portal` div. Until then
-     (a transient window before CreateQuestionContent's MutationObserver
-     discovers the portal target) the cards-wrapper bottom padding reads
-     this default — sized to roughly match the unfocused pill bar (~48px
-     pill + 16px gap + ~34px iPhone safe-area-inset-bottom). A slightly-high
-     default over-reserves a hair before measurement rather than letting the
-     last card hide behind the bar. */
-  --bubble-bar-panel-height: 80px;
 }
 
 @theme inline {

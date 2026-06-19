@@ -12,7 +12,6 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ExploreFeedList, ExploreTitleBar } from "@/components/ExploreFeed";
 import { getCachedExplorePolls } from "@/lib/questionCache";
-import { PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
 import {
   HIDE_EXPLORE_BACKDROP_EVENT,
   SHOW_EXPLORE_BACKDROP_EVENT,
@@ -50,7 +49,7 @@ export default function ExploreBackdropHost(): React.ReactElement | null {
           overflowY: "auto",
           paddingLeft: "max(0.35rem, env(safe-area-inset-left))",
           paddingRight: "max(0.35rem, env(safe-area-inset-right))",
-          paddingBottom: `var(${PANEL_HEIGHT_VAR}, 80px)`,
+          paddingBottom: "1.5rem",
           // Contain so any descendant fixed/z-elevated chrome can't escape to
           // body level over the still-mounted poll detail page. Same pattern
           // as GroupBackdropHost / SlideOverlayHost.

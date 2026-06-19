@@ -18,7 +18,7 @@ import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import HeaderPortal from "@/components/HeaderPortal";
 import { apiGetExplore } from "@/lib/api/groups";
 import { getCachedExplorePolls } from "@/lib/questionCache";
-import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 import type { Poll } from "@/lib/types";
 import { ExploreFeedList, ExploreTitleBar } from "@/components/ExploreFeed";
 
@@ -134,8 +134,9 @@ export default function ExplorePage() {
             paddingRight: "max(0.35rem, env(safe-area-inset-right, 0px))",
             // Clear the fixed top bar (safe-area inset + the h-14 row).
             paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)",
-            // Reserve room for the floating create bar so the last card clears it.
-            paddingBottom: `var(${PANEL_HEIGHT_VAR}, 80px)`,
+            // The create pill is now an inline trigger in flow (it sits at the
+            // end of the feed), so just normal bottom breathing room.
+            paddingBottom: "1.5rem",
           }}
         >
           <ExploreFeedList polls={polls} />

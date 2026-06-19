@@ -32,7 +32,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
-import { GROUP_ID_ATTR, DRAFT_POLL_PORTAL_ID, PANEL_HEIGHT_VAR } from "@/lib/groupDomMarkers";
+import { GROUP_ID_ATTR, DRAFT_POLL_PORTAL_ID } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { useDeadlineTick } from "@/lib/useDeadlineTick";
@@ -1014,19 +1014,15 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // made it visually collide with the (statically positioned) settings
   // gear at the viewport's left edge.
   const upArrowRef = useRef<HTMLButtonElement | null>(null);
-  // The create-poll search bar is portaled into `#draft-poll-portal`, which
-  // GroupContent renders as a body-level sibling of the swipe wrapper (so the
-  // bar's fixed full-screen focused picker still layers above the header /
-  // commit badge). Body-level means the gesture transform wouldn't reach it,
-  // so add the portal node to `extraTargets` — then a group→home swipe slides
-  // the bar off with the page (mirroring the header). During a slide OVERLAY
-  // the bar inherits the overlay's transform instead (it's portaled into the
-  // overlay's `contain: strict` GroupContent), so no per-frame work is needed
-  // there.
-  const barPortalRef = useRef<HTMLDivElement | null>(null);
+  // The create-poll search pill is portaled into `#draft-poll-portal`, which
+  // GroupContent now renders INLINE in the cards wrapper (under "Scheduled").
+  // Living inside the swipe wrapper means it rides the gesture transform for
+  // free — no `extraTargets` entry needed. Its focused full-screen picker is
+  // body-portalled separately (see CreateQuestionContent), so the swipe
+  // wrapper's `will-change: transform` containing block never traps it.
   const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
     headerRef,
-    extraTargets: [upArrowRef, barPortalRef],
+    extraTargets: [upArrowRef],
     showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
     hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
     // No scroll save here: returning home intentionally resets every group's
@@ -1924,6 +1920,27 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           navigateWithTransition(router, '/', 'back');
         }}
         backIconVariant="menu"
+        // "Scheduled" lives in the header's right end as a timer icon +
+        // chevron (opens the recurring-poll-instances subroute). Shown only
+        // when the group has polls (mirrors the old inline link's gate).
+        rightSlot={showFollowTabs ? (
+          <button
+            type="button"
+            onClick={() => {
+              rememberCurrentScroll(groupScrollKey(groupId));
+              slideToGroupScheduled({ groupId });
+            }}
+            className="self-stretch py-2 pl-1 pr-3 flex items-center gap-0.5 text-gray-500 dark:text-gray-400 active:opacity-70"
+            aria-label="View scheduled polls"
+          >
+            <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        ) : undefined}
       />
 
       {/* paddingTop reserves space for the fixed header above. The card
@@ -1991,11 +2008,10 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       <div
         style={{
           paddingTop: `calc(${headerHeight}px + var(--group-card-gap, 0px))`,
-          // Reserve exactly the panel's measured height so the last card
-          // sits flush against the panel's top edge at scroll-bottom.
-          // Fallback covers a 3-row bubble bar + heading + safe-area
-          // inset for the first paint before the ResizeObserver fires.
-          paddingBottom: `var(${PANEL_HEIGHT_VAR}, 12rem)`,
+          // The create-poll pill is now inline at the top of the scroll (not a
+          // floating bottom bar), so the list just needs normal bottom
+          // breathing room rather than a reserved panel height.
+          paddingBottom: '1.5rem',
           // Saved-scroll restore uses `overlayCardsOffset`; a fresh-nav
           // overlay has no offset (shows the top, matching the real route's
           // fresh-visit scroll-to-top). Undefined means no transform.
@@ -2005,30 +2021,21 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
-        {/* "Scheduled ›" — inline at the very top of the scroll, right-
-            justified, just above the To Do section. Opens the group's
-            Scheduled subroute listing upcoming recurring-poll instances. */}
-        {showFollowTabs && (
-          <button
-            type="button"
-            onClick={() => {
-              rememberCurrentScroll(groupScrollKey(groupId));
-              slideToGroupScheduled({ groupId });
-            }}
-            className="w-full flex items-center justify-end gap-0.5 pr-[0.65rem] py-0 leading-none text-[15px] font-medium text-gray-500 dark:text-gray-400 active:opacity-70"
-            aria-label="View scheduled polls"
-          >
-            Scheduled
-            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        )}
+        {/* New-poll create box — inline at the top of the scroll, above the
+            To Do section. CreateQuestionContent (root layout) portals the
+            search input into this target; focusing it drops a suggestions
+            dropdown below it. Living inline in the cards wrapper means it
+            scrolls with the content and rides the swipe/slide transforms for
+            free. The min-height reserves the input's height (42.24px + py-2)
+            so content below doesn't jump when CreateQuestionContent portals
+            the input in a frame after this empty div mounts. */}
+        <div id={DRAFT_POLL_PORTAL_ID} style={{ minHeight: '3.64rem' }} />
 
         {/* Solo-group CTAs — the creator is the only member, so surface the
-            two ways to bring people in, inline under the Scheduled link and
-            above any polls. Subtle tinted pills (hemisphere sides via
-            rounded-full), distinct hues so the two actions read apart. */}
+            two ways to bring people in, UNDERNEATH the new-poll box. Subtle
+            tinted pills (hemisphere sides via rounded-full), distinct hues so
+            the two actions read apart. ("Scheduled" moved into the header's
+            right end as a timer button.) */}
         {soloAdmin && (
           <div className="flex justify-center gap-2.5 px-[0.9rem] pt-1.5 pb-2.5">
             <button
@@ -2153,30 +2160,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         )}
       </div>
       </div>
-      {/* Create-poll search bar portal target. CreateQuestionContent (in the
-          root layout) portals the fixed search pill + ➕ into here. Rendered
-          as a body-level sibling of the swipe wrapper — NOT inside it — so
-          the bar's focused full-screen picker still stacks above the fixed
-          header (z-20) and commit badge (z-30) in the viewport context.
-          Because it lives inside THIS GroupContent, it rides the page's
-          motion: a slide overlay's `contain: strict` box (slides in with the
-          group), the swipe-back backdrop (revealed under the sliding poll
-          page), and `barPortalRef` in the swipe `extraTargets` (slides off on
-          a group→home swipe).
-
-          `relative z-40` is load-bearing for that last case: the swipe
-          gesture sets a `transform` on this div, which makes it a NEW stacking
-          context — and a static div would land at z-auto, BELOW the z-0 home
-          backdrop that mounts at swipe start, so the bar would paint behind it
-          and vanish instantly instead of sliding off. `position: relative`
-          doesn't trap the fixed bar (only transform/contain do), so the
-          overlay-slide + backdrop-reveal cases are unchanged; it just pins the
-          stacking level above the backdrop. The bar reserves matching bottom
-          space on the cards wrapper above via the --bubble-bar-panel-height
-          CSS var (written by CreateQuestionContent after it measures the
-          bar). */}
-      <div id={DRAFT_POLL_PORTAL_ID} ref={barPortalRef} className="relative z-40" />
-      {/* End create-poll bar portal target. */}
 
       {/* Group-aware long-press modal — Copy + Forget, plus Reopen when
            the poll is closed and the current browser is the creator (or dev). */}
