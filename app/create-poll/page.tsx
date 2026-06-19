@@ -111,6 +111,22 @@ function autoSizeDetailsTextarea(el: HTMLTextAreaElement) {
   el.style.overflowY = el.scrollHeight > maxH ? "auto" : "hidden";
 }
 
+// Measure the live `env(safe-area-inset-top)` value (notch / status-bar inset)
+// in px via a throwaway probe. Used when focusing the search box to land the
+// pill just below the notch rather than literally at y=0. Works on every page
+// (group / explore / empty placeholder) regardless of which top-bar chrome is
+// mounted, so we don't have to read it off a page-specific header element.
+function measureSafeAreaTop(): number {
+  if (typeof document === "undefined") return 0;
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:fixed;top:0;left:0;height:0;padding-top:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none";
+  document.body.appendChild(probe);
+  const h = probe.getBoundingClientRect().height;
+  probe.remove();
+  return h;
+}
+
 // How long the new-poll sheet body's open-at-top scroll pin stays armed
 // (see setSheetScrollerRef). Sized to outlast the iOS soft-keyboard collapse
 // (~250-400ms) + the sheet's 300ms slide-up with margin; the user's first
@@ -668,6 +684,12 @@ export function CreateQuestionContent() {
   // is shown directly below it (see `searchBox`). The box stays in place; the
   // page is still visible around it. `searchQuery` filters the category rows.
   const [searchFocused, setSearchFocused] = useState(false);
+  // Vertical distance (px) the search pill rises so it lands just below the
+  // notch when focused — measured in onFocus before the keyboard appears. The
+  // whole page animates up by this amount (the pill via its own React
+  // transform, the fixed top-bar chrome via the JS effect below) so the
+  // suggestions get the maximum room beneath the box. 0 when unfocused.
+  const [searchShift, setSearchShift] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   // On-device embedding category hint (augment, never block): a confident result
   // ADDS a category suggestion when the keyword matcher misses (slang/typos). Fed
@@ -692,6 +714,10 @@ export function CreateQuestionContent() {
   // below the pill. `searchPillRef` anchors that dropdown; its max height is
   // computed so it ends just above the soft keyboard.
   const searchPillRef = useRef<HTMLDivElement | null>(null);
+  // Defers clearing the slide transition on the top-bar chrome until the
+  // slide-back animation finishes (so we don't leave a permanent
+  // `transition: transform` that would lag the swipe-back gesture).
+  const chromeSlideTimerRef = useRef<number | null>(null);
   const [searchDropdownMaxHeight, setSearchDropdownMaxHeight] = useState(320);
 
   // A ranked_choice question is a "suggestion poll" when the creator left the
@@ -1358,7 +1384,9 @@ export function CreateQuestionContent() {
     openModalWithDraft(overrides);
   }, [openModalWithDraft]);
 
-  // While the box is focused, dim + disable the app's FIXED top-bar chrome.
+  // While the box is focused, dim + disable AND SLIDE UP the app's FIXED
+  // top-bar chrome so the whole page reads as having moved up to bring the
+  // search box to the top (maximizing the room below it for suggestions).
   // The content area (polls, CTAs) is covered by the `bg-black/20` scrim in
   // `searchBox`, but the top bar paints above that scrim's stacking context,
   // so it can't be reached by the scrim — dim it here to match. We use
@@ -1367,30 +1395,49 @@ export function CreateQuestionContent() {
   // reads brighter than the washed polls); `brightness(0.8)` is mathematically
   // identical to a 20%-black overlay (compositing black at alpha 0.2 over a
   // color C yields C*0.8), so the bar darkens EXACTLY like the `bg-black/20`
-  // polls. Inline styles survive React re-renders: React only reconciles the
-  // style keys it owns (paddingTop on the group header), never the
-  // pointer-events/filter/transition we add. Covers the group header, the
-  // explore/header-portal bar, and the dev badge.
+  // polls. The `translateY(-searchShift)` slides the bar up by the same amount
+  // the pill rises (the pill rides its own React transform in `searchBox`), so
+  // they move together. Inline styles survive React re-renders: React only
+  // reconciles the style keys it owns (paddingTop on the group header), never
+  // the pointer-events/filter/transform/transition we add. Covers the group
+  // header, the explore/header-portal bar, and the dev badge. Runs on both
+  // focus AND blur so the slide animates back out; the transition is cleared a
+  // beat after the slide-back so it can't lag the swipe-back gesture (which
+  // also writes `transform` to the group header).
   useEffect(() => {
-    if (typeof document === 'undefined' || !searchFocused) return;
+    if (typeof document === 'undefined') return;
     const els = Array.from(
       document.querySelectorAll<HTMLElement>(
         '[data-group-header], #header-portal, #commit-badge-portal',
       ),
     );
-    els.forEach((el) => {
-      el.style.pointerEvents = 'none';
-      el.style.filter = 'brightness(0.8)';
-      el.style.transition = 'filter 150ms ease-out';
-    });
-    return () => {
+    if (chromeSlideTimerRef.current) {
+      clearTimeout(chromeSlideTimerRef.current);
+      chromeSlideTimerRef.current = null;
+    }
+    if (searchFocused) {
+      els.forEach((el) => {
+        el.style.transition = 'filter 150ms ease-out, transform 250ms ease';
+        el.style.pointerEvents = 'none';
+        el.style.filter = 'brightness(0.8)';
+        el.style.transform = `translateY(-${searchShift}px)`;
+      });
+    } else {
+      // Animate back (the transition set during focus is still in place), then
+      // clear it so a later swipe-back's imperative transform isn't animated.
       els.forEach((el) => {
         el.style.pointerEvents = '';
         el.style.filter = '';
-        el.style.transition = '';
+        el.style.transform = '';
       });
-    };
-  }, [searchFocused]);
+      chromeSlideTimerRef.current = window.setTimeout(() => {
+        els.forEach((el) => {
+          el.style.transition = '';
+        });
+        chromeSlideTimerRef.current = null;
+      }, 280);
+    }
+  }, [searchFocused, searchShift]);
 
   // Read showDiscardConfirm via a ref inside the Escape handler so toggling
   // the inner confirm dialog doesn't tear down + rebuild the body-position
@@ -3005,8 +3052,21 @@ export function CreateQuestionContent() {
           onPointerDown={() => searchInputRef.current?.blur()}
         />
       )}
-      {/* When focused, elevate the pill + dropdown above the scrim (z-50). */}
-      <div className={`px-3 py-2 relative ${searchFocused ? 'z-50' : ''}`}>
+      {/* When focused, elevate the pill + dropdown above the scrim (z-50) and
+          slide them UP by `searchShift` so the pill lands just below the notch.
+          The transition is always present (so the start state is already
+          painted), letting the single commit that sets the transform animate.
+          Only this wrapper rises — the sibling scrim stays put covering the
+          viewport. The top-bar chrome slides up by the same amount via the JS
+          effect above, so the whole page reads as moving up together. */}
+      <div
+        className={`px-3 py-2 relative ${searchFocused ? 'z-50' : ''}`}
+        style={{
+          transform: searchFocused ? `translateY(-${searchShift}px)` : undefined,
+          transition: 'transform 250ms ease',
+          willChange: searchFocused ? 'transform' : undefined,
+        }}
+      >
       {/* `relative` anchors the absolute dropdown directly below the pill. */}
       <div ref={searchPillRef} className="relative">
         {/* The real inline input pill — full width, stays in place when
@@ -3017,7 +3077,18 @@ export function CreateQuestionContent() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => setSearchFocused(true)}
+            onFocus={() => {
+              // Measure how far the pill must rise to sit just below the notch
+              // BEFORE the keyboard appears / the page is scroll-locked (the
+              // pill is still at its resting position). The pill + the top-bar
+              // chrome then animate up by this amount, bringing the box to the
+              // top and giving the suggestions the maximum room below. Batched
+              // with setSearchFocused so both land in one render.
+              const rect = searchPillRef.current?.getBoundingClientRect();
+              const target = measureSafeAreaTop() + 4;
+              setSearchShift(rect ? Math.max(0, rect.top - target) : 0);
+              setSearchFocused(true);
+            }}
             // Collapse on blur (closes the dropdown + dismisses the keyboard).
             onBlur={() => setSearchFocused(false)}
             disabled={isLoading}
