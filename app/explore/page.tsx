@@ -18,7 +18,7 @@ import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import HeaderPortal from "@/components/HeaderPortal";
 import { apiGetExplore } from "@/lib/api/groups";
 import { getCachedExplorePolls } from "@/lib/questionCache";
-import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
 import type { Poll } from "@/lib/types";
 import { ExploreFeedList, ExploreTitleBar } from "@/components/ExploreFeed";
 
@@ -120,7 +120,7 @@ export default function ExplorePage() {
         className="touch-pan-y"
         // See GroupPage's swipe wrapper: lets the focused create-poll search
         // box translate the whole feed up rigidly with the top bar.
-        data-poll-page-scroll=""
+        {...{ [POLL_PAGE_SCROLL_ATTR]: '' }}
         style={{
           willChange: "transform",
           position: "relative",

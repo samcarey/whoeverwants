@@ -68,7 +68,7 @@ import {
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
 import {
   pollLookup,
   validateRankedChoiceOptions,
@@ -1429,8 +1429,9 @@ export function CreateQuestionContent() {
       ),
     );
     const content = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-poll-page-scroll]'),
+      document.querySelectorAll<HTMLElement>(`[${POLL_PAGE_SCROLL_ATTR}]`),
     );
+    const all = [...chrome, ...content];
     if (chromeSlideTimerRef.current) {
       clearTimeout(chromeSlideTimerRef.current);
       chromeSlideTimerRef.current = null;
@@ -1449,7 +1450,7 @@ export function CreateQuestionContent() {
     } else {
       // Animate back (the transition set during focus is still in place), then
       // clear it so a later swipe-back's imperative transform isn't animated.
-      [...chrome, ...content].forEach((el) => {
+      all.forEach((el) => {
         el.style.transform = '';
       });
       chrome.forEach((el) => {
@@ -1457,7 +1458,7 @@ export function CreateQuestionContent() {
         el.style.filter = '';
       });
       chromeSlideTimerRef.current = window.setTimeout(() => {
-        [...chrome, ...content].forEach((el) => {
+        all.forEach((el) => {
           el.style.transition = '';
         });
         chromeSlideTimerRef.current = null;

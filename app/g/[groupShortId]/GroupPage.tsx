@@ -32,7 +32,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
-import { GROUP_ID_ATTR, DRAFT_POLL_PORTAL_ID } from "@/lib/groupDomMarkers";
+import { GROUP_ID_ATTR, DRAFT_POLL_PORTAL_ID, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { useDeadlineTick } from "@/lib/useDeadlineTick";
@@ -1985,7 +1985,7 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         // imperative transform it writes here is safe: `transform` is not in
         // this element's React style, and the swipe gesture (the only other
         // imperative transform writer) can't run while the box is focused.
-        data-poll-page-scroll=""
+        {...{ [POLL_PAGE_SCROLL_ATTR]: '' }}
         style={{
           willChange: 'transform',
           position: 'relative',
