@@ -32,7 +32,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
-import { GROUP_ID_ATTR, DRAFT_POLL_PORTAL_ID, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
+import { GROUP_ID_ATTR, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { useDeadlineTick } from "@/lib/useDeadlineTick";
@@ -2028,15 +2028,11 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
-        {/* New-poll create box — inline at the top of the scroll, above the
-            To Do section. CreateQuestionContent (root layout) portals the
-            search input into this target; focusing it drops a suggestions
-            dropdown below it. Living inline in the cards wrapper means it
-            scrolls with the content and rides the swipe/slide transforms for
-            free. The min-height reserves the input's height (42.24px + py-2)
-            so content below doesn't jump when CreateQuestionContent portals
-            the input in a frame after this empty div mounts. */}
-        <div id={DRAFT_POLL_PORTAL_ID} style={{ minHeight: '3.64rem' }} />
+        {/* The inline create-poll box was retired: poll creation now lives on
+            the dedicated New-Poll draft page (`/g/<id>/new-poll`), reached via
+            the floating "Poll" button (CreatePollButtonHost, layout level).
+            That page renders the `#draft-poll-portal` CreateQuestionContent
+            portals its search box into. */}
 
         {/* Solo-group CTAs — the creator is the only member, so surface the
             two ways to bring people in, UNDERNEATH the new-poll box. Subtle

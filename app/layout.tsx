@@ -12,6 +12,7 @@ import PollBackdropHost from "@/components/PollBackdropHost";
 import ExploreBackdropHost from "@/components/ExploreBackdropHost";
 import SettingsBackdropHost from "@/components/SettingsBackdropHost";
 import CreateGroupButtonHost from "@/components/CreateGroupButtonHost";
+import CreatePollButtonHost from "@/components/CreatePollButtonHost";
 import RecoveryReminderHost from "@/components/RecoveryReminderHost";
 import { PersistentCreatePollHost } from "@/components/PersistentCreatePollHost";
 import { UniversalLinksHandler } from "@/components/UniversalLinksHandler";
@@ -174,6 +175,11 @@ export default function RootLayout({
             level so the DOM node is identical across the gesture and the
             commit — no fake/real button swap, no position jump. */}
         <CreateGroupButtonHost />
+
+        {/* Floating "Poll" button on group root views — slides to the
+            dedicated New-Poll draft page. Layout-level (like the "+ Group"
+            button) so the DOM node is stable across route states. */}
+        <CreatePollButtonHost />
 
         {/* Home-page nudge for recovery-less accounts (name-only / passkey-
             only) to add a sign-in method. Self-hides off home, when the

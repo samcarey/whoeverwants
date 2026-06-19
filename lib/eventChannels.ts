@@ -106,6 +106,10 @@ export type SlideOverlayKind =
   // poll-level actions (forget / reopen / close / cutoff) and the full
   // respondent list. Tapping the title on the poll detail page slides here.
   | { type: 'pollInfo'; groupId: string; pollShortId: string }
+  // Dedicated "New Poll" draft page at /g/<group>/new-poll. Hosts the
+  // poll-creation search box + multi-question draft-stack UI + the upper-right
+  // send button. Reached from the floating "Poll" button on the group page.
+  | { type: 'newPollDraft'; groupId: string }
   // Empty "New Group" placeholder, used by the home new group button. The overlay
   // renders the same content as `/g/`'s EmptyPlaceholder; the actual group
   // is created via `apiCreateGroup` in parallel, and the caller fires

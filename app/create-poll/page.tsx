@@ -68,7 +68,7 @@ import {
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, POLL_SEND_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
 import {
   pollLookup,
   BASE_DEADLINE_OPTIONS,
@@ -1612,7 +1612,13 @@ export function CreateQuestionContent() {
   // to avoid. WeakMap + counter assign each DOM node a permanent id;
   // assignment happens inside the effect's callback so refs aren't read
   // during render.
+  // `#poll-send-portal` is rendered ONLY by the New-Poll draft page (in its
+  // header's upper-right). When present, the round ↑ send button portals there
+  // instead of rendering inline on the draft-stack row; on the other surfaces
+  // (empty `/g/` placeholder, /explore) there's no such target so the send
+  // button stays inline. Tracked by the same observer as the search-box portal.
   const [draftPollPortals, setDraftPollPortals] = useState<Array<{ key: string; target: HTMLElement }>>([]);
+  const [pollSendPortals, setPollSendPortals] = useState<Array<{ key: string; target: HTMLElement }>>([]);
   useEffect(() => {
     const keys = new WeakMap<HTMLElement, string>();
     let nextKey = 0;
@@ -1628,11 +1634,16 @@ export function CreateQuestionContent() {
       a: Array<{ key: string; target: HTMLElement }>,
       b: Array<{ key: string; target: HTMLElement }>,
     ) => a.length === b.length && a.every((x, i) => x.target === b[i].target);
+    const queryTargets = (id: string) =>
+      Array.from(document.querySelectorAll<HTMLElement>(`#${id}`)).map(target => ({
+        key: keyFor(target),
+        target,
+      }));
     const check = () => {
-      const all = Array.from(
-        document.querySelectorAll<HTMLElement>(`#${DRAFT_POLL_PORTAL_ID}`)
-      ).map(target => ({ key: keyFor(target), target }));
-      setDraftPollPortals(prev => (entriesShallowEqual(prev, all) ? prev : all));
+      const boxes = queryTargets(DRAFT_POLL_PORTAL_ID);
+      setDraftPollPortals(prev => (entriesShallowEqual(prev, boxes) ? prev : boxes));
+      const sends = queryTargets(POLL_SEND_PORTAL_ID);
+      setPollSendPortals(prev => (entriesShallowEqual(prev, sends) ? prev : sends));
     };
     const observer = new MutationObserver(check);
     observer.observe(document.body, { childList: true, subtree: true });
@@ -3174,9 +3185,15 @@ export function CreateQuestionContent() {
   // re-renders on many unrelated events) recomputes it only when drafts change.
   const pollPreviewTitle = useMemo(() => draftPollPreview(drafts, '').title, [drafts]);
 
-  // Round ↑ "create poll" button. Lives on the single-question row, or moves to
-  // the combined poll-title row once a second question is staged. Reused across
-  // those mutually-exclusive branches (never rendered twice at once).
+  // On the New-Poll draft page the send button is portaled to the header's
+  // upper-right (`#poll-send-portal`) instead of sitting on a draft-stack row.
+  // `sendInHeader` suppresses the inline placement on that surface.
+  const sendInHeader = pollSendPortals.length > 0;
+
+  // Round ↑ "create poll" button. On the New-Poll page it's portaled into the
+  // header (upper-right); on the empty-placeholder / explore surfaces it sits
+  // inline on the single-question row or the combined poll-title row. Reused
+  // across those mutually-exclusive placements (never rendered twice at once).
   const sendButton = (
     <button
       type="button"
@@ -3217,7 +3234,7 @@ export function CreateQuestionContent() {
               {pollPreviewTitle}
             </span>
           </button>
-          {sendButton}
+          {!sendInHeader && sendButton}
         </div>
       )}
       {drafts.map((d, i) => {
@@ -3249,7 +3266,7 @@ export function CreateQuestionContent() {
                 </svg>
               </button>
             </div>
-            {drafts.length === 1 && sendButton}
+            {drafts.length === 1 && !sendInHeader && sendButton}
           </div>
         );
       })}
@@ -3280,7 +3297,7 @@ export function CreateQuestionContent() {
           // so it still covers the whole screen after that translate — without
           // this it'd slide up too and leave an undimmed strip at the bottom.
           style={{ top: '-100vh', bottom: '-100vh' }}
-          onPointerDown={() => searchInputRef.current?.blur()}
+          onPointerDown={() => (document.activeElement as HTMLElement | null)?.blur()}
         />
       )}
       {/* When focused, elevate the pill + dropdown above the scrim (z-50). The
@@ -3289,25 +3306,34 @@ export function CreateQuestionContent() {
           rigidly by `searchShift` via the JS effect above, so the box reaches
           the top without moving relative to the rest of the page. */}
       <div className={`px-3 py-2 relative ${searchFocused ? 'z-50' : ''}`}>
-      {/* `relative` anchors the absolute dropdown directly below the pill. */}
-      <div ref={searchPillRef} className="relative">
+      {/* `relative` anchors the absolute dropdown directly below the pill.
+          `data-poll-pill` lets onFocus measure the pill via the focused
+          input's `closest()` — robust when two portaled copies coexist
+          mid-slide (the single React ref can go stale on the overlay's
+          unmount; the New-Poll draft page's auto-focus relies on a correct
+          measurement). */}
+      <div ref={searchPillRef} data-poll-pill className="relative">
         {/* The real inline input pill — full width, stays in place when
             focused. Tapping outside (blur) closes the dropdown. */}
         <div className="flex items-center h-[42.24px] rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4">
           <input
             ref={searchInputRef}
+            data-poll-search-input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => {
+            onFocus={(e) => {
               // Measure how far the page must rise so the pill sits just below
               // the notch, BEFORE the keyboard appears / the page is
               // scroll-locked (the pill is still at its resting position). The
               // whole page content + the top-bar chrome then animate up by this
               // amount, bringing the box to the top and giving the suggestions
               // the maximum room below. Batched with setSearchFocused so both
-              // land in one render.
-              const rect = searchPillRef.current?.getBoundingClientRect();
+              // land in one render. Measure via the focused input's `closest`
+              // pill (not the shared ref) so the New-Poll page's auto-focus
+              // measures the right copy even mid-slide.
+              const pill = (e.currentTarget as HTMLElement).closest('[data-poll-pill]') as HTMLElement | null;
+              const rect = pill?.getBoundingClientRect();
               const target = measureSafeAreaTop() + 4; // where the pill TOP lands
               setSearchShift(rect ? Math.max(0, rect.top - target) : 0);
               // The pill BOTTOM ends at target + its (transform-invariant)
@@ -3346,6 +3372,10 @@ export function CreateQuestionContent() {
   return (
     <div className="question-content">
       {draftPollPortals.map(({ key, target }) => createPortal(searchBox, target, key))}
+      {/* On the New-Poll draft page the send button lives in the header's
+          upper-right (`#poll-send-portal`). Elsewhere it renders inline on the
+          draft-stack row (gated by `sendInHeader` above). */}
+      {sendInHeader && pollSendPortals.map(({ key, target }) => createPortal(sendButton, target, key))}
 
       {/* New-poll bottom sheet — slides up from the bottom edge. Top half
           holds the question form; bottom half holds poll-level settings
