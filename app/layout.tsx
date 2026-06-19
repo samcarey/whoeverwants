@@ -180,15 +180,12 @@ export default function RootLayout({
             account gains a recovery identity, or when dismissed. */}
         <RecoveryReminderHost />
 
-        {/* CreateQuestionContent (create-poll search bar + create-poll modal).
-            Lives in the root layout — NOT template — so it persists across
-            route changes. template.tsx re-instantiates on every navigation
-            in App Router, which would unmount + remount this component and
-            cause the bar's portal target to be briefly cleared (visible as
-            "bar blinks after slide"). The bar's `#draft-poll-portal` target
-            itself is rendered by the group page content (GroupContent /
-            EmptyPlaceholder) so the bar rides the page's slide/swipe motion;
-            this host just keeps the portaled bar JSX mounted across routes. */}
+        {/* CreateQuestionContent (the floating "+ Poll" button + New Poll
+            sheet hosting the create-poll search box). Lives in the root
+            layout — NOT template — so it persists across route changes.
+            template.tsx re-instantiates on every navigation in App Router,
+            which would unmount + remount this component and reset the FAB /
+            modal state. */}
         <PersistentCreatePollHost />
 
         {/* iOS Universal Links — converts an `appUrlOpen` event from the

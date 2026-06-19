@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Capacitor } from "@capacitor/core";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   apiCreatePoll,
   apiFindDuplicateQuestion,
@@ -68,7 +69,9 @@ import {
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
+import { EXPLORE_ATTR, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
+import { isGroupRootView } from "@/lib/questionId";
+import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
 import {
   pollLookup,
   BASE_DEADLINE_OPTIONS,
@@ -101,6 +104,11 @@ export const dynamic = 'force-dynamic';
 // auto-grow reset so one line of Notes lines up with the other field rows.
 const SINGLE_LINE_INPUT_HEIGHT = 48;
 
+// Bottom offset for the "+ Poll" FAB — matches the home "+ Group" button so
+// the two share the bottom-right corner (mutually exclusive per route).
+const IS_CAPACITOR_NATIVE =
+  typeof window !== "undefined" && Capacitor.isNativePlatform();
+
 // Sizes the Notes textarea to its content: starts at one line and grows up
 // to ~5 lines, then scrolls. Called on every change AND when the textarea
 // first attaches (callback ref) so it opens at one line instead of rows={N}.
@@ -109,22 +117,6 @@ function autoSizeDetailsTextarea(el: HTMLTextAreaElement) {
   const maxH = 5 * 24 + 24;
   el.style.height = Math.min(el.scrollHeight, maxH) + "px";
   el.style.overflowY = el.scrollHeight > maxH ? "auto" : "hidden";
-}
-
-// Measure the live `env(safe-area-inset-top)` value (notch / status-bar inset)
-// in px via a throwaway probe. Used when focusing the search box to land the
-// pill just below the notch rather than literally at y=0. Works on every page
-// (group / explore / empty placeholder) regardless of which top-bar chrome is
-// mounted, so we don't have to read it off a page-specific header element.
-function measureSafeAreaTop(): number {
-  if (typeof document === "undefined") return 0;
-  const probe = document.createElement("div");
-  probe.style.cssText =
-    "position:fixed;top:0;left:0;height:0;padding-top:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none";
-  document.body.appendChild(probe);
-  const h = probe.getBoundingClientRect().height;
-  probe.remove();
-  return h;
 }
 
 // How long the new-poll sheet body's open-at-top scroll pin stays armed
@@ -139,6 +131,11 @@ const SHEET_SCROLL_PIN_MS = 1200;
 // the pin within a frame or two — before the keyboard-collapse scroll settles.
 // Must comfortably outlast that collapse; a deliberate scroll after it still disarms.
 const SHEET_SCROLL_PIN_GRACE_MS = 550;
+
+// Duration of the question/poll editor sub-panel slide (must match the inline
+// `transition: transform 300ms` on the sub-panel). After sliding out, editMode
+// flips back to 'compose' so the sub-panel unmounts off-screen.
+const SUB_SLIDE_MS = 300;
 
 // Order matches the dropdown inside the modal so muscle memory carries over.
 // The leading "New" button (rendered separately at the start of the row)
@@ -438,6 +435,10 @@ export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  // Hide the "+ Poll" FAB during a group→home swipe-back (shared with the
+  // "+ Group" FAB), so the two don't both occupy the bottom-right corner.
+  const swipeBackActive = useHomeBackdropActive();
   const followUpToParam = searchParams.get('followUpTo');
   const duplicateOfParam = searchParams.get('duplicate');
   const voteFromSuggestionParam = searchParams.get('voteFromSuggestion');
@@ -708,9 +709,17 @@ export function CreateQuestionContent() {
   //     (the draft is the source of truth, so nothing changes on cancel).
   //   'poll' — edit poll-wide settings (cutoff, recurrence, notes, …). ✓ keeps
   //     the edits, ✕ restores the pre-edit snapshot. Neither edit mode sends.
-  type EditMode = { type: 'create' } | { type: 'question'; index: number } | { type: 'poll' };
+  //   'compose' — the new-poll sheet opened by the "+ Poll" FAB. The body
+  //     hosts the search box (staged-question bubbles above the text box) +
+  //     the inline ↑ send button. No header ✓ in this mode (the ↑ sends).
+  type EditMode = { type: 'compose' } | { type: 'create' } | { type: 'question'; index: number } | { type: 'poll' };
   const [editMode, setEditMode] = useState<EditMode | null>(null);
   const isModalOpen = editMode !== null;
+  // Drives the question/poll editor sub-panel's slide: false = off-screen
+  // right, true = slid in over the compose sheet. Toggled false→true on open
+  // and true→false on back/commit (the panel stays mounted through the
+  // slide-out, then editMode flips back to 'compose').
+  const [subSlideIn, setSubSlideIn] = useState(false);
   // The QUESTION form section (category / options / time / per-question
   // settings) shows in 'create' + 'question' edit modes — the modes where the
   // live form represents a real question. The POLL-settings section shows in
@@ -739,17 +748,13 @@ export function CreateQuestionContent() {
   // action carries the full staged-draft list, not just a category.
   const [pendingSearchAction, setPendingSearchAction] = useState<(() => void) | null>(null);
 
-  // --- Poll-creation search box (inline input + dropdown) ----------------
-  // `searchFocused` = the inline box is focused, so its suggestions dropdown
-  // is shown directly below it (see `searchBox`). The box stays in place; the
-  // page is still visible around it. `searchQuery` filters the category rows.
+  // --- Poll-creation search box (lives inside the New Poll sheet) --------
+  // `searchFocused` = the box is focused, so its suggestions dropdown is shown
+  // directly below it (see `searchBox`). The box renders at the bottom of the
+  // sheet body (staged bubbles above it); focusing it just drops the dropdown,
+  // no page-rise/scrim (the sheet is already a focused overlay).
+  // `searchQuery` filters the category rows.
   const [searchFocused, setSearchFocused] = useState(false);
-  // Vertical distance (px) the search pill rises so it lands just below the
-  // notch when focused — measured in onFocus before the keyboard appears. The
-  // whole page animates up by this amount (the pill via its own React
-  // transform, the fixed top-bar chrome via the JS effect below) so the
-  // suggestions get the maximum room beneath the box. 0 when unfocused.
-  const [searchShift, setSearchShift] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   // On-device embedding category hint (augment, never block): a confident result
   // ADDS a category suggestion when the keyword matcher misses (slang/typos). Fed
@@ -768,20 +773,14 @@ export function CreateQuestionContent() {
   // unavailable) → the box falls back to server order + token filtering.
   const [aiScores, setAiScores] = useState<number[] | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  // The create-poll box is a real inline <input> living in the group scroll
-  // (under "Scheduled"). Focusing it stays IN PLACE — the page is still
-  // visible around it — and the suggestions render as a dropdown directly
-  // below the pill. `searchPillRef` anchors that dropdown; its max height is
-  // computed so it ends just above the soft keyboard.
+  // The create-poll box is a real <input> inside the New Poll sheet body.
+  // Focusing it renders the suggestions as a dropdown directly below the pill;
+  // `searchPillRef` anchors that dropdown and its max height is computed so it
+  // ends just above the soft keyboard.
   const searchPillRef = useRef<HTMLDivElement | null>(null);
-  // Defers clearing the slide transition on the top-bar chrome until the
-  // slide-back animation finishes (so we don't leave a permanent
-  // `transition: transform` that would lag the swipe-back gesture).
-  const chromeSlideTimerRef = useRef<number | null>(null);
-  // Viewport-Y the pill's BOTTOM lands at once the page has slid up. Captured
-  // at focus (stable, independent of the in-flight slide animation) so the
-  // dropdown is sized to its full height immediately instead of growing as the
-  // box rises. Only the keyboard appearing changes the room below it.
+  // Viewport-Y the pill's BOTTOM sits at (captured at focus) so the dropdown
+  // is sized to its full height immediately. Only the keyboard appearing
+  // changes the room below it.
   const pillTargetBottomRef = useRef(0);
   const [searchDropdownMaxHeight, setSearchDropdownMaxHeight] = useState(320);
 
@@ -1234,7 +1233,7 @@ export function CreateQuestionContent() {
   // shared `validateQuestionDraft` via a snapshot of the live form, so the
   // modal-edit + ↑ send paths can't drift. Different from getValidationErrorFor
   // (which validates poll-level fields too). Memoized (after readCurrentDraft)
-  // so commitQuestionEdit's useCallback dep stays stable.
+  // so closeSubEdit's useCallback dep stays stable.
   const getCurrentQuestionFormError = useCallback(
     (): string | null => validateQuestionDraft(readCurrentDraft()),
     [readCurrentDraft],
@@ -1310,6 +1309,20 @@ export function CreateQuestionContent() {
     setAllowPlusOnes(null);
     setRecurrence(DEFAULT_RECURRENCE);
   }, []);
+
+  // Open the New Poll sheet (the "+ Poll" FAB). The sheet body hosts the
+  // search box; any already-staged drafts persist (they're shown as bubbles).
+  // Reset the fresh poll-level fields only when starting clean (no drafts),
+  // so re-opening mid-compose doesn't wipe a Notes/recurrence the user set.
+  const openComposeModal = useCallback(() => {
+    if (drafts.length === 0) {
+      applyDraftToState(emptyDraft());
+      resetFreshPollFields();
+    }
+    setError(null);
+    setSendError(null);
+    setEditMode({ type: 'compose' });
+  }, [drafts.length, applyDraftToState, resetFreshPollFields]);
 
   const discardAndClose = useCallback(() => {
     applyDraftToState(emptyDraft());
@@ -1430,8 +1443,15 @@ export function CreateQuestionContent() {
     setSendError(null);
   }, []);
 
-  // Tap a question bubble → open the modal showing ONLY that question's form.
-  // The draft is loaded into the live form; ✓ commits it back, ✕ cancels.
+  // Slide the editor sub-panel in: mount it off-screen (subSlideIn=false) then,
+  // after the mount paints, flip to true so the transform transition runs.
+  const slideInSub = useCallback(() => {
+    setSubSlideIn(false);
+    requestAnimationFrame(() => requestAnimationFrame(() => setSubSlideIn(true)));
+  }, []);
+
+  // Tap a question bubble → slide in the editor showing ONLY that question's
+  // form. The draft is loaded into the live form; ✓ commits it back, ← cancels.
   const openQuestionEdit = useCallback((index: number) => {
     const draft = drafts[index];
     if (!draft) return;
@@ -1439,108 +1459,46 @@ export function CreateQuestionContent() {
     setError(null);
     collapseSearchBox();
     setEditMode({ type: 'question', index });
-  }, [drafts, applyDraftToState, collapseSearchBox]);
+    slideInSub();
+  }, [drafts, applyDraftToState, collapseSearchBox, slideInSub]);
 
-  // Tap the combined poll-title bubble → open the modal showing ONLY the
-  // poll-wide settings. A snapshot is captured so ✕ can revert.
+  // Tap the combined poll-title bubble → slide in the poll-wide settings.
+  // A snapshot is captured so ← can revert.
   const openPollEdit = useCallback(() => {
     capturePollSnapshot();
     setError(null);
     collapseSearchBox();
     setEditMode({ type: 'poll' });
-  }, [capturePollSnapshot, collapseSearchBox]);
+    slideInSub();
+  }, [capturePollSnapshot, collapseSearchBox, slideInSub]);
 
-  // Commit a question-edit: validate the live form, write it back to the draft,
-  // close. Does NOT send.
-  const commitQuestionEdit = useCallback((index: number) => {
-    const subErr = getCurrentQuestionFormError();
-    if (subErr) { setError(subErr); return; }
-    const updated = readCurrentDraft();
-    setDrafts((prev) => prev.map((d, i) => (i === index ? updated : d)));
-    setSendError(null);
-    setError(null);
-    setEditMode(null);
-  }, [getCurrentQuestionFormError, readCurrentDraft]);
-
-  // Commit a poll-settings edit: the controls already wrote component state, so
-  // just clear the snapshot and close. Does NOT send.
-  const commitPollEdit = useCallback(() => {
-    pollSnapshotRef.current = null;
-    setError(null);
-    setEditMode(null);
-  }, []);
-
-  // While the box is focused, dim + disable AND SLIDE UP the app's FIXED
-  // top-bar chrome so the whole page reads as having moved up to bring the
-  // search box to the top (maximizing the room below it for suggestions).
-  // The content area (polls, CTAs) is covered by the `bg-black/20` scrim in
-  // `searchBox`, but the top bar paints above that scrim's stacking context,
-  // so it can't be reached by the scrim — dim it here to match. We use
-  // `filter: brightness(0.8)` rather than `opacity` because opacity only fades
-  // the bar's dark text/icons while its white background stays bright (so it
-  // reads brighter than the washed polls); `brightness(0.8)` is mathematically
-  // identical to a 20%-black overlay (compositing black at alpha 0.2 over a
-  // color C yields C*0.8), so the bar darkens EXACTLY like the `bg-black/20`
-  // polls. The `translateY(-searchShift)` slides the bar up by the same amount
-  // the pill rises (the pill rides its own React transform in `searchBox`), so
-  // they move together. Inline styles survive React re-renders: React only
-  // reconciles the style keys it owns (paddingTop on the group header), never
-  // the pointer-events/filter/transform/transition we add. Covers the group
-  // header, the explore/header-portal bar, and the dev badge. Runs on both
-  // focus AND blur so the slide animates back out; the transition is cleared a
-  // beat after the slide-back so it can't lag the swipe-back gesture (which
-  // also writes `transform` to the group header).
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    // Two groups, both translated up by the SAME `searchShift` so the page
-    // moves rigidly:
-    //  - chrome: the fixed top-bar elements — also DIMMED (they paint above
-    //    the scrim so the scrim can't reach them).
-    //  - content: the scrollable page-content wrapper (header-cleared box +
-    //    polls). NOT dimmed — it sits behind the scrim already; translating it
-    //    is what carries the box + poll list up together.
-    const chrome = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        '[data-group-header], #header-portal, #commit-badge-portal',
-      ),
-    );
-    const content = Array.from(
-      document.querySelectorAll<HTMLElement>(`[${POLL_PAGE_SCROLL_ATTR}]`),
-    );
-    const all = [...chrome, ...content];
-    if (chromeSlideTimerRef.current) {
-      clearTimeout(chromeSlideTimerRef.current);
-      chromeSlideTimerRef.current = null;
+  // Close the editor sub-panel and slide it back to the compose sheet.
+  //   commit=true  → validate (question) / keep (poll) the edits, write back.
+  //   commit=false → discard: question is untouched; poll restores its snapshot.
+  // A failing question validation surfaces the error and stays open (no slide).
+  // The panel stays mounted through the slide-out, then editMode → 'compose'.
+  const closeSubEdit = useCallback((commit: boolean) => {
+    const mode = editMode;
+    if (mode?.type === 'question') {
+      if (commit) {
+        const subErr = getCurrentQuestionFormError();
+        if (subErr) { setError(subErr); return; }
+        const updated = readCurrentDraft();
+        setDrafts((prev) => prev.map((d, i) => (i === mode.index ? updated : d)));
+        setSendError(null);
+      }
+    } else if (mode?.type === 'poll') {
+      if (commit) pollSnapshotRef.current = null;
+      else restorePollSnapshot();
     }
-    if (searchFocused) {
-      chrome.forEach((el) => {
-        el.style.transition = 'filter 150ms ease-out, transform 250ms ease';
-        el.style.pointerEvents = 'none';
-        el.style.filter = 'brightness(0.8)';
-        el.style.transform = `translateY(-${searchShift}px)`;
-      });
-      content.forEach((el) => {
-        el.style.transition = 'transform 250ms ease';
-        el.style.transform = `translateY(-${searchShift}px)`;
-      });
-    } else {
-      // Animate back (the transition set during focus is still in place), then
-      // clear it so a later swipe-back's imperative transform isn't animated.
-      all.forEach((el) => {
-        el.style.transform = '';
-      });
-      chrome.forEach((el) => {
-        el.style.pointerEvents = '';
-        el.style.filter = '';
-      });
-      chromeSlideTimerRef.current = window.setTimeout(() => {
-        all.forEach((el) => {
-          el.style.transition = '';
-        });
-        chromeSlideTimerRef.current = null;
-      }, 280);
-    }
-  }, [searchFocused, searchShift]);
+    setError(null);
+    setSubSlideIn(false);
+    window.setTimeout(() => setEditMode({ type: 'compose' }), SUB_SLIDE_MS);
+  }, [editMode, getCurrentQuestionFormError, readCurrentDraft, restorePollSnapshot]);
+
+  // (The search box used to live inline on the group page and rise/dim the
+  // page chrome on focus; now it lives inside the New Poll sheet — a focused
+  // overlay — so none of that page-rise/scrim machinery is needed.)
 
   // Read showDiscardConfirm via a ref inside the Escape handler so toggling
   // the inner confirm dialog doesn't tear down + rebuild the body-position
@@ -1551,94 +1509,27 @@ export function CreateQuestionContent() {
   }, [showDiscardConfirm]);
 
   // `position: fixed` on body (vs. `overflow: hidden`) is required to
-  // block iOS pull-to-refresh from bypassing the lock.
-  //
-  // Also lock while the inline search box is focused: pinning the page (vs
-  // letting iOS auto-scroll the focused input into view) is what keeps the box
-  // exactly where it is, with the dropdown anchored below it. The lock
-  // snapshots `scrollY` on engage and restores it on release, so opening +
-  // cancelling leaves the group's scroll untouched. `locked` stays true across
-  // the focus → modal-open transition (searchFocused flips false as isModalOpen
-  // flips true in the same batch), so the snapshot carries through without a
-  // teardown/flicker.
-  useBodyScrollLock(isModalOpen || searchFocused, false);
+  // block iOS pull-to-refresh from bypassing the lock. The sheet (which hosts
+  // the search box) is the only thing that locks the page now — focusing the
+  // box inside it is covered by isModalOpen.
+  useBodyScrollLock(isModalOpen, false);
 
-  // Escape closes the sheet (preserving state). Skip when the inner
+  // Escape: when the question/poll editor sub-panel is open, slide it back
+  // (discarding); otherwise close the sheet. Skip when the inner
   // ConfirmationModal is open — its own document-level Escape handler runs
   // too, and we don't want one Escape to dismiss both.
   useEffect(() => {
     if (!isModalOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
-      // Edit modes revert (poll-settings restore their snapshot); 'create'
-      // keeps state. cancelModal handles both.
-      if (e.key === 'Escape' && !showDiscardConfirmRef.current) cancelModal();
+      if (e.key !== 'Escape' || showDiscardConfirmRef.current) return;
+      if (editMode?.type === 'question' || editMode?.type === 'poll') closeSubEdit(false);
+      else cancelModal();
     };
     document.addEventListener('keydown', handleEsc);
     return () => {
       document.removeEventListener('keydown', handleEsc);
     };
-  }, [isModalOpen, cancelModal]);
-
-  // Portal targets for the create-poll search bar. The `#draft-poll-portal`
-  // is rendered by the group page CONTENT (GroupContent / EmptyPlaceholder),
-  // NOT at the layout level, so the fixed bar rides the page's motion: it
-  // slides in with a slide overlay (it's inside the overlay's `contain:
-  // strict` box) and is revealed with the swipe-back backdrop, exactly like
-  // the fixed GroupHeader.
-  //
-  // Re-queried via a MutationObserver that stays armed for the full
-  // component lifetime — the target node mounts / unmounts as the route
-  // changes (and the loading-spinner / no-access early-returns inside
-  // GroupContent omit it), so a self-disconnecting observer could leave us
-  // holding a stale reference pointing at a detached node.
-  //
-  // We render into EVERY `#draft-poll-portal` found, not just the last.
-  // During a slide overlay's post-commit overlap window the destination's
-  // GroupContent renders one target while the overlay's copy still renders
-  // another; both bars are identical fixed pills at the same position, so
-  // they coincide (no visible doubling) and the bar never blinks through a
-  // portal-target swap when the overlay unmounts.
-  //
-  // The listener runs synchronously on every mutation (no rAF
-  // coalescing). React still no-op-renders when the list of portal
-  // targets is unchanged (reference-equality on every entry via the
-  // arraysShallowEqual check), so typing / scrolling don't trigger
-  // re-renders even though the listener fires on every body-subtree
-  // mutation.
-  // Stable React keys per portal target (NOT positional indexes). When a
-  // target is removed from the front of the list, index-based keys would
-  // shift survivors and force React to teardown + remount their bubble
-  // bar subtree — exactly the kind of churn this whole effect is trying
-  // to avoid. WeakMap + counter assign each DOM node a permanent id;
-  // assignment happens inside the effect's callback so refs aren't read
-  // during render.
-  const [draftPollPortals, setDraftPollPortals] = useState<Array<{ key: string; target: HTMLElement }>>([]);
-  useEffect(() => {
-    const keys = new WeakMap<HTMLElement, string>();
-    let nextKey = 0;
-    const keyFor = (target: HTMLElement): string => {
-      let k = keys.get(target);
-      if (k === undefined) {
-        k = String(++nextKey);
-        keys.set(target, k);
-      }
-      return k;
-    };
-    const entriesShallowEqual = (
-      a: Array<{ key: string; target: HTMLElement }>,
-      b: Array<{ key: string; target: HTMLElement }>,
-    ) => a.length === b.length && a.every((x, i) => x.target === b[i].target);
-    const check = () => {
-      const all = Array.from(
-        document.querySelectorAll<HTMLElement>(`#${DRAFT_POLL_PORTAL_ID}`)
-      ).map(target => ({ key: keyFor(target), target }));
-      setDraftPollPortals(prev => (entriesShallowEqual(prev, all) ? prev : all));
-    };
-    const observer = new MutationObserver(check);
-    observer.observe(document.body, { childList: true, subtree: true });
-    check();
-    return () => observer.disconnect();
-  }, []);
+  }, [isModalOpen, editMode, cancelModal, closeSubEdit]);
 
   // Track the current group (the group page sets `<body data-group-id>`)
   // so the category bubble bar can fetch + apply that group's recency
@@ -2873,12 +2764,13 @@ export function CreateQuestionContent() {
     doSend();
   };
 
-  // The modal ✓ button: submit (create mode) / commit the draft (question edit)
-  // / keep the poll-settings edit (poll edit). Only create mode sends.
+  // The BASE sheet header's upper-right action: send the staged poll
+  // (compose) or submit the in-progress form (legacy create mode). The
+  // question/poll sub-editors have their OWN ✓ (→ closeSubEdit), so this
+  // only ever fires while the base panel is showing.
   const handleModalCheck = (e: React.MouseEvent) => {
-    if (editMode?.type === 'create') { handleSubmitClick(e); return; }
-    if (editMode?.type === 'question') { commitQuestionEdit(editMode.index); return; }
-    if (editMode?.type === 'poll') { commitPollEdit(); return; }
+    if (editMode?.type === 'create') handleSubmitClick(e);
+    else if (editMode?.type === 'compose') handleSendPoll();
   };
 
   // Empty-state hint shown in the title-preview slot above the form card,
@@ -3174,82 +3066,52 @@ export function CreateQuestionContent() {
   // re-renders on many unrelated events) recomputes it only when drafts change.
   const pollPreviewTitle = useMemo(() => draftPollPreview(drafts, '').title, [drafts]);
 
-  // Round ↑ "create poll" button. Lives on the single-question row, or moves to
-  // the combined poll-title row once a second question is staged. Reused across
-  // those mutually-exclusive branches (never rendered twice at once).
-  const sendButton = (
-    <button
-      type="button"
-      onClick={handleSendPoll}
-      disabled={isLoading || drafts.length === 0}
-      aria-label="Create poll"
-      className="shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-blue-500 text-white disabled:opacity-50 active:scale-95"
-    >
-      {isLoading ? (
-        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-        </svg>
-      ) : (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
-        </svg>
-      )}
-    </button>
-  );
-
-  // Staged-draft bubbles, rendered above the search input. 1 draft → one bubble
-  // + ↑ send on its row. 2+ drafts → a combined poll-title bubble on top (tap to
-  // edit poll-wide settings; ↑ send moves here) over one bubble per question.
-  // Tapping a question bubble edits it; × removes it.
+  // Staged-draft bubbles, rendered above the search input. 2+ drafts → a
+  // combined poll-title bubble on top (tap to edit poll-wide settings) over one
+  // bubble per question. Tapping a question bubble edits it; × removes it. The
+  // poll is sent via the ↑ button in the sheet's upper-right corner.
   const draftStack = drafts.length > 0 ? (
-    <div className="px-3 pt-2 space-y-2">
+    <div className="pt-2 space-y-2">
       {drafts.length > 1 && (
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={openPollEdit}
-            disabled={isLoading}
-            aria-label="Edit poll settings"
-            className="flex-1 min-w-0 text-left rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-4 py-2.5 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"
-          >
-            <span className="block truncate text-base font-semibold">
-              {pollPreviewTitle}
-            </span>
-          </button>
-          {sendButton}
-        </div>
+        <button
+          type="button"
+          onClick={openPollEdit}
+          disabled={isLoading}
+          aria-label="Edit poll settings"
+          className="block w-full text-left rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-4 py-2.5 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"
+        >
+          <span className="block truncate text-base font-semibold">
+            {pollPreviewTitle}
+          </span>
+        </button>
       )}
       {drafts.map((d, i) => {
         const segs = annotateSegments(draftTitleSegments(d));
         const hasLabel = segs.some((seg) => seg.label);
         return (
-          <div key={i} className="flex items-center gap-2">
-            <div className="flex-1 min-w-0 flex items-center rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-4 pr-1">
-              <button
-                type="button"
-                onClick={() => openQuestionEdit(i)}
-                disabled={isLoading}
-                aria-label="Edit question"
-                className="flex-1 min-w-0 text-left py-2.5 disabled:opacity-50"
-              >
-                <span className={`relative block overflow-hidden whitespace-nowrap text-base ${hasLabel ? 'pt-3' : ''}`}>
-                  {renderSegmentSpans(segs)}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => removeDraft(i)}
-                disabled={isLoading}
-                aria-label="Remove question"
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 disabled:opacity-50"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            {drafts.length === 1 && sendButton}
+          <div key={i} className="flex-1 min-w-0 flex items-center rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-4 pr-1">
+            <button
+              type="button"
+              onClick={() => openQuestionEdit(i)}
+              disabled={isLoading}
+              aria-label="Edit question"
+              className="flex-1 min-w-0 text-left py-2.5 disabled:opacity-50"
+            >
+              <span className={`relative block overflow-hidden whitespace-nowrap text-base ${hasLabel ? 'pt-3' : ''}`}>
+                {renderSegmentSpans(segs)}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => removeDraft(i)}
+              disabled={isLoading}
+              aria-label="Remove question"
+              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 disabled:opacity-50"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         );
       })}
@@ -3259,60 +3121,28 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
+  // The poll-creation search box, rendered inside the New Poll sheet (compose
+  // mode): staged-question bubbles above, the text box below. `relative`
+  // anchors the suggestions dropdown directly below the pill; the dropdown's
+  // max-height is bounded above the soft keyboard.
   const searchBox = (
     <>
       {draftStack}
-      {/* While focused, a slightly-dimmed scrim covers the rest of the page
-          (polls, CTAs, the area behind the top bar) so the background reads as
-          backgrounded + non-interactive — tapping it dismisses the search. The
-          fixed top bar paints above this scrim's stacking context, so it's
-          dimmed + disabled separately in the JS effect above. `fixed inset-0`
-          is trapped to the swipe wrapper's will-change:transform box, covering
-          the content area; z-40 sits below the box (z-50) and above the
-          polls. */}
-      {searchFocused && (
-        <div
-          className="fixed left-0 right-0 z-40 bg-black/20"
-          aria-hidden
-          // The scrim lives inside the page content (its containing block is
-          // the swipe wrapper, which is translated up by `searchShift` while
-          // focused). Extend it far past the viewport top/bottom (vs `inset-0`)
-          // so it still covers the whole screen after that translate — without
-          // this it'd slide up too and leave an undimmed strip at the bottom.
-          style={{ top: '-100vh', bottom: '-100vh' }}
-          onPointerDown={() => searchInputRef.current?.blur()}
-        />
-      )}
-      {/* When focused, elevate the pill + dropdown above the scrim (z-50). The
-          pill does NOT carry its own transform — the ENTIRE page content
-          (this box, the polls, and the top-bar chrome) is translated up
-          rigidly by `searchShift` via the JS effect above, so the box reaches
-          the top without moving relative to the rest of the page. */}
-      <div className={`px-3 py-2 relative ${searchFocused ? 'z-50' : ''}`}>
-      {/* `relative` anchors the absolute dropdown directly below the pill. */}
-      <div ref={searchPillRef} className="relative">
-        {/* The real inline input pill — full width, stays in place when
-            focused. Tapping outside (blur) closes the dropdown. */}
-        <div className="flex items-center h-[42.24px] rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4">
+      <div ref={searchPillRef} className="relative py-2">
+        {/* The input pill — fills the sheet card width; `bg-white` so it
+            stands out against the gray sheet body. */}
+        <div className="flex items-center h-[42.24px] rounded-full bg-white dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4">
           <input
             ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => {
-              // Measure how far the page must rise so the pill sits just below
-              // the notch, BEFORE the keyboard appears / the page is
-              // scroll-locked (the pill is still at its resting position). The
-              // whole page content + the top-bar chrome then animate up by this
-              // amount, bringing the box to the top and giving the suggestions
-              // the maximum room below. Batched with setSearchFocused so both
-              // land in one render.
+              // Anchor the dropdown's max-height to the pill's current bottom
+              // (the sheet doesn't move the box on focus); the keyboard top
+              // bounds it from below.
               const rect = searchPillRef.current?.getBoundingClientRect();
-              const target = measureSafeAreaTop() + 4; // where the pill TOP lands
-              setSearchShift(rect ? Math.max(0, rect.top - target) : 0);
-              // The pill BOTTOM ends at target + its (transform-invariant)
-              // height — a stable anchor for the dropdown's max height.
-              pillTargetBottomRef.current = rect ? target + rect.height : 0;
+              pillTargetBottomRef.current = rect ? rect.bottom : 0;
               setSearchFocused(true);
             }}
             // Collapse on blur (closes the dropdown + dismisses the keyboard).
@@ -3327,9 +3157,8 @@ export function CreateQuestionContent() {
             className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
           />
         </div>
-        {/* Suggestions dropdown — directly below the box, overlaying the polls
-            beneath (bg-background + border, no shadow) so the rest of the page
-            stays visible around it. Bounded above the keyboard. */}
+        {/* Suggestions dropdown — directly below the box, bounded above the
+            soft keyboard. */}
         {searchFocused && searchDropdownRows.length > 0 && (
           <div
             className="absolute left-0 right-0 top-full mt-2 z-50 overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background py-1"
@@ -3339,88 +3168,41 @@ export function CreateQuestionContent() {
           </div>
         )}
       </div>
-      </div>
     </>
   );
 
-  return (
-    <div className="question-content">
-      {draftPollPortals.map(({ key, target }) => createPortal(searchBox, target, key))}
+  // The "+ Poll" FAB — mirrors the home "+ Group" button, shown on the
+  // group-root / empty-placeholder / explore surfaces (where a poll can be
+  // created). Tapping it opens the New Poll sheet (compose mode) whose body
+  // hosts the search box. Hidden during a group→home swipe-back so it doesn't
+  // collide with the revealed "+ Group" button.
+  const fabTarget =
+    isClient && typeof document !== "undefined"
+      ? document.getElementById("floating-fab-portal")
+      : null;
+  const showPollFab =
+    isClient && !swipeBackActive && (isGroupRootView(pathname) || pathname === "/explore");
 
-      {/* New-poll bottom sheet — slides up from the bottom edge. Top half
-          holds the question form; bottom half holds poll-level settings
-          (voting cutoff, prephase cutoff, notes, voter name). Each section
-          is a borderless rounded card with a lighter bg than the sheet so
-          the two read as stacked panels. The check button submits the
-          whole poll immediately (single-question mode); backdrop / Escape
-          dismisses. */}
-      {isModalOpen && (
-        <ModalPortal>
-          <div className="fixed inset-0 z-[60] flex items-end justify-center">
-            {/* Backdrop — tap to dismiss. Edit modes cancel without applying
-                (poll-settings restore their snapshot); create mode keeps state. */}
-            <div
-              className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
-              onClick={cancelModal}
-              aria-hidden="true"
-            />
-            {/* Sheet panel — anchored to the bottom edge with rounded top
-                corners. Slides up on mount via the shared `slide-up`
-                keyframe in globals.css. */}
-            <div
-              className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col animate-slide-up"
-              style={{ height: 'calc(100dvh - 70px)' }}
-              role="dialog"
-              aria-modal="true"
-              aria-label="New poll"
-            >
-              <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
-                <button
-                  type="button"
-                  onClick={handleCloseClick}
-                  disabled={isLoading}
-                  aria-label="Close poll form"
-                  className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-                <span className="text-lg font-semibold select-none">
-                  {editMode?.type === 'poll'
-                    ? 'Poll Settings'
-                    : editMode?.type === 'question'
-                      ? 'Edit Question'
-                      : 'New Poll'}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleModalCheck}
-                  // Create mode requires draftable content to submit; the two
-                  // edit modes always allow ✓ (commit / keep).
-                  disabled={isLoading || isSubmitted || (editMode?.type === 'create' && !inlineFormHasDraftableContent)}
-                  aria-label={editMode?.type === 'create' ? 'Submit poll' : 'Save'}
-                  className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isSubmitted || isLoading ? (
-                    <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : (
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </button>
-              </div>
+  const isSubEdit = editMode?.type === 'question' || editMode?.type === 'poll';
+  // The base sheet shows compose (search box) for the FAB flow and for the
+  // question / poll editors (which slide in OVER it); only the create-prefill
+  // flow shows the full form as the base.
+  const baseIsCompose = editMode?.type !== 'create';
 
-              {/* Sheet body — scrollable when content overflows. Holds the
-                  two stacked section cards with a small gap between them.
-                  Bottom padding reserves breathing room above the sheet's
-                  bottom edge so the last form field doesn't sit flush with
-                  the rounded corner when scrolled to bottom. */}
-              <div ref={setSheetScrollerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
+  const errorBlock = error ? (
+    <div className="p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
+      {error}
+    </div>
+  ) : null;
+
+  // Question / poll form sections — rendered in the create-prefill sheet (base)
+  // and in the slide-in sub-panel (question / poll edit). Internally gated on
+  // showQuestionSection / showPollSection so each mode shows the right parts
+  // (create: both; question: the question form; poll: the settings). Built only
+  // when actually shown (null in compose / when closed) to avoid constructing
+  // the whole form tree on every render of this layout-level component.
+  const formSections = (editMode?.type === 'create' || isSubEdit) ? (
+    <>
                 {showQuestionSection ? (
                   // Question header: emoji + this question's (live) title preview.
                   <div className="text-center px-2 pt-1 break-words min-h-8 flex items-center justify-center gap-2">
@@ -3873,13 +3655,160 @@ export function CreateQuestionContent() {
                   </section>
                 </div>
                 </>)}
+    </>
+  ) : null;
 
-                {error && (
-                  <div className="p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
-                    {error}
-                  </div>
-                )}
+  return (
+    <div className="question-content">
+      {fabTarget &&
+        createPortal(
+          <button
+            onClick={openComposeModal}
+            className="fixed h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
+            style={{
+              zIndex: 50,
+              right: "max(1.5rem, env(safe-area-inset-right, 0px))",
+              bottom: IS_CAPACITOR_NATIVE ? "2.65rem" : "1.9rem",
+              transform: "translateZ(0)",
+              visibility: showPollFab ? "visible" : "hidden",
+              pointerEvents: showPollFab ? "auto" : "none",
+            }}
+            aria-label="Create new poll"
+            aria-hidden={!showPollFab}
+            tabIndex={showPollFab ? 0 : -1}
+          >
+            <span aria-hidden="true" className="text-[28.8px] leading-none">
+              +
+            </span>
+            <span className="text-lg leading-none">Poll</span>
+          </button>,
+          fabTarget,
+        )}
+
+      {/* New-poll bottom sheet — slides up from the bottom edge. Top half
+          holds the question form; bottom half holds poll-level settings
+          (voting cutoff, prephase cutoff, notes, voter name). Each section
+          is a borderless rounded card with a lighter bg than the sheet so
+          the two read as stacked panels. The check button submits the
+          whole poll immediately (single-question mode); backdrop / Escape
+          dismisses. */}
+      {isModalOpen && (
+        <ModalPortal>
+          <div className="fixed inset-0 z-[60] flex items-end justify-center">
+            {/* Backdrop — tap to dismiss. With the editor sub-panel open, a
+                tap slides it back (discarding) rather than closing the sheet. */}
+            <div
+              className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
+              onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
+              aria-hidden="true"
+            />
+            {/* Sheet panel — anchored to the bottom edge with rounded top
+                corners. `overflow-hidden` clips the editor sub-panel while it's
+                slid off-screen to the right. Slides up on mount via the shared
+                `slide-up` keyframe in globals.css. */}
+            <div
+              className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up"
+              style={{ height: 'calc(100dvh - 70px)' }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="New poll"
+            >
+              {/* BASE sheet header — ✕ close (left), title, and the
+                  upper-right action: ↑ SEND in compose (disabled until a
+                  question is staged) or ✓ SUBMIT in the create-prefill flow. */}
+              <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                <button
+                  type="button"
+                  onClick={handleCloseClick}
+                  disabled={isLoading}
+                  aria-label="Close poll form"
+                  className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                <span className="text-lg font-semibold select-none">New Poll</span>
+                <button
+                  type="button"
+                  onClick={handleModalCheck}
+                  disabled={
+                    isLoading ||
+                    isSubmitted ||
+                    (baseIsCompose ? drafts.length === 0 : !inlineFormHasDraftableContent)
+                  }
+                  aria-label={baseIsCompose ? 'Create poll' : 'Submit poll'}
+                  className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isSubmitted || isLoading ? (
+                    <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : baseIsCompose ? (
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
               </div>
+
+              {/* BASE body: search box (compose) or the full form (create). */}
+              <div ref={setSheetScrollerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
+                {baseIsCompose ? searchBox : formSections}
+                {errorBlock}
+              </div>
+
+              {/* SUB-PANEL: the question / poll editor, slid in from the right
+                  OVER the compose sheet. ← (upper-left) discards + slides back;
+                  ✓ (upper-right) commits + slides back. */}
+              {isSubEdit && (
+                <div
+                  className="absolute inset-0 bg-gray-100 dark:bg-gray-900 rounded-t-3xl flex flex-col"
+                  style={{
+                    transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
+                    transition: 'transform 300ms ease',
+                  }}
+                  role="dialog"
+                  aria-modal="true"
+                >
+                  <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                    <button
+                      type="button"
+                      onClick={() => closeSubEdit(false)}
+                      disabled={isLoading}
+                      aria-label="Back"
+                      className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <span className="text-lg font-semibold select-none">
+                      {editMode?.type === 'poll' ? 'Poll Settings' : 'Edit Question'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => closeSubEdit(true)}
+                      disabled={isLoading}
+                      aria-label="Save changes"
+                      className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
+                    {formSections}
+                    {errorBlock}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </ModalPortal>

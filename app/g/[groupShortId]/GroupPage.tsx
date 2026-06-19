@@ -32,7 +32,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
-import { GROUP_ID_ATTR, DRAFT_POLL_PORTAL_ID, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
+import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { useDeadlineTick } from "@/lib/useDeadlineTick";
@@ -291,14 +291,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
     }
   }, [group?.groupId]);
 
-  // The create-poll bar's access gating is structural: GroupContent only
-  // renders the `#draft-poll-portal` (below) in its loaded-with-access main
-  // return. The loading spinner and the no-access wall (`error || !group`)
-  // return early WITHOUT the portal, so the bar can't appear there.
-
   // "No one else is here yet" CTAs: when the viewer is this group's admin
   // AND its only member (a freshly-created group), float two big buttons —
-  // Add People / Create Invite Link — just above the create-poll search bar.
+  // Add People / Create Invite Link — near the top of the list.
   // `participantNames`/`anonymousRespondentCount` (poll voters, viewer
   // excluded) are a cheap client-side pre-filter: any OTHER participant means
   // the group can't be solo, so the roster round-trip only fires on
@@ -1014,12 +1009,8 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // made it visually collide with the (statically positioned) settings
   // gear at the viewport's left edge.
   const upArrowRef = useRef<HTMLButtonElement | null>(null);
-  // The create-poll search pill is portaled into `#draft-poll-portal`, which
-  // GroupContent now renders INLINE in the cards wrapper (under "Scheduled").
-  // Living inside the swipe wrapper means it rides the gesture transform for
-  // free — no `extraTargets` entry needed. Its focused full-screen picker is
-  // body-portalled separately (see CreateQuestionContent), so the swipe
-  // wrapper's `will-change: transform` containing block never traps it.
+  // New polls are created via the floating "+ Poll" button (CreateQuestionContent
+  // in the root layout), which opens the New Poll sheet hosting the search box.
   const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
     headerRef,
     extraTargets: [upArrowRef],
@@ -1979,13 +1970,6 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
         ref={swipeWrapperRef}
         {...swipeTouchHandlers}
         className="touch-pan-y"
-        // Marker so the create-poll search box (root layout) can translate the
-        // whole page content up when it's focused, carrying the box + poll list
-        // together (see the focus effect in app/create-poll/page.tsx). The
-        // imperative transform it writes here is safe: `transform` is not in
-        // this element's React style, and the swipe gesture (the only other
-        // imperative transform writer) can't run while the box is focused.
-        {...{ [POLL_PAGE_SCROLL_ATTR]: '' }}
         style={{
           willChange: 'transform',
           position: 'relative',
@@ -2015,10 +1999,10 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
       <div
         style={{
           paddingTop: `calc(${headerHeight}px + var(--group-card-gap, 0px))`,
-          // The create-poll pill is now inline at the top of the scroll (not a
-          // floating bottom bar), so the list just needs normal bottom
-          // breathing room rather than a reserved panel height.
-          paddingBottom: '1.5rem',
+          // Reserve room at the bottom for the floating "+ Poll" button so it
+          // doesn't cover the last card when scrolled to the bottom (matches
+          // the home page's clearance for the "+ Group" button).
+          paddingBottom: '6rem',
           // Saved-scroll restore uses `overlayCardsOffset`; a fresh-nav
           // overlay has no offset (shows the top, matching the real route's
           // fresh-visit scroll-to-top). Undefined means no transform.
@@ -2028,15 +2012,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           willChange: cardsTransformOffset ? 'transform' : undefined,
         }}
       >
-        {/* New-poll create box — inline at the top of the scroll, above the
-            To Do section. CreateQuestionContent (root layout) portals the
-            search input into this target; focusing it drops a suggestions
-            dropdown below it. Living inline in the cards wrapper means it
-            scrolls with the content and rides the swipe/slide transforms for
-            free. The min-height reserves the input's height (42.24px + py-2)
-            so content below doesn't jump when CreateQuestionContent portals
-            the input in a frame after this empty div mounts. */}
-        <div id={DRAFT_POLL_PORTAL_ID} style={{ minHeight: '3.64rem' }} />
+        {/* New polls are created via the floating "+ Poll" button (which opens
+            the New Poll sheet hosting the create-poll search box) — see
+            CreateQuestionContent in the root layout. */}
 
         {/* Solo-group CTAs — the creator is the only member, so surface the
             two ways to bring people in, UNDERNEATH the new-poll box. Subtle
