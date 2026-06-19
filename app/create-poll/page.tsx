@@ -16,6 +16,7 @@ import {
 import type { Poll, OptionsMetadata, Question } from "@/lib/types";
 import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isAutocompleteCategory, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
+import KeyboardSuggestionPicker from "@/components/KeyboardSuggestionPicker";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import AccountGateModal from "@/components/AccountGateModal";
 import { useAppPrefetch } from "@/lib/prefetch";
@@ -3249,13 +3250,9 @@ export function CreateQuestionContent() {
   const SEARCH_ROW_CLASS =
     "w-full flex items-center gap-[11.2px] pl-[14px] pr-5 py-1.5 text-left active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
 
-  // searchSuggestions is ordered best-LAST; reverse it so the best match is
-  // FIRST — i.e. topmost in the dropdown, nearest the box above it. Built only
-  // while focused (the dropdown is hidden otherwise): this component is
-  // layout-level + persistent, so it re-renders on many unrelated events, and
-  // building N suggestion buttons every time when the box isn't even open is
-  // wasted work.
-  const searchDropdownRows = (searchFocused ? [...searchSuggestions].reverse() : []).map((s) => {
+  // One suggestion row. Used by both the inline dropdown (below the box) and the
+  // composer picker (above the box) — only the ORDER of the list differs.
+  const renderSuggestionRow = (s: typeof searchSuggestions[number]) => {
     // Rows with an annotation label reserve `pt-3` above BOTH the icon and the
     // text so the label has room AND the two stay vertically centered.
     const hasLabel = s.segments.some((seg) => seg.label);
@@ -3302,7 +3299,18 @@ export function CreateQuestionContent() {
         )}
       </button>
     );
-  });
+  };
+
+  // searchSuggestions is ordered best-LAST. Built only while focused (the
+  // dropdown / picker is hidden otherwise): this layout-level + persistent
+  // component re-renders on many unrelated events, and building N buttons when
+  // the box isn't open is wasted work.
+  //   - inline dropdown (box on TOP, list below): best FIRST → topmost, nearest
+  //     the box above it. So reverse.
+  //   - composer picker (box at BOTTOM above the keyboard, list above): best LAST
+  //     → bottom of the list, nearest the box below it. So keep order.
+  const searchDropdownRows = (searchFocused ? [...searchSuggestions].reverse() : []).map(renderSuggestionRow);
+  const composerRows = (searchFocused ? searchSuggestions : []).map(renderSuggestionRow);
 
   // Combined poll title — shown on the draft-stack poll bubble AND the
   // poll-edit modal header. Memoized so this layout-level component (which
@@ -3401,26 +3409,22 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
-  // The search box + staged-draft bubbles + suggestions dropdown. Rendered in
-  // TWO modes:
-  //  - sheetMode=true  — inside the composer bottom sheet (the "+ Poll" flow).
-  //    No scrim / page-rise (the sheet IS the modal + the box is already at the
-  //    top); the dropdown sits in normal flow inside the scrolling sheet body;
-  //    the box prefocuses on mount (setSearchInputEl) and stays "focused" for
-  //    the sheet's life (sheet-mode blur doesn't flip searchFocused off).
-  //  - sheetMode=false — portaled inline on /explore + the /g/ empty placeholder
-  //    (the legacy in-flow box: scrim + rigid page-rise + absolute dropdown
-  //    bounded above the keyboard).
-  const renderSearchBox = (sheetMode: boolean) => (
+  // The INLINE search box (portaled onto /explore + the /g/ empty placeholder).
+  // Focusing it stays IN PLACE: a scrim covers the page + the whole page rises
+  // rigidly (searchShift) so the box reaches the top, with the suggestions
+  // dropdown absolute below it bounded above the keyboard. (The group-page "+
+  // Poll" composer uses the keyboard-aware KeyboardSuggestionPicker instead —
+  // box just above the keyboard, suggestions above it.)
+  const searchBox = (
     <>
       {draftStack}
-      {/* While focused (inline mode only), a slightly-dimmed scrim covers the
-          rest of the page (polls, CTAs, the area behind the top bar) so the
-          background reads as backgrounded + non-interactive — tapping it
-          dismisses the search. The fixed top bar paints above this scrim's
-          stacking context, so it's dimmed + disabled separately in the JS effect
-          above. z-40 sits below the box (z-50) and above the polls. */}
-      {!sheetMode && searchFocused && (
+      {/* While focused, a slightly-dimmed scrim covers the rest of the page
+          (polls, CTAs, the area behind the top bar) so the background reads as
+          backgrounded + non-interactive — tapping it dismisses the search. The
+          fixed top bar paints above this scrim's stacking context, so it's
+          dimmed + disabled separately in the JS effect above. z-40 sits below
+          the box (z-50) and above the polls. */}
+      {searchFocused && (
         <div
           className="fixed left-0 right-0 z-40 bg-black/20"
           aria-hidden
@@ -3454,12 +3458,6 @@ export function CreateQuestionContent() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={(e) => {
-              if (sheetMode) {
-                // The composer box is already at the sheet top — no page-rise.
-                setSearchShift(0);
-                setSearchFocused(true);
-                return;
-              }
               // Measure how far the page must rise so the pill sits just below
               // the notch, BEFORE the keyboard appears / the page is
               // scroll-locked (the pill is still at its resting position). The
@@ -3477,10 +3475,8 @@ export function CreateQuestionContent() {
               pillTargetBottomRef.current = rect ? target + rect.height : 0;
               setSearchFocused(true);
             }}
-            // Inline mode: collapse on blur. Sheet mode: keep searchFocused true
-            // (the dropdown + suggestions machinery stay on for the sheet's life;
-            // it's reset only when the box is left — closeCompose / open*Edit).
-            onBlur={() => { if (!sheetMode) setSearchFocused(false); }}
+            // Collapse on blur (closes the dropdown + dismisses the keyboard).
+            onBlur={() => setSearchFocused(false)}
             disabled={isLoading}
             placeholder={drafts.length > 0 && !isExplore ? "Ask another question…" : "Ask a question…"}
             aria-label={drafts.length > 0 && !isExplore ? "Ask another question" : "Ask a question"}
@@ -3491,23 +3487,16 @@ export function CreateQuestionContent() {
             className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
           />
         </div>
-        {/* Suggestions dropdown. Sheet mode: normal flow below the box (the sheet
-            body scrolls). Inline mode: absolute below the box, bounded above the
+        {/* Suggestions dropdown — absolute below the box, bounded above the
             keyboard, overlaying the polls. */}
-        {sheetMode
-          ? searchDropdownRows.length > 0 && (
-              <div className="mt-2 overflow-hidden rounded-2xl border border-gray-300 dark:border-gray-700 bg-background py-1">
-                {searchDropdownRows}
-              </div>
-            )
-          : searchFocused && searchDropdownRows.length > 0 && (
-              <div
-                className="absolute left-0 right-0 top-full mt-2 z-50 overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background py-1"
-                style={{ maxHeight: searchDropdownMaxHeight }}
-              >
-                {searchDropdownRows}
-              </div>
-            )}
+        {searchFocused && searchDropdownRows.length > 0 && (
+          <div
+            className="absolute left-0 right-0 top-full mt-2 z-50 overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background py-1"
+            style={{ maxHeight: searchDropdownMaxHeight }}
+          >
+            {searchDropdownRows}
+          </div>
+        )}
       </div>
       </div>
     </>
@@ -3515,7 +3504,7 @@ export function CreateQuestionContent() {
 
   return (
     <div className="question-content">
-      {draftPollPortals.map(({ key, target }) => createPortal(renderSearchBox(false), target, key))}
+      {draftPollPortals.map(({ key, target }) => createPortal(searchBox, target, key))}
 
       {/* Create-poll modal layer. Two overlapping bottom sheets share one
           backdrop:
@@ -3539,37 +3528,56 @@ export function CreateQuestionContent() {
               aria-hidden="true"
             />
 
-            {/* COMPOSER sheet — bottom slide-up. The ↑ send is in the header
-                (upper-right); the X (upper-left) closes it preserving drafts. */}
+            {/* COMPOSER — keyboard-aware picker: the search box bar sits just
+                above the iOS keyboard, the staged-draft bubbles + suggestions
+                scroll ABOVE it (best match nearest the box). When the keyboard
+                is dismissed it collapses to just the bottom bar. The X (closes,
+                preserving drafts) + ↑ send flank the box on the bar. */}
             {composeOpen && (
-              <div
-                className="absolute inset-x-0 bottom-0 mx-auto w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col animate-slide-up"
-                style={{ height: 'calc(100dvh - 70px)' }}
-                role="dialog"
-                aria-modal="true"
-                aria-label="New poll"
+              <KeyboardSuggestionPicker
+                focused={searchFocused}
+                zClassName="z-10"
+                scrollSignal={`${searchSuggestions.length}:${searchQuery}:${drafts.length}`}
+                rows={<>{draftStack}{composerRows}</>}
               >
-                <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={closeCompose}
                     disabled={isLoading}
                     aria-label="Close"
-                    className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 active:scale-95 disabled:opacity-50"
                   >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
-                  <span className="text-lg font-semibold select-none">New Poll</span>
-                  {/* ↑ send (upper-right). sendInHeader === composeOpen, so the
-                      inline placement on the draft-stack row is suppressed. */}
-                  <div className="absolute right-2 top-2">{sendButton}</div>
+                  <div className="flex-1 min-w-0 flex items-center h-[42.24px] rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4">
+                    <input
+                      ref={setSearchInputEl}
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      // No searchShift here — the picker pins the bar above the
+                      // keyboard, so the box never needs the page-rise.
+                      onFocus={() => setSearchFocused(true)}
+                      // Blur collapses the picker to just this bar (keyboard
+                      // down); the composer stays open. Tapping the box / X /
+                      // backdrop re-expands / closes.
+                      onBlur={() => setSearchFocused(false)}
+                      disabled={isLoading}
+                      placeholder={drafts.length > 0 && !isExplore ? "Ask another question…" : "Ask a question…"}
+                      aria-label={drafts.length > 0 && !isExplore ? "Ask another question" : "Ask a question"}
+                      enterKeyHint="search"
+                      style={{ lineHeight: 'normal' }}
+                      className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                    />
+                  </div>
+                  {/* ↑ send. sendInHeader === composeOpen, so the inline
+                      placement on the draft-stack rows is suppressed. */}
+                  {sendButton}
                 </div>
-                <div className="flex-1 overflow-y-auto overflow-x-hidden pb-[4.5rem]">
-                  {renderSearchBox(true)}
-                </div>
-              </div>
+              </KeyboardSuggestionPicker>
             )}
 
             {/* EDIT sheet — 'create' is a bottom slide-up; question / poll-
@@ -3577,7 +3585,7 @@ export function CreateQuestionContent() {
                 again, driven by editSlideShown. */}
             {isModalOpen && (
               <div
-                className={`absolute inset-x-0 bottom-0 mx-auto w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col z-10 ${editMode?.type === 'create' ? 'animate-slide-up' : ''}`}
+                className={`absolute inset-x-0 bottom-0 mx-auto w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col z-20 ${editMode?.type === 'create' ? 'animate-slide-up' : ''}`}
                 style={editMode?.type === 'create'
                   ? { height: 'calc(100dvh - 70px)' }
                   : {
