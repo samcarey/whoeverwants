@@ -2743,6 +2743,7 @@ export function CreateQuestionContent() {
   // The modal ✓ button: submit (create mode) / commit the draft (question edit)
   // / keep the poll-settings edit (poll edit). Only create mode sends.
   const handleModalCheck = (e: React.MouseEvent) => {
+    if (editMode?.type === 'compose') { handleSendPoll(); return; }
     if (editMode?.type === 'create') { handleSubmitClick(e); return; }
     if (editMode?.type === 'question') { commitQuestionEdit(editMode.index); return; }
     if (editMode?.type === 'poll') { commitPollEdit(); return; }
@@ -3041,82 +3042,52 @@ export function CreateQuestionContent() {
   // re-renders on many unrelated events) recomputes it only when drafts change.
   const pollPreviewTitle = useMemo(() => draftPollPreview(drafts, '').title, [drafts]);
 
-  // Round ↑ "create poll" button. Lives on the single-question row, or moves to
-  // the combined poll-title row once a second question is staged. Reused across
-  // those mutually-exclusive branches (never rendered twice at once).
-  const sendButton = (
-    <button
-      type="button"
-      onClick={handleSendPoll}
-      disabled={isLoading || drafts.length === 0}
-      aria-label="Create poll"
-      className="shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-blue-500 text-white disabled:opacity-50 active:scale-95"
-    >
-      {isLoading ? (
-        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-        </svg>
-      ) : (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
-        </svg>
-      )}
-    </button>
-  );
-
-  // Staged-draft bubbles, rendered above the search input. 1 draft → one bubble
-  // + ↑ send on its row. 2+ drafts → a combined poll-title bubble on top (tap to
-  // edit poll-wide settings; ↑ send moves here) over one bubble per question.
-  // Tapping a question bubble edits it; × removes it.
+  // Staged-draft bubbles, rendered above the search input. 2+ drafts → a
+  // combined poll-title bubble on top (tap to edit poll-wide settings) over one
+  // bubble per question. Tapping a question bubble edits it; × removes it. The
+  // poll is sent via the ↑ button in the sheet's upper-right corner.
   const draftStack = drafts.length > 0 ? (
     <div className="pt-2 space-y-2">
       {drafts.length > 1 && (
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={openPollEdit}
-            disabled={isLoading}
-            aria-label="Edit poll settings"
-            className="flex-1 min-w-0 text-left rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-4 py-2.5 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"
-          >
-            <span className="block truncate text-base font-semibold">
-              {pollPreviewTitle}
-            </span>
-          </button>
-          {sendButton}
-        </div>
+        <button
+          type="button"
+          onClick={openPollEdit}
+          disabled={isLoading}
+          aria-label="Edit poll settings"
+          className="block w-full text-left rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-4 py-2.5 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"
+        >
+          <span className="block truncate text-base font-semibold">
+            {pollPreviewTitle}
+          </span>
+        </button>
       )}
       {drafts.map((d, i) => {
         const segs = annotateSegments(draftTitleSegments(d));
         const hasLabel = segs.some((seg) => seg.label);
         return (
-          <div key={i} className="flex items-center gap-2">
-            <div className="flex-1 min-w-0 flex items-center rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-4 pr-1">
-              <button
-                type="button"
-                onClick={() => openQuestionEdit(i)}
-                disabled={isLoading}
-                aria-label="Edit question"
-                className="flex-1 min-w-0 text-left py-2.5 disabled:opacity-50"
-              >
-                <span className={`relative block overflow-hidden whitespace-nowrap text-base ${hasLabel ? 'pt-3' : ''}`}>
-                  {renderSegmentSpans(segs)}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => removeDraft(i)}
-                disabled={isLoading}
-                aria-label="Remove question"
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 disabled:opacity-50"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            {drafts.length === 1 && sendButton}
+          <div key={i} className="flex-1 min-w-0 flex items-center rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-4 pr-1">
+            <button
+              type="button"
+              onClick={() => openQuestionEdit(i)}
+              disabled={isLoading}
+              aria-label="Edit question"
+              className="flex-1 min-w-0 text-left py-2.5 disabled:opacity-50"
+            >
+              <span className={`relative block overflow-hidden whitespace-nowrap text-base ${hasLabel ? 'pt-3' : ''}`}>
+                {renderSegmentSpans(segs)}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => removeDraft(i)}
+              disabled={isLoading}
+              aria-label="Remove question"
+              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 disabled:opacity-50"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         );
       })}
@@ -3261,30 +3232,44 @@ export function CreateQuestionContent() {
                       ? 'Edit Question'
                       : 'New Poll'}
                 </span>
-                {/* No header ✓ in compose mode — the inline ↑ button on the
-                    staged-question row sends the poll there. */}
-                {editMode?.type !== 'compose' && (
-                  <button
-                    type="button"
-                    onClick={handleModalCheck}
-                    // Create mode requires draftable content to submit; the two
-                    // edit modes always allow ✓ (commit / keep).
-                    disabled={isLoading || isSubmitted || (editMode?.type === 'create' && !inlineFormHasDraftableContent)}
-                    aria-label={editMode?.type === 'create' ? 'Submit poll' : 'Save'}
-                    className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {isSubmitted || isLoading ? (
-                      <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    ) : (
-                      <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
-                )}
+                {/* Upper-right action. In compose mode this is the ↑ SEND
+                    button (disabled until a question is staged); in the edit
+                    modes it's the ✓ commit/submit. */}
+                <button
+                  type="button"
+                  onClick={handleModalCheck}
+                  // Compose needs a staged question to send; create needs
+                  // draftable content; the two edit modes always allow ✓.
+                  disabled={
+                    isLoading ||
+                    isSubmitted ||
+                    (editMode?.type === 'create' && !inlineFormHasDraftableContent) ||
+                    (editMode?.type === 'compose' && drafts.length === 0)
+                  }
+                  aria-label={
+                    editMode?.type === 'compose'
+                      ? 'Create poll'
+                      : editMode?.type === 'create'
+                        ? 'Submit poll'
+                        : 'Save'
+                  }
+                  className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isSubmitted || isLoading ? (
+                    <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : editMode?.type === 'compose' ? (
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
               </div>
 
               {/* Sheet body — scrollable when content overflows. Holds the
