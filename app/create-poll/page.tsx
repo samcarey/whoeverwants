@@ -2764,13 +2764,13 @@ export function CreateQuestionContent() {
     doSend();
   };
 
-  // The modal ✓ button: submit (create mode) / commit the draft (question edit)
-  // / keep the poll-settings edit (poll edit). Only create mode sends.
-  // The BASE sheet header's upper-right action: send (compose) or submit
-  // (create). The question/poll editors have their OWN ✓ (→ closeSubEdit).
+  // The BASE sheet header's upper-right action: send the staged poll
+  // (compose) or submit the in-progress form (legacy create mode). The
+  // question/poll sub-editors have their OWN ✓ (→ closeSubEdit), so this
+  // only ever fires while the base panel is showing.
   const handleModalCheck = (e: React.MouseEvent) => {
-    if (editMode?.type === 'create') { handleSubmitClick(e); return; }
-    handleSendPoll();
+    if (editMode?.type === 'create') handleSubmitClick(e);
+    else if (editMode?.type === 'compose') handleSendPoll();
   };
 
   // Empty-state hint shown in the title-preview slot above the form card,
