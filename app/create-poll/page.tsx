@@ -132,6 +132,11 @@ const SHEET_SCROLL_PIN_MS = 1200;
 // Must comfortably outlast that collapse; a deliberate scroll after it still disarms.
 const SHEET_SCROLL_PIN_GRACE_MS = 550;
 
+// Duration of the question/poll editor sub-panel slide (must match the inline
+// `transition: transform 300ms` on the sub-panel). After sliding out, editMode
+// flips back to 'compose' so the sub-panel unmounts off-screen.
+const SUB_SLIDE_MS = 300;
+
 // Order matches the dropdown inside the modal so muscle memory carries over.
 // The leading "New" button (rendered separately at the start of the row)
 // is the catch-all that opens the modal with the default `custom` category;
@@ -710,6 +715,11 @@ export function CreateQuestionContent() {
   type EditMode = { type: 'compose' } | { type: 'create' } | { type: 'question'; index: number } | { type: 'poll' };
   const [editMode, setEditMode] = useState<EditMode | null>(null);
   const isModalOpen = editMode !== null;
+  // Drives the question/poll editor sub-panel's slide: false = off-screen
+  // right, true = slid in over the compose sheet. Toggled false→true on open
+  // and true→false on back/commit (the panel stays mounted through the
+  // slide-out, then editMode flips back to 'compose').
+  const [subSlideIn, setSubSlideIn] = useState(false);
   // The QUESTION form section (category / options / time / per-question
   // settings) shows in 'create' + 'question' edit modes — the modes where the
   // live form represents a real question. The POLL-settings section shows in
@@ -1223,7 +1233,7 @@ export function CreateQuestionContent() {
   // shared `validateQuestionDraft` via a snapshot of the live form, so the
   // modal-edit + ↑ send paths can't drift. Different from getValidationErrorFor
   // (which validates poll-level fields too). Memoized (after readCurrentDraft)
-  // so commitQuestionEdit's useCallback dep stays stable.
+  // so closeSubEdit's useCallback dep stays stable.
   const getCurrentQuestionFormError = useCallback(
     (): string | null => validateQuestionDraft(readCurrentDraft()),
     [readCurrentDraft],
@@ -1433,8 +1443,15 @@ export function CreateQuestionContent() {
     setSendError(null);
   }, []);
 
-  // Tap a question bubble → open the modal showing ONLY that question's form.
-  // The draft is loaded into the live form; ✓ commits it back, ✕ cancels.
+  // Slide the editor sub-panel in: mount it off-screen (subSlideIn=false) then,
+  // after the mount paints, flip to true so the transform transition runs.
+  const slideInSub = useCallback(() => {
+    setSubSlideIn(false);
+    requestAnimationFrame(() => requestAnimationFrame(() => setSubSlideIn(true)));
+  }, []);
+
+  // Tap a question bubble → slide in the editor showing ONLY that question's
+  // form. The draft is loaded into the live form; ✓ commits it back, ← cancels.
   const openQuestionEdit = useCallback((index: number) => {
     const draft = drafts[index];
     if (!draft) return;
@@ -1442,36 +1459,42 @@ export function CreateQuestionContent() {
     setError(null);
     collapseSearchBox();
     setEditMode({ type: 'question', index });
-  }, [drafts, applyDraftToState, collapseSearchBox]);
+    slideInSub();
+  }, [drafts, applyDraftToState, collapseSearchBox, slideInSub]);
 
-  // Tap the combined poll-title bubble → open the modal showing ONLY the
-  // poll-wide settings. A snapshot is captured so ✕ can revert.
+  // Tap the combined poll-title bubble → slide in the poll-wide settings.
+  // A snapshot is captured so ← can revert.
   const openPollEdit = useCallback(() => {
     capturePollSnapshot();
     setError(null);
     collapseSearchBox();
     setEditMode({ type: 'poll' });
-  }, [capturePollSnapshot, collapseSearchBox]);
+    slideInSub();
+  }, [capturePollSnapshot, collapseSearchBox, slideInSub]);
 
-  // Commit a question-edit: validate the live form, write it back to the draft,
-  // close. Does NOT send.
-  const commitQuestionEdit = useCallback((index: number) => {
-    const subErr = getCurrentQuestionFormError();
-    if (subErr) { setError(subErr); return; }
-    const updated = readCurrentDraft();
-    setDrafts((prev) => prev.map((d, i) => (i === index ? updated : d)));
-    setSendError(null);
+  // Close the editor sub-panel and slide it back to the compose sheet.
+  //   commit=true  → validate (question) / keep (poll) the edits, write back.
+  //   commit=false → discard: question is untouched; poll restores its snapshot.
+  // A failing question validation surfaces the error and stays open (no slide).
+  // The panel stays mounted through the slide-out, then editMode → 'compose'.
+  const closeSubEdit = useCallback((commit: boolean) => {
+    const mode = editMode;
+    if (mode?.type === 'question') {
+      if (commit) {
+        const subErr = getCurrentQuestionFormError();
+        if (subErr) { setError(subErr); return; }
+        const updated = readCurrentDraft();
+        setDrafts((prev) => prev.map((d, i) => (i === mode.index ? updated : d)));
+        setSendError(null);
+      }
+    } else if (mode?.type === 'poll') {
+      if (commit) pollSnapshotRef.current = null;
+      else restorePollSnapshot();
+    }
     setError(null);
-    setEditMode(null);
-  }, [getCurrentQuestionFormError, readCurrentDraft]);
-
-  // Commit a poll-settings edit: the controls already wrote component state, so
-  // just clear the snapshot and close. Does NOT send.
-  const commitPollEdit = useCallback(() => {
-    pollSnapshotRef.current = null;
-    setError(null);
-    setEditMode(null);
-  }, []);
+    setSubSlideIn(false);
+    window.setTimeout(() => setEditMode({ type: 'compose' }), SUB_SLIDE_MS);
+  }, [editMode, getCurrentQuestionFormError, readCurrentDraft, restorePollSnapshot]);
 
   // (The search box used to live inline on the group page and rise/dim the
   // page chrome on focus; now it lives inside the New Poll sheet — a focused
@@ -1491,21 +1514,22 @@ export function CreateQuestionContent() {
   // box inside it is covered by isModalOpen.
   useBodyScrollLock(isModalOpen, false);
 
-  // Escape closes the sheet (preserving state). Skip when the inner
+  // Escape: when the question/poll editor sub-panel is open, slide it back
+  // (discarding); otherwise close the sheet. Skip when the inner
   // ConfirmationModal is open — its own document-level Escape handler runs
   // too, and we don't want one Escape to dismiss both.
   useEffect(() => {
     if (!isModalOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
-      // Edit modes revert (poll-settings restore their snapshot); 'create'
-      // keeps state. cancelModal handles both.
-      if (e.key === 'Escape' && !showDiscardConfirmRef.current) cancelModal();
+      if (e.key !== 'Escape' || showDiscardConfirmRef.current) return;
+      if (editMode?.type === 'question' || editMode?.type === 'poll') closeSubEdit(false);
+      else cancelModal();
     };
     document.addEventListener('keydown', handleEsc);
     return () => {
       document.removeEventListener('keydown', handleEsc);
     };
-  }, [isModalOpen, cancelModal]);
+  }, [isModalOpen, editMode, cancelModal, closeSubEdit]);
 
   // Track the current group (the group page sets `<body data-group-id>`)
   // so the category bubble bar can fetch + apply that group's recency
@@ -2742,11 +2766,11 @@ export function CreateQuestionContent() {
 
   // The modal ✓ button: submit (create mode) / commit the draft (question edit)
   // / keep the poll-settings edit (poll edit). Only create mode sends.
+  // The BASE sheet header's upper-right action: send (compose) or submit
+  // (create). The question/poll editors have their OWN ✓ (→ closeSubEdit).
   const handleModalCheck = (e: React.MouseEvent) => {
-    if (editMode?.type === 'compose') { handleSendPoll(); return; }
     if (editMode?.type === 'create') { handleSubmitClick(e); return; }
-    if (editMode?.type === 'question') { commitQuestionEdit(editMode.index); return; }
-    if (editMode?.type === 'poll') { commitPollEdit(); return; }
+    handleSendPoll();
   };
 
   // Empty-state hint shown in the title-preview slot above the form card,
@@ -3159,131 +3183,26 @@ export function CreateQuestionContent() {
   const showPollFab =
     isClient && !swipeBackActive && (isGroupRootView(pathname) || pathname === "/explore");
 
-  return (
-    <div className="question-content">
-      {fabTarget &&
-        createPortal(
-          <button
-            onClick={openComposeModal}
-            className="fixed h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
-            style={{
-              zIndex: 50,
-              right: "max(1.5rem, env(safe-area-inset-right, 0px))",
-              bottom: IS_CAPACITOR_NATIVE ? "2.65rem" : "1.9rem",
-              transform: "translateZ(0)",
-              visibility: showPollFab ? "visible" : "hidden",
-              pointerEvents: showPollFab ? "auto" : "none",
-            }}
-            aria-label="Create new poll"
-            aria-hidden={!showPollFab}
-            tabIndex={showPollFab ? 0 : -1}
-          >
-            <span aria-hidden="true" className="text-[28.8px] leading-none">
-              +
-            </span>
-            <span className="text-lg leading-none">Poll</span>
-          </button>,
-          fabTarget,
-        )}
+  const isSubEdit = editMode?.type === 'question' || editMode?.type === 'poll';
+  // The base sheet shows compose (search box) for the FAB flow and for the
+  // question / poll editors (which slide in OVER it); only the create-prefill
+  // flow shows the full form as the base.
+  const baseIsCompose = editMode?.type !== 'create';
 
-      {/* New-poll bottom sheet — slides up from the bottom edge. Top half
-          holds the question form; bottom half holds poll-level settings
-          (voting cutoff, prephase cutoff, notes, voter name). Each section
-          is a borderless rounded card with a lighter bg than the sheet so
-          the two read as stacked panels. The check button submits the
-          whole poll immediately (single-question mode); backdrop / Escape
-          dismisses. */}
-      {isModalOpen && (
-        <ModalPortal>
-          <div className="fixed inset-0 z-[60] flex items-end justify-center">
-            {/* Backdrop — tap to dismiss. Edit modes cancel without applying
-                (poll-settings restore their snapshot); create mode keeps state. */}
-            <div
-              className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
-              onClick={cancelModal}
-              aria-hidden="true"
-            />
-            {/* Sheet panel — anchored to the bottom edge with rounded top
-                corners. Slides up on mount via the shared `slide-up`
-                keyframe in globals.css. */}
-            <div
-              className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col animate-slide-up"
-              style={{ height: 'calc(100dvh - 70px)' }}
-              role="dialog"
-              aria-modal="true"
-              aria-label="New poll"
-            >
-              <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
-                <button
-                  type="button"
-                  onClick={handleCloseClick}
-                  disabled={isLoading}
-                  aria-label="Close poll form"
-                  className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-                <span className="text-lg font-semibold select-none">
-                  {editMode?.type === 'poll'
-                    ? 'Poll Settings'
-                    : editMode?.type === 'question'
-                      ? 'Edit Question'
-                      : 'New Poll'}
-                </span>
-                {/* Upper-right action. In compose mode this is the ↑ SEND
-                    button (disabled until a question is staged); in the edit
-                    modes it's the ✓ commit/submit. */}
-                <button
-                  type="button"
-                  onClick={handleModalCheck}
-                  // Compose needs a staged question to send; create needs
-                  // draftable content; the two edit modes always allow ✓.
-                  disabled={
-                    isLoading ||
-                    isSubmitted ||
-                    (editMode?.type === 'create' && !inlineFormHasDraftableContent) ||
-                    (editMode?.type === 'compose' && drafts.length === 0)
-                  }
-                  aria-label={
-                    editMode?.type === 'compose'
-                      ? 'Create poll'
-                      : editMode?.type === 'create'
-                        ? 'Submit poll'
-                        : 'Save'
-                  }
-                  className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isSubmitted || isLoading ? (
-                    <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : editMode?.type === 'compose' ? (
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </button>
-              </div>
+  const errorBlock = error ? (
+    <div className="p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
+      {error}
+    </div>
+  ) : null;
 
-              {/* Sheet body — scrollable when content overflows. Holds the
-                  two stacked section cards with a small gap between them.
-                  Bottom padding reserves breathing room above the sheet's
-                  bottom edge so the last form field doesn't sit flush with
-                  the rounded corner when scrolled to bottom. */}
-              <div ref={setSheetScrollerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
-                {editMode?.type === 'compose' ? (
-                  // Compose mode (the "+ Poll" FAB): the search box — staged
-                  // question bubbles above the text box. Tapping a bubble opens
-                  // its editor; the ↑ on a bubble row sends the poll.
-                  searchBox
-                ) : (<>
+  // Question / poll form sections — rendered in the create-prefill sheet (base)
+  // and in the slide-in sub-panel (question / poll edit). Internally gated on
+  // showQuestionSection / showPollSection so each mode shows the right parts
+  // (create: both; question: the question form; poll: the settings). Built only
+  // when actually shown (null in compose / when closed) to avoid constructing
+  // the whole form tree on every render of this layout-level component.
+  const formSections = (editMode?.type === 'create' || isSubEdit) ? (
+    <>
                 {showQuestionSection ? (
                   // Question header: emoji + this question's (live) title preview.
                   <div className="text-center px-2 pt-1 break-words min-h-8 flex items-center justify-center gap-2">
@@ -3736,14 +3655,160 @@ export function CreateQuestionContent() {
                   </section>
                 </div>
                 </>)}
-                </>)}
+    </>
+  ) : null;
 
-                {error && (
-                  <div className="p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
-                    {error}
-                  </div>
-                )}
+  return (
+    <div className="question-content">
+      {fabTarget &&
+        createPortal(
+          <button
+            onClick={openComposeModal}
+            className="fixed h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
+            style={{
+              zIndex: 50,
+              right: "max(1.5rem, env(safe-area-inset-right, 0px))",
+              bottom: IS_CAPACITOR_NATIVE ? "2.65rem" : "1.9rem",
+              transform: "translateZ(0)",
+              visibility: showPollFab ? "visible" : "hidden",
+              pointerEvents: showPollFab ? "auto" : "none",
+            }}
+            aria-label="Create new poll"
+            aria-hidden={!showPollFab}
+            tabIndex={showPollFab ? 0 : -1}
+          >
+            <span aria-hidden="true" className="text-[28.8px] leading-none">
+              +
+            </span>
+            <span className="text-lg leading-none">Poll</span>
+          </button>,
+          fabTarget,
+        )}
+
+      {/* New-poll bottom sheet — slides up from the bottom edge. Top half
+          holds the question form; bottom half holds poll-level settings
+          (voting cutoff, prephase cutoff, notes, voter name). Each section
+          is a borderless rounded card with a lighter bg than the sheet so
+          the two read as stacked panels. The check button submits the
+          whole poll immediately (single-question mode); backdrop / Escape
+          dismisses. */}
+      {isModalOpen && (
+        <ModalPortal>
+          <div className="fixed inset-0 z-[60] flex items-end justify-center">
+            {/* Backdrop — tap to dismiss. With the editor sub-panel open, a
+                tap slides it back (discarding) rather than closing the sheet. */}
+            <div
+              className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
+              onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
+              aria-hidden="true"
+            />
+            {/* Sheet panel — anchored to the bottom edge with rounded top
+                corners. `overflow-hidden` clips the editor sub-panel while it's
+                slid off-screen to the right. Slides up on mount via the shared
+                `slide-up` keyframe in globals.css. */}
+            <div
+              className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up"
+              style={{ height: 'calc(100dvh - 70px)' }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="New poll"
+            >
+              {/* BASE sheet header — ✕ close (left), title, and the
+                  upper-right action: ↑ SEND in compose (disabled until a
+                  question is staged) or ✓ SUBMIT in the create-prefill flow. */}
+              <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                <button
+                  type="button"
+                  onClick={handleCloseClick}
+                  disabled={isLoading}
+                  aria-label="Close poll form"
+                  className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                <span className="text-lg font-semibold select-none">New Poll</span>
+                <button
+                  type="button"
+                  onClick={handleModalCheck}
+                  disabled={
+                    isLoading ||
+                    isSubmitted ||
+                    (baseIsCompose ? drafts.length === 0 : !inlineFormHasDraftableContent)
+                  }
+                  aria-label={baseIsCompose ? 'Create poll' : 'Submit poll'}
+                  className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isSubmitted || isLoading ? (
+                    <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : baseIsCompose ? (
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
               </div>
+
+              {/* BASE body: search box (compose) or the full form (create). */}
+              <div ref={setSheetScrollerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
+                {baseIsCompose ? searchBox : formSections}
+                {errorBlock}
+              </div>
+
+              {/* SUB-PANEL: the question / poll editor, slid in from the right
+                  OVER the compose sheet. ← (upper-left) discards + slides back;
+                  ✓ (upper-right) commits + slides back. */}
+              {isSubEdit && (
+                <div
+                  className="absolute inset-0 bg-gray-100 dark:bg-gray-900 rounded-t-3xl flex flex-col"
+                  style={{
+                    transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
+                    transition: 'transform 300ms ease',
+                  }}
+                  role="dialog"
+                  aria-modal="true"
+                >
+                  <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                    <button
+                      type="button"
+                      onClick={() => closeSubEdit(false)}
+                      disabled={isLoading}
+                      aria-label="Back"
+                      className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <span className="text-lg font-semibold select-none">
+                      {editMode?.type === 'poll' ? 'Poll Settings' : 'Edit Question'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => closeSubEdit(true)}
+                      disabled={isLoading}
+                      aria-label="Save changes"
+                      className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
+                    {formSections}
+                    {errorBlock}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </ModalPortal>
