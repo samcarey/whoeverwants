@@ -136,6 +136,23 @@ const SHEET_SCROLL_PIN_GRACE_MS = 550;
 // `transition: transform 300ms` on the sub-panel). After sliding out, editMode
 // flips back to 'compose' so the sub-panel unmounts off-screen.
 const SUB_SLIDE_MS = 300;
+// The sub-panel's resting transition (state-driven slide in/out). The swipe
+// gesture restores this exact string imperatively after a drag, so the DOM
+// stays in sync with the JSX style prop by construction (single source).
+const SUB_SLIDE_TRANSITION = `transform ${SUB_SLIDE_MS}ms ease`;
+
+// Swipe-to-go-back on the editor sub-panel: a rightward drag past 30% of the
+// panel width OR a flick (≥0.5 px/ms) discards + slides back to the compose
+// sheet (same thresholds/feel as the page-level useSwipeBackGesture). The
+// drag is axis-locked to horizontal-rightward so vertical scrolling inside the
+// form is untouched, and the per-frame transform is driven imperatively via a
+// ref (no React re-render). We never preventDefault on touchmove (per
+// CLAUDE.md: it permanently kills iOS scroll for the touch sequence).
+const SUB_SWIPE_RECOGNIZE_PX = 10;
+const SUB_SWIPE_COMMIT_RATIO = 0.3;
+const SUB_SWIPE_COMMIT_VELOCITY = 0.5; // px/ms
+const SUB_SWIPE_SNAP_BACK_MS = 220;
+const SUB_SWIPE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 
 // Order matches the dropdown inside the modal so muscle memory carries over.
 // The leading "New" button (rendered separately at the start of the row)
@@ -1495,6 +1512,106 @@ export function CreateQuestionContent() {
     setSubSlideIn(false);
     window.setTimeout(() => setEditMode({ type: 'compose' }), SUB_SLIDE_MS);
   }, [editMode, getCurrentQuestionFormError, readCurrentDraft, restorePollSnapshot]);
+
+  // Swipe-to-go-back on the editor sub-panel. The panel's resting transform is
+  // React-state-driven (subSlideIn → translateX(0|100%)); during a drag we
+  // imperatively override transform/transition on the node so motion doesn't
+  // re-render, then either commit (closeSubEdit(false) — React's translateX(100%)
+  // continues the slide-off from the drag position) or snap back to 0 and clear
+  // the overrides so the state-driven style resumes.
+  const subPanelRef = useRef<HTMLDivElement | null>(null);
+  const subSwipeRef = useRef<{
+    startX: number;
+    startY: number;
+    startTime: number;
+    swiping: boolean;
+    ignored: boolean;
+  } | null>(null);
+  // Read closeSubEdit through a ref so the touch handlers (stable `[]`-dep
+  // callbacks, so their DOM listeners never rebind) always call the latest
+  // closure without threading it through deps. The assignment lives in an
+  // effect (not render) per the react-hooks/refs rule — same pattern as
+  // AccountGateModal's onCancelRef / SignInOptions' onCompleteRef.
+  const closeSubEditRef = useRef(closeSubEdit);
+  useEffect(() => {
+    closeSubEditRef.current = closeSubEdit;
+  }, [closeSubEdit]);
+
+  const handleSubPanelTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 1) {
+      subSwipeRef.current = null;
+      return;
+    }
+    subSwipeRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      startTime: Date.now(),
+      swiping: false,
+      ignored: false,
+    };
+  }, []);
+
+  const handleSubPanelTouchMove = useCallback((e: React.TouchEvent) => {
+    const st = subSwipeRef.current;
+    if (!st || st.ignored) return;
+    if (e.touches.length !== 1) {
+      st.ignored = true;
+      return;
+    }
+    const dx = e.touches[0].clientX - st.startX;
+    const dy = e.touches[0].clientY - st.startY;
+    if (!st.swiping) {
+      // Decide direction once motion crosses the threshold; require
+      // horizontal-dominant AND rightward. Anything else (vertical scroll,
+      // leftward drag) is not our gesture and is ignored for the sequence.
+      if (Math.abs(dx) < SUB_SWIPE_RECOGNIZE_PX && Math.abs(dy) < SUB_SWIPE_RECOGNIZE_PX) return;
+      if (Math.abs(dy) >= Math.abs(dx) || dx <= 0) {
+        st.ignored = true;
+        return;
+      }
+      st.swiping = true;
+    }
+    const el = subPanelRef.current;
+    if (el) {
+      el.style.transition = "none";
+      el.style.transform = `translateX(${Math.max(0, dx)}px)`;
+    }
+  }, []);
+
+  const handleSubPanelTouchEnd = useCallback((e: React.TouchEvent) => {
+    const st = subSwipeRef.current;
+    subSwipeRef.current = null;
+    if (!st || !st.swiping || st.ignored) return;
+    const endX = e.changedTouches[0]?.clientX ?? st.startX;
+    const dx = Math.max(0, endX - st.startX);
+    const dt = Date.now() - st.startTime;
+    const velocity = (endX - st.startX) / Math.max(1, dt);
+    const el = subPanelRef.current;
+    const width = el?.offsetWidth ?? window.innerWidth;
+    const shouldCommit = dx >= width * SUB_SWIPE_COMMIT_RATIO || velocity >= SUB_SWIPE_COMMIT_VELOCITY;
+    if (shouldCommit) {
+      // Restore the resting transition imperatively first: React won't
+      // re-apply it on the closeSubEdit re-render (the `transition` prop string
+      // is unchanged from the drag's `none` override), and only `transform`
+      // changes to translateX(100%) — so without this the slide-off would snap.
+      if (el) el.style.transition = SUB_SLIDE_TRANSITION;
+      // closeSubEdit(false) flips subSlideIn → React renders translateX(100%),
+      // continuing the slide-off from the current drag position.
+      closeSubEditRef.current(false);
+    } else if (el) {
+      el.style.transition = `transform ${SUB_SWIPE_SNAP_BACK_MS}ms ${SUB_SWIPE_EASING}`;
+      el.style.transform = "translateX(0)";
+      window.setTimeout(() => {
+        // Restore the imperative styles to the state-driven resting values so
+        // the DOM stays in sync with React's props — a later button-tap close
+        // (which only changes the `transform` prop) still animates.
+        if (subPanelRef.current === el) {
+          el.style.transition = SUB_SLIDE_TRANSITION;
+          el.style.transform = "translateX(0)";
+        }
+      }, SUB_SWIPE_SNAP_BACK_MS + 20);
+    }
+  }, []);
 
   // (The search box used to live inline on the group page and rise/dim the
   // page chrome on focus; now it lives inside the New Poll sheet — a focused
@@ -3765,16 +3882,22 @@ export function CreateQuestionContent() {
 
               {/* SUB-PANEL: the question / poll editor, slid in from the right
                   OVER the compose sheet. ← (upper-left) discards + slides back;
-                  ✓ (upper-right) commits + slides back. */}
+                  ✓ (upper-right) commits + slides back. A rightward swipe on the
+                  panel also goes back (discarding), same as ←. */}
               {isSubEdit && (
                 <div
-                  className="absolute inset-0 bg-gray-100 dark:bg-gray-900 rounded-t-3xl flex flex-col"
+                  ref={subPanelRef}
+                  className="absolute inset-0 bg-gray-100 dark:bg-gray-900 rounded-t-3xl flex flex-col touch-pan-y"
                   style={{
                     transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
-                    transition: 'transform 300ms ease',
+                    transition: SUB_SLIDE_TRANSITION,
                   }}
                   role="dialog"
                   aria-modal="true"
+                  onTouchStart={handleSubPanelTouchStart}
+                  onTouchMove={handleSubPanelTouchMove}
+                  onTouchEnd={handleSubPanelTouchEnd}
+                  onTouchCancel={handleSubPanelTouchEnd}
                 >
                   <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
                     <button
