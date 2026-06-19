@@ -32,7 +32,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
-import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
+import { GROUP_ID_ATTR, GROUP_FAB_PORTAL_ID } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { useDeadlineTick } from "@/lib/useDeadlineTick";
@@ -1009,11 +1009,20 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   // made it visually collide with the (statically positioned) settings
   // gear at the viewport's left edge.
   const upArrowRef = useRef<HTMLButtonElement | null>(null);
+  // Bottom-anchored portal target for the "+ Poll" FAB (CreateQuestionContent
+  // in the root layout portals the button into it). Lives as a SIBLING of the
+  // swipe wrapper (below) so a `position: fixed` FAB resolves to the viewport
+  // at rest, not the tall scrolling wrapper. It's added to the swipe gesture's
+  // extraTargets so the FAB slides OFF with the page during a group→home
+  // swipe-back (instead of vanishing instantly). The overlay / backdrop
+  // instances of GroupContent render their own copy inside their
+  // `contain: strict` box, so the FAB slides IN / is revealed there too.
+  const fabPortalRef = useRef<HTMLDivElement | null>(null);
   // New polls are created via the floating "+ Poll" button (CreateQuestionContent
   // in the root layout), which opens the New Poll sheet hosting the search box.
   const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
     headerRef,
-    extraTargets: [upArrowRef],
+    extraTargets: [upArrowRef, fabPortalRef],
     showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
     hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
     // No scroll save here: returning home intentionally resets every group's
@@ -1966,6 +1975,26 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           rather than popping on top. See CreateGroupButtonHost.)
           Inner cards div keeps its own transform for overlayCardsOffset
           so the two don't conflict across React re-renders. */}
+
+      {/* Bottom-anchored, zero-height portal target for the "+ Poll" FAB.
+          A SIBLING of the swipe wrapper (not a child) so a `position: fixed`
+          FAB resolves to the viewport at rest — not the tall scrolling
+          wrapper. In the slide overlay / swipe-back backdrop this same div
+          sits inside the host's `contain: strict` box, so the FAB slides
+          in / is revealed with the page. For the group→home swipe-back it's
+          in the gesture's `extraTargets`, so the transform applied here
+          becomes the fixed FAB's containing block and carries it off. The
+          explicit z-50 (a fixed element + z-index is already a stacking
+          context) keeps the FAB above the z-0 home backdrop even while
+          transformed — without it the transform would drop the div to
+          z-auto and the FAB would vanish behind the backdrop mid-swipe.
+          h-0 so the bar itself never intercepts taps. */}
+      <div
+        ref={fabPortalRef}
+        id={GROUP_FAB_PORTAL_ID}
+        className="fixed inset-x-0 bottom-0 h-0 z-50"
+      />
+
       <div
         ref={swipeWrapperRef}
         {...swipeTouchHandlers}

@@ -7,7 +7,7 @@ import { getGroupHrefForPoll } from "@/lib/groupUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupHeader from "@/components/GroupHeader";
-import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
+import { GROUP_ID_ATTR, GROUP_FAB_PORTAL_ID } from "@/lib/groupDomMarkers";
 
 export const dynamic = 'force-dynamic';
 
@@ -86,7 +86,10 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
       <div style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }} />
       {/* New polls are created via the floating "+ Poll" button, which opens
           the New Poll sheet hosting the create-poll search box (see
-          CreateQuestionContent in the root layout). */}
+          CreateQuestionContent in the root layout). This bottom-anchored
+          target hosts it — rendered inside the overlay's contain:strict box
+          during a newGroup slide so the FAB slides in with the placeholder. */}
+      <div id={GROUP_FAB_PORTAL_ID} className="fixed inset-x-0 bottom-0 h-0 z-50" />
     </>
   );
 }
