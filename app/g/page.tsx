@@ -7,7 +7,7 @@ import { getGroupHrefForPoll } from "@/lib/groupUtils";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import GroupHeader from "@/components/GroupHeader";
-import { GROUP_ID_ATTR, DRAFT_POLL_PORTAL_ID } from "@/lib/groupDomMarkers";
+import { GROUP_ID_ATTR, DRAFT_POLL_PORTAL_ID, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
 
 export const dynamic = 'force-dynamic';
 
@@ -90,7 +90,14 @@ export function EmptyPlaceholder({ inOverlay = false }: { inOverlay?: boolean } 
           `relative z-40` keeps the bar's stacking consistent with the group
           page (see GroupContent's portal target for the full rationale).
           CreateQuestionContent (root layout) portals the bar into it. */}
-      <div id={DRAFT_POLL_PORTAL_ID} className="relative z-40" />
+      <div
+        id={DRAFT_POLL_PORTAL_ID}
+        className="relative z-40"
+        // No swipe wrapper / poll list on the empty placeholder, so the portal
+        // (which hosts the search box) is itself the page content the focused
+        // box translates up. See app/create-poll/page.tsx's focus effect.
+        {...{ [POLL_PAGE_SCROLL_ATTR]: '' }}
+      />
     </>
   );
 }
