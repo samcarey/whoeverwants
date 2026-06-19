@@ -738,6 +738,83 @@ export function CreateQuestionContent() {
   // true→false on back/commit (the panel stays mounted through the slide-out,
   // then editMode flips back to 'compose').
   const [subSlideIn, setSubSlideIn] = useState(false);
+
+  // --- Compose-sheet "open short, expand on scroll" geometry ---------------
+  // The compose sheet opens showing ONLY the question box at the bottom edge
+  // (backdrop visible above it); the poll settings live below the fold and the
+  // user scrolls to reveal them, the opaque card growing to full height. This
+  // is achieved with a TRANSPARENT spacer above an opaque card inside ONE
+  // native scroll container: at scrollTop 0 the spacer fills the area above the
+  // box (the dim backdrop shows through it), and scrolling reveals the card.
+  // spacer height = scrollViewport - topRegion(header + question box), so the
+  // box sits exactly at the bottom edge initially. Pure native scroll — no
+  // drag/height JS, no preventDefault (the iOS-fragile bits). The ref-mirror
+  // (composeSpacerHeightRef) lets onFocus scroll-to-expand synchronously.
+  const composeScrollNodeRef = useRef<HTMLDivElement | null>(null);
+  const composeTopRegionNodeRef = useRef<HTMLDivElement | null>(null);
+  const composeRoRef = useRef<ResizeObserver | null>(null);
+  const composeSpacerHeightRef = useRef(0);
+  const [composeSpacerHeight, setComposeSpacerHeight] = useState(0);
+
+  const recomputeComposeSpacer = useCallback(() => {
+    const scroll = composeScrollNodeRef.current;
+    const top = composeTopRegionNodeRef.current;
+    if (!scroll || !top) return;
+    const h = Math.max(0, scroll.clientHeight - top.offsetHeight);
+    composeSpacerHeightRef.current = h;
+    setComposeSpacerHeight((prev) => (prev === h ? prev : h));
+  }, []);
+
+  const ensureComposeRo = useCallback(() => {
+    if (!composeRoRef.current && typeof ResizeObserver !== "undefined") {
+      composeRoRef.current = new ResizeObserver(() => recomputeComposeSpacer());
+    }
+    return composeRoRef.current;
+  }, [recomputeComposeSpacer]);
+
+  // Callback refs (NOT useMeasuredHeight) because the elements mount inside
+  // <ModalPortal>'s deferred commit — a useLayoutEffect([]) would run with a
+  // null ref and never reattach (the documented early-return pitfall).
+  const setComposeScrollRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      composeScrollNodeRef.current = node;
+      setSheetScrollerRef(node);
+      if (node) {
+        ensureComposeRo()?.observe(node);
+        recomputeComposeSpacer();
+      }
+    },
+    [setSheetScrollerRef, ensureComposeRo, recomputeComposeSpacer],
+  );
+
+  const setComposeTopRegionRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      composeTopRegionNodeRef.current = node;
+      if (node) {
+        ensureComposeRo()?.observe(node);
+        recomputeComposeSpacer();
+      }
+    },
+    [ensureComposeRo, recomputeComposeSpacer],
+  );
+
+  // Recompute on viewport/keyboard changes; tear the observer down on close so
+  // it doesn't retain the detached compose nodes across reopen.
+  useEffect(() => {
+    if (!isModalOpen) {
+      composeRoRef.current?.disconnect();
+      composeRoRef.current = null;
+      return;
+    }
+    const onResize = () => recomputeComposeSpacer();
+    window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
+    };
+  }, [isModalOpen, recomputeComposeSpacer]);
+
   // The QUESTION form section (category / options / time / per-question
   // settings) shows in 'create' + 'question' edit modes — the modes where the
   // live form represents a real question. The POLL-settings section
@@ -1300,6 +1377,15 @@ export function CreateQuestionContent() {
     }
     setError(null);
     setSendError(null);
+    // Seed the spacer so the very first paint is already bottom-anchored
+    // (box at the bottom edge); the callback-ref measure corrects it. ~130px
+    // ≈ header + the question box; the slide-up also masks any residual jump.
+    if (typeof window !== "undefined") {
+      const vh = window.visualViewport?.height ?? window.innerHeight;
+      const seed = Math.max(0, vh - 70 - 130 - drafts.length * 44);
+      composeSpacerHeightRef.current = seed;
+      setComposeSpacerHeight(seed);
+    }
     setEditMode({ type: 'compose' });
   }, [drafts.length, applyDraftToState, resetFreshPollFields]);
 
@@ -3224,9 +3310,18 @@ export function CreateQuestionContent() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => {
-              // Anchor the dropdown's max-height to the pill's current bottom
-              // (the sheet doesn't move the box on focus); the keyboard top
-              // bounds it from below.
+              // The box opens at the BOTTOM of the sheet; focusing it would put
+              // it behind the soft keyboard. Expand the sheet (scroll the card
+              // to the top, so the box sits under the sticky header, above the
+              // keyboard) before anchoring the dropdown. Disarm the open-time
+              // scroll pin first so it can't yank back to 0.
+              const scroll = composeScrollNodeRef.current;
+              if (scroll && editMode?.type !== "create") {
+                sheetScrollPinCleanupRef.current?.();
+                scroll.scrollTo({ top: composeSpacerHeightRef.current });
+              }
+              // Anchor the dropdown's max-height to the pill's (post-scroll)
+              // bottom; the keyboard top bounds it from below.
               const rect = searchPillRef.current?.getBoundingClientRect();
               pillTargetBottomRef.current = rect ? rect.bottom : 0;
               setSearchFocused(true);
@@ -3807,128 +3902,195 @@ export function CreateQuestionContent() {
       {isModalOpen && (
         <ModalPortal>
           <div className="fixed inset-0 z-[60] flex items-end justify-center">
-            {/* Backdrop — tap to dismiss. With the editor sub-panel open, a
-                tap slides it back (discarding) rather than closing the sheet. */}
+            {/* Backdrop — the dim layer. In COMPOSE mode the transparent sheet
+                covers it, so dismiss-on-tap there flows through the transparent
+                spacer's onClick (below); in CREATE mode the opaque content-sized
+                panel doesn't cover the top, so this backdrop's onClick handles
+                tap-above-to-dismiss. */}
             <div
               className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
               onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
               aria-hidden="true"
             />
-            {/* Sheet panel — anchored to the bottom edge with rounded top
-                corners. `overflow-hidden` clips the editor sub-panel while it's
-                slid off-screen to the right. Slides up on mount via the shared
-                `slide-up` keyframe in globals.css. */}
-            <div
-              className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up"
-              style={{ height: 'calc(100dvh - 70px)' }}
-              role="dialog"
-              aria-modal="true"
-              aria-label="New poll"
-            >
-              {/* BASE sheet header — ✕ close (left), title, and the
-                  upper-right action: ↑ SEND in compose (disabled until a
-                  question is staged) or ✓ SUBMIT in the create-prefill flow. */}
-              <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
-                <button
-                  type="button"
-                  onClick={handleCloseClick}
-                  disabled={isLoading}
-                  aria-label="Close poll form"
-                  className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-                <span className="text-lg font-semibold select-none">New Poll</span>
-                <button
-                  type="button"
-                  onClick={handleModalCheck}
-                  disabled={
-                    isLoading ||
-                    isSubmitted ||
-                    (baseIsCompose ? drafts.length === 0 : !inlineFormHasDraftableContent)
-                  }
-                  aria-label={baseIsCompose ? 'Create poll' : 'Submit poll'}
-                  className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isSubmitted || isLoading ? (
-                    <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : baseIsCompose ? (
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </button>
-              </div>
 
-              {/* BASE body: compose = search box + the poll-WIDE settings
-                  inline below it (no submodal); create = the full prefill form. */}
-              <div ref={setSheetScrollerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
-                {baseIsCompose ? (<>{searchBox}{pollSettingsSections}</>) : formSections}
-                {errorBlock}
-              </div>
-
-              {/* SUB-PANEL: the question editor, slid in from the right OVER
-                  the compose sheet. ← (upper-left) discards + slides back;
-                  ✓ (upper-right) commits + slides back. A rightward swipe on the
-                  panel also goes back (discarding), same as ←. */}
-              {isSubEdit && (
+            {baseIsCompose ? (
+              /* COMPOSE sheet — opens SHORT (question box at the bottom edge,
+                 backdrop above) and expands to full as the user scrolls. The
+                 panel is full-height + TRANSPARENT; one native scroll container
+                 holds a transparent spacer (shows the backdrop through it) above
+                 an opaque card. `overflow-hidden` clips the editor sub-panel
+                 while it's slid off to the right. */
+              <div
+                className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up"
+                style={{ height: 'calc(100dvh - 70px)' }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="New poll"
+              >
                 <div
-                  ref={subPanelRef}
-                  className="absolute inset-0 bg-gray-100 dark:bg-gray-900 rounded-t-3xl flex flex-col touch-pan-y"
-                  style={{
-                    transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
-                    transition: SUB_SLIDE_TRANSITION,
-                  }}
-                  role="dialog"
-                  aria-modal="true"
-                  onTouchStart={handleSubPanelTouchStart}
-                  onTouchMove={handleSubPanelTouchMove}
-                  onTouchEnd={handleSubPanelTouchEnd}
-                  onTouchCancel={handleSubPanelTouchEnd}
+                  ref={setComposeScrollRef}
+                  className="absolute inset-0 z-0 overflow-y-auto overflow-x-hidden"
                 >
-                  <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
-                    <button
-                      type="button"
-                      onClick={() => closeSubEdit(false)}
-                      disabled={isLoading}
-                      aria-label="Back"
-                      className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  {/* Transparent spacer — the dim backdrop shows through it, so
+                      at rest only the card (header + box) peeks up from the
+                      bottom. Tapping it dismisses, like the backdrop. */}
+                  <div
+                    aria-hidden="true"
+                    style={{ height: composeSpacerHeight }}
+                    onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
+                  />
+                  {/* Opaque card — min-h-full so it fills the viewport once
+                      expanded (no backdrop gap at the bottom). */}
+                  <div className="min-h-full bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl">
+                    {/* topRegion (measured): sticky header + question box. The
+                        spacer height is viewport − this, so the box sits at the
+                        bottom edge initially. */}
+                    <div ref={setComposeTopRegionRef}>
+                      <div className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-900 rounded-t-3xl relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                        <button
+                          type="button"
+                          onClick={handleCloseClick}
+                          disabled={isLoading}
+                          aria-label="Close poll form"
+                          className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                        <span className="text-lg font-semibold select-none">New Poll</span>
+                        <button
+                          type="button"
+                          onClick={handleModalCheck}
+                          disabled={isLoading || isSubmitted || drafts.length === 0}
+                          aria-label="Create poll"
+                          className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {isSubmitted || isLoading ? (
+                            <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                      <div className="px-3">{searchBox}</div>
+                    </div>
+                    {/* Below the fold at rest: the poll-WIDE settings. */}
+                    <div className="px-3 pb-[4.5rem] pt-[14.4px] space-y-[14.4px]">
+                      {pollSettingsSections}
+                      {errorBlock}
+                    </div>
+                  </div>
+                </div>
+
+                {/* SUB-PANEL: the question editor, slid in from the right OVER
+                    the compose sheet. Bottom-anchored + content-sized (no blank
+                    space below; scrolls internally if it exceeds the cap). ←
+                    (upper-left) discards + slides back; ✓ (upper-right) commits +
+                    slides back. A rightward swipe also goes back (discarding). */}
+                {isSubEdit && (
+                  <div
+                    ref={subPanelRef}
+                    className="absolute inset-x-0 bottom-0 z-20 bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col touch-pan-y"
+                    style={{
+                      maxHeight: 'calc(100dvh - 70px)',
+                      transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
+                      transition: SUB_SLIDE_TRANSITION,
+                    }}
+                    role="dialog"
+                    aria-modal="true"
+                    onTouchStart={handleSubPanelTouchStart}
+                    onTouchMove={handleSubPanelTouchMove}
+                    onTouchEnd={handleSubPanelTouchEnd}
+                    onTouchCancel={handleSubPanelTouchEnd}
+                  >
+                    <div className="shrink-0 relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                      <button
+                        type="button"
+                        onClick={() => closeSubEdit(false)}
+                        disabled={isLoading}
+                        aria-label="Back"
+                        className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      <span className="text-lg font-semibold select-none">
+                        Edit Question
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => closeSubEdit(true)}
+                        disabled={isLoading}
+                        aria-label="Save changes"
+                        className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-6 space-y-[14.4px]">
+                      {formSections}
+                      {errorBlock}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* CREATE sheet (duplicate / Siri prefill) — opaque, bottom-anchored,
+                 sized to its content up to the cap, then scrolls internally. */
+              <div
+                className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up"
+                style={{ maxHeight: 'calc(100dvh - 70px)' }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="New poll"
+              >
+                <div className="shrink-0 relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                  <button
+                    type="button"
+                    onClick={handleCloseClick}
+                    disabled={isLoading}
+                    aria-label="Close poll form"
+                    className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <span className="text-lg font-semibold select-none">New Poll</span>
+                  <button
+                    type="button"
+                    onClick={handleModalCheck}
+                    disabled={isLoading || isSubmitted || !inlineFormHasDraftableContent}
+                    aria-label="Submit poll"
+                    className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitted || isLoading ? (
+                      <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
-                    </button>
-                    <span className="text-lg font-semibold select-none">
-                      Edit Question
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => closeSubEdit(true)}
-                      disabled={isLoading}
-                      aria-label="Save changes"
-                      className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
+                    ) : (
                       <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
-                    </button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
-                    {formSections}
-                    {errorBlock}
-                  </div>
+                    )}
+                  </button>
                 </div>
-              )}
-            </div>
+                <div ref={setSheetScrollerRef} className="min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-6 space-y-[14.4px]">
+                  {formSections}
+                  {errorBlock}
+                </div>
+              </div>
+            )}
           </div>
         </ModalPortal>
       )}
