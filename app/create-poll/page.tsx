@@ -2913,8 +2913,12 @@ export function CreateQuestionContent() {
     "w-full flex items-center gap-[11.2px] pl-[14px] pr-5 py-1.5 text-left active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
 
   // searchSuggestions is ordered best-LAST; reverse it so the best match is
-  // FIRST — i.e. topmost in the dropdown, nearest the box above it.
-  const searchDropdownRows = [...searchSuggestions].reverse().map((s) => {
+  // FIRST — i.e. topmost in the dropdown, nearest the box above it. Built only
+  // while focused (the dropdown is hidden otherwise): this component is
+  // layout-level + persistent, so it re-renders on many unrelated events, and
+  // building N suggestion buttons every time when the box isn't even open is
+  // wasted work.
+  const searchDropdownRows = (searchFocused ? [...searchSuggestions].reverse() : []).map((s) => {
     // Rows with an annotation label reserve `pt-3` above BOTH the icon and the
     // text so the label has room AND the two stay vertically centered.
     const hasLabel = s.segments.some((seg) => seg.label);
