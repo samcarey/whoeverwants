@@ -759,11 +759,17 @@ export function CreateQuestionContent() {
   // it) so setComposeScrollRef can read it without a use-before-define.
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  // True while a FAB-initiated focused open is settling: the scroll pin targets
-  // spacerHeight (box at the TOP, with room for the dropdown above the keyboard)
-  // instead of 0 (box at the bottom). Reset on first user gesture / pin timeout.
+  // The compose sheet's bottom edge rides the visual viewport bottom (= the
+  // keyboard top when the keyboard is up), and the box sits at the bottom of the
+  // scroll content (scrollTop 0) so it lands right above the keyboard. The
+  // suggestions drop UP above it; the poll settings sit below (scroll down to
+  // reveal). composeFocusedOpenRef gates auto-focusing the box on a FAB open
+  // (kept true across a StrictMode detach+reattach; reset on close + a timeout).
   const composeFocusedOpenRef = useRef(false);
-  const composePinCleanupRef = useRef<(() => void) | null>(null);
+  // Visual-viewport rect the modal tracks (null = not yet measured → CSS
+  // fallback). The sheet is sized to it so it stays above the soft keyboard.
+  const [modalViewportH, setModalViewportH] = useState<number | null>(null);
+  const [modalViewportTop, setModalViewportTop] = useState(0);
 
   const recomputeComposeSpacer = useCallback(() => {
     const scroll = composeScrollNodeRef.current;
@@ -772,9 +778,6 @@ export function CreateQuestionContent() {
     const h = Math.max(0, scroll.clientHeight - top.offsetHeight);
     composeSpacerHeightRef.current = h;
     setComposeSpacerHeight((prev) => (prev === h ? prev : h));
-    // While a focused open is settling, keep the box pinned at the top as the
-    // measured spacer refines.
-    if (composeFocusedOpenRef.current && scroll.scrollTop !== h) scroll.scrollTop = h;
   }, []);
 
   const ensureComposeRo = useCallback(() => {
@@ -786,67 +789,23 @@ export function CreateQuestionContent() {
 
   // Callback ref (NOT useMeasuredHeight) because the element mounts inside
   // <ModalPortal>'s deferred commit — a useLayoutEffect([]) would run with a
-  // null ref and never reattach (the documented early-return pitfall). This ref
-  // ALSO owns the compose open-time scroll pin: refs attach child-first, so by
-  // the time it fires the input + topRegion are already attached + measured,
-  // letting us position the box AND focus it from the same settled commit.
+  // null ref and never reattach (the documented early-return pitfall). It pins
+  // scrollTop to 0 (box at the bottom = just above the keyboard) and, on a FAB
+  // open, focuses the box (refs attach child-first, so the input is already
+  // attached by the time this fires; the flag survives the StrictMode remount).
   const setComposeScrollRef = useCallback(
     (node: HTMLDivElement | null) => {
-      // disarm() (NOT endOpen) so a StrictMode/React detach+reattach doesn't
-      // clear the focused-open intent — the box must still land at the top.
-      composePinCleanupRef.current?.();
       composeScrollNodeRef.current = node;
+      setSheetScrollerRef(node);
       if (!node) return;
       ensureComposeRo()?.observe(node);
       recomputeComposeSpacer();
-      const focused = composeFocusedOpenRef.current;
-      // Target: focused open → box at TOP (scrollTop = spacer; dropdown room
-      // below, above the keyboard); else → box at BOTTOM (0). Read live so the
-      // measure + a mid-window gesture (which flips focused off) refine it.
-      const target = () => (composeFocusedOpenRef.current ? composeSpacerHeightRef.current : 0);
-      node.scrollTop = target();
-      if (focused) {
-        // Position settled at the top — focus the box now so onFocus anchors
-        // the dropdown correctly and iOS lands the keyboard (primer hand-off).
+      if (composeFocusedOpenRef.current) {
         searchInputRef.current?.focus({ preventScroll: true });
         removeKeyboardPrimer();
       }
-      // Brief pin to fight iOS's auto-scroll on open; disarm on the first real
-      // gesture (deferred past the grace window so the opening tap's synthetic
-      // touch can't disarm it) or after the cap. Mirrors setSheetScrollerRef.
-      let raf = 0;
-      let t = 0;
-      let armT = 0;
-      // disarm() just tears down the pin (used on detach — intent preserved);
-      // endOpen() also ends the focused-open intent (real gesture / timeout).
-      const disarm = () => {
-        window.clearTimeout(t);
-        window.clearTimeout(armT);
-        if (raf) cancelAnimationFrame(raf);
-        node.removeEventListener("touchmove", endOpen);
-        node.removeEventListener("wheel", endOpen);
-        node.removeEventListener("keydown", endOpen);
-        composePinCleanupRef.current = null;
-      };
-      const endOpen = () => {
-        composeFocusedOpenRef.current = false;
-        disarm();
-      };
-      const reassert = () => {
-        const tt = target();
-        if (node.scrollTop !== tt) node.scrollTop = tt;
-        raf = requestAnimationFrame(reassert);
-      };
-      raf = requestAnimationFrame(reassert);
-      armT = window.setTimeout(() => {
-        node.addEventListener("touchmove", endOpen, { passive: true });
-        node.addEventListener("wheel", endOpen, { passive: true });
-        node.addEventListener("keydown", endOpen, { passive: true });
-      }, SHEET_SCROLL_PIN_GRACE_MS);
-      t = window.setTimeout(endOpen, SHEET_SCROLL_PIN_MS);
-      composePinCleanupRef.current = disarm;
     },
-    [ensureComposeRo, recomputeComposeSpacer, removeKeyboardPrimer],
+    [setSheetScrollerRef, ensureComposeRo, recomputeComposeSpacer, removeKeyboardPrimer],
   );
 
   const setComposeTopRegionRef = useCallback(
@@ -860,22 +819,32 @@ export function CreateQuestionContent() {
     [ensureComposeRo, recomputeComposeSpacer],
   );
 
-  // Recompute on viewport/keyboard changes; tear the observer down on close so
-  // it doesn't retain the detached compose nodes across reopen.
+  // Track the visual viewport (size the sheet above the keyboard) + recompute
+  // the spacer on every change; tear the observer down + reset the focus flag
+  // on close.
   useEffect(() => {
     if (!isModalOpen) {
       composeRoRef.current?.disconnect();
       composeRoRef.current = null;
-      composePinCleanupRef.current?.();
       composeFocusedOpenRef.current = false;
+      setModalViewportH(null);
+      setModalViewportTop(0);
       return;
     }
-    const onResize = () => recomputeComposeSpacer();
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const onResize = () => {
+      setModalViewportH(vv ? vv.height : window.innerHeight);
+      setModalViewportTop(vv ? vv.offsetTop : 0);
+      recomputeComposeSpacer();
+    };
+    onResize();
+    vv?.addEventListener("resize", onResize);
+    vv?.addEventListener("scroll", onResize);
     window.addEventListener("resize", onResize);
-    window.visualViewport?.addEventListener("resize", onResize);
     return () => {
+      vv?.removeEventListener("resize", onResize);
+      vv?.removeEventListener("scroll", onResize);
       window.removeEventListener("resize", onResize);
-      window.visualViewport?.removeEventListener("resize", onResize);
     };
   }, [isModalOpen, recomputeComposeSpacer]);
 
@@ -932,6 +901,9 @@ export function CreateQuestionContent() {
   // is sized to its full height immediately. Only the keyboard appearing
   // changes the room below it.
   const pillTargetBottomRef = useRef(0);
+  // Viewport-Y of the pill's TOP (captured at focus) — the drop-up suggestions
+  // are bounded to the room above it.
+  const pillTargetTopRef = useRef(0);
   const [searchDropdownMaxHeight, setSearchDropdownMaxHeight] = useState(320);
 
   // A ranked_choice question is a "suggestion poll" when the creator left the
@@ -1442,14 +1414,19 @@ export function CreateQuestionContent() {
     setSendError(null);
     // Open with the question box focused + the iOS keyboard up. primeKeyboard()
     // must run synchronously in this tap (the input mounts a commit later); the
-    // search input's callback ref then transfers focus + removes the primer.
+    // compose scroll ref then focuses the box + removes the primer. The flag is
+    // reset after the open settles (it stays set across the StrictMode remount).
     composeFocusedOpenRef.current = true;
     primeKeyboard();
-    // Seed the spacer so the very first paint is already bottom-anchored (box
-    // at the bottom edge); the callback-ref measure corrects it. ~130px ≈
-    // header + the question box; the slide-up also masks any residual jump.
+    window.setTimeout(() => { composeFocusedOpenRef.current = false; }, 1500);
+    // Seed the viewport + spacer so the first paint is already bottom-anchored
+    // (box at the bottom edge, above where the keyboard lands); the vv listener
+    // + callback-ref measure correct them. ~130px ≈ header + the question box.
     if (typeof window !== "undefined") {
-      const vh = window.visualViewport?.height ?? window.innerHeight;
+      const vv = window.visualViewport;
+      const vh = vv?.height ?? window.innerHeight;
+      setModalViewportH(vh);
+      setModalViewportTop(vv?.offsetTop ?? 0);
       const seed = Math.max(0, vh - 70 - 130 - drafts.length * 44);
       composeSpacerHeightRef.current = seed;
       setComposeSpacerHeight(seed);
@@ -1516,24 +1493,22 @@ export function CreateQuestionContent() {
     dismissSoftKeyboard();
   }, [dismissSoftKeyboard]);
 
-  // While the box is focused, bound the suggestions dropdown so its bottom
-  // ends just above the soft keyboard (the box stays put; only the dropdown is
-  // sized to the visible gap below it). visualViewport gives the above-keyboard
-  // region; the pill's rect gives where the dropdown starts.
+  // While the box is focused, bound the DROP-UP suggestions to the room ABOVE
+  // the box — from the pill's top up to the sheet's top edge. The box sits just
+  // above the keyboard (bottom of the sheet), so the suggestions stack upward.
   useEffect(() => {
     if (!searchFocused) return;
     const vp = typeof window !== 'undefined' ? window.visualViewport : null;
     const recompute = () => {
-      // Use the STABLE post-slide pill bottom (captured at focus), not the live
-      // rect — otherwise the height tracks the box mid-rise and the dropdown
-      // visibly grows as the slide completes. With the stable anchor the
-      // dropdown is full-height immediately; only the keyboard sliding in
-      // (which shrinks `keyboardTop`) reduces it, as intended.
-      const bottom = pillTargetBottomRef.current;
-      if (!bottom) return;
-      const keyboardTop = vp ? vp.offsetTop + vp.height : window.innerHeight;
-      // 8px dropdown gap + 12px breathing room above the keyboard.
-      setSearchDropdownMaxHeight(Math.max(140, keyboardTop - bottom - 20));
+      // Stable post-focus pill top (captured at focus). Sheet top = the visual
+      // viewport top + the 70px panel inset; 12px breathing room below it.
+      const top = pillTargetTopRef.current;
+      if (!top) return;
+      // The box sits at the sheet bottom with the header directly above it, so
+      // the drop-up extends up over the header into the dimmed area; bound it to
+      // the sheet/panel top (70px viewport inset) with 12px breathing room.
+      const sheetTop = (vp ? vp.offsetTop : 0) + 70;
+      setSearchDropdownMaxHeight(Math.max(140, top - sheetTop - 12));
     };
     recompute();
     // Re-measure as the keyboard animates in (visualViewport settles a few
@@ -3378,19 +3353,11 @@ export function CreateQuestionContent() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => {
-              // The box opens at the BOTTOM of the sheet; focusing it (auto on
-              // open, or a manual tap) would put it behind the soft keyboard.
-              // Raise it to the top (scroll the card up under the sticky header)
-              // so it sits above the keyboard with room for the dropdown below.
-              // Disarm the open-time scroll pin first so it can't yank back to 0.
-              const scroll = composeScrollNodeRef.current;
-              if (scroll && editMode?.type !== "create") {
-                composePinCleanupRef.current?.();
-                scroll.scrollTo({ top: composeSpacerHeightRef.current });
-              }
-              // Anchor the dropdown's max-height to the pill's (post-scroll)
-              // bottom; the keyboard top bounds it from below.
+              // The box sits at the bottom of the sheet, just above the keyboard
+              // (the sheet bottom rides the visual viewport). Suggestions drop UP
+              // above it — anchor their max-height to the pill's top.
               const rect = searchPillRef.current?.getBoundingClientRect();
+              pillTargetTopRef.current = rect ? rect.top : 0;
               pillTargetBottomRef.current = rect ? rect.bottom : 0;
               setSearchFocused(true);
             }}
@@ -3410,10 +3377,12 @@ export function CreateQuestionContent() {
             soft keyboard. */}
         {searchFocused && searchDropdownRows.length > 0 && (
           <div
-            className="absolute left-0 right-0 top-full mt-2 z-50 overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background py-1"
+            className="absolute left-0 right-0 bottom-full mb-2 z-50 flex flex-col overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background"
             style={{ maxHeight: searchDropdownMaxHeight }}
           >
-            {searchDropdownRows}
+            {/* mt-auto bottom-anchors the list so the best match (last row)
+                sits right above the box; overflow scrolls up for the rest. */}
+            <div className="mt-auto py-1">{searchDropdownRows}</div>
           </div>
         )}
       </div>
@@ -3969,7 +3938,13 @@ export function CreateQuestionContent() {
           dismisses. */}
       {isModalOpen && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[60] flex items-end justify-center">
+          <div
+            className="fixed left-0 w-full z-[60] flex items-end justify-center"
+            style={{
+              top: `${modalViewportTop}px`,
+              height: modalViewportH != null ? `${modalViewportH}px` : '100dvh',
+            }}
+          >
             {/* Backdrop — the dim layer. In COMPOSE mode the transparent sheet
                 covers it, so dismiss-on-tap there flows through the transparent
                 spacer's onClick (below); in CREATE mode the opaque content-sized
@@ -3990,7 +3965,7 @@ export function CreateQuestionContent() {
                  while it's slid off to the right. */
               <div
                 className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up"
-                style={{ height: 'calc(100dvh - 70px)' }}
+                style={{ height: modalViewportH != null ? `${modalViewportH - 70}px` : 'calc(100dvh - 70px)' }}
                 role="dialog"
                 aria-modal="true"
                 aria-label="New poll"
@@ -4066,7 +4041,7 @@ export function CreateQuestionContent() {
                     ref={subPanelRef}
                     className="absolute inset-x-0 bottom-0 z-20 bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col touch-pan-y"
                     style={{
-                      maxHeight: 'calc(100dvh - 70px)',
+                      maxHeight: modalViewportH != null ? `${modalViewportH - 70}px` : 'calc(100dvh - 70px)',
                       transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
                       transition: SUB_SLIDE_TRANSITION,
                     }}
@@ -4116,7 +4091,7 @@ export function CreateQuestionContent() {
                  sized to its content up to the cap, then scrolls internally. */
               <div
                 className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up"
-                style={{ maxHeight: 'calc(100dvh - 70px)' }}
+                style={{ maxHeight: modalViewportH != null ? `${modalViewportH - 70}px` : 'calc(100dvh - 70px)' }}
                 role="dialog"
                 aria-modal="true"
                 aria-label="New poll"
