@@ -136,6 +136,10 @@ const SHEET_SCROLL_PIN_GRACE_MS = 550;
 // `transition: transform 300ms` on the sub-panel). After sliding out, editMode
 // flips back to 'compose' so the sub-panel unmounts off-screen.
 const SUB_SLIDE_MS = 300;
+// The sub-panel's resting transition (state-driven slide in/out). The swipe
+// gesture restores this exact string imperatively after a drag, so the DOM
+// stays in sync with the JSX style prop by construction (single source).
+const SUB_SLIDE_TRANSITION = `transform ${SUB_SLIDE_MS}ms ease`;
 
 // Swipe-to-go-back on the editor sub-panel: a rightward drag past 30% of the
 // panel width OR a flick (≥0.5 px/ms) discards + slides back to the compose
@@ -1582,11 +1586,11 @@ export function CreateQuestionContent() {
     const width = el?.offsetWidth ?? window.innerWidth;
     const shouldCommit = dx >= width * SUB_SWIPE_COMMIT_RATIO || velocity >= SUB_SWIPE_COMMIT_VELOCITY;
     if (shouldCommit) {
-      // Restore the resting 300ms transition imperatively first: React won't
+      // Restore the resting transition imperatively first: React won't
       // re-apply it on the closeSubEdit re-render (the `transition` prop string
       // is unchanged from the drag's `none` override), and only `transform`
       // changes to translateX(100%) — so without this the slide-off would snap.
-      if (el) el.style.transition = "transform 300ms ease";
+      if (el) el.style.transition = SUB_SLIDE_TRANSITION;
       // closeSubEdit(false) flips subSlideIn → React renders translateX(100%),
       // continuing the slide-off from the current drag position.
       closeSubEditRef.current(false);
@@ -1598,7 +1602,7 @@ export function CreateQuestionContent() {
         // the DOM stays in sync with React's props — a later button-tap close
         // (which only changes the `transform` prop) still animates.
         if (subPanelRef.current === el) {
-          el.style.transition = "transform 300ms ease";
+          el.style.transition = SUB_SLIDE_TRANSITION;
           el.style.transform = "translateX(0)";
         }
       }, SUB_SWIPE_SNAP_BACK_MS + 20);
@@ -3882,7 +3886,7 @@ export function CreateQuestionContent() {
                   className="absolute inset-0 bg-gray-100 dark:bg-gray-900 rounded-t-3xl flex flex-col touch-pan-y"
                   style={{
                     transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
-                    transition: 'transform 300ms ease',
+                    transition: SUB_SLIDE_TRANSITION,
                   }}
                   role="dialog"
                   aria-modal="true"
