@@ -11,7 +11,7 @@ import type { PollSuggestion } from "@/lib/api/users";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { buildPollMap } from "@/lib/groupUtils";
 import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
-import { DEFAULT_TIME_WINDOW, formatLocalDateISO } from "@/lib/timeUtils";
+import { DEFAULT_TIME_WINDOW, formatLocalDateISO, formatDurationLabel, windowDurationMinutes } from "@/lib/timeUtils";
 import { detailsIsTypedPrompt } from "@/lib/questionListUtils";
 import type { DayTimeWindow, OptionsMetadata, Poll, Question } from "@/lib/types";
 
@@ -868,6 +868,55 @@ export function validateRankedChoiceOptions(
   }
   if (!collectSuggestions && filledOptions.length < 2) {
     return "Add at least two options, or turn on “Collect Suggestions before Vote” to ask for suggestions.";
+  }
+  return null;
+}
+
+/**
+ * Validate a single question's own fields (NOT poll-level constraints).
+ * Returns null when the draft's question is valid, else a user-facing message.
+ * The single source of truth for both the modal-edit path (which validates the
+ * live form via a `readCurrentDraft()` snapshot) and the ↑ send path (which
+ * validates each staged draft), so the two can't drift.
+ */
+export function validateQuestionDraft(d: QuestionDraft): string | null {
+  const dbType = draftDbQuestionType(d);
+  const titleTrim = d.title.trim();
+  if (dbType === 'yes_no' || dbType === 'limited_supply') {
+    if (!titleTrim) {
+      return dbType === 'yes_no'
+        ? "Please enter a yes/no question."
+        : "Please describe what's being handed out.";
+    }
+    if (d.title.length > 100) return "Title must be 100 characters or less.";
+    if (/https?:\/\/\S+|www\.\S+/i.test(d.title)) {
+      return "Links aren't allowed in the title. Use the Notes field for links.";
+    }
+    if (dbType === 'limited_supply' && (!Number.isFinite(d.supplyCount) || d.supplyCount < 1)) {
+      return "Set at least one available spot.";
+    }
+    return null;
+  }
+  if (dbType === 'showtime') {
+    if (d.options.filter((o) => o.trim() !== '').length === 0) {
+      return "Pick a movie and select at least one showtime to vote on.";
+    }
+    return null;
+  }
+  if (dbType === 'ranked_choice') {
+    return validateRankedChoiceOptions(d.options, d.category, d.collectSuggestions);
+  }
+  // time
+  if (d.dayTimeWindows.length === 0) return "Please select at least one day.";
+  if (d.dayTimeWindows.some((dtw) => dtw.windows.length === 0)) {
+    return "Every selected day must have at least one time slot. Add time slots or remove empty days.";
+  }
+  if (d.durationMinEnabled && d.durationMinValue != null) {
+    const minDurMinutes = Math.round(d.durationMinValue * 60);
+    if (minDurMinutes > 0 && d.dayTimeWindows.some((dtw) =>
+      dtw.windows.some((w) => windowDurationMinutes(w) < minDurMinutes))) {
+      return `Each time window must be at least ${formatDurationLabel(minDurMinutes)} long (the minimum duration).`;
+    }
   }
   return null;
 }
