@@ -18,7 +18,7 @@ import { setSwipeScrollbarLock } from "@/lib/scrollbarLock";
 import HeaderPortal from "@/components/HeaderPortal";
 import { apiGetExplore } from "@/lib/api/groups";
 import { getCachedExplorePolls } from "@/lib/questionCache";
-import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
+import { EXPLORE_ATTR, GROUP_ID_ATTR, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
 import type { Poll } from "@/lib/types";
 import { ExploreFeedList, ExploreTitleBar } from "@/components/ExploreFeed";
 
@@ -137,9 +137,9 @@ export default function ExplorePage() {
             paddingRight: "max(0.35rem, env(safe-area-inset-right, 0px))",
             // Clear the fixed top bar (safe-area inset + the h-14 row).
             paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.5rem)",
-            // The create pill is now an inline trigger in flow (it sits at the
-            // end of the feed), so just normal bottom breathing room.
-            paddingBottom: "1.5rem",
+            // Reserve room at the bottom for the floating "+ Poll" button so
+            // it doesn't cover the last feed row when scrolled to the bottom.
+            paddingBottom: "6rem",
           }}
         >
           <ExploreFeedList polls={polls} />
@@ -152,11 +152,9 @@ export default function ExplorePage() {
             </p>
           )}
 
-          {/* Portal target for the always-on create bar (the bottom plus
-              button + text box). Rendered INSIDE the page content so the
-              fixed bar inherits the page's transform during the swipe-back.
-              See DRAFT_POLL_PORTAL_ID. */}
-          <div id={DRAFT_POLL_PORTAL_ID} className="relative z-40" />
+          {/* New polls are created via the floating "+ Poll" button, which
+              opens the New Poll sheet hosting the create-poll search box (see
+              CreateQuestionContent in the root layout). */}
         </div>
       </div>
     </>
