@@ -2,11 +2,12 @@
  * Module-level iOS soft-keyboard primer for the cross-navigation case.
  *
  * iOS WebKit only raises the soft keyboard when `focus()` runs synchronously
- * inside the tap's user-activation window. When a tap NAVIGATES to another page
- * whose input mounts much later (e.g. the floating "Poll" button → the New-Poll
- * draft page's search box, which only auto-focuses after the slide settles), the
- * tap-handler component and the focus-target component are different React trees,
- * so the hook-based `useKeyboardPrimer` can't bridge them.
+ * inside the tap's user-activation window. When a tap opens a surface whose input
+ * mounts much later (e.g. the floating "Poll" button → the create-poll composer
+ * sheet's search box, which mounts inside ModalPortal's deferred commit and
+ * auto-focuses via a callback ref), the tap-handler component and the focus-target
+ * component are different React trees, so the hook-based `useKeyboardPrimer` can't
+ * bridge them.
  *
  * This module keeps a single off-screen `<input>` at module scope: the tap
  * handler calls `primeIosKeyboard()` synchronously (claiming the keyboard), and

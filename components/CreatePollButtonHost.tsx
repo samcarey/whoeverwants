@@ -4,10 +4,10 @@
  * Layout-level mount of the group page's floating "Poll" button — the
  * counterpart to the home page's "+ Group" button (CreateGroupButtonHost).
  *
- * Tapping it slides to the dedicated New-Poll draft page
- * (`/g/<id>/new-poll`), where CreateQuestionContent's search box + draft-stack
- * UI is portaled in. It replaces the inline create-poll box that used to sit at
- * the top of the group scroll.
+ * Tapping it opens the create-poll bottom-sheet composer (owned by the
+ * layout-level CreateQuestionContent) via the OPEN_POLL_COMPOSER_EVENT. It
+ * replaces the inline create-poll box that used to sit at the top of the group
+ * scroll.
  *
  * Mounted at layout level (like CreateGroupButtonHost) so it's a single
  * persistent DOM node — its position can't jump between route states.
@@ -27,8 +27,8 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
-import { slideToNewPollDraft } from "@/lib/slideOverlay";
 import { primeIosKeyboard } from "@/lib/iosKeyboardPrimer";
+import { OPEN_POLL_COMPOSER_EVENT } from "@/lib/eventChannels";
 import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
 import { haptic } from "@/lib/haptics";
 
@@ -56,17 +56,15 @@ export default function CreatePollButtonHost(): React.ReactElement | null {
   const target = document.getElementById("floating-fab-portal");
   if (!target) return null;
 
-  const match = pathname.match(GROUP_ROOT_WITH_ID);
-  const groupId = match ? pathname.replace(/^\/g\//, "").replace(/\/$/, "") : null;
-  const visible = !!groupId && !homeSwipeActive;
+  const visible = GROUP_ROOT_WITH_ID.test(pathname) && !homeSwipeActive;
 
   const onClick = () => {
-    if (!groupId) return;
     haptic.medium();
-    // Claim the iOS soft keyboard synchronously in the tap so the draft page's
-    // auto-focus can keep it up across the slide navigation (released there).
+    // Claim the iOS soft keyboard synchronously in the tap so the composer's
+    // box can keep it up when it prefocuses (released by CreateQuestionContent
+    // once the box focuses).
     primeIosKeyboard();
-    slideToNewPollDraft({ groupId });
+    window.dispatchEvent(new Event(OPEN_POLL_COMPOSER_EVENT));
   };
 
   return createPortal(

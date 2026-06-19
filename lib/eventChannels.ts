@@ -86,6 +86,13 @@ export interface UserContactForgottenDetail {
  *  for the full lifecycle. */
 export const SLIDE_TO_GROUP_EVENT = 'slideToGroup';
 
+/** Fired by the floating "Poll" button (CreatePollButtonHost) on the group
+ *  page to open the create-poll bottom-sheet composer. CreateQuestionContent
+ *  (layout-level, owns the modal) listens and opens the compose sheet with the
+ *  search box prefocused. A custom event is used because the button is a
+ *  separate layout-level component from the modal host. */
+export const OPEN_POLL_COMPOSER_EVENT = 'openPollComposer';
+
 export type SlideOverlayKind =
   | { type: 'group'; groupId: string }
   | { type: 'groupInfo'; groupId: string }
@@ -106,10 +113,6 @@ export type SlideOverlayKind =
   // poll-level actions (forget / reopen / close / cutoff) and the full
   // respondent list. Tapping the title on the poll detail page slides here.
   | { type: 'pollInfo'; groupId: string; pollShortId: string }
-  // Dedicated "New Poll" draft page at /g/<group>/new-poll. Hosts the
-  // poll-creation search box + multi-question draft-stack UI + the upper-right
-  // send button. Reached from the floating "Poll" button on the group page.
-  | { type: 'newPollDraft'; groupId: string }
   // Empty "New Group" placeholder, used by the home new group button. The overlay
   // renders the same content as `/g/`'s EmptyPlaceholder; the actual group
   // is created via `apiCreateGroup` in parallel, and the caller fires

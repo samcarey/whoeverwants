@@ -30,14 +30,6 @@ export const EXPLORE_ATTR = 'data-explore';
  *  GroupHeader. */
 export const DRAFT_POLL_PORTAL_ID = 'draft-poll-portal';
 
-/** Portal target rendered by the dedicated New-Poll draft page
- *  (`/g/<id>/new-poll`) in the upper-right of its header, where
- *  CreateQuestionContent portals the round ↑ "create poll" send button.
- *  On surfaces WITHOUT this target (the `/g/` empty placeholder, /explore)
- *  the send button falls back to rendering inline on the draft-stack row.
- *  Reader: create-poll's `pollSendPortals` observer. */
-export const POLL_SEND_PORTAL_ID = 'poll-send-portal';
-
 /** Marker attribute on the fixed-position group header. Used by code
  *  that needs to scroll to a position just below the header (e.g.
  *  scrolling a newly-inserted draft card to the top of the visible area)

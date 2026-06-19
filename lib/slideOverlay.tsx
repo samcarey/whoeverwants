@@ -61,7 +61,6 @@ import { GroupEditTitleView } from "@/app/g/[groupShortId]/edit-title/page";
 import { GroupInviteMembersView } from "@/app/g/[groupShortId]/invite-members/page";
 import { PollDetailView } from "@/app/g/[groupShortId]/p/[pollShortId]/PollDetailPage";
 import { ScheduledView } from "@/app/g/[groupShortId]/scheduled/page";
-import { NewPollDraftView } from "@/app/g/[groupShortId]/new-poll/page";
 import { PollInfoView } from "@/app/g/[groupShortId]/p/[pollShortId]/info/page";
 import { EmptyPlaceholder } from "@/app/g/page";
 
@@ -277,28 +276,6 @@ export function slideToGroupScheduled({
   });
 }
 
-/** Slide-in the dedicated "New Poll" draft page (`/g/<group>/new-poll`).
- *  Reached from the floating "Poll" button on the group page. The page hosts
- *  the poll-creation search box + multi-question draft stack + upper-right
- *  send button. A fresh page (no saved scroll, lands at top), so it takes the
- *  default scroll-to-top on commit. */
-export function slideToNewPollDraft({
-  groupId,
-  direction = 'forward',
-  useHistoryBack = false,
-}: {
-  groupId: string;
-  direction?: 'forward' | 'back';
-  useHistoryBack?: boolean;
-}): void {
-  dispatchSlide({
-    href: `/g/${groupId}/new-poll`,
-    direction,
-    useHistoryBack,
-    kind: { type: 'newPollDraft', groupId },
-  });
-}
-
 /** Slide-in the "New Group" empty placeholder. Caller (the home new group button)
  *  fires `apiCreateGroup` in parallel, then `router.push('/g/<short_id>')`
  *  on success or `router.push('/g')` on failure. The host skips its
@@ -372,11 +349,6 @@ function renderForKind(
       return <GroupInviteMembersView key={kind.groupId} groupId={kind.groupId} />;
     case 'groupScheduled':
       return <ScheduledView key={kind.groupId} groupId={kind.groupId} />;
-    case 'newPollDraft':
-      // `inOverlay` so this transient copy does NOT fire the auto-focus event
-      // (only the real route, mounted underneath, does — after the overlay
-      // unmounts, when the single live search input can be focused).
-      return <NewPollDraftView key={kind.groupId} groupId={kind.groupId} inOverlay />;
     case 'pollDetail':
       // `inOverlay` keeps this transient instance from scrolling the
       // document (the still-mounted source page) — the real route owns

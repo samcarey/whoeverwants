@@ -68,7 +68,9 @@ import {
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID, POLL_SEND_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
+import { OPEN_POLL_COMPOSER_EVENT } from "@/lib/eventChannels";
+import { releaseIosKeyboardPrimer } from "@/lib/iosKeyboardPrimer";
 import {
   pollLookup,
   BASE_DEADLINE_OPTIONS,
@@ -139,6 +141,11 @@ const SHEET_SCROLL_PIN_MS = 1200;
 // the pin within a frame or two — before the keyboard-collapse scroll settles.
 // Must comfortably outlast that collapse; a deliberate scroll after it still disarms.
 const SHEET_SCROLL_PIN_GRACE_MS = 550;
+
+// Duration of the question / poll-settings edit sheet's side-slide (in/out from
+// the right, over the composer). Must match the inline `transition` on the sheet
+// so the unmount-after-exit setTimeout lands when the slide finishes.
+const EDIT_SLIDE_MS = 300;
 
 // Order matches the dropdown inside the modal so muscle memory carries over.
 // The leading "New" button (rendered separately at the start of the row)
@@ -739,6 +746,25 @@ export function CreateQuestionContent() {
   // action carries the full staged-draft list, not just a category.
   const [pendingSearchAction, setPendingSearchAction] = useState<(() => void) | null>(null);
 
+  // The bottom-sheet COMPOSER — the "+ Poll" entry point on a group page. Hosts
+  // the search box (prefocused) + the staged-draft bubbles + the ↑ send button
+  // in its header. Opened by CreatePollButtonHost via OPEN_POLL_COMPOSER_EVENT.
+  // Distinct from `editMode`: the question / poll-settings edit sheet slides in
+  // OVER this sheet from the right, so the composer must stay mounted beneath it.
+  // (On /explore + the `/g/` empty placeholder the box is still rendered inline
+  // via `draftPollPortals`, not in this sheet — composeOpen is false there.)
+  const [composeOpen, setComposeOpen] = useState(false);
+  // Drives the question / poll-settings edit sheet's enter/exit side-slide.
+  // false → translateX(100%) (off-screen right); true → translateX(0). Mount at
+  // false then rAF×2 → true to animate in; set false to slide out, then unmount
+  // (setEditMode(null)) after EDIT_SLIDE_MS.
+  const [editSlideShown, setEditSlideShown] = useState(false);
+  // Set when the composer opens so the search input's callback ref focuses it on
+  // mount. The input mounts inside <ModalPortal>'s deferred commit, so a sync
+  // focus right after setComposeOpen(true) would find a null node — the callback
+  // ref fires exactly when the node attaches (same pattern as setTitleInputRef).
+  const shouldFocusSearchRef = useRef(false);
+
   // --- Poll-creation search box (inline input + dropdown) ----------------
   // `searchFocused` = the inline box is focused, so its suggestions dropdown
   // is shown directly below it (see `searchBox`). The box stays in place; the
@@ -768,6 +794,18 @@ export function CreateQuestionContent() {
   // unavailable) → the box falls back to server order + token filtering.
   const [aiScores, setAiScores] = useState<number[] | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  // Merged ref for the search <input>: keeps searchInputRef in sync AND, when the
+  // composer opened (shouldFocusSearchRef), focuses the box the instant it
+  // attaches (it mounts inside ModalPortal's deferred commit) and releases the
+  // iOS keyboard primer that CreatePollButtonHost claimed in the tap.
+  const setSearchInputEl = useCallback((el: HTMLInputElement | null) => {
+    searchInputRef.current = el;
+    if (el && shouldFocusSearchRef.current) {
+      shouldFocusSearchRef.current = false;
+      el.focus();
+      releaseIosKeyboardPrimer();
+    }
+  }, []);
   // The create-poll box is a real inline <input> living in the group scroll
   // (under "Scheduled"). Focusing it stays IN PLACE — the page is still
   // visible around it — and the suggestions render as a dropdown directly
@@ -1234,7 +1272,7 @@ export function CreateQuestionContent() {
   // shared `validateQuestionDraft` via a snapshot of the live form, so the
   // modal-edit + ↑ send paths can't drift. Different from getValidationErrorFor
   // (which validates poll-level fields too). Memoized (after readCurrentDraft)
-  // so commitQuestionEdit's useCallback dep stays stable.
+  // so closeEditSheet's useCallback dep stays stable.
   const getCurrentQuestionFormError = useCallback(
     (): string | null => validateQuestionDraft(readCurrentDraft()),
     [readCurrentDraft],
@@ -1317,6 +1355,7 @@ export function CreateQuestionContent() {
     setCalendarExpanded(false);
     setError(null);
     setEditMode(null);
+    setComposeOpen(false);
     setDrafts([]);
     setSendError(null);
     resetFreshPollFields();
@@ -1377,7 +1416,10 @@ export function CreateQuestionContent() {
   // sized to the visible gap below it). visualViewport gives the above-keyboard
   // region; the pill's rect gives where the dropdown starts.
   useEffect(() => {
-    if (!searchFocused) return;
+    // Sheet-mode (composer) renders the dropdown in normal flow inside the
+    // scrolling sheet body, so the above-keyboard max-height sizing doesn't
+    // apply — skip it (and its visualViewport listeners) there.
+    if (!searchFocused || composeOpen) return;
     const vp = typeof window !== 'undefined' ? window.visualViewport : null;
     const recompute = () => {
       // Use the STABLE post-slide pill bottom (captured at focus), not the live
@@ -1404,7 +1446,7 @@ export function CreateQuestionContent() {
       vp?.removeEventListener('resize', recompute);
       vp?.removeEventListener('scroll', recompute);
     };
-  }, [searchFocused]);
+  }, [searchFocused, composeOpen]);
 
   // Pick a poll suggestion from the focused picker → STAGE it as a draft bubble
   // (no modal). On /explore only one (yes/no) question is allowed, so a new
@@ -1420,8 +1462,16 @@ export function CreateQuestionContent() {
       && document.body.getAttribute(EXPLORE_ATTR) === '1';
     setDrafts((prev) => (onExplore ? [draft] : [...prev, draft]));
     setSendError(null);
-    collapseSearchBox();
-  }, [buildDraftFromOverrides, collapseSearchBox]);
+    // In the composer SHEET, keep the box focused so the user can immediately
+    // add another question (just clear the typed query). On the inline surfaces
+    // (/explore, /g/) collapse the box so the page slides back down + reveals
+    // the staged bubbles.
+    if (composeOpen) {
+      setSearchQuery("");
+    } else {
+      collapseSearchBox();
+    }
+  }, [buildDraftFromOverrides, collapseSearchBox, composeOpen]);
 
   // Remove a staged draft bubble. (Mis-tap recovery — a stuck bubble would
   // otherwise have to be edited away.)
@@ -1450,25 +1500,60 @@ export function CreateQuestionContent() {
     setEditMode({ type: 'poll' });
   }, [capturePollSnapshot, collapseSearchBox]);
 
-  // Commit a question-edit: validate the live form, write it back to the draft,
-  // close. Does NOT send.
-  const commitQuestionEdit = useCallback((index: number) => {
-    const subErr = getCurrentQuestionFormError();
-    if (subErr) { setError(subErr); return; }
-    const updated = readCurrentDraft();
-    setDrafts((prev) => prev.map((d, i) => (i === index ? updated : d)));
-    setSendError(null);
-    setError(null);
-    setEditMode(null);
-  }, [getCurrentQuestionFormError, readCurrentDraft]);
+  // Close the COMPOSER bottom sheet, preserving the staged drafts (the X button
+  // closes-without-discarding per spec). The drafts live on in component state
+  // (and localStorage via questionFormState), so reopening picks up where it
+  // left off. Blurs the box (dismisses the keyboard + hides the dropdown).
+  const closeCompose = useCallback(() => {
+    collapseSearchBox();
+    setComposeOpen(false);
+  }, [collapseSearchBox]);
 
-  // Commit a poll-settings edit: the controls already wrote component state, so
-  // just clear the snapshot and close. Does NOT send.
-  const commitPollEdit = useCallback(() => {
-    pollSnapshotRef.current = null;
+  // Slide the question / poll-settings edit sheet out to the right, then unmount.
+  // `commit` true (✓ Save) writes the edit back; false (back / backdrop) discards
+  // (question: nothing to revert — the draft is the source of truth; poll:
+  // restore the snapshot). Validation failures on a question commit abort the
+  // close so the error shows.
+  const closeEditSheet = useCallback((commit: boolean) => {
+    if (editMode?.type === 'question') {
+      if (commit) {
+        const subErr = getCurrentQuestionFormError();
+        if (subErr) { setError(subErr); return; }
+        const updated = readCurrentDraft();
+        const idx = editMode.index;
+        setDrafts((prev) => prev.map((d, i) => (i === idx ? updated : d)));
+        setSendError(null);
+      }
+    } else if (editMode?.type === 'poll') {
+      if (commit) pollSnapshotRef.current = null;
+      else restorePollSnapshot();
+    }
     setError(null);
-    setEditMode(null);
-  }, []);
+    // Slide out (transform → translateX(100%)), then unmount once it lands. If
+    // the composer is still open underneath, re-focus the box so the user can
+    // keep composing (the keyboard may not re-pop on iOS outside the tap window,
+    // which is fine — the dropdown returns and a tap pops it).
+    setEditSlideShown(false);
+    window.setTimeout(() => {
+      setEditMode(null);
+      if (composeOpen) searchInputRef.current?.focus();
+    }, EDIT_SLIDE_MS);
+  }, [editMode, getCurrentQuestionFormError, readCurrentDraft, restorePollSnapshot, composeOpen]);
+
+  const saveEdit = useCallback(() => closeEditSheet(true), [closeEditSheet]);
+  const cancelEdit = useCallback(() => closeEditSheet(false), [closeEditSheet]);
+
+  // Tap on the shared backdrop: dismiss the topmost surface. Edit sheet open →
+  // 'create' uses its discard-confirm (handleCloseClick); question/poll discard
+  // + slide back (cancelEdit). Only the composer open → close it (keep drafts).
+  const backdropClick = useCallback(() => {
+    if (isModalOpen) {
+      if (editMode?.type === 'create') handleCloseClick();
+      else cancelEdit();
+    } else if (composeOpen) {
+      closeCompose();
+    }
+  }, [isModalOpen, editMode, handleCloseClick, cancelEdit, composeOpen, closeCompose]);
 
   // While the box is focused, dim + disable AND SLIDE UP the app's FIXED
   // top-bar chrome so the whole page reads as having moved up to bring the
@@ -1512,7 +1597,10 @@ export function CreateQuestionContent() {
       clearTimeout(chromeSlideTimerRef.current);
       chromeSlideTimerRef.current = null;
     }
-    if (searchFocused) {
+    // In the composer SHEET the box is already at the top of its own modal, so
+    // the page chrome behind the backdrop must NOT slide/dim — only the inline
+    // (portaled) box on /explore + /g/ does the rigid page-rise.
+    if (searchFocused && !composeOpen) {
       chrome.forEach((el) => {
         el.style.transition = 'filter 150ms ease-out, transform 250ms ease';
         el.style.pointerEvents = 'none';
@@ -1540,7 +1628,43 @@ export function CreateQuestionContent() {
         chromeSlideTimerRef.current = null;
       }, 280);
     }
-  }, [searchFocused, searchShift]);
+  }, [searchFocused, searchShift, composeOpen]);
+
+  // The floating "Poll" button (CreatePollButtonHost) opens the composer here.
+  // Flag the box to auto-focus on mount (it mounts inside ModalPortal's deferred
+  // commit) and mark searchFocused so the suggestions + AI-scoring machinery —
+  // all gated on searchFocused — run for the sheet's lifetime (kept true until
+  // the box is left; sheet-mode onBlur doesn't flip it off).
+  useEffect(() => {
+    const open = () => {
+      shouldFocusSearchRef.current = true;
+      setEditMode(null);
+      setComposeOpen(true);
+      setSearchQuery("");
+      setSearchFocused(true);
+    };
+    window.addEventListener(OPEN_POLL_COMPOSER_EVENT, open);
+    return () => window.removeEventListener(OPEN_POLL_COMPOSER_EVENT, open);
+  }, []);
+
+  // Animate the question / poll-settings edit sheet IN from the right when it
+  // opens (mount at translateX(100%) then rAF×2 → translateX(0)). The double
+  // rAF guarantees the off-screen frame paints before the transform flips, so
+  // the transition isn't optimized away. Create mode uses animate-slide-up
+  // instead and ignores editSlideShown.
+  useEffect(() => {
+    if (editMode && editMode.type !== 'create') {
+      let r2 = 0;
+      const r1 = requestAnimationFrame(() => {
+        r2 = requestAnimationFrame(() => setEditSlideShown(true));
+      });
+      return () => {
+        cancelAnimationFrame(r1);
+        cancelAnimationFrame(r2);
+      };
+    }
+    setEditSlideShown(false);
+  }, [editMode]);
 
   // Read showDiscardConfirm via a ref inside the Escape handler so toggling
   // the inner confirm dialog doesn't tear down + rebuild the body-position
@@ -1561,23 +1685,30 @@ export function CreateQuestionContent() {
   // the focus → modal-open transition (searchFocused flips false as isModalOpen
   // flips true in the same batch), so the snapshot carries through without a
   // teardown/flicker.
-  useBodyScrollLock(isModalOpen || searchFocused, false);
+  useBodyScrollLock(isModalOpen || searchFocused || composeOpen, false);
 
   // Escape closes the sheet (preserving state). Skip when the inner
   // ConfirmationModal is open — its own document-level Escape handler runs
   // too, and we don't want one Escape to dismiss both.
   useEffect(() => {
-    if (!isModalOpen) return;
+    if (!isModalOpen && !composeOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
-      // Edit modes revert (poll-settings restore their snapshot); 'create'
-      // keeps state. cancelModal handles both.
-      if (e.key === 'Escape' && !showDiscardConfirmRef.current) cancelModal();
+      if (e.key !== 'Escape' || showDiscardConfirmRef.current) return;
+      // Dismiss the topmost surface: the side edit sheet (discard) if open, else
+      // the composer (preserving drafts). 'create' (standalone bottom sheet)
+      // routes through cancelModal (restores any poll snapshot).
+      if (isModalOpen) {
+        if (editMode?.type === 'create') cancelModal();
+        else cancelEdit();
+      } else {
+        closeCompose();
+      }
     };
     document.addEventListener('keydown', handleEsc);
     return () => {
       document.removeEventListener('keydown', handleEsc);
     };
-  }, [isModalOpen, cancelModal]);
+  }, [isModalOpen, composeOpen, editMode, cancelModal, cancelEdit, closeCompose]);
 
   // Portal targets for the create-poll search bar. The `#draft-poll-portal`
   // is rendered by the group page CONTENT (GroupContent / EmptyPlaceholder),
@@ -1612,13 +1743,7 @@ export function CreateQuestionContent() {
   // to avoid. WeakMap + counter assign each DOM node a permanent id;
   // assignment happens inside the effect's callback so refs aren't read
   // during render.
-  // `#poll-send-portal` is rendered ONLY by the New-Poll draft page (in its
-  // header's upper-right). When present, the round ↑ send button portals there
-  // instead of rendering inline on the draft-stack row; on the other surfaces
-  // (empty `/g/` placeholder, /explore) there's no such target so the send
-  // button stays inline. Tracked by the same observer as the search-box portal.
   const [draftPollPortals, setDraftPollPortals] = useState<Array<{ key: string; target: HTMLElement }>>([]);
-  const [pollSendPortals, setPollSendPortals] = useState<Array<{ key: string; target: HTMLElement }>>([]);
   useEffect(() => {
     const keys = new WeakMap<HTMLElement, string>();
     let nextKey = 0;
@@ -1642,8 +1767,6 @@ export function CreateQuestionContent() {
     const check = () => {
       const boxes = queryTargets(DRAFT_POLL_PORTAL_ID);
       setDraftPollPortals(prev => (entriesShallowEqual(prev, boxes) ? prev : boxes));
-      const sends = queryTargets(POLL_SEND_PORTAL_ID);
-      setPollSendPortals(prev => (entriesShallowEqual(prev, sends) ? prev : sends));
     };
     const observer = new MutationObserver(check);
     observer.observe(document.body, { childList: true, subtree: true });
@@ -2641,6 +2764,7 @@ export function CreateQuestionContent() {
             isSubmittingRef.current = false;
             setIsLoading(false);
             setEditMode(null);
+            setComposeOpen(false);
             applyDraftToState(emptyDraft());
             setDrafts([]);
             setSendError(null);
@@ -2795,6 +2919,7 @@ export function CreateQuestionContent() {
       isSubmittingRef.current = false;
       setIsLoading(false);
       setEditMode(null);
+      setComposeOpen(false);
       applyDraftToState(emptyDraft());
       // Clear the staged drafts now the poll exists (kept until here so a failed
       // send leaves the bubbles to retry). Without this they'd persist on the
@@ -2884,12 +3009,11 @@ export function CreateQuestionContent() {
     doSend();
   };
 
-  // The modal ✓ button: submit (create mode) / commit the draft (question edit)
-  // / keep the poll-settings edit (poll edit). Only create mode sends.
+  // The create-mode (legacy prefill: duplicate / vote-from-suggestion / Siri) ✓
+  // button submits the poll. The question / poll-settings edit sheets use their
+  // own ✓ Save button → saveEdit (with the side-slide-out).
   const handleModalCheck = (e: React.MouseEvent) => {
-    if (editMode?.type === 'create') { handleSubmitClick(e); return; }
-    if (editMode?.type === 'question') { commitQuestionEdit(editMode.index); return; }
-    if (editMode?.type === 'poll') { commitPollEdit(); return; }
+    if (editMode?.type === 'create') handleSubmitClick(e);
   };
 
   // Empty-state hint shown in the title-preview slot above the form card,
@@ -3185,12 +3309,13 @@ export function CreateQuestionContent() {
   // re-renders on many unrelated events) recomputes it only when drafts change.
   const pollPreviewTitle = useMemo(() => draftPollPreview(drafts, '').title, [drafts]);
 
-  // On the New-Poll draft page the send button is portaled to the header's
-  // upper-right (`#poll-send-portal`) instead of sitting on a draft-stack row.
-  // `sendInHeader` suppresses the inline placement on that surface.
-  const sendInHeader = pollSendPortals.length > 0;
+  // In the composer SHEET the ↑ send button lives in the header's upper-right;
+  // `sendInHeader` suppresses the inline placement on the draft-stack row there.
+  // On the inline surfaces (/explore, /g/ empty placeholder) the box has no
+  // header, so the send button stays inline on the draft-stack row.
+  const sendInHeader = composeOpen;
 
-  // Round ↑ "create poll" button. On the New-Poll page it's portaled into the
+  // Round ↑ "create poll" button. In the composer it's rendered in the sheet
   // header (upper-right); on the empty-placeholder / explore surfaces it sits
   // inline on the single-question row or the combined poll-title row. Reused
   // across those mutually-exclusive placements (never rendered twice at once).
@@ -3276,18 +3401,26 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
-  const searchBox = (
+  // The search box + staged-draft bubbles + suggestions dropdown. Rendered in
+  // TWO modes:
+  //  - sheetMode=true  — inside the composer bottom sheet (the "+ Poll" flow).
+  //    No scrim / page-rise (the sheet IS the modal + the box is already at the
+  //    top); the dropdown sits in normal flow inside the scrolling sheet body;
+  //    the box prefocuses on mount (setSearchInputEl) and stays "focused" for
+  //    the sheet's life (sheet-mode blur doesn't flip searchFocused off).
+  //  - sheetMode=false — portaled inline on /explore + the /g/ empty placeholder
+  //    (the legacy in-flow box: scrim + rigid page-rise + absolute dropdown
+  //    bounded above the keyboard).
+  const renderSearchBox = (sheetMode: boolean) => (
     <>
       {draftStack}
-      {/* While focused, a slightly-dimmed scrim covers the rest of the page
-          (polls, CTAs, the area behind the top bar) so the background reads as
-          backgrounded + non-interactive — tapping it dismisses the search. The
-          fixed top bar paints above this scrim's stacking context, so it's
-          dimmed + disabled separately in the JS effect above. `fixed inset-0`
-          is trapped to the swipe wrapper's will-change:transform box, covering
-          the content area; z-40 sits below the box (z-50) and above the
-          polls. */}
-      {searchFocused && (
+      {/* While focused (inline mode only), a slightly-dimmed scrim covers the
+          rest of the page (polls, CTAs, the area behind the top bar) so the
+          background reads as backgrounded + non-interactive — tapping it
+          dismisses the search. The fixed top bar paints above this scrim's
+          stacking context, so it's dimmed + disabled separately in the JS effect
+          above. z-40 sits below the box (z-50) and above the polls. */}
+      {!sheetMode && searchFocused && (
         <div
           className="fixed left-0 right-0 z-40 bg-black/20"
           aria-hidden
@@ -3310,19 +3443,23 @@ export function CreateQuestionContent() {
           `data-poll-pill` lets onFocus measure the pill via the focused
           input's `closest()` — robust when two portaled copies coexist
           mid-slide (the single React ref can go stale on the overlay's
-          unmount; the New-Poll draft page's auto-focus relies on a correct
-          measurement). */}
+          unmount). */}
       <div ref={searchPillRef} data-poll-pill className="relative">
         {/* The real inline input pill — full width, stays in place when
             focused. Tapping outside (blur) closes the dropdown. */}
         <div className="flex items-center h-[42.24px] rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4">
           <input
-            ref={searchInputRef}
-            data-poll-search-input
+            ref={setSearchInputEl}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={(e) => {
+              if (sheetMode) {
+                // The composer box is already at the sheet top — no page-rise.
+                setSearchShift(0);
+                setSearchFocused(true);
+                return;
+              }
               // Measure how far the page must rise so the pill sits just below
               // the notch, BEFORE the keyboard appears / the page is
               // scroll-locked (the pill is still at its resting position). The
@@ -3330,8 +3467,7 @@ export function CreateQuestionContent() {
               // amount, bringing the box to the top and giving the suggestions
               // the maximum room below. Batched with setSearchFocused so both
               // land in one render. Measure via the focused input's `closest`
-              // pill (not the shared ref) so the New-Poll page's auto-focus
-              // measures the right copy even mid-slide.
+              // pill (not the shared ref) so a mid-slide copy measures correctly.
               const pill = (e.currentTarget as HTMLElement).closest('[data-poll-pill]') as HTMLElement | null;
               const rect = pill?.getBoundingClientRect();
               const target = measureSafeAreaTop() + 4; // where the pill TOP lands
@@ -3341,8 +3477,10 @@ export function CreateQuestionContent() {
               pillTargetBottomRef.current = rect ? target + rect.height : 0;
               setSearchFocused(true);
             }}
-            // Collapse on blur (closes the dropdown + dismisses the keyboard).
-            onBlur={() => setSearchFocused(false)}
+            // Inline mode: collapse on blur. Sheet mode: keep searchFocused true
+            // (the dropdown + suggestions machinery stay on for the sheet's life;
+            // it's reset only when the box is left — closeCompose / open*Edit).
+            onBlur={() => { if (!sheetMode) setSearchFocused(false); }}
             disabled={isLoading}
             placeholder={drafts.length > 0 && !isExplore ? "Ask another question…" : "Ask a question…"}
             aria-label={drafts.length > 0 && !isExplore ? "Ask another question" : "Ask a question"}
@@ -3353,17 +3491,23 @@ export function CreateQuestionContent() {
             className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
           />
         </div>
-        {/* Suggestions dropdown — directly below the box, overlaying the polls
-            beneath (bg-background + border, no shadow) so the rest of the page
-            stays visible around it. Bounded above the keyboard. */}
-        {searchFocused && searchDropdownRows.length > 0 && (
-          <div
-            className="absolute left-0 right-0 top-full mt-2 z-50 overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background py-1"
-            style={{ maxHeight: searchDropdownMaxHeight }}
-          >
-            {searchDropdownRows}
-          </div>
-        )}
+        {/* Suggestions dropdown. Sheet mode: normal flow below the box (the sheet
+            body scrolls). Inline mode: absolute below the box, bounded above the
+            keyboard, overlaying the polls. */}
+        {sheetMode
+          ? searchDropdownRows.length > 0 && (
+              <div className="mt-2 overflow-hidden rounded-2xl border border-gray-300 dark:border-gray-700 bg-background py-1">
+                {searchDropdownRows}
+              </div>
+            )
+          : searchFocused && searchDropdownRows.length > 0 && (
+              <div
+                className="absolute left-0 right-0 top-full mt-2 z-50 overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background py-1"
+                style={{ maxHeight: searchDropdownMaxHeight }}
+              >
+                {searchDropdownRows}
+              </div>
+            )}
       </div>
       </div>
     </>
@@ -3371,50 +3515,99 @@ export function CreateQuestionContent() {
 
   return (
     <div className="question-content">
-      {draftPollPortals.map(({ key, target }) => createPortal(searchBox, target, key))}
-      {/* On the New-Poll draft page the send button lives in the header's
-          upper-right (`#poll-send-portal`). Elsewhere it renders inline on the
-          draft-stack row (gated by `sendInHeader` above). */}
-      {sendInHeader && pollSendPortals.map(({ key, target }) => createPortal(sendButton, target, key))}
+      {draftPollPortals.map(({ key, target }) => createPortal(renderSearchBox(false), target, key))}
 
-      {/* New-poll bottom sheet — slides up from the bottom edge. Top half
-          holds the question form; bottom half holds poll-level settings
-          (voting cutoff, prephase cutoff, notes, voter name). Each section
-          is a borderless rounded card with a lighter bg than the sheet so
-          the two read as stacked panels. The check button submits the
-          whole poll immediately (single-question mode); backdrop / Escape
-          dismisses. */}
-      {isModalOpen && (
+      {/* Create-poll modal layer. Two overlapping bottom sheets share one
+          backdrop:
+            - the COMPOSER (the "+ Poll" entry point) — hosts the prefocused
+              search box + staged-draft bubbles, with the ↑ send button in its
+              header. Slides up from the bottom.
+            - the EDIT sheet — the question / poll-settings form (reached by
+              tapping a bubble), OR the legacy 'create' prefill flow. For an edit
+              it slides in from the RIGHT over the composer (back discards, ✓
+              saves); for 'create' it's a standalone bottom slide-up (X + submit).
+          Children are absolutely positioned (not flex) so they overlap; the edit
+          sheet sits at z-10 above the composer. */}
+      {(composeOpen || isModalOpen) && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[60] flex items-end justify-center">
-            {/* Backdrop — tap to dismiss. Edit modes cancel without applying
-                (poll-settings restore their snapshot); create mode keeps state. */}
+          <div className="fixed inset-0 z-[60]">
+            {/* Shared backdrop — dismiss the topmost surface (edit sheet if open,
+                else the composer). */}
             <div
               className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
-              onClick={cancelModal}
+              onClick={backdropClick}
               aria-hidden="true"
             />
-            {/* Sheet panel — anchored to the bottom edge with rounded top
-                corners. Slides up on mount via the shared `slide-up`
-                keyframe in globals.css. */}
-            <div
-              className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col animate-slide-up"
-              style={{ height: 'calc(100dvh - 70px)' }}
-              role="dialog"
-              aria-modal="true"
-              aria-label="New poll"
-            >
+
+            {/* COMPOSER sheet — bottom slide-up. The ↑ send is in the header
+                (upper-right); the X (upper-left) closes it preserving drafts. */}
+            {composeOpen && (
+              <div
+                className="absolute inset-x-0 bottom-0 mx-auto w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col animate-slide-up"
+                style={{ height: 'calc(100dvh - 70px)' }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="New poll"
+              >
+                <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                  <button
+                    type="button"
+                    onClick={closeCompose}
+                    disabled={isLoading}
+                    aria-label="Close"
+                    className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <span className="text-lg font-semibold select-none">New Poll</span>
+                  {/* ↑ send (upper-right). sendInHeader === composeOpen, so the
+                      inline placement on the draft-stack row is suppressed. */}
+                  <div className="absolute right-2 top-2">{sendButton}</div>
+                </div>
+                <div className="flex-1 overflow-y-auto overflow-x-hidden pb-[4.5rem]">
+                  {renderSearchBox(true)}
+                </div>
+              </div>
+            )}
+
+            {/* EDIT sheet — 'create' is a bottom slide-up; question / poll-
+                settings slide in from the right (over the composer) and out
+                again, driven by editSlideShown. */}
+            {isModalOpen && (
+              <div
+                className={`absolute inset-x-0 bottom-0 mx-auto w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col z-10 ${editMode?.type === 'create' ? 'animate-slide-up' : ''}`}
+                style={editMode?.type === 'create'
+                  ? { height: 'calc(100dvh - 70px)' }
+                  : {
+                      height: 'calc(100dvh - 70px)',
+                      transform: `translateX(${editSlideShown ? '0' : '100%'})`,
+                      transition: `transform ${EDIT_SLIDE_MS}ms ease`,
+                    }}
+                role="dialog"
+                aria-modal="true"
+                aria-label={editMode?.type === 'poll' ? 'Poll settings' : editMode?.type === 'question' ? 'Edit question' : 'New poll'}
+              >
               <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                {/* Upper-left: X (create, discard-confirm) or back-chevron
+                    (question / poll edit — discards + slides back right). */}
                 <button
                   type="button"
-                  onClick={handleCloseClick}
+                  onClick={editMode?.type === 'create' ? handleCloseClick : cancelEdit}
                   disabled={isLoading}
-                  aria-label="Close poll form"
+                  aria-label={editMode?.type === 'create' ? 'Close poll form' : 'Back'}
                   className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  {editMode?.type === 'create' ? (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                  )}
                 </button>
                 <span className="text-lg font-semibold select-none">
                   {editMode?.type === 'poll'
@@ -3423,11 +3616,13 @@ export function CreateQuestionContent() {
                       ? 'Edit Question'
                       : 'New Poll'}
                 </span>
+                {/* Upper-right: ✓ — submits (create) or saves the edit (question
+                    / poll, with the slide-out). */}
                 <button
                   type="button"
-                  onClick={handleModalCheck}
+                  onClick={editMode?.type === 'create' ? handleModalCheck : saveEdit}
                   // Create mode requires draftable content to submit; the two
-                  // edit modes always allow ✓ (commit / keep).
+                  // edit modes always allow ✓ Save.
                   disabled={isLoading || isSubmitted || (editMode?.type === 'create' && !inlineFormHasDraftableContent)}
                   aria-label={editMode?.type === 'create' ? 'Submit poll' : 'Save'}
                   className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
@@ -3911,6 +4106,7 @@ export function CreateQuestionContent() {
                 )}
               </div>
             </div>
+            )}
           </div>
         </ModalPortal>
       )}
