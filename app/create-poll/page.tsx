@@ -755,6 +755,15 @@ export function CreateQuestionContent() {
   const composeRoRef = useRef<ResizeObserver | null>(null);
   const composeSpacerHeightRef = useRef(0);
   const [composeSpacerHeight, setComposeSpacerHeight] = useState(0);
+  // The question box. Declared here (above the compose scroll ref that focuses
+  // it) so setComposeScrollRef can read it without a use-before-define.
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // True while a FAB-initiated focused open is settling: the scroll pin targets
+  // spacerHeight (box at the TOP, with room for the dropdown above the keyboard)
+  // instead of 0 (box at the bottom). Reset on first user gesture / pin timeout.
+  const composeFocusedOpenRef = useRef(false);
+  const composePinCleanupRef = useRef<(() => void) | null>(null);
 
   const recomputeComposeSpacer = useCallback(() => {
     const scroll = composeScrollNodeRef.current;
@@ -763,6 +772,9 @@ export function CreateQuestionContent() {
     const h = Math.max(0, scroll.clientHeight - top.offsetHeight);
     composeSpacerHeightRef.current = h;
     setComposeSpacerHeight((prev) => (prev === h ? prev : h));
+    // While a focused open is settling, keep the box pinned at the top as the
+    // measured spacer refines.
+    if (composeFocusedOpenRef.current && scroll.scrollTop !== h) scroll.scrollTop = h;
   }, []);
 
   const ensureComposeRo = useCallback(() => {
@@ -772,19 +784,62 @@ export function CreateQuestionContent() {
     return composeRoRef.current;
   }, [recomputeComposeSpacer]);
 
-  // Callback refs (NOT useMeasuredHeight) because the elements mount inside
+  // Callback ref (NOT useMeasuredHeight) because the element mounts inside
   // <ModalPortal>'s deferred commit — a useLayoutEffect([]) would run with a
-  // null ref and never reattach (the documented early-return pitfall).
+  // null ref and never reattach (the documented early-return pitfall). This ref
+  // ALSO owns the compose open-time scroll pin: refs attach child-first, so by
+  // the time it fires the input + topRegion are already attached + measured,
+  // letting us position the box AND focus it from the same settled commit.
   const setComposeScrollRef = useCallback(
     (node: HTMLDivElement | null) => {
+      composePinCleanupRef.current?.();
       composeScrollNodeRef.current = node;
-      setSheetScrollerRef(node);
-      if (node) {
-        ensureComposeRo()?.observe(node);
-        recomputeComposeSpacer();
+      if (!node) return;
+      ensureComposeRo()?.observe(node);
+      recomputeComposeSpacer();
+      const focused = composeFocusedOpenRef.current;
+      // Target: focused open → box at TOP (scrollTop = spacer; dropdown room
+      // below, above the keyboard); else → box at BOTTOM (0). Read live so the
+      // measure can refine it.
+      const target = () => (focused ? composeSpacerHeightRef.current : 0);
+      node.scrollTop = target();
+      if (focused) {
+        // Position settled at the top — focus the box now so onFocus anchors
+        // the dropdown correctly and iOS lands the keyboard (primer hand-off).
+        searchInputRef.current?.focus({ preventScroll: true });
+        removeKeyboardPrimer();
       }
+      // Brief pin to fight iOS's auto-scroll on open; disarm on the first real
+      // gesture (deferred past the grace window so the opening tap's synthetic
+      // touch can't disarm it) or after the cap. Mirrors setSheetScrollerRef.
+      let raf = 0;
+      let t = 0;
+      let armT = 0;
+      const cleanup = () => {
+        window.clearTimeout(t);
+        window.clearTimeout(armT);
+        if (raf) cancelAnimationFrame(raf);
+        node.removeEventListener("touchmove", cleanup);
+        node.removeEventListener("wheel", cleanup);
+        node.removeEventListener("keydown", cleanup);
+        composeFocusedOpenRef.current = false;
+        composePinCleanupRef.current = null;
+      };
+      const reassert = () => {
+        const tt = target();
+        if (node.scrollTop !== tt) node.scrollTop = tt;
+        raf = requestAnimationFrame(reassert);
+      };
+      raf = requestAnimationFrame(reassert);
+      armT = window.setTimeout(() => {
+        node.addEventListener("touchmove", cleanup, { passive: true });
+        node.addEventListener("wheel", cleanup, { passive: true });
+        node.addEventListener("keydown", cleanup, { passive: true });
+      }, SHEET_SCROLL_PIN_GRACE_MS);
+      t = window.setTimeout(cleanup, SHEET_SCROLL_PIN_MS);
+      composePinCleanupRef.current = cleanup;
     },
-    [setSheetScrollerRef, ensureComposeRo, recomputeComposeSpacer],
+    [ensureComposeRo, recomputeComposeSpacer, removeKeyboardPrimer],
   );
 
   const setComposeTopRegionRef = useCallback(
@@ -859,7 +914,6 @@ export function CreateQuestionContent() {
   // or null when the on-device model hasn't scored them (empty query / loading /
   // unavailable) → the box falls back to server order + token filtering.
   const [aiScores, setAiScores] = useState<number[] | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
   // The create-poll box is a real <input> inside the New Poll sheet body.
   // Focusing it renders the suggestions as a dropdown directly below the pill;
   // `searchPillRef` anchors that dropdown and its max height is computed so it
@@ -870,28 +924,6 @@ export function CreateQuestionContent() {
   // changes the room below it.
   const pillTargetBottomRef = useRef(0);
   const [searchDropdownMaxHeight, setSearchDropdownMaxHeight] = useState(320);
-
-  // --- Auto-focus the question box (with the soft keyboard) on FAB-open -----
-  // openComposeModal (a real tap) calls primeKeyboard() to claim the iOS
-  // keyboard synchronously; the search input mounts a commit later inside
-  // <ModalPortal>, so this callback ref transfers focus the moment it attaches
-  // and removes the primer — iOS keeps the keyboard up across the move (same
-  // pattern as setTitleInputRef). The flag is set ONLY by openComposeModal, so
-  // returning to compose from the sub-editor doesn't re-pop the keyboard.
-  const shouldFocusSearchRef = useRef(false);
-  const setSearchInputRef = useCallback(
-    (node: HTMLInputElement | null) => {
-      searchInputRef.current = node;
-      if (node && shouldFocusSearchRef.current) {
-        shouldFocusSearchRef.current = false;
-        // focus() synchronously fires onFocus, which raises the box above the
-        // keyboard (scroll-to-top) and anchors the dropdown.
-        node.focus({ preventScroll: true });
-        removeKeyboardPrimer();
-      }
-    },
-    [removeKeyboardPrimer],
-  );
 
   // A ranked_choice question is a "suggestion poll" when the creator left the
   // "Collect Suggestions before Vote" toggle on — regardless of whether they
@@ -1402,7 +1434,7 @@ export function CreateQuestionContent() {
     // Open with the question box focused + the iOS keyboard up. primeKeyboard()
     // must run synchronously in this tap (the input mounts a commit later); the
     // search input's callback ref then transfers focus + removes the primer.
-    shouldFocusSearchRef.current = true;
+    composeFocusedOpenRef.current = true;
     primeKeyboard();
     // Seed the spacer so the very first paint is already bottom-anchored (box
     // at the bottom edge); the callback-ref measure corrects it. ~130px ≈
@@ -3332,7 +3364,7 @@ export function CreateQuestionContent() {
             stands out against the gray sheet body. */}
         <div className="flex items-center h-[42.24px] rounded-full bg-white dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4">
           <input
-            ref={setSearchInputRef}
+            ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -3344,7 +3376,7 @@ export function CreateQuestionContent() {
               // Disarm the open-time scroll pin first so it can't yank back to 0.
               const scroll = composeScrollNodeRef.current;
               if (scroll && editMode?.type !== "create") {
-                sheetScrollPinCleanupRef.current?.();
+                composePinCleanupRef.current?.();
                 scroll.scrollTo({ top: composeSpacerHeightRef.current });
               }
               // Anchor the dropdown's max-height to the pill's (post-scroll)
