@@ -69,8 +69,7 @@ import {
   type PollHydratedDetail,
   type PollFailedDetail,
 } from "@/lib/eventChannels";
-import { EXPLORE_ATTR, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
-import { isGroupRootView } from "@/lib/questionId";
+import { EXPLORE_ATTR, GROUP_ID_ATTR, GROUP_FAB_PORTAL_ID } from "@/lib/groupDomMarkers";
 import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
 import {
   pollLookup,
@@ -453,8 +452,9 @@ export function CreateQuestionContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  // Hide the "+ Poll" FAB during a group→home swipe-back (shared with the
-  // "+ Group" FAB), so the two don't both occupy the bottom-right corner.
+  // Used only for the /explore body-portal FAB (hidden during an
+  // explore→home swipe-back). Group surfaces render the FAB into their own
+  // #group-fab-portal targets, which ride the page transforms directly.
   const swipeBackActive = useHomeBackdropActive();
   const followUpToParam = searchParams.get('followUpTo');
   const duplicateOfParam = searchParams.get('duplicate');
@@ -1610,6 +1610,34 @@ export function CreateQuestionContent() {
       attributeFilter: [GROUP_ID_ATTR],
     });
     read();
+    return () => observer.disconnect();
+  }, []);
+
+  // Live list of `#group-fab-portal` targets (rendered by each GroupContent /
+  // EmptyPlaceholder instance — real route, slide overlay, swipe-back
+  // backdrop). The "+ Poll" FAB is portaled into EVERY one so it rides the
+  // page's slide/swipe/reveal transforms (the targets sit inside the host's
+  // contain:strict box during a transition). Re-queried via a MutationObserver
+  // armed for the whole component lifetime — the targets mount/unmount as the
+  // route changes and as the overlay/backdrop appear, so a self-disconnecting
+  // observer would strand a detached reference. Rendering into ALL targets
+  // (not just the last) avoids a blink during the overlay→real-route handoff
+  // overlap, when both the overlay's copy and the destination's copy exist —
+  // the two FABs coincide at the same corner, so there's no visible doubling.
+  // Plain element list + index keys: the FAB is a stateless button, so the
+  // remount when the list reorders is invisible (unlike the old bubble bar,
+  // whose stateful picker needed WeakMap-stable keys).
+  const [groupFabPortals, setGroupFabPortals] = useState<HTMLElement[]>([]);
+  useEffect(() => {
+    const sameTargets = (a: HTMLElement[], b: HTMLElement[]) =>
+      a.length === b.length && a.every((x, i) => x === b[i]);
+    const check = () => {
+      const all = Array.from(document.querySelectorAll<HTMLElement>(`#${GROUP_FAB_PORTAL_ID}`));
+      setGroupFabPortals((prev) => (sameTargets(prev, all) ? prev : all));
+    };
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    check();
     return () => observer.disconnect();
   }, []);
 
@@ -3229,17 +3257,53 @@ export function CreateQuestionContent() {
     </>
   );
 
-  // The "+ Poll" FAB — mirrors the home "+ Group" button, shown on the
-  // group-root / empty-placeholder / explore surfaces (where a poll can be
-  // created). Tapping it opens the New Poll sheet (compose mode) whose body
-  // hosts the search box. Hidden during a group→home swipe-back so it doesn't
-  // collide with the revealed "+ Group" button.
-  const fabTarget =
+  // The "+ Poll" FAB — mirrors the home "+ Group" button. Tapping it opens
+  // the New Poll sheet (compose mode) whose body hosts the search box.
+  //
+  // Two rendering paths:
+  //  - GROUP surfaces (group root / empty placeholder, incl. their slide
+  //    overlay + swipe-back backdrop instances) render a #group-fab-portal
+  //    target INSIDE GroupContent's tree, so the FAB rides every page
+  //    transform (slides IN with the overlay, slides OFF with a swipe-back,
+  //    is revealed under a poll→group swipe). We portal the button into each
+  //    such target; their mere presence is the visibility gate.
+  //  - /EXPLORE has no GroupContent, so the FAB falls back to the body-level
+  //    #floating-fab-portal (static, like before). Hidden during an
+  //    explore→home swipe-back so it doesn't collide with the revealed
+  //    "+ Group" button.
+  const exploreFabTarget =
     isClient && typeof document !== "undefined"
       ? document.getElementById("floating-fab-portal")
       : null;
-  const showPollFab =
-    isClient && !swipeBackActive && (isGroupRootView(pathname) || pathname === "/explore");
+  const showExploreFab = isClient && !swipeBackActive && pathname === "/explore";
+
+  // One shared button definition for every portal target. The button keeps
+  // its own z-50 for the explore (body-level) path where it must float above
+  // the page; inside a #group-fab-portal target the wrapping div already
+  // establishes the stacking context, so the z-index is moot but harmless.
+  // (It's the single child of each portal, so it needs no key.)
+  const pollFabButton = (visible: boolean) => (
+    <button
+      onClick={openComposeModal}
+      className="fixed h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
+      style={{
+        zIndex: 50,
+        right: "max(1.5rem, env(safe-area-inset-right, 0px))",
+        bottom: IS_CAPACITOR_NATIVE ? "2.65rem" : "1.9rem",
+        transform: "translateZ(0)",
+        visibility: visible ? "visible" : "hidden",
+        pointerEvents: visible ? "auto" : "none",
+      }}
+      aria-label="Create new poll"
+      aria-hidden={!visible}
+      tabIndex={visible ? 0 : -1}
+    >
+      <span aria-hidden="true" className="text-[28.8px] leading-none">
+        +
+      </span>
+      <span className="text-lg leading-none">Poll</span>
+    </button>
+  );
 
   const isSubEdit = editMode?.type === 'question';
   // The base sheet shows compose (search box + inline poll settings) for the
@@ -3722,30 +3786,16 @@ export function CreateQuestionContent() {
 
   return (
     <div className="question-content">
-      {fabTarget &&
-        createPortal(
-          <button
-            onClick={openComposeModal}
-            className="fixed h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
-            style={{
-              zIndex: 50,
-              right: "max(1.5rem, env(safe-area-inset-right, 0px))",
-              bottom: IS_CAPACITOR_NATIVE ? "2.65rem" : "1.9rem",
-              transform: "translateZ(0)",
-              visibility: showPollFab ? "visible" : "hidden",
-              pointerEvents: showPollFab ? "auto" : "none",
-            }}
-            aria-label="Create new poll"
-            aria-hidden={!showPollFab}
-            tabIndex={showPollFab ? 0 : -1}
-          >
-            <span aria-hidden="true" className="text-[28.8px] leading-none">
-              +
-            </span>
-            <span className="text-lg leading-none">Poll</span>
-          </button>,
-          fabTarget,
-        )}
+      {/* Group surfaces: portal the FAB into every #group-fab-portal target
+          so it rides the page transforms. Always visible — the target only
+          exists where a poll can be created. */}
+      {groupFabPortals.map((target, i) =>
+        createPortal(pollFabButton(true), target, `group-fab-${i}`),
+      )}
+
+      {/* /explore: static body-level FAB (no GroupContent to host a target). */}
+      {exploreFabTarget &&
+        createPortal(pollFabButton(showExploreFab), exploreFabTarget, "explore-fab")}
 
       {/* New-poll bottom sheet — slides up from the bottom edge. Top half
           holds the question form; bottom half holds poll-level settings

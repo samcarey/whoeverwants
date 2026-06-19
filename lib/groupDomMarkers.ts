@@ -25,3 +25,24 @@ export const EXPLORE_ATTR = 'data-explore';
  *  scrolling a newly-inserted draft card to the top of the visible area)
  *  without re-implementing the header-height measurement here. */
 export const GROUP_HEADER_ATTR = 'data-group-header';
+
+/** Portal target for the "+ Poll" FAB. Rendered by each GroupContent /
+ *  EmptyPlaceholder instance (real route, slide overlay, swipe-back
+ *  backdrop) as a body-level-style bottom-anchored fixed div that's a
+ *  SIBLING of the swipe wrapper (NOT inside it — the wrapper's
+ *  `will-change: transform` would make a fixed FAB resolve to the tall
+ *  scrolling wrapper instead of the viewport, so it'd scroll away). The
+ *  layout-level CreateQuestionContent portals the FAB into every instance
+ *  of this target, so the button rides the page's slide/swipe/reveal
+ *  transforms exactly like the fixed GroupHeader does — instead of being a
+ *  static body-level element that can only pop in/out. */
+export const GROUP_FAB_PORTAL_ID = 'group-fab-portal';
+
+/** Class for the `#group-fab-portal` target div — bottom-anchored,
+ *  full-width, zero-height (so it never intercepts taps). The explicit z-50
+ *  (a fixed element + z-index is already a stacking context) keeps the FAB
+ *  above the z-0 home backdrop even while the div is transformed mid-swipe —
+ *  without it the transform would drop the div to z-auto and the FAB would
+ *  vanish behind the backdrop. Shared by GroupContent + EmptyPlaceholder so
+ *  the two stay in lockstep (the positioning + z are load-bearing). */
+export const GROUP_FAB_PORTAL_CLASS = 'fixed inset-x-0 bottom-0 h-0 z-50';
