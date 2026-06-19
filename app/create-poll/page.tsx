@@ -72,6 +72,7 @@ import {
 import { EXPLORE_ATTR, GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
 import { isGroupRootView } from "@/lib/questionId";
 import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
+import { useIsSlideOverlayGroupActive } from "@/lib/slideOverlay";
 import {
   pollLookup,
   BASE_DEADLINE_OPTIONS,
@@ -456,6 +457,10 @@ export function CreateQuestionContent() {
   // Hide the "+ Poll" FAB during a group→home swipe-back (shared with the
   // "+ Group" FAB), so the two don't both occupy the bottom-right corner.
   const swipeBackActive = useHomeBackdropActive();
+  // True while a group-kind slide overlay (home→group / →empty placeholder)
+  // is mounted. The destination pathname hasn't committed yet during the
+  // slide, so without this the FAB pops in only after the transition ends.
+  const slideOverlayGroupActive = useIsSlideOverlayGroupActive();
   const followUpToParam = searchParams.get('followUpTo');
   const duplicateOfParam = searchParams.get('duplicate');
   const voteFromSuggestionParam = searchParams.get('voteFromSuggestion');
@@ -3238,8 +3243,14 @@ export function CreateQuestionContent() {
     isClient && typeof document !== "undefined"
       ? document.getElementById("floating-fab-portal")
       : null;
+  // Show on the settled group-root / empty-placeholder / explore surfaces,
+  // AND during a group-kind slide overlay so the FAB is present from the
+  // first frame of the transition (the pathname only flips after the
+  // overlay's router.push commits).
   const showPollFab =
-    isClient && !swipeBackActive && (isGroupRootView(pathname) || pathname === "/explore");
+    isClient &&
+    !swipeBackActive &&
+    (isGroupRootView(pathname) || pathname === "/explore" || slideOverlayGroupActive);
 
   const isSubEdit = editMode?.type === 'question';
   // The base sheet shows compose (search box + inline poll settings) for the
@@ -3728,7 +3739,12 @@ export function CreateQuestionContent() {
             onClick={openComposeModal}
             className="fixed h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
             style={{
-              zIndex: 50,
+              // z-50 normally. DURING a group-kind slide overlay (z-60,
+              // opaque) the FAB must sit ABOVE it or it's hidden behind the
+              // sliding group content until the overlay unmounts — i.e. it
+              // would still "pop in after the transition". z-[70] matches the
+              // scroll-helper arrows' elevated value for the same reason.
+              zIndex: slideOverlayGroupActive ? 70 : 50,
               right: "max(1.5rem, env(safe-area-inset-right, 0px))",
               bottom: IS_CAPACITOR_NATIVE ? "2.65rem" : "1.9rem",
               transform: "translateZ(0)",
