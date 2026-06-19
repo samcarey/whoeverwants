@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { createPortal, flushSync } from "react-dom";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   apiCreatePoll,
@@ -52,7 +52,7 @@ import ShowtimeCreateFlow, { ShowtimeCurated } from "./ShowtimeCreateFlow";
 import type { DayTimeWindow } from "@/lib/types";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
-import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel, formatMonthYearLabel, shiftMonth, DEFAULT_TIME_WINDOW, formatLocalDateISO, formatDayLabel } from "@/lib/timeUtils";
+import { formatDeadlineLabel, formatMonthYearLabel, shiftMonth, DEFAULT_TIME_WINDOW, formatLocalDateISO, formatDayLabel } from "@/lib/timeUtils";
 import { getGroupHrefForPoll, resolveGroupRootRouteId } from "@/lib/groupUtils";
 import { enterAdvancesFocus } from "@/lib/formNavigation";
 import { haptic } from "@/lib/haptics";
@@ -71,7 +71,6 @@ import {
 import { DRAFT_POLL_PORTAL_ID, EXPLORE_ATTR, GROUP_ID_ATTR, POLL_PAGE_SCROLL_ATTR } from "@/lib/groupDomMarkers";
 import {
   pollLookup,
-  validateRankedChoiceOptions,
   BASE_DEADLINE_OPTIONS,
   FRACTIONAL_CUTOFF_OPTIONS,
   ABSOLUTE_CUTOFF_OPTIONS,
@@ -93,6 +92,7 @@ import {
   sharedDraftContext,
   suggestionToOverrides,
   synthesizePlaceholderPoll,
+  validateQuestionDraft,
 } from "./createPollHelpers";
 export const dynamic = 'force-dynamic';
 
@@ -298,6 +298,35 @@ function customCategorySegments(overrides: Partial<QuestionDraft>): SuggestionSe
 // title text, it's "here's what I parsed the time as"). The render's else
 // branch honors `colorText` on a segment with no `colorBorder`/`label`.
 const SEG_TIME_RANGE = 'text-blue-600 dark:text-blue-400';
+
+// Render annotated title segments as the colored/labelled/underlined spans used
+// by BOTH the suggestion dropdown rows and the staged draft bubbles, so the two
+// can't drift. A labelled segment hangs its tiny uppercase label above its
+// underlined text (the caller reserves `pt-3` when any segment has a label).
+function renderSegmentSpans(segments: SuggestionSegment[]) {
+  return segments.map((seg, i) =>
+    seg.colorBorder ? (
+      <span key={i} className="relative inline-block align-baseline">
+        {seg.label && (
+          <span
+            className={`absolute left-0 bottom-full translate-y-[1.368px] text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
+            aria-hidden
+          >
+            {seg.label}
+          </span>
+        )}
+        <span className={`border-b-2 ${seg.colorBorder}`}>{seg.text}</span>
+      </span>
+    ) : (
+      <span
+        key={i}
+        className={seg.muted ? 'text-gray-400 dark:text-gray-500' : (seg.colorText || undefined)}
+      >
+        {seg.text}
+      </span>
+    ),
+  );
+}
 
 // Format a 24h "HH:MM" as a compact 12h piece, e.g. "6", "6:30", "12".
 function to12h(hhmm: string): { label: string; ap: 'AM' | 'PM' } {
@@ -668,15 +697,46 @@ export function CreateQuestionContent() {
   // 'favorite' (IRV): strongest core / most first-choice support.
   const [winnerMethod, setWinnerMethod] = useState<'favorite' | 'consensus'>('consensus');
 
+  // Staged questions. Tapping a suggestion in the search box appends a draft
+  // (rendered as a bubble above the box); the ↑ send button creates the poll
+  // from them. Editing a bubble round-trips one draft through the modal.
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Modal mode. `null` = closed. The form modal serves three roles:
+  //   'create' — the legacy full-form create flow (duplicate / vote-from-
+  //     suggestion / Siri prefill). ✓ submits the poll; ✕ keeps/discards state.
+  //   {question, index} — edit a staged bubble. ✓ commits the draft, ✕ cancels
+  //     (the draft is the source of truth, so nothing changes on cancel).
+  //   'poll' — edit poll-wide settings (cutoff, recurrence, notes, …). ✓ keeps
+  //     the edits, ✕ restores the pre-edit snapshot. Neither edit mode sends.
+  type EditMode = { type: 'create' } | { type: 'question'; index: number } | { type: 'poll' };
+  const [editMode, setEditMode] = useState<EditMode | null>(null);
+  const isModalOpen = editMode !== null;
+  // The QUESTION form section (category / options / time / per-question
+  // settings) shows in 'create' + 'question' edit modes — the modes where the
+  // live form represents a real question. The POLL-settings section shows in
+  // 'create' + 'poll' edit modes. So the inline-form predicates below gate on
+  // showQuestionSection (not bare isModalOpen): in poll-edit the live form is
+  // stale, so the poll fields must derive from `drafts` alone.
+  const showQuestionSection = editMode?.type === 'create' || editMode?.type === 'question';
+  const showPollSection = editMode?.type === 'create' || editMode?.type === 'poll';
+  // Inline error for the draft-stack ↑ send path (the modal isn't open then,
+  // so a modal-level `error` wouldn't be visible).
+  const [sendError, setSendError] = useState<string | null>(null);
+  // Snapshot of the poll-wide fields captured when poll-edit opens; restored on
+  // ✕ so cancelling a poll-settings edit doesn't apply the in-progress changes
+  // (those controls mutate component state directly, unlike the question form,
+  // whose source of truth is the untouched draft).
+  const pollSnapshotRef = useRef<{
+    deadlineOption: string; customDate: string; customTime: string;
+    suggestionCutoff: string; customSuggestionDate: string; customSuggestionTime: string;
+    recurrence: RecurrenceRule; minResponses: number; showPreliminaryResults: boolean;
+    allowPreRanking: boolean; allowPlusOnes: boolean | null; details: string;
+  } | null>(null);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
-  // When the user taps a poll suggestion but hasn't saved a name, stash a
-  // retry thunk and open the AccountGateModal. On save, the thunk replays
-  // the exact suggestion (`openModalWithDraft(overrides)`) so the form lands
-  // prefilled. A thunk (vs. a category string) is needed because suggestions
-  // now carry a full draft prefill (title / options / context), not just a
-  // category.
+  // When the user taps ↑ send (or, in create mode, ✓ submit) without a saved
+  // name, stash a retry thunk and open the AccountGateModal. On save, the thunk
+  // replays the action (creating the poll). A thunk is needed because the
+  // action carries the full staged-draft list, not just a category.
   const [pendingSearchAction, setPendingSearchAction] = useState<(() => void) | null>(null);
 
   // --- Poll-creation search box (inline input + dropdown) ----------------
@@ -979,15 +1039,6 @@ export function CreateQuestionContent() {
   };
 
   // Determine question type based on form selection and options
-  const getQuestionType = (): 'yes_no' | 'ranked_choice' | 'time' | 'limited_supply' => {
-    if (questionType === 'time' || category === 'time') return 'time';
-    if (category === 'yes_no') return 'yes_no';
-    if (category === 'limited_supply') return 'limited_supply';
-    return 'ranked_choice';
-  };
-
-
-
   // Whether any staged draft (or the in-progress inline form, when the
   // modal is open) uses the poll-level prephase cutoff (suggestion mode
   // or time question). Drives whether the suggestion/availability-cutoff
@@ -1001,8 +1052,8 @@ export function CreateQuestionContent() {
   // "Ask for Availability before Voting" toggle is on. With it off the poll has
   // no availability phase, so it must NOT surface the cutoff field or the
   // allow-pre-vote toggle for that time question.
-  const inlineFormUsesAvailability = isModalOpen && (questionType === 'time' || category === 'time') && collectAvailability;
-  const inlineFormHasSuggestion = isModalOpen && isSuggestionMode;
+  const inlineFormUsesAvailability = showQuestionSection && (questionType === 'time' || category === 'time') && collectAvailability;
+  const inlineFormHasSuggestion = showQuestionSection && isSuggestionMode;
   const pollHasAvailability = anyDraftUsesAvailabilityPhase(drafts) || inlineFormUsesAvailability;
   const pollHasSuggestion = anyDraftHasSuggestion(drafts) || inlineFormHasSuggestion;
   const pollHasPrephase = pollHasAvailability || pollHasSuggestion;
@@ -1027,7 +1078,7 @@ export function CreateQuestionContent() {
   const inlineFormIsLimitedSupply = category === 'limited_supply';
   const inlineFormIsShowtime = category === 'showtime';
   const pollHasPlusOneDefaultType =
-    (isModalOpen && (inlineFormIsTime || inlineFormIsLimitedSupply || inlineFormIsShowtime)) ||
+    (showQuestionSection && (inlineFormIsTime || inlineFormIsLimitedSupply || inlineFormIsShowtime)) ||
     drafts.some((d) => {
       const t = draftDbQuestionType(d);
       return t === 'time' || t === 'limited_supply' || t === 'showtime';
@@ -1041,12 +1092,12 @@ export function CreateQuestionContent() {
   const allDraftsLimitedSupply =
     drafts.length === 0 || drafts.every((d) => draftDbQuestionType(d) === 'limited_supply');
   const pollIsLimitedSupply =
-    allDraftsLimitedSupply && (isModalOpen ? inlineFormIsLimitedSupply : drafts.length > 0);
+    allDraftsLimitedSupply && (showQuestionSection ? inlineFormIsLimitedSupply : drafts.length > 0);
 
   // Migration 098: poll-level results-display + ranked-choice settings.
   // The min-responses + show-results pair is meaningful iff the poll
   // contains at least one ranked_choice question.
-  const inlineFormIsRankedChoice = isModalOpen
+  const inlineFormIsRankedChoice = showQuestionSection
     && questionType === 'question'
     && category !== 'yes_no'
     && category !== 'time'
@@ -1149,55 +1200,6 @@ export function CreateQuestionContent() {
     forField.trim() !== '' ||
     options.filter(o => o.trim() !== '').length >= 2;
 
-  // Validates only the per-question fields the top modal can edit. Used by
-  // stageCurrentQuestion + the auto-stage path on Submit + the projected-
-  // drafts preview. Different from getValidationErrorFor (which validates
-  // poll-level fields too).
-  const getCurrentQuestionFormError = (): string | null => {
-    const dbQuestionType = getQuestionType();
-    if (dbQuestionType === 'yes_no') {
-      if (!title.trim()) return "Please enter a yes/no question.";
-      if (title.length > 100) return "Title must be 100 characters or less.";
-      if (/https?:\/\/\S+|www\.\S+/i.test(title)) {
-        return "Links aren't allowed in the title. Use the Notes field for links.";
-      }
-      return null;
-    }
-    if (dbQuestionType === 'limited_supply') {
-      if (!title.trim()) return "Please describe what's being handed out.";
-      if (title.length > 100) return "Title must be 100 characters or less.";
-      if (/https?:\/\/\S+|www\.\S+/i.test(title)) {
-        return "Links aren't allowed in the title. Use the Notes field for links.";
-      }
-      if (!Number.isFinite(supplyCount) || supplyCount < 1) {
-        return "Set at least one available spot.";
-      }
-      return null;
-    }
-    if (dbQuestionType === 'ranked_choice') {
-      return validateRankedChoiceOptions(options, category, collectSuggestions);
-    }
-    if (dbQuestionType === 'time') {
-      if (dayTimeWindows.length === 0) return "Please select at least one day.";
-      const emptyDays = dayTimeWindows.filter(dtw => dtw.windows.length === 0);
-      if (emptyDays.length > 0) {
-        return "Every selected day must have at least one time slot. Add time slots or remove empty days.";
-      }
-      if (durationMinEnabled && durationMinValue != null) {
-        const minDurMinutes = Math.round(durationMinValue * 60);
-        if (minDurMinutes > 0) {
-          const tooShort = dayTimeWindows.some(dtw =>
-            dtw.windows.some(w => windowDurationMinutes(w) < minDurMinutes)
-          );
-          if (tooShort) {
-            return `Each time window must be at least ${formatDurationLabel(minDurMinutes)} long (the minimum duration).`;
-          }
-        }
-      }
-    }
-    return null;
-  };
-
   // Read the current per-question form state into a QuestionDraft snapshot.
   // Migration 098: minResponses / showPreliminaryResults / allowPreRanking
   // live at the poll level (not per-draft).
@@ -1228,6 +1230,16 @@ export function CreateQuestionContent() {
     collectAvailability,
   }), [questionType, title, isAutoTitle, category, categoryEmoji, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minParticipants, exclusionTolerance, supplyCount, revealClaimantNames, collectSuggestions, winnerMethod, collectAvailability]);
 
+  // Validate the live per-question form (the top modal). Delegates to the
+  // shared `validateQuestionDraft` via a snapshot of the live form, so the
+  // modal-edit + ↑ send paths can't drift. Different from getValidationErrorFor
+  // (which validates poll-level fields too). Memoized (after readCurrentDraft)
+  // so commitQuestionEdit's useCallback dep stays stable.
+  const getCurrentQuestionFormError = useCallback(
+    (): string | null => validateQuestionDraft(readCurrentDraft()),
+    [readCurrentDraft],
+  );
+
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
     setQuestionType(d.questionType);
@@ -1257,12 +1269,35 @@ export function CreateQuestionContent() {
     setCollectAvailability(d.collectAvailability ?? true);
   }, []);
 
-  // Backdrop + Escape preserve form state; only the explicit X-confirm
-  // path resets it. The retained state survives in React + the
-  // questionFormState localStorage auto-save.
-  const closeKeepState = useCallback(() => {
-    setError(null);
-    setIsModalOpen(false);
+  // Capture / restore the poll-wide fields so cancelling a poll-settings edit
+  // (✕ / backdrop / Escape) doesn't apply the in-progress changes. These
+  // controls write component state directly (unlike the question form, whose
+  // source of truth is the untouched draft), so a snapshot is the only way to
+  // revert them.
+  const capturePollSnapshot = useCallback(() => {
+    pollSnapshotRef.current = {
+      deadlineOption, customDate, customTime,
+      suggestionCutoff, customSuggestionDate, customSuggestionTime,
+      recurrence, minResponses, showPreliminaryResults,
+      allowPreRanking, allowPlusOnes, details,
+    };
+  }, [deadlineOption, customDate, customTime, suggestionCutoff, customSuggestionDate, customSuggestionTime, recurrence, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, details]);
+  const restorePollSnapshot = useCallback(() => {
+    const s = pollSnapshotRef.current;
+    if (!s) return;
+    setDeadlineOption(s.deadlineOption);
+    setCustomDate(s.customDate);
+    setCustomTime(s.customTime);
+    setSuggestionCutoff(s.suggestionCutoff);
+    setCustomSuggestionDate(s.customSuggestionDate);
+    setCustomSuggestionTime(s.customSuggestionTime);
+    setRecurrence(s.recurrence);
+    setMinResponses(s.minResponses);
+    setShowPreliminaryResults(s.showPreliminaryResults);
+    setAllowPreRanking(s.allowPreRanking);
+    setAllowPlusOnes(s.allowPlusOnes);
+    setDetails(s.details);
+    pollSnapshotRef.current = null;
   }, []);
 
   // Poll-level fields that must be FRESH for each new poll — `applyDraftToState`
@@ -1281,28 +1316,42 @@ export function CreateQuestionContent() {
     resetDayTimeWindowsCache();
     setCalendarExpanded(false);
     setError(null);
-    setIsModalOpen(false);
+    setEditMode(null);
     setDrafts([]);
+    setSendError(null);
     resetFreshPollFields();
     setShowDiscardConfirm(false);
   }, [applyDraftToState, resetDayTimeWindowsCache, resetFreshPollFields]);
 
-  const handleCloseClick = useCallback(() => {
-    if (inlineFormHasContent() || drafts.length > 0) {
-      setShowDiscardConfirm(true);
-    } else {
-      closeKeepState();
-    }
-  }, [inlineFormHasContent, drafts.length, closeKeepState]);
+  // Cancel the modal WITHOUT applying changes (✕ on an edit form, backdrop, or
+  // Escape). Per the spec: editing a question or the poll and then dismissing
+  // leaves that part of the poll untouched. Question-edit needs no revert (the
+  // draft is the source of truth); poll-edit restores its snapshot. In 'create'
+  // mode there's no staged draft to protect, so this just keeps state (the X
+  // button offers a discard-confirm instead — see handleCloseClick).
+  const cancelModal = useCallback(() => {
+    if (editMode?.type === 'poll') restorePollSnapshot();
+    setError(null);
+    setEditMode(null);
+  }, [editMode, restorePollSnapshot]);
 
-  // Open the new-poll form prefilled from a partial draft. `overrides` carry
-  // whatever a suggestion specifies — category, title, options, forField
-  // (context), etc. — layered over a fresh `emptyDraft`. Also collapses the
-  // search bar so the modal opens over a clean group view.
-  const openModalWithDraft = useCallback((overrides: Partial<QuestionDraft>) => {
-    // When the poll already has staged drafts AND they share a context,
-    // inherit it as the new question's forField so the auto-title can
-    // collapse to "Cat1, Cat2 for SharedContext" without the user retyping.
+  const handleCloseClick = useCallback(() => {
+    // 'create' mode (duplicate / Siri prefill) with typed content: offer to
+    // discard. Otherwise (edit modes, or empty create) cancel without applying —
+    // cancelModal restores any poll-edit snapshot and closes.
+    if (editMode?.type === 'create' && (inlineFormHasContent() || drafts.length > 0)) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+    cancelModal();
+  }, [editMode, cancelModal, inlineFormHasContent, drafts.length]);
+
+  // Build a full QuestionDraft from a suggestion's partial overrides. `overrides`
+  // carry whatever a suggestion specifies — category, title, options, forField
+  // (context), etc. — layered over a fresh `emptyDraft`. When staged drafts
+  // already share a context, inherit it so the combined auto-title can collapse
+  // to "Cat1, Cat2 for SharedContext" without the user retyping.
+  const buildDraftFromOverrides = useCallback((overrides: Partial<QuestionDraft>): QuestionDraft => {
     const inheritedForField = sharedDraftContext(drafts) ?? '';
     const base = emptyDraft({
       category: overrides.category,
@@ -1310,42 +1359,18 @@ export function CreateQuestionContent() {
       collectSuggestions: getUserCollectSuggestions() ?? true,
       collectAvailability: getUserCollectAvailability() ?? true,
     });
-    const draft: QuestionDraft = { ...base, ...overrides };
-    applyDraftToState(draft);
-    setCreatorName(getUserName() ?? "");
-    // Starting a brand-new poll (no staged drafts): clear poll-level fields that
-    // applyDraftToState doesn't touch, so a prior session's Notes (restored by
-    // loadFormState) etc. don't leak in ("random text in the notes field").
-    // When drafts exist the user is ADDING a question to a multi-question poll,
-    // so the poll-level config they already set must be preserved.
-    if (drafts.length === 0) resetFreshPollFields();
-    setError(null);
-    // For yes/no the title IS the question prompt; focus it once the input
-    // mounts (see setTitleInputRef) ONLY when no prompt was prefilled. Prime
-    // the iOS keyboard synchronously here (still inside the tap) so it
-    // survives the async mount of the real input.
-    const focusTitle = draft.category === 'yes_no' && !draft.title.trim();
-    shouldFocusTitleRef.current = focusTitle;
-    if (focusTitle) {
-      primeKeyboard();
-    } else {
-      // Reliably dismiss the soft keyboard. The suggestion rows keep the search
-      // input focused through the tap (onMouseDown preventDefault), so a single
-      // synchronous blur() — fired mid-gesture as the modal mounts — is
-      // intermittently ignored on iOS, leaving the keyboard up over a form with
-      // nothing focused (reported). Blur the actual active element now AND on the
-      // next frame, after the tap's microtasks settle. Skipped for focusTitle,
-      // where primeKeyboard deliberately keeps the keyboard up for the title.
-      dismissSoftKeyboard();
-    }
-    // Collapse the search bar so the modal opens over a clean group view and
-    // we're back to the unfocused pill when it closes. Clearing the query keeps
-    // the next picker open fresh.
+    return { ...base, ...overrides };
+  }, [drafts]);
+
+  // Collapse the focused search box (blur + clear) so the page slides back down
+  // and the bubbles are revealed. The soft keyboard is dismissed on iOS (a
+  // single blur mid-gesture is intermittently ignored there — see the helper).
+  const collapseSearchBox = useCallback(() => {
     searchInputRef.current?.blur();
     setSearchFocused(false);
     setSearchQuery("");
-    setIsModalOpen(true);
-  }, [applyDraftToState, drafts, primeKeyboard, dismissSoftKeyboard, resetFreshPollFields]);
+    dismissSoftKeyboard();
+  }, [dismissSoftKeyboard]);
 
   // While the box is focused, bound the suggestions dropdown so its bottom
   // ends just above the soft keyboard (the box stays put; only the dropdown is
@@ -1381,18 +1406,69 @@ export function CreateQuestionContent() {
     };
   }, [searchFocused]);
 
-  // Pick a poll suggestion from the focused picker. Collapses the picker,
-  // then either opens the form (valid name) or stashes a retry thunk and
-  // opens the AccountGateModal (name required to create a poll).
-  const chooseSuggestion = useCallback((overrides: Partial<QuestionDraft>) => {
-    searchInputRef.current?.blur();
-    setSearchFocused(false);
-    if (!isValidUserName(getUserName())) {
-      setPendingSearchAction(() => () => openModalWithDraft(overrides));
-      return;
-    }
-    openModalWithDraft(overrides);
-  }, [openModalWithDraft]);
+  // Pick a poll suggestion from the focused picker → STAGE it as a draft bubble
+  // (no modal). On /explore only one (yes/no) question is allowed, so a new
+  // suggestion REPLACES the staged draft; elsewhere it's appended. The ↑ send
+  // button creates the poll; tapping a bubble edits it. (Staging needs no name —
+  // the name gate fires at send time.)
+  const stageSuggestion = useCallback((overrides: Partial<QuestionDraft>) => {
+    const draft = buildDraftFromOverrides(overrides);
+    // /explore accepts only ONE (yes/no) question — read the body marker
+    // directly (the `isExplore` state is declared lower in render, so it can't
+    // be a dependency here). A new suggestion replaces the staged draft there.
+    const onExplore = typeof document !== 'undefined'
+      && document.body.getAttribute(EXPLORE_ATTR) === '1';
+    setDrafts((prev) => (onExplore ? [draft] : [...prev, draft]));
+    setSendError(null);
+    collapseSearchBox();
+  }, [buildDraftFromOverrides, collapseSearchBox]);
+
+  // Remove a staged draft bubble. (Mis-tap recovery — a stuck bubble would
+  // otherwise have to be edited away.)
+  const removeDraft = useCallback((index: number) => {
+    setDrafts((prev) => prev.filter((_, i) => i !== index));
+    setSendError(null);
+  }, []);
+
+  // Tap a question bubble → open the modal showing ONLY that question's form.
+  // The draft is loaded into the live form; ✓ commits it back, ✕ cancels.
+  const openQuestionEdit = useCallback((index: number) => {
+    const draft = drafts[index];
+    if (!draft) return;
+    applyDraftToState(draft);
+    setError(null);
+    collapseSearchBox();
+    setEditMode({ type: 'question', index });
+  }, [drafts, applyDraftToState, collapseSearchBox]);
+
+  // Tap the combined poll-title bubble → open the modal showing ONLY the
+  // poll-wide settings. A snapshot is captured so ✕ can revert.
+  const openPollEdit = useCallback(() => {
+    capturePollSnapshot();
+    setError(null);
+    collapseSearchBox();
+    setEditMode({ type: 'poll' });
+  }, [capturePollSnapshot, collapseSearchBox]);
+
+  // Commit a question-edit: validate the live form, write it back to the draft,
+  // close. Does NOT send.
+  const commitQuestionEdit = useCallback((index: number) => {
+    const subErr = getCurrentQuestionFormError();
+    if (subErr) { setError(subErr); return; }
+    const updated = readCurrentDraft();
+    setDrafts((prev) => prev.map((d, i) => (i === index ? updated : d)));
+    setSendError(null);
+    setError(null);
+    setEditMode(null);
+  }, [getCurrentQuestionFormError, readCurrentDraft]);
+
+  // Commit a poll-settings edit: the controls already wrote component state, so
+  // just clear the snapshot and close. Does NOT send.
+  const commitPollEdit = useCallback(() => {
+    pollSnapshotRef.current = null;
+    setError(null);
+    setEditMode(null);
+  }, []);
 
   // While the box is focused, dim + disable AND SLIDE UP the app's FIXED
   // top-bar chrome so the whole page reads as having moved up to bring the
@@ -1493,13 +1569,15 @@ export function CreateQuestionContent() {
   useEffect(() => {
     if (!isModalOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !showDiscardConfirmRef.current) closeKeepState();
+      // Edit modes revert (poll-settings restore their snapshot); 'create'
+      // keeps state. cancelModal handles both.
+      if (e.key === 'Escape' && !showDiscardConfirmRef.current) cancelModal();
     };
     document.addEventListener('keydown', handleEsc);
     return () => {
       document.removeEventListener('keydown', handleEsc);
     };
-  }, [isModalOpen, closeKeepState]);
+  }, [isModalOpen, cancelModal]);
 
   // Portal targets for the create-poll search bar. The `#draft-poll-portal`
   // is rendered by the group page CONTENT (GroupContent / EmptyPlaceholder),
@@ -2171,8 +2249,8 @@ export function CreateQuestionContent() {
           if (duplicateData.show_preliminary_results != null) setShowPreliminaryResults(duplicateData.show_preliminary_results);
           if (duplicateData.allow_pre_ranking != null) setAllowPreRanking(duplicateData.allow_pre_ranking);
 
-          // Auto-open: prefill is invisible until the user opens the modal.
-          setIsModalOpen(true);
+          // Auto-open: the full create form (✓ submits the poll directly).
+          setEditMode({ type: 'create' });
 
           // Don't clean up the duplicate data yet - keep it until question is created
           // so that refresh doesn't lose the data
@@ -2218,8 +2296,8 @@ export function CreateQuestionContent() {
           // Fresh ranking ballot follows the create-form default (Consensus).
           setWinnerMethod('consensus');
 
-          // Auto-open: prefill is invisible until the user opens the modal.
-          setIsModalOpen(true);
+          // Auto-open: the full create form (✓ submits the poll directly).
+          setEditMode({ type: 'create' });
 
           // Don't clean up the vote data yet - keep it until question is created
           // so that refresh doesn't lose the data
@@ -2276,7 +2354,7 @@ export function CreateQuestionContent() {
       setForField(forContext.slice(0, 100));
     }
 
-    setIsModalOpen(true);
+    setEditMode({ type: 'create' });
 
     // Consume the prefill params so refresh / back doesn't re-trigger.
     const url = new URL(window.location.href);
@@ -2435,10 +2513,20 @@ export function CreateQuestionContent() {
       return;
     }
 
+    await submitPoll(effectiveDrafts, creatorName);
+  };
+
+  // Core poll-creation pipeline, shared by the create-modal ✓ (handleSubmitClick)
+  // and the draft-stack ↑ send button (handleSendPoll). Poll-wide settings are
+  // read from component state; the question list + resolved creator name are
+  // passed in (they differ between callers). Callers do their own validation
+  // (per-question + poll-level) before calling this.
+  const submitPoll = async (effectiveDrafts: QuestionDraft[], resolvedName: string) => {
     haptic.success();
     isSubmittingRef.current = true;
     setIsLoading(true);
     setError(null);
+    setSendError(null);
     try {
       const responseDeadline = calculateDeadline();
 
@@ -2541,8 +2629,10 @@ export function CreateQuestionContent() {
             // the user just typed).
             isSubmittingRef.current = false;
             setIsLoading(false);
-            setIsModalOpen(false);
+            setEditMode(null);
             applyDraftToState(emptyDraft());
+            setDrafts([]);
+            setSendError(null);
             setError(null);
             router.replace(href);
             return;
@@ -2576,7 +2666,7 @@ export function CreateQuestionContent() {
         wrapperTitle,
         responseDeadline,
         groupId: effectiveGroupId ?? null,
-        creatorName: creatorName.trim() || null,
+        creatorName: resolvedName.trim() || null,
         details: detailsForRequest,
         prephaseDeadline: effectivePrephaseDeadlineIso,
         allowPlusOnes: effectiveAllowPlusOnes,
@@ -2603,11 +2693,9 @@ export function CreateQuestionContent() {
         );
       }
 
-      // Clear staged drafts immediately so the in-card list resets to the
-      // empty inline form for the user's next poll.
-      flushSync(() => {
-        setDrafts([]);
-      });
+      // NOTE: the staged drafts are intentionally KEPT until the API succeeds
+      // (cleared after `apiCreatePoll` resolves), so a failed send leaves the
+      // bubbles in place for the user to retry — rather than vanishing.
 
       // Stay on /t until the API resolves on empty-group submits — the
       // placeholder id (`pending-...`) doesn't resolve as a UUID/short_id,
@@ -2626,7 +2714,7 @@ export function CreateQuestionContent() {
       let createdPoll: Poll;
       try {
         createdPoll = await apiCreatePoll({
-          creator_name: creatorName.trim() || undefined,
+          creator_name: resolvedName.trim() || undefined,
           response_deadline: responseDeadline,
           prephase_deadline: prephaseDeadlineIso,
           prephase_deadline_minutes: prephaseDeadlineIso ? null : prephaseMinutes != null ? Math.round(prephaseMinutes) : null,
@@ -2653,16 +2741,19 @@ export function CreateQuestionContent() {
         });
       } catch (apiError: any) {
         console.error("Error creating question:", apiError);
-        setError(apiError.message || "Failed to create question. Please try again.");
+        const msg = apiError.message || "Failed to create question. Please try again.";
+        setError(msg);
+        // The modal isn't open on the ↑ send path, so surface the failure under
+        // the draft bubbles too (the staged drafts are still there to retry).
+        setSendError(msg);
         setIsLoading(false);
         isSubmittingRef.current = false;
         // Clean up the optimistic state so the user doesn't see a stuck
         // placeholder card with no chrome (just a title) lingering in the
-        // group, with the form cleared and seemingly nothing to retry. The
-        // POLL_FAILED listener on the group page removes the placeholder
-        // from group state; here we evict it from cache and restore the
-        // staged drafts so the user can edit and resubmit. (No placeholder
-        // on the explore path — nothing to clean up there.)
+        // group. The POLL_FAILED listener on the group page removes the
+        // placeholder from group state; here we evict it from cache. The staged
+        // drafts are left intact (never cleared until success) so the user can
+        // edit and resubmit. (No placeholder on the explore path.)
         if (placeholderPoll) {
           invalidatePoll(placeholderPoll.id);
           updateAccessiblePollsIfFresh(existing => existing.filter(p => p.id !== placeholderPoll.id));
@@ -2680,7 +2771,7 @@ export function CreateQuestionContent() {
       // anonymous creator) and the returned poll carries viewer_is_creator,
       // so there's no per-question secret to persist locally.
 
-      saveUserName(creatorName);
+      saveUserName(resolvedName);
       // Remember the suggestion toggle for the creator's next poll. The toggle
       // only renders for ranked_choice, so this no-ops the value for yes_no /
       // time polls (collectSuggestions keeps whatever it last was).
@@ -2692,8 +2783,13 @@ export function CreateQuestionContent() {
       setIsSubmitted(false);
       isSubmittingRef.current = false;
       setIsLoading(false);
-      setIsModalOpen(false);
+      setEditMode(null);
       applyDraftToState(emptyDraft());
+      // Clear the staged drafts now the poll exists (kept until here so a failed
+      // send leaves the bubbles to retry). Without this they'd persist on the
+      // layout-level host and reappear if the user navigated back to the group.
+      setDrafts([]);
+      setSendError(null);
       setError(null);
 
       // Cache the real poll, then notify group state so it swaps placeholder
@@ -2747,10 +2843,42 @@ export function CreateQuestionContent() {
       }
     } catch (error) {
       console.error("Unexpected error:", error);
-      setError("An unexpected error occurred. Please try again.");
+      const msg = "An unexpected error occurred. Please try again.";
+      setError(msg);
+      setSendError(msg);
       setIsLoading(false);
       isSubmittingRef.current = false;
     }
+  };
+
+  // ↑ send the staged poll directly (no modal). Validates each draft + the
+  // poll-level fields, then runs the shared create pipeline. Name-gated here
+  // (not at stage time): a missing name stashes a retry thunk + opens the
+  // account modal, which replays the send on save.
+  const handleSendPoll = () => {
+    if (isSubmittingRef.current || drafts.length === 0) return;
+    const doSend = () => {
+      for (const d of drafts) {
+        const err = validateQuestionDraft(d);
+        if (err) { setSendError(err); return; }
+      }
+      const validationError = getValidationErrorFor(drafts);
+      if (validationError) { setSendError(validationError); return; }
+      submitPoll(drafts, getUserName() ?? '');
+    };
+    if (!isValidUserName(getUserName())) {
+      setPendingSearchAction(() => doSend);
+      return;
+    }
+    doSend();
+  };
+
+  // The modal ✓ button: submit (create mode) / commit the draft (question edit)
+  // / keep the poll-settings edit (poll edit). Only create mode sends.
+  const handleModalCheck = (e: React.MouseEvent) => {
+    if (editMode?.type === 'create') { handleSubmitClick(e); return; }
+    if (editMode?.type === 'question') { commitQuestionEdit(editMode.index); return; }
+    if (editMode?.type === 'poll') { commitPollEdit(); return; }
   };
 
   // Empty-state hint shown in the title-preview slot above the form card,
@@ -3003,10 +3131,10 @@ export function CreateQuestionContent() {
         // onMouseDown preventDefault keeps the input focused through the tap so
         // the click lands reliably before onBlur closes the dropdown.
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => chooseSuggestion(s.overrides)}
+        onClick={() => stageSuggestion(s.overrides)}
         disabled={isLoading}
         className={SEARCH_ROW_CLASS}
-        aria-label={`Create poll: ${s.segments.map((seg) => seg.text).join('')}`}
+        aria-label={`Add question: ${s.segments.map((seg) => seg.text).join('')}`}
       >
         <span
           className={`w-7 text-center text-2xl leading-none shrink-0 ${hasLabel ? 'pt-3' : ''}`}
@@ -3017,28 +3145,7 @@ export function CreateQuestionContent() {
         <span
           className={`relative flex-1 min-w-0 overflow-hidden whitespace-nowrap text-base ${hasLabel ? 'pt-3' : ''}`}
         >
-          {s.segments.map((seg, i) =>
-            seg.colorBorder ? (
-              <span key={i} className="relative inline-block align-baseline">
-                {seg.label && (
-                  <span
-                    className={`absolute left-0 bottom-full translate-y-[1.368px] text-[9px] font-semibold uppercase tracking-wide leading-none ${seg.colorText}`}
-                    aria-hidden
-                  >
-                    {seg.label}
-                  </span>
-                )}
-                <span className={`border-b-2 ${seg.colorBorder}`}>{seg.text}</span>
-              </span>
-            ) : (
-              <span
-                key={i}
-                className={seg.muted ? 'text-gray-400 dark:text-gray-500' : (seg.colorText || undefined)}
-              >
-                {seg.text}
-              </span>
-            )
-          )}
+          {renderSegmentSpans(s.segments)}
         </span>
         {/* Right-edge monochrome source hint: sparkles = AI-predicted, clock =
             a previously-used poll. Others get nothing. */}
@@ -3062,8 +3169,99 @@ export function CreateQuestionContent() {
     );
   });
 
+  // Combined poll title — shown on the draft-stack poll bubble AND the
+  // poll-edit modal header. Memoized so this layout-level component (which
+  // re-renders on many unrelated events) recomputes it only when drafts change.
+  const pollPreviewTitle = useMemo(() => draftPollPreview(drafts, '').title, [drafts]);
+
+  // Round ↑ "create poll" button. Lives on the single-question row, or moves to
+  // the combined poll-title row once a second question is staged. Reused across
+  // those mutually-exclusive branches (never rendered twice at once).
+  const sendButton = (
+    <button
+      type="button"
+      onClick={handleSendPoll}
+      disabled={isLoading || drafts.length === 0}
+      aria-label="Create poll"
+      className="shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-blue-500 text-white disabled:opacity-50 active:scale-95"
+    >
+      {isLoading ? (
+        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
+      ) : (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
+        </svg>
+      )}
+    </button>
+  );
+
+  // Staged-draft bubbles, rendered above the search input. 1 draft → one bubble
+  // + ↑ send on its row. 2+ drafts → a combined poll-title bubble on top (tap to
+  // edit poll-wide settings; ↑ send moves here) over one bubble per question.
+  // Tapping a question bubble edits it; × removes it.
+  const draftStack = drafts.length > 0 ? (
+    <div className="px-3 pt-2 space-y-2">
+      {drafts.length > 1 && (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openPollEdit}
+            disabled={isLoading}
+            aria-label="Edit poll settings"
+            className="flex-1 min-w-0 text-left rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-4 py-2.5 active:bg-gray-200 dark:active:bg-gray-700 disabled:opacity-50"
+          >
+            <span className="block truncate text-base font-semibold">
+              {pollPreviewTitle}
+            </span>
+          </button>
+          {sendButton}
+        </div>
+      )}
+      {drafts.map((d, i) => {
+        const segs = annotateSegments(draftTitleSegments(d));
+        const hasLabel = segs.some((seg) => seg.label);
+        return (
+          <div key={i} className="flex items-center gap-2">
+            <div className="flex-1 min-w-0 flex items-center rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-4 pr-1">
+              <button
+                type="button"
+                onClick={() => openQuestionEdit(i)}
+                disabled={isLoading}
+                aria-label="Edit question"
+                className="flex-1 min-w-0 text-left py-2.5 disabled:opacity-50"
+              >
+                <span className={`relative block overflow-hidden whitespace-nowrap text-base ${hasLabel ? 'pt-3' : ''}`}>
+                  {renderSegmentSpans(segs)}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => removeDraft(i)}
+                disabled={isLoading}
+                aria-label="Remove question"
+                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 disabled:opacity-50"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {drafts.length === 1 && sendButton}
+          </div>
+        );
+      })}
+      {sendError && (
+        <p className="px-1 text-sm text-red-600 dark:text-red-400">{sendError}</p>
+      )}
+    </div>
+  ) : null;
+
   const searchBox = (
     <>
+      {draftStack}
       {/* While focused, a slightly-dimmed scrim covers the rest of the page
           (polls, CTAs, the area behind the top bar) so the background reads as
           backgrounded + non-interactive — tapping it dismisses the search. The
@@ -3120,8 +3318,8 @@ export function CreateQuestionContent() {
             // Collapse on blur (closes the dropdown + dismisses the keyboard).
             onBlur={() => setSearchFocused(false)}
             disabled={isLoading}
-            placeholder="Ask a question…"
-            aria-label="Ask a question"
+            placeholder={drafts.length > 0 && !isExplore ? "Ask another question…" : "Ask a question…"}
+            aria-label={drafts.length > 0 && !isExplore ? "Ask another question" : "Ask a question"}
             enterKeyHint="search"
             // `line-height: normal` keeps the iOS caret aligned with the text
             // (a custom line-height splits the caret/text metrics).
@@ -3159,10 +3357,11 @@ export function CreateQuestionContent() {
       {isModalOpen && (
         <ModalPortal>
           <div className="fixed inset-0 z-[60] flex items-end justify-center">
-            {/* Backdrop — tap to close the sheet (state retained). */}
+            {/* Backdrop — tap to dismiss. Edit modes cancel without applying
+                (poll-settings restore their snapshot); create mode keeps state. */}
             <div
               className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
-              onClick={closeKeepState}
+              onClick={cancelModal}
               aria-hidden="true"
             />
             {/* Sheet panel — anchored to the bottom edge with rounded top
@@ -3188,13 +3387,19 @@ export function CreateQuestionContent() {
                   </svg>
                 </button>
                 <span className="text-lg font-semibold select-none">
-                  New Poll
+                  {editMode?.type === 'poll'
+                    ? 'Poll Settings'
+                    : editMode?.type === 'question'
+                      ? 'Edit Question'
+                      : 'New Poll'}
                 </span>
                 <button
                   type="button"
-                  onClick={handleSubmitClick}
-                  disabled={isLoading || isSubmitted || !inlineFormHasDraftableContent}
-                  aria-label="Submit poll"
+                  onClick={handleModalCheck}
+                  // Create mode requires draftable content to submit; the two
+                  // edit modes always allow ✓ (commit / keep).
+                  disabled={isLoading || isSubmitted || (editMode?.type === 'create' && !inlineFormHasDraftableContent)}
+                  aria-label={editMode?.type === 'create' ? 'Submit poll' : 'Save'}
                   className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {isSubmitted || isLoading ? (
@@ -3216,33 +3421,48 @@ export function CreateQuestionContent() {
                   bottom edge so the last form field doesn't sit flush with
                   the rounded corner when scrolled to bottom. */}
               <div ref={setSheetScrollerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
-                <div className="text-center px-2 pt-1 break-words min-h-8 flex items-center justify-center gap-2">
-                  {category !== 'yes_no' && (
-                    <button
-                      type="button"
-                      onClick={() => { if (!isLoading) setEmojiModalOpen(true); }}
-                      disabled={isLoading}
-                      aria-label="Choose an emoji"
-                      className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-lg leading-none active:scale-95 disabled:cursor-not-allowed"
-                    >
-                      <span className={categoryEmoji.trim() ? '' : 'opacity-40'}>
-                        {categoryEmoji.trim() || getBuiltInType(category)?.icon || '🗳️'}
+                {showQuestionSection ? (
+                  // Question header: emoji + this question's (live) title preview.
+                  <div className="text-center px-2 pt-1 break-words min-h-8 flex items-center justify-center gap-2">
+                    {category !== 'yes_no' && (
+                      <button
+                        type="button"
+                        onClick={() => { if (!isLoading) setEmojiModalOpen(true); }}
+                        disabled={isLoading}
+                        aria-label="Choose an emoji"
+                        className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-lg leading-none active:scale-95 disabled:cursor-not-allowed"
+                      >
+                        <span className={categoryEmoji.trim() ? '' : 'opacity-40'}>
+                          {categoryEmoji.trim() || getBuiltInType(category)?.icon || '🗳️'}
+                        </span>
+                      </button>
+                    )}
+                    {title.trim() ? (
+                      <span
+                        className="text-xl font-bold leading-7 text-blue-600 dark:text-blue-400"
+                        style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
+                      >
+                        {title.trim()}
                       </span>
-                    </button>
-                  )}
-                  {title.trim() ? (
+                    ) : (
+                      <span className="text-[0.9375rem] leading-7 italic text-gray-500 dark:text-gray-400">
+                        {titlePreviewHint}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  // Poll-settings header: the combined poll title (read-only).
+                  <div className="text-center px-2 pt-1 break-words min-h-8 flex items-center justify-center">
                     <span
                       className="text-xl font-bold leading-7 text-blue-600 dark:text-blue-400"
                       style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
                     >
-                      {title.trim()}
+                      {pollPreviewTitle}
                     </span>
-                  ) : (
-                    <span className="text-[0.9375rem] leading-7 italic text-gray-500 dark:text-gray-400">
-                      {titlePreviewHint}
-                    </span>
-                  )}
-                </div>
+                  </div>
+                )}
+
+                {showQuestionSection && (<>
 
                 {/* Top card: question form. Simple fields (Category, Context,
                     Title) sit as inline rows in a divide-y container — labels
@@ -3483,9 +3703,57 @@ export function CreateQuestionContent() {
 
                 {optionsCard}
 
-                {/* Bottom card: poll-level settings. Each setting is a row
-                    with label left, value right; hairlines between rows
-                    (inset to the card's px-4 padding). */}
+                {/* Per-question settings — these are stored PER QUESTION
+                    (scoring algorithm, time-viability gates), so they live in
+                    the question section and gate on the live form's type. */}
+                {(inlineFormIsRankedChoice || (showTimeFields && collectAvailability)) && (
+                  <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {inlineFormIsRankedChoice && (
+                        <ScoringAlgorithmField
+                          value={winnerMethod}
+                          setValue={setWinnerMethod}
+                          disabled={isLoading}
+                        />
+                      )}
+                      {/* A time slot counts only if at least this many people
+                          are available for it; if none clears the bar the event
+                          is cancelled. Only meaningful with an availability
+                          phase. */}
+                      {showTimeFields && collectAvailability && (
+                        <CompactNumberRow
+                          label="Minimum Participants"
+                          value={minParticipants}
+                          setValue={setMinParticipants}
+                          disabled={isLoading}
+                        />
+                      )}
+                      {/* How many fewer people than the best-attended slot a
+                          time may have and still be offered for preference
+                          voting. 0 (default) → only the best-attended slot(s). */}
+                      {showTimeFields && collectAvailability && (
+                        <CompactNumberRow
+                          label="Attendance Leeway"
+                          labelInfo={
+                            <OutcomeInfoButton
+                              align="left"
+                              text="By default only the time(s) the most people can make are offered for a final preference vote. Attendance Leeway lets times with a few fewer people stay in the running too — sometimes a slightly less-attended slot is better for other reasons. Set it to how many fewer attendees you'll tolerate: e.g. 2 keeps any time that leaves out at most 2 more people than the best slot. Voters see an orange badge on each time showing how many it excludes."
+                            />
+                          }
+                          value={exclusionTolerance}
+                          setValue={setExclusionTolerance}
+                          min={0}
+                          disabled={isLoading}
+                        />
+                      )}
+                    </div>
+                  </section>
+                )}
+                </>)}
+
+                {/* Poll-WIDE settings card (voting cutoff, recurrence, …) +
+                    Notes — shown in 'create' + 'poll' edit modes. */}
+                {showPollSection && (<>
                 <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
                   <form
                     onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -3514,14 +3782,9 @@ export function CreateQuestionContent() {
 
                     {pollHasPrephase && suggestionCutoffField}
 
-                    {pollHasRankedChoice && (
-                      <ScoringAlgorithmField
-                        value={winnerMethod}
-                        setValue={setWinnerMethod}
-                        disabled={isLoading}
-                      />
-                    )}
-
+                    {/* Min votes to show preliminary results — poll-WIDE (the
+                        scoring algorithm + time gates are per-question and live
+                        in the question section above). */}
                     {pollHasRankedChoice && (
                       <CompactMinResponsesField
                         value={minResponses}
@@ -3531,42 +3794,6 @@ export function CreateQuestionContent() {
                         }}
                         showPreliminary={showPreliminaryResults}
                         setShowPreliminary={setShowPreliminaryResults}
-                        disabled={isLoading}
-                      />
-                    )}
-
-                    {/* Time polls get "Minimum Participants" in the same slot
-                        Minimum Votes occupies for other poll types. A time slot
-                        counts only if at least this many people are available
-                        for it; if none clears the bar the event is cancelled.
-                        Only meaningful when an availability phase collects that
-                        data. */}
-                    {showTimeFields && collectAvailability && (
-                      <CompactNumberRow
-                        label="Minimum Participants"
-                        value={minParticipants}
-                        setValue={setMinParticipants}
-                        disabled={isLoading}
-                      />
-                    )}
-
-                    {/* "Attendance Leeway": how many fewer people than the
-                        best-attended slot a time may have and still be offered
-                        for preference voting. 0 (default) → only the
-                        best-attended slot(s). Only meaningful when an
-                        availability phase collects attendance to compare. */}
-                    {showTimeFields && collectAvailability && (
-                      <CompactNumberRow
-                        label="Attendance Leeway"
-                        labelInfo={
-                          <OutcomeInfoButton
-                            align="left"
-                            text="By default only the time(s) the most people can make are offered for a final preference vote. Attendance Leeway lets times with a few fewer people stay in the running too — sometimes a slightly less-attended slot is better for other reasons. Set it to how many fewer attendees you'll tolerate: e.g. 2 keeps any time that leaves out at most 2 more people than the best slot. Voters see an orange badge on each time showing how many it excludes."
-                          />
-                        }
-                        value={exclusionTolerance}
-                        setValue={setExclusionTolerance}
-                        min={0}
                         disabled={isLoading}
                       />
                     )}
@@ -3645,6 +3872,7 @@ export function CreateQuestionContent() {
                     />
                   </section>
                 </div>
+                </>)}
 
                 {error && (
                   <div className="p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
