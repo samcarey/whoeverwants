@@ -37,3 +37,12 @@ export const GROUP_HEADER_ATTR = 'data-group-header';
  *  transforms exactly like the fixed GroupHeader does — instead of being a
  *  static body-level element that can only pop in/out. */
 export const GROUP_FAB_PORTAL_ID = 'group-fab-portal';
+
+/** Class for the `#group-fab-portal` target div — bottom-anchored,
+ *  full-width, zero-height (so it never intercepts taps). The explicit z-50
+ *  (a fixed element + z-index is already a stacking context) keeps the FAB
+ *  above the z-0 home backdrop even while the div is transformed mid-swipe —
+ *  without it the transform would drop the div to z-auto and the FAB would
+ *  vanish behind the backdrop. Shared by GroupContent + EmptyPlaceholder so
+ *  the two stay in lockstep (the positioning + z are load-bearing). */
+export const GROUP_FAB_PORTAL_CLASS = 'fixed inset-x-0 bottom-0 h-0 z-50';

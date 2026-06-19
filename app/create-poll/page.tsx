@@ -1624,24 +1624,15 @@ export function CreateQuestionContent() {
   // (not just the last) avoids a blink during the overlay→real-route handoff
   // overlap, when both the overlay's copy and the destination's copy exist —
   // the two FABs coincide at the same corner, so there's no visible doubling.
-  // WeakMap keys keep React subtrees stable across additions/removals.
-  const [groupFabPortals, setGroupFabPortals] = useState<Array<{ key: string; target: HTMLElement }>>([]);
+  // Plain element list + index keys: the FAB is a stateless button, so the
+  // remount when the list reorders is invisible (unlike the old bubble bar,
+  // whose stateful picker needed WeakMap-stable keys).
+  const [groupFabPortals, setGroupFabPortals] = useState<HTMLElement[]>([]);
   useEffect(() => {
-    const keys = new WeakMap<HTMLElement, string>();
-    let nextKey = 0;
-    const keyFor = (el: HTMLElement): string => {
-      let k = keys.get(el);
-      if (k === undefined) { k = String(++nextKey); keys.set(el, k); }
-      return k;
-    };
-    const sameTargets = (
-      a: Array<{ key: string; target: HTMLElement }>,
-      b: Array<{ key: string; target: HTMLElement }>,
-    ) => a.length === b.length && a.every((x, i) => x.target === b[i].target);
+    const sameTargets = (a: HTMLElement[], b: HTMLElement[]) =>
+      a.length === b.length && a.every((x, i) => x === b[i]);
     const check = () => {
-      const all = Array.from(
-        document.querySelectorAll<HTMLElement>(`#${GROUP_FAB_PORTAL_ID}`),
-      ).map((target) => ({ key: keyFor(target), target }));
+      const all = Array.from(document.querySelectorAll<HTMLElement>(`#${GROUP_FAB_PORTAL_ID}`));
       setGroupFabPortals((prev) => (sameTargets(prev, all) ? prev : all));
     };
     const observer = new MutationObserver(check);
@@ -3290,9 +3281,9 @@ export function CreateQuestionContent() {
   // its own z-50 for the explore (body-level) path where it must float above
   // the page; inside a #group-fab-portal target the wrapping div already
   // establishes the stacking context, so the z-index is moot but harmless.
-  const renderPollFab = (key: string, opts: { visible: boolean }) => (
+  // (It's the single child of each portal, so it needs no key.)
+  const pollFabButton = (visible: boolean) => (
     <button
-      key={key}
       onClick={openComposeModal}
       className="fixed h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
       style={{
@@ -3300,12 +3291,12 @@ export function CreateQuestionContent() {
         right: "max(1.5rem, env(safe-area-inset-right, 0px))",
         bottom: IS_CAPACITOR_NATIVE ? "2.65rem" : "1.9rem",
         transform: "translateZ(0)",
-        visibility: opts.visible ? "visible" : "hidden",
-        pointerEvents: opts.visible ? "auto" : "none",
+        visibility: visible ? "visible" : "hidden",
+        pointerEvents: visible ? "auto" : "none",
       }}
       aria-label="Create new poll"
-      aria-hidden={!opts.visible}
-      tabIndex={opts.visible ? 0 : -1}
+      aria-hidden={!visible}
+      tabIndex={visible ? 0 : -1}
     >
       <span aria-hidden="true" className="text-[28.8px] leading-none">
         +
@@ -3798,16 +3789,13 @@ export function CreateQuestionContent() {
       {/* Group surfaces: portal the FAB into every #group-fab-portal target
           so it rides the page transforms. Always visible — the target only
           exists where a poll can be created. */}
-      {groupFabPortals.map(({ key, target }) =>
-        createPortal(renderPollFab(`group-${key}`, { visible: true }), target, key),
+      {groupFabPortals.map((target, i) =>
+        createPortal(pollFabButton(true), target, `group-fab-${i}`),
       )}
 
       {/* /explore: static body-level FAB (no GroupContent to host a target). */}
       {exploreFabTarget &&
-        createPortal(
-          renderPollFab("explore", { visible: showExploreFab }),
-          exploreFabTarget,
-        )}
+        createPortal(pollFabButton(showExploreFab), exploreFabTarget, "explore-fab")}
 
       {/* New-poll bottom sheet — slides up from the bottom edge. Top half
           holds the question form; bottom half holds poll-level settings

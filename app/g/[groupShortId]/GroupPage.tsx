@@ -32,7 +32,7 @@ import {
   type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
-import { GROUP_ID_ATTR, GROUP_FAB_PORTAL_ID } from "@/lib/groupDomMarkers";
+import { GROUP_ID_ATTR, GROUP_FAB_PORTAL_ID, GROUP_FAB_PORTAL_CLASS } from "@/lib/groupDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { useDeadlineTick } from "@/lib/useDeadlineTick";
@@ -1983,17 +1983,9 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           sits inside the host's `contain: strict` box, so the FAB slides
           in / is revealed with the page. For the group→home swipe-back it's
           in the gesture's `extraTargets`, so the transform applied here
-          becomes the fixed FAB's containing block and carries it off. The
-          explicit z-50 (a fixed element + z-index is already a stacking
-          context) keeps the FAB above the z-0 home backdrop even while
-          transformed — without it the transform would drop the div to
-          z-auto and the FAB would vanish behind the backdrop mid-swipe.
-          h-0 so the bar itself never intercepts taps. */}
-      <div
-        ref={fabPortalRef}
-        id={GROUP_FAB_PORTAL_ID}
-        className="fixed inset-x-0 bottom-0 h-0 z-50"
-      />
+          becomes the fixed FAB's containing block and carries it off.
+          (Positioning + z-50 live in GROUP_FAB_PORTAL_CLASS.) */}
+      <div ref={fabPortalRef} id={GROUP_FAB_PORTAL_ID} className={GROUP_FAB_PORTAL_CLASS} />
 
       <div
         ref={swipeWrapperRef}
