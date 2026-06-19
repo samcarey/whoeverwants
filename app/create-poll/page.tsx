@@ -1527,11 +1527,15 @@ export function CreateQuestionContent() {
     swiping: boolean;
     ignored: boolean;
   } | null>(null);
-  // Read closeSubEdit through a ref so the touch handlers (created fresh each
-  // render, but only invoked on user touch) always call the latest closure
-  // without us threading it through deps.
+  // Read closeSubEdit through a ref so the touch handlers (stable `[]`-dep
+  // callbacks, so their DOM listeners never rebind) always call the latest
+  // closure without threading it through deps. The assignment lives in an
+  // effect (not render) per the react-hooks/refs rule — same pattern as
+  // AccountGateModal's onCancelRef / SignInOptions' onCompleteRef.
   const closeSubEditRef = useRef(closeSubEdit);
-  closeSubEditRef.current = closeSubEdit;
+  useEffect(() => {
+    closeSubEditRef.current = closeSubEdit;
+  }, [closeSubEdit]);
 
   const handleSubPanelTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length !== 1) {
