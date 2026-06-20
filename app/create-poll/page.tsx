@@ -910,11 +910,18 @@ export function CreateQuestionContent() {
   const searchPillRef = useRef<HTMLDivElement | null>(null);
   // Geometry of the drop-up suggestions overlay (positioned at the modal-
   // container level). Computed from the box's rect; null until measured.
+  // `dropUp` true → the list sits ABOVE the box (anchored by `bottom`); false →
+  // BELOW it (anchored by `top`). Direction is chosen per-measure from whichever
+  // side of the box has more room in the visible viewport — on iOS the keyboard
+  // shrinks the viewport and scrolls the box to the top, leaving no room above,
+  // so the list must drop DOWN into the space between the box and the keyboard.
   const [dropdownStyle, setDropdownStyle] = useState<{
     left: number;
     width: number;
-    bottom: number;
     maxHeight: number;
+    dropUp: boolean;
+    top?: number;
+    bottom?: number;
   } | null>(null);
   // Gate for actually SHOWING the drop-up: stays false while the sheet slides
   // up and the keyboard rises (the box is still moving), flips true once the
@@ -1563,22 +1570,40 @@ export function CreateQuestionContent() {
       const containerTop = vp ? vp.offsetTop : 0;
       const containerH = vp ? vp.height : window.innerHeight;
       const gap = 8; // gap between the box and the overlay
-      const topMargin = 12; // breathing room at the very top
-      const boxTopInContainer = r.top - containerTop;
-      setDropdownStyle({
-        left: r.left,
-        width: r.width,
-        bottom: containerH - boxTopInContainer + gap,
-        maxHeight: Math.max(140, boxTopInContainer - topMargin - gap),
-      });
-      if (lastTop === null || Math.abs(boxTopInContainer - lastTop) >= 1) {
+      const margin = 12; // breathing room at the viewport edge
+      const boxTop = r.top - containerTop; // box top in container coords
+      const boxBottom = r.bottom - containerTop;
+      const roomAbove = boxTop; // visible space above the box
+      const roomBelow = containerH - boxBottom; // visible space below the box
+      // Drop UP only when there's genuinely more room above; otherwise DOWN.
+      // (iOS scrolls the focused box to the top, so roomAbove collapses and we
+      // drop into the large gap between the box and the keyboard below.)
+      const dropUp = roomAbove >= roomBelow;
+      setDropdownStyle(
+        dropUp
+          ? {
+              left: r.left,
+              width: r.width,
+              dropUp: true,
+              bottom: containerH - boxTop + gap,
+              maxHeight: Math.max(120, roomAbove - margin - gap),
+            }
+          : {
+              left: r.left,
+              width: r.width,
+              dropUp: false,
+              top: Math.max(margin, boxBottom + gap),
+              maxHeight: Math.max(120, roomBelow - margin - gap),
+            },
+      );
+      if (lastTop === null || Math.abs(boxTop - lastTop) >= 1) {
         lastMoveAt = Date.now();
       }
-      lastTop = boxTopInContainer;
+      lastTop = boxTop;
       const now = Date.now();
       if (!revealed && now - effectStart >= FLOOR_MS && now - lastMoveAt >= SETTLE_MS) {
         revealed = true;
-        RFDBG(`REVEAL boxTop=${Math.round(boxTopInContainer)} containerH=${Math.round(containerH)} bottom=${Math.round(containerH - boxTopInContainer + gap)} restarts=${restartCount}`);
+        RFDBG(`REVEAL boxTop=${Math.round(boxTop)} containerH=${Math.round(containerH)} dropUp=${dropUp} roomAbove=${Math.round(roomAbove)} roomBelow=${Math.round(roomBelow)} restarts=${restartCount}`);
         setShowDropdown(true);
       }
     };
@@ -3330,14 +3355,17 @@ export function CreateQuestionContent() {
   const SEARCH_ROW_CLASS =
     "w-full flex items-center gap-[11.2px] pl-[14px] pr-5 py-1.5 text-left active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
 
-  // searchSuggestions is ordered best-LAST, and the dropdown is a `mt-auto`
-  // bottom-anchored list ABOVE the box — so rendering in natural order puts the
-  // best match as the LAST row, nearest the box. (Don't reverse: that pushes the
-  // best match to the top, furthest from the box.) Built only while focused (the
-  // list is hidden otherwise): this component is layout-level + persistent, so
-  // it re-renders on many unrelated events, and building N suggestion buttons
-  // when the box isn't open is wasted work.
-  const searchDropdownRows = (searchFocused ? searchSuggestions : []).map((s) => {
+  // Keep the best match NEAREST the box regardless of drop direction:
+  //  - drop UP   → list is above the box, best match at the BOTTOM (nearest) →
+  //                natural order (searchSuggestions is best-LAST) + `mt-auto`.
+  //  - drop DOWN → list is below the box, best match at the TOP (nearest) →
+  //                reversed order, top-anchored.
+  // Built only while focused (the list is hidden otherwise): this component is
+  // layout-level + persistent, so it re-renders on many unrelated events.
+  const dropdownDropsUp = dropdownStyle?.dropUp ?? true;
+  const searchDropdownRows = (
+    !searchFocused ? [] : dropdownDropsUp ? searchSuggestions : [...searchSuggestions].reverse()
+  ).map((s) => {
     // Rows with an annotation label reserve `pt-3` above BOTH the icon and the
     // text so the label has room AND the two stay vertically centered.
     const hasLabel = s.segments.some((seg) => seg.label);
@@ -3521,13 +3549,15 @@ export function CreateQuestionContent() {
         style={{
           left: dropdownStyle.left,
           width: dropdownStyle.width,
+          top: dropdownStyle.top,
           bottom: dropdownStyle.bottom,
           maxHeight: dropdownStyle.maxHeight,
         }}
       >
-        {/* mt-auto bottom-anchors the list so the best match (last row) sits
-            right above the box; overflow scrolls up for the rest. */}
-        <div className="mt-auto py-1">{searchDropdownRows}</div>
+        {/* Drop UP: mt-auto bottom-anchors so the best match (last row) sits
+            right above the box. Drop DOWN: top-anchored so the best match (now
+            the first, reversed row) sits right below the box. */}
+        <div className={dropdownStyle.dropUp ? "mt-auto py-1" : "py-1"}>{searchDropdownRows}</div>
       </div>
     ) : null;
 
