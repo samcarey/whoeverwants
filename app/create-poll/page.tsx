@@ -131,17 +131,6 @@ const SHEET_SCROLL_PIN_MS = 1200;
 // Must comfortably outlast that collapse; a deliberate scroll after it still disarms.
 const SHEET_SCROLL_PIN_GRACE_MS = 550;
 
-// TEMPORARY iOS re-focus diagnostic — console.warn forwards to the server log
-// buffer on the dev host (/api/client-logs?search=RFDBG). Remove once the
-// suggestion-list-not-reappearing bug is pinned down.
-const RFDBG = (msg: string) => {
-  try {
-    console.warn(`[RFDBG] ${msg}`);
-  } catch {
-    /* ignore */
-  }
-};
-
 // Duration of the question editor sub-panel slide (must match the inline
 // `transition: transform 300ms` on the sub-panel). After sliding out, editMode
 // flips back to 'compose' so the sub-panel unmounts off-screen.
@@ -1538,17 +1527,14 @@ export function CreateQuestionContent() {
   // keep an input "focused" after the keyboard's Done button, so a re-tap fires
   // no fresh focus event — the nonce re-arms this so the list reappears.
   useEffect(() => {
-    RFDBG(`effect run: searchFocused=${searchFocused} nonce=${searchFocusNonce}`);
     if (!searchFocused) {
       setShowDropdown(false);
       return;
     }
     const vp = typeof window !== 'undefined' ? window.visualViewport : null;
     const scroller = composeScrollNodeRef.current;
-    RFDBG(`effect active: vp=${!!vp} scroller=${!!scroller} pill=${!!searchPillRef.current} query="${searchQuery}"`);
     let rafId = 0;
     let stopped = false;
-    let restartCount = 0;
     let lastTop: number | null = null;
     // `effectStart` is fixed for this focus (never reset) — it's the floor that
     // outlasts the slide-up's static start frames so we don't reveal at the
@@ -1603,7 +1589,6 @@ export function CreateQuestionContent() {
       const now = Date.now();
       if (!revealed && now - effectStart >= FLOOR_MS && now - lastMoveAt >= SETTLE_MS) {
         revealed = true;
-        RFDBG(`REVEAL boxTop=${Math.round(boxTop)} containerH=${Math.round(containerH)} dropUp=${dropUp} roomAbove=${Math.round(roomAbove)} roomBelow=${Math.round(roomBelow)} restarts=${restartCount}`);
         setShowDropdown(true);
       }
     };
@@ -1616,7 +1601,6 @@ export function CreateQuestionContent() {
       if (!revealed && Date.now() - effectStart < 4000) {
         rafId = requestAnimationFrame(tick);
       } else {
-        if (!revealed) RFDBG(`loop cap hit WITHOUT reveal restarts=${restartCount}`);
         rafId = 0;
       }
     };
@@ -1626,8 +1610,6 @@ export function CreateQuestionContent() {
     // settle clock, and resume the loop. Does NOT touch effectStart, so the
     // reveal can't be starved by a stream of these events.
     const restart = () => {
-      restartCount += 1;
-      if (restartCount <= 30) RFDBG(`restart #${restartCount}`);
       revealed = false;
       lastTop = null;
       lastMoveAt = Date.now();
@@ -1646,14 +1628,6 @@ export function CreateQuestionContent() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchFocused, searchFocusNonce, composeSpacerHeight, modalViewportH, modalViewportTop]);
-
-  // TEMPORARY: log the overlay GATE inputs whenever they change so the iOS
-  // re-focus trace shows whether the list is hidden by focus, the show-gate, or
-  // a null position.
-  useEffect(() => {
-    RFDBG(`gate: focused=${searchFocused} show=${showDropdown} style=${!!dropdownStyle} q="${searchQuery}"`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchFocused, showDropdown, dropdownStyle, searchQuery]);
 
   // Pick a poll suggestion from the focused picker → STAGE it as a draft bubble
   // (no modal). On /explore only one (yes/no) question is allowed, so a new
@@ -3494,35 +3468,22 @@ export function CreateQuestionContent() {
             // never fires, searchFocused would stay false and the effect would
             // bail — so the list would never reappear. (pointerdown precedes
             // focus; redundant when focus does fire.)
+            // On every tap, mark focused + bump the nonce so the settle effect
+            // re-arms — belt-and-braces in case iOS keeps the input "focused"
+            // after the keyboard's Done button and fires no fresh focus event.
             onPointerDown={() => {
-              RFDBG("input pointerdown");
-              setSearchFocused(true);
-              setSearchFocusNonce((n) => n + 1);
-            }}
-            onTouchStart={() => {
-              RFDBG("input touchstart");
-              setSearchFocused(true);
-              setSearchFocusNonce((n) => n + 1);
-            }}
-            onClick={() => {
-              RFDBG("input click");
               setSearchFocused(true);
               setSearchFocusNonce((n) => n + 1);
             }}
             onFocus={() => {
-              RFDBG("input focus");
-              // The box sits at the bottom of the sheet, just above the keyboard
-              // (the sheet bottom rides the visual viewport). Suggestions drop UP
-              // above it — the settle effect positions + reveals the overlay once
-              // the box stops moving.
+              // The settle effect positions + reveals the suggestion overlay
+              // once the box stops moving (it drops up or down depending on
+              // which side of the box has room above the keyboard).
               setSearchFocused(true);
               setSearchFocusNonce((n) => n + 1);
             }}
             // Collapse on blur (closes the dropdown + dismisses the keyboard).
-            onBlur={() => {
-              RFDBG("input blur");
-              setSearchFocused(false);
-            }}
+            onBlur={() => setSearchFocused(false)}
             disabled={isLoading}
             placeholder={drafts.length > 0 && !isExplore ? "Ask another question…" : "Ask a question…"}
             aria-label={drafts.length > 0 && !isExplore ? "Ask another question" : "Ask a question"}
