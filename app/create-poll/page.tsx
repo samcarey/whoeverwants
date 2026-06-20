@@ -4041,20 +4041,28 @@ export function CreateQuestionContent() {
             {baseIsCompose ? (
               /* COMPOSE sheet — opens SHORT (question box at the bottom edge,
                  backdrop above) and expands to full as the user scrolls. The
-                 panel is full-height + TRANSPARENT; one native scroll container
-                 holds a transparent spacer (shows the backdrop through it) above
-                 an opaque card. `overflow-hidden` clips the editor sub-panel
-                 while it's slid off to the right. */
+                 panel reserves only the safe-area inset (notch / Dynamic Island)
+                 at the top, NOT a flat gap — so when scrolled up the opaque card
+                 slides OVER the page's top bar (which is dimmed behind the
+                 backdrop) instead of the content clipping under it; only the
+                 notch stays dimmed. The panel is TRANSPARENT; one native scroll
+                 container holds a transparent spacer (shows the backdrop through
+                 it) above an opaque card. `overflow-hidden` clips the editor
+                 sub-panel while it's slid off to the right. */
               <div
                 className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up"
-                style={{ height: modalViewportH != null ? `${modalViewportH - 70}px` : 'calc(100dvh - 70px)' }}
+                style={{ height: modalViewportH != null ? `calc(${modalViewportH}px - env(safe-area-inset-top, 0px))` : 'calc(100dvh - env(safe-area-inset-top, 0px))' }}
                 role="dialog"
                 aria-modal="true"
                 aria-label="New poll"
               >
                 <div
                   ref={setComposeScrollRef}
-                  className="absolute inset-0 z-0 overflow-y-auto overflow-x-hidden"
+                  // overscroll-none kills the iOS rubber-band bounce at the
+                  // scroll extremes (and stops chaining) — a bounce at max scroll
+                  // could momentum-glitch the scroll back toward the top, flashing
+                  // the transparent spacer's dimmed backdrop.
+                  className="absolute inset-0 z-0 overflow-y-auto overflow-x-hidden overscroll-none"
                 >
                   {/* Transparent spacer — the dim backdrop shows through it, so
                       at rest only the card (header + box) peeks up from the
