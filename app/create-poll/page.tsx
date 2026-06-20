@@ -131,21 +131,6 @@ const SHEET_SCROLL_PIN_MS = 1200;
 // Must comfortably outlast that collapse; a deliberate scroll after it still disarms.
 const SHEET_SCROLL_PIN_GRACE_MS = 550;
 
-// TEMPORARY: logs ONLY when the suggestion list would overlap the box, with the
-// geometry, so an iOS repro is conclusive. Forwarded to the dev client-log
-// buffer (/api/client-logs?search=RFDBG). Remove once confirmed fixed.
-let _rfdbgLast = 0;
-const RFDBG = (msg: string) => {
-  const now = Date.now();
-  if (now - _rfdbgLast < 400) return; // throttle
-  _rfdbgLast = now;
-  try {
-    console.warn(`[RFDBG] ${msg}`);
-  } catch {
-    /* ignore */
-  }
-};
-
 // Duration of the question editor sub-panel slide (must match the inline
 // `transition: transform 300ms` on the sub-panel). After sliding out, editMode
 // flips back to 'compose' so the sub-panel unmounts off-screen.
@@ -1620,18 +1605,6 @@ export function CreateQuestionContent() {
         lastMoveAt = Date.now();
       }
       lastTop = boxTop;
-      // Diagnostic: would the list (in viewport coords) overlap the box? If so,
-      // log the geometry — this should never happen with container-relative
-      // positioning.
-      const listTopVp = style.dropUp
-        ? cr.bottom - (style.bottom ?? 0) - style.maxHeight
-        : cr.top + (style.top ?? 0);
-      const listBottomVp = style.dropUp ? cr.bottom - (style.bottom ?? 0) : listTopVp + style.maxHeight;
-      if (listTopVp < r.bottom && listBottomVp > r.top) {
-        RFDBG(
-          `OVERLAP dropUp=${style.dropUp} box=[${Math.round(r.top)},${Math.round(r.bottom)}] list=[${Math.round(listTopVp)},${Math.round(listBottomVp)}] cr=[${Math.round(cr.top)},${Math.round(cr.bottom)}] vpTop=${vp ? Math.round(vp.offsetTop) : 'na'} vpH=${vp ? Math.round(vp.height) : 'na'}`,
-        );
-      }
       const now = Date.now();
       if (!revealed && now - effectStart >= FLOOR_MS && now - lastMoveAt >= SETTLE_MS) {
         revealed = true;
@@ -3508,9 +3481,6 @@ export function CreateQuestionContent() {
             // never fires, searchFocused would stay false and the effect would
             // bail — so the list would never reappear. (pointerdown precedes
             // focus; redundant when focus does fire.)
-            // On every tap, mark focused + bump the nonce so the settle effect
-            // re-arms — belt-and-braces in case iOS keeps the input "focused"
-            // after the keyboard's Done button and fires no fresh focus event.
             onPointerDown={() => {
               setSearchFocused(true);
               setSearchFocusNonce((n) => n + 1);
@@ -3562,8 +3532,6 @@ export function CreateQuestionContent() {
       </div>
     ) : null;
 
-
-  //
   // Two rendering paths:
   //  - GROUP surfaces (group root / empty placeholder, incl. their slide
   //    overlay + swipe-back backdrop instances) render a #group-fab-portal
