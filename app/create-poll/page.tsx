@@ -1536,19 +1536,21 @@ export function CreateQuestionContent() {
     let rafId = 0;
     let stopped = false;
     let lastTop: number | null = null;
-    // `effectStart` is fixed for this focus (never reset) — it's the floor that
-    // outlasts the slide-up's static start frames so we don't reveal at the
-    // box's off-screen start position. `lastMoveAt` is a ROLLING settle clock:
-    // the box's last position change OR the last viewport/scroll event. Reveal
-    // needs BOTH the floor passed AND the box quiet for SETTLE_MS — so it can't
-    // get stuck when iOS streams resize/scroll events through a keyboard rise
-    // (the bug: previously every such event reset the floor, so the reveal
-    // condition was never met on re-focus).
+    let lastStyleKey = '';
+    // `effectStart` is fixed for this focus — the floor that outlasts the
+    // slide-up's static start frames so the list doesn't REVEAL at the box's
+    // off-screen start position. `lastMoveAt` is a rolling settle clock. The
+    // list only REVEALS once the floor has passed AND the box has been quiet for
+    // SETTLE_MS. But the loop keeps RE-MEASURING + repositioning every frame for
+    // the whole focus, so once shown the list stays GLUED to the box — on iOS
+    // the box gets scrolled/adjusted AFTER the keyboard settles, and a
+    // measure-once approach left the (container-anchored) list behind, covering
+    // the box. Continuous tracking can't diverge.
     const effectStart = Date.now();
     let lastMoveAt = Date.now();
     let revealed = false;
     const FLOOR_MS = 360; // outlast the slide-up static-start frames
-    const SETTLE_MS = 160; // quiet window after the box stops moving
+    const SETTLE_MS = 160; // quiet window before first reveal
 
     const measure = () => {
       const r = searchPillRef.current?.getBoundingClientRect();
@@ -1565,23 +1567,28 @@ export function CreateQuestionContent() {
       // (iOS scrolls the focused box to the top, so roomAbove collapses and we
       // drop into the large gap between the box and the keyboard below.)
       const dropUp = roomAbove >= roomBelow;
-      setDropdownStyle(
-        dropUp
-          ? {
-              left: r.left,
-              width: r.width,
-              dropUp: true,
-              bottom: containerH - boxTop + gap,
-              maxHeight: Math.max(120, roomAbove - margin - gap),
-            }
-          : {
-              left: r.left,
-              width: r.width,
-              dropUp: false,
-              top: Math.max(margin, boxBottom + gap),
-              maxHeight: Math.max(120, roomBelow - margin - gap),
-            },
-      );
+      const style = dropUp
+        ? {
+            left: r.left,
+            width: r.width,
+            dropUp: true,
+            bottom: containerH - boxTop + gap,
+            maxHeight: Math.max(120, roomAbove - margin - gap),
+          }
+        : {
+            left: r.left,
+            width: r.width,
+            dropUp: false,
+            top: Math.max(margin, boxBottom + gap),
+            maxHeight: Math.max(120, roomBelow - margin - gap),
+          };
+      // Only re-render when the position actually changes (the loop runs every
+      // frame; an unchanged box must not churn React).
+      const key = `${style.dropUp}:${Math.round(style.top ?? -1)}:${Math.round(style.bottom ?? -1)}:${Math.round(style.maxHeight)}:${Math.round(style.left)}:${Math.round(style.width)}`;
+      if (key !== lastStyleKey) {
+        lastStyleKey = key;
+        setDropdownStyle(style);
+      }
       if (lastTop === null || Math.abs(boxTop - lastTop) >= 1) {
         lastMoveAt = Date.now();
       }
@@ -1593,38 +1600,32 @@ export function CreateQuestionContent() {
       }
     };
 
+    // Run for the whole focus so the list tracks the box continuously (the
+    // per-frame cost is a getBoundingClientRect + compare; setState only fires
+    // on real movement via the key guard).
     const tick = () => {
       if (stopped) return;
       measure();
-      // Run until revealed (then stop and let restart resume on movement); cap
-      // absolute runtime from focus so a never-settling layout can't spin.
-      if (!revealed && Date.now() - effectStart < 4000) {
-        rafId = requestAnimationFrame(tick);
-      } else {
-        rafId = 0;
-      }
+      rafId = requestAnimationFrame(tick);
     };
     tick();
 
-    // The box moved (keyboard rising / sheet scrolling): re-hide, push the
-    // settle clock, and resume the loop. Does NOT touch effectStart, so the
-    // reveal can't be starved by a stream of these events.
-    const restart = () => {
-      revealed = false;
-      lastTop = null;
-      lastMoveAt = Date.now();
-      setShowDropdown(false);
-      if (!rafId && !stopped) rafId = requestAnimationFrame(tick);
+    // A viewport/scroll event that doesn't shift the box rect still means
+    // "things are moving" — push the settle clock so the FIRST reveal waits for
+    // quiet. After reveal the continuous loop already keeps the list glued, so
+    // this only matters pre-reveal.
+    const onMove = () => {
+      if (!revealed) lastMoveAt = Date.now();
     };
-    vp?.addEventListener('resize', restart);
-    vp?.addEventListener('scroll', restart);
-    scroller?.addEventListener('scroll', restart, { passive: true });
+    vp?.addEventListener('resize', onMove);
+    vp?.addEventListener('scroll', onMove);
+    scroller?.addEventListener('scroll', onMove, { passive: true });
     return () => {
       stopped = true;
       cancelAnimationFrame(rafId);
-      vp?.removeEventListener('resize', restart);
-      vp?.removeEventListener('scroll', restart);
-      scroller?.removeEventListener('scroll', restart);
+      vp?.removeEventListener('resize', onMove);
+      vp?.removeEventListener('scroll', onMove);
+      scroller?.removeEventListener('scroll', onMove);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchFocused, searchFocusNonce, composeSpacerHeight, modalViewportH, modalViewportTop]);
