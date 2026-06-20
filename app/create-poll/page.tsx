@@ -541,6 +541,12 @@ export function CreateQuestionContent() {
   // Throwaway off-screen input used to keep the iOS soft keyboard open while
   // the real title input mounts (see primeKeyboard).
   const keyboardPrimerRef = useRef<HTMLInputElement | null>(null);
+  // Set when the search box is RE-TAPPED while the keyboard is down: we prime
+  // the keyboard from a top-anchored input (so iOS doesn't scroll the webview
+  // up to reveal the bottom-anchored box) and defer the real focus to the
+  // visualViewport listener, which transfers it with preventScroll once the
+  // keyboard has settled. Mirrors the FAB-open path for an already-mounted box.
+  const pendingSearchRefocusRef = useRef(false);
   const removeKeyboardPrimer = useCallback(() => {
     const el = keyboardPrimerRef.current;
     if (el) {
@@ -827,15 +833,25 @@ export function CreateQuestionContent() {
       composeRoRef.current?.disconnect();
       composeRoRef.current = null;
       composeFocusedOpenRef.current = false;
+      pendingSearchRefocusRef.current = false;
       setModalViewportH(null);
       setModalViewportTop(0);
       return;
     }
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
     const onResize = () => {
-      setModalViewportH(vv ? vv.height : window.innerHeight);
+      const vh = vv ? vv.height : window.innerHeight;
+      setModalViewportH(vh);
       setModalViewportTop(vv ? vv.offsetTop : 0);
       recomputeComposeSpacer();
+      // A re-tap primed the keyboard and deferred the box focus to here: now
+      // that the keyboard is up (vh shrank) the box sits above it, so focus it
+      // with preventScroll — iOS won't scroll the webview, so nothing lurches.
+      if (pendingSearchRefocusRef.current && vh < window.innerHeight - 100) {
+        pendingSearchRefocusRef.current = false;
+        searchInputRef.current?.focus({ preventScroll: true });
+        removeKeyboardPrimer();
+      }
     };
     onResize();
     vv?.addEventListener("resize", onResize);
@@ -846,7 +862,7 @@ export function CreateQuestionContent() {
       vv?.removeEventListener("scroll", onResize);
       window.removeEventListener("resize", onResize);
     };
-  }, [isModalOpen, recomputeComposeSpacer]);
+  }, [isModalOpen, recomputeComposeSpacer, removeKeyboardPrimer]);
 
   // The QUESTION form section (category / options / time / per-question
   // settings) shows in 'create' + 'question' edit modes — the modes where the
@@ -3481,7 +3497,22 @@ export function CreateQuestionContent() {
             // never fires, searchFocused would stay false and the effect would
             // bail — so the list would never reappear. (pointerdown precedes
             // focus; redundant when focus does fire.)
-            onPointerDown={() => {
+            onPointerDown={(e) => {
+              // Re-tapping the box while the keyboard is DOWN: focusing the
+              // bottom-anchored box natively makes iOS scroll the whole webview
+              // up to reveal it (offsetTop jumps → the page lurches). Match the
+              // FAB-open path: block the native focus, prime the keyboard from a
+              // top-anchored offscreen input (offsetTop stays 0 → only the sheet
+              // rides the keyboard), then transfer focus with preventScroll once
+              // the keyboard settles (in the visualViewport listener above).
+              const keyboardDown =
+                modalViewportH == null ||
+                modalViewportH > window.innerHeight - 100;
+              if (keyboardDown) {
+                e.preventDefault();
+                primeKeyboard();
+                pendingSearchRefocusRef.current = true;
+              }
               setSearchFocused(true);
               setSearchFocusNonce((n) => n + 1);
             }}
