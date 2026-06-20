@@ -1496,11 +1496,27 @@ export function CreateQuestionContent() {
   // While the box is focused, position the DROP-UP suggestions overlay from the
   // box's live rect: it sits just above the box and extends up toward the top
   // (over the page top bar — it's a modal-container child, not clipped by the
-  // sheet). Re-runs as the keyboard animates the box up.
+  // sheet).
+  //
+  // The box lives inside the sheet's scroll container, and its viewport
+  // position settles asynchronously (composeSpacerHeight is sized by a
+  // ResizeObserver a few frames after open, and the keyboard animates the
+  // sheet up over ~300ms). A fixed recompute schedule (immediate + rAF +
+  // one timeout) races that settle and can latch a transient off-screen box
+  // position. So we run a bounded rAF loop that re-measures until the box's
+  // position is stable for a few frames, then stops — and we restart it on
+  // any visualViewport change (keyboard) or sheet scroll so the overlay keeps
+  // tracking the box.
   useEffect(() => {
     if (!searchFocused) return;
     const vp = typeof window !== 'undefined' ? window.visualViewport : null;
-    const recompute = () => {
+    const scroller = composeScrollNodeRef.current;
+    let rafId = 0;
+    let stopped = false;
+    let lastBottom: number | null = null;
+    let stableFrames = 0;
+
+    const measure = () => {
       const r = searchPillRef.current?.getBoundingClientRect();
       if (!r) return;
       const containerTop = vp ? vp.offsetTop : 0;
@@ -1508,25 +1524,45 @@ export function CreateQuestionContent() {
       const gap = 8; // gap between the box and the overlay
       const topMargin = 12; // breathing room at the very top
       const boxTopInContainer = r.top - containerTop;
+      const bottom = containerH - boxTopInContainer + gap;
       setDropdownStyle({
         left: r.left,
         width: r.width,
-        bottom: containerH - boxTopInContainer + gap,
+        bottom,
         maxHeight: Math.max(140, boxTopInContainer - topMargin - gap),
       });
+      if (lastBottom !== null && Math.abs(bottom - lastBottom) < 1) {
+        stableFrames += 1;
+      } else {
+        stableFrames = 0;
+      }
+      lastBottom = bottom;
     };
-    recompute();
-    // Re-measure as the keyboard animates in (visualViewport settles a few
-    // frames later) and on any subsequent viewport change.
-    const raf = requestAnimationFrame(recompute);
-    const t = window.setTimeout(recompute, 350);
-    vp?.addEventListener('resize', recompute);
-    vp?.addEventListener('scroll', recompute);
+
+    const tick = () => {
+      if (stopped) return;
+      measure();
+      // Keep re-measuring until the box position holds steady for 3 frames,
+      // capped so a never-settling layout can't spin forever.
+      if (stableFrames < 3) rafId = requestAnimationFrame(tick);
+    };
+    tick();
+
+    // Restart the stabilization loop whenever the box could have moved.
+    const restart = () => {
+      lastBottom = null;
+      stableFrames = 0;
+      if (!rafId && !stopped) rafId = requestAnimationFrame(tick);
+    };
+    vp?.addEventListener('resize', restart);
+    vp?.addEventListener('scroll', restart);
+    scroller?.addEventListener('scroll', restart, { passive: true });
     return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(t);
-      vp?.removeEventListener('resize', recompute);
-      vp?.removeEventListener('scroll', recompute);
+      stopped = true;
+      cancelAnimationFrame(rafId);
+      vp?.removeEventListener('resize', restart);
+      vp?.removeEventListener('scroll', restart);
+      scroller?.removeEventListener('scroll', restart);
     };
   }, [searchFocused]);
 
