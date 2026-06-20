@@ -738,6 +738,116 @@ export function CreateQuestionContent() {
   // true→false on back/commit (the panel stays mounted through the slide-out,
   // then editMode flips back to 'compose').
   const [subSlideIn, setSubSlideIn] = useState(false);
+
+  // --- Compose-sheet "open short, expand on scroll" geometry ---------------
+  // The compose sheet opens showing ONLY the question box at the bottom edge
+  // (backdrop visible above it); the poll settings live below the fold and the
+  // user scrolls to reveal them, the opaque card growing to full height. This
+  // is achieved with a TRANSPARENT spacer above an opaque card inside ONE
+  // native scroll container: at scrollTop 0 the spacer fills the area above the
+  // box (the dim backdrop shows through it), and scrolling reveals the card.
+  // spacer height = scrollViewport - topRegion(header + question box), so the
+  // box sits exactly at the bottom edge initially. Pure native scroll — no
+  // drag/height JS, no preventDefault (the iOS-fragile bits). The ref-mirror
+  // (composeSpacerHeightRef) lets onFocus scroll-to-expand synchronously.
+  const composeScrollNodeRef = useRef<HTMLDivElement | null>(null);
+  const composeTopRegionNodeRef = useRef<HTMLDivElement | null>(null);
+  const composeRoRef = useRef<ResizeObserver | null>(null);
+  const composeSpacerHeightRef = useRef(0);
+  const [composeSpacerHeight, setComposeSpacerHeight] = useState(0);
+  // The question box. Declared here (above the compose scroll ref that focuses
+  // it) so setComposeScrollRef can read it without a use-before-define.
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // The compose sheet's bottom edge rides the visual viewport bottom (= the
+  // keyboard top when the keyboard is up), and the box sits at the bottom of the
+  // scroll content (scrollTop 0) so it lands right above the keyboard. The
+  // suggestions drop UP above it; the poll settings sit below (scroll down to
+  // reveal). composeFocusedOpenRef gates auto-focusing the box on a FAB open
+  // (kept true across a StrictMode detach+reattach; reset on close + a timeout).
+  const composeFocusedOpenRef = useRef(false);
+  // Visual-viewport rect the modal tracks (null = not yet measured → CSS
+  // fallback). The sheet is sized to it so it stays above the soft keyboard.
+  const [modalViewportH, setModalViewportH] = useState<number | null>(null);
+  const [modalViewportTop, setModalViewportTop] = useState(0);
+
+  const recomputeComposeSpacer = useCallback(() => {
+    const scroll = composeScrollNodeRef.current;
+    const top = composeTopRegionNodeRef.current;
+    if (!scroll || !top) return;
+    const h = Math.max(0, scroll.clientHeight - top.offsetHeight);
+    composeSpacerHeightRef.current = h;
+    setComposeSpacerHeight((prev) => (prev === h ? prev : h));
+  }, []);
+
+  const ensureComposeRo = useCallback(() => {
+    if (!composeRoRef.current && typeof ResizeObserver !== "undefined") {
+      composeRoRef.current = new ResizeObserver(() => recomputeComposeSpacer());
+    }
+    return composeRoRef.current;
+  }, [recomputeComposeSpacer]);
+
+  // Callback ref (NOT useMeasuredHeight) because the element mounts inside
+  // <ModalPortal>'s deferred commit — a useLayoutEffect([]) would run with a
+  // null ref and never reattach (the documented early-return pitfall). It pins
+  // scrollTop to 0 (box at the bottom = just above the keyboard) and, on a FAB
+  // open, focuses the box (refs attach child-first, so the input is already
+  // attached by the time this fires; the flag survives the StrictMode remount).
+  const setComposeScrollRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      composeScrollNodeRef.current = node;
+      setSheetScrollerRef(node);
+      if (!node) return;
+      ensureComposeRo()?.observe(node);
+      recomputeComposeSpacer();
+      if (composeFocusedOpenRef.current) {
+        searchInputRef.current?.focus({ preventScroll: true });
+        removeKeyboardPrimer();
+      }
+    },
+    [setSheetScrollerRef, ensureComposeRo, recomputeComposeSpacer, removeKeyboardPrimer],
+  );
+
+  const setComposeTopRegionRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      composeTopRegionNodeRef.current = node;
+      if (node) {
+        ensureComposeRo()?.observe(node);
+        recomputeComposeSpacer();
+      }
+    },
+    [ensureComposeRo, recomputeComposeSpacer],
+  );
+
+  // Track the visual viewport (size the sheet above the keyboard) + recompute
+  // the spacer on every change; tear the observer down + reset the focus flag
+  // on close.
+  useEffect(() => {
+    if (!isModalOpen) {
+      composeRoRef.current?.disconnect();
+      composeRoRef.current = null;
+      composeFocusedOpenRef.current = false;
+      setModalViewportH(null);
+      setModalViewportTop(0);
+      return;
+    }
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const onResize = () => {
+      setModalViewportH(vv ? vv.height : window.innerHeight);
+      setModalViewportTop(vv ? vv.offsetTop : 0);
+      recomputeComposeSpacer();
+    };
+    onResize();
+    vv?.addEventListener("resize", onResize);
+    vv?.addEventListener("scroll", onResize);
+    window.addEventListener("resize", onResize);
+    return () => {
+      vv?.removeEventListener("resize", onResize);
+      vv?.removeEventListener("scroll", onResize);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [isModalOpen, recomputeComposeSpacer]);
+
   // The QUESTION form section (category / options / time / per-question
   // settings) shows in 'create' + 'question' edit modes — the modes where the
   // live form represents a real question. The POLL-settings section
@@ -782,17 +892,42 @@ export function CreateQuestionContent() {
   // or null when the on-device model hasn't scored them (empty query / loading /
   // unavailable) → the box falls back to server order + token filtering.
   const [aiScores, setAiScores] = useState<number[] | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
   // The create-poll box is a real <input> inside the New Poll sheet body.
   // Focusing it renders the suggestions as a dropdown directly below the pill;
   // `searchPillRef` anchors that dropdown and its max height is computed so it
   // ends just above the soft keyboard.
   const searchPillRef = useRef<HTMLDivElement | null>(null);
-  // Viewport-Y the pill's BOTTOM sits at (captured at focus) so the dropdown
-  // is sized to its full height immediately. Only the keyboard appearing
-  // changes the room below it.
-  const pillTargetBottomRef = useRef(0);
-  const [searchDropdownMaxHeight, setSearchDropdownMaxHeight] = useState(320);
+  // The modal container the suggestion overlay is positioned inside (position:
+  // absolute). We measure the box relative to THIS element's live rect — not the
+  // visual viewport — because the container's top/height come from React state
+  // (modalViewportTop/H) that lags the live visualViewport during the iOS
+  // keyboard animation; positioning off the live viewport then mismaps the list
+  // onto the box.
+  const modalContainerRef = useRef<HTMLDivElement | null>(null);
+  // Geometry of the drop-up suggestions overlay (positioned at the modal-
+  // container level). Computed from the box's rect; null until measured.
+  // `dropUp` true → the list sits ABOVE the box (anchored by `bottom`); false →
+  // BELOW it (anchored by `top`). Direction is chosen per-measure from whichever
+  // side of the box has more room in the visible viewport — on iOS the keyboard
+  // shrinks the viewport and scrolls the box to the top, leaving no room above,
+  // so the list must drop DOWN into the space between the box and the keyboard.
+  const [dropdownStyle, setDropdownStyle] = useState<{
+    left: number;
+    width: number;
+    maxHeight: number;
+    dropUp: boolean;
+    top?: number;
+    bottom?: number;
+  } | null>(null);
+  // Gate for actually SHOWING the drop-up: stays false while the sheet slides
+  // up and the keyboard rises (the box is still moving), flips true once the
+  // box position settles — so the list never appears lagging behind the box.
+  const [showDropdown, setShowDropdown] = useState(false);
+  // Bumped on every tap/focus of the box so the settle effect re-runs even when
+  // searchFocused doesn't transition (iOS can keep an input "focused" after the
+  // keyboard's Done button, so a re-tap fires no fresh focus event — the nonce
+  // re-arms the show-gate regardless).
+  const [searchFocusNonce, setSearchFocusNonce] = useState(0);
 
   // A ranked_choice question is a "suggestion poll" when the creator left the
   // "Collect Suggestions before Vote" toggle on — regardless of whether they
@@ -1300,8 +1435,27 @@ export function CreateQuestionContent() {
     }
     setError(null);
     setSendError(null);
+    // Open with the question box focused + the iOS keyboard up. primeKeyboard()
+    // must run synchronously in this tap (the input mounts a commit later); the
+    // compose scroll ref then focuses the box + removes the primer. The flag is
+    // reset after the open settles (it stays set across the StrictMode remount).
+    composeFocusedOpenRef.current = true;
+    primeKeyboard();
+    window.setTimeout(() => { composeFocusedOpenRef.current = false; }, 1500);
+    // Seed the viewport + spacer so the first paint is already bottom-anchored
+    // (box at the bottom edge, above where the keyboard lands); the vv listener
+    // + callback-ref measure correct them. ~130px ≈ header + the question box.
+    if (typeof window !== "undefined") {
+      const vv = window.visualViewport;
+      const vh = vv?.height ?? window.innerHeight;
+      setModalViewportH(vh);
+      setModalViewportTop(vv?.offsetTop ?? 0);
+      const seed = Math.max(0, vh - 70 - 130 - drafts.length * 44);
+      composeSpacerHeightRef.current = seed;
+      setComposeSpacerHeight(seed);
+    }
     setEditMode({ type: 'compose' });
-  }, [drafts.length, applyDraftToState, resetFreshPollFields]);
+  }, [drafts.length, applyDraftToState, resetFreshPollFields, primeKeyboard]);
 
   const discardAndClose = useCallback(() => {
     applyDraftToState(emptyDraft());
@@ -1362,39 +1516,131 @@ export function CreateQuestionContent() {
     dismissSoftKeyboard();
   }, [dismissSoftKeyboard]);
 
-  // While the box is focused, bound the suggestions dropdown so its bottom
-  // ends just above the soft keyboard (the box stays put; only the dropdown is
-  // sized to the visible gap below it). visualViewport gives the above-keyboard
-  // region; the pill's rect gives where the dropdown starts.
+  // While the box is focused, position the DROP-UP suggestions overlay from the
+  // box's live rect (it sits just above the box and extends up over the page top
+  // bar — it's a modal-container child, not clipped by the sheet) AND decide
+  // WHEN to reveal it.
+  //
+  // The box moves twice on open: the sheet slides up (~300ms transform) and the
+  // iOS keyboard rises (visualViewport shrinks over ~300ms), both shifting the
+  // box's viewport position. Showing the list mid-animation makes its bottom lag
+  // behind the box. So we keep re-measuring the position but only flip
+  // `showDropdown` true once the box has held still for a few frames (past a min
+  // delay that outlasts the slide-up). Every visualViewport/scroll change
+  // re-hides the list and re-arms the settle, so it stays hidden through the
+  // whole rise and appears, correctly placed, only once everything has stopped.
+  //
+  // Re-runs on `searchFocusNonce` too (bumped on every tap of the box): iOS can
+  // keep an input "focused" after the keyboard's Done button, so a re-tap fires
+  // no fresh focus event — the nonce re-arms this so the list reappears.
   useEffect(() => {
-    if (!searchFocused) return;
+    if (!searchFocused) {
+      setShowDropdown(false);
+      return;
+    }
     const vp = typeof window !== 'undefined' ? window.visualViewport : null;
-    const recompute = () => {
-      // Use the STABLE post-slide pill bottom (captured at focus), not the live
-      // rect — otherwise the height tracks the box mid-rise and the dropdown
-      // visibly grows as the slide completes. With the stable anchor the
-      // dropdown is full-height immediately; only the keyboard sliding in
-      // (which shrinks `keyboardTop`) reduces it, as intended.
-      const bottom = pillTargetBottomRef.current;
-      if (!bottom) return;
-      const keyboardTop = vp ? vp.offsetTop + vp.height : window.innerHeight;
-      // 8px dropdown gap + 12px breathing room above the keyboard.
-      setSearchDropdownMaxHeight(Math.max(140, keyboardTop - bottom - 20));
+    const scroller = composeScrollNodeRef.current;
+    let rafId = 0;
+    let stopped = false;
+    let lastTop: number | null = null;
+    let lastStyleKey = '';
+    // `effectStart` is fixed for this focus — the floor that outlasts the
+    // slide-up's static start frames so the list doesn't REVEAL at the box's
+    // off-screen start position. `lastMoveAt` is a rolling settle clock. The
+    // list only REVEALS once the floor has passed AND the box has been quiet for
+    // SETTLE_MS. But the loop keeps RE-MEASURING + repositioning every frame for
+    // the whole focus, so once shown the list stays GLUED to the box — on iOS
+    // the box gets scrolled/adjusted AFTER the keyboard settles, and a
+    // measure-once approach left the (container-anchored) list behind, covering
+    // the box. Continuous tracking can't diverge.
+    const effectStart = Date.now();
+    let lastMoveAt = Date.now();
+    let revealed = false;
+    const FLOOR_MS = 360; // outlast the slide-up static-start frames
+    const SETTLE_MS = 160; // quiet window before first reveal
+
+    const measure = () => {
+      const r = searchPillRef.current?.getBoundingClientRect();
+      const cr = modalContainerRef.current?.getBoundingClientRect();
+      if (!r || !cr) return;
+      // Position relative to the container's ACTUAL rendered rect (not the live
+      // visual viewport): the list is absolute inside the container, so its
+      // top/bottom must be in the container's coordinate space. Using cr keeps
+      // the list glued to the box even while the container's state-driven
+      // top/height lag the live viewport during the iOS keyboard animation.
+      const containerH = cr.height;
+      const gap = 8; // gap between the box and the overlay
+      const margin = 12; // breathing room at the viewport edge
+      const boxTop = r.top - cr.top; // box top in container coords
+      const boxBottom = r.bottom - cr.top;
+      const roomAbove = boxTop; // space above the box within the container
+      const roomBelow = containerH - boxBottom; // space below the box
+      // Drop UP only when there's genuinely more room above; otherwise DOWN.
+      // (iOS scrolls the focused box to the top, so roomAbove collapses and we
+      // drop into the large gap between the box and the keyboard below.)
+      const dropUp = roomAbove >= roomBelow;
+      const style = dropUp
+        ? {
+            left: r.left,
+            width: r.width,
+            dropUp: true,
+            bottom: containerH - boxTop + gap,
+            maxHeight: Math.max(120, roomAbove - margin - gap),
+          }
+        : {
+            left: r.left,
+            width: r.width,
+            dropUp: false,
+            top: Math.max(margin, boxBottom + gap),
+            maxHeight: Math.max(120, roomBelow - margin - gap),
+          };
+      // Only re-render when the position actually changes (the loop runs every
+      // frame; an unchanged box must not churn React).
+      const key = `${style.dropUp}:${Math.round(style.top ?? -1)}:${Math.round(style.bottom ?? -1)}:${Math.round(style.maxHeight)}:${Math.round(style.left)}:${Math.round(style.width)}`;
+      if (key !== lastStyleKey) {
+        lastStyleKey = key;
+        setDropdownStyle(style);
+      }
+      if (lastTop === null || Math.abs(boxTop - lastTop) >= 1) {
+        lastMoveAt = Date.now();
+      }
+      lastTop = boxTop;
+      const now = Date.now();
+      if (!revealed && now - effectStart >= FLOOR_MS && now - lastMoveAt >= SETTLE_MS) {
+        revealed = true;
+        setShowDropdown(true);
+      }
     };
-    recompute();
-    // Re-measure as the keyboard animates in (visualViewport settles a few
-    // frames later) and on any subsequent viewport change.
-    const raf = requestAnimationFrame(recompute);
-    const t = window.setTimeout(recompute, 350);
-    vp?.addEventListener('resize', recompute);
-    vp?.addEventListener('scroll', recompute);
+
+    // Run for the whole focus so the list tracks the box continuously (the
+    // per-frame cost is a getBoundingClientRect + compare; setState only fires
+    // on real movement via the key guard).
+    const tick = () => {
+      if (stopped) return;
+      measure();
+      rafId = requestAnimationFrame(tick);
+    };
+    tick();
+
+    // A viewport/scroll event that doesn't shift the box rect still means
+    // "things are moving" — push the settle clock so the FIRST reveal waits for
+    // quiet. After reveal the continuous loop already keeps the list glued, so
+    // this only matters pre-reveal.
+    const onMove = () => {
+      if (!revealed) lastMoveAt = Date.now();
+    };
+    vp?.addEventListener('resize', onMove);
+    vp?.addEventListener('scroll', onMove);
+    scroller?.addEventListener('scroll', onMove, { passive: true });
     return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(t);
-      vp?.removeEventListener('resize', recompute);
-      vp?.removeEventListener('scroll', recompute);
+      stopped = true;
+      cancelAnimationFrame(rafId);
+      vp?.removeEventListener('resize', onMove);
+      vp?.removeEventListener('scroll', onMove);
+      scroller?.removeEventListener('scroll', onMove);
     };
-  }, [searchFocused]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchFocused, searchFocusNonce, composeSpacerHeight, modalViewportH, modalViewportTop]);
 
   // Pick a poll suggestion from the focused picker → STAGE it as a draft bubble
   // (no modal). On /explore only one (yes/no) question is allowed, so a new
@@ -3096,13 +3342,17 @@ export function CreateQuestionContent() {
   const SEARCH_ROW_CLASS =
     "w-full flex items-center gap-[11.2px] pl-[14px] pr-5 py-1.5 text-left active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
 
-  // searchSuggestions is ordered best-LAST; reverse it so the best match is
-  // FIRST — i.e. topmost in the dropdown, nearest the box above it. Built only
-  // while focused (the dropdown is hidden otherwise): this component is
-  // layout-level + persistent, so it re-renders on many unrelated events, and
-  // building N suggestion buttons every time when the box isn't even open is
-  // wasted work.
-  const searchDropdownRows = (searchFocused ? [...searchSuggestions].reverse() : []).map((s) => {
+  // Keep the best match NEAREST the box regardless of drop direction:
+  //  - drop UP   → list is above the box, best match at the BOTTOM (nearest) →
+  //                natural order (searchSuggestions is best-LAST) + `mt-auto`.
+  //  - drop DOWN → list is below the box, best match at the TOP (nearest) →
+  //                reversed order, top-anchored.
+  // Built only while focused (the list is hidden otherwise): this component is
+  // layout-level + persistent, so it re-renders on many unrelated events.
+  const dropdownDropsUp = dropdownStyle?.dropUp ?? true;
+  const searchDropdownRows = (
+    !searchFocused ? [] : dropdownDropsUp ? searchSuggestions : [...searchSuggestions].reverse()
+  ).map((s) => {
     // Rows with an annotation label reserve `pt-3` above BOTH the icon and the
     // text so the label has room AND the two stay vertically centered.
     const hasLabel = s.segments.some((seg) => seg.label);
@@ -3208,9 +3458,10 @@ export function CreateQuestionContent() {
   ) : null;
 
   // The poll-creation search box, rendered inside the New Poll sheet (compose
-  // mode): staged-question bubbles above, the text box below. `relative`
-  // anchors the suggestions dropdown directly below the pill; the dropdown's
-  // max-height is bounded above the soft keyboard.
+  // mode): staged-question bubbles above, the text box below. The suggestions
+  // DROP-UP is rendered separately at the modal-container level (so it isn't
+  // clipped by the sheet's scroll container / can sit over the page top bar) —
+  // see searchDropdownOverlay.
   const searchBox = (
     <>
       {draftStack}
@@ -3223,13 +3474,23 @@ export function CreateQuestionContent() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => {
-              // Anchor the dropdown's max-height to the pill's current bottom
-              // (the sheet doesn't move the box on focus); the keyboard top
-              // bounds it from below.
-              const rect = searchPillRef.current?.getBoundingClientRect();
-              pillTargetBottomRef.current = rect ? rect.bottom : 0;
+            // On every tap, mark focused + bump the nonce so the settle effect
+            // re-arms even when iOS keeps the input "focused" after the keyboard's
+            // Done button and fires NO fresh focus event on re-tap. Setting
+            // searchFocused here (not just the nonce) is load-bearing: if onFocus
+            // never fires, searchFocused would stay false and the effect would
+            // bail — so the list would never reappear. (pointerdown precedes
+            // focus; redundant when focus does fire.)
+            onPointerDown={() => {
               setSearchFocused(true);
+              setSearchFocusNonce((n) => n + 1);
+            }}
+            onFocus={() => {
+              // The settle effect positions + reveals the suggestion overlay
+              // once the box stops moving (it drops up or down depending on
+              // which side of the box has room above the keyboard).
+              setSearchFocused(true);
+              setSearchFocusNonce((n) => n + 1);
             }}
             // Collapse on blur (closes the dropdown + dismisses the keyboard).
             onBlur={() => setSearchFocused(false)}
@@ -3243,23 +3504,34 @@ export function CreateQuestionContent() {
             className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
           />
         </div>
-        {/* Suggestions dropdown — directly below the box, bounded above the
-            soft keyboard. */}
-        {searchFocused && searchDropdownRows.length > 0 && (
-          <div
-            className="absolute left-0 right-0 top-full mt-2 z-50 overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background py-1"
-            style={{ maxHeight: searchDropdownMaxHeight }}
-          >
-            {searchDropdownRows}
-          </div>
-        )}
       </div>
     </>
   );
 
-  // The "+ Poll" FAB — mirrors the home "+ Group" button. Tapping it opens
-  // the New Poll sheet (compose mode) whose body hosts the search box.
-  //
+  // The suggestions DROP-UP. Rendered at the modal-container level (a sibling of
+  // the sheet, NOT inside the scroll container) so it escapes the sheet's
+  // overflow clip and can extend up over the page's top bar. Positioned via
+  // dropdownStyle (computed from the box's rect): bottom = just above the box,
+  // maxHeight = the room above it up to the top.
+  const searchDropdownOverlay =
+    searchFocused && showDropdown && searchDropdownRows.length > 0 && dropdownStyle ? (
+      <div
+        className="absolute z-[55] flex flex-col overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background shadow-2xl"
+        style={{
+          left: dropdownStyle.left,
+          width: dropdownStyle.width,
+          top: dropdownStyle.top,
+          bottom: dropdownStyle.bottom,
+          maxHeight: dropdownStyle.maxHeight,
+        }}
+      >
+        {/* Drop UP: mt-auto bottom-anchors so the best match (last row) sits
+            right above the box. Drop DOWN: top-anchored so the best match (now
+            the first, reversed row) sits right below the box. */}
+        <div className={dropdownStyle.dropUp ? "mt-auto py-1" : "py-1"}>{searchDropdownRows}</div>
+      </div>
+    ) : null;
+
   // Two rendering paths:
   //  - GROUP surfaces (group root / empty placeholder, incl. their slide
   //    overlay + swipe-back backdrop instances) render a #group-fab-portal
@@ -3806,129 +4078,215 @@ export function CreateQuestionContent() {
           dismisses. */}
       {isModalOpen && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[60] flex items-end justify-center">
-            {/* Backdrop — tap to dismiss. With the editor sub-panel open, a
-                tap slides it back (discarding) rather than closing the sheet. */}
+          <div
+            ref={modalContainerRef}
+            className="fixed left-0 w-full z-[60] flex items-end justify-center"
+            style={{
+              top: `${modalViewportTop}px`,
+              height: modalViewportH != null ? `${modalViewportH}px` : '100dvh',
+            }}
+          >
+            {/* Backdrop — the dim layer. In COMPOSE mode the transparent sheet
+                covers it, so dismiss-on-tap there flows through the transparent
+                spacer's onClick (below); in CREATE mode the opaque content-sized
+                panel doesn't cover the top, so this backdrop's onClick handles
+                tap-above-to-dismiss. */}
             <div
               className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
               onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
               aria-hidden="true"
             />
-            {/* Sheet panel — anchored to the bottom edge with rounded top
-                corners. `overflow-hidden` clips the editor sub-panel while it's
-                slid off-screen to the right. Slides up on mount via the shared
-                `slide-up` keyframe in globals.css. */}
-            <div
-              className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up"
-              style={{ height: 'calc(100dvh - 70px)' }}
-              role="dialog"
-              aria-modal="true"
-              aria-label="New poll"
-            >
-              {/* BASE sheet header — ✕ close (left), title, and the
-                  upper-right action: ↑ SEND in compose (disabled until a
-                  question is staged) or ✓ SUBMIT in the create-prefill flow. */}
-              <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
-                <button
-                  type="button"
-                  onClick={handleCloseClick}
-                  disabled={isLoading}
-                  aria-label="Close poll form"
-                  className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-                <span className="text-lg font-semibold select-none">New Poll</span>
-                <button
-                  type="button"
-                  onClick={handleModalCheck}
-                  disabled={
-                    isLoading ||
-                    isSubmitted ||
-                    (baseIsCompose ? drafts.length === 0 : !inlineFormHasDraftableContent)
-                  }
-                  aria-label={baseIsCompose ? 'Create poll' : 'Submit poll'}
-                  className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isSubmitted || isLoading ? (
-                    <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : baseIsCompose ? (
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </button>
-              </div>
 
-              {/* BASE body: compose = search box + the poll-WIDE settings
-                  inline below it (no submodal); create = the full prefill form. */}
-              <div ref={setSheetScrollerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
-                {baseIsCompose ? (<>{searchBox}{pollSettingsSections}</>) : formSections}
-                {errorBlock}
-              </div>
-
-              {/* SUB-PANEL: the question editor, slid in from the right OVER
-                  the compose sheet. ← (upper-left) discards + slides back;
-                  ✓ (upper-right) commits + slides back. A rightward swipe on the
-                  panel also goes back (discarding), same as ←. */}
-              {isSubEdit && (
+            {baseIsCompose ? (
+              /* COMPOSE sheet — opens SHORT (question box at the bottom edge,
+                 backdrop above) and expands to full as the user scrolls. The
+                 panel reserves only the safe-area inset (notch / Dynamic Island)
+                 at the top, NOT a flat gap — so when scrolled up the opaque card
+                 slides OVER the page's top bar (which is dimmed behind the
+                 backdrop) instead of the content clipping under it; only the
+                 notch stays dimmed. The panel is TRANSPARENT; one native scroll
+                 container holds a transparent spacer (shows the backdrop through
+                 it) above an opaque card. `overflow-hidden` clips the editor
+                 sub-panel while it's slid off to the right. */
+              <div
+                className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up"
+                style={{ height: modalViewportH != null ? `calc(${modalViewportH}px - env(safe-area-inset-top, 0px))` : 'calc(100dvh - env(safe-area-inset-top, 0px))' }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="New poll"
+              >
                 <div
-                  ref={subPanelRef}
-                  className="absolute inset-0 bg-gray-100 dark:bg-gray-900 rounded-t-3xl flex flex-col touch-pan-y"
-                  style={{
-                    transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
-                    transition: SUB_SLIDE_TRANSITION,
-                  }}
-                  role="dialog"
-                  aria-modal="true"
-                  onTouchStart={handleSubPanelTouchStart}
-                  onTouchMove={handleSubPanelTouchMove}
-                  onTouchEnd={handleSubPanelTouchEnd}
-                  onTouchCancel={handleSubPanelTouchEnd}
+                  ref={setComposeScrollRef}
+                  // overscroll-none kills the iOS rubber-band bounce at the
+                  // scroll extremes (and stops chaining) — a bounce at max scroll
+                  // could momentum-glitch the scroll back toward the top, flashing
+                  // the transparent spacer's dimmed backdrop.
+                  className="absolute inset-0 z-0 overflow-y-auto overflow-x-hidden overscroll-none"
                 >
-                  <div className="relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
-                    <button
-                      type="button"
-                      onClick={() => closeSubEdit(false)}
-                      disabled={isLoading}
-                      aria-label="Back"
-                      className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  {/* Transparent spacer — the dim backdrop shows through it, so
+                      at rest only the card (header + box) peeks up from the
+                      bottom. Tapping it dismisses, like the backdrop. */}
+                  <div
+                    aria-hidden="true"
+                    style={{ height: composeSpacerHeight }}
+                    onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
+                  />
+                  {/* Opaque card — min-h-full so it fills the viewport once
+                      expanded (no backdrop gap at the bottom). */}
+                  <div className="min-h-full bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl">
+                    {/* topRegion (measured): sticky header + question box. The
+                        spacer height is viewport − this, so the box sits at the
+                        bottom edge initially. */}
+                    <div ref={setComposeTopRegionRef}>
+                      <div className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-900 rounded-t-3xl relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                        <button
+                          type="button"
+                          onClick={handleCloseClick}
+                          disabled={isLoading}
+                          aria-label="Close poll form"
+                          className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                        <span className="text-lg font-semibold select-none">New Poll</span>
+                        <button
+                          type="button"
+                          onClick={handleModalCheck}
+                          disabled={isLoading || isSubmitted || drafts.length === 0}
+                          aria-label="Create poll"
+                          className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {isSubmitted || isLoading ? (
+                            <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                      <div className="px-3">{searchBox}</div>
+                    </div>
+                    {/* Below the fold at rest: the poll-WIDE settings. */}
+                    <div className="px-3 pb-[4.5rem] pt-[14.4px] space-y-[14.4px]">
+                      {pollSettingsSections}
+                      {errorBlock}
+                    </div>
+                  </div>
+                </div>
+
+                {/* SUB-PANEL: the question editor, slid in from the right OVER
+                    the compose sheet. Bottom-anchored + content-sized (no blank
+                    space below; scrolls internally if it exceeds the cap). ←
+                    (upper-left) discards + slides back; ✓ (upper-right) commits +
+                    slides back. A rightward swipe also goes back (discarding). */}
+                {isSubEdit && (
+                  <div
+                    ref={subPanelRef}
+                    className="absolute inset-x-0 bottom-0 z-20 bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col touch-pan-y"
+                    style={{
+                      maxHeight: modalViewportH != null ? `${modalViewportH - 70}px` : 'calc(100dvh - 70px)',
+                      transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
+                      transition: SUB_SLIDE_TRANSITION,
+                    }}
+                    role="dialog"
+                    aria-modal="true"
+                    onTouchStart={handleSubPanelTouchStart}
+                    onTouchMove={handleSubPanelTouchMove}
+                    onTouchEnd={handleSubPanelTouchEnd}
+                    onTouchCancel={handleSubPanelTouchEnd}
+                  >
+                    <div className="shrink-0 relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                      <button
+                        type="button"
+                        onClick={() => closeSubEdit(false)}
+                        disabled={isLoading}
+                        aria-label="Back"
+                        className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      <span className="text-lg font-semibold select-none">
+                        Edit Question
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => closeSubEdit(true)}
+                        disabled={isLoading}
+                        aria-label="Save changes"
+                        className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-6 space-y-[14.4px]">
+                      {formSections}
+                      {errorBlock}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* CREATE sheet (duplicate / Siri prefill) — opaque, bottom-anchored,
+                 sized to its content up to the cap, then scrolls internally. */
+              <div
+                className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up"
+                style={{ maxHeight: modalViewportH != null ? `${modalViewportH - 70}px` : 'calc(100dvh - 70px)' }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="New poll"
+              >
+                <div className="shrink-0 relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                  <button
+                    type="button"
+                    onClick={handleCloseClick}
+                    disabled={isLoading}
+                    aria-label="Close poll form"
+                    className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <span className="text-lg font-semibold select-none">New Poll</span>
+                  <button
+                    type="button"
+                    onClick={handleModalCheck}
+                    disabled={isLoading || isSubmitted || !inlineFormHasDraftableContent}
+                    aria-label="Submit poll"
+                    className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitted || isLoading ? (
+                      <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
-                    </button>
-                    <span className="text-lg font-semibold select-none">
-                      Edit Question
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => closeSubEdit(true)}
-                      disabled={isLoading}
-                      aria-label="Save changes"
-                      className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
+                    ) : (
                       <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
-                    </button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[4.5rem] space-y-[14.4px]">
-                    {formSections}
-                    {errorBlock}
-                  </div>
+                    )}
+                  </button>
                 </div>
-              )}
-            </div>
+                <div ref={setSheetScrollerRef} className="min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-6 space-y-[14.4px]">
+                  {formSections}
+                  {errorBlock}
+                </div>
+              </div>
+            )}
+
+            {/* Drop-up suggestions — a modal-container child so it escapes the
+                sheet's overflow clip and can sit over the page top bar. */}
+            {baseIsCompose && searchDropdownOverlay}
           </div>
         </ModalPortal>
       )}
