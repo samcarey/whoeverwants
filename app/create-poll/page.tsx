@@ -1564,7 +1564,14 @@ export function CreateQuestionContent() {
       vp?.removeEventListener('scroll', restart);
       scroller?.removeEventListener('scroll', restart);
     };
-  }, [searchFocused]);
+    // Re-measure when the box's layout-driving inputs change: composeSpacerHeight
+    // (the spacer that pins the box to the sheet bottom — sized by a
+    // ResizeObserver a few frames after open) and the visual-viewport
+    // dimensions (keyboard). The box's viewport position is a function of these,
+    // so a stale 3-frames-stable read at a transient position gets corrected
+    // when the real spacer height lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchFocused, composeSpacerHeight, modalViewportH, modalViewportTop]);
 
   // Pick a poll suggestion from the focused picker → STAGE it as a draft bubble
   // (no modal). On /explore only one (yes/no) question is allowed, so a new
