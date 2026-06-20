@@ -1529,10 +1529,19 @@ export function CreateQuestionContent() {
     let rafId = 0;
     let stopped = false;
     let lastTop: number | null = null;
-    let stableFrames = 0;
-    let startedAt = Date.now();
-    const REVEAL_MIN_MS = 380; // outlast the slide-up's static start frames
-    const MAX_MS = 1800; // safety cap so a never-settling layout can't spin
+    // `effectStart` is fixed for this focus (never reset) — it's the floor that
+    // outlasts the slide-up's static start frames so we don't reveal at the
+    // box's off-screen start position. `lastMoveAt` is a ROLLING settle clock:
+    // the box's last position change OR the last viewport/scroll event. Reveal
+    // needs BOTH the floor passed AND the box quiet for SETTLE_MS — so it can't
+    // get stuck when iOS streams resize/scroll events through a keyboard rise
+    // (the bug: previously every such event reset the floor, so the reveal
+    // condition was never met on re-focus).
+    const effectStart = Date.now();
+    let lastMoveAt = Date.now();
+    let revealed = false;
+    const FLOOR_MS = 360; // outlast the slide-up static-start frames
+    const SETTLE_MS = 160; // quiet window after the box stops moving
 
     const measure = () => {
       const r = searchPillRef.current?.getBoundingClientRect();
@@ -1548,14 +1557,13 @@ export function CreateQuestionContent() {
         bottom: containerH - boxTopInContainer + gap,
         maxHeight: Math.max(140, boxTopInContainer - topMargin - gap),
       });
-      if (lastTop !== null && Math.abs(boxTopInContainer - lastTop) < 1) {
-        stableFrames += 1;
-      } else {
-        stableFrames = 0;
+      if (lastTop === null || Math.abs(boxTopInContainer - lastTop) >= 1) {
+        lastMoveAt = Date.now();
       }
       lastTop = boxTopInContainer;
-      // Reveal once the box has held still AND the slide-up window has passed.
-      if (stableFrames >= 3 && Date.now() - startedAt > REVEAL_MIN_MS) {
+      const now = Date.now();
+      if (!revealed && now - effectStart >= FLOOR_MS && now - lastMoveAt >= SETTLE_MS) {
+        revealed = true;
         setShowDropdown(true);
       }
     };
@@ -1563,7 +1571,9 @@ export function CreateQuestionContent() {
     const tick = () => {
       if (stopped) return;
       measure();
-      if (Date.now() < startedAt + MAX_MS) {
+      // Run until revealed (then stop and let restart resume on movement); cap
+      // absolute runtime from focus so a never-settling layout can't spin.
+      if (!revealed && Date.now() - effectStart < 4000) {
         rafId = requestAnimationFrame(tick);
       } else {
         rafId = 0;
@@ -1571,13 +1581,14 @@ export function CreateQuestionContent() {
     };
     tick();
 
-    // The box is still moving (keyboard rising / sheet scrolling): re-hide and
-    // re-arm the settle from now, and resume the loop if it had stopped.
+    // The box moved (keyboard rising / sheet scrolling): re-hide, push the
+    // settle clock, and resume the loop. Does NOT touch effectStart, so the
+    // reveal can't be starved by a stream of these events.
     const restart = () => {
-      setShowDropdown(false);
+      revealed = false;
       lastTop = null;
-      stableFrames = 0;
-      startedAt = Date.now();
+      lastMoveAt = Date.now();
+      setShowDropdown(false);
       if (!rafId && !stopped) rafId = requestAnimationFrame(tick);
     };
     vp?.addEventListener('resize', restart);
@@ -3422,10 +3433,17 @@ export function CreateQuestionContent() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            // Bump the nonce on every tap so the settle effect re-arms even when
-            // iOS keeps the input "focused" after the keyboard's Done button and
-            // fires no fresh focus event on re-tap (the list reappears).
-            onPointerDown={() => setSearchFocusNonce((n) => n + 1)}
+            // On every tap, mark focused + bump the nonce so the settle effect
+            // re-arms even when iOS keeps the input "focused" after the keyboard's
+            // Done button and fires NO fresh focus event on re-tap. Setting
+            // searchFocused here (not just the nonce) is load-bearing: if onFocus
+            // never fires, searchFocused would stay false and the effect would
+            // bail — so the list would never reappear. (pointerdown precedes
+            // focus; redundant when focus does fire.)
+            onPointerDown={() => {
+              setSearchFocused(true);
+              setSearchFocusNonce((n) => n + 1);
+            }}
             onFocus={() => {
               // The box sits at the bottom of the sheet, just above the keyboard
               // (the sheet bottom rides the visual viewport). Suggestions drop UP
