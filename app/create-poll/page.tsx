@@ -131,6 +131,21 @@ const SHEET_SCROLL_PIN_MS = 1200;
 // Must comfortably outlast that collapse; a deliberate scroll after it still disarms.
 const SHEET_SCROLL_PIN_GRACE_MS = 550;
 
+// TEMPORARY: logs ONLY when the suggestion list would overlap the box, with the
+// geometry, so an iOS repro is conclusive. Forwarded to the dev client-log
+// buffer (/api/client-logs?search=RFDBG). Remove once confirmed fixed.
+let _rfdbgLast = 0;
+const RFDBG = (msg: string) => {
+  const now = Date.now();
+  if (now - _rfdbgLast < 400) return; // throttle
+  _rfdbgLast = now;
+  try {
+    console.warn(`[RFDBG] ${msg}`);
+  } catch {
+    /* ignore */
+  }
+};
+
 // Duration of the question editor sub-panel slide (must match the inline
 // `transition: transform 300ms` on the sub-panel). After sliding out, editMode
 // flips back to 'compose' so the sub-panel unmounts off-screen.
@@ -897,6 +912,13 @@ export function CreateQuestionContent() {
   // `searchPillRef` anchors that dropdown and its max height is computed so it
   // ends just above the soft keyboard.
   const searchPillRef = useRef<HTMLDivElement | null>(null);
+  // The modal container the suggestion overlay is positioned inside (position:
+  // absolute). We measure the box relative to THIS element's live rect — not the
+  // visual viewport — because the container's top/height come from React state
+  // (modalViewportTop/H) that lags the live visualViewport during the iOS
+  // keyboard animation; positioning off the live viewport then mismaps the list
+  // onto the box.
+  const modalContainerRef = useRef<HTMLDivElement | null>(null);
   // Geometry of the drop-up suggestions overlay (positioned at the modal-
   // container level). Computed from the box's rect; null until measured.
   // `dropUp` true → the list sits ABOVE the box (anchored by `bottom`); false →
@@ -1554,15 +1576,20 @@ export function CreateQuestionContent() {
 
     const measure = () => {
       const r = searchPillRef.current?.getBoundingClientRect();
-      if (!r) return;
-      const containerTop = vp ? vp.offsetTop : 0;
-      const containerH = vp ? vp.height : window.innerHeight;
+      const cr = modalContainerRef.current?.getBoundingClientRect();
+      if (!r || !cr) return;
+      // Position relative to the container's ACTUAL rendered rect (not the live
+      // visual viewport): the list is absolute inside the container, so its
+      // top/bottom must be in the container's coordinate space. Using cr keeps
+      // the list glued to the box even while the container's state-driven
+      // top/height lag the live viewport during the iOS keyboard animation.
+      const containerH = cr.height;
       const gap = 8; // gap between the box and the overlay
       const margin = 12; // breathing room at the viewport edge
-      const boxTop = r.top - containerTop; // box top in container coords
-      const boxBottom = r.bottom - containerTop;
-      const roomAbove = boxTop; // visible space above the box
-      const roomBelow = containerH - boxBottom; // visible space below the box
+      const boxTop = r.top - cr.top; // box top in container coords
+      const boxBottom = r.bottom - cr.top;
+      const roomAbove = boxTop; // space above the box within the container
+      const roomBelow = containerH - boxBottom; // space below the box
       // Drop UP only when there's genuinely more room above; otherwise DOWN.
       // (iOS scrolls the focused box to the top, so roomAbove collapses and we
       // drop into the large gap between the box and the keyboard below.)
@@ -1593,6 +1620,18 @@ export function CreateQuestionContent() {
         lastMoveAt = Date.now();
       }
       lastTop = boxTop;
+      // Diagnostic: would the list (in viewport coords) overlap the box? If so,
+      // log the geometry — this should never happen with container-relative
+      // positioning.
+      const listTopVp = style.dropUp
+        ? cr.bottom - (style.bottom ?? 0) - style.maxHeight
+        : cr.top + (style.top ?? 0);
+      const listBottomVp = style.dropUp ? cr.bottom - (style.bottom ?? 0) : listTopVp + style.maxHeight;
+      if (listTopVp < r.bottom && listBottomVp > r.top) {
+        RFDBG(
+          `OVERLAP dropUp=${style.dropUp} box=[${Math.round(r.top)},${Math.round(r.bottom)}] list=[${Math.round(listTopVp)},${Math.round(listBottomVp)}] cr=[${Math.round(cr.top)},${Math.round(cr.bottom)}] vpTop=${vp ? Math.round(vp.offsetTop) : 'na'} vpH=${vp ? Math.round(vp.height) : 'na'}`,
+        );
+      }
       const now = Date.now();
       if (!revealed && now - effectStart >= FLOOR_MS && now - lastMoveAt >= SETTLE_MS) {
         revealed = true;
@@ -4072,6 +4111,7 @@ export function CreateQuestionContent() {
       {isModalOpen && (
         <ModalPortal>
           <div
+            ref={modalContainerRef}
             className="fixed left-0 w-full z-[60] flex items-end justify-center"
             style={{
               top: `${modalViewportTop}px`,
