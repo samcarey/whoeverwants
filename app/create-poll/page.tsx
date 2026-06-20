@@ -1513,8 +1513,17 @@ export function CreateQuestionContent() {
     const scroller = composeScrollNodeRef.current;
     let rafId = 0;
     let stopped = false;
-    let lastBottom: number | null = null;
-    let stableFrames = 0;
+    // Keep re-measuring for a fixed window rather than stopping on a few
+    // "stable" frames. The sheet opens with a slide-up transform (≈300ms), so
+    // the box's getBoundingClientRect().top reads its OFF-SCREEN start position
+    // (natural top + panel height) for the first frames — a stable-frames stop
+    // latched that transient and never tracked the box up to its settled spot.
+    // The window outlasts the slide-up + iOS keyboard animation; whatever the
+    // box reads at the end of the window is its true resting position. The loop
+    // only runs while focused (and restarts on viewport/scroll changes), so the
+    // per-frame cost is bounded to the open + keyboard settle.
+    const WINDOW_MS = 700;
+    let windowEnd = Date.now() + WINDOW_MS;
 
     const measure = () => {
       const r = searchPillRef.current?.getBoundingClientRect();
@@ -1524,34 +1533,29 @@ export function CreateQuestionContent() {
       const gap = 8; // gap between the box and the overlay
       const topMargin = 12; // breathing room at the very top
       const boxTopInContainer = r.top - containerTop;
-      const bottom = containerH - boxTopInContainer + gap;
       setDropdownStyle({
         left: r.left,
         width: r.width,
-        bottom,
+        bottom: containerH - boxTopInContainer + gap,
         maxHeight: Math.max(140, boxTopInContainer - topMargin - gap),
       });
-      if (lastBottom !== null && Math.abs(bottom - lastBottom) < 1) {
-        stableFrames += 1;
-      } else {
-        stableFrames = 0;
-      }
-      lastBottom = bottom;
     };
 
     const tick = () => {
       if (stopped) return;
       measure();
-      // Keep re-measuring until the box position holds steady for 3 frames,
-      // capped so a never-settling layout can't spin forever.
-      if (stableFrames < 3) rafId = requestAnimationFrame(tick);
+      if (Date.now() < windowEnd) {
+        rafId = requestAnimationFrame(tick);
+      } else {
+        rafId = 0;
+      }
     };
     tick();
 
-    // Restart the stabilization loop whenever the box could have moved.
+    // Restart the measure window whenever the box could have moved (keyboard
+    // anim via visualViewport, or a sheet scroll).
     const restart = () => {
-      lastBottom = null;
-      stableFrames = 0;
+      windowEnd = Date.now() + WINDOW_MS;
       if (!rafId && !stopped) rafId = requestAnimationFrame(tick);
     };
     vp?.addEventListener('resize', restart);
@@ -1564,12 +1568,9 @@ export function CreateQuestionContent() {
       vp?.removeEventListener('scroll', restart);
       scroller?.removeEventListener('scroll', restart);
     };
-    // Re-measure when the box's layout-driving inputs change: composeSpacerHeight
-    // (the spacer that pins the box to the sheet bottom — sized by a
-    // ResizeObserver a few frames after open) and the visual-viewport
-    // dimensions (keyboard). The box's viewport position is a function of these,
-    // so a stale 3-frames-stable read at a transient position gets corrected
-    // when the real spacer height lands.
+    // Re-arm the window when the box's layout-driving inputs change
+    // (composeSpacerHeight — the spacer sized a few frames after open — and the
+    // visual-viewport dimensions for the keyboard).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchFocused, composeSpacerHeight, modalViewportH, modalViewportTop]);
 
