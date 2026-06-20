@@ -897,14 +897,14 @@ export function CreateQuestionContent() {
   // `searchPillRef` anchors that dropdown and its max height is computed so it
   // ends just above the soft keyboard.
   const searchPillRef = useRef<HTMLDivElement | null>(null);
-  // Viewport-Y the pill's BOTTOM sits at (captured at focus) so the dropdown
-  // is sized to its full height immediately. Only the keyboard appearing
-  // changes the room below it.
-  const pillTargetBottomRef = useRef(0);
-  // Viewport-Y of the pill's TOP (captured at focus) — the drop-up suggestions
-  // are bounded to the room above it.
-  const pillTargetTopRef = useRef(0);
-  const [searchDropdownMaxHeight, setSearchDropdownMaxHeight] = useState(320);
+  // Geometry of the drop-up suggestions overlay (positioned at the modal-
+  // container level). Computed from the box's rect; null until measured.
+  const [dropdownStyle, setDropdownStyle] = useState<{
+    left: number;
+    width: number;
+    bottom: number;
+    maxHeight: number;
+  } | null>(null);
 
   // A ranked_choice question is a "suggestion poll" when the creator left the
   // "Collect Suggestions before Vote" toggle on — regardless of whether they
@@ -1493,22 +1493,27 @@ export function CreateQuestionContent() {
     dismissSoftKeyboard();
   }, [dismissSoftKeyboard]);
 
-  // While the box is focused, bound the DROP-UP suggestions to the room ABOVE
-  // the box — from the pill's top up to the sheet's top edge. The box sits just
-  // above the keyboard (bottom of the sheet), so the suggestions stack upward.
+  // While the box is focused, position the DROP-UP suggestions overlay from the
+  // box's live rect: it sits just above the box and extends up toward the top
+  // (over the page top bar — it's a modal-container child, not clipped by the
+  // sheet). Re-runs as the keyboard animates the box up.
   useEffect(() => {
     if (!searchFocused) return;
     const vp = typeof window !== 'undefined' ? window.visualViewport : null;
     const recompute = () => {
-      // Stable post-focus pill top (captured at focus). Sheet top = the visual
-      // viewport top + the 70px panel inset; 12px breathing room below it.
-      const top = pillTargetTopRef.current;
-      if (!top) return;
-      // The box sits at the sheet bottom with the header directly above it, so
-      // the drop-up extends up over the header into the dimmed area; bound it to
-      // the sheet/panel top (70px viewport inset) with 12px breathing room.
-      const sheetTop = (vp ? vp.offsetTop : 0) + 70;
-      setSearchDropdownMaxHeight(Math.max(140, top - sheetTop - 12));
+      const r = searchPillRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const containerTop = vp ? vp.offsetTop : 0;
+      const containerH = vp ? vp.height : window.innerHeight;
+      const gap = 8; // gap between the box and the overlay
+      const topMargin = 12; // breathing room at the very top
+      const boxTopInContainer = r.top - containerTop;
+      setDropdownStyle({
+        left: r.left,
+        width: r.width,
+        bottom: containerH - boxTopInContainer + gap,
+        maxHeight: Math.max(140, boxTopInContainer - topMargin - gap),
+      });
     };
     recompute();
     // Re-measure as the keyboard animates in (visualViewport settles a few
@@ -3337,9 +3342,10 @@ export function CreateQuestionContent() {
   ) : null;
 
   // The poll-creation search box, rendered inside the New Poll sheet (compose
-  // mode): staged-question bubbles above, the text box below. `relative`
-  // anchors the suggestions dropdown directly below the pill; the dropdown's
-  // max-height is bounded above the soft keyboard.
+  // mode): staged-question bubbles above, the text box below. The suggestions
+  // DROP-UP is rendered separately at the modal-container level (so it isn't
+  // clipped by the sheet's scroll container / can sit over the page top bar) —
+  // see searchDropdownOverlay.
   const searchBox = (
     <>
       {draftStack}
@@ -3355,10 +3361,8 @@ export function CreateQuestionContent() {
             onFocus={() => {
               // The box sits at the bottom of the sheet, just above the keyboard
               // (the sheet bottom rides the visual viewport). Suggestions drop UP
-              // above it — anchor their max-height to the pill's top.
-              const rect = searchPillRef.current?.getBoundingClientRect();
-              pillTargetTopRef.current = rect ? rect.top : 0;
-              pillTargetBottomRef.current = rect ? rect.bottom : 0;
+              // above it — the position effect computes the overlay geometry from
+              // the box's rect once focused.
               setSearchFocused(true);
             }}
             // Collapse on blur (closes the dropdown + dismisses the keyboard).
@@ -3373,24 +3377,33 @@ export function CreateQuestionContent() {
             className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
           />
         </div>
-        {/* Suggestions dropdown — directly below the box, bounded above the
-            soft keyboard. */}
-        {searchFocused && searchDropdownRows.length > 0 && (
-          <div
-            className="absolute left-0 right-0 bottom-full mb-2 z-50 flex flex-col overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background"
-            style={{ maxHeight: searchDropdownMaxHeight }}
-          >
-            {/* mt-auto bottom-anchors the list so the best match (last row)
-                sits right above the box; overflow scrolls up for the rest. */}
-            <div className="mt-auto py-1">{searchDropdownRows}</div>
-          </div>
-        )}
       </div>
     </>
   );
 
-  // The "+ Poll" FAB — mirrors the home "+ Group" button. Tapping it opens
-  // the New Poll sheet (compose mode) whose body hosts the search box.
+  // The suggestions DROP-UP. Rendered at the modal-container level (a sibling of
+  // the sheet, NOT inside the scroll container) so it escapes the sheet's
+  // overflow clip and can extend up over the page's top bar. Positioned via
+  // dropdownStyle (computed from the box's rect): bottom = just above the box,
+  // maxHeight = the room above it up to the top.
+  const searchDropdownOverlay =
+    searchFocused && searchDropdownRows.length > 0 && dropdownStyle ? (
+      <div
+        className="absolute z-[55] flex flex-col overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background shadow-2xl"
+        style={{
+          left: dropdownStyle.left,
+          width: dropdownStyle.width,
+          bottom: dropdownStyle.bottom,
+          maxHeight: dropdownStyle.maxHeight,
+        }}
+      >
+        {/* mt-auto bottom-anchors the list so the best match (last row) sits
+            right above the box; overflow scrolls up for the rest. */}
+        <div className="mt-auto py-1">{searchDropdownRows}</div>
+      </div>
+    ) : null;
+
+
   //
   // Two rendering paths:
   //  - GROUP surfaces (group root / empty placeholder, incl. their slide
@@ -4134,6 +4147,10 @@ export function CreateQuestionContent() {
                 </div>
               </div>
             )}
+
+            {/* Drop-up suggestions — a modal-container child so it escapes the
+                sheet's overflow clip and can sit over the page top bar. */}
+            {baseIsCompose && searchDropdownOverlay}
           </div>
         </ModalPortal>
       )}
