@@ -905,6 +905,15 @@ export function CreateQuestionContent() {
     bottom: number;
     maxHeight: number;
   } | null>(null);
+  // Gate for actually SHOWING the drop-up: stays false while the sheet slides
+  // up and the keyboard rises (the box is still moving), flips true once the
+  // box position settles — so the list never appears lagging behind the box.
+  const [showDropdown, setShowDropdown] = useState(false);
+  // Bumped on every tap/focus of the box so the settle effect re-runs even when
+  // searchFocused doesn't transition (iOS can keep an input "focused" after the
+  // keyboard's Done button, so a re-tap fires no fresh focus event — the nonce
+  // re-arms the show-gate regardless).
+  const [searchFocusNonce, setSearchFocusNonce] = useState(0);
 
   // A ranked_choice question is a "suggestion poll" when the creator left the
   // "Collect Suggestions before Vote" toggle on — regardless of whether they
@@ -1494,36 +1503,36 @@ export function CreateQuestionContent() {
   }, [dismissSoftKeyboard]);
 
   // While the box is focused, position the DROP-UP suggestions overlay from the
-  // box's live rect: it sits just above the box and extends up toward the top
-  // (over the page top bar — it's a modal-container child, not clipped by the
-  // sheet).
+  // box's live rect (it sits just above the box and extends up over the page top
+  // bar — it's a modal-container child, not clipped by the sheet) AND decide
+  // WHEN to reveal it.
   //
-  // The box lives inside the sheet's scroll container, and its viewport
-  // position settles asynchronously (composeSpacerHeight is sized by a
-  // ResizeObserver a few frames after open, and the keyboard animates the
-  // sheet up over ~300ms). A fixed recompute schedule (immediate + rAF +
-  // one timeout) races that settle and can latch a transient off-screen box
-  // position. So we run a bounded rAF loop that re-measures until the box's
-  // position is stable for a few frames, then stops — and we restart it on
-  // any visualViewport change (keyboard) or sheet scroll so the overlay keeps
-  // tracking the box.
+  // The box moves twice on open: the sheet slides up (~300ms transform) and the
+  // iOS keyboard rises (visualViewport shrinks over ~300ms), both shifting the
+  // box's viewport position. Showing the list mid-animation makes its bottom lag
+  // behind the box. So we keep re-measuring the position but only flip
+  // `showDropdown` true once the box has held still for a few frames (past a min
+  // delay that outlasts the slide-up). Every visualViewport/scroll change
+  // re-hides the list and re-arms the settle, so it stays hidden through the
+  // whole rise and appears, correctly placed, only once everything has stopped.
+  //
+  // Re-runs on `searchFocusNonce` too (bumped on every tap of the box): iOS can
+  // keep an input "focused" after the keyboard's Done button, so a re-tap fires
+  // no fresh focus event — the nonce re-arms this so the list reappears.
   useEffect(() => {
-    if (!searchFocused) return;
+    if (!searchFocused) {
+      setShowDropdown(false);
+      return;
+    }
     const vp = typeof window !== 'undefined' ? window.visualViewport : null;
     const scroller = composeScrollNodeRef.current;
     let rafId = 0;
     let stopped = false;
-    // Keep re-measuring for a fixed window rather than stopping on a few
-    // "stable" frames. The sheet opens with a slide-up transform (≈300ms), so
-    // the box's getBoundingClientRect().top reads its OFF-SCREEN start position
-    // (natural top + panel height) for the first frames — a stable-frames stop
-    // latched that transient and never tracked the box up to its settled spot.
-    // The window outlasts the slide-up + iOS keyboard animation; whatever the
-    // box reads at the end of the window is its true resting position. The loop
-    // only runs while focused (and restarts on viewport/scroll changes), so the
-    // per-frame cost is bounded to the open + keyboard settle.
-    const WINDOW_MS = 700;
-    let windowEnd = Date.now() + WINDOW_MS;
+    let lastTop: number | null = null;
+    let stableFrames = 0;
+    let startedAt = Date.now();
+    const REVEAL_MIN_MS = 380; // outlast the slide-up's static start frames
+    const MAX_MS = 1800; // safety cap so a never-settling layout can't spin
 
     const measure = () => {
       const r = searchPillRef.current?.getBoundingClientRect();
@@ -1539,12 +1548,22 @@ export function CreateQuestionContent() {
         bottom: containerH - boxTopInContainer + gap,
         maxHeight: Math.max(140, boxTopInContainer - topMargin - gap),
       });
+      if (lastTop !== null && Math.abs(boxTopInContainer - lastTop) < 1) {
+        stableFrames += 1;
+      } else {
+        stableFrames = 0;
+      }
+      lastTop = boxTopInContainer;
+      // Reveal once the box has held still AND the slide-up window has passed.
+      if (stableFrames >= 3 && Date.now() - startedAt > REVEAL_MIN_MS) {
+        setShowDropdown(true);
+      }
     };
 
     const tick = () => {
       if (stopped) return;
       measure();
-      if (Date.now() < windowEnd) {
+      if (Date.now() < startedAt + MAX_MS) {
         rafId = requestAnimationFrame(tick);
       } else {
         rafId = 0;
@@ -1552,10 +1571,13 @@ export function CreateQuestionContent() {
     };
     tick();
 
-    // Restart the measure window whenever the box could have moved (keyboard
-    // anim via visualViewport, or a sheet scroll).
+    // The box is still moving (keyboard rising / sheet scrolling): re-hide and
+    // re-arm the settle from now, and resume the loop if it had stopped.
     const restart = () => {
-      windowEnd = Date.now() + WINDOW_MS;
+      setShowDropdown(false);
+      lastTop = null;
+      stableFrames = 0;
+      startedAt = Date.now();
       if (!rafId && !stopped) rafId = requestAnimationFrame(tick);
     };
     vp?.addEventListener('resize', restart);
@@ -1568,11 +1590,8 @@ export function CreateQuestionContent() {
       vp?.removeEventListener('scroll', restart);
       scroller?.removeEventListener('scroll', restart);
     };
-    // Re-arm the window when the box's layout-driving inputs change
-    // (composeSpacerHeight — the spacer sized a few frames after open — and the
-    // visual-viewport dimensions for the keyboard).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchFocused, composeSpacerHeight, modalViewportH, modalViewportTop]);
+  }, [searchFocused, searchFocusNonce, composeSpacerHeight, modalViewportH, modalViewportTop]);
 
   // Pick a poll suggestion from the focused picker → STAGE it as a draft bubble
   // (no modal). On /explore only one (yes/no) question is allowed, so a new
@@ -3274,13 +3293,14 @@ export function CreateQuestionContent() {
   const SEARCH_ROW_CLASS =
     "w-full flex items-center gap-[11.2px] pl-[14px] pr-5 py-1.5 text-left active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
 
-  // searchSuggestions is ordered best-LAST; reverse it so the best match is
-  // FIRST — i.e. topmost in the dropdown, nearest the box above it. Built only
-  // while focused (the dropdown is hidden otherwise): this component is
-  // layout-level + persistent, so it re-renders on many unrelated events, and
-  // building N suggestion buttons every time when the box isn't even open is
-  // wasted work.
-  const searchDropdownRows = (searchFocused ? [...searchSuggestions].reverse() : []).map((s) => {
+  // searchSuggestions is ordered best-LAST, and the dropdown is a `mt-auto`
+  // bottom-anchored list ABOVE the box — so rendering in natural order puts the
+  // best match as the LAST row, nearest the box. (Don't reverse: that pushes the
+  // best match to the top, furthest from the box.) Built only while focused (the
+  // list is hidden otherwise): this component is layout-level + persistent, so
+  // it re-renders on many unrelated events, and building N suggestion buttons
+  // when the box isn't open is wasted work.
+  const searchDropdownRows = (searchFocused ? searchSuggestions : []).map((s) => {
     // Rows with an annotation label reserve `pt-3` above BOTH the icon and the
     // text so the label has room AND the two stay vertically centered.
     const hasLabel = s.segments.some((seg) => seg.label);
@@ -3402,12 +3422,17 @@ export function CreateQuestionContent() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            // Bump the nonce on every tap so the settle effect re-arms even when
+            // iOS keeps the input "focused" after the keyboard's Done button and
+            // fires no fresh focus event on re-tap (the list reappears).
+            onPointerDown={() => setSearchFocusNonce((n) => n + 1)}
             onFocus={() => {
               // The box sits at the bottom of the sheet, just above the keyboard
               // (the sheet bottom rides the visual viewport). Suggestions drop UP
-              // above it — the position effect computes the overlay geometry from
-              // the box's rect once focused.
+              // above it — the settle effect positions + reveals the overlay once
+              // the box stops moving.
               setSearchFocused(true);
+              setSearchFocusNonce((n) => n + 1);
             }}
             // Collapse on blur (closes the dropdown + dismisses the keyboard).
             onBlur={() => setSearchFocused(false)}
@@ -3431,7 +3456,7 @@ export function CreateQuestionContent() {
   // dropdownStyle (computed from the box's rect): bottom = just above the box,
   // maxHeight = the room above it up to the top.
   const searchDropdownOverlay =
-    searchFocused && searchDropdownRows.length > 0 && dropdownStyle ? (
+    searchFocused && showDropdown && searchDropdownRows.length > 0 && dropdownStyle ? (
       <div
         className="absolute z-[55] flex flex-col overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background shadow-2xl"
         style={{
