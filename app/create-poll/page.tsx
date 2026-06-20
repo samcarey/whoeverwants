@@ -3516,7 +3516,7 @@ export function CreateQuestionContent() {
   const searchDropdownOverlay =
     searchFocused && showDropdown && searchDropdownRows.length > 0 && dropdownStyle ? (
       <div
-        className="absolute z-[55] flex flex-col overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background shadow-2xl"
+        className="absolute z-[55] flex flex-col overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background shadow-2xl pointer-events-auto"
         style={{
           left: dropdownStyle.left,
           width: dropdownStyle.width,
@@ -4078,25 +4078,33 @@ export function CreateQuestionContent() {
           dismisses. */}
       {isModalOpen && (
         <ModalPortal>
+          {/* Dim backdrop — a SEPARATE full-screen layer pinned to the LAYOUT
+              viewport (NOT the visual viewport), so it stays put covering the
+              whole screen while the soft keyboard rises. Only the sheet
+              container below tracks the visual viewport and slides up above the
+              keyboard; the background page never appears to move (the dim
+              previously lived INSIDE the visual-viewport container, so it
+              retracted/shifted with the keyboard — the "whole page moves up"
+              symptom). Its onClick handles tap-to-dismiss for both modes (taps
+              in the sheet container's transparent areas fall through to it via
+              the container's `pointer-events-none`). */}
+          <div
+            className="fixed inset-0 z-[59] bg-black/40 dark:bg-black/60 animate-fade-in"
+            onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
+            aria-hidden="true"
+          />
           <div
             ref={modalContainerRef}
-            className="fixed left-0 w-full z-[60] flex items-end justify-center"
+            // Visual-viewport-tracked: the sheet rides the keyboard top. The
+            // transparent regions are pointer-events-none so taps fall through
+            // to the stationary backdrop above (dismiss); the sheet + dropdown
+            // re-enable pointer events.
+            className="fixed left-0 w-full z-[60] flex items-end justify-center pointer-events-none"
             style={{
               top: `${modalViewportTop}px`,
               height: modalViewportH != null ? `${modalViewportH}px` : '100dvh',
             }}
           >
-            {/* Backdrop — the dim layer. In COMPOSE mode the transparent sheet
-                covers it, so dismiss-on-tap there flows through the transparent
-                spacer's onClick (below); in CREATE mode the opaque content-sized
-                panel doesn't cover the top, so this backdrop's onClick handles
-                tap-above-to-dismiss. */}
-            <div
-              className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
-              onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
-              aria-hidden="true"
-            />
-
             {baseIsCompose ? (
               /* COMPOSE sheet — opens SHORT (question box at the bottom edge,
                  backdrop above) and expands to full as the user scrolls. The
@@ -4109,7 +4117,7 @@ export function CreateQuestionContent() {
                  it) above an opaque card. `overflow-hidden` clips the editor
                  sub-panel while it's slid off to the right. */
               <div
-                className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up"
+                className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
                 style={{ height: modalViewportH != null ? `calc(${modalViewportH}px - env(safe-area-inset-top, 0px))` : 'calc(100dvh - env(safe-area-inset-top, 0px))' }}
                 role="dialog"
                 aria-modal="true"
@@ -4239,7 +4247,7 @@ export function CreateQuestionContent() {
               /* CREATE sheet (duplicate / Siri prefill) — opaque, bottom-anchored,
                  sized to its content up to the cap, then scrolls internally. */
               <div
-                className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up"
+                className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
                 style={{ maxHeight: modalViewportH != null ? `${modalViewportH - 70}px` : 'calc(100dvh - 70px)' }}
                 role="dialog"
                 aria-modal="true"
