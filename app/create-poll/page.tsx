@@ -123,6 +123,11 @@ function autoSizeDetailsTextarea(el: HTMLTextAreaElement) {
 // (~250-400ms) + the sheet's 300ms slide-up with margin; the user's first
 // touch/wheel AFTER the grace window disarms it, so it never fights a real scroll.
 const SHEET_SCROLL_PIN_MS = 1200;
+// The soft keyboard shrinks the visual viewport by far more than this; if the
+// visual-viewport height is within KEYBOARD_GAP_PX of the layout height the
+// keyboard is considered DOWN. Used to decide whether a search-box re-tap needs
+// the primer dance + when the deferred re-focus should fire.
+const KEYBOARD_GAP_PX = 100;
 // The disarm listeners (touchmove/wheel/keydown) are attached only AFTER this
 // grace delay. The SAME physical tap that opens the sheet replays a synthetic
 // touchstart+touchmove onto the freshly-mounted scroller (the picker unmounts +
@@ -847,7 +852,7 @@ export function CreateQuestionContent() {
       // A re-tap primed the keyboard and deferred the box focus to here: now
       // that the keyboard is up (vh shrank) the box sits above it, so focus it
       // with preventScroll — iOS won't scroll the webview, so nothing lurches.
-      if (pendingSearchRefocusRef.current && vh < window.innerHeight - 100) {
+      if (pendingSearchRefocusRef.current && vh < window.innerHeight - KEYBOARD_GAP_PX) {
         pendingSearchRefocusRef.current = false;
         searchInputRef.current?.focus({ preventScroll: true });
         removeKeyboardPrimer();
@@ -3507,7 +3512,7 @@ export function CreateQuestionContent() {
               // the keyboard settles (in the visualViewport listener above).
               const keyboardDown =
                 modalViewportH == null ||
-                modalViewportH > window.innerHeight - 100;
+                modalViewportH > window.innerHeight - KEYBOARD_GAP_PX;
               if (keyboardDown) {
                 e.preventDefault();
                 primeKeyboard();
