@@ -123,6 +123,11 @@ function autoSizeDetailsTextarea(el: HTMLTextAreaElement) {
 // (~250-400ms) + the sheet's 300ms slide-up with margin; the user's first
 // touch/wheel AFTER the grace window disarms it, so it never fights a real scroll.
 const SHEET_SCROLL_PIN_MS = 1200;
+// The soft keyboard shrinks the visual viewport by far more than this; if the
+// visual-viewport height is within KEYBOARD_GAP_PX of the layout height the
+// keyboard is considered DOWN. Used to decide whether a search-box re-tap needs
+// the primer dance + when the deferred re-focus should fire.
+const KEYBOARD_GAP_PX = 100;
 // The disarm listeners (touchmove/wheel/keydown) are attached only AFTER this
 // grace delay. The SAME physical tap that opens the sheet replays a synthetic
 // touchstart+touchmove onto the freshly-mounted scroller (the picker unmounts +
@@ -541,6 +546,12 @@ export function CreateQuestionContent() {
   // Throwaway off-screen input used to keep the iOS soft keyboard open while
   // the real title input mounts (see primeKeyboard).
   const keyboardPrimerRef = useRef<HTMLInputElement | null>(null);
+  // Set when the search box is RE-TAPPED while the keyboard is down: we prime
+  // the keyboard from a top-anchored input (so iOS doesn't scroll the webview
+  // up to reveal the bottom-anchored box) and defer the real focus to the
+  // visualViewport listener, which transfers it with preventScroll once the
+  // keyboard has settled. Mirrors the FAB-open path for an already-mounted box.
+  const pendingSearchRefocusRef = useRef(false);
   const removeKeyboardPrimer = useCallback(() => {
     const el = keyboardPrimerRef.current;
     if (el) {
@@ -827,15 +838,25 @@ export function CreateQuestionContent() {
       composeRoRef.current?.disconnect();
       composeRoRef.current = null;
       composeFocusedOpenRef.current = false;
+      pendingSearchRefocusRef.current = false;
       setModalViewportH(null);
       setModalViewportTop(0);
       return;
     }
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
     const onResize = () => {
-      setModalViewportH(vv ? vv.height : window.innerHeight);
+      const vh = vv ? vv.height : window.innerHeight;
+      setModalViewportH(vh);
       setModalViewportTop(vv ? vv.offsetTop : 0);
       recomputeComposeSpacer();
+      // A re-tap primed the keyboard and deferred the box focus to here: now
+      // that the keyboard is up (vh shrank) the box sits above it, so focus it
+      // with preventScroll — iOS won't scroll the webview, so nothing lurches.
+      if (pendingSearchRefocusRef.current && vh < window.innerHeight - KEYBOARD_GAP_PX) {
+        pendingSearchRefocusRef.current = false;
+        searchInputRef.current?.focus({ preventScroll: true });
+        removeKeyboardPrimer();
+      }
     };
     onResize();
     vv?.addEventListener("resize", onResize);
@@ -846,7 +867,7 @@ export function CreateQuestionContent() {
       vv?.removeEventListener("scroll", onResize);
       window.removeEventListener("resize", onResize);
     };
-  }, [isModalOpen, recomputeComposeSpacer]);
+  }, [isModalOpen, recomputeComposeSpacer, removeKeyboardPrimer]);
 
   // The QUESTION form section (category / options / time / per-question
   // settings) shows in 'create' + 'question' edit modes — the modes where the
@@ -3481,7 +3502,22 @@ export function CreateQuestionContent() {
             // never fires, searchFocused would stay false and the effect would
             // bail — so the list would never reappear. (pointerdown precedes
             // focus; redundant when focus does fire.)
-            onPointerDown={() => {
+            onPointerDown={(e) => {
+              // Re-tapping the box while the keyboard is DOWN: focusing the
+              // bottom-anchored box natively makes iOS scroll the whole webview
+              // up to reveal it (offsetTop jumps → the page lurches). Match the
+              // FAB-open path: block the native focus, prime the keyboard from a
+              // top-anchored offscreen input (offsetTop stays 0 → only the sheet
+              // rides the keyboard), then transfer focus with preventScroll once
+              // the keyboard settles (in the visualViewport listener above).
+              const keyboardDown =
+                modalViewportH == null ||
+                modalViewportH > window.innerHeight - KEYBOARD_GAP_PX;
+              if (keyboardDown) {
+                e.preventDefault();
+                primeKeyboard();
+                pendingSearchRefocusRef.current = true;
+              }
               setSearchFocused(true);
               setSearchFocusNonce((n) => n + 1);
             }}
@@ -3516,7 +3552,7 @@ export function CreateQuestionContent() {
   const searchDropdownOverlay =
     searchFocused && showDropdown && searchDropdownRows.length > 0 && dropdownStyle ? (
       <div
-        className="absolute z-[55] flex flex-col overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background shadow-2xl"
+        className="absolute z-[55] flex flex-col overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background shadow-2xl pointer-events-auto"
         style={{
           left: dropdownStyle.left,
           width: dropdownStyle.width,
@@ -4078,25 +4114,33 @@ export function CreateQuestionContent() {
           dismisses. */}
       {isModalOpen && (
         <ModalPortal>
+          {/* Dim backdrop — a SEPARATE full-screen layer pinned to the LAYOUT
+              viewport (NOT the visual viewport), so it stays put covering the
+              whole screen while the soft keyboard rises. Only the sheet
+              container below tracks the visual viewport and slides up above the
+              keyboard; the background page never appears to move (the dim
+              previously lived INSIDE the visual-viewport container, so it
+              retracted/shifted with the keyboard — the "whole page moves up"
+              symptom). Its onClick handles tap-to-dismiss for both modes (taps
+              in the sheet container's transparent areas fall through to it via
+              the container's `pointer-events-none`). */}
+          <div
+            className="fixed inset-0 z-[59] bg-black/40 dark:bg-black/60 animate-fade-in"
+            onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
+            aria-hidden="true"
+          />
           <div
             ref={modalContainerRef}
-            className="fixed left-0 w-full z-[60] flex items-end justify-center"
+            // Visual-viewport-tracked: the sheet rides the keyboard top. The
+            // transparent regions are pointer-events-none so taps fall through
+            // to the stationary backdrop above (dismiss); the sheet + dropdown
+            // re-enable pointer events.
+            className="fixed left-0 w-full z-[60] flex items-end justify-center pointer-events-none"
             style={{
               top: `${modalViewportTop}px`,
               height: modalViewportH != null ? `${modalViewportH}px` : '100dvh',
             }}
           >
-            {/* Backdrop — the dim layer. In COMPOSE mode the transparent sheet
-                covers it, so dismiss-on-tap there flows through the transparent
-                spacer's onClick (below); in CREATE mode the opaque content-sized
-                panel doesn't cover the top, so this backdrop's onClick handles
-                tap-above-to-dismiss. */}
-            <div
-              className="absolute inset-0 bg-black/40 dark:bg-black/60 animate-fade-in"
-              onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
-              aria-hidden="true"
-            />
-
             {baseIsCompose ? (
               /* COMPOSE sheet — opens SHORT (question box at the bottom edge,
                  backdrop above) and expands to full as the user scrolls. The
@@ -4109,7 +4153,7 @@ export function CreateQuestionContent() {
                  it) above an opaque card. `overflow-hidden` clips the editor
                  sub-panel while it's slid off to the right. */
               <div
-                className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up"
+                className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
                 style={{ height: modalViewportH != null ? `calc(${modalViewportH}px - env(safe-area-inset-top, 0px))` : 'calc(100dvh - env(safe-area-inset-top, 0px))' }}
                 role="dialog"
                 aria-modal="true"
@@ -4239,7 +4283,7 @@ export function CreateQuestionContent() {
               /* CREATE sheet (duplicate / Siri prefill) — opaque, bottom-anchored,
                  sized to its content up to the cap, then scrolls internally. */
               <div
-                className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up"
+                className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
                 style={{ maxHeight: modalViewportH != null ? `${modalViewportH - 70}px` : 'calc(100dvh - 70px)' }}
                 role="dialog"
                 aria-modal="true"
