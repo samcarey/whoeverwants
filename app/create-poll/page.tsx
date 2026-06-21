@@ -757,22 +757,13 @@ export function CreateQuestionContent() {
   // then editMode flips back to 'compose').
   const [subSlideIn, setSubSlideIn] = useState(false);
 
-  // --- Compose-sheet "open short, expand on scroll" geometry ---------------
-  // The compose sheet opens showing ONLY the question box at the bottom edge
-  // (backdrop visible above it); the poll settings live below the fold and the
-  // user scrolls to reveal them, the opaque card growing to full height. This
-  // is achieved with a TRANSPARENT spacer above an opaque card inside ONE
-  // native scroll container: at scrollTop 0 the spacer fills the area above the
-  // box (the dim backdrop shows through it), and scrolling reveals the card.
-  // spacer height = scrollViewport - topRegion(header + question box), so the
-  // box sits exactly at the bottom edge initially. Pure native scroll — no
-  // drag/height JS, no preventDefault (the iOS-fragile bits). The ref-mirror
-  // (composeSpacerHeightRef) lets onFocus scroll-to-expand synchronously.
+  // --- Compose-sheet geometry ----------------------------------------------
+  // The compose sheet is a top-anchored, fixed-height sheet (sticky header at the
+  // top, one native scroll container below holding the staged bubbles, the
+  // question box, and the "Details" bubble). It fills the screen with a small
+  // gap to the notch — like every other sheet — and rides the visual viewport so
+  // it stays above the soft keyboard. (No spacer / box-at-bottom geometry.)
   const composeScrollNodeRef = useRef<HTMLDivElement | null>(null);
-  const composeTopRegionNodeRef = useRef<HTMLDivElement | null>(null);
-  const composeRoRef = useRef<ResizeObserver | null>(null);
-  const composeSpacerHeightRef = useRef(0);
-  const [composeSpacerHeight, setComposeSpacerHeight] = useState(0);
   // The question box. Declared here (above the compose scroll ref that focuses
   // it) so setComposeScrollRef can read it without a use-before-define.
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -789,61 +780,29 @@ export function CreateQuestionContent() {
   const [modalViewportH, setModalViewportH] = useState<number | null>(null);
   const [modalViewportTop, setModalViewportTop] = useState(0);
 
-  const recomputeComposeSpacer = useCallback(() => {
-    const scroll = composeScrollNodeRef.current;
-    const top = composeTopRegionNodeRef.current;
-    if (!scroll || !top) return;
-    const h = Math.max(0, scroll.clientHeight - top.offsetHeight);
-    composeSpacerHeightRef.current = h;
-    setComposeSpacerHeight((prev) => (prev === h ? prev : h));
-  }, []);
-
-  const ensureComposeRo = useCallback(() => {
-    if (!composeRoRef.current && typeof ResizeObserver !== "undefined") {
-      composeRoRef.current = new ResizeObserver(() => recomputeComposeSpacer());
-    }
-    return composeRoRef.current;
-  }, [recomputeComposeSpacer]);
-
   // Callback ref (NOT useMeasuredHeight) because the element mounts inside
   // <ModalPortal>'s deferred commit — a useLayoutEffect([]) would run with a
   // null ref and never reattach (the documented early-return pitfall). It pins
-  // scrollTop to 0 (box at the bottom = just above the keyboard) and, on a FAB
-  // open, focuses the box (refs attach child-first, so the input is already
-  // attached by the time this fires; the flag survives the StrictMode remount).
+  // scrollTop to 0 (top-anchored) via setSheetScrollerRef and, on a FAB open,
+  // focuses the box (refs attach child-first, so the input is already attached
+  // by the time this fires; the flag survives the StrictMode remount).
   const setComposeScrollRef = useCallback(
     (node: HTMLDivElement | null) => {
       composeScrollNodeRef.current = node;
       setSheetScrollerRef(node);
       if (!node) return;
-      ensureComposeRo()?.observe(node);
-      recomputeComposeSpacer();
       if (composeFocusedOpenRef.current) {
         searchInputRef.current?.focus({ preventScroll: true });
         removeKeyboardPrimer();
       }
     },
-    [setSheetScrollerRef, ensureComposeRo, recomputeComposeSpacer, removeKeyboardPrimer],
+    [setSheetScrollerRef, removeKeyboardPrimer],
   );
 
-  const setComposeTopRegionRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      composeTopRegionNodeRef.current = node;
-      if (node) {
-        ensureComposeRo()?.observe(node);
-        recomputeComposeSpacer();
-      }
-    },
-    [ensureComposeRo, recomputeComposeSpacer],
-  );
-
-  // Track the visual viewport (size the sheet above the keyboard) + recompute
-  // the spacer on every change; tear the observer down + reset the focus flag
-  // on close.
+  // Track the visual viewport (size the sheet above the keyboard) + reset the
+  // focus flag on close.
   useEffect(() => {
     if (!isModalOpen) {
-      composeRoRef.current?.disconnect();
-      composeRoRef.current = null;
       composeFocusedOpenRef.current = false;
       pendingSearchRefocusRef.current = false;
       setModalViewportH(null);
@@ -855,7 +814,6 @@ export function CreateQuestionContent() {
       const vh = vv ? vv.height : window.innerHeight;
       setModalViewportH(vh);
       setModalViewportTop(vv ? vv.offsetTop : 0);
-      recomputeComposeSpacer();
       // A re-tap primed the keyboard and deferred the box focus to here: now
       // that the keyboard is up (vh shrank) the box sits above it, so focus it
       // with preventScroll — iOS won't scroll the webview, so nothing lurches.
@@ -874,7 +832,7 @@ export function CreateQuestionContent() {
       vv?.removeEventListener("scroll", onResize);
       window.removeEventListener("resize", onResize);
     };
-  }, [isModalOpen, recomputeComposeSpacer, removeKeyboardPrimer]);
+  }, [isModalOpen, removeKeyboardPrimer]);
 
   // The QUESTION form section (category / options / time / per-question
   // settings) shows in 'create' + 'question' edit modes — the modes where the
@@ -1470,17 +1428,13 @@ export function CreateQuestionContent() {
     composeFocusedOpenRef.current = true;
     primeKeyboard();
     window.setTimeout(() => { composeFocusedOpenRef.current = false; }, 1500);
-    // Seed the viewport + spacer so the first paint is already bottom-anchored
-    // (box at the bottom edge, above where the keyboard lands); the vv listener
-    // + callback-ref measure correct them. ~130px ≈ header + the question box.
+    // Seed the viewport so the first paint already sizes the sheet to ride above
+    // where the keyboard lands; the vv listener corrects it.
     if (typeof window !== "undefined") {
       const vv = window.visualViewport;
       const vh = vv?.height ?? window.innerHeight;
       setModalViewportH(vh);
       setModalViewportTop(vv?.offsetTop ?? 0);
-      const seed = Math.max(0, vh - 70 - 130 - drafts.length * 44);
-      composeSpacerHeightRef.current = seed;
-      setComposeSpacerHeight(seed);
     }
     setEditMode({ type: 'compose' });
   }, [drafts.length, applyDraftToState, resetFreshPollFields, primeKeyboard]);
@@ -1668,7 +1622,7 @@ export function CreateQuestionContent() {
       scroller?.removeEventListener('scroll', onMove);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchFocused, searchFocusNonce, composeSpacerHeight, modalViewportH, modalViewportTop]);
+  }, [searchFocused, searchFocusNonce, modalViewportH, modalViewportTop]);
 
   // Pick a poll suggestion from the focused picker → STAGE it as a draft bubble
   // (no modal). On /explore only one (yes/no) question is allowed, so a new
@@ -3492,26 +3446,30 @@ export function CreateQuestionContent() {
           </div>
         );
       })}
-      {/* Poll-WIDE settings (cutoff, recurrence, notes, …) live behind this
-          bubble — tapping it slides in the 'details' sub-panel (same chrome +
-          swipe-back as the question editor). Rightward chevron signals the
-          drill-in. */}
-      <button
-        type="button"
-        onClick={openDetailsEdit}
-        disabled={isLoading}
-        aria-label="Poll details"
-        className="w-full flex items-center justify-between rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-4 pr-3 py-2.5 disabled:opacity-50"
-      >
-        <span className="text-base text-gray-700 dark:text-gray-300">Details</span>
-        <svg className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-        </svg>
-      </button>
       {sendError && (
         <p className="px-1 text-sm text-red-600 dark:text-red-400">{sendError}</p>
       )}
     </div>
+  ) : null;
+
+  // The "Details" bubble — opens the poll-WIDE settings (cutoff, recurrence,
+  // notes, …) in the 'details' sub-panel (same slide-in + swipe-back chrome as
+  // the question editor). Rendered BELOW the question box (not in the draft
+  // stack above it); shown once at least one question is staged. Rightward
+  // chevron signals the drill-in.
+  const detailsBubble = drafts.length > 0 ? (
+    <button
+      type="button"
+      onClick={openDetailsEdit}
+      disabled={isLoading}
+      aria-label="Poll details"
+      className="w-full flex items-center justify-between rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-4 pr-3 py-2.5 disabled:opacity-50"
+    >
+      <span className="text-base text-gray-700 dark:text-gray-300">Details</span>
+      <svg className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+      </svg>
+    </button>
   ) : null;
 
   // The poll-creation search box, rendered inside the New Poll sheet (compose
@@ -4182,16 +4140,12 @@ export function CreateQuestionContent() {
             }}
           >
             {baseIsCompose ? (
-              /* COMPOSE sheet — opens SHORT (question box at the bottom edge,
-                 backdrop above) and expands to full as the user scrolls. The
-                 panel reserves only the safe-area inset (notch / Dynamic Island)
-                 at the top, NOT a flat gap — so when scrolled up the opaque card
-                 slides OVER the page's top bar (which is dimmed behind the
-                 backdrop) instead of the content clipping under it; only the
-                 notch stays dimmed. The panel is TRANSPARENT; one native scroll
-                 container holds a transparent spacer (shows the backdrop through
-                 it) above an opaque card. `overflow-hidden` clips the editor
-                 sub-panel while it's slid off to the right. */
+              /* COMPOSE sheet — top-anchored, fixed full height with a small gap
+                 to the notch (like every other sheet). A sticky header sits at
+                 the top of one native scroll container; below it flow the staged
+                 question bubbles, the question box, and the "Details" bubble.
+                 `overflow-hidden` on the wrapper clips the editor sub-panel while
+                 it's slid off to the right. */
               <div
                 className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
                 style={{ height: modalViewportH != null ? `calc(${modalViewportH}px - env(safe-area-inset-top, 0px))` : 'calc(100dvh - env(safe-area-inset-top, 0px))' }}
@@ -4202,66 +4156,47 @@ export function CreateQuestionContent() {
                 <div
                   ref={setComposeScrollRef}
                   // overscroll-none kills the iOS rubber-band bounce at the
-                  // scroll extremes (and stops chaining) — a bounce at max scroll
-                  // could momentum-glitch the scroll back toward the top, flashing
-                  // the transparent spacer's dimmed backdrop.
-                  className="absolute inset-0 z-0 overflow-y-auto overflow-x-hidden overscroll-none"
+                  // scroll extremes (and stops chaining).
+                  className="absolute inset-0 z-0 overflow-y-auto overflow-x-hidden overscroll-none bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl"
                 >
-                  {/* Transparent spacer — the dim backdrop shows through it, so
-                      at rest only the card (header + box) peeks up from the
-                      bottom. Tapping it dismisses, like the backdrop. */}
-                  <div
-                    aria-hidden="true"
-                    style={{ height: composeSpacerHeight }}
-                    onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
-                  />
-                  {/* Opaque card — min-h-full so it fills the viewport once
-                      expanded (no backdrop gap at the bottom). */}
-                  <div className="min-h-full bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl">
-                    {/* topRegion (measured): sticky header + question box. The
-                        spacer height is viewport − this, so the box sits at the
-                        bottom edge initially. */}
-                    <div ref={setComposeTopRegionRef}>
-                      <div className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-900 rounded-t-3xl relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
-                        <button
-                          type="button"
-                          onClick={handleCloseClick}
-                          disabled={isLoading}
-                          aria-label="Close poll form"
-                          className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                        <span className="text-lg font-semibold select-none">New Poll</span>
-                        <button
-                          type="button"
-                          onClick={handleModalCheck}
-                          disabled={isLoading || isSubmitted || drafts.length === 0}
-                          aria-label="Create poll"
-                          className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {isSubmitted || isLoading ? (
-                            <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                          ) : (
-                            <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
-                            </svg>
-                          )}
-                        </button>
-                      </div>
-                      <div className="px-3">{searchBox}</div>
-                    </div>
-                    {/* Below the fold at rest: validation errors only. The
-                        poll-WIDE settings now live behind the "Details" bubble
-                        (the 'details' sub-panel), not inline here. */}
-                    <div className="px-3 pb-[4.5rem] pt-[14.4px] space-y-[14.4px]">
-                      {errorBlock}
-                    </div>
+                  <div className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-900 rounded-t-3xl relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                    <button
+                      type="button"
+                      onClick={handleCloseClick}
+                      disabled={isLoading}
+                      aria-label="Close poll form"
+                      className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                    <span className="text-lg font-semibold select-none">New Poll</span>
+                    <button
+                      type="button"
+                      onClick={handleModalCheck}
+                      disabled={isLoading || isSubmitted || drafts.length === 0}
+                      aria-label="Create poll"
+                      className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isSubmitted || isLoading ? (
+                        <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                  {/* Staged bubbles + question box, then the "Details" bubble
+                      (poll-wide settings) directly UNDER the box. */}
+                  <div className="px-3 pb-[4.5rem] space-y-[14.4px]">
+                    {searchBox}
+                    {detailsBubble}
+                    {errorBlock}
                   </div>
                 </div>
 
