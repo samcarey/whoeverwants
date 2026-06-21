@@ -1586,7 +1586,7 @@ export function CreateQuestionContent() {
       // the list glued to the box even while the container's state-driven
       // top/height lag the live viewport during the iOS keyboard animation.
       const containerH = cr.height;
-      const gap = 2; // gap between the box and the overlay
+      const gap = 1; // gap between the box and the overlay
       const margin = 12; // breathing room at the viewport edge
       const boxTop = r.top - cr.top; // box top in container coords
       const boxBottom = r.bottom - cr.top;
@@ -3578,9 +3578,10 @@ export function CreateQuestionContent() {
         }}
       >
         {/* Drop UP: mt-auto bottom-anchors so the best match (last row) sits
-            right above the box. Drop DOWN: top-anchored so the best match (now
-            the first, reversed row) sits right below the box. */}
-        <div className={dropdownStyle.dropUp ? "mt-auto py-1" : "py-1"}>{searchDropdownRows}</div>
+            right above the box; pad only the TOP so the bottom row hugs the box.
+            Drop DOWN: top-anchored, pad only the BOTTOM so the top row hugs the
+            box. (No box-facing padding keeps the suggestions tight to the box.) */}
+        <div className={dropdownStyle.dropUp ? "mt-auto pt-1" : "pb-1"}>{searchDropdownRows}</div>
       </div>
     ) : null;
 
