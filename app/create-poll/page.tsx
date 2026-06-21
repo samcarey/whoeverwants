@@ -1445,10 +1445,12 @@ export function CreateQuestionContent() {
     setRecurrence(DEFAULT_RECURRENCE);
   }, []);
 
-  // Open the New Poll sheet (the "+ Poll" FAB). The sheet body hosts the
-  // search box; any already-staged drafts persist (they're shown as bubbles).
-  // Reset the fresh poll-level fields only when starting clean (no drafts),
-  // so re-opening mid-compose doesn't wipe a Notes/recurrence the user set.
+  // Tap the floating new-poll box → open the compose overlay focused on the
+  // search box. With nothing staged it's CHROMELESS (box + suggestions only);
+  // staging the first suggestion flips it into the full sheet form. Any
+  // already-staged drafts persist (shown as bubbles) and skip the chromeless
+  // step. Reset the fresh poll-level fields only when starting clean (no
+  // drafts), so re-opening mid-compose doesn't wipe a Notes/recurrence set.
   const openComposeModal = useCallback(() => {
     if (drafts.length === 0) {
       applyDraftToState(emptyDraft());
@@ -1471,7 +1473,11 @@ export function CreateQuestionContent() {
       const vh = vv?.height ?? window.innerHeight;
       setModalViewportH(vh);
       setModalViewportTop(vv?.offsetTop ?? 0);
-      const seed = Math.max(0, vh - 70 - 130 - drafts.length * 44);
+      // topRegion ≈ just the box (~58) while chromeless (no staged questions →
+      // no header), or header + box (~130) once a question is staged; the bubble
+      // rows add ~44 each. The ResizeObserver corrects any drift after mount.
+      const topApprox = drafts.length > 0 ? 130 : 58;
+      const seed = Math.max(0, vh - 70 - topApprox - drafts.length * 44);
       composeSpacerHeightRef.current = seed;
       setComposeSpacerHeight(seed);
     }
@@ -3585,18 +3591,30 @@ export function CreateQuestionContent() {
       : null;
   const showExploreFab = isClient && !swipeBackActive && pathname === "/explore";
 
-  // One shared button definition for every portal target. The button keeps
-  // its own z-50 for the explore (body-level) path where it must float above
-  // the page; inside a #group-fab-portal target the wrapping div already
-  // establishes the stacking context, so the z-index is moot but harmless.
-  // (It's the single child of each portal, so it needs no key.)
-  const pollFabButton = (visible: boolean) => (
+  // The always-visible "new poll" entry: a wide text-box-styled bar pinned near
+  // the bottom of the group/explore page (replaces the old "+ Poll" FAB).
+  // Tapping it opens the compose overlay — which, until the first suggestion is
+  // staged, is CHROMELESS (just this box + the suggestion drop-up, no dim /
+  // sheet), so it reads as "show me suggestions", not "open a modal". One shared
+  // definition for every portal target: it keeps its own z-50 for the explore
+  // (body-level) path; inside a #group-fab-portal target the wrapping div
+  // already establishes the stacking context, so the z-index is moot but
+  // harmless. (It's the single child of each portal, so it needs no key.) Hidden
+  // while the compose/create modal is open — the modal renders its own box.
+  const newPollBoxTrigger = (visible: boolean) => (
     <button
       onClick={openComposeModal}
-      className="fixed h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
+      className="fixed flex items-center gap-2 h-[42.24px] rounded-full bg-white dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4 shadow-md shadow-black/20 cursor-pointer text-left"
       style={{
         zIndex: 50,
-        right: "max(1.5rem, env(safe-area-inset-right, 0px))",
+        // left+right+auto margins+max-width → full-width (minus margins) on
+        // phones, but capped + centered on desktop to match the compose sheet's
+        // sm:max-w-md. The slide transform still rides on top during page nav.
+        left: "max(0.75rem, env(safe-area-inset-left, 0px))",
+        right: "max(0.75rem, env(safe-area-inset-right, 0px))",
+        maxWidth: "28rem",
+        marginLeft: "auto",
+        marginRight: "auto",
         bottom: IS_CAPACITOR_NATIVE ? "2.65rem" : "1.9rem",
         transform: "translateZ(0)",
         visibility: visible ? "visible" : "hidden",
@@ -3606,18 +3624,26 @@ export function CreateQuestionContent() {
       aria-hidden={!visible}
       tabIndex={visible ? 0 : -1}
     >
-      <span aria-hidden="true" className="text-[28.8px] leading-none">
+      <span className="flex-1 min-w-0 truncate text-base text-gray-400 dark:text-gray-500">
+        Ask a question…
+      </span>
+      <span aria-hidden="true" className="shrink-0 text-[1.7rem] leading-none text-gray-400 dark:text-gray-500">
         +
       </span>
-      <span className="text-lg leading-none">Poll</span>
     </button>
   );
 
   const isSubEdit = editMode?.type === 'question';
   // The base sheet shows compose (search box + inline poll settings) for the
-  // FAB flow and for the question editor (which slides in OVER it); only the
+  // box-tap flow and for the question editor (which slides in OVER it); only the
   // create-prefill flow shows the full form as the base.
   const baseIsCompose = editMode?.type !== 'create';
+  // Compose with NOTHING staged yet → CHROMELESS: just the floating box + its
+  // suggestion drop-up, no dim / header / card / settings. Staging the first
+  // suggestion (drafts 0→1) flips compose into the full sheet form (box pinned
+  // at the bottom, staged question bubble + settings above/below).
+  const draftStaged = drafts.length > 0;
+  const composeChromeless = baseIsCompose && !draftStaged;
 
   const errorBlock = error ? (
     <div className="p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
@@ -4094,16 +4120,17 @@ export function CreateQuestionContent() {
 
   return (
     <div className="question-content">
-      {/* Group surfaces: portal the FAB into every #group-fab-portal target
-          so it rides the page transforms. Always visible — the target only
-          exists where a poll can be created. */}
+      {/* Group surfaces: portal the floating new-poll box into every
+          #group-fab-portal target so it rides the page transforms. The target
+          only exists where a poll can be created; the box hides while the
+          compose/create modal is open (the modal renders its own box). */}
       {groupFabPortals.map((target, i) =>
-        createPortal(pollFabButton(true), target, `group-fab-${i}`),
+        createPortal(newPollBoxTrigger(!isModalOpen), target, `group-fab-${i}`),
       )}
 
-      {/* /explore: static body-level FAB (no GroupContent to host a target). */}
+      {/* /explore: static body-level box (no GroupContent to host a target). */}
       {exploreFabTarget &&
-        createPortal(pollFabButton(showExploreFab), exploreFabTarget, "explore-fab")}
+        createPortal(newPollBoxTrigger(showExploreFab && !isModalOpen), exploreFabTarget, "explore-fab")}
 
       {/* New-poll bottom sheet — slides up from the bottom edge. Top half
           holds the question form; bottom half holds poll-level settings
@@ -4125,7 +4152,7 @@ export function CreateQuestionContent() {
               in the sheet container's transparent areas fall through to it via
               the container's `pointer-events-none`). */}
           <div
-            className="fixed inset-0 z-[59] bg-black/40 dark:bg-black/60 animate-fade-in"
+            className={`fixed inset-0 z-[59] ${composeChromeless ? '' : 'bg-black/40 dark:bg-black/60 animate-fade-in'}`}
             onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
             aria-hidden="true"
           />
@@ -4153,7 +4180,7 @@ export function CreateQuestionContent() {
                  it) above an opaque card. `overflow-hidden` clips the editor
                  sub-panel while it's slid off to the right. */
               <div
-                className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
+                className={`relative w-full sm:max-w-md flex flex-col overflow-hidden pointer-events-auto ${draftStaged ? 'animate-slide-up' : ''}`}
                 style={{ height: modalViewportH != null ? `calc(${modalViewportH}px - env(safe-area-inset-top, 0px))` : 'calc(100dvh - env(safe-area-inset-top, 0px))' }}
                 role="dialog"
                 aria-modal="true"
@@ -4175,13 +4202,17 @@ export function CreateQuestionContent() {
                     style={{ height: composeSpacerHeight }}
                     onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
                   />
-                  {/* Opaque card — min-h-full so it fills the viewport once
+                  {/* Card — opaque (bg + rounded top + shadow) ONLY once a
+                      question is staged (the full sheet form). While chromeless
+                      it's transparent so just the box + suggestions float over
+                      the un-dimmed page. min-h-full fills the viewport once
                       expanded (no backdrop gap at the bottom). */}
-                  <div className="min-h-full bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl">
-                    {/* topRegion (measured): sticky header + question box. The
-                        spacer height is viewport − this, so the box sits at the
-                        bottom edge initially. */}
+                  <div className={`min-h-full ${draftStaged ? 'bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl' : ''}`}>
+                    {/* topRegion (measured): sticky header (staged only) +
+                        question box. The spacer height is viewport − this, so the
+                        box sits at the bottom edge initially. */}
                     <div ref={setComposeTopRegionRef}>
+                      {draftStaged && (
                       <div className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-900 rounded-t-3xl relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
                         <button
                           type="button"
@@ -4214,13 +4245,17 @@ export function CreateQuestionContent() {
                           )}
                         </button>
                       </div>
+                      )}
                       <div className="px-3">{searchBox}</div>
                     </div>
-                    {/* Below the fold at rest: the poll-WIDE settings. */}
+                    {/* Below the fold at rest: the poll-WIDE settings — only
+                        once a question is staged (the full sheet form). */}
+                    {draftStaged && (
                     <div className="px-3 pb-[4.5rem] pt-[14.4px] space-y-[14.4px]">
                       {pollSettingsSections}
                       {errorBlock}
                     </div>
+                    )}
                   </div>
                 </div>
 
