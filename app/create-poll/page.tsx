@@ -1635,24 +1635,42 @@ export function CreateQuestionContent() {
     };
     tick();
 
-    // ALSO re-measure on viewport / scroll changes. iOS THROTTLES (or pauses)
-    // requestAnimationFrame during the soft-keyboard rise, so the rAF loop above
-    // can stop converging mid-animation and leave the overlay anchored to where
-    // the box WAS — covering the box once it settles higher (the reported "with
-    // 4 questions, the list covers the box" bug). visualViewport resize/scroll
-    // fire reliably at every keyboard frame, so measuring on them guarantees the
-    // overlay re-anchors to the box's final position even if rAF stalls.
+    // Keep the BOX scrolled into view just above the keyboard. With several
+    // staged questions the topRegion (header + bubbles + box) is taller than the
+    // keyboard-shrunk sheet, so the box ends up scrolled BELOW the visible area
+    // (behind the keyboard) — the suggestions list (correctly anchored above the
+    // box) then fills the whole visible sheet and the box itself is hidden, which
+    // reads as "the list covers the box" (confirmed on-device: box.top 374 with
+    // a 361px visible viewport). Scrolling the compose scroller so the box's
+    // bottom sits just above the keyboard top brings it back into view (and the
+    // overlay re-anchors above the now-visible box). Only acts when the box is
+    // below the fold, so it never fights a deliberate scroll-up to review bubbles.
+    const pinBoxAboveKeyboard = () => {
+      const sc = composeScrollNodeRef.current;
+      const box = searchInputRef.current;
+      if (!sc || !box) return;
+      const below = box.getBoundingClientRect().bottom - sc.getBoundingClientRect().bottom;
+      if (below > 1) sc.scrollTop += below + 4; // +4: a little gap above the keyboard
+    };
+    // Re-measure + re-pin on viewport / scroll changes. iOS throttles rAF during
+    // the keyboard rise, but visualViewport resize/scroll fire reliably at every
+    // keyboard frame, so this converges the box + overlay to their final places.
     const vp = typeof window !== 'undefined' ? window.visualViewport : null;
     const scroller = composeScrollNodeRef.current;
-    vp?.addEventListener('resize', measure);
-    vp?.addEventListener('scroll', measure);
+    const onViewportChange = () => { measure(); pinBoxAboveKeyboard(); };
+    vp?.addEventListener('resize', onViewportChange);
+    vp?.addEventListener('scroll', onViewportChange);
     scroller?.addEventListener('scroll', measure, { passive: true });
+    // Belt-and-suspenders for a fresh focus where the keyboard rise + box scroll
+    // settle asynchronously (iOS timing varies; the vp events usually cover it).
+    const pinTimers = [60, 200, 400, 700].map((d) => window.setTimeout(pinBoxAboveKeyboard, d));
 
     return () => {
       stopped = true;
       cancelAnimationFrame(rafId);
-      vp?.removeEventListener('resize', measure);
-      vp?.removeEventListener('scroll', measure);
+      pinTimers.forEach((t) => window.clearTimeout(t));
+      vp?.removeEventListener('resize', onViewportChange);
+      vp?.removeEventListener('scroll', onViewportChange);
       scroller?.removeEventListener('scroll', measure);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
