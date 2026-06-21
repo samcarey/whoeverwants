@@ -735,13 +735,20 @@ export function CreateQuestionContent() {
   //     suggestion / Siri prefill). ✓ submits the poll; ✕ keeps/discards state.
   //   {question, index} — edit a staged bubble. ✓ commits the draft, ✕ cancels
   //     (the draft is the source of truth, so nothing changes on cancel).
+  //   'details' — the poll-WIDE settings (cutoff, recurrence, notes, …) editor.
+  //     Opened by the "Details" bubble below the staged questions; slides in as
+  //     a sub-panel over the compose sheet (same chrome + swipe-back as the
+  //     question editor). The settings are LIVE (they edit component state
+  //     directly), so ✓/← both just slide back — there's nothing to commit.
   //   'compose' — the new-poll sheet opened by the "+ Poll" FAB. The body
-  //     hosts the search box (staged-question bubbles above the text box),
-  //     the poll-WIDE settings (cutoff, recurrence, notes, …) directly below
-  //     the text box, and the inline ↑ send button. No header ✓ in this mode
-  //     (the ↑ sends). The poll settings are LIVE here — they edit component
-  //     state directly with no separate commit/cancel (there's no submodal).
-  type EditMode = { type: 'compose' } | { type: 'create' } | { type: 'question'; index: number };
+  //     hosts the search box (staged-question bubbles + the "Details" bubble
+  //     above the text box) and the inline ↑ send button. No header ✓ in this
+  //     mode (the ↑ sends).
+  type EditMode =
+    | { type: 'compose' }
+    | { type: 'create' }
+    | { type: 'question'; index: number }
+    | { type: 'details' };
   const [editMode, setEditMode] = useState<EditMode | null>(null);
   const isModalOpen = editMode !== null;
   // Drives the question editor sub-panel's slide: false = off-screen right,
@@ -873,10 +880,10 @@ export function CreateQuestionContent() {
   // settings) shows in 'create' + 'question' edit modes — the modes where the
   // live form represents a real question. The POLL-settings section
   // (`pollSettingsSections`) shows in 'create' (inside `formSections`) and in
-  // 'compose' (inline below the search box) — but NOT in 'question' mode, hence
-  // `showPollSection` gates only 'create'. The inline-form predicates below gate
-  // on showQuestionSection (not bare isModalOpen): in compose the live form is
-  // stale, so the poll fields must derive from `drafts` alone.
+  // the 'details' sub-panel — but NOT in 'question' mode, hence `showPollSection`
+  // gates only 'create'. The inline-form predicates below gate on
+  // showQuestionSection (not bare isModalOpen): in compose/details the live form
+  // is stale, so the poll fields must derive from `drafts` alone.
   const showQuestionSection = editMode?.type === 'create' || editMode?.type === 'question';
   const showPollSection = editMode?.type === 'create';
   // Inline error for the draft-stack ↑ send path (the modal isn't open then,
@@ -1706,11 +1713,24 @@ export function CreateQuestionContent() {
     slideInSub();
   }, [drafts, applyDraftToState, collapseSearchBox, slideInSub]);
 
-  // Close the question editor sub-panel and slide it back to the compose sheet.
-  //   commit=true  → validate the edits and write the draft back.
+  // Tap the "Details" bubble → slide in the poll-WIDE settings (cutoff,
+  // recurrence, notes, …). Unlike the question editor there's no draft to load
+  // — the poll-level state is already live, so closing just slides back.
+  const openDetailsEdit = useCallback(() => {
+    setError(null);
+    collapseSearchBox();
+    setEditMode({ type: 'details' });
+    slideInSub();
+  }, [collapseSearchBox, slideInSub]);
+
+  // Close a sub-panel (question editor OR details) and slide it back to the
+  // compose sheet.
+  //   commit=true  → (question only) validate the edits and write the draft back.
   //   commit=false → discard (the draft is untouched, so nothing to revert).
-  // A failing question validation surfaces the error and stays open (no slide).
-  // The panel stays mounted through the slide-out, then editMode → 'compose'.
+  // For 'details' both ✓ and ← just slide back — its settings edit live state,
+  // so there's nothing to validate or write back. A failing question validation
+  // surfaces the error and stays open (no slide). The panel stays mounted
+  // through the slide-out, then editMode → 'compose'.
   const closeSubEdit = useCallback((commit: boolean) => {
     const mode = editMode;
     if (mode?.type === 'question' && commit) {
@@ -1851,7 +1871,7 @@ export function CreateQuestionContent() {
     if (!isModalOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || showDiscardConfirmRef.current) return;
-      if (editMode?.type === 'question') closeSubEdit(false);
+      if (editMode?.type === 'question' || editMode?.type === 'details') closeSubEdit(false);
       else cancelModal();
     };
     document.addEventListener('keydown', handleEsc);
@@ -3429,10 +3449,10 @@ export function CreateQuestionContent() {
   const pollPreviewTitle = useMemo(() => draftPollPreview(drafts, '').title, [drafts]);
 
   // Staged-draft bubbles, rendered above the search input. 2+ drafts → a
-  // combined poll-title heading on top (read-only — poll-wide settings live
-  // inline below the search box, not in a submodal) over one bubble per
-  // question. Tapping a question bubble edits it; × removes it. The poll is
-  // sent via the ↑ button in the sheet's upper-right corner.
+  // combined poll-title heading on top (read-only) over one bubble per question,
+  // then a "Details" bubble that opens the poll-wide settings sub-panel. Tapping
+  // a question bubble edits it; × removes it. The poll is sent via the ↑ button
+  // in the sheet's upper-right corner.
   const draftStack = drafts.length > 0 ? (
     <div className="pt-2 space-y-2">
       {drafts.length > 1 && (
@@ -3472,6 +3492,22 @@ export function CreateQuestionContent() {
           </div>
         );
       })}
+      {/* Poll-WIDE settings (cutoff, recurrence, notes, …) live behind this
+          bubble — tapping it slides in the 'details' sub-panel (same chrome +
+          swipe-back as the question editor). Rightward chevron signals the
+          drill-in. */}
+      <button
+        type="button"
+        onClick={openDetailsEdit}
+        disabled={isLoading}
+        aria-label="Poll details"
+        className="w-full flex items-center justify-between rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-4 pr-3 py-2.5 disabled:opacity-50"
+      >
+        <span className="text-base text-gray-700 dark:text-gray-300">Details</span>
+        <svg className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
       {sendError && (
         <p className="px-1 text-sm text-red-600 dark:text-red-400">{sendError}</p>
       )}
@@ -3613,10 +3649,13 @@ export function CreateQuestionContent() {
     </button>
   );
 
-  const isSubEdit = editMode?.type === 'question';
-  // The base sheet shows compose (search box + inline poll settings) for the
-  // FAB flow and for the question editor (which slides in OVER it); only the
-  // create-prefill flow shows the full form as the base.
+  // Either sub-panel (question editor OR details settings) slides in OVER the
+  // compose sheet, so they share the slide/swipe-back chrome and the
+  // backdrop/Escape "tap = slide back" behavior.
+  const isSubEdit = editMode?.type === 'question' || editMode?.type === 'details';
+  // The base sheet shows compose (search box) for the FAB flow and for the
+  // sub-panels (which slide in OVER it); only the create-prefill flow shows the
+  // full form as the base.
   const baseIsCompose = editMode?.type !== 'create';
 
   const errorBlock = error ? (
@@ -3626,14 +3665,15 @@ export function CreateQuestionContent() {
   ) : null;
 
   // Poll-WIDE settings (voting cutoff, recurrence, prephase cutoff, plus-ones,
-  // …) + Notes. Rendered in TWO places: inline in the 'compose' base body
-  // (directly below the search box — the main-modal home for these settings,
-  // no submodal) and inside `formSections` for the 'create' prefill flow. The
-  // poll predicates (pollHasPrephase / pollHasRankedChoice / pollIsLimitedSupply
-  // / effectiveAllowPlusOnes) derive from the staged `drafts` in compose mode
-  // (showQuestionSection is false there). Built only when the modal is open to
-  // avoid constructing the tree on every render of this layout-level component.
-  const pollSettingsSections = isModalOpen ? (
+  // …) + Notes. Rendered in TWO places: the 'details' sub-panel (opened by the
+  // "Details" bubble — the main home for these settings) and inside
+  // `formSections` for the 'create' prefill flow. The poll predicates
+  // (pollHasPrephase / pollHasRankedChoice / pollIsLimitedSupply /
+  // effectiveAllowPlusOnes) derive from the staged `drafts` in details mode
+  // (showQuestionSection is false there). Built only when actually shown
+  // (details / create) to avoid constructing the tree on every render of this
+  // layout-level component.
+  const pollSettingsSections = (editMode?.type === 'create' || editMode?.type === 'details') ? (
     <>
                 <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
                   <form
@@ -3757,12 +3797,12 @@ export function CreateQuestionContent() {
   ) : null;
 
   // Question form sections — rendered in the create-prefill sheet (base) and in
-  // the slide-in sub-panel (question edit). create additionally appends the
-  // poll settings via `showPollSection && pollSettingsSections`; question mode
-  // shows just the question form. Built only when actually shown (null in
-  // compose / when closed) to avoid constructing the whole form tree on every
+  // the question-edit slide-in sub-panel. create additionally appends the poll
+  // settings via `showPollSection && pollSettingsSections`; question mode shows
+  // just the question form. Built only when actually shown (null in compose /
+  // details / when closed) to avoid constructing the whole form tree on every
   // render of this layout-level component.
-  const formSections = (editMode?.type === 'create' || isSubEdit) ? (
+  const formSections = (editMode?.type === 'create' || editMode?.type === 'question') ? (
     <>
                 {/* Question header: emoji + this question's (live) title preview.
                     formSections only renders in create / question modes, so the
@@ -4086,8 +4126,8 @@ export function CreateQuestionContent() {
 
                 {/* Poll-WIDE settings card (voting cutoff, recurrence, …) +
                     Notes — in 'create' mode they render here below the question
-                    form; in 'compose' they render inline below the search box
-                    (see `pollSettingsSections` rendered in the base body). */}
+                    form; in the FAB/compose flow they live behind the "Details"
+                    bubble (the 'details' sub-panel), not in this base sheet. */}
                 {showPollSection && pollSettingsSections}
     </>
   ) : null;
@@ -4216,30 +4256,33 @@ export function CreateQuestionContent() {
                       </div>
                       <div className="px-3">{searchBox}</div>
                     </div>
-                    {/* Below the fold at rest: the poll-WIDE settings. */}
+                    {/* Below the fold at rest: validation errors only. The
+                        poll-WIDE settings now live behind the "Details" bubble
+                        (the 'details' sub-panel), not inline here. */}
                     <div className="px-3 pb-[4.5rem] pt-[14.4px] space-y-[14.4px]">
-                      {pollSettingsSections}
                       {errorBlock}
                     </div>
                   </div>
                 </div>
 
-                {/* SUB-PANEL: the question editor, slid in from the right OVER
-                    the compose sheet. Bottom-anchored + content-sized (no blank
-                    space below; scrolls internally if it exceeds the cap). ←
-                    (upper-left) discards + slides back; ✓ (upper-right) commits +
-                    slides back. A rightward swipe also goes back (discarding). */}
+                {/* SUB-PANEL: the question editor OR the poll-details settings,
+                    slid in from the right OVER the compose sheet. Fixed height —
+                    it fills the compose container (inset-0), so every sheet is the
+                    same height regardless of content. ← (upper-left) goes back
+                    (question: discards; details: live, so just closes); ✓
+                    (upper-right) commits (question) / closes (details). A rightward
+                    swipe also goes back. */}
                 {isSubEdit && (
                   <div
                     ref={subPanelRef}
-                    className="absolute inset-x-0 bottom-0 z-20 bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col touch-pan-y"
+                    className="absolute inset-0 z-20 bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col touch-pan-y"
                     style={{
-                      maxHeight: modalViewportH != null ? `${modalViewportH - 70}px` : 'calc(100dvh - 70px)',
                       transform: subSlideIn ? 'translateX(0)' : 'translateX(100%)',
                       transition: SUB_SLIDE_TRANSITION,
                     }}
                     role="dialog"
                     aria-modal="true"
+                    aria-label={editMode?.type === 'details' ? 'Poll details' : 'Edit question'}
                     onTouchStart={handleSubPanelTouchStart}
                     onTouchMove={handleSubPanelTouchMove}
                     onTouchEnd={handleSubPanelTouchEnd}
@@ -4258,13 +4301,13 @@ export function CreateQuestionContent() {
                         </svg>
                       </button>
                       <span className="text-lg font-semibold select-none">
-                        Edit Question
+                        {editMode?.type === 'details' ? 'Details' : 'Edit Question'}
                       </span>
                       <button
                         type="button"
                         onClick={() => closeSubEdit(true)}
                         disabled={isLoading}
-                        aria-label="Save changes"
+                        aria-label={editMode?.type === 'details' ? 'Done' : 'Save changes'}
                         className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
@@ -4272,8 +4315,8 @@ export function CreateQuestionContent() {
                         </svg>
                       </button>
                     </div>
-                    <div className="min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-6 space-y-[14.4px]">
-                      {formSections}
+                    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-6 space-y-[14.4px]">
+                      {editMode?.type === 'details' ? pollSettingsSections : formSections}
                       {errorBlock}
                     </div>
                   </div>
@@ -4281,10 +4324,11 @@ export function CreateQuestionContent() {
               </div>
             ) : (
               /* CREATE sheet (duplicate / Siri prefill) — opaque, bottom-anchored,
-                 sized to its content up to the cap, then scrolls internally. */
+                 fixed full height (same as the compose sheet + sub-panels, small
+                 gap to the top), scrolls internally. */
               <div
                 className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
-                style={{ maxHeight: modalViewportH != null ? `${modalViewportH - 70}px` : 'calc(100dvh - 70px)' }}
+                style={{ height: modalViewportH != null ? `calc(${modalViewportH}px - env(safe-area-inset-top, 0px))` : 'calc(100dvh - env(safe-area-inset-top, 0px))' }}
                 role="dialog"
                 aria-modal="true"
                 aria-label="New poll"
@@ -4321,7 +4365,7 @@ export function CreateQuestionContent() {
                     )}
                   </button>
                 </div>
-                <div ref={setSheetScrollerRef} className="min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-6 space-y-[14.4px]">
+                <div ref={setSheetScrollerRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-6 space-y-[14.4px]">
                   {formSections}
                   {errorBlock}
                 </div>
