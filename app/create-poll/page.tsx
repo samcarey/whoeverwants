@@ -1586,7 +1586,7 @@ export function CreateQuestionContent() {
       // the list glued to the box even while the container's state-driven
       // top/height lag the live viewport during the iOS keyboard animation.
       const containerH = cr.height;
-      const gap = 8; // gap between the box and the overlay
+      const gap = 2; // gap between the box and the overlay
       const margin = 12; // breathing room at the viewport edge
       const boxTop = r.top - cr.top; // box top in container coords
       const boxBottom = r.bottom - cr.top;
