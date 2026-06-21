@@ -1641,16 +1641,23 @@ export function CreateQuestionContent() {
     // (behind the keyboard) — the suggestions list (correctly anchored above the
     // box) then fills the whole visible sheet and the box itself is hidden, which
     // reads as "the list covers the box" (confirmed on-device: box.top 374 with
-    // a 361px visible viewport). Scrolling the compose scroller so the box's
-    // bottom sits just above the keyboard top brings it back into view (and the
-    // overlay re-anchors above the now-visible box). Only acts when the box is
-    // below the fold, so it never fights a deliberate scroll-up to review bubbles.
+    // a 361px visible viewport). Compute an ABSOLUTE target scrollTop that puts
+    // the box's bottom just above the keyboard and SET it (idempotent) — an
+    // incremental `scrollTop += delta` over-scrolls when the timers + viewport
+    // events fire faster than layout reflows (each reads the same stale delta),
+    // bouncing the box around. Only acts when the box is below the fold, so it
+    // never fights a deliberate scroll-up to review the staged bubbles.
     const pinBoxAboveKeyboard = () => {
       const sc = composeScrollNodeRef.current;
       const box = searchInputRef.current;
       if (!sc || !box) return;
-      const below = box.getBoundingClientRect().bottom - sc.getBoundingClientRect().bottom;
-      if (below > 1) sc.scrollTop += below + 4; // +4: a little gap above the keyboard
+      const sRect = sc.getBoundingClientRect();
+      const bRect = box.getBoundingClientRect();
+      if (bRect.bottom <= sRect.bottom - 1) return; // already visible above the keyboard
+      const boxTopInContent = bRect.top - sRect.top + sc.scrollTop;
+      const target = boxTopInContent + bRect.height - sc.clientHeight + 4; // +4: gap above keyboard
+      const clamped = Math.max(0, Math.min(target, sc.scrollHeight - sc.clientHeight));
+      if (Math.abs(sc.scrollTop - clamped) > 1) sc.scrollTop = clamped;
     };
     // Re-measure + re-pin on viewport / scroll changes. iOS throttles rAF during
     // the keyboard rise, but visualViewport resize/scroll fire reliably at every
