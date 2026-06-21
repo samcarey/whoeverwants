@@ -1658,6 +1658,37 @@ export function CreateQuestionContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchFocused, searchFocusNonce, composeSpacerHeight, modalViewportH, modalViewportTop]);
 
+  // TEMP DIAGNOSTIC (remove after the iOS overlap bug is pinned): while the box
+  // is focused, sample the ACTUAL rendered geometry every 250ms and forward it
+  // via console.warn (the client-log forwarder ships warn on dev hosts). Reveals
+  // where the overlay actually renders vs the box on a real device — see the
+  // "[SUGGEST-DIAG]" entries at /api/client-logs?search=SUGGEST-DIAG.
+  useEffect(() => {
+    if (!searchFocused) return;
+    const id = window.setInterval(() => {
+      const ov = document.querySelector<HTMLElement>('div[style*="clip-path"]');
+      const inp = searchInputRef.current;
+      const cont = modalContainerRef.current;
+      const vp = window.visualViewport;
+      const b = inp?.getBoundingClientRect();
+      const o = ov?.getBoundingClientRect();
+      const c = cont?.getBoundingClientRect();
+      console.warn('[SUGGEST-DIAG]', JSON.stringify({
+        win: Math.round(window.innerHeight),
+        vvH: vp ? Math.round(vp.height) : null,
+        vvTop: vp ? Math.round(vp.offsetTop) : null,
+        scrollY: Math.round(window.scrollY),
+        cont: c ? { top: Math.round(c.top), h: Math.round(c.height) } : null,
+        box: b ? { top: Math.round(b.top), bottom: Math.round(b.bottom) } : null,
+        ovRect: o ? { top: Math.round(o.top), bottom: Math.round(o.bottom) } : null,
+        ovStyle: ov ? (ov.getAttribute('style') || '').replace(/clip-path[^;]*;?|transition[^;]*;?/g, '').trim() : null,
+        covers: (o && b) ? (o.bottom > b.top && o.top < b.bottom) : null,
+      }));
+    }, 250);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchFocused, searchFocusNonce]);
+
   // Grow-from-zero reveal: when the list first appears (`showDropdown` true) it
   // mounts clipped to a zero-height sliver at its bottom edge; flip `grown` true
   // a frame later so the clip-path transition animates it expanding upward to
