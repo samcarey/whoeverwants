@@ -1635,9 +1635,25 @@ export function CreateQuestionContent() {
     };
     tick();
 
+    // ALSO re-measure on viewport / scroll changes. iOS THROTTLES (or pauses)
+    // requestAnimationFrame during the soft-keyboard rise, so the rAF loop above
+    // can stop converging mid-animation and leave the overlay anchored to where
+    // the box WAS — covering the box once it settles higher (the reported "with
+    // 4 questions, the list covers the box" bug). visualViewport resize/scroll
+    // fire reliably at every keyboard frame, so measuring on them guarantees the
+    // overlay re-anchors to the box's final position even if rAF stalls.
+    const vp = typeof window !== 'undefined' ? window.visualViewport : null;
+    const scroller = composeScrollNodeRef.current;
+    vp?.addEventListener('resize', measure);
+    vp?.addEventListener('scroll', measure);
+    scroller?.addEventListener('scroll', measure, { passive: true });
+
     return () => {
       stopped = true;
       cancelAnimationFrame(rafId);
+      vp?.removeEventListener('resize', measure);
+      vp?.removeEventListener('scroll', measure);
+      scroller?.removeEventListener('scroll', measure);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchFocused, searchFocusNonce, composeSpacerHeight, modalViewportH, modalViewportTop]);
