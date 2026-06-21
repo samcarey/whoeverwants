@@ -3574,7 +3574,7 @@ export function CreateQuestionContent() {
           maxHeight: dropdownStyle.maxHeight,
           clipPath: dropdownClip,
           WebkitClipPath: dropdownClip,
-          transition: 'clip-path 300ms ease-out, -webkit-clip-path 300ms ease-out',
+          transition: 'clip-path 210ms ease-out, -webkit-clip-path 210ms ease-out',
         }}
       >
         {/* Drop UP: mt-auto bottom-anchors so the best match (last row) sits
