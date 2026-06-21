@@ -940,10 +940,16 @@ export function CreateQuestionContent() {
     top?: number;
     bottom?: number;
   } | null>(null);
-  // Gate for actually SHOWING the drop-up: stays false while the sheet slides
-  // up and the keyboard rises (the box is still moving), flips true once the
-  // box position settles — so the list never appears lagging behind the box.
+  // Gate for SHOWING the drop-up: flips true as soon as the box has a measured
+  // position (effectively the first frame after focus). The list then appears
+  // INSTANTLY but renders zero-height (clipped) and grows upward to full height
+  // via `dropdownGrown` below — synced to the iOS keyboard rise.
   const [showDropdown, setShowDropdown] = useState(false);
+  // Drives the grow-from-zero reveal: false on appear (clip-path collapses the
+  // list to a zero-height sliver at its bottom edge, just above the box), then
+  // flipped true a frame later so the clip-path transition animates the list
+  // growing upward to full height as the keyboard raises.
+  const [dropdownGrown, setDropdownGrown] = useState(false);
   // Bumped on every tap/focus of the box so the settle effect re-runs even when
   // searchFocused doesn't transition (iOS can keep an input "focused" after the
   // keyboard's Done button, so a re-tap fires no fresh focus event — the nonce
@@ -1559,26 +1565,16 @@ export function CreateQuestionContent() {
       setShowDropdown(false);
       return;
     }
-    const vp = typeof window !== 'undefined' ? window.visualViewport : null;
-    const scroller = composeScrollNodeRef.current;
     let rafId = 0;
     let stopped = false;
-    let lastTop: number | null = null;
     let lastStyleKey = '';
-    // `effectStart` is fixed for this focus — the floor that outlasts the
-    // slide-up's static start frames so the list doesn't REVEAL at the box's
-    // off-screen start position. `lastMoveAt` is a rolling settle clock. The
-    // list only REVEALS once the floor has passed AND the box has been quiet for
-    // SETTLE_MS. But the loop keeps RE-MEASURING + repositioning every frame for
-    // the whole focus, so once shown the list stays GLUED to the box — on iOS
-    // the box gets scrolled/adjusted AFTER the keyboard settles, and a
-    // measure-once approach left the (container-anchored) list behind, covering
-    // the box. Continuous tracking can't diverge.
-    const effectStart = Date.now();
-    let lastMoveAt = Date.now();
+    // The list reveals IMMEDIATELY on focus (no settle gate) and grows from zero
+    // height upward via clip-path (see render) — synced to the keyboard rise.
+    // The rAF loop keeps RE-MEASURING + repositioning every frame for the whole
+    // focus, so the list's BOTTOM stays GLUED just above the box even while the
+    // box is still moving (sheet slide-up + keyboard rise); only the reveal
+    // animates. Continuous tracking can't diverge from the box.
     let revealed = false;
-    const FLOOR_MS = 360; // outlast the slide-up static-start frames
-    const SETTLE_MS = 160; // quiet window before first reveal
 
     const measure = () => {
       const r = searchPillRef.current?.getBoundingClientRect();
@@ -1622,12 +1618,8 @@ export function CreateQuestionContent() {
         lastStyleKey = key;
         setDropdownStyle(style);
       }
-      if (lastTop === null || Math.abs(boxTop - lastTop) >= 1) {
-        lastMoveAt = Date.now();
-      }
-      lastTop = boxTop;
-      const now = Date.now();
-      if (!revealed && now - effectStart >= FLOOR_MS && now - lastMoveAt >= SETTLE_MS) {
+      // Reveal as soon as we have a valid position (the first frame).
+      if (!revealed) {
         revealed = true;
         setShowDropdown(true);
       }
@@ -1643,25 +1635,33 @@ export function CreateQuestionContent() {
     };
     tick();
 
-    // A viewport/scroll event that doesn't shift the box rect still means
-    // "things are moving" — push the settle clock so the FIRST reveal waits for
-    // quiet. After reveal the continuous loop already keeps the list glued, so
-    // this only matters pre-reveal.
-    const onMove = () => {
-      if (!revealed) lastMoveAt = Date.now();
-    };
-    vp?.addEventListener('resize', onMove);
-    vp?.addEventListener('scroll', onMove);
-    scroller?.addEventListener('scroll', onMove, { passive: true });
     return () => {
       stopped = true;
       cancelAnimationFrame(rafId);
-      vp?.removeEventListener('resize', onMove);
-      vp?.removeEventListener('scroll', onMove);
-      scroller?.removeEventListener('scroll', onMove);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchFocused, searchFocusNonce, composeSpacerHeight, modalViewportH, modalViewportTop]);
+
+  // Grow-from-zero reveal: when the list first appears (`showDropdown` true) it
+  // mounts clipped to a zero-height sliver at its bottom edge; flip `grown` true
+  // a frame later so the clip-path transition animates it expanding upward to
+  // full height — landing in step with the iOS keyboard rise. The double rAF
+  // guarantees the browser paints the clipped state before the transition runs
+  // (a single rAF can batch with the mount commit and skip the animation).
+  useEffect(() => {
+    if (!showDropdown) {
+      setDropdownGrown(false);
+      return;
+    }
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setDropdownGrown(true));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [showDropdown]);
 
   // Pick a poll suggestion from the focused picker → STAGE it as a draft bubble
   // (no modal). On /explore only one (yes/no) question is allowed, so a new
@@ -3549,6 +3549,19 @@ export function CreateQuestionContent() {
   // overflow clip and can extend up over the page's top bar. Positioned via
   // dropdownStyle (computed from the box's rect): bottom = just above the box,
   // maxHeight = the room above it up to the top.
+  //
+  // The grow-from-zero reveal is a clip-path inset transition: the element
+  // renders at its FULL layout size immediately (so the bottom edge sits
+  // correctly just above the box) but its paint is clipped to a zero-height
+  // sliver at the anchored edge, then the clip animates open. Drop UP clips from
+  // the TOP so it reveals UPWARD from the bottom (just above the box); drop DOWN
+  // clips from the BOTTOM so it reveals downward from the top. `round 1rem`
+  // tracks rounded-2xl so the corners stay clipped to the rounded box. clip-path
+  // (unlike scaleY) doesn't distort the row contents, and (unlike height) needs
+  // no content measurement.
+  const dropdownClip = !dropdownGrown
+    ? (dropdownStyle?.dropUp ? 'inset(100% 0 0 0 round 1rem)' : 'inset(0 0 100% 0 round 1rem)')
+    : 'inset(0 0 0 0 round 1rem)';
   const searchDropdownOverlay =
     searchFocused && showDropdown && searchDropdownRows.length > 0 && dropdownStyle ? (
       <div
@@ -3559,6 +3572,9 @@ export function CreateQuestionContent() {
           top: dropdownStyle.top,
           bottom: dropdownStyle.bottom,
           maxHeight: dropdownStyle.maxHeight,
+          clipPath: dropdownClip,
+          WebkitClipPath: dropdownClip,
+          transition: 'clip-path 300ms ease-out, -webkit-clip-path 300ms ease-out',
         }}
       >
         {/* Drop UP: mt-auto bottom-anchors so the best match (last row) sits
