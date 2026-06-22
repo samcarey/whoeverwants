@@ -794,7 +794,11 @@ export function CreateQuestionContent() {
     [setSheetScrollerRef],
   );
 
-  // Track the visual viewport (size the sheet above the keyboard).
+  // Track the visual viewport to size the SHEET above the keyboard. The search
+  // suggestion overlay does its OWN visualViewport tracking inside
+  // KeyboardSuggestionPicker — that's intentional, not redundant: this sizes the
+  // sheet container (modalViewportH/Top drive its top/height), while the picker
+  // pins itself just above the keyboard. Two separate geometries, two trackers.
   useEffect(() => {
     if (!isModalOpen) {
       setModalViewportH(null);
