@@ -17,6 +17,7 @@ import {
 import type { Poll, OptionsMetadata, Question } from "@/lib/types";
 import TypeFieldInput, { BUILT_IN_TYPES, FOR_FIELD_PLACEHOLDERS, getBuiltInType, isAutocompleteCategory, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import ModalPortal from "@/components/ModalPortal";
+import KeyboardSuggestionPicker from "@/components/KeyboardSuggestionPicker";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import AccountGateModal from "@/components/AccountGateModal";
 import { useAppPrefetch } from "@/lib/prefetch";
@@ -123,11 +124,6 @@ function autoSizeDetailsTextarea(el: HTMLTextAreaElement) {
 // (~250-400ms) + the sheet's 300ms slide-up with margin; the user's first
 // touch/wheel AFTER the grace window disarms it, so it never fights a real scroll.
 const SHEET_SCROLL_PIN_MS = 1200;
-// The soft keyboard shrinks the visual viewport by far more than this; if the
-// visual-viewport height is within KEYBOARD_GAP_PX of the layout height the
-// keyboard is considered DOWN. Used to decide whether a search-box re-tap needs
-// the primer dance + when the deferred re-focus should fire.
-const KEYBOARD_GAP_PX = 100;
 // The disarm listeners (touchmove/wheel/keydown) are attached only AFTER this
 // grace delay. The SAME physical tap that opens the sheet replays a synthetic
 // touchstart+touchmove onto the freshly-mounted scroller (the picker unmounts +
@@ -552,12 +548,11 @@ export function CreateQuestionContent() {
   // Throwaway off-screen input used to keep the iOS soft keyboard open while
   // the real title input mounts (see primeKeyboard).
   const keyboardPrimerRef = useRef<HTMLInputElement | null>(null);
-  // Set when the search box is RE-TAPPED while the keyboard is down: we prime
-  // the keyboard from a top-anchored input (so iOS doesn't scroll the webview
-  // up to reveal the bottom-anchored box) and defer the real focus to the
-  // visualViewport listener, which transfers it with preventScroll once the
-  // keyboard has settled. Mirrors the FAB-open path for an already-mounted box.
-  const pendingSearchRefocusRef = useRef(false);
+  // Set when the search overlay opens (trigger tap / FAB open): we prime the
+  // keyboard synchronously in the tap, then the overlay's input callback ref
+  // (setSearchOverlayInputRef) transfers focus the moment it mounts. Same
+  // mechanism as shouldFocusTitleRef / setTitleInputRef.
+  const shouldFocusSearchRef = useRef(false);
   const removeKeyboardPrimer = useCallback(() => {
     const el = keyboardPrimerRef.current;
     if (el) {
@@ -610,6 +605,18 @@ export function CreateQuestionContent() {
     titleInputRef.current = node;
     if (node && shouldFocusTitleRef.current) {
       shouldFocusTitleRef.current = false;
+      node.focus({ preventScroll: true });
+      removeKeyboardPrimer();
+    }
+  }, [removeKeyboardPrimer]);
+  // Callback ref for the search overlay's input. The overlay is body-portalled
+  // and mounts on the same commit that flips searchFocused true, so focusing
+  // from here (after a synchronous primeKeyboard() in the opening tap) keeps the
+  // iOS keyboard up across the handoff. Mirrors setTitleInputRef.
+  const setSearchOverlayInputRef = useCallback((node: HTMLInputElement | null) => {
+    searchInputRef.current = node;
+    if (node && shouldFocusSearchRef.current) {
+      shouldFocusSearchRef.current = false;
       node.focus({ preventScroll: true });
       removeKeyboardPrimer();
     }
@@ -766,51 +773,30 @@ export function CreateQuestionContent() {
   // --- Compose-sheet geometry ----------------------------------------------
   // The compose sheet is a top-anchored, fixed-height sheet (sticky header at the
   // top, one native scroll container below holding the staged bubbles, the
-  // question box, and the "Details" bubble). It fills the screen with a small
-  // gap to the notch — like every other sheet — and rides the visual viewport so
-  // it stays above the soft keyboard. (No spacer / box-at-bottom geometry.)
-  const composeScrollNodeRef = useRef<HTMLDivElement | null>(null);
-  // The question box. Declared here (above the compose scroll ref that focuses
-  // it) so setComposeScrollRef can read it without a use-before-define.
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-
-  // The compose sheet's bottom edge rides the visual viewport bottom (= the
-  // keyboard top when the keyboard is up), and the box sits at the bottom of the
-  // scroll content (scrollTop 0) so it lands right above the keyboard. The
-  // suggestions drop UP above it; the poll settings sit below (scroll down to
-  // reveal). composeFocusedOpenRef gates auto-focusing the box on a FAB open
-  // (kept true across a StrictMode detach+reattach; reset on close + a timeout).
-  const composeFocusedOpenRef = useRef(false);
+  // question box trigger, and the "Details" bubble). It fills the screen with a
+  // small gap to the notch — like every other sheet. Focusing the box opens a
+  // body-portalled, keyboard-pinned overlay (KeyboardSuggestionPicker) that owns
+  // the live input + suggestion list; the sheet itself never needs to ride the
+  // keyboard or position the suggestions.
   // Visual-viewport rect the modal tracks (null = not yet measured → CSS
   // fallback). The sheet is sized to it so it stays above the soft keyboard.
   const [modalViewportH, setModalViewportH] = useState<number | null>(null);
   const [modalViewportTop, setModalViewportTop] = useState(0);
 
-  // Callback ref (NOT useMeasuredHeight) because the element mounts inside
-  // <ModalPortal>'s deferred commit — a useLayoutEffect([]) would run with a
-  // null ref and never reattach (the documented early-return pitfall). It pins
-  // scrollTop to 0 (top-anchored) via setSheetScrollerRef and, on a FAB open,
-  // focuses the box (refs attach child-first, so the input is already attached
-  // by the time this fires; the flag survives the StrictMode remount).
+  // Pins the compose scroll container to scrollTop 0 (top-anchored) via
+  // setSheetScrollerRef. (Callback ref, not useMeasuredHeight: the element
+  // mounts inside <ModalPortal>'s deferred commit, where a useLayoutEffect([])
+  // would run with a null ref and never reattach.)
   const setComposeScrollRef = useCallback(
     (node: HTMLDivElement | null) => {
-      composeScrollNodeRef.current = node;
       setSheetScrollerRef(node);
-      if (!node) return;
-      if (composeFocusedOpenRef.current) {
-        searchInputRef.current?.focus({ preventScroll: true });
-        removeKeyboardPrimer();
-      }
     },
-    [setSheetScrollerRef, removeKeyboardPrimer],
+    [setSheetScrollerRef],
   );
 
-  // Track the visual viewport (size the sheet above the keyboard) + reset the
-  // focus flag on close.
+  // Track the visual viewport (size the sheet above the keyboard).
   useEffect(() => {
     if (!isModalOpen) {
-      composeFocusedOpenRef.current = false;
-      pendingSearchRefocusRef.current = false;
       setModalViewportH(null);
       setModalViewportTop(0);
       return;
@@ -820,14 +806,6 @@ export function CreateQuestionContent() {
       const vh = vv ? vv.height : window.innerHeight;
       setModalViewportH(vh);
       setModalViewportTop(vv ? vv.offsetTop : 0);
-      // A re-tap primed the keyboard and deferred the box focus to here: now
-      // that the keyboard is up (vh shrank) the box sits above it, so focus it
-      // with preventScroll — iOS won't scroll the webview, so nothing lurches.
-      if (pendingSearchRefocusRef.current && vh < window.innerHeight - KEYBOARD_GAP_PX) {
-        pendingSearchRefocusRef.current = false;
-        searchInputRef.current?.focus({ preventScroll: true });
-        removeKeyboardPrimer();
-      }
     };
     onResize();
     vv?.addEventListener("resize", onResize);
@@ -838,7 +816,7 @@ export function CreateQuestionContent() {
       vv?.removeEventListener("scroll", onResize);
       window.removeEventListener("resize", onResize);
     };
-  }, [isModalOpen, removeKeyboardPrimer]);
+  }, [isModalOpen]);
 
   // The QUESTION form section (category / options / time / per-question
   // settings) shows in 'create' + 'question' edit modes — the modes where the
@@ -861,13 +839,16 @@ export function CreateQuestionContent() {
   const [pendingSearchAction, setPendingSearchAction] = useState<(() => void) | null>(null);
 
   // --- Poll-creation search box (lives inside the New Poll sheet) --------
-  // `searchFocused` = the box is focused, so its suggestions dropdown is shown
-  // directly below it (see `searchBox`). The box renders at the bottom of the
-  // sheet body (staged bubbles above it); focusing it just drops the dropdown,
-  // no page-rise/scrim (the sheet is already a focused overlay).
-  // `searchQuery` filters the category rows.
+  // `searchFocused` = the keyboard-pinned search OVERLAY is open. In the sheet
+  // body the box is just a trigger button (see `searchBox`); tapping it opens a
+  // body-portalled KeyboardSuggestionPicker (`searchOverlay`) whose input bar
+  // sits flush above the keyboard with the suggestion list stacked above it —
+  // so the list can never overlap the box, no matter how many drafts are staged.
+  // `searchQuery` filters the category rows; cleared when the overlay closes.
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // The live <input> inside the search overlay (assigned by setSearchOverlayInputRef).
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   // On-device embedding category hint (augment, never block): a confident result
   // ADDS a category suggestion when the keyword matcher misses (slang/typos). Fed
   // into planPollSuggestions; null = no-op. Dev/canary only + fully fail-safe.
@@ -884,43 +865,6 @@ export function CreateQuestionContent() {
   // or null when the on-device model hasn't scored them (empty query / loading /
   // unavailable) → the box falls back to server order + token filtering.
   const [aiScores, setAiScores] = useState<number[] | null>(null);
-  // The create-poll box is a real <input> inside the New Poll sheet body.
-  // Focusing it renders the suggestions as a dropdown directly below the pill;
-  // `searchPillRef` anchors that dropdown and its max height is computed so it
-  // ends just above the soft keyboard.
-  const searchPillRef = useRef<HTMLDivElement | null>(null);
-  // The modal container the suggestion overlay is positioned inside (position:
-  // absolute). We measure the box relative to THIS element's live rect — not the
-  // visual viewport — because the container's top/height come from React state
-  // (modalViewportTop/H) that lags the live visualViewport during the iOS
-  // keyboard animation; positioning off the live viewport then mismaps the list
-  // onto the box.
-  const modalContainerRef = useRef<HTMLDivElement | null>(null);
-  // Geometry of the drop-up suggestions overlay (positioned at the modal-
-  // container level). Computed from the box's rect; null until measured.
-  // `dropUp` true → the list sits ABOVE the box (anchored by `bottom`); false →
-  // BELOW it (anchored by `top`). Direction is chosen per-measure from whichever
-  // side of the box has more room in the visible viewport — on iOS the keyboard
-  // shrinks the viewport and scrolls the box to the top, leaving no room above,
-  // so the list must drop DOWN into the space between the box and the keyboard.
-  const [dropdownStyle, setDropdownStyle] = useState<{
-    left: number;
-    width: number;
-    maxHeight: number;
-    dropUp: boolean;
-    top?: number;
-    bottom?: number;
-  } | null>(null);
-  // Gate for actually SHOWING the drop-up: stays false while the sheet slides
-  // up and the keyboard rises (the box is still moving), flips true once the
-  // box position settles — so the list never appears lagging behind the box.
-  const [showDropdown, setShowDropdown] = useState(false);
-  // Bumped on every tap/focus of the box so the settle effect re-runs even when
-  // searchFocused doesn't transition (iOS can keep an input "focused" after the
-  // keyboard's Done button, so a re-tap fires no fresh focus event — the nonce
-  // re-arms the show-gate regardless).
-  const [searchFocusNonce, setSearchFocusNonce] = useState(0);
-
   // A ranked_choice question is a "suggestion poll" when the creator left the
   // "Collect Suggestions before Vote" toggle on — regardless of whether they
   // typed any initial options. Drives the poll-level prephase fields.
@@ -1427,13 +1371,14 @@ export function CreateQuestionContent() {
     }
     setError(null);
     setSendError(null);
-    // Open with the question box focused + the iOS keyboard up. primeKeyboard()
-    // must run synchronously in this tap (the input mounts a commit later); the
-    // compose scroll ref then focuses the box + removes the primer. The flag is
-    // reset after the open settles (it stays set across the StrictMode remount).
-    composeFocusedOpenRef.current = true;
+    // Open straight into the keyboard-pinned search overlay (box focused, iOS
+    // keyboard up). primeKeyboard() must run synchronously in this tap (the
+    // overlay input mounts a commit later); setSearchOverlayInputRef then
+    // transfers focus + removes the primer the moment it attaches.
     primeKeyboard();
-    window.setTimeout(() => { composeFocusedOpenRef.current = false; }, 1500);
+    shouldFocusSearchRef.current = true;
+    setSearchFocused(true);
+    setSearchQuery("");
     // Seed the viewport so the first paint already sizes the sheet to ride above
     // where the keyboard lands; the vv listener corrects it.
     if (typeof window !== "undefined") {
@@ -1503,132 +1448,6 @@ export function CreateQuestionContent() {
     setSearchQuery("");
     dismissSoftKeyboard();
   }, [dismissSoftKeyboard]);
-
-  // While the box is focused, position the DROP-UP suggestions overlay from the
-  // box's live rect (it sits just above the box and extends up over the page top
-  // bar — it's a modal-container child, not clipped by the sheet) AND decide
-  // WHEN to reveal it.
-  //
-  // The box moves twice on open: the sheet slides up (~300ms transform) and the
-  // iOS keyboard rises (visualViewport shrinks over ~300ms), both shifting the
-  // box's viewport position. Showing the list mid-animation makes its bottom lag
-  // behind the box. So we keep re-measuring the position but only flip
-  // `showDropdown` true once the box has held still for a few frames (past a min
-  // delay that outlasts the slide-up). Every visualViewport/scroll change
-  // re-hides the list and re-arms the settle, so it stays hidden through the
-  // whole rise and appears, correctly placed, only once everything has stopped.
-  //
-  // Re-runs on `searchFocusNonce` too (bumped on every tap of the box): iOS can
-  // keep an input "focused" after the keyboard's Done button, so a re-tap fires
-  // no fresh focus event — the nonce re-arms this so the list reappears.
-  useEffect(() => {
-    if (!searchFocused) {
-      setShowDropdown(false);
-      return;
-    }
-    const vp = typeof window !== 'undefined' ? window.visualViewport : null;
-    const scroller = composeScrollNodeRef.current;
-    let rafId = 0;
-    let stopped = false;
-    let lastTop: number | null = null;
-    let lastStyleKey = '';
-    // `effectStart` is fixed for this focus — the floor that outlasts the
-    // slide-up's static start frames so the list doesn't REVEAL at the box's
-    // off-screen start position. `lastMoveAt` is a rolling settle clock. The
-    // list only REVEALS once the floor has passed AND the box has been quiet for
-    // SETTLE_MS. But the loop keeps RE-MEASURING + repositioning every frame for
-    // the whole focus, so once shown the list stays GLUED to the box — on iOS
-    // the box gets scrolled/adjusted AFTER the keyboard settles, and a
-    // measure-once approach left the (container-anchored) list behind, covering
-    // the box. Continuous tracking can't diverge.
-    const effectStart = Date.now();
-    let lastMoveAt = Date.now();
-    let revealed = false;
-    const FLOOR_MS = 360; // outlast the slide-up static-start frames
-    const SETTLE_MS = 160; // quiet window before first reveal
-
-    const measure = () => {
-      const r = searchPillRef.current?.getBoundingClientRect();
-      const cr = modalContainerRef.current?.getBoundingClientRect();
-      if (!r || !cr) return;
-      // Position relative to the container's ACTUAL rendered rect (not the live
-      // visual viewport): the list is absolute inside the container, so its
-      // top/bottom must be in the container's coordinate space. Using cr keeps
-      // the list glued to the box even while the container's state-driven
-      // top/height lag the live viewport during the iOS keyboard animation.
-      const containerH = cr.height;
-      const gap = 8; // gap between the box and the overlay
-      const margin = 12; // breathing room at the viewport edge
-      const boxTop = r.top - cr.top; // box top in container coords
-      const boxBottom = r.bottom - cr.top;
-      const roomAbove = boxTop; // space above the box within the container
-      const roomBelow = containerH - boxBottom; // space below the box
-      // Drop UP only when there's genuinely more room above; otherwise DOWN.
-      // (iOS scrolls the focused box to the top, so roomAbove collapses and we
-      // drop into the large gap between the box and the keyboard below.)
-      const dropUp = roomAbove >= roomBelow;
-      const style = dropUp
-        ? {
-            left: r.left,
-            width: r.width,
-            dropUp: true,
-            bottom: containerH - boxTop + gap,
-            maxHeight: Math.max(120, roomAbove - margin - gap),
-          }
-        : {
-            left: r.left,
-            width: r.width,
-            dropUp: false,
-            top: Math.max(margin, boxBottom + gap),
-            maxHeight: Math.max(120, roomBelow - margin - gap),
-          };
-      // Only re-render when the position actually changes (the loop runs every
-      // frame; an unchanged box must not churn React).
-      const key = `${style.dropUp}:${Math.round(style.top ?? -1)}:${Math.round(style.bottom ?? -1)}:${Math.round(style.maxHeight)}:${Math.round(style.left)}:${Math.round(style.width)}`;
-      if (key !== lastStyleKey) {
-        lastStyleKey = key;
-        setDropdownStyle(style);
-      }
-      if (lastTop === null || Math.abs(boxTop - lastTop) >= 1) {
-        lastMoveAt = Date.now();
-      }
-      lastTop = boxTop;
-      const now = Date.now();
-      if (!revealed && now - effectStart >= FLOOR_MS && now - lastMoveAt >= SETTLE_MS) {
-        revealed = true;
-        setShowDropdown(true);
-      }
-    };
-
-    // Run for the whole focus so the list tracks the box continuously (the
-    // per-frame cost is a getBoundingClientRect + compare; setState only fires
-    // on real movement via the key guard).
-    const tick = () => {
-      if (stopped) return;
-      measure();
-      rafId = requestAnimationFrame(tick);
-    };
-    tick();
-
-    // A viewport/scroll event that doesn't shift the box rect still means
-    // "things are moving" — push the settle clock so the FIRST reveal waits for
-    // quiet. After reveal the continuous loop already keeps the list glued, so
-    // this only matters pre-reveal.
-    const onMove = () => {
-      if (!revealed) lastMoveAt = Date.now();
-    };
-    vp?.addEventListener('resize', onMove);
-    vp?.addEventListener('scroll', onMove);
-    scroller?.addEventListener('scroll', onMove, { passive: true });
-    return () => {
-      stopped = true;
-      cancelAnimationFrame(rafId);
-      vp?.removeEventListener('resize', onMove);
-      vp?.removeEventListener('scroll', onMove);
-      scroller?.removeEventListener('scroll', onMove);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchFocused, searchFocusNonce, modalViewportH, modalViewportTop]);
 
   // Pick a poll suggestion from the focused picker → STAGE it as a draft bubble
   // (no modal). On /explore only one (yes/no) question is allowed, so a new
@@ -3343,16 +3162,13 @@ export function CreateQuestionContent() {
   const SEARCH_ROW_CLASS =
     "w-full flex items-center gap-[11.2px] pl-[14px] pr-5 py-1.5 text-left active:bg-gray-100 dark:active:bg-gray-800 disabled:opacity-50";
 
-  // Keep the best match NEAREST the box regardless of drop direction:
-  //  - drop UP   → list is above the box, best match at the BOTTOM (nearest) →
-  //                natural order (searchSuggestions is best-LAST) + `mt-auto`.
-  //  - drop DOWN → list is below the box, best match at the TOP (nearest) →
-  //                reversed order, top-anchored.
-  // Built only while focused (the list is hidden otherwise): this component is
-  // layout-level + persistent, so it re-renders on many unrelated events.
-  const dropdownDropsUp = dropdownStyle?.dropUp ?? true;
+  // The list always sits ABOVE the input bar (KeyboardSuggestionPicker
+  // bottom-anchors via `mt-auto`), so render in NATURAL order — searchSuggestions
+  // is best-LAST, putting the best match nearest the bar. Built only while
+  // focused (the overlay is unmounted otherwise): this component is layout-level
+  // + persistent, so it re-renders on many unrelated events.
   const searchDropdownRows = (
-    !searchFocused ? [] : dropdownDropsUp ? searchSuggestions : [...searchSuggestions].reverse()
+    !searchFocused ? [] : searchSuggestions
   ).map((s) => {
     // Rows with an annotation label reserve `pt-3` above BOTH the icon and the
     // text so the label has room AND the two stay vertically centered.
@@ -3478,95 +3294,90 @@ export function CreateQuestionContent() {
     </button>
   ) : null;
 
+  const searchPlaceholder = drafts.length > 0 && !isExplore ? "Ask another question…" : "Ask a question…";
+
   // The poll-creation search box, rendered inside the New Poll sheet (compose
-  // mode): staged-question bubbles above, the text box below. The suggestions
-  // DROP-UP is rendered separately at the modal-container level (so it isn't
-  // clipped by the sheet's scroll container / can sit over the page top bar) —
-  // see searchDropdownOverlay.
+  // mode): staged-question bubbles above, then a TRIGGER pill below. Tapping the
+  // trigger opens `searchOverlay` (a body-portalled, keyboard-pinned
+  // KeyboardSuggestionPicker) which owns the live <input> + suggestion list — so
+  // the input always sits flush above the keyboard and the list stacks above it
+  // (they're flex siblings → the list can never cover the box, regardless of how
+  // many drafts are staged). Mirrors AutocompleteInput's trigger+overlay model.
   const searchBox = (
     <>
       {draftStack}
-      <div ref={searchPillRef} className="relative py-2">
-        {/* The input pill — fills the sheet card width; `bg-white` so it
-            stands out against the gray sheet body. */}
-        <div className="flex items-center h-[42.24px] rounded-full bg-white dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4">
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            // On every tap, mark focused + bump the nonce so the settle effect
-            // re-arms even when iOS keeps the input "focused" after the keyboard's
-            // Done button and fires NO fresh focus event on re-tap. Setting
-            // searchFocused here (not just the nonce) is load-bearing: if onFocus
-            // never fires, searchFocused would stay false and the effect would
-            // bail — so the list would never reappear. (pointerdown precedes
-            // focus; redundant when focus does fire.)
-            onPointerDown={(e) => {
-              // Re-tapping the box while the keyboard is DOWN: focusing the
-              // bottom-anchored box natively makes iOS scroll the whole webview
-              // up to reveal it (offsetTop jumps → the page lurches). Match the
-              // FAB-open path: block the native focus, prime the keyboard from a
-              // top-anchored offscreen input (offsetTop stays 0 → only the sheet
-              // rides the keyboard), then transfer focus with preventScroll once
-              // the keyboard settles (in the visualViewport listener above).
-              const keyboardDown =
-                modalViewportH == null ||
-                modalViewportH > window.innerHeight - KEYBOARD_GAP_PX;
-              if (keyboardDown) {
-                e.preventDefault();
-                primeKeyboard();
-                pendingSearchRefocusRef.current = true;
-              }
-              setSearchFocused(true);
-              setSearchFocusNonce((n) => n + 1);
-            }}
-            onFocus={() => {
-              // The settle effect positions + reveals the suggestion overlay
-              // once the box stops moving (it drops up or down depending on
-              // which side of the box has room above the keyboard).
-              setSearchFocused(true);
-              setSearchFocusNonce((n) => n + 1);
-            }}
-            // Collapse on blur (closes the dropdown + dismisses the keyboard).
-            onBlur={() => setSearchFocused(false)}
-            disabled={isLoading}
-            placeholder={drafts.length > 0 && !isExplore ? "Ask another question…" : "Ask a question…"}
-            aria-label={drafts.length > 0 && !isExplore ? "Ask another question" : "Ask a question"}
-            enterKeyHint="search"
-            // `line-height: normal` keeps the iOS caret aligned with the text
-            // (a custom line-height splits the caret/text metrics).
-            style={{ lineHeight: 'normal' }}
-            className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
-          />
-        </div>
+      <div className="py-2">
+        <button
+          type="button"
+          onClick={() => {
+            // Prime synchronously in the tap (the overlay input mounts a commit
+            // later); setSearchOverlayInputRef transfers focus + drops the primer.
+            primeKeyboard();
+            shouldFocusSearchRef.current = true;
+            setSearchQuery("");
+            setSearchFocused(true);
+          }}
+          disabled={isLoading}
+          aria-label={searchPlaceholder}
+          className="w-full flex items-center h-[42.24px] rounded-full bg-white dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4 text-left disabled:opacity-50"
+        >
+          <span className="flex-1 min-w-0 truncate text-base text-gray-400 dark:text-gray-500">
+            {searchPlaceholder}
+          </span>
+        </button>
       </div>
     </>
   );
 
-  // The suggestions DROP-UP. Rendered at the modal-container level (a sibling of
-  // the sheet, NOT inside the scroll container) so it escapes the sheet's
-  // overflow clip and can extend up over the page's top bar. Positioned via
-  // dropdownStyle (computed from the box's rect): bottom = just above the box,
-  // maxHeight = the room above it up to the top.
-  const searchDropdownOverlay =
-    searchFocused && showDropdown && searchDropdownRows.length > 0 && dropdownStyle ? (
-      <div
-        className="absolute z-[55] flex flex-col overflow-y-auto overscroll-contain rounded-2xl border border-gray-300 dark:border-gray-700 bg-background shadow-2xl pointer-events-auto"
-        style={{
-          left: dropdownStyle.left,
-          width: dropdownStyle.width,
-          top: dropdownStyle.top,
-          bottom: dropdownStyle.bottom,
-          maxHeight: dropdownStyle.maxHeight,
-        }}
-      >
-        {/* Drop UP: mt-auto bottom-anchors so the best match (last row) sits
-            right above the box. Drop DOWN: top-anchored so the best match (now
-            the first, reversed row) sits right below the box. */}
-        <div className={dropdownStyle.dropUp ? "mt-auto py-1" : "py-1"}>{searchDropdownRows}</div>
-      </div>
-    ) : null;
+  // The keyboard-pinned search overlay (body-portalled, above the whole sheet at
+  // z-[85]). KeyboardSuggestionPicker pins itself to the visual viewport: the
+  // suggestion list fills the area above the keyboard, the input bar sits flush
+  // on top of it. This is the "move the box just above the keyboard" answer — no
+  // manual visual-viewport math, and list/input can't overlap (flex-col).
+  const searchOverlay = searchFocused
+    ? createPortal(
+        <KeyboardSuggestionPicker
+          focused
+          zClassName="z-[85]"
+          scrollSignal={searchSuggestions}
+          rows={searchDropdownRows}
+        >
+          <div className="flex items-center gap-2">
+            {/* ✕ closes the overlay back to the sheet. preventDefault on
+                mousedown keeps the input focused through the tap so onBlur
+                doesn't double-fire mid-close. */}
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={collapseSearchBox}
+              aria-label="Close search"
+              className="w-[42.24px] h-[42.24px] shrink-0 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 shadow-lg active:bg-gray-200 dark:active:bg-gray-700"
+            >
+              <svg className="w-5 h-5 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <div className="flex-1 min-w-0 flex items-center h-[42.24px] rounded-full bg-white dark:bg-gray-800 border-[0.5px] border-gray-500 dark:border-gray-400 px-4 shadow-lg">
+              <input
+                ref={setSearchOverlayInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onBlur={() => setSearchFocused(false)}
+                disabled={isLoading}
+                placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
+                enterKeyHint="search"
+                // `line-height: normal` keeps the iOS caret aligned with the text.
+                style={{ lineHeight: 'normal' }}
+                className="flex-1 min-w-0 bg-transparent outline-none text-base text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+              />
+            </div>
+          </div>
+        </KeyboardSuggestionPicker>,
+        document.body,
+      )
+    : null;
 
   // Two rendering paths:
   //  - GROUP surfaces (group root / empty placeholder, incl. their slide
@@ -4142,11 +3953,10 @@ export function CreateQuestionContent() {
             aria-hidden="true"
           />
           <div
-            ref={modalContainerRef}
             // Visual-viewport-tracked: the sheet rides the keyboard top. The
             // transparent regions are pointer-events-none so taps fall through
-            // to the stationary backdrop above (dismiss); the sheet + dropdown
-            // re-enable pointer events.
+            // to the stationary backdrop above (dismiss); the sheet re-enables
+            // pointer events.
             className="fixed left-0 w-full z-[60] flex items-end justify-center pointer-events-none"
             style={{
               top: `${modalViewportTop}px`,
@@ -4321,9 +4131,8 @@ export function CreateQuestionContent() {
               </div>
             )}
 
-            {/* Drop-up suggestions — a modal-container child so it escapes the
-                sheet's overflow clip and can sit over the page top bar. */}
-            {baseIsCompose && searchDropdownOverlay}
+            {/* Keyboard-pinned search overlay (body-portalled at z-[85]). */}
+            {baseIsCompose && searchOverlay}
           </div>
         </ModalPortal>
       )}
