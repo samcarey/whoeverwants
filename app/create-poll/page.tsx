@@ -140,6 +140,12 @@ const SHEET_SCROLL_PIN_GRACE_MS = 550;
 // `transition: transform 300ms` on the sub-panel). After sliding out, editMode
 // flips back to 'compose' so the sub-panel unmounts off-screen.
 const SUB_SLIDE_MS = 300;
+// Gap between the top of the screen and the top of every sheet — the safe-area
+// inset (notch / Dynamic Island) PLUS a small flat amount so there's always a
+// visible gap above the sheet (even on notchless devices). Every sheet height
+// is `viewport - SHEET_TOP_GAP`; the sub-panels fill the compose container, so
+// they inherit it.
+const SHEET_TOP_GAP = 'calc(env(safe-area-inset-top, 0px) + 1.25rem)';
 // The sub-panel's resting transition (state-driven slide in/out). The swipe
 // gesture restores this exact string imperatively after a drag, so the DOM
 // stays in sync with the JSX style prop by construction (single source).
@@ -3615,6 +3621,11 @@ export function CreateQuestionContent() {
   // sub-panels (which slide in OVER it); only the create-prefill flow shows the
   // full form as the base.
   const baseIsCompose = editMode?.type !== 'create';
+  // Every sheet is this tall (fixed height, small gap to the top — see
+  // SHEET_TOP_GAP). The sub-panels fill the compose container, so they match.
+  const sheetHeight = modalViewportH != null
+    ? `calc(${modalViewportH}px - ${SHEET_TOP_GAP})`
+    : `calc(100dvh - ${SHEET_TOP_GAP})`;
 
   const errorBlock = error ? (
     <div className="p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
@@ -4148,7 +4159,7 @@ export function CreateQuestionContent() {
                  it's slid off to the right. */
               <div
                 className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
-                style={{ height: modalViewportH != null ? `calc(${modalViewportH}px - env(safe-area-inset-top, 0px))` : 'calc(100dvh - env(safe-area-inset-top, 0px))' }}
+                style={{ height: sheetHeight }}
                 role="dialog"
                 aria-modal="true"
                 aria-label="New poll"
@@ -4263,7 +4274,7 @@ export function CreateQuestionContent() {
                  gap to the top), scrolls internally. */
               <div
                 className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
-                style={{ height: modalViewportH != null ? `calc(${modalViewportH}px - env(safe-area-inset-top, 0px))` : 'calc(100dvh - env(safe-area-inset-top, 0px))' }}
+                style={{ height: sheetHeight }}
                 role="dialog"
                 aria-modal="true"
                 aria-label="New poll"
