@@ -3617,6 +3617,9 @@ export function CreateQuestionContent() {
   // compose sheet, so they share the slide/swipe-back chrome and the
   // backdrop/Escape "tap = slide back" behavior.
   const isSubEdit = editMode?.type === 'question' || editMode?.type === 'details';
+  // Which sub-panel is showing (the two share the slide/swipe chrome; this
+  // drives the title / aria / body that differ between them).
+  const subPanelIsDetails = editMode?.type === 'details';
   // The base sheet shows compose (search box) for the FAB flow and for the
   // sub-panels (which slide in OVER it); only the create-prefill flow shows the
   // full form as the base.
@@ -4228,7 +4231,7 @@ export function CreateQuestionContent() {
                     }}
                     role="dialog"
                     aria-modal="true"
-                    aria-label={editMode?.type === 'details' ? 'Poll details' : 'Edit question'}
+                    aria-label={subPanelIsDetails ? 'Poll details' : 'Edit question'}
                     onTouchStart={handleSubPanelTouchStart}
                     onTouchMove={handleSubPanelTouchMove}
                     onTouchEnd={handleSubPanelTouchEnd}
@@ -4247,13 +4250,13 @@ export function CreateQuestionContent() {
                         </svg>
                       </button>
                       <span className="text-lg font-semibold select-none">
-                        {editMode?.type === 'details' ? 'Details' : 'Edit Question'}
+                        {subPanelIsDetails ? 'Details' : 'Edit Question'}
                       </span>
                       <button
                         type="button"
                         onClick={() => closeSubEdit(true)}
                         disabled={isLoading}
-                        aria-label={editMode?.type === 'details' ? 'Done' : 'Save changes'}
+                        aria-label={subPanelIsDetails ? 'Done' : 'Save changes'}
                         className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
@@ -4262,7 +4265,7 @@ export function CreateQuestionContent() {
                       </button>
                     </div>
                     <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-6 space-y-[14.4px]">
-                      {editMode?.type === 'details' ? pollSettingsSections : formSections}
+                      {subPanelIsDetails ? pollSettingsSections : formSections}
                       {errorBlock}
                     </div>
                   </div>
