@@ -148,17 +148,31 @@ export default function KeyboardSuggestionPicker({
   }, [focused]);
 
   return (
-    <div
-      ref={rootRef}
-      className={`fixed left-0 right-0 ${zClassName} flex flex-col`}
-      style={
-        focused
-          ? vv.height > 0
-            ? { top: vv.offsetTop, height: vv.height }
-            : { top: 0, bottom: 0 }
-          : { bottom: 0 }
-      }
-    >
+    <>
+      {/* Full-screen fill behind the picker. The root below is pinned to the
+          visual viewport (`top: vv.offsetTop; height: vv.height`), so the regions
+          OUTSIDE it — below the keyboard, the strip above `offsetTop`, and the
+          safe-area side insets — would otherwise show whatever's behind. This
+          covers the whole layout viewport in the picker's bg so nothing peeks
+          through. Same z (DOM-order-behind the root) + `pointer-events-none` so
+          it's purely visual and doesn't change any tap/dismiss behavior. */}
+      {focused && (
+        <div
+          className={`fixed inset-0 ${zClassName} bg-background pointer-events-none`}
+          aria-hidden="true"
+        />
+      )}
+      <div
+        ref={rootRef}
+        className={`fixed left-0 right-0 ${zClassName} flex flex-col`}
+        style={
+          focused
+            ? vv.height > 0
+              ? { top: vv.offsetTop, height: vv.height }
+              : { top: 0, bottom: 0 }
+            : { bottom: 0 }
+        }
+      >
       {focused && (
         <div
           ref={listRef}
@@ -184,6 +198,7 @@ export default function KeyboardSuggestionPicker({
       >
         {children}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
