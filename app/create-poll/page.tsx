@@ -160,6 +160,22 @@ const SUB_SWIPE_COMMIT_VELOCITY = 0.5; // px/ms
 const SUB_SWIPE_SNAP_BACK_MS = 220;
 const SUB_SWIPE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 
+// Swipe-down-to-dismiss on the new-poll sheet (native iOS sheet behavior). The
+// gesture engages ONLY when the sheet body is scrolled to the top AND the drag
+// is downward-dominant — so a mid-content downward drag still scrolls the body,
+// and you have to be at the top (or scroll there first + lift) before a pull
+// drags the whole sheet. Past 50% of the sheet height OR a downward flick
+// (≥0.5 px/ms) closes; otherwise it snaps back. Same imperative-transform
+// mechanics as the sub-panel swipe: per-frame transform driven via a ref (no
+// re-render), never preventDefault on touchmove (per CLAUDE.md: it permanently
+// kills iOS scroll for the touch sequence).
+const SHEET_SWIPE_RECOGNIZE_PX = 8;
+const SHEET_SWIPE_COMMIT_RATIO = 0.5;
+const SHEET_SWIPE_COMMIT_VELOCITY = 0.5; // px/ms
+const SHEET_SWIPE_CLOSE_MS = 250;
+const SHEET_SWIPE_SNAP_BACK_MS = 220;
+const SHEET_SWIPE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
+
 // Order matches the dropdown inside the modal so muscle memory carries over.
 // The leading "New" button (rendered separately at the start of the row)
 // is the catch-all that opens the modal with the default `custom` category;
@@ -649,8 +665,14 @@ export function CreateQuestionContent() {
   // fought. Doesn't reproduce in headless Chromium/WebKit — device-only, like
   // the other keyboard races.
   const sheetScrollPinCleanupRef = useRef<(() => void) | null>(null);
+  // The live scroll container, read by the swipe-down-to-dismiss gesture to
+  // decide whether the sheet body is at the top (gesture engages) or mid-scroll
+  // (let it scroll). Populated for both the compose scroller (via
+  // setComposeScrollRef → setSheetScrollerRef) and the create scroller.
+  const sheetScrollerNodeRef = useRef<HTMLDivElement | null>(null);
   const setSheetScrollerRef = useCallback((node: HTMLDivElement | null) => {
     sheetScrollPinCleanupRef.current?.();
+    sheetScrollerNodeRef.current = node;
     if (!node) return;
     node.scrollTop = 0;
     let raf = 0;
@@ -1627,6 +1649,132 @@ export function CreateQuestionContent() {
       }, SUB_SWIPE_SNAP_BACK_MS + 20);
     }
   }, []);
+
+  // Swipe-down-to-dismiss on the new-poll sheet (native iOS sheet behavior).
+  // The handlers are attached to the OUTER sheet div (both the compose and the
+  // create variants); the per-frame transform is applied imperatively to that
+  // same node (sheetRef) so the whole sheet — header, body, sub-panel — moves
+  // rigidly. The gesture engages only when the body is scrolled to the top AND
+  // the drag is downward-dominant, so a mid-content downward drag still scrolls
+  // the body. When a sub-panel (question editor / details) is open we bail —
+  // it owns its own swipe-back gesture (the sub-panel covers the compose sheet,
+  // and its touches bubble up to this handler).
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const sheetBackdropRef = useRef<HTMLDivElement | null>(null);
+  const sheetSwipeRef = useRef<{
+    startY: number;
+    startX: number;
+    startTime: number;
+    atTop: boolean;
+    swiping: boolean;
+    ignored: boolean;
+  } | null>(null);
+  // Synced via effects so the stable touch handlers can read current values
+  // without threading them through deps (mirrors closeSubEditRef).
+  const sheetIsSubEditRef = useRef(false);
+  const sheetConfirmDiscardRef = useRef(false);
+
+  const resetSheetTransform = useCallback((el: HTMLDivElement) => {
+    el.style.transition = "";
+    el.style.transform = "";
+  }, []);
+
+  const handleSheetTouchStart = useCallback((e: React.TouchEvent) => {
+    if (sheetIsSubEditRef.current || e.touches.length !== 1) {
+      sheetSwipeRef.current = null;
+      return;
+    }
+    const scroller = sheetScrollerNodeRef.current;
+    sheetSwipeRef.current = {
+      startY: e.touches[0].clientY,
+      startX: e.touches[0].clientX,
+      startTime: Date.now(),
+      atTop: !scroller || scroller.scrollTop <= 0,
+      swiping: false,
+      ignored: false,
+    };
+  }, []);
+
+  const handleSheetTouchMove = useCallback((e: React.TouchEvent) => {
+    const st = sheetSwipeRef.current;
+    if (!st || st.ignored) return;
+    if (e.touches.length !== 1) {
+      st.ignored = true;
+      return;
+    }
+    const dy = e.touches[0].clientY - st.startY;
+    const dx = e.touches[0].clientX - st.startX;
+    if (!st.swiping) {
+      if (Math.abs(dy) < SHEET_SWIPE_RECOGNIZE_PX && Math.abs(dx) < SHEET_SWIPE_RECOGNIZE_PX) return;
+      // Engage only for a downward, vertical-dominant drag that began at the
+      // top of the body. Anything else (upward, horizontal, or started
+      // mid-scroll) is left to the native scroll for this touch sequence.
+      if (!st.atTop || dy <= 0 || Math.abs(dy) <= Math.abs(dx)) {
+        st.ignored = true;
+        return;
+      }
+      st.swiping = true;
+    }
+    const el = sheetRef.current;
+    if (el) {
+      el.style.transition = "none";
+      el.style.transform = `translateY(${Math.max(0, dy)}px)`;
+    }
+  }, []);
+
+  const handleSheetTouchEnd = useCallback((e: React.TouchEvent) => {
+    const st = sheetSwipeRef.current;
+    sheetSwipeRef.current = null;
+    if (!st || !st.swiping || st.ignored) return;
+    const endY = e.changedTouches[0]?.clientY ?? st.startY;
+    const dy = Math.max(0, endY - st.startY);
+    const dt = Date.now() - st.startTime;
+    const velocity = (endY - st.startY) / Math.max(1, dt);
+    const el = sheetRef.current;
+    const height = el?.offsetHeight ?? window.innerHeight;
+    const shouldClose = dy >= height * SHEET_SWIPE_COMMIT_RATIO || velocity >= SHEET_SWIPE_COMMIT_VELOCITY;
+
+    const snapBack = () => {
+      if (!el) return;
+      el.style.transition = `transform ${SHEET_SWIPE_SNAP_BACK_MS}ms ${SHEET_SWIPE_EASING}`;
+      el.style.transform = "translateY(0)";
+      window.setTimeout(() => {
+        if (sheetRef.current === el) resetSheetTransform(el);
+      }, SHEET_SWIPE_SNAP_BACK_MS + 20);
+    };
+
+    if (!shouldClose) {
+      snapBack();
+      return;
+    }
+    // create-mode with typed content: native iOS keeps the sheet and asks to
+    // discard rather than silently dropping the draft (mirrors handleCloseClick).
+    if (sheetConfirmDiscardRef.current) {
+      snapBack();
+      setShowDiscardConfirm(true);
+      return;
+    }
+    // Slide the sheet the rest of the way down + fade the backdrop, then close.
+    if (el) {
+      el.style.transition = `transform ${SHEET_SWIPE_CLOSE_MS}ms ${SHEET_SWIPE_EASING}`;
+      el.style.transform = "translateY(100%)";
+    }
+    if (sheetBackdropRef.current) {
+      sheetBackdropRef.current.style.transition = `opacity ${SHEET_SWIPE_CLOSE_MS}ms ease`;
+      sheetBackdropRef.current.style.opacity = "0";
+    }
+    window.setTimeout(() => cancelModal(), SHEET_SWIPE_CLOSE_MS);
+  }, [cancelModal, resetSheetTransform]);
+
+  const sheetIsSubEdit = editMode?.type === 'question' || editMode?.type === 'details';
+  useEffect(() => {
+    sheetIsSubEditRef.current = sheetIsSubEdit;
+  }, [sheetIsSubEdit]);
+  const sheetConfirmDiscard =
+    editMode?.type === 'create' && (inlineFormHasContent() || drafts.length > 0);
+  useEffect(() => {
+    sheetConfirmDiscardRef.current = sheetConfirmDiscard;
+  }, [sheetConfirmDiscard]);
 
   // (The search box used to live inline on the group page and rise/dim the
   // page chrome on focus; now it lives inside the New Poll sheet — a focused
@@ -3952,6 +4100,7 @@ export function CreateQuestionContent() {
               in the sheet container's transparent areas fall through to it via
               the container's `pointer-events-none`). */}
           <div
+            ref={sheetBackdropRef}
             className="fixed inset-0 z-[59] bg-black/40 dark:bg-black/60 animate-fade-in"
             onClick={() => (isSubEdit ? closeSubEdit(false) : cancelModal())}
             aria-hidden="true"
@@ -3975,11 +4124,16 @@ export function CreateQuestionContent() {
                  `overflow-hidden` on the wrapper clips the editor sub-panel while
                  it's slid off to the right. */
               <div
+                ref={sheetRef}
                 className="relative w-full sm:max-w-md flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
                 style={{ height: sheetHeight }}
                 role="dialog"
                 aria-modal="true"
                 aria-label="New poll"
+                onTouchStart={handleSheetTouchStart}
+                onTouchMove={handleSheetTouchMove}
+                onTouchEnd={handleSheetTouchEnd}
+                onTouchCancel={handleSheetTouchEnd}
               >
                 <div
                   ref={setComposeScrollRef}
@@ -4090,11 +4244,16 @@ export function CreateQuestionContent() {
                  fixed full height (same as the compose sheet + sub-panels, small
                  gap to the top), scrolls internally. */
               <div
+                ref={sheetRef}
                 className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
                 style={{ height: sheetHeight }}
                 role="dialog"
                 aria-modal="true"
                 aria-label="New poll"
+                onTouchStart={handleSheetTouchStart}
+                onTouchMove={handleSheetTouchMove}
+                onTouchEnd={handleSheetTouchEnd}
+                onTouchCancel={handleSheetTouchEnd}
               >
                 <div className="shrink-0 relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
                   <button
@@ -4128,7 +4287,7 @@ export function CreateQuestionContent() {
                     )}
                   </button>
                 </div>
-                <div ref={setSheetScrollerRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-6 space-y-[14.4px]">
+                <div ref={setSheetScrollerRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-none px-3 pb-6 space-y-[14.4px]">
                   {formSections}
                   {errorBlock}
                 </div>
