@@ -1397,14 +1397,19 @@ export function CreateQuestionContent() {
     }
     setError(null);
     setSendError(null);
-    // Open straight into the keyboard-pinned search overlay (box focused, iOS
-    // keyboard up). primeKeyboard() must run synchronously in this tap (the
-    // overlay input mounts a commit later); setSearchOverlayInputRef then
-    // transfers focus + removes the primer the moment it attaches.
-    primeKeyboard();
-    shouldFocusSearchRef.current = true;
-    setSearchFocused(true);
     setSearchQuery("");
+    // With a question already staged, open the sheet WITHOUT auto-focusing the
+    // box / popping the keyboard — the user is reviewing the poll, not
+    // necessarily adding another. They tap the trigger pill to focus. With no
+    // drafts yet, open straight into the keyboard-pinned search overlay (box
+    // focused, iOS keyboard up): primeKeyboard() must run synchronously in this
+    // tap (the overlay input mounts a commit later); setSearchOverlayInputRef
+    // then transfers focus + removes the primer the moment it attaches.
+    if (drafts.length === 0) {
+      primeKeyboard();
+      shouldFocusSearchRef.current = true;
+      setSearchFocused(true);
+    }
     // Seed the viewport so the first paint already sizes the sheet to ride above
     // where the keyboard lands; the vv listener corrects it.
     if (typeof window !== "undefined") {
