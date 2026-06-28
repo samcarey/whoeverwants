@@ -1788,11 +1788,16 @@ export function CreateQuestionContent() {
     showDiscardConfirmRef.current = showDiscardConfirm;
   }, [showDiscardConfirm]);
 
-  // `position: fixed` on body (vs. `overflow: hidden`) is required to
-  // block iOS pull-to-refresh from bypassing the lock. The sheet (which hosts
-  // the search box) is the only thing that locks the page now — focusing the
-  // box inside it is covered by isModalOpen.
-  useBodyScrollLock(isModalOpen, false);
+  // `position: fixed` on body (vs. `overflow: hidden`) blocks the page from
+  // scrolling, but on iOS that ALONE does NOT stop the browser's native
+  // pull-to-refresh — a downward drag at the top still triggers a reload, which
+  // competes with the sheet's swipe-down-to-dismiss gesture (reported). The
+  // `overscroll-behavior: none` guard (default-on, set on <html>+<body> by the
+  // hook) is what actually disables PTR; every OTHER modal in the app already
+  // relies on it. preventDefault on touchmove is NOT an option here — React
+  // registers touch listeners as passive, so it'd be a no-op, and the CSS guard
+  // is the non-invasive fix that leaves the sheet's own internal scroll intact.
+  useBodyScrollLock(isModalOpen);
 
   // Escape: when the question editor sub-panel is open, slide it back
   // (discarding); otherwise close the sheet. Skip when the inner
