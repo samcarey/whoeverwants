@@ -3471,7 +3471,7 @@ export function CreateQuestionContent() {
       onClick={openDetailsEdit}
       disabled={isLoading}
       aria-label="Poll details"
-      className="w-full flex items-center justify-between rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 pl-4 pr-3 py-2.5 disabled:opacity-50"
+      className="w-full flex items-center justify-end gap-1 px-1 py-2.5 disabled:opacity-50"
     >
       <span className="text-base text-gray-700 dark:text-gray-300">Details</span>
       <svg className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
