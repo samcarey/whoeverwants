@@ -3783,17 +3783,59 @@ export function CreateQuestionContent() {
                         </span>
                       </button>
                     )}
-                    {title.trim() ? (
-                      <span
-                        className="text-xl font-bold leading-7 text-blue-600 dark:text-blue-400"
-                        style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
-                      >
-                        {title.trim()}
-                      </span>
+                    {category === 'yes_no' || category === 'limited_supply' ? (
+                      // yes_no / limited_supply edit their title via the Title row
+                      // in the card below; here it's just a greyed reflection.
+                      title.trim() ? (
+                        <span
+                          className="text-xl font-bold leading-7 text-gray-400 dark:text-gray-500"
+                          style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
+                        >
+                          {title.trim()}
+                        </span>
+                      ) : (
+                        <span className="text-[0.9375rem] leading-7 italic text-gray-500 dark:text-gray-400">
+                          {titlePreviewHint}
+                        </span>
+                      )
                     ) : (
-                      <span className="text-[0.9375rem] leading-7 italic text-gray-500 dark:text-gray-400">
-                        {titlePreviewHint}
-                      </span>
+                      // Auto-generated categories: the title is greyed out and
+                      // editable inline. Touching it switches off auto-titling;
+                      // the × clears the override and resets to auto-generated.
+                      <>
+                        <input
+                          type="text"
+                          value={title}
+                          onChange={(e) => {
+                            setTitle(e.target.value);
+                            setIsAutoTitle(false);
+                          }}
+                          onBlur={(e) => {
+                            const trimmed = e.target.value.trim();
+                            if (trimmed !== title) setTitle(trimmed);
+                          }}
+                          onKeyDown={enterAdvancesFocus}
+                          disabled={isLoading}
+                          maxLength={100}
+                          aria-label="Poll title"
+                          placeholder={titlePreviewHint}
+                          className="text-xl font-bold leading-7 text-gray-400 dark:text-gray-500 bg-transparent text-center focus:outline-none disabled:cursor-not-allowed placeholder:text-[0.9375rem] placeholder:font-normal placeholder:italic placeholder:text-gray-500 dark:placeholder:text-gray-400"
+                          style={{ fontFamily: "'M PLUS 1 Code', monospace", fieldSizing: 'content', maxWidth: '100%' } as unknown as React.CSSProperties}
+                        />
+                        {!isAutoTitle && (
+                          <button
+                            type="button"
+                            onClick={() => setIsAutoTitle(true)}
+                            disabled={isLoading}
+                            aria-label="Reset to auto-generated title"
+                            className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 active:scale-95 disabled:cursor-not-allowed"
+                          >
+                            <svg className="w-3 h-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+                              <path d="M5 5l10 10M15 5L5 15" />
+                            </svg>
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
 
