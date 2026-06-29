@@ -3819,7 +3819,7 @@ export function CreateQuestionContent() {
                           maxLength={100}
                           aria-label="Poll title"
                           placeholder={titlePreviewHint}
-                          className="text-xl font-bold leading-7 text-gray-400 dark:text-gray-500 bg-transparent text-center focus:outline-none disabled:cursor-not-allowed placeholder:text-[0.9375rem] placeholder:font-normal placeholder:italic placeholder:text-gray-500 dark:placeholder:text-gray-400"
+                          className={`text-xl font-bold leading-7 bg-transparent text-center focus:outline-none disabled:cursor-not-allowed placeholder:text-[0.9375rem] placeholder:font-normal placeholder:italic placeholder:text-gray-500 dark:placeholder:text-gray-400 ${isAutoTitle ? 'text-gray-400 dark:text-gray-500' : 'text-blue-600 dark:text-blue-400'}`}
                           style={{ fontFamily: "'M PLUS 1 Code', monospace", fieldSizing: 'content', maxWidth: '100%' } as unknown as React.CSSProperties}
                         />
                         {!isAutoTitle && (
