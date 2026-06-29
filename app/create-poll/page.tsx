@@ -3436,6 +3436,30 @@ export function CreateQuestionContent() {
     </div>
   ) : null;
 
+  // Voting cutoff — the most common poll-wide setting, surfaced as its own card
+  // in the main sheet (just above the "Details" bubble in the compose flow;
+  // inside the form in the 'create' prefill flow) rather than buried in the
+  // 'details' sub-panel. `pollIsLimitedSupply` swaps the label to "Claiming
+  // Cutoff". Built only while a modal is open to avoid constructing the tree on
+  // every render of this layout-level component.
+  const votingCutoffCard = isModalOpen ? (
+    <section className="rounded-3xl bg-white dark:bg-gray-800 px-4">
+      <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+        <VotingCutoffField
+          label={pollIsLimitedSupply ? 'Claiming Cutoff' : 'Voting Cutoff'}
+          deadlineOption={deadlineOption}
+          setDeadlineOption={setDeadlineOption}
+          customDate={customDate}
+          setCustomDate={setCustomDate}
+          customTime={customTime}
+          setCustomTime={setCustomTime}
+          isLoading={isLoading}
+          isClient={isClient}
+        />
+      </form>
+    </section>
+  ) : null;
+
   // The "Details" bubble — opens the poll-WIDE settings (cutoff, recurrence,
   // notes, …) in the 'details' sub-panel (same slide-in + swipe-back chrome as
   // the question editor). Rendered BELOW the question box (not in the draft
@@ -3625,17 +3649,10 @@ export function CreateQuestionContent() {
                     onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     className="divide-y divide-gray-200 dark:divide-gray-700"
                   >
-                    <VotingCutoffField
-                      label={pollIsLimitedSupply ? 'Claiming Cutoff' : 'Voting Cutoff'}
-                      deadlineOption={deadlineOption}
-                      setDeadlineOption={setDeadlineOption}
-                      customDate={customDate}
-                      setCustomDate={setCustomDate}
-                      customTime={customTime}
-                      setCustomTime={setCustomTime}
-                      isLoading={isLoading}
-                      isClient={isClient}
-                    />
+                    {/* NOTE: the Voting Cutoff field used to live here as the
+                        first row, but it was lifted into its own card in the
+                        main sheet (above the "Details" bubble) — see
+                        `votingCutoffCard`. */}
 
                     {/* Recurrence (prototype): how often this poll re-runs.
                         Poll-level, always available. */}
@@ -4069,11 +4086,17 @@ export function CreateQuestionContent() {
                 )}
                 </>)}
 
-                {/* Poll-WIDE settings card (voting cutoff, recurrence, …) +
-                    Notes — in 'create' mode they render here below the question
-                    form; in the FAB/compose flow they live behind the "Details"
+                {/* Poll-WIDE settings (voting cutoff card + recurrence, … +
+                    Notes) — in 'create' mode they render here below the question
+                    form; in the FAB/compose flow the voting cutoff is its own
+                    card above the box and the rest live behind the "Details"
                     bubble (the 'details' sub-panel), not in this base sheet. */}
-                {showPollSection && pollSettingsSections}
+                {showPollSection && (
+                  <>
+                    {votingCutoffCard}
+                    {pollSettingsSections}
+                  </>
+                )}
     </>
   ) : null;
 
@@ -4183,10 +4206,12 @@ export function CreateQuestionContent() {
                       )}
                     </button>
                   </div>
-                  {/* Staged bubbles + question box, then the "Details" bubble
-                      (poll-wide settings) directly UNDER the box. */}
+                  {/* Staged bubbles + question box, then the Voting Cutoff card
+                      and the "Details" bubble (remaining poll-wide settings)
+                      directly UNDER the box. */}
                   <div className="px-3 pb-[4.5rem] space-y-[14.4px]">
                     {searchBox}
+                    {drafts.length > 0 && votingCutoffCard}
                     {detailsBubble}
                     {errorBlock}
                   </div>
