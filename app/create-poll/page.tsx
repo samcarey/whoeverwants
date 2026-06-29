@@ -726,6 +726,11 @@ export function CreateQuestionContent() {
   const [recurrence, setRecurrence] = useState<RecurrenceRule>(DEFAULT_RECURRENCE);
   const [recurrenceStart] = useState(() => formatRecurrenceDateISO(new Date()));
   const [details, setDetails] = useState("");
+  // Poll-level title override for MULTI-question polls. null = auto-generated
+  // from the staged drafts (draftPollPreview); a string = the user edited the
+  // combined poll title in the New Poll modal. The × in the heading resets to
+  // null (auto). Single-question polls use the per-draft `title`/`isAutoTitle`.
+  const [pollTitleOverride, setPollTitleOverride] = useState<string | null>(null);
   // Callback ref: size the Notes textarea to its content the moment it
   // attaches (ModalPortal mounts it after open), so it opens at one line for
   // an empty draft yet grows to fit restored/duplicated multi-line content.
@@ -1056,11 +1061,12 @@ export function CreateQuestionContent() {
         winnerMethod,
         collectAvailability,
         recurrence,
+        pollTitleOverride,
         drafts,
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, collectSuggestions, winnerMethod, collectAvailability, recurrence, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, categoryEmoji, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, supplyCount, revealClaimantNames, minResponses, showPreliminaryResults, allowPreRanking, allowPlusOnes, collectSuggestions, winnerMethod, collectAvailability, recurrence, pollTitleOverride, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -1117,6 +1123,7 @@ export function CreateQuestionContent() {
           if (formState.winnerMethod === 'favorite' || formState.winnerMethod === 'consensus') setWinnerMethod(formState.winnerMethod);
           if (formState.collectAvailability !== undefined) setCollectAvailability(formState.collectAvailability);
           if (formState.recurrence && typeof formState.recurrence === 'object') setRecurrence(formState.recurrence);
+          if (typeof formState.pollTitleOverride === 'string') setPollTitleOverride(formState.pollTitleOverride);
           if (Array.isArray(formState.drafts)) setDrafts(formState.drafts);
 
           return formState;
@@ -1384,6 +1391,7 @@ export function CreateQuestionContent() {
     setDetails("");
     setAllowPlusOnes(null);
     setRecurrence(DEFAULT_RECURRENCE);
+    setPollTitleOverride(null);
   }, []);
 
   // Open the New Poll sheet (the "+ Poll" FAB). The sheet body hosts the
@@ -2803,7 +2811,9 @@ export function CreateQuestionContent() {
             // derived title for the blank-custom case where the preview is the
             // hint placeholder rather than a real title.
             : (onlyDraft.title.trim() || deriveDraftTitle(onlyDraft)))
-        : draftPollPreview(effectiveDrafts, '').title;
+        // Multi-question: the user-edited combined title (pollTitleOverride)
+        // wins; otherwise the auto-generated preview.
+        : (pollTitleOverride?.trim() || draftPollPreview(effectiveDrafts, '').title);
 
       const questionsForRequest: CreateQuestionParams[] =
         effectiveDrafts.map(d => draftToQuestionParams(d, prephaseMinutes));
@@ -2841,6 +2851,7 @@ export function CreateQuestionContent() {
             setEditMode(null);
             applyDraftToState(emptyDraft());
             setDrafts([]);
+            setPollTitleOverride(null);
             setSendError(null);
             setError(null);
             router.replace(href);
@@ -2998,6 +3009,7 @@ export function CreateQuestionContent() {
       // send leaves the bubbles to retry). Without this they'd persist on the
       // layout-level host and reappear if the user navigated back to the group.
       setDrafts([]);
+      setPollTitleOverride(null);
       setSendError(null);
       setError(null);
 
@@ -3386,18 +3398,46 @@ export function CreateQuestionContent() {
   // change.
   const pollPreviewTitle = useMemo(() => draftPollPreview(drafts, '').title, [drafts]);
 
-  // Staged-draft bubbles, rendered above the search input. 2+ drafts → a
-  // combined poll-title heading on top (read-only) over one bubble per question,
-  // then a "Details" bubble that opens the poll-wide settings sub-panel. Tapping
-  // a question bubble edits it; × removes it. The poll is sent via the ↑ button
-  // in the sheet's upper-right corner.
+  // Staged-draft bubbles, rendered above the search input. 2+ drafts → an
+  // EDITABLE combined poll-title heading on top over one bubble per question,
+  // then a "Details" bubble that opens the poll-wide settings sub-panel. The
+  // heading is greyed while auto-generated; touching it sets `pollTitleOverride`
+  // (rendered active), and the × resets to auto (null). Tapping a question
+  // bubble edits it; × removes it. The poll is sent via the ↑ button in the
+  // sheet's upper-right corner.
   const draftStack = drafts.length > 0 ? (
     <div className="pt-2 space-y-2">
       {drafts.length > 1 && (
-        <div className="px-1 pt-1">
-          <span className="block truncate text-base font-semibold text-gray-700 dark:text-gray-300">
-            {pollPreviewTitle}
-          </span>
+        <div className="px-1 pt-1 flex items-center gap-1">
+          <input
+            type="text"
+            value={pollTitleOverride ?? pollPreviewTitle}
+            onChange={(e) => setPollTitleOverride(e.target.value)}
+            onBlur={(e) => {
+              const trimmed = e.target.value.trim();
+              // An emptied override resets to auto-generated.
+              if (trimmed === '') setPollTitleOverride(null);
+              else if (trimmed !== pollTitleOverride) setPollTitleOverride(trimmed);
+            }}
+            onKeyDown={enterAdvancesFocus}
+            disabled={isLoading}
+            maxLength={100}
+            aria-label="Poll title"
+            className={`flex-1 min-w-0 truncate text-base font-semibold bg-transparent focus:outline-none disabled:cursor-not-allowed ${pollTitleOverride === null ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}
+          />
+          {pollTitleOverride !== null && (
+            <button
+              type="button"
+              onClick={() => setPollTitleOverride(null)}
+              disabled={isLoading}
+              aria-label="Reset to auto-generated title"
+              className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 active:scale-95 disabled:cursor-not-allowed"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+                <path d="M5 5l10 10M15 5L5 15" />
+              </svg>
+            </button>
+          )}
         </div>
       )}
       {drafts.map((d, i) => {
