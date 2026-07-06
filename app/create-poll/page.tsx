@@ -3408,10 +3408,15 @@ export function CreateQuestionContent() {
   const draftStack = drafts.length > 0 ? (
     <div className="pt-2 space-y-2">
       {drafts.length > 1 && (
-        <div className="px-1 pt-1 flex items-center gap-1">
+        <div className="px-1 pt-1 relative">
+          {/* Auto mode shows the generated title as a (greyed) placeholder, so
+              the editable VALUE is empty — focusing starts blank rather than
+              seeding the autogen text. An override becomes the actual value. The
+              × is absolutely positioned so the title stays centered either way;
+              symmetric px-6 keeps the centered text clear of it. */}
           <input
             type="text"
-            value={pollTitleOverride ?? pollPreviewTitle}
+            value={pollTitleOverride ?? ''}
             onChange={(e) => setPollTitleOverride(e.target.value)}
             onBlur={(e) => {
               const trimmed = e.target.value.trim();
@@ -3423,7 +3428,8 @@ export function CreateQuestionContent() {
             disabled={isLoading}
             maxLength={100}
             aria-label="Poll title"
-            className={`flex-1 min-w-0 truncate text-base font-semibold bg-transparent focus:outline-none disabled:cursor-not-allowed ${pollTitleOverride === null ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}
+            placeholder={pollTitleOverride === null ? pollPreviewTitle : undefined}
+            className="w-full px-6 truncate text-center text-base font-semibold bg-transparent text-gray-900 dark:text-gray-100 focus:outline-none disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500"
           />
           {pollTitleOverride !== null && (
             <button
@@ -3431,7 +3437,7 @@ export function CreateQuestionContent() {
               onClick={() => setPollTitleOverride(null)}
               disabled={isLoading}
               aria-label="Reset to auto-generated title"
-              className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 active:scale-95 disabled:cursor-not-allowed"
+              className="absolute right-0 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 active:scale-95 disabled:cursor-not-allowed"
             >
               <svg className="w-3 h-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
                 <path d="M5 5l10 10M15 5L5 15" />
