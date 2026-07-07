@@ -3519,7 +3519,7 @@ export function CreateQuestionContent() {
       aria-label="Poll details"
       className="w-full flex items-center justify-end gap-1 px-1 py-2.5 disabled:opacity-50"
     >
-      <span className="text-[28px] text-gray-700 dark:text-gray-300">Details</span>
+      <span className="text-[16.8px] text-gray-700 dark:text-gray-300">Details</span>
       <svg className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
       </svg>
