@@ -242,3 +242,70 @@ export async function apiCutoffPollAvailability(pollId: string): Promise<Poll> {
   return pollOperation(pollId, 'cutoff-availability');
 }
 
+
+// --- Poll comments (migration 146) ---
+
+/** One comment on a poll. `is_mine` is server-computed per viewer
+ *  (account-aware, mirrors viewer_is_creator) and gates the delete
+ *  affordance. Comments are poll-level and flat (no threading). */
+export interface PollComment {
+  id: string;
+  poll_id: string;
+  commenter_name: string;
+  user_id: string | null;
+  body: string;
+  created_at: string;
+  is_mine: boolean;
+}
+
+function toPollComment(data: any): PollComment {
+  return {
+    id: data.id,
+    poll_id: data.poll_id,
+    commenter_name: data.commenter_name,
+    user_id: data.user_id ?? null,
+    body: data.body,
+    created_at: data.created_at,
+    is_mine: data.is_mine === true,
+  };
+}
+
+const commentsInFlight = new Map<string, Promise<PollComment[]>>();
+
+/** The poll's comments, oldest first. Coalesced so the slide-overlay /
+ *  swipe-backdrop double-mount of the detail page shares one round-trip.
+ *  404 (non-member of a private group) surfaces as ApiError — the detail
+ *  page only renders for visible polls, so callers can treat any failure
+ *  as "no comments to show". */
+export async function apiGetPollComments(pollId: string): Promise<PollComment[]> {
+  return coalesced(commentsInFlight, pollId, null, async () => {
+    const data = await pollFetch<any[]>(`/${encodeURIComponent(pollId)}/comments`);
+    return data.map(toPollComment);
+  });
+}
+
+/** Post a comment as the saved display name (the caller name-gates via
+ *  AccountGateModal before invoking — the server's validate_user_name is
+ *  the backstop). Returns the created comment (`is_mine` true). */
+export async function apiCreatePollComment(
+  pollId: string,
+  name: string,
+  body: string,
+): Promise<PollComment> {
+  const data = await pollFetch(`/${encodeURIComponent(pollId)}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ commenter_name: name, body }),
+  });
+  return toPollComment(data);
+}
+
+/** Delete the caller's own comment (account-aware ownership server-side). */
+export async function apiDeletePollComment(
+  pollId: string,
+  commentId: string,
+): Promise<void> {
+  await pollFetch(
+    `/${encodeURIComponent(pollId)}/comments/${encodeURIComponent(commentId)}`,
+    { method: 'DELETE' },
+  );
+}

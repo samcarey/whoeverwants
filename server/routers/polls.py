@@ -23,10 +23,12 @@ from services.auth import (
 from models import (
     CancelRecurrenceRequest,
     CloseQuestionRequest,
+    CreatePollCommentRequest,
     CreatePollRequest,
     CreateQuestionRequest,
     CutoffSuggestionsRequest,
     EditVoteRequest,
+    PollCommentResponse,
     PollResponse,
     PollSummaryQuestionResponse,
     PollSummaryResponse,
@@ -48,14 +50,23 @@ from services.contacts import (
     user_responded_to_poll,
 )
 from services.invites import issue_invite
+from services.comments import (
+    comment_is_mine,
+    create_comment,
+    delete_comment,
+    list_comments,
+    sanitize_comment_body,
+)
 from services.groups import (
     EXPLORE_PRIVACY,
     NIL_UUID,
     _is_uuid_like,
     add_group_admin,
+    get_group_metadata,
     get_or_create_explore_group,
     group_display_name,
     group_name_phrase,
+    is_caller_member_of_group,
     require_uuid,
 )
 from services.memberships import join_group, join_group_for_poll
@@ -2347,5 +2358,124 @@ def set_poll_follow_state(
         if not exists:
             raise HTTPException(status_code=404, detail="Poll not found")
         set_follow_state(conn, poll_id, browser_id, req.state)
+
+
+# ---------------------------------------------------------------------------
+# Poll comments (migration 146)
+# ---------------------------------------------------------------------------
+
+
+def _require_comment_access(conn, poll_id: str, request: Request) -> dict:
+    """Resolve the poll and gate NON-PUBLIC groups (private + explore) to
+    members — a comment thread is user content, so it follows the group read
+    contract (404 to strangers, indistinguishable from not-found) rather than
+    the visibility-blind poll GETs. Membership is account-aware: the check is
+    fed the resolved actor user_id (bearer OR browser-linked account), per the
+    load_user_visibility rule."""
+    poll = conn.execute(
+        "SELECT id, group_id FROM polls WHERE id = %(id)s",
+        {"id": poll_id},
+    ).fetchone()
+    if not poll:
+        raise HTTPException(status_code=404, detail="Poll not found")
+    group_id = str(poll["group_id"]) if poll.get("group_id") else None
+    meta = get_group_metadata(conn, group_id) if group_id else None
+    if meta and meta["privacy"] != "public":
+        if not is_caller_member_of_group(
+            conn,
+            group_id,
+            browser_id=_browser_id(request),
+            user_id=_caller_user_id(conn, request),
+        ):
+            raise HTTPException(status_code=404, detail="Poll not found")
+    return poll
+
+
+def _row_to_comment(row: dict, *, is_mine: bool) -> PollCommentResponse:
+    return PollCommentResponse(
+        id=str(row["id"]),
+        poll_id=str(row["poll_id"]),
+        commenter_name=row["commenter_name"],
+        user_id=str(row["user_id"]) if row.get("user_id") else None,
+        body=row["body"],
+        created_at=row["created_at"],
+        is_mine=is_mine,
+    )
+
+
+@router.get("/{poll_id}/comments", response_model=list[PollCommentResponse])
+def get_poll_comments(poll_id: str, request: Request):
+    """The poll's comments, oldest first. Members-only for non-public groups
+    (404 to strangers); each row carries the per-viewer `is_mine` flag
+    (account-aware, mirrors viewer_is_creator)."""
+    require_uuid(poll_id, "poll_id")
+    with get_db() as conn:
+        _require_comment_access(conn, poll_id, request)
+        rows = list_comments(conn, poll_id)
+        bids = caller_browser_ids(
+            conn, browser_id=_browser_id(request), user_id=_user_id(request)
+        )
+        actor = _caller_user_id(conn, request)
+    return [
+        _row_to_comment(
+            r, is_mine=comment_is_mine(r, caller_bids=bids, actor_user_id=actor)
+        )
+        for r in rows
+    ]
+
+
+@router.post(
+    "/{poll_id}/comments", response_model=PollCommentResponse, status_code=201
+)
+def create_poll_comment(
+    poll_id: str, req: CreatePollCommentRequest, request: Request
+):
+    """Post a comment. Name-gated like voting (`validate_user_name` backstop —
+    the FE's AccountGateModal is the primary UX); body is trimmed + silently
+    capped (COMMENT_MAX_CHARS), 400 when empty after trim. Commenting is
+    participating, so the poster auto-joins the group AFTER the access check
+    (the check must run first — joining a non-member onto a private group
+    would be a visibility grant)."""
+    require_uuid(poll_id, "poll_id")
+    name = validate_user_name(req.commenter_name, field="Name")
+    body = sanitize_comment_body(req.body)
+    if not body:
+        raise HTTPException(status_code=400, detail="Comment body is required")
+    browser_id = _browser_id(request)
+    with get_db() as conn:
+        _require_comment_access(conn, poll_id, request)
+        actor = _caller_user_id(conn, request)
+        row = create_comment(
+            conn,
+            poll_id,
+            browser_id=browser_id,
+            user_id=actor,
+            name=name,
+            body=body,
+        )
+    # Decoupled own-transaction membership write (services/memberships.py
+    # convention) — a public-group commenter becomes a member like a voter
+    # does; idempotent for existing members.
+    join_group_for_poll(poll_id, browser_id)
+    return _row_to_comment(row, is_mine=True)
+
+
+@router.delete("/{poll_id}/comments/{comment_id}", status_code=204)
+def delete_poll_comment(poll_id: str, comment_id: str, request: Request):
+    """Delete the caller's OWN comment (account-aware ownership — posted on
+    any of their linked browsers). 404 when the comment doesn't exist, belongs
+    to another poll, or isn't theirs (indistinguishable on purpose)."""
+    require_uuid(poll_id, "poll_id")
+    require_uuid(comment_id, "comment_id")
+    with get_db() as conn:
+        _require_comment_access(conn, poll_id, request)
+        bids = caller_browser_ids(
+            conn, browser_id=_browser_id(request), user_id=_user_id(request)
+        )
+        actor = _caller_user_id(conn, request)
+        if not delete_comment(
+            conn, poll_id, comment_id, caller_bids=bids, actor_user_id=actor
+        ):
+            raise HTTPException(status_code=404, detail="Comment not found")
 
 

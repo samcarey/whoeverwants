@@ -25,6 +25,7 @@ import {
   type PlusOneCandidate,
 } from "@/lib/api";
 import PlusOnesInput, { type PlusOneEntry } from "@/components/PlusOnesInput";
+import PollComments from "@/components/PollComments";
 import {
   POLL_HYDRATED_EVENT,
   SHOW_GROUP_BACKDROP_EVENT,
@@ -1264,6 +1265,11 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, fromExplore, 
             </div>
           );
         })()}
+
+        {/* Poll-level comment thread (migration 146). Renders for open AND
+            closed polls — discussing an outcome is as valid as debating a
+            live vote. Shares the page's name gate (AccountGateModal). */}
+        <PollComments pollId={poll.id} gateOnName={gateOnName} />
 
       </div>
       </div>

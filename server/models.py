@@ -453,6 +453,29 @@ class SetFollowStateRequest(BaseModel):
     state: str
 
 
+class CreatePollCommentRequest(BaseModel):
+    """Post a comment on a poll (migration 146). `commenter_name` follows the
+    same name-required policy as voting (validate_user_name backstop); `body`
+    is trimmed + silently capped server-side (COMMENT_MAX_CHARS)."""
+
+    commenter_name: str | None = None
+    body: str | None = None
+
+
+class PollCommentResponse(BaseModel):
+    id: str
+    poll_id: str
+    commenter_name: str
+    # The poster's account, when one resolved at post time (drives the FE's
+    # profile long-press). Null for pure-anonymous posters + deleted accounts.
+    user_id: str | None = None
+    body: str
+    created_at: datetime
+    # Server-computed per-viewer flag (mirrors viewer_is_creator): true when
+    # the comment was posted by this caller (account-aware across devices).
+    is_mine: bool = False
+
+
 class PollResponse(BaseModel):
     id: str
     short_id: str | None = None

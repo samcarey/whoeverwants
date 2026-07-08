@@ -27,8 +27,11 @@ export {
   apiCancelRecurrence,
   apiRecordPollView,
   apiSetPollFollowState,
+  apiGetPollComments,
+  apiCreatePollComment,
+  apiDeletePollComment,
 } from "./polls";
-export type { QuestionType, CreateQuestionParams, CreatePollParams } from "./polls";
+export type { QuestionType, CreateQuestionParams, CreatePollParams, PollComment } from "./polls";
 
 export {
   QUESTION_VOTES_CHANGED_EVENT,
