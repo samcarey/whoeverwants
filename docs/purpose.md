@@ -159,9 +159,10 @@ needs features.
 
 ## Open questions
 
-- Near-term optimization target: (a) decision→event conversion, (b) intent/matchmaking
-  layer, (c) radical simplification of the default create/respond path, (d) outcome
-  measurement first?
+- **Commitment semantics for the event layer:** when a poll decides, are voters who
+  indicated availability *presumed in* (opt-out — aligns with "defaults over
+  decisions" and friction 1) or must they explicitly RSVP (opt-in — cleaner signal,
+  more friction)?
 - Who is the product for in the next 3–6 months: the owner's actual social circle
   (dogfood; optimize for real events among real friends), or a general audience?
 - What "did it happen?" signal costs attendees approximately zero?
@@ -172,3 +173,9 @@ needs features.
 
 - **2026-07-08** — Document created. North-star metric proposed (realized events per
   active user per month) — pending owner confirmation.
+- **2026-07-08** — Owner chose **decision → event conversion** as the next frontier
+  (over intent/matchmaking, default-path simplification, and measure-first). Direction:
+  after a poll decides, it becomes a real event — commitment/RSVP state, add-to-
+  calendar, day-of reminder, post-event "did it happen? / run it back" (which doubles
+  as the missing outcome measurement). Intent/matchmaking and simplification remain
+  queued, not rejected.
