@@ -325,4 +325,7 @@ export interface Poll {
   // ranked_choice suggestion phase(s). 0 for polls with no suggestion phase.
   // Drives the "N suggestions" segment of the group-card info line.
   suggestion_count?: number;
+  // Total comments on the poll (migration 146). Drives the "N Comments"
+  // segment of the group-card info line.
+  comment_count?: number;
 }

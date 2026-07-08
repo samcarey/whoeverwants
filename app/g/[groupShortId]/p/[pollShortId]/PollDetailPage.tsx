@@ -1266,10 +1266,11 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, fromExplore, 
           );
         })()}
 
-        {/* Poll-level comment thread (migration 146). Renders for open AND
-            closed polls — discussing an outcome is as valid as debating a
-            live vote. Shares the page's name gate (AccountGateModal). */}
-        <PollComments pollId={poll.id} gateOnName={gateOnName} />
+        {/* Poll-level comment thread (migrations 146/147). Renders for open
+            AND closed polls — discussing an outcome is as valid as debating a
+            live vote. Shares the page's name gate (AccountGateModal); groupId
+            feeds the @-mention roster. */}
+        <PollComments pollId={poll.id} groupId={groupId} gateOnName={gateOnName} />
 
       </div>
       </div>

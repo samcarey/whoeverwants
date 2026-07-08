@@ -28,8 +28,12 @@ from models import (
     CreateQuestionRequest,
     CutoffSuggestionsRequest,
     EditVoteRequest,
+    PollCommentMention,
+    PollCommentReaction,
     PollCommentResponse,
     PollResponse,
+    ToggleCommentReactionRequest,
+    UpdatePollCommentRequest,
     PollSummaryQuestionResponse,
     PollSummaryResponse,
     PollSummarySlot,
@@ -55,7 +59,11 @@ from services.comments import (
     create_comment,
     delete_comment,
     list_comments,
+    reactions_for_comments,
+    resolve_mentions,
     sanitize_comment_body,
+    toggle_reaction,
+    update_comment,
 )
 from services.groups import (
     EXPLORE_PRIVACY,
@@ -751,6 +759,7 @@ def _row_to_poll(
         viewed_ignored_count=vd.viewed_ignored_count,
         viewed_total=vd.viewed_total,
         suggestion_count=vd.suggestion_count,
+        comment_count=vd.comment_count,
     )
 
 
@@ -788,6 +797,9 @@ class PollVoterData:
     # Distinct non-empty options voters proposed across the poll's ranked_choice
     # suggestion phase(s) (read from votes.suggestions, stable across phases).
     suggestion_count: int = 0
+    # Total comments on the poll (migration 146). Indexed COUNT on
+    # poll_comments(poll_id, ...) — cheap enough for the 5s refresh loop.
+    comment_count: int = 0
 
 
 def _compute_poll_voter_data(conn, poll_id: str) -> PollVoterData:
@@ -917,6 +929,12 @@ def _compute_poll_voter_data(conn, poll_id: str) -> PollVoterData:
         viewed_total=int(viewed_row["viewed_total"] or 0)
         + int(votes_row["plus_one_total"] or 0),
         suggestion_count=int(votes_row["suggestion_count"] or 0),
+        comment_count=int(
+            conn.execute(
+                "SELECT COUNT(*) AS n FROM poll_comments WHERE poll_id = %(mid)s",
+                {"mid": poll_id},
+            ).fetchone()["n"]
+        ),
     )
 
 
@@ -2368,15 +2386,18 @@ def set_poll_follow_state(
 
 def _require_comment_access(
     conn, poll_id: str, request: Request, *, actor_user_id: str | None
-) -> None:
+) -> dict:
     """Resolve the poll and gate MEMBERS-ONLY groups (private + explore) to
     members — a comment thread is user content, so it follows the group read
     contract (404 to strangers, indistinguishable from not-found) rather than
     the visibility-blind poll GETs. Membership is account-aware: callers pass
     the resolved actor user_id (bearer OR browser-linked account, computed
-    once per request), per the load_user_visibility rule."""
+    once per request), per the load_user_visibility rule.
+
+    Returns the poll's {group_id, short_id} row (the mention-push payload
+    builder needs both)."""
     poll = conn.execute(
-        "SELECT group_id FROM polls WHERE id = %(id)s",
+        "SELECT group_id, short_id FROM polls WHERE id = %(id)s",
         {"id": poll_id},
     ).fetchone()
     if not poll:
@@ -2391,9 +2412,12 @@ def _require_comment_access(
             user_id=actor_user_id,
         ):
             raise HTTPException(status_code=404, detail="Poll not found")
+    return poll
 
 
-def _row_to_comment(row: dict, *, is_mine: bool) -> PollCommentResponse:
+def _row_to_comment(
+    row: dict, *, is_mine: bool, reactions: list[dict] | None = None
+) -> PollCommentResponse:
     return PollCommentResponse(
         id=str(row["id"]),
         poll_id=str(row["poll_id"]),
@@ -2401,8 +2425,35 @@ def _row_to_comment(row: dict, *, is_mine: bool) -> PollCommentResponse:
         user_id=str(row["user_id"]) if row.get("user_id") else None,
         body=row["body"],
         created_at=row["created_at"],
+        edited_at=row.get("edited_at"),
+        mentions=[PollCommentMention(**m) for m in (row.get("mentions") or [])],
+        reactions=[PollCommentReaction(**r) for r in (reactions or [])],
         is_mine=is_mine,
     )
+
+
+def _mention_push_payload(
+    conn, *, group_id: str, poll_short_id: str | None, commenter: str, body: str
+) -> dict:
+    """The @mention notification: `Mentioned in "<Group>"` / `<name>: <snippet>`,
+    deep-linking the poll detail page (path form, never ?p=). Carries
+    group_id/group_uuid/tag per the group-scoped push payload rules
+    (lib/swMessages.ts matchers)."""
+    grp = conn.execute(
+        "SELECT short_id, title FROM groups WHERE id = %(id)s", {"id": group_id}
+    ).fetchone()
+    route = (grp or {}).get("short_id") or group_id
+    phrase = group_name_phrase(conn, group_id, override=(grp or {}).get("title"))
+    snippet = body if len(body) <= 120 else body[:117] + "…"
+    url = f"/g/{route}/p/{poll_short_id}" if poll_short_id else f"/g/{route}"
+    return {
+        "title": f"Mentioned in {phrase}",
+        "body": f"{commenter}: {snippet}",
+        "url": url,
+        "group_id": route,
+        "group_uuid": str(group_id),
+        "tag": f"comment-mention-{group_id}",
+    }
 
 
 @router.get("/{poll_id}/comments", response_model=list[PollCommentResponse])
@@ -2420,9 +2471,17 @@ def get_poll_comments(poll_id: str, request: Request):
         bids = caller_browser_ids(
             conn, browser_id=_browser_id(request), user_id=actor
         )
+        reactions = reactions_for_comments(
+            conn,
+            [str(r["id"]) for r in rows],
+            caller_bids=bids,
+            actor_user_id=actor,
+        )
     return [
         _row_to_comment(
-            r, is_mine=comment_is_mine(r, caller_bids=bids, actor_user_id=actor)
+            r,
+            is_mine=comment_is_mine(r, caller_bids=bids, actor_user_id=actor),
+            reactions=reactions.get(str(r["id"])),
         )
         for r in rows
     ]
@@ -2432,14 +2491,22 @@ def get_poll_comments(poll_id: str, request: Request):
     "/{poll_id}/comments", response_model=PollCommentResponse, status_code=201
 )
 def create_poll_comment(
-    poll_id: str, req: CreatePollCommentRequest, request: Request
+    poll_id: str,
+    req: CreatePollCommentRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
 ):
     """Post a comment. Name-gated like voting (`validate_user_name` backstop —
     the FE's AccountGateModal is the primary UX); body is trimmed + silently
     capped (COMMENT_MAX_CHARS), 400 when empty after trim. Commenting is
     participating, so the poster auto-joins the group AFTER the access check
     (the check must run first — joining a non-member onto a private group
-    would be a visibility grant)."""
+    would be a visibility grant).
+
+    @mentions: `mentioned_user_ids` are validated to group members
+    (`resolve_mentions` — stale/non-member ids silently dropped), stored on
+    the row, and each mentioned account (except the poster) gets a targeted
+    push via `fan_out_to_user` AFTER the response (BackgroundTasks)."""
     require_uuid(poll_id, "poll_id")
     name = validate_user_name(req.commenter_name, field="Name")
     body = sanitize_comment_body(req.body)
@@ -2448,7 +2515,9 @@ def create_poll_comment(
     browser_id = _browser_id(request)
     with get_db() as conn:
         actor = _caller_user_id(conn, request)
-        _require_comment_access(conn, poll_id, request, actor_user_id=actor)
+        poll = _require_comment_access(conn, poll_id, request, actor_user_id=actor)
+        group_id = str(poll["group_id"]) if poll.get("group_id") else None
+        mentions = resolve_mentions(conn, group_id, req.mentioned_user_ids)
         row = create_comment(
             conn,
             poll_id,
@@ -2456,12 +2525,113 @@ def create_poll_comment(
             user_id=actor,
             name=name,
             body=body,
+            mentions=mentions,
         )
+        # Build the mention pushes while we still hold the connection; only
+        # created comments notify (edits don't — no re-fire on typo fixes).
+        notify_uids = [
+            m["user_id"] for m in mentions if m["user_id"] != (actor or "")
+        ]
+        payload = (
+            _mention_push_payload(
+                conn,
+                group_id=group_id,
+                poll_short_id=poll.get("short_id"),
+                commenter=name,
+                body=body,
+            )
+            if notify_uids and group_id
+            else None
+        )
+    if payload:
+        for uid in notify_uids:
+            background_tasks.add_task(fan_out_to_user, group_id, uid, payload)
     # Decoupled own-transaction membership write (services/memberships.py
     # convention) — a public-group commenter becomes a member like a voter
     # does; idempotent for existing members.
     join_group_for_poll(poll_id, browser_id)
     return _row_to_comment(row, is_mine=True)
+
+
+@router.put("/{poll_id}/comments/{comment_id}", response_model=PollCommentResponse)
+def update_poll_comment(
+    poll_id: str, comment_id: str, req: UpdatePollCommentRequest, request: Request
+):
+    """Edit the caller's OWN comment body (stamps `edited_at`; stored mentions
+    are preserved — rendering only highlights names still present). Same
+    ownership + 404 semantics as delete; same body trim/cap as create."""
+    require_uuid(poll_id, "poll_id")
+    require_uuid(comment_id, "comment_id")
+    body = sanitize_comment_body(req.body)
+    if not body:
+        raise HTTPException(status_code=400, detail="Comment body is required")
+    with get_db() as conn:
+        actor = _caller_user_id(conn, request)
+        _require_comment_access(conn, poll_id, request, actor_user_id=actor)
+        bids = caller_browser_ids(
+            conn, browser_id=_browser_id(request), user_id=actor
+        )
+        row = update_comment(
+            conn,
+            poll_id,
+            comment_id,
+            caller_bids=bids,
+            actor_user_id=actor,
+            body=body,
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        reactions = reactions_for_comments(
+            conn, [comment_id], caller_bids=bids, actor_user_id=actor
+        )
+    return _row_to_comment(row, is_mine=True, reactions=reactions.get(comment_id))
+
+
+@router.post(
+    "/{poll_id}/comments/{comment_id}/reactions",
+    response_model=list[PollCommentReaction],
+)
+def toggle_poll_comment_reaction(
+    poll_id: str,
+    comment_id: str,
+    req: ToggleCommentReactionRequest,
+    request: Request,
+):
+    """Toggle the caller's emoji reaction on a comment (on if absent, off if
+    present — account-aware, so toggling off removes the account's reaction
+    from any linked browser). Returns the comment's updated reaction summary.
+    Reacting is identity-light (no name needed — it's not authored content);
+    the emoji is validated leniently like category icons."""
+    require_uuid(poll_id, "poll_id")
+    require_uuid(comment_id, "comment_id")
+    emoji = validate_category_icon(req.emoji)
+    if not emoji:
+        raise HTTPException(status_code=400, detail="Reaction emoji is required")
+    browser_id = _browser_id(request)
+    if not browser_id or browser_id == NIL_UUID:
+        raise HTTPException(status_code=400, detail="Browser identity required")
+    with get_db() as conn:
+        actor = _caller_user_id(conn, request)
+        _require_comment_access(conn, poll_id, request, actor_user_id=actor)
+        exists = conn.execute(
+            "SELECT 1 FROM poll_comments WHERE id = %(cid)s AND poll_id = %(pid)s",
+            {"cid": comment_id, "pid": poll_id},
+        ).fetchone()
+        if not exists:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        bids = caller_browser_ids(conn, browser_id=browser_id, user_id=actor)
+        toggle_reaction(
+            conn,
+            comment_id,
+            browser_id=browser_id,
+            user_id=actor,
+            caller_bids=bids,
+            emoji=emoji,
+        )
+        reactions = reactions_for_comments(
+            conn, [comment_id], caller_bids=bids, actor_user_id=actor
+        )
+    return [PollCommentReaction(**r) for r in reactions.get(comment_id, [])]
 
 
 @router.delete("/{poll_id}/comments/{comment_id}", status_code=204)

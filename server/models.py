@@ -456,10 +456,41 @@ class SetFollowStateRequest(BaseModel):
 class CreatePollCommentRequest(BaseModel):
     """Post a comment on a poll (migration 146). `commenter_name` follows the
     same name-required policy as voting (validate_user_name backstop); `body`
-    is trimmed + silently capped server-side (COMMENT_MAX_CHARS)."""
+    is trimmed + silently capped server-side (COMMENT_MAX_CHARS).
+    `mentioned_user_ids` come from the FE's @-autocomplete; the server
+    validates each is a group member and pushes to their account."""
 
     commenter_name: str | None = None
     body: str | None = None
+    mentioned_user_ids: list[str] | None = None
+
+
+class UpdatePollCommentRequest(BaseModel):
+    """Author-edit of a comment's body (migration 147). Same trim/cap policy
+    as create; stamps `edited_at`."""
+
+    body: str | None = None
+
+
+class ToggleCommentReactionRequest(BaseModel):
+    # A single emoji (validated leniently like category icons). Toggles the
+    # caller's reaction on/off.
+    emoji: str | None = None
+
+
+class PollCommentMention(BaseModel):
+    user_id: str
+    # Display name captured at post time (survives account deletion; rendering
+    # highlights "@<name>" occurrences still present in the body).
+    name: str
+
+
+class PollCommentReaction(BaseModel):
+    emoji: str
+    # Distinct people (account-collapsed across linked browsers).
+    count: int
+    # Whether the CALLER reacted with this emoji (account-aware).
+    mine: bool = False
 
 
 class PollCommentResponse(BaseModel):
@@ -471,6 +502,10 @@ class PollCommentResponse(BaseModel):
     user_id: str | None = None
     body: str
     created_at: datetime
+    # Migration 147: set on every author edit (FE shows an "edited" marker).
+    edited_at: datetime | None = None
+    mentions: list[PollCommentMention] = []
+    reactions: list[PollCommentReaction] = []
     # Server-computed per-viewer flag (mirrors viewer_is_creator): true when
     # the comment was posted by this caller (account-aware across devices).
     is_mine: bool = False
@@ -607,6 +642,9 @@ class PollResponse(BaseModel):
     # polls with no suggestion phase. Drives the "N suggestions" segment of
     # the group-card info line.
     suggestion_count: int = 0
+    # Migration 146/147: total comments on the poll. Drives the group card's
+    # "N Comments" metadata segment.
+    comment_count: int = 0
     # Only set on the create response: maps question_id → the vote_id of the
     # creator's auto-submitted initial-suggestions vote (see
     # CreateQuestionRequest.initial_suggestions). The FE stores these so the

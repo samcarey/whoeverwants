@@ -16,7 +16,9 @@ const EXPANDED_HEIGHT = EXPANDED_LINES * LINE_HEIGHT;
 
 const URL_REGEX = /(https?:\/\/\S+|www\.\S+)/gi;
 
-function renderWithLinks(text: string) {
+/** Shared autolinker: splits text on URLs and renders each as a safe
+ *  new-tab anchor. Also consumed by PollComments for comment bodies. */
+export function renderWithLinks(text: string) {
   const parts = text.split(URL_REGEX);
   return parts.map((part, i) => {
     if (i % 2 === 1) {

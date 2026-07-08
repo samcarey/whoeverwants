@@ -248,6 +248,21 @@ export async function apiCutoffPollAvailability(pollId: string): Promise<Poll> {
 /** One comment on a poll. `is_mine` is server-computed per viewer
  *  (account-aware, mirrors viewer_is_creator) and gates the delete
  *  affordance. Comments are poll-level and flat (no threading). */
+export interface PollCommentMention {
+  user_id: string;
+  /** Display name captured at post time; rendering highlights "@<name>"
+   *  occurrences still present in the body. */
+  name: string;
+}
+
+export interface PollCommentReaction {
+  emoji: string;
+  /** Distinct people (account-collapsed across linked browsers). */
+  count: number;
+  /** Whether the CALLER reacted with this emoji (account-aware). */
+  mine: boolean;
+}
+
 export interface PollComment {
   id: string;
   poll_id: string;
@@ -255,6 +270,10 @@ export interface PollComment {
   user_id: string | null;
   body: string;
   created_at: string;
+  /** Set on every author edit (drives the "edited" marker). */
+  edited_at: string | null;
+  mentions: PollCommentMention[];
+  reactions: PollCommentReaction[];
   is_mine: boolean;
 }
 
@@ -266,6 +285,9 @@ function toPollComment(data: any): PollComment {
     user_id: data.user_id ?? null,
     body: data.body,
     created_at: data.created_at,
+    edited_at: data.edited_at ?? null,
+    mentions: Array.isArray(data.mentions) ? data.mentions : [],
+    reactions: Array.isArray(data.reactions) ? data.reactions : [],
     is_mine: data.is_mine === true,
   };
 }
@@ -291,12 +313,44 @@ export async function apiCreatePollComment(
   pollId: string,
   name: string,
   body: string,
+  mentionedUserIds: string[] = [],
 ): Promise<PollComment> {
   const data = await pollFetch(`/${encodeURIComponent(pollId)}/comments`, {
     method: 'POST',
-    body: JSON.stringify({ commenter_name: name, body }),
+    body: JSON.stringify({
+      commenter_name: name,
+      body,
+      mentioned_user_ids: mentionedUserIds,
+    }),
   });
   return toPollComment(data);
+}
+
+/** Author-edit a comment's body (stamps edited_at server-side). */
+export async function apiUpdatePollComment(
+  pollId: string,
+  commentId: string,
+  body: string,
+): Promise<PollComment> {
+  const data = await pollFetch(
+    `/${encodeURIComponent(pollId)}/comments/${encodeURIComponent(commentId)}`,
+    { method: 'PUT', body: JSON.stringify({ body }) },
+  );
+  return toPollComment(data);
+}
+
+/** Toggle the caller's emoji reaction; returns the comment's updated
+ *  reaction summary. */
+export async function apiTogglePollCommentReaction(
+  pollId: string,
+  commentId: string,
+  emoji: string,
+): Promise<PollCommentReaction[]> {
+  const data = await pollFetch<any[]>(
+    `/${encodeURIComponent(pollId)}/comments/${encodeURIComponent(commentId)}/reactions`,
+    { method: 'POST', body: JSON.stringify({ emoji }) },
+  );
+  return Array.isArray(data) ? data : [];
 }
 
 /** Delete the caller's own comment (account-aware ownership server-side). */

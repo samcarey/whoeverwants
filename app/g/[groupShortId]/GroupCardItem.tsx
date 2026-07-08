@@ -782,6 +782,7 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
     (wrapper?.voter_names?.length ?? 0) + (wrapper?.anonymous_count ?? 0);
   const suggestionCount = wrapper?.suggestion_count ?? 0;
   const viewsCount = wrapper?.viewed_total ?? 0;
+  const commentsCount = wrapper?.comment_count ?? 0;
   const pluralize = (n: number) => (n === 1 ? "" : "s");
 
   // Bottom-right corner: a "{N} Suggestions: Xd" prephase part + a "{N} Votes:
@@ -1045,6 +1046,12 @@ function GroupCardItemImpl(props: GroupCardItemProps) {
                 <span className="shrink-0 whitespace-nowrap">
                   &nbsp;&middot;&nbsp;{viewsCount} View{pluralize(viewsCount)}
                 </span>
+                {commentsCount > 0 && (
+                  <span className="shrink-0 whitespace-nowrap">
+                    &nbsp;&middot;&nbsp;{commentsCount} Comment
+                    {pluralize(commentsCount)}
+                  </span>
+                )}
               </div>
             </ClientOnly>
             {cornerCluster}
