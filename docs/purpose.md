@@ -159,9 +159,9 @@ needs features.
 
 ## Open questions
 
-- Who is the product for in the next 3–6 months: the owner's actual social circle
-  (dogfood; optimize for real events among real friends), or a general audience?
-- What "did it happen?" signal costs attendees approximately zero?
+- What "did it happen?" signal costs attendees approximately zero? (Partially answered
+  by presumed-in semantics: no back-outs + no cancel ≈ happened; an explicit post-event
+  ping may still add precision.)
 - Should stories 1/3/5 be served by templates over the existing poll machinery, or by
   a new intent-first flow?
 
@@ -181,3 +181,7 @@ needs features.
   reminder push doubles as the escape hatch ("still in / can't make it"), so
   commitment hardens passively and back-outs are captured as a signal. Explicit
   opt-in RSVP was rejected as re-taxing invitees at the historical drop-off point.
+- **2026-07-08** — Audience decided: **the owner's circle first** for the next 3–6
+  months. Optimize for real events among real friends (success = the six stories
+  happening in real life); iPhones/iMessage may be assumed, scrappy is fine, real
+  usage drives the roadmap. Generalize later from what demonstrably works.
