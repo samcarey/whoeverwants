@@ -14,7 +14,6 @@ import {
   apiTogglePollCommentReaction,
   apiUpdatePollComment,
   type PollComment,
-  type PollCommentReaction,
 } from "@/lib/api";
 import { haptic } from "@/lib/haptics";
 import { relativeTime } from "@/lib/questionListUtils";
