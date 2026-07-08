@@ -7,6 +7,7 @@
 - **Live site**: https://whoeverwants.com
 - **Repository**: https://github.com/samcarey/whoeverwants
 - **License**: Dual MIT / Apache 2.0
+- **Purpose / mission (living doc): `docs/purpose.md`** — why the project exists, the six canonical user stories, the friction catalog, the north-star metric (realized events per user per month), and a dated current-state assessment. Consult it when weighing what to build next; update its Decision Log when product direction shifts.
 
 ## Active Plan
 
