@@ -15,7 +15,7 @@ import { haptic } from "@/lib/haptics";
 import { relativeTime } from "@/lib/questionListUtils";
 import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import { useProfileLongPress } from "@/lib/useUserProfile";
-import { getUserName, isCurrentUserName } from "@/lib/userProfile";
+import { getUserName } from "@/lib/userProfile";
 
 // Mirror of server/services/comments.py: COMMENT_MAX_CHARS (silent server cap;
 // the maxLength here keeps the two in lockstep so users never hit it blind).
@@ -32,10 +32,9 @@ function CommentRow({
   myImageUrl: string | null;
   onDelete: (comment: PollComment) => void;
 }) {
-  const isMine = comment.is_mine || isCurrentUserName(comment.commenter_name);
-  // Long-press (touch) / click (desktop) another commenter's name/avatar →
-  // their profile modal. Disabled for the viewer's own rows + anonymous
-  // posters (null userId → no handlers), same as the creator avatar.
+  // `is_mine` is server-computed + account-aware — the single source of
+  // ownership truth here (no isCurrentUserName name-match fallback: a
+  // same-named OTHER person would get a delete ✕ that can only 404).
   const profilePress = useProfileLongPress(
     comment.is_mine ? null : comment.user_id,
     comment.commenter_name,
@@ -45,7 +44,7 @@ function CommentRow({
       <div className="shrink-0 mt-0.5" {...profilePress}>
         <InitialBubble
           name={comment.commenter_name}
-          imageUrl={isMine ? myImageUrl : null}
+          imageUrl={comment.is_mine ? myImageUrl : null}
         />
       </div>
       <div className="min-w-0 flex-1">
@@ -147,7 +146,7 @@ export default function PollComments({
   };
 
   const handlePost = () => {
-    if (!draft.trim() || submitting) return;
+    // Empty/submitting guards live in `submit` (the gate's retry target).
     const fire = () => void submit();
     if (gateOnName && !gateOnName(fire)) return;
     fire();

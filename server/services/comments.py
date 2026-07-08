@@ -17,13 +17,14 @@ after trim is the caller's 400 to raise.
 
 from __future__ import annotations
 
+from services.validation import truncate_text
+
 COMMENT_MAX_CHARS = 2000
 
 
 def sanitize_comment_body(body: str | None) -> str | None:
     """Trimmed, capped comment body — None when nothing usable remains."""
-    cleaned = (body or "").strip()[:COMMENT_MAX_CHARS].rstrip()
-    return cleaned or None
+    return truncate_text(body, COMMENT_MAX_CHARS)
 
 
 def create_comment(

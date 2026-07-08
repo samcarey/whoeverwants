@@ -67,6 +67,7 @@ from services.groups import (
     group_display_name,
     group_name_phrase,
     is_caller_member_of_group,
+    is_members_only_privacy,
     require_uuid,
 )
 from services.memberships import join_group, join_group_for_poll
@@ -2365,30 +2366,31 @@ def set_poll_follow_state(
 # ---------------------------------------------------------------------------
 
 
-def _require_comment_access(conn, poll_id: str, request: Request) -> dict:
-    """Resolve the poll and gate NON-PUBLIC groups (private + explore) to
+def _require_comment_access(
+    conn, poll_id: str, request: Request, *, actor_user_id: str | None
+) -> None:
+    """Resolve the poll and gate MEMBERS-ONLY groups (private + explore) to
     members — a comment thread is user content, so it follows the group read
     contract (404 to strangers, indistinguishable from not-found) rather than
-    the visibility-blind poll GETs. Membership is account-aware: the check is
-    fed the resolved actor user_id (bearer OR browser-linked account), per the
-    load_user_visibility rule."""
+    the visibility-blind poll GETs. Membership is account-aware: callers pass
+    the resolved actor user_id (bearer OR browser-linked account, computed
+    once per request), per the load_user_visibility rule."""
     poll = conn.execute(
-        "SELECT id, group_id FROM polls WHERE id = %(id)s",
+        "SELECT group_id FROM polls WHERE id = %(id)s",
         {"id": poll_id},
     ).fetchone()
     if not poll:
         raise HTTPException(status_code=404, detail="Poll not found")
     group_id = str(poll["group_id"]) if poll.get("group_id") else None
     meta = get_group_metadata(conn, group_id) if group_id else None
-    if meta and meta["privacy"] != "public":
+    if meta and is_members_only_privacy(meta["privacy"]):
         if not is_caller_member_of_group(
             conn,
             group_id,
             browser_id=_browser_id(request),
-            user_id=_caller_user_id(conn, request),
+            user_id=actor_user_id,
         ):
             raise HTTPException(status_code=404, detail="Poll not found")
-    return poll
 
 
 def _row_to_comment(row: dict, *, is_mine: bool) -> PollCommentResponse:
@@ -2410,12 +2412,14 @@ def get_poll_comments(poll_id: str, request: Request):
     (account-aware, mirrors viewer_is_creator)."""
     require_uuid(poll_id, "poll_id")
     with get_db() as conn:
-        _require_comment_access(conn, poll_id, request)
+        # Resolve identity ONCE; passing the resolved actor into
+        # caller_browser_ids short-circuits its internal re-resolve.
+        actor = _caller_user_id(conn, request)
+        _require_comment_access(conn, poll_id, request, actor_user_id=actor)
         rows = list_comments(conn, poll_id)
         bids = caller_browser_ids(
-            conn, browser_id=_browser_id(request), user_id=_user_id(request)
+            conn, browser_id=_browser_id(request), user_id=actor
         )
-        actor = _caller_user_id(conn, request)
     return [
         _row_to_comment(
             r, is_mine=comment_is_mine(r, caller_bids=bids, actor_user_id=actor)
@@ -2443,8 +2447,8 @@ def create_poll_comment(
         raise HTTPException(status_code=400, detail="Comment body is required")
     browser_id = _browser_id(request)
     with get_db() as conn:
-        _require_comment_access(conn, poll_id, request)
         actor = _caller_user_id(conn, request)
+        _require_comment_access(conn, poll_id, request, actor_user_id=actor)
         row = create_comment(
             conn,
             poll_id,
@@ -2468,11 +2472,11 @@ def delete_poll_comment(poll_id: str, comment_id: str, request: Request):
     require_uuid(poll_id, "poll_id")
     require_uuid(comment_id, "comment_id")
     with get_db() as conn:
-        _require_comment_access(conn, poll_id, request)
-        bids = caller_browser_ids(
-            conn, browser_id=_browser_id(request), user_id=_user_id(request)
-        )
         actor = _caller_user_id(conn, request)
+        _require_comment_access(conn, poll_id, request, actor_user_id=actor)
+        bids = caller_browser_ids(
+            conn, browser_id=_browser_id(request), user_id=actor
+        )
         if not delete_comment(
             conn, poll_id, comment_id, caller_bids=bids, actor_user_id=actor
         ):

@@ -3822,6 +3822,20 @@ Bob → list still says only Sam). Shipped on
 
 ---
 
+## Poll Comments (migration 146)
+
+Every poll carries a flat, poll-level comment thread rendered at the bottom of the poll DETAIL page (`components/PollComments.tsx`, mounted in `PollDetailPage.tsx` for open AND closed polls — discussing an outcome is as valid as debating a live vote). No threading, no edit path; author-only hard delete. Comments are poll-level per the Addressability paradigm — never per-question.
+
+- **Schema:** `poll_comments(id, poll_id FK CASCADE, browser_id, user_id FK SET NULL, commenter_name, body, created_at)` + a `(poll_id, created_at)` index. Writer identity mirrors votes (migration 120): browser_id + the resolved account user_id are stamped at post time; `commenter_name` is the display string captured then (SET NULL keeps the comment after account deletion — the name stands on its own).
+- **Endpoints (`routers/polls.py`):** `GET`/`POST /api/polls/{id}/comments`, `DELETE /api/polls/{id}/comments/{comment_id}`. The service ops live in `services/comments.py` (`create_comment` / `list_comments` / `delete_comment` / `comment_is_mine` / `sanitize_comment_body`). Body policy = the join-request-message convention via the NEW shared `services/validation.py: truncate_text(value, limit)` (trim → cap → rstrip → None; join_requests now uses it too): SILENT truncation to `COMMENT_MAX_CHARS` (2000) for raw-API callers, 400 only when empty after trim; the FE textarea's `maxLength` mirrors the cap.
+- **Privacy: comments follow the group-READ contract, not the visibility-blind poll GETs.** `_require_comment_access` (routers/polls.py) 404s strangers on members-only groups (the shared `is_members_only_privacy` predicate — private + explore), account-aware (`is_caller_member_of_group` fed the resolved actor id, which each endpoint resolves ONCE and threads into both the access check and `caller_browser_ids` so the anonymous path doesn't re-run the `user_browsers` SELECT 2-3×). The access check runs BEFORE the auto-join — joining a non-member onto a private group would be a visibility grant. On public groups, POSTing auto-joins via `join_group_for_poll` (commenting is participating, exactly like voting).
+- **Ownership is account-aware.** `PollCommentResponse.is_mine` (per-viewer, mirrors `viewer_is_creator`) and delete-authorization both match the row's browser_id against `caller_browser_ids` OR its user_id against the resolved actor — a comment posted on device A is "mine"/deletable from device B of the same account. Delete folds ownership into the WHERE (atomic); not-found / not-owned / cross-poll are an indistinguishable 404.
+- **Name-gated like voting.** The FE routes Post through the detail page's shared `gateOnName` (AccountGateModal, retry-thunk pattern); `validate_user_name` is the server backstop.
+- **FE:** `apiGetPollComments` (coalesced so the slide-overlay/backdrop double-mount of the detail page shares one GET) / `apiCreatePollComment` / `apiDeletePollComment` in `lib/api/polls.ts`. Rows render `InitialBubble` (own rows get the viewer's profile image, keyed on the server `is_mine` ONLY — no `isCurrentUserName` name-match fallback, which would hand a same-named stranger a delete ✕ that can only 404) + name + `relativeTime` + body via a `CommentRow` child component — split out so `useProfileLongPress` (long-press another commenter → profile modal) can run per-row (hooks can't be called in the parent's `.map`). Own rows read "You (name)" (the VoterList `labelFor` convention) + a ✕ behind `ConfirmationModal`; delete is optimistic-remove with 404-as-success + restore-on-other-failure (the InviteLinksSection convention). List order is oldest-first (chat order, composer at the bottom).
+- Tests: `server/tests/test_poll_comments.py` (round-trips, validation backstops, private-group member gate incl. no-join-on-blocked-POST, public-group auto-join, account-agnostic delete ownership, malformed-uuid 404s).
+
+---
+
 ## Group Admin System (migration 142)
 
 Every group has ≥1 **admin** at all times (when it has ≥1 account member). Admins

@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from services.groups import backdate_membership_for_user
+from services.validation import truncate_text
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ def create_join_request(
     don't want a re-fire on every "polite re-request" tap. Phase I can
     add an explicit "edit my message" action if anyone asks.
     """
-    msg = (message or "").strip()[:MESSAGE_MAX_CHARS].rstrip() or None
+    msg = truncate_text(message, MESSAGE_MAX_CHARS)
     # Attempt INSERT; on conflict, SELECT the existing row. Two-step is
     # the cleanest way to express "first writer wins, everyone else
     # reads" in postgres without a RAISE-and-recover dance.

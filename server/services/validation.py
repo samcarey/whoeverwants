@@ -16,6 +16,14 @@ MAX_NAME_LENGTH = 50
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1F\x7F]")
 
 
+def truncate_text(value: str | None, limit: int) -> str | None:
+    """The shared trim → cap → rstrip → None rule for free-text fields whose
+    columns are unbounded TEXT (SILENT truncation for raw-API callers, not a
+    400 — the join-request-message convention). Returns None when nothing
+    usable remains after trimming."""
+    return (value or "").strip()[:limit].rstrip() or None
+
+
 def validate_user_name(value: str | None, *, field: str = "name") -> str:
     """Validate a display-name field. Returns the trimmed value; raises
     HTTPException(400) on missing / out-of-range / control-char input.
