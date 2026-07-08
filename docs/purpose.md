@@ -159,10 +159,6 @@ needs features.
 
 ## Open questions
 
-- **Commitment semantics for the event layer:** when a poll decides, are voters who
-  indicated availability *presumed in* (opt-out — aligns with "defaults over
-  decisions" and friction 1) or must they explicitly RSVP (opt-in — cleaner signal,
-  more friction)?
 - Who is the product for in the next 3–6 months: the owner's actual social circle
   (dogfood; optimize for real events among real friends), or a general audience?
 - What "did it happen?" signal costs attendees approximately zero?
@@ -179,3 +175,9 @@ needs features.
   calendar, day-of reminder, post-event "did it happen? / run it back" (which doubles
   as the missing outcome measurement). Intent/matchmaking and simplification remain
   queued, not rejected.
+- **2026-07-08** — Commitment semantics decided: **presumed in, with reminder and a
+  chance to back out.** A voter whose availability/vote matches the decided outcome is
+  on the attendee list by default (no extra RSVP tap — friction 1 wins); the day-of
+  reminder push doubles as the escape hatch ("still in / can't make it"), so
+  commitment hardens passively and back-outs are captured as a signal. Explicit
+  opt-in RSVP was rejected as re-taxing invitees at the historical drop-off point.
