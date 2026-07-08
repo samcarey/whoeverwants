@@ -31,6 +31,7 @@ from models import (
     PollSummaryQuestionResponse,
     PollSummaryResponse,
     PollSummarySlot,
+    SetEventAttendanceRequest,
     SetFollowStateRequest,
     PollVoteItem,
     PlusOneCandidateResponse,
@@ -2347,5 +2348,32 @@ def set_poll_follow_state(
         if not exists:
             raise HTTPException(status_code=404, detail="Poll not found")
         set_follow_state(conn, poll_id, browser_id, req.state)
+
+
+@router.post("/{poll_id}/attendance", status_code=204)
+def set_poll_attendance(
+    poll_id: str, req: SetEventAttendanceRequest, request: Request
+):
+    """Set the calling browser's attendance override on a decided poll's
+    event (event layer Phase 1, docs/event-layer-plan.md). `status='out'` =
+    "can't make it" (back-out from the presumed-in list); `status='in'` =
+    (late) opt-in. Per-viewer + reversible; browser-keyed like /follow-state,
+    read account-aware with recency-wins across linked browsers."""
+    require_uuid(poll_id, "poll_id")
+    from services.events import VALID_ATTENDANCE, set_event_attendance
+
+    if req.status not in VALID_ATTENDANCE:
+        raise HTTPException(status_code=400, detail="Invalid attendance status")
+    browser_id = _browser_id(request)
+    if not browser_id or browser_id == NIL_UUID:
+        raise HTTPException(status_code=400, detail="Browser identity required")
+    with get_db() as conn:
+        # Guard against an unknown poll_id 500ing on the FK violation.
+        exists = conn.execute(
+            "SELECT 1 FROM polls WHERE id = %(id)s::uuid", {"id": poll_id}
+        ).fetchone()
+        if not exists:
+            raise HTTPException(status_code=404, detail="Poll not found")
+        set_event_attendance(conn, poll_id, browser_id, req.status)
 
 
