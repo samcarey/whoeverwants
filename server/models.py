@@ -453,6 +453,30 @@ class SetFollowStateRequest(BaseModel):
     state: str
 
 
+class SetEventAttendanceRequest(BaseModel):
+    # Event layer Phase 1: 'out' = "can't make it" (back-out from presumed-in),
+    # 'in' = (late) opt-in. Validated against events.VALID_ATTENDANCE
+    # server-side (400 on anything else).
+    status: str
+
+
+class PollEventAttendeeResponse(BaseModel):
+    name: str | None = None
+    status: str  # 'in' | 'out'
+    is_viewer: bool = False
+
+
+class PollEventResponse(BaseModel):
+    # Derived event view of a decided poll (docs/event-layer-plan.md).
+    # has_event False ⇒ every other field is default (open poll / no time
+    # question / no winner / cancelled).
+    has_event: bool
+    slot_key: str | None = None  # "YYYY-MM-DD HH:MM-HH:MM"; FE formats it
+    attendees: list[PollEventAttendeeResponse] = Field(default_factory=list)
+    in_count: int = 0
+    viewer_status: str | None = None  # 'in' | 'out' | None (not listed)
+
+
 class PollResponse(BaseModel):
     id: str
     short_id: str | None = None

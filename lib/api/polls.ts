@@ -159,6 +159,20 @@ export async function apiRecordPollView(pollId: string): Promise<void> {
  *  optimistic update. Patches the cached Poll's `viewer_follow_state` (per-poll
  *  + accessible-polls caches) so home + a back-nav reflect the change without a
  *  round-trip. */
+/** Event layer Phase 1: set the calling browser's attendance override on a
+ *  decided poll's event. 'out' = "can't make it" (back-out from presumed-in),
+ *  'in' = (late) opt-in. No cache patching — event data isn't embedded in the
+ *  poll caches; callers refetch via `apiGetPollEvent`. */
+export async function apiSetEventAttendance(
+  pollId: string,
+  status: "in" | "out",
+): Promise<void> {
+  await pollFetch(`/${encodeURIComponent(pollId)}/attendance`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+}
+
 export async function apiSetPollFollowState(
   pollId: string,
   state: "new" | "old",

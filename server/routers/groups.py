@@ -43,7 +43,12 @@ from middleware import (
     browser_id_from_request as _browser_id,
     user_id_from_request as _user_id,
 )
-from models import PollResponse, UpdateGroupTitleRequest
+from models import (
+    PollEventAttendeeResponse,
+    PollEventResponse,
+    PollResponse,
+    UpdateGroupTitleRequest,
+)
 from services.invites import (
     IssuedInvite,
     InviteSummary,
@@ -1986,24 +1991,75 @@ def get_poll_voters(route_id: str, poll_ref: str, request: Request):
             raise HTTPException(
                 status_code=404, detail="Group not found"
             )
-        poll_row = conn.execute(
-            "SELECT id FROM polls "
-            "WHERE group_id = %(gid)s::uuid AND short_id = %(ref)s",
-            {"gid": group_id, "ref": poll_ref},
-        ).fetchone()
-        if not poll_row and _is_uuid_like(poll_ref):
-            poll_row = conn.execute(
-                "SELECT id FROM polls "
-                "WHERE group_id = %(gid)s::uuid AND id = %(ref)s::uuid",
-                {"gid": group_id, "ref": poll_ref},
-            ).fetchone()
-        if not poll_row:
+        poll_id = _poll_id_in_group(conn, group_id, poll_ref)
+        if not poll_id:
             raise HTTPException(status_code=404, detail="Poll not found")
-        named, anon = load_poll_voters(conn, str(poll_row["id"]))
+        named, anon = load_poll_voters(conn, poll_id)
         return GroupMembersResponse(
             members=[GroupMemberResponse(**m) for m in named],
             anonymous_count=anon,
         )
+
+
+def _poll_id_in_group(conn, group_id: str, poll_ref: str) -> str | None:
+    """Resolve `poll_ref` (polls.short_id, then polls.id uuid) WITHIN one
+    group — a poll from a different group does not resolve (None). Third
+    occurrence of the pattern (get_group_poll keeps its own copy because it
+    also needs `updated_at`)."""
+    row = conn.execute(
+        "SELECT id FROM polls "
+        "WHERE group_id = %(gid)s::uuid AND short_id = %(ref)s",
+        {"gid": group_id, "ref": poll_ref},
+    ).fetchone()
+    if not row and _is_uuid_like(poll_ref):
+        row = conn.execute(
+            "SELECT id FROM polls "
+            "WHERE group_id = %(gid)s::uuid AND id = %(ref)s::uuid",
+            {"gid": group_id, "ref": poll_ref},
+        ).fetchone()
+    return str(row["id"]) if row else None
+
+
+@router.get(
+    "/by-route-id/{route_id}/poll/{poll_ref}/event",
+    response_model=PollEventResponse,
+)
+def get_poll_event(route_id: str, poll_ref: str, request: Request):
+    """Derived event view of a decided poll (event layer Phase 1,
+    docs/event-layer-plan.md): the winning time slot + the presumed-in
+    attendee list with this caller's effective status. `has_event` is False
+    for open polls / no time question / no winner / cancelled events.
+    Member-gated like `/voter-identities`; 404 on unresolvable route/poll."""
+    from services.events import poll_event
+
+    browser_id = _browser_id(request)
+    user_id = _user_id(request)
+    with get_db() as conn:
+        group_id = resolve_group_id_from_route_id(conn, route_id)
+        if not group_id:
+            raise HTTPException(status_code=404, detail="Group not found")
+        if not is_caller_member_of_group(
+            conn, group_id, browser_id=browser_id, user_id=user_id
+        ):
+            raise HTTPException(status_code=404, detail="Group not found")
+        poll_id = _poll_id_in_group(conn, group_id, poll_ref)
+        if not poll_id:
+            raise HTTPException(status_code=404, detail="Poll not found")
+        ev = poll_event(conn, poll_id, browser_id=browser_id, user_id=user_id)
+    if ev is None:
+        return PollEventResponse(has_event=False)
+    return PollEventResponse(
+        has_event=True,
+        slot_key=ev.slot_key,
+        attendees=[
+            PollEventAttendeeResponse(
+                name=a.name, status=a.status, is_viewer=a.is_viewer
+            )
+            for a in ev.attendees
+        ],
+        in_count=ev.in_count,
+        viewer_status=ev.viewer_status,
+    )
 
 
 # ---------------------------------------------------------------------------
