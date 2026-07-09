@@ -7,7 +7,9 @@
 > back out**; audience is **the owner's circle first** (iPhone/iMessage
 > assumptions allowed).
 >
-> **Status: Phase 1 in progress.** This doc is updated as phases land.
+> **Status: Phase 1 implemented** (migration 146 + `services/events.py` +
+> endpoints + `PollEventCard`; landed via PR #779). Phases 2–3 not started.
+> This doc is updated as phases land.
 
 ## Concepts
 
