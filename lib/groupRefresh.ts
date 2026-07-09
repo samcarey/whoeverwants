@@ -120,6 +120,7 @@ function isPollContentEqual(a: Poll, b: Poll): boolean {
   // To Do classification + gold bar clear on the 5s refresh.
   if ((a.viewer_responded ?? false) !== (b.viewer_responded ?? false)) return false;
   if ((a.suggestion_count ?? 0) !== (b.suggestion_count ?? 0)) return false;
+  if ((a.comment_count ?? 0) !== (b.comment_count ?? 0)) return false;
   if (a.updated_at !== b.updated_at) return false;
   if (a.creator_name !== b.creator_name) return false;
   if (!isStringArrayEqual(a.voter_names, b.voter_names)) return false;

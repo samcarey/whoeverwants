@@ -242,3 +242,124 @@ export async function apiCutoffPollAvailability(pollId: string): Promise<Poll> {
   return pollOperation(pollId, 'cutoff-availability');
 }
 
+
+// --- Poll comments (migration 146) ---
+
+/** One comment on a poll. `is_mine` is server-computed per viewer
+ *  (account-aware, mirrors viewer_is_creator) and gates the delete
+ *  affordance. Comments are poll-level and flat (no threading). */
+export interface PollCommentMention {
+  user_id: string;
+  /** Display name captured at post time; rendering highlights "@<name>"
+   *  occurrences still present in the body. */
+  name: string;
+}
+
+export interface PollCommentReaction {
+  emoji: string;
+  /** Distinct people (account-collapsed across linked browsers). */
+  count: number;
+  /** Whether the CALLER reacted with this emoji (account-aware). */
+  mine: boolean;
+}
+
+export interface PollComment {
+  id: string;
+  poll_id: string;
+  commenter_name: string;
+  user_id: string | null;
+  body: string;
+  created_at: string;
+  /** Set on every author edit (drives the "edited" marker). */
+  edited_at: string | null;
+  mentions: PollCommentMention[];
+  reactions: PollCommentReaction[];
+  is_mine: boolean;
+}
+
+function toPollComment(data: any): PollComment {
+  return {
+    id: data.id,
+    poll_id: data.poll_id,
+    commenter_name: data.commenter_name,
+    user_id: data.user_id ?? null,
+    body: data.body,
+    created_at: data.created_at,
+    edited_at: data.edited_at ?? null,
+    mentions: Array.isArray(data.mentions) ? data.mentions : [],
+    reactions: Array.isArray(data.reactions) ? data.reactions : [],
+    is_mine: data.is_mine === true,
+  };
+}
+
+const commentsInFlight = new Map<string, Promise<PollComment[]>>();
+
+/** The poll's comments, oldest first. Coalesced so the slide-overlay /
+ *  swipe-backdrop double-mount of the detail page shares one round-trip.
+ *  404 (non-member of a private group) surfaces as ApiError — the detail
+ *  page only renders for visible polls, so callers can treat any failure
+ *  as "no comments to show". */
+export async function apiGetPollComments(pollId: string): Promise<PollComment[]> {
+  return coalesced(commentsInFlight, pollId, null, async () => {
+    const data = await pollFetch<any[]>(`/${encodeURIComponent(pollId)}/comments`);
+    return data.map(toPollComment);
+  });
+}
+
+/** Post a comment as the saved display name (the caller name-gates via
+ *  AccountGateModal before invoking — the server's validate_user_name is
+ *  the backstop). Returns the created comment (`is_mine` true). */
+export async function apiCreatePollComment(
+  pollId: string,
+  name: string,
+  body: string,
+  mentionedUserIds: string[] = [],
+): Promise<PollComment> {
+  const data = await pollFetch(`/${encodeURIComponent(pollId)}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({
+      commenter_name: name,
+      body,
+      mentioned_user_ids: mentionedUserIds,
+    }),
+  });
+  return toPollComment(data);
+}
+
+/** Author-edit a comment's body (stamps edited_at server-side). */
+export async function apiUpdatePollComment(
+  pollId: string,
+  commentId: string,
+  body: string,
+): Promise<PollComment> {
+  const data = await pollFetch(
+    `/${encodeURIComponent(pollId)}/comments/${encodeURIComponent(commentId)}`,
+    { method: 'PUT', body: JSON.stringify({ body }) },
+  );
+  return toPollComment(data);
+}
+
+/** Toggle the caller's emoji reaction; returns the comment's updated
+ *  reaction summary. */
+export async function apiTogglePollCommentReaction(
+  pollId: string,
+  commentId: string,
+  emoji: string,
+): Promise<PollCommentReaction[]> {
+  const data = await pollFetch<any[]>(
+    `/${encodeURIComponent(pollId)}/comments/${encodeURIComponent(commentId)}/reactions`,
+    { method: 'POST', body: JSON.stringify({ emoji }) },
+  );
+  return Array.isArray(data) ? data : [];
+}
+
+/** Delete the caller's own comment (account-aware ownership server-side). */
+export async function apiDeletePollComment(
+  pollId: string,
+  commentId: string,
+): Promise<void> {
+  await pollFetch(
+    `/${encodeURIComponent(pollId)}/comments/${encodeURIComponent(commentId)}`,
+    { method: 'DELETE' },
+  );
+}
