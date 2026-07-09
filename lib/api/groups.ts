@@ -836,6 +836,51 @@ export async function apiGetGroupMembers(
  *  the poll /info respondents list (per-person rows + long-press to profile).
  *  `is_admin` / `viewer_is_admin` are not meaningful here (it's a voter roster,
  *  not group membership) — defaulted false to satisfy the shared types. */
+
+/** Event layer Phase 1 (docs/event-layer-plan.md): the derived event view of
+ *  a decided poll — winning slot + presumed-in attendee list. */
+export interface PollEventAttendee {
+  name: string | null;
+  status: "in" | "out";
+  is_viewer: boolean;
+}
+
+export interface PollEventData {
+  has_event: boolean;
+  slot_key: string | null;
+  attendees: PollEventAttendee[];
+  in_count: number;
+  viewer_status: "in" | "out" | null;
+}
+
+/** Member-gated event read for one poll. 404 (non-member / unknown) and
+ *  network failures surface as a thrown error — callers typically treat any
+ *  failure as "no event card". */
+export async function apiGetPollEvent(
+  routeId: string,
+  pollRef: string,
+): Promise<PollEventData> {
+  const data = await groupFetch<any>(
+    `/by-route-id/${encodeURIComponent(routeId)}/poll/${encodeURIComponent(pollRef)}/event`,
+  );
+  return {
+    has_event: !!data?.has_event,
+    slot_key: typeof data?.slot_key === "string" ? data.slot_key : null,
+    attendees: Array.isArray(data?.attendees)
+      ? (data.attendees as any[]).map((a) => ({
+          name: typeof a?.name === "string" ? a.name : null,
+          status: a?.status === "out" ? "out" : "in",
+          is_viewer: !!a?.is_viewer,
+        }))
+      : [],
+    in_count: typeof data?.in_count === "number" ? data.in_count : 0,
+    viewer_status:
+      data?.viewer_status === "in" || data?.viewer_status === "out"
+        ? data.viewer_status
+        : null,
+  };
+}
+
 export async function apiGetGroupPollVoters(
   routeId: string,
   pollRef: string,

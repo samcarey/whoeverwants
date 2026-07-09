@@ -25,6 +25,7 @@ import {
   type PlusOneCandidate,
 } from "@/lib/api";
 import PlusOnesInput, { type PlusOneEntry } from "@/components/PlusOnesInput";
+import PollEventCard from "@/components/PollEventCard";
 import {
   POLL_HYDRATED_EVENT,
   SHOW_GROUP_BACKDROP_EVENT,
@@ -1046,6 +1047,21 @@ function PollDetail({ poll, setPoll, groupId, pollShortId, onBack, fromExplore, 
         )}
 
         {poll.details && <QuestionDetails details={poll.details} label="Notes: " />}
+
+        {/* Event layer Phase 1: a decided time/showtime poll's event — winning
+            slot, presumed-in attendees, and the viewer's back-out/opt-in
+            toggle. Gated on closed + time-bearing so other polls never fire
+            the event GET. */}
+        {isClosed &&
+          subQuestions.some(
+            (sp) => sp.question_type === "time" || sp.question_type === "showtime",
+          ) && (
+            <PollEventCard
+              groupRouteId={groupId}
+              pollRef={poll.short_id ?? poll.id}
+              pollId={poll.id}
+            />
+          )}
 
         {subQuestions.map((sp, idx) => {
           const isYesNo = sp.question_type === "yes_no";
