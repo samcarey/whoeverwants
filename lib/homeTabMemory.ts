@@ -6,7 +6,7 @@
 
 export type HomeTab = "playlist" | "groups";
 
-export const DEFAULT_HOME_TAB: HomeTab = "playlist";
+const DEFAULT_HOME_TAB: HomeTab = "playlist";
 
 export const HOME_TABS: { value: HomeTab; label: string }[] = [
   { value: "playlist", label: "Playlist" },

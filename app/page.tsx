@@ -329,59 +329,63 @@ export default function Home() {
         </div>
       )}
 
-      {homeTab === "groups" && loading && (
-        <div className="flex justify-center items-center py-8">
-          <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        </div>
-      )}
+      {homeTab === "groups" && (
+        <>
+        {loading && (
+          <div className="flex justify-center items-center py-8">
+            <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </div>
+        )}
 
-      {homeTab === "groups" && error && (
-        <div className="p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-center">
-          <p>{error}</p>
-          <button
-            type="button"
-            onClick={() => fetchQuestions({ isRetry: true })}
-            className="mt-3 inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
-          >
-            Try again
-          </button>
-        </div>
-      )}
-
-      {homeTab === "groups" && !loading && !error && polls.length === 0 && emptyGroups.length === 0 && (
-        <div className="text-center py-8">
-          <p className="text-gray-500 dark:text-gray-400">You don&apos;t have access to any groups</p>
-          {!session && (
+        {error && (
+          <div className="p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-center">
+            <p>{error}</p>
             <button
               type="button"
-              onClick={() => setSignInOpen(true)}
-              className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+              onClick={() => fetchQuestions({ isRetry: true })}
+              className="mt-3 inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
             >
-              Sign In
+              Try again
             </button>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {homeTab === "groups" && !loading && !error && (
-        <GroupList
-          polls={polls}
-          emptyGroups={emptyGroups}
-          onGroupsForgotten={(forgottenPollIds, forgottenGroupIds) => {
-            // Drop the forgotten groups optimistically — caches were
-            // already invalidated inside forgetGroup, so the next natural
-            // refresh re-syncs; no immediate fetch needed.
-            const forgottenPolls = new Set(forgottenPollIds);
-            setPolls((prev) => prev.filter((p) => !forgottenPolls.has(p.id)));
-            if (forgottenGroupIds && forgottenGroupIds.length > 0) {
-              const forgottenGroups = new Set(forgottenGroupIds);
-              setEmptyGroups((prev) => prev.filter((g) => !forgottenGroups.has(g.id)));
-            }
-          }}
-        />
+        {!loading && !error && polls.length === 0 && emptyGroups.length === 0 && (
+          <div className="text-center py-8">
+            <p className="text-gray-500 dark:text-gray-400">You don&apos;t have access to any groups</p>
+            {!session && (
+              <button
+                type="button"
+                onClick={() => setSignInOpen(true)}
+                className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+              >
+                Sign In
+              </button>
+            )}
+          </div>
+        )}
+
+        {!loading && !error && (
+          <GroupList
+            polls={polls}
+            emptyGroups={emptyGroups}
+            onGroupsForgotten={(forgottenPollIds, forgottenGroupIds) => {
+              // Drop the forgotten groups optimistically — caches were
+              // already invalidated inside forgetGroup, so the next natural
+              // refresh re-syncs; no immediate fetch needed.
+              const forgottenPolls = new Set(forgottenPollIds);
+              setPolls((prev) => prev.filter((p) => !forgottenPolls.has(p.id)));
+              if (forgottenGroupIds && forgottenGroupIds.length > 0) {
+                const forgottenGroups = new Set(forgottenGroupIds);
+                setEmptyGroups((prev) => prev.filter((g) => !forgottenGroups.has(g.id)));
+              }
+            }}
+          />
+        )}
+        </>
       )}
 
       <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
