@@ -10,6 +10,7 @@ import { usePageReady } from "@/lib/usePageReady";
 import { HOME_SCROLL_KEY, getRememberedScroll, clearGroupScroll } from "@/lib/scrollMemory";
 import { clearGroupTabs } from "@/lib/groupTabMemory";
 import { getCachedSessionUser, SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
+import { HOME_TABS, getHomeTab, homeTabPillClass, rememberHomeTab, type HomeTab } from "@/lib/homeTabMemory";
 import GroupList from "@/components/GroupList";
 import SignInModal from "@/components/SignInModal";
 
@@ -57,6 +58,14 @@ export default function Home() {
   const [fontSize, setFontSize] = useState<string>("text-xl");
   const [session, setSession] = useState<SessionUser | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
+  // Seeded from module memory so the chosen tab survives back-nav remounts;
+  // the module default matches the SSR render (no hydration mismatch).
+  const [homeTab, setHomeTabState] = useState<HomeTab>(() => getHomeTab());
+
+  const selectHomeTab = (tab: HomeTab) => {
+    setHomeTabState(tab);
+    rememberHomeTab(tab);
+  };
 
   usePageReady(true);
 
@@ -298,8 +307,29 @@ export default function Home() {
 
   return (
     <>
+      {/* Tab bubbles just below the page title (the title lives in
+          template.tsx; this is the first element of the page content). */}
+      <div className="flex justify-center gap-2 pt-1 pb-3">
+        {HOME_TABS.map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => selectHomeTab(value)}
+            aria-pressed={homeTab === value}
+            className={homeTabPillClass(homeTab === value)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {loading && (
+      {homeTab === "playlist" && (
+        <div className="text-center py-8">
+          <p className="text-gray-500 dark:text-gray-400">Playlist coming soon!</p>
+        </div>
+      )}
+
+      {homeTab === "groups" && loading && (
         <div className="flex justify-center items-center py-8">
           <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -308,7 +338,7 @@ export default function Home() {
         </div>
       )}
 
-      {error && (
+      {homeTab === "groups" && error && (
         <div className="p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-center">
           <p>{error}</p>
           <button
@@ -321,7 +351,7 @@ export default function Home() {
         </div>
       )}
 
-      {!loading && !error && polls.length === 0 && emptyGroups.length === 0 && (
+      {homeTab === "groups" && !loading && !error && polls.length === 0 && emptyGroups.length === 0 && (
         <div className="text-center py-8">
           <p className="text-gray-500 dark:text-gray-400">You don&apos;t have access to any groups</p>
           {!session && (
@@ -336,7 +366,7 @@ export default function Home() {
         </div>
       )}
 
-      {!loading && !error && (
+      {homeTab === "groups" && !loading && !error && (
         <GroupList
           polls={polls}
           emptyGroups={emptyGroups}
