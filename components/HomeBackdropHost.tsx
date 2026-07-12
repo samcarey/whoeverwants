@@ -36,6 +36,7 @@ import { getRememberedScroll, HOME_SCROLL_KEY } from "@/lib/scrollMemory";
 import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
 import { getCachedSessionUser } from "@/lib/session";
 import { isExploreButtonEnabled } from "@/lib/exploreButtonFlag";
+import { HOME_TABS, HOME_TAB_ROW_CLASS, getHomeTab, homeTabPillClass } from "@/lib/homeTabMemory";
 
 export default function HomeBackdropHost(): React.ReactElement | null {
   const visible = useHomeBackdropActive();
@@ -56,6 +57,9 @@ export default function HomeBackdropHost(): React.ReactElement | null {
   // when the flag-off real home committed (the reported "shown until the
   // transition completes then disappears" flicker).
   const showExplore = isExploreButtonEnabled();
+  // Mirror the real home's active tab (Playlist · Groups) so the revealed
+  // backdrop matches what the committed home page will render.
+  const homeTab = getHomeTab();
 
   return createPortal(
     // Wrap in a div carrying the Geist sans font-family. The portal target
@@ -167,19 +171,36 @@ export default function HomeBackdropHost(): React.ReactElement | null {
           className="max-w-4xl mx-auto -mx-4 sm:mx-auto sm:px-4 pt-0.5"
           style={{ paddingBottom: "6rem" }}
         >
-          {isEmpty && (
+          {/* Decorative mirror of the home tab bubbles — inert spans, the
+              real buttons live in app/page.tsx. */}
+          <div className={HOME_TAB_ROW_CLASS}>
+            {HOME_TABS.map(({ value, label }) => (
+              <span key={value} aria-hidden="true" className={homeTabPillClass(homeTab === value)}>
+                {label}
+              </span>
+            ))}
+          </div>
+          {homeTab === "playlist" ? (
             <div className="text-center py-8">
-              <p className="text-gray-500 dark:text-gray-400">
-                You don&apos;t have access to any groups
-              </p>
-              {!signedIn && (
-                <span className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg">
-                  Sign In
-                </span>
-              )}
+              <p className="text-gray-500 dark:text-gray-400">Playlist coming soon!</p>
             </div>
+          ) : (
+            <>
+              {isEmpty && (
+                <div className="text-center py-8">
+                  <p className="text-gray-500 dark:text-gray-400">
+                    You don&apos;t have access to any groups
+                  </p>
+                  {!signedIn && (
+                    <span className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg">
+                      Sign In
+                    </span>
+                  )}
+                </div>
+              )}
+              <GroupList polls={cachedPolls} emptyGroups={cachedEmptyGroups} />
+            </>
           )}
-          <GroupList polls={cachedPolls} emptyGroups={cachedEmptyGroups} />
         </div>
       </div>
     </div>,

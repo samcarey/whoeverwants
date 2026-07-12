@@ -10,6 +10,8 @@ import { usePageReady } from "@/lib/usePageReady";
 import { HOME_SCROLL_KEY, getRememberedScroll, clearGroupScroll } from "@/lib/scrollMemory";
 import { clearGroupTabs } from "@/lib/groupTabMemory";
 import { getCachedSessionUser, SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
+import { DEFAULT_HOME_TAB, HOME_TABS, HOME_TAB_ROW_CLASS, getHomeTab, homeTabPillClass, rememberHomeTab, type HomeTab } from "@/lib/homeTabMemory";
+import { isAppHydrated } from "@/lib/hydration";
 import GroupList from "@/components/GroupList";
 import SignInModal from "@/components/SignInModal";
 
@@ -57,6 +59,23 @@ export default function Home() {
   const [fontSize, setFontSize] = useState<string>("text-xl");
   const [session, setSession] = useState<SessionUser | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
+  // The chosen tab persists in localStorage (via homeTabMemory), so it
+  // survives back-nav remounts AND hard reloads. Eager seeding is gated on
+  // isAppHydrated() — on a direct load the server HTML was rendered with
+  // the default, so reading localStorage in the initializer would diverge
+  // from it; the mount effect below covers that case (one-frame default
+  // flash on hard reload only, the settings-page convention).
+  const [homeTab, setHomeTabState] = useState<HomeTab>(() =>
+    isAppHydrated() ? getHomeTab() : DEFAULT_HOME_TAB,
+  );
+  useEffect(() => {
+    setHomeTabState(getHomeTab());
+  }, []);
+
+  const selectHomeTab = (tab: HomeTab) => {
+    setHomeTabState(tab);
+    rememberHomeTab(tab);
+  };
 
   usePageReady(true);
 
@@ -298,60 +317,85 @@ export default function Home() {
 
   return (
     <>
-
-      {loading && (
-        <div className="flex justify-center items-center py-8">
-          <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        </div>
-      )}
-
-      {error && (
-        <div className="p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-center">
-          <p>{error}</p>
+      {/* Tab bubbles just below the page title (the title lives in
+          template.tsx; this is the first element of the page content). */}
+      <div className={HOME_TAB_ROW_CLASS}>
+        {HOME_TABS.map(({ value, label }) => (
           <button
+            key={value}
             type="button"
-            onClick={() => fetchQuestions({ isRetry: true })}
-            className="mt-3 inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
+            onClick={() => selectHomeTab(value)}
+            aria-pressed={homeTab === value}
+            className={homeTabPillClass(homeTab === value)}
           >
-            Try again
+            {label}
           </button>
+        ))}
+      </div>
+
+      {homeTab === "playlist" && (
+        <div className="text-center py-8">
+          <p className="text-gray-500 dark:text-gray-400">Playlist coming soon!</p>
         </div>
       )}
 
-      {!loading && !error && polls.length === 0 && emptyGroups.length === 0 && (
-        <div className="text-center py-8">
-          <p className="text-gray-500 dark:text-gray-400">You don&apos;t have access to any groups</p>
-          {!session && (
+      {homeTab === "groups" && (
+        <>
+        {loading && (
+          <div className="flex justify-center items-center py-8">
+            <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </div>
+        )}
+
+        {error && (
+          <div className="p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-center">
+            <p>{error}</p>
             <button
               type="button"
-              onClick={() => setSignInOpen(true)}
-              className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+              onClick={() => fetchQuestions({ isRetry: true })}
+              className="mt-3 inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
             >
-              Sign In
+              Try again
             </button>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {!loading && !error && (
-        <GroupList
-          polls={polls}
-          emptyGroups={emptyGroups}
-          onGroupsForgotten={(forgottenPollIds, forgottenGroupIds) => {
-            // Drop the forgotten groups optimistically — caches were
-            // already invalidated inside forgetGroup, so the next natural
-            // refresh re-syncs; no immediate fetch needed.
-            const forgottenPolls = new Set(forgottenPollIds);
-            setPolls((prev) => prev.filter((p) => !forgottenPolls.has(p.id)));
-            if (forgottenGroupIds && forgottenGroupIds.length > 0) {
-              const forgottenGroups = new Set(forgottenGroupIds);
-              setEmptyGroups((prev) => prev.filter((g) => !forgottenGroups.has(g.id)));
-            }
-          }}
-        />
+        {!loading && !error && polls.length === 0 && emptyGroups.length === 0 && (
+          <div className="text-center py-8">
+            <p className="text-gray-500 dark:text-gray-400">You don&apos;t have access to any groups</p>
+            {!session && (
+              <button
+                type="button"
+                onClick={() => setSignInOpen(true)}
+                className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+              >
+                Sign In
+              </button>
+            )}
+          </div>
+        )}
+
+        {!loading && !error && (
+          <GroupList
+            polls={polls}
+            emptyGroups={emptyGroups}
+            onGroupsForgotten={(forgottenPollIds, forgottenGroupIds) => {
+              // Drop the forgotten groups optimistically — caches were
+              // already invalidated inside forgetGroup, so the next natural
+              // refresh re-syncs; no immediate fetch needed.
+              const forgottenPolls = new Set(forgottenPollIds);
+              setPolls((prev) => prev.filter((p) => !forgottenPolls.has(p.id)));
+              if (forgottenGroupIds && forgottenGroupIds.length > 0) {
+                const forgottenGroups = new Set(forgottenGroupIds);
+                setEmptyGroups((prev) => prev.filter((g) => !forgottenGroups.has(g.id)));
+              }
+            }}
+          />
+        )}
+        </>
       )}
 
       <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
