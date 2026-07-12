@@ -20,7 +20,7 @@ export const HOME_TABS: { value: HomeTab; label: string }[] = [
 // Row: left-justified + horizontally scrollable (more tabs may come);
 // `.scrollbar-hide` is the app/globals.css utility.
 export const HOME_TAB_ROW_CLASS =
-  "flex gap-2 px-2 pt-1 pb-3 overflow-x-auto scrollbar-hide";
+  "flex gap-2 px-2 pt-1 pb-1 overflow-x-auto scrollbar-hide";
 
 export function homeTabPillClass(selected: boolean): string {
   return `shrink-0 whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
