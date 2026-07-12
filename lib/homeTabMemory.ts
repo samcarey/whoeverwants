@@ -30,6 +30,11 @@ export function homeTabPillClass(selected: boolean): string {
   }`;
 }
 
+// Fired on every rememberHomeTab so layout-level chrome that depends on the
+// active tab (the floating "+ Group" / "+ Slot" FAB in CreateGroupButtonHost)
+// can react without a home-page remount.
+export const HOME_TAB_CHANGED_EVENT = "homeTabChanged";
+
 let current: HomeTab = DEFAULT_HOME_TAB;
 
 export function getHomeTab(): HomeTab {
@@ -38,4 +43,7 @@ export function getHomeTab(): HomeTab {
 
 export function rememberHomeTab(tab: HomeTab): void {
   current = tab;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(HOME_TAB_CHANGED_EVENT));
+  }
 }

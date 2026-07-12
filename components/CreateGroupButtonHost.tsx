@@ -36,7 +36,9 @@ import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
 import { haptic } from "@/lib/haptics";
 import { getUserName } from "@/lib/userProfile";
 import { isValidUserName } from "@/lib/nameValidation";
+import { HOME_TAB_CHANGED_EVENT, getHomeTab, type HomeTab } from "@/lib/homeTabMemory";
 import AccountGateModal from "@/components/AccountGateModal";
+import NewSlotSheet from "@/components/NewSlotSheet";
 
 const IS_CAPACITOR_NATIVE =
   typeof window !== "undefined" && Capacitor.isNativePlatform();
@@ -49,9 +51,20 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
   // Hide the FAB during a group→home swipe-back (shared listener hook).
   const swipeBackActive = useHomeBackdropActive();
   const [nameModalOpen, setNameModalOpen] = useState(false);
+  const [slotSheetOpen, setSlotSheetOpen] = useState(false);
+  // Active home tab drives the FAB's identity: Groups tab → "+ Group",
+  // Playlist tab → "+ Slot". Tracked via the module memory's change event
+  // since this host lives at layout level (no home-page remount reaches it).
+  const [homeTab, setHomeTab] = useState<HomeTab>(() => getHomeTab());
 
   useEffect(() => {
     setMounted(true);
+    const update = () => setHomeTab(getHomeTab());
+    // Re-read on mount too — the module memory may have changed while this
+    // effect wasn't yet registered.
+    update();
+    window.addEventListener(HOME_TAB_CHANGED_EVENT, update);
+    return () => window.removeEventListener(HOME_TAB_CHANGED_EVENT, update);
   }, []);
 
   if (!mounted) return null;
@@ -81,7 +94,16 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
       });
   };
 
+  // On the Playlist tab the FAB creates a slot (bottom sheet) instead of a
+  // group. No name gate — nothing is persisted yet.
+  const isSlotMode = homeTab === "playlist";
+
   const onClick = () => {
+    if (isSlotMode) {
+      haptic.medium();
+      setSlotSheetOpen(true);
+      return;
+    }
     if (inFlight.current) return;
     if (!isValidUserName(getUserName())) {
       setNameModalOpen(true);
@@ -117,15 +139,16 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
         visibility: visible ? "visible" : "hidden",
         pointerEvents: visible ? "auto" : "none",
       }}
-      aria-label="Create new group"
+      aria-label={isSlotMode ? "Create new slot" : "Create new group"}
       aria-hidden={!visible}
       tabIndex={visible ? 0 : -1}
     >
       <span aria-hidden="true" className="text-[28.8px] leading-none">
         +
       </span>
-      <span className="text-lg leading-none">Group</span>
+      <span className="text-lg leading-none">{isSlotMode ? "Slot" : "Group"}</span>
     </button>
+    <NewSlotSheet isOpen={slotSheetOpen} onClose={() => setSlotSheetOpen(false)} />
     <AccountGateModal
       isOpen={nameModalOpen}
       message="to create a new group"
