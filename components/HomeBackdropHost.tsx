@@ -36,7 +36,7 @@ import { getRememberedScroll, HOME_SCROLL_KEY } from "@/lib/scrollMemory";
 import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
 import { getCachedSessionUser } from "@/lib/session";
 import { isExploreButtonEnabled } from "@/lib/exploreButtonFlag";
-import { HOME_TABS, getHomeTab, homeTabPillClass } from "@/lib/homeTabMemory";
+import { HOME_TABS, HOME_TAB_ROW_CLASS, getHomeTab, homeTabPillClass } from "@/lib/homeTabMemory";
 
 export default function HomeBackdropHost(): React.ReactElement | null {
   const visible = useHomeBackdropActive();
@@ -173,7 +173,7 @@ export default function HomeBackdropHost(): React.ReactElement | null {
         >
           {/* Decorative mirror of the home tab bubbles — inert spans, the
               real buttons live in app/page.tsx. */}
-          <div className="flex justify-center gap-2 pt-1 pb-3">
+          <div className={HOME_TAB_ROW_CLASS}>
             {HOME_TABS.map(({ value, label }) => (
               <span key={value} aria-hidden="true" className={homeTabPillClass(homeTab === value)}>
                 {label}

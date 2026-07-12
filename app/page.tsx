@@ -10,7 +10,7 @@ import { usePageReady } from "@/lib/usePageReady";
 import { HOME_SCROLL_KEY, getRememberedScroll, clearGroupScroll } from "@/lib/scrollMemory";
 import { clearGroupTabs } from "@/lib/groupTabMemory";
 import { getCachedSessionUser, SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
-import { HOME_TABS, getHomeTab, homeTabPillClass, rememberHomeTab, type HomeTab } from "@/lib/homeTabMemory";
+import { HOME_TABS, HOME_TAB_ROW_CLASS, getHomeTab, homeTabPillClass, rememberHomeTab, type HomeTab } from "@/lib/homeTabMemory";
 import GroupList from "@/components/GroupList";
 import SignInModal from "@/components/SignInModal";
 
@@ -309,7 +309,7 @@ export default function Home() {
     <>
       {/* Tab bubbles just below the page title (the title lives in
           template.tsx; this is the first element of the page content). */}
-      <div className="flex justify-center gap-2 pt-1 pb-3">
+      <div className={HOME_TAB_ROW_CLASS}>
         {HOME_TABS.map(({ value, label }) => (
           <button
             key={value}
