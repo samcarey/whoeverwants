@@ -1661,20 +1661,15 @@ export function CreateQuestionContent() {
   const sheetIsSubEdit = editMode?.type === 'question' || editMode?.type === 'details';
   const sheetConfirmDiscard =
     editMode?.type === 'create' && (inlineFormHasContent() || drafts.length > 0);
-  // Read via refs so the gesture's canStart / onBeforeDismiss see current
-  // values without re-subscribing on every render.
-  const sheetIsSubEditRef = useRef(sheetIsSubEdit);
-  sheetIsSubEditRef.current = sheetIsSubEdit;
-  const sheetConfirmDiscardRef = useRef(sheetConfirmDiscard);
-  sheetConfirmDiscardRef.current = sheetConfirmDiscard;
-
+  // Inline closures capture the current sheetIsSubEdit / sheetConfirmDiscard;
+  // the gesture's touch handlers carry them in deps + re-bind each render.
   const { sheetRef, backdropRef: sheetBackdropRef, touchHandlers: sheetTouchHandlers } =
     useSheetDismissGesture({
       scrollerRef: sheetScrollerNodeRef,
       onDismiss: cancelModal,
-      canStart: () => !sheetIsSubEditRef.current,
+      canStart: () => !sheetIsSubEdit,
       onBeforeDismiss: () => {
-        if (sheetConfirmDiscardRef.current) {
+        if (sheetConfirmDiscard) {
           setShowDiscardConfirm(true);
           return false;
         }

@@ -61,23 +61,18 @@ export function useSheetDismissGesture({
   const backdropRef = useRef<HTMLDivElement | null>(null);
   const swipeRef = useRef<SwipeState | null>(null);
 
-  // Latest callbacks read via refs so the touch handlers stay identity-stable
-  // (the codebase's stable-handler-+-ref-to-latest-closure pattern).
-  const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
-  const canStartRef = useRef(canStart);
-  canStartRef.current = canStart;
-  const onBeforeDismissRef = useRef(onBeforeDismiss);
-  onBeforeDismissRef.current = onBeforeDismiss;
-
   const resetTransform = useCallback((el: HTMLDivElement) => {
     el.style.transition = "";
     el.style.transform = "";
   }, []);
 
+  // The handlers are plain onTouch* props on a div (not window listeners), so
+  // they can carry the caller callbacks in their deps and re-bind on identity
+  // change — no window-listener churn, and a gesture reads its own state from
+  // swipeRef regardless of which handler identity ends up bound.
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
-      if ((canStartRef.current && !canStartRef.current()) || e.touches.length !== 1) {
+      if ((canStart && !canStart()) || e.touches.length !== 1) {
         swipeRef.current = null;
         return;
       }
@@ -91,7 +86,7 @@ export function useSheetDismissGesture({
         ignored: false,
       };
     },
-    [scrollerRef],
+    [scrollerRef, canStart],
   );
 
   const onTouchMove = useCallback((e: React.TouchEvent) => {
@@ -148,7 +143,7 @@ export function useSheetDismissGesture({
         return;
       }
       // Caller may veto the dismiss (e.g. show a discard-confirm) — snap back.
-      if (onBeforeDismissRef.current && !onBeforeDismissRef.current()) {
+      if (onBeforeDismiss && !onBeforeDismiss()) {
         snapBack();
         return;
       }
@@ -161,9 +156,9 @@ export function useSheetDismissGesture({
         backdropRef.current.style.transition = `opacity ${CLOSE_MS}ms ease`;
         backdropRef.current.style.opacity = "0";
       }
-      window.setTimeout(() => onDismissRef.current(), CLOSE_MS);
+      window.setTimeout(() => onDismiss(), CLOSE_MS);
     },
-    [resetTransform],
+    [onDismiss, onBeforeDismiss, resetTransform],
   );
 
   return {
