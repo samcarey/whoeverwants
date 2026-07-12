@@ -29,6 +29,7 @@ import DaysSelector from "@/components/DaysSelector";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
 import ModalPortal from "@/components/ModalPortal";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
+import { useSheetDismissGesture } from "@/lib/useSheetDismissGesture";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { formatMonthYearLabel, shiftMonth } from "@/lib/timeUtils";
 import { haptic } from "@/lib/haptics";
@@ -46,14 +47,6 @@ const SUGGESTION_GROUPS: { key: keyof ActivitySuggestions; label: string }[] = [
 
 // Same top gap as the create-poll sheets (SHEET_TOP_GAP there).
 const SHEET_HEIGHT = "calc(100dvh - env(safe-area-inset-top, 0px) - 1.25rem)";
-
-// Swipe-down-to-dismiss tuning (mirrors the create-poll sheet).
-const SHEET_SWIPE_RECOGNIZE_PX = 8;
-const SHEET_SWIPE_COMMIT_RATIO = 0.5;
-const SHEET_SWIPE_COMMIT_VELOCITY = 0.5; // px/ms
-const SHEET_SWIPE_CLOSE_MS = 250;
-const SHEET_SWIPE_SNAP_BACK_MS = 220;
-const SHEET_SWIPE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 
 interface NewSlotSheetProps {
   isOpen: boolean;
@@ -222,113 +215,21 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
     });
   }, [calendarExpanded]);
 
-  // Swipe-down-to-dismiss (native iOS sheet behavior; ported from the
-  // create-poll sheet). The handlers are on the OUTER sheet div; the per-frame
-  // transform is applied imperatively to that same node (sheetRef) so the whole
-  // sheet moves rigidly (no re-render). The gesture engages only when the body
-  // is scrolled to the top AND the drag is downward-dominant, so a mid-content
-  // downward drag still scrolls the body. No sub-panel / discard-confirm here —
-  // there's nothing to lose, so a committed swipe just closes.
-  const sheetRef = useRef<HTMLDivElement | null>(null);
-  const sheetBackdropRef = useRef<HTMLDivElement | null>(null);
+  // Swipe-down-to-dismiss (native iOS sheet behavior), shared with the
+  // create-poll sheet. No sub-panel / discard-confirm here — there's nothing
+  // to lose, so a committed swipe just closes.
   const sheetScrollerNodeRef = useRef<HTMLDivElement | null>(null);
-  const sheetSwipeRef = useRef<{
-    startY: number;
-    startX: number;
-    startTime: number;
-    atTop: boolean;
-    swiping: boolean;
-    ignored: boolean;
-  } | null>(null);
-
-  const resetSheetTransform = useCallback((el: HTMLDivElement) => {
-    el.style.transition = "";
-    el.style.transform = "";
-  }, []);
-
-  const handleSheetTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length !== 1) {
-      sheetSwipeRef.current = null;
-      return;
-    }
-    const scroller = sheetScrollerNodeRef.current;
-    sheetSwipeRef.current = {
-      startY: e.touches[0].clientY,
-      startX: e.touches[0].clientX,
-      startTime: Date.now(),
-      atTop: !scroller || scroller.scrollTop <= 0,
-      swiping: false,
-      ignored: false,
-    };
-  }, []);
-
-  const handleSheetTouchMove = useCallback((e: React.TouchEvent) => {
-    const st = sheetSwipeRef.current;
-    if (!st || st.ignored) return;
-    if (e.touches.length !== 1) {
-      st.ignored = true;
-      return;
-    }
-    const dy = e.touches[0].clientY - st.startY;
-    const dx = e.touches[0].clientX - st.startX;
-    if (!st.swiping) {
-      if (Math.abs(dy) < SHEET_SWIPE_RECOGNIZE_PX && Math.abs(dx) < SHEET_SWIPE_RECOGNIZE_PX) return;
-      // Engage only for a downward, vertical-dominant drag that began at the
-      // top of the body. Anything else (upward, horizontal, or started
-      // mid-scroll) is left to the native scroll for this touch sequence.
-      if (!st.atTop || dy <= 0 || Math.abs(dy) <= Math.abs(dx)) {
-        st.ignored = true;
-        return;
-      }
-      st.swiping = true;
-    }
-    const el = sheetRef.current;
-    if (el) {
-      el.style.transition = "none";
-      el.style.transform = `translateY(${Math.max(0, dy)}px)`;
-    }
-  }, []);
-
-  const handleSheetTouchEnd = useCallback((e: React.TouchEvent) => {
-    const st = sheetSwipeRef.current;
-    sheetSwipeRef.current = null;
-    if (!st || !st.swiping || st.ignored) return;
-    const endY = e.changedTouches[0]?.clientY ?? st.startY;
-    const dy = Math.max(0, endY - st.startY);
-    const dt = Date.now() - st.startTime;
-    const velocity = (endY - st.startY) / Math.max(1, dt);
-    const el = sheetRef.current;
-    const height = el?.offsetHeight ?? window.innerHeight;
-    const shouldClose = dy >= height * SHEET_SWIPE_COMMIT_RATIO || velocity >= SHEET_SWIPE_COMMIT_VELOCITY;
-
-    if (!shouldClose) {
-      if (el) {
-        el.style.transition = `transform ${SHEET_SWIPE_SNAP_BACK_MS}ms ${SHEET_SWIPE_EASING}`;
-        el.style.transform = "translateY(0)";
-        window.setTimeout(() => {
-          if (sheetRef.current === el) resetSheetTransform(el);
-        }, SHEET_SWIPE_SNAP_BACK_MS + 20);
-      }
-      return;
-    }
-    // Slide the sheet the rest of the way down + fade the backdrop, then close.
-    if (el) {
-      el.style.transition = `transform ${SHEET_SWIPE_CLOSE_MS}ms ${SHEET_SWIPE_EASING}`;
-      el.style.transform = "translateY(100%)";
-    }
-    if (sheetBackdropRef.current) {
-      sheetBackdropRef.current.style.transition = `opacity ${SHEET_SWIPE_CLOSE_MS}ms ease`;
-      sheetBackdropRef.current.style.opacity = "0";
-    }
-    window.setTimeout(() => onClose(), SHEET_SWIPE_CLOSE_MS);
-  }, [onClose, resetSheetTransform]);
+  const { sheetRef, backdropRef, touchHandlers } = useSheetDismissGesture({
+    scrollerRef: sheetScrollerNodeRef,
+    onDismiss: onClose,
+  });
 
   if (!isOpen) return null;
 
   return (
     <ModalPortal>
       <div
-        ref={sheetBackdropRef}
+        ref={backdropRef}
         className="fixed inset-0 z-[59] bg-black/40 dark:bg-black/60 animate-fade-in"
         onClick={onClose}
         aria-hidden="true"
@@ -336,10 +237,7 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
       <div className="fixed inset-0 z-[60] flex items-end justify-center pointer-events-none">
         <div
           ref={sheetRef}
-          onTouchStart={handleSheetTouchStart}
-          onTouchMove={handleSheetTouchMove}
-          onTouchEnd={handleSheetTouchEnd}
-          onTouchCancel={handleSheetTouchEnd}
+          {...touchHandlers}
           className="relative w-full sm:max-w-md bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up pointer-events-auto"
           style={{ height: SHEET_HEIGHT }}
           role="dialog"
