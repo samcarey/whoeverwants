@@ -25,7 +25,7 @@ export const HOME_TAB_ROW_CLASS =
 export function homeTabPillClass(selected: boolean): string {
   return `shrink-0 whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
     selected
-      ? "bg-blue-600 border-blue-600 text-white"
+      ? "bg-blue-500 border-blue-500 text-white"
       : "bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300"
   }`;
 }
