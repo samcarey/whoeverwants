@@ -353,3 +353,29 @@ function base64FromArrayBuffer(buffer: ArrayBuffer): string {
   }
   return btoa(binary);
 }
+
+// ---------------------------------------------------------------------------
+// Activity blacklist (account-synced; edited from settings, filters slot
+// suggestions). Each helper returns the full updated list.
+// ---------------------------------------------------------------------------
+
+export async function apiGetActivityBlacklist(): Promise<string[]> {
+  const data = await userFetch<{ activities: string[] }>('/me/activity-blacklist');
+  return data.activities ?? [];
+}
+
+export async function apiAddActivityBlacklist(activity: string): Promise<string[]> {
+  const data = await userFetch<{ activities: string[] }>('/me/activity-blacklist', {
+    method: 'POST',
+    body: JSON.stringify({ activity }),
+  });
+  return data.activities ?? [];
+}
+
+export async function apiRemoveActivityBlacklist(activity: string): Promise<string[]> {
+  const data = await userFetch<{ activities: string[] }>('/me/activity-blacklist', {
+    method: 'DELETE',
+    body: JSON.stringify({ activity }),
+  });
+  return data.activities ?? [];
+}

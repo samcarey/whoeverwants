@@ -44,6 +44,10 @@ import { useMyUserImageUrl } from "@/lib/useMyUserImageUrl";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { getStoredTheme, saveTheme, type ThemePreference } from "@/lib/theme";
 import {
+  apiGetActivityBlacklist,
+  apiRemoveActivityBlacklist,
+} from "@/lib/api/users";
+import {
   getEffectiveBadgeSettings,
   saveBadgeSettings,
   DEFAULT_BADGE_SETTINGS,
@@ -203,6 +207,11 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
   const [passkeyToDelete, setPasskeyToDelete] = useState<PasskeySummary | null>(null);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
+  // Account-synced activity blacklist (edited here; filters slot
+  // suggestions). null = not yet loaded.
+  const [blacklist, setBlacklist] = useState<string[] | null>(null);
+  const [blacklistBusy, setBlacklistBusy] = useState<string | null>(null);
+
   // Single write path for the passkeys list so the module-level mirror
   // (which seeds the next mount's first commit) can't drift from state.
   const updatePasskeys = (v: PasskeySummary[] | null) => {
@@ -256,6 +265,24 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
     setBadge(getEffectiveBadgeSettings());
     setVoteReminder(getEffectiveVoteReminder());
   }, [currentUser?.user_id]);
+
+  // Load the activity blacklist on mount + on identity change (a different
+  // account has its own list). Skipped in the swipe-back overlay instance.
+  useEffect(() => {
+    if (inOverlay) return;
+    apiGetActivityBlacklist()
+      .then(setBlacklist)
+      .catch(() => setBlacklist([]));
+  }, [inOverlay, currentUser?.user_id]);
+
+  const handleRemoveBlacklist = (activity: string) => {
+    if (blacklistBusy) return;
+    setBlacklistBusy(activity);
+    apiRemoveActivityBlacklist(activity)
+      .then(setBlacklist)
+      .catch(() => {})
+      .finally(() => setBlacklistBusy(null));
+  };
 
   const updateBadge = (next: BadgeSettings) => {
     setBadge(next);
@@ -866,6 +893,37 @@ export function SettingsView({ inOverlay = false }: SettingsViewProps) {
           much of the poll&apos;s voting window remains.
         </p>
       </div>
+
+      {/* Blocked activities: the account-synced blacklist. Activities here
+          are never suggested in the new-slot sheet. Added via the ✕ on a
+          suggestion; removed here. Shown when there are entries (so an
+          anonymous browser that blocked some can still clear them). */}
+      {blacklist && blacklist.length > 0 && (
+        <div className="mb-6">
+          <h2 className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+            Blocked activities
+          </h2>
+          <section className="rounded-3xl bg-gray-50 dark:bg-gray-800 px-4 divide-y divide-gray-200 dark:divide-gray-700">
+            {blacklist.map((activity) => (
+              <div key={activity} className="flex items-center justify-between gap-3 h-12">
+                <span className="text-base font-normal truncate">{activity}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveBlacklist(activity)}
+                  disabled={blacklistBusy === activity}
+                  aria-label={`Unblock "${activity}"`}
+                  className="shrink-0 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                >
+                  {blacklistBusy === activity ? "Removing…" : "Unblock"}
+                </button>
+              </div>
+            ))}
+          </section>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            These activities won&apos;t be suggested when you create a slot.
+          </p>
+        </div>
+      )}
 
       {/* About Section */}
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6">

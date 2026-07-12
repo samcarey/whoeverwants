@@ -53,6 +53,11 @@ from services.poll_suggest import (
     refresh_poll_suggestions,
 )
 from services.profiles import get_profile_card
+from services.slots import (
+    add_to_blacklist,
+    get_blacklist,
+    remove_from_blacklist,
+)
 from services.validation import validate_user_name
 
 
@@ -466,6 +471,51 @@ def forget_my_contact(contact_user_id: str, request: Request):
         if user_id:
             forget_contact(conn, user_id, contact_user_id)
     return Response(status_code=204)
+
+
+class ActivityBlacklistResponse(BaseModel):
+    activities: list[str] = []
+
+
+class ActivityBlacklistBody(BaseModel):
+    activity: str
+
+
+@router.get("/me/activity-blacklist", response_model=ActivityBlacklistResponse)
+def get_my_activity_blacklist(request: Request):
+    """The caller's account-synced blacklist of activities never to suggest.
+    Empty when the caller has no resolvable account."""
+    with get_db() as conn:
+        user_id = _caller_user_id(conn, request)
+        activities = get_blacklist(conn, user_id) if user_id else []
+    return ActivityBlacklistResponse(activities=activities)
+
+
+@router.post("/me/activity-blacklist", response_model=ActivityBlacklistResponse)
+def add_my_activity_blacklist(req: ActivityBlacklistBody, request: Request):
+    """Add an activity to the caller's blacklist (case-insensitive, idempotent).
+    No-op returning the current list when the caller has no account."""
+    with get_db() as conn:
+        user_id = _caller_user_id(conn, request)
+        if user_id:
+            add_to_blacklist(conn, user_id=user_id, activity=req.activity)
+            activities = get_blacklist(conn, user_id)
+        else:
+            activities = []
+    return ActivityBlacklistResponse(activities=activities)
+
+
+@router.delete("/me/activity-blacklist", response_model=ActivityBlacklistResponse)
+def remove_my_activity_blacklist(req: ActivityBlacklistBody, request: Request):
+    """Remove an activity from the caller's blacklist (case-insensitive)."""
+    with get_db() as conn:
+        user_id = _caller_user_id(conn, request)
+        if user_id:
+            remove_from_blacklist(conn, user_id=user_id, activity=req.activity)
+            activities = get_blacklist(conn, user_id)
+        else:
+            activities = []
+    return ActivityBlacklistResponse(activities=activities)
 
 
 @router.get("/by-user-id/{user_id}/image")
