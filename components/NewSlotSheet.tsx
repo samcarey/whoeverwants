@@ -6,10 +6,16 @@
  * Mirrors the create-poll sheet chrome (stationary dim backdrop at z-[59],
  * bottom-anchored opaque sheet at z-[60], fixed full height with the same
  * small top gap, ✕ / title / ✓ header) so the two sheets read as one
- * family. The body holds a calendar picker built from the same pieces as
- * the create-poll Days card: the month-label header row with the +/−
- * expand toggle (compact 3-week grid ↔ full month with prev/next arrows)
- * over an inline <DaysSelector>.
+ * family. The body stacks three create-poll-style cards:
+ *   1. Calendar picker — the create-poll Days card (month-label header
+ *      row with the +/− expand toggle, compact 3-week grid ↔ full month
+ *      with prev/next arrows, over an inline <DaysSelector>).
+ *   2. Time Windows — per-day time-slot pills via <DayTimeWindowsList>
+ *      (+ button, tap-to-edit TimeGridModal), fed by
+ *      useDayTimeWindowsState so newly-picked days inherit windows.
+ *   3. Activities — free-text descriptions of what the user would be
+ *      interested in doing during the selected period, via <OptionsInput>
+ *      (custom category → plain text rows, no autocomplete).
  *
  * The ✓ is a placeholder for now — slots don't persist anywhere yet; it
  * just dismisses the sheet. Wire the real create call here when the slot
@@ -18,9 +24,13 @@
 
 import { useEffect, useState } from "react";
 import DaysSelector from "@/components/DaysSelector";
+import DayTimeWindowsList from "@/components/DayTimeWindowsList";
 import ModalPortal from "@/components/ModalPortal";
+import OptionsInput from "@/components/OptionsInput";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
+import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { formatMonthYearLabel, shiftMonth } from "@/lib/timeUtils";
+import type { DayTimeWindow } from "@/lib/types";
 
 // Same top gap as the create-poll sheets (SHEET_TOP_GAP there).
 const SHEET_HEIGHT = "calc(100dvh - env(safe-area-inset-top, 0px) - 1.25rem)";
@@ -36,19 +46,31 @@ const monthOfToday = () => {
 };
 
 export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
-  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
+  const [activities, setActivities] = useState<string[]>([""]);
   const [calendarMonth, setCalendarMonth] = useState<Date>(monthOfToday);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
+
+  // Day selection is derived from the windows list (one entry per picked
+  // day); the hook seeds newly-added days with inherited/default windows
+  // and caches removed days' windows for re-add — same as create-poll.
+  const selectedDays = dayTimeWindows.map((dtw) => dtw.day);
+  const { onDaysSelected, reset: resetDayWindowCache } = useDayTimeWindowsState(
+    dayTimeWindows,
+    setDayTimeWindows,
+  );
 
   useBodyScrollLock(isOpen);
 
   // Fresh state on every open (the host keeps this component mounted).
   useEffect(() => {
     if (!isOpen) return;
-    setSelectedDays([]);
+    setDayTimeWindows([]);
+    setActivities([""]);
     setCalendarMonth(monthOfToday());
     setCalendarExpanded(false);
-  }, [isOpen]);
+    resetDayWindowCache();
+  }, [isOpen, resetDayWindowCache]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -168,10 +190,36 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
               <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
                 <DaysSelector
                   selectedDays={selectedDays}
-                  onChange={setSelectedDays}
+                  onChange={onDaysSelected}
                   inline
                   currentMonth={calendarMonth}
                   compact={!calendarExpanded}
+                />
+              </section>
+            </div>
+            {dayTimeWindows.length > 0 && (
+              <div>
+                <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+                  Time Windows
+                </label>
+                <section className="rounded-3xl bg-white dark:bg-gray-800 pl-4 pr-3">
+                  <DayTimeWindowsList
+                    dayTimeWindows={dayTimeWindows}
+                    onChange={setDayTimeWindows}
+                  />
+                </section>
+              </div>
+            )}
+            <div>
+              <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+                Activities
+              </label>
+              <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-1">
+                <OptionsInput
+                  options={activities}
+                  setOptions={setActivities}
+                  category="custom"
+                  variant="compact"
                 />
               </section>
             </div>

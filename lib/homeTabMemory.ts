@@ -1,17 +1,28 @@
-// Module-level memory for the home page's active tab (Playlist · Groups).
-// Mirrors lib/groupTabMemory.ts: the home page remounts on every back-nav
-// from a group, so component state alone would snap the tab back to the
-// default each time. A module variable survives client-side navigation and
-// resets to the default on a hard reload.
+// Memory for the home page's active tab (Groups · Playlist), persisted to
+// localStorage so the choice survives hard reloads as well as back-nav
+// remounts. A module-level cache avoids re-reading localStorage on every
+// call (same pattern as lib/session's cachedToken).
+//
+// Hydration note: the home page must NOT seed its tab state from this
+// module during the initial hydration render (the server HTML is rendered
+// with DEFAULT_HOME_TAB) — it gates the eager read on isAppHydrated() and
+// falls back to a mount-effect read for the hard-reload case.
 
 export type HomeTab = "playlist" | "groups";
 
-const DEFAULT_HOME_TAB: HomeTab = "groups";
+export const DEFAULT_HOME_TAB: HomeTab = "groups";
+
+const STORAGE_KEY = "whoeverwants_home_tab";
 
 export const HOME_TABS: { value: HomeTab; label: string }[] = [
   { value: "groups", label: "Groups" },
   { value: "playlist", label: "Playlist" },
 ];
+
+// Fired on every rememberHomeTab so layout-level chrome that depends on the
+// active tab (the floating "+ Group" / "+ Slot" FAB in CreateGroupButtonHost)
+// can react without a home-page remount.
+export const HOME_TAB_CHANGED_EVENT = "homeTabChanged";
 
 // Shared class builders so the real home page and HomeBackdropHost's
 // decorative mirror can't drift (the mirror must be pixel-identical or the
@@ -30,19 +41,25 @@ export function homeTabPillClass(selected: boolean): string {
   }`;
 }
 
-// Fired on every rememberHomeTab so layout-level chrome that depends on the
-// active tab (the floating "+ Group" / "+ Slot" FAB in CreateGroupButtonHost)
-// can react without a home-page remount.
-export const HOME_TAB_CHANGED_EVENT = "homeTabChanged";
-
-let current: HomeTab = DEFAULT_HOME_TAB;
+let current: HomeTab | null = null;
 
 export function getHomeTab(): HomeTab {
+  if (current !== null) return current;
+  if (typeof window === "undefined") return DEFAULT_HOME_TAB;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    current = stored === "playlist" || stored === "groups" ? stored : DEFAULT_HOME_TAB;
+  } catch {
+    current = DEFAULT_HOME_TAB;
+  }
   return current;
 }
 
 export function rememberHomeTab(tab: HomeTab): void {
   current = tab;
+  try {
+    localStorage.setItem(STORAGE_KEY, tab);
+  } catch {}
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(HOME_TAB_CHANGED_EVENT));
   }

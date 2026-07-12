@@ -10,7 +10,8 @@ import { usePageReady } from "@/lib/usePageReady";
 import { HOME_SCROLL_KEY, getRememberedScroll, clearGroupScroll } from "@/lib/scrollMemory";
 import { clearGroupTabs } from "@/lib/groupTabMemory";
 import { getCachedSessionUser, SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
-import { HOME_TABS, HOME_TAB_ROW_CLASS, getHomeTab, homeTabPillClass, rememberHomeTab, type HomeTab } from "@/lib/homeTabMemory";
+import { DEFAULT_HOME_TAB, HOME_TABS, HOME_TAB_ROW_CLASS, getHomeTab, homeTabPillClass, rememberHomeTab, type HomeTab } from "@/lib/homeTabMemory";
+import { isAppHydrated } from "@/lib/hydration";
 import GroupList from "@/components/GroupList";
 import SignInModal from "@/components/SignInModal";
 
@@ -58,9 +59,18 @@ export default function Home() {
   const [fontSize, setFontSize] = useState<string>("text-xl");
   const [session, setSession] = useState<SessionUser | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
-  // Seeded from module memory so the chosen tab survives back-nav remounts;
-  // the module default matches the SSR render (no hydration mismatch).
-  const [homeTab, setHomeTabState] = useState<HomeTab>(() => getHomeTab());
+  // The chosen tab persists in localStorage (via homeTabMemory), so it
+  // survives back-nav remounts AND hard reloads. Eager seeding is gated on
+  // isAppHydrated() — on a direct load the server HTML was rendered with
+  // the default, so reading localStorage in the initializer would diverge
+  // from it; the mount effect below covers that case (one-frame default
+  // flash on hard reload only, the settings-page convention).
+  const [homeTab, setHomeTabState] = useState<HomeTab>(() =>
+    isAppHydrated() ? getHomeTab() : DEFAULT_HOME_TAB,
+  );
+  useEffect(() => {
+    setHomeTabState(getHomeTab());
+  }, []);
 
   const selectHomeTab = (tab: HomeTab) => {
     setHomeTabState(tab);
