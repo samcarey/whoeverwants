@@ -13,12 +13,12 @@
  *   2. Time Windows — per-day time-slot pills via <DayTimeWindowsList>
  *      (+ button, tap-to-edit TimeGridModal), fed by
  *      useDayTimeWindowsState so newly-picked days inherit windows.
- *   3. Activities — a CHECKBOX list of suggested activities in three
- *      labeled, priority-ordered groups (others planning this period /
- *      your past picks / others' past picks), each row with an ✕ to
- *      blacklist it (account-synced, never suggested again). An
- *      "Add your own" free-text card below lets the user introduce new
- *      activities (which then seed suggestions for everyone).
+ *   3. Activities — a "+" in the header inserts a typed activity row; below
+ *      it, a CHECKBOX list of suggested activities in three labeled,
+ *      priority-ordered groups (others planning this period / your past
+ *      picks / others' past picks), each row with an ✕ to blacklist it
+ *      (account-synced, never suggested again). Typed rows seed suggestions
+ *      for everyone once saved.
  *
  * The ✓ saves the slot (selected windows + checked/typed activities) via
  * apiCreateSlot, then closes.
@@ -28,7 +28,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DaysSelector from "@/components/DaysSelector";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
 import ModalPortal from "@/components/ModalPortal";
-import OptionsInput from "@/components/OptionsInput";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { formatMonthYearLabel, shiftMonth } from "@/lib/timeUtils";
@@ -60,7 +59,8 @@ const monthOfToday = () => {
 
 export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
-  const [customActivities, setCustomActivities] = useState<string[]>([""]);
+  // User-typed activities (added via the "+" next to the Activities header).
+  const [customActivities, setCustomActivities] = useState<string[]>([]);
   const [calendarMonth, setCalendarMonth] = useState<Date>(monthOfToday);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
   const [suggestions, setSuggestions] = useState<ActivitySuggestions>(EMPTY_SUGGESTIONS);
@@ -84,7 +84,7 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
   useEffect(() => {
     if (!isOpen) return;
     setDayTimeWindows([]);
-    setCustomActivities([""]);
+    setCustomActivities([]);
     setCalendarMonth(monthOfToday());
     setCalendarExpanded(false);
     setSuggestions(EMPTY_SUGGESTIONS);
@@ -122,6 +122,27 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
       else next.add(activity);
       return next;
     });
+  }, []);
+
+  // Custom activity rows (added via the "+" in the Activities header). The
+  // newly appended row auto-focuses so the user can type immediately.
+  const lastCustomRef = useRef<HTMLInputElement | null>(null);
+  const focusLastCustomRef = useRef(false);
+  const addCustom = useCallback(() => {
+    focusLastCustomRef.current = true;
+    setCustomActivities((prev) => [...prev, ""]);
+  }, []);
+  useEffect(() => {
+    if (focusLastCustomRef.current) {
+      focusLastCustomRef.current = false;
+      lastCustomRef.current?.focus();
+    }
+  }, [customActivities.length]);
+  const updateCustom = useCallback((i: number, value: string) => {
+    setCustomActivities((prev) => prev.map((a, j) => (j === i ? value : a)));
+  }, []);
+  const removeCustom = useCallback((i: number) => {
+    setCustomActivities((prev) => prev.filter((_, j) => j !== i));
   }, []);
 
   // ✕ on a suggestion: remove it from every group + selection immediately and
@@ -317,14 +338,55 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
               </div>
             )}
             <div>
-              <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
-                Activities
-              </label>
-              {/* Suggested activities, grouped + labeled by priority. Each row:
-                  round checkbox (select → saved on the slot) + text + ✕
-                  (blacklist). */}
-              {hasSuggestions && (
+              {/* Header + "+" (aligned right) to insert a new activity row. */}
+              <div className="flex items-center justify-between mb-1 px-1">
+                <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
+                  Activities
+                </label>
+                <button
+                  type="button"
+                  onClick={addCustom}
+                  aria-label="Add an activity"
+                  className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full bg-blue-500 text-white hover:bg-blue-600 active:scale-95 transition"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              </div>
+              {(customActivities.length > 0 || hasSuggestions) && (
                 <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-2 divide-y divide-gray-200 dark:divide-gray-700">
+                  {/* User-typed activity rows (always saved). */}
+                  {customActivities.length > 0 && (
+                    <ul className="py-1">
+                      {customActivities.map((val, i) => (
+                        <li key={i} className="flex items-center gap-3 h-11">
+                          <input
+                            ref={i === customActivities.length - 1 ? lastCustomRef : undefined}
+                            value={val}
+                            onChange={(e) => updateCustom(i, e.target.value)}
+                            onBlur={(e) => updateCustom(i, e.target.value.trim())}
+                            placeholder="Activity"
+                            aria-label="Activity"
+                            className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeCustom(i)}
+                            aria-label="Remove activity"
+                            className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {/* Suggested activities, grouped + labeled by priority. Each
+                      row: round checkbox (select → saved) + text + ✕
+                      (blacklist). */}
                   {SUGGESTION_GROUPS.map((group) => {
                     const items = suggestions[group.key];
                     if (items.length === 0) return null;
@@ -381,18 +443,6 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
                   })}
                 </section>
               )}
-              {/* Introduce a new activity (seeds suggestions for others). */}
-              <label className="block text-xs font-medium text-gray-400 dark:text-gray-500 mt-2 mb-1 px-1">
-                Add your own
-              </label>
-              <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-1">
-                <OptionsInput
-                  options={customActivities}
-                  setOptions={setCustomActivities}
-                  category="custom"
-                  variant="compact"
-                />
-              </section>
             </div>
           </div>
         </div>
