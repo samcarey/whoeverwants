@@ -10,18 +10,24 @@
 import type { DayTimeWindow } from "@/lib/types";
 import { slotFetch } from "./_internal";
 
+/** A suggested (or typed) activity + its optional emoji. */
+export interface ActivitySuggestion {
+  name: string;
+  emoji: string | null;
+}
+
 export interface ActivitySuggestions {
   /** Others' activities for an OVERLAPPING time period (highest priority). */
-  overlapping: string[];
+  overlapping: ActivitySuggestion[];
   /** Activities this account has used before. */
-  yours: string[];
+  yours: ActivitySuggestion[];
   /** Other users' activities, any time. */
-  others: string[];
+  others: ActivitySuggestion[];
 }
 
 export async function apiCreateSlot(
   dayTimeWindows: DayTimeWindow[],
-  activities: string[],
+  activities: ActivitySuggestion[],
 ): Promise<{ id: string }> {
   return slotFetch<{ id: string }>("", {
     method: "POST",

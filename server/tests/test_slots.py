@@ -46,13 +46,15 @@ def test_suggestions_group_overlapping_and_others_no_dupes(client):
     r = _suggestions(client, browser_id=me, day_time_windows=_dtw(day, "11:00", "13:00"))
     assert r.status_code == 200, r.text
     body = r.json()
+    over_names = [a["name"] for a in body["overlapping"]]
+    others_names = [a["name"] for a in body["others"]]
     # "Board games" overlaps → group 1.
-    assert "Board games" in body["overlapping"]
+    assert "Board games" in over_names
     # "Sailing" is another user's, non-overlapping → group 3 only.
-    assert "Sailing" in body["others"]
-    assert "Sailing" not in body["overlapping"]
+    assert "Sailing" in others_names
+    assert "Sailing" not in over_names
     # No activity appears in more than one group.
-    seen = body["overlapping"] + body["yours"] + body["others"]
+    seen = [a["name"] for a in body["overlapping"] + body["yours"] + body["others"]]
     assert len(seen) == len(set(a.lower() for a in seen))
 
 
@@ -64,7 +66,7 @@ def test_suggestions_yours_group(client):
     # past activity under "yours".
     r = _suggestions(client, browser_id=me, day_time_windows=_dtw(day))
     assert r.status_code == 200
-    assert "Pottery" in r.json()["yours"]
+    assert "Pottery" in [a["name"] for a in r.json()["yours"]]
 
 
 def test_blacklist_filters_and_round_trips(client):
@@ -79,25 +81,58 @@ def test_blacklist_filters_and_round_trips(client):
 
     # Karaoke shows up (overlapping other user) before blacklisting.
     before = _suggestions(client, browser_id=me, day_time_windows=_dtw(day)).json()
-    assert "Karaoke" in before["overlapping"]
+    assert "Karaoke" in [a["name"] for a in before["overlapping"]]
 
     r = client.post("/api/users/me/activity-blacklist", json={"activity": "karaoke"}, headers=bid_headers(me))
     assert r.status_code == 200, r.text
     assert any(a.lower() == "karaoke" for a in r.json()["activities"])
 
     after = _suggestions(client, browser_id=me, day_time_windows=_dtw(day)).json()
-    assert "Karaoke" not in after["overlapping"]
-    assert "Karaoke" not in after["others"]
+    assert "Karaoke" not in [a["name"] for a in after["overlapping"]]
+    assert "Karaoke" not in [a["name"] for a in after["others"]]
 
     # Remove it and it comes back.
     r = client.request("DELETE", "/api/users/me/activity-blacklist", json={"activity": "Karaoke"}, headers=bid_headers(me))
     assert r.status_code == 200, r.text
     assert not any(a.lower() == "karaoke" for a in r.json()["activities"])
     restored = _suggestions(client, browser_id=me, day_time_windows=_dtw(day)).json()
-    assert "Karaoke" in restored["overlapping"]
+    assert "Karaoke" in [a["name"] for a in restored["overlapping"]]
 
 
 def test_get_blacklist_empty_for_new_browser(client):
     r = client.get("/api/users/me/activity-blacklist", headers=bid_headers(str(uuid.uuid4())))
     assert r.status_code == 200
     assert r.json()["activities"] == []
+
+
+def test_create_slot_accepts_mixed_string_and_object_activities(client):
+    # A bare string + a {name, emoji} object both persist (the wire coerces
+    # strings to {name}).
+    bid = str(uuid.uuid4())
+    r = _create_slot(
+        client,
+        browser_id=bid,
+        day_time_windows=_dtw("2026-10-10"),
+        activities=["Hiking", {"name": "Climbing", "emoji": "🧗"}],
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_activity_emoji_round_trips_into_suggestions(client):
+    day = "2026-10-05"
+    other = str(uuid.uuid4())
+    # Another user tags an activity WITH an emoji on an overlapping window.
+    r = _create_slot(
+        client,
+        browser_id=other,
+        day_time_windows=_dtw(day, "10:00", "12:00"),
+        activities=[{"name": "Bowling", "emoji": "🎳"}],
+    )
+    assert r.status_code == 200, r.text
+
+    me = str(uuid.uuid4())
+    body = _suggestions(client, browser_id=me, day_time_windows=_dtw(day, "11:00", "13:00")).json()
+    match = next((a for a in body["overlapping"] if a["name"] == "Bowling"), None)
+    assert match is not None
+    # The suggestion carries the tagging user's emoji.
+    assert match["emoji"] == "🎳"

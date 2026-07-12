@@ -27,15 +27,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DaysSelector from "@/components/DaysSelector";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
+import EmojiPickerModal from "@/components/EmojiPickerModal";
 import ModalPortal from "@/components/ModalPortal";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { useSheetDismissGesture } from "@/lib/useSheetDismissGesture";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { formatMonthYearLabel, shiftMonth } from "@/lib/timeUtils";
 import { haptic } from "@/lib/haptics";
-import { apiCreateSlot, apiGetActivitySuggestions, type ActivitySuggestions } from "@/lib/api/slots";
+import {
+  apiCreateSlot,
+  apiGetActivitySuggestions,
+  type ActivitySuggestion,
+  type ActivitySuggestions,
+} from "@/lib/api/slots";
 import { apiAddActivityBlacklist } from "@/lib/api/users";
 import type { DayTimeWindow } from "@/lib/types";
+
+/** A user-typed activity + its chosen emoji ("" = none, picker faded). */
+interface CustomActivity {
+  name: string;
+  emoji: string;
+}
+
+// Faded placeholder glyph on an activity row's emoji chip / in the picker
+// input when no emoji is chosen (activities have no per-category default).
+const EMOJI_PLACEHOLDER = "🙂";
 
 const EMPTY_SUGGESTIONS: ActivitySuggestions = { overlapping: [], yours: [], others: [] };
 
@@ -60,13 +76,16 @@ const monthOfToday = () => {
 
 export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
-  // User-typed activities (added via the "+" next to the Activities header).
-  const [customActivities, setCustomActivities] = useState<string[]>([]);
+  // User-typed activities (added via the "+" next to the Activities header),
+  // each with an optional chosen emoji.
+  const [customActivities, setCustomActivities] = useState<CustomActivity[]>([]);
+  // Which custom row's emoji picker is open (null = closed).
+  const [emojiEditIndex, setEmojiEditIndex] = useState<number | null>(null);
   const [calendarMonth, setCalendarMonth] = useState<Date>(monthOfToday);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
   const [suggestions, setSuggestions] = useState<ActivitySuggestions>(EMPTY_SUGGESTIONS);
-  // Checked suggestions (display strings). Lowercase-compared on toggle so a
-  // suggestion + a typed custom with the same text don't double-save.
+  // Checked suggestion NAMES. Lowercase-compared on toggle so a suggestion +
+  // a typed custom with the same text don't double-save.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
@@ -86,6 +105,7 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
     if (!isOpen) return;
     setDayTimeWindows([]);
     setCustomActivities([]);
+    setEmojiEditIndex(null);
     setCalendarMonth(monthOfToday());
     setCalendarExpanded(false);
     setSuggestions(EMPTY_SUGGESTIONS);
@@ -131,7 +151,7 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
   const focusLastCustomRef = useRef(false);
   const addCustom = useCallback(() => {
     focusLastCustomRef.current = true;
-    setCustomActivities((prev) => [...prev, ""]);
+    setCustomActivities((prev) => [...prev, { name: "", emoji: "" }]);
   }, []);
   useEffect(() => {
     if (focusLastCustomRef.current) {
@@ -139,8 +159,11 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
       lastCustomRef.current?.focus();
     }
   }, [customActivities.length]);
-  const updateCustom = useCallback((i: number, value: string) => {
-    setCustomActivities((prev) => prev.map((a, j) => (j === i ? value : a)));
+  const updateCustom = useCallback((i: number, name: string) => {
+    setCustomActivities((prev) => prev.map((a, j) => (j === i ? { ...a, name } : a)));
+  }, []);
+  const setCustomEmoji = useCallback((i: number, emoji: string) => {
+    setCustomActivities((prev) => prev.map((a, j) => (j === i ? { ...a, emoji } : a)));
   }, []);
   const removeCustom = useCallback((i: number) => {
     setCustomActivities((prev) => prev.filter((_, j) => j !== i));
@@ -151,7 +174,8 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
   const blacklistActivity = useCallback((activity: string) => {
     haptic.light();
     setSuggestions((prev) => {
-      const drop = (list: string[]) => list.filter((a) => a.toLowerCase() !== activity.toLowerCase());
+      const drop = (list: ActivitySuggestion[]) =>
+        list.filter((a) => a.name.toLowerCase() !== activity.toLowerCase());
       return {
         overlapping: drop(prev.overlapping),
         yours: drop(prev.yours),
@@ -169,23 +193,31 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
 
   const handleSave = useCallback(() => {
     if (saving || dayTimeWindows.length === 0) return;
-    // Merge checked suggestions + typed customs, deduped case-insensitively.
-    const seen = new Set<string>();
-    const activities: string[] = [];
-    for (const a of [...selected, ...customActivities]) {
-      const t = a.trim();
-      if (!t) continue;
-      const key = t.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      activities.push(t);
+    // A checked suggestion carries the emoji from its suggestion row.
+    const suggEmoji = new Map<string, string | null>();
+    for (const g of SUGGESTION_GROUPS) {
+      for (const s of suggestions[g.key]) suggEmoji.set(s.name.toLowerCase(), s.emoji);
     }
+    // Merge checked suggestions + typed customs (selected first, so a shared
+    // name keeps the suggestion's emoji), deduped case-insensitively.
+    const seen = new Set<string>();
+    const activities: ActivitySuggestion[] = [];
+    const push = (name: string, emoji?: string | null) => {
+      const t = name.trim();
+      if (!t) return;
+      const key = t.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      activities.push({ name: t, emoji: emoji || null });
+    };
+    for (const name of selected) push(name, suggEmoji.get(name.toLowerCase()));
+    for (const c of customActivities) push(c.name, c.emoji);
     setSaving(true);
     haptic.success();
     apiCreateSlot(dayTimeWindows, activities)
       .then(() => onClose())
       .catch(() => setSaving(false));
-  }, [saving, dayTimeWindows, selected, customActivities, onClose]);
+  }, [saving, dayTimeWindows, selected, customActivities, suggestions, onClose]);
 
   // Any suggestion group has items?
   const hasSuggestions = useMemo(
@@ -196,11 +228,13 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
   useEffect(() => {
     if (!isOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // While the emoji picker (a stacked modal with its own Escape handler)
+      // is open, let it consume Escape — don't also close the sheet.
+      if (e.key === "Escape" && emojiEditIndex === null) onClose();
     };
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, emojiEditIndex]);
 
   // Collapsing snaps the month back to today's (the compact grid is
   // today-anchored, so a navigated-away month would disagree with it) —
@@ -223,6 +257,9 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
     scrollerRef: sheetScrollerNodeRef,
     onDismiss: onClose,
   });
+
+  // The custom row whose emoji picker is open (undefined = closed).
+  const editingCustom = emojiEditIndex !== null ? customActivities[emojiEditIndex] : undefined;
 
   if (!isOpen) return null;
 
@@ -375,11 +412,21 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
                   {/* User-typed activity rows (always saved). */}
                   {customActivities.length > 0 && (
                     <ul className="py-1">
-                      {customActivities.map((val, i) => (
+                      {customActivities.map((row, i) => (
                         <li key={i} className="flex items-center gap-3 h-11">
+                          <button
+                            type="button"
+                            onClick={() => setEmojiEditIndex(i)}
+                            aria-label="Choose an emoji"
+                            className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-lg leading-none active:scale-95"
+                          >
+                            <span className={row.emoji.trim() ? "" : "opacity-40"}>
+                              {row.emoji.trim() || EMOJI_PLACEHOLDER}
+                            </span>
+                          </button>
                           <input
                             ref={i === customActivities.length - 1 ? lastCustomRef : undefined}
-                            value={val}
+                            value={row.name}
                             onChange={(e) => updateCustom(i, e.target.value)}
                             onBlur={(e) => updateCustom(i, e.target.value.trim())}
                             placeholder="Activity"
@@ -413,14 +460,14 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
                         </p>
                         <ul>
                           {items.map((activity) => {
-                            const checked = selected.has(activity);
+                            const checked = selected.has(activity.name);
                             return (
-                              <li key={activity} className="flex items-center gap-3 h-11">
+                              <li key={activity.name} className="flex items-center gap-3 h-11">
                                 <button
                                   type="button"
                                   role="checkbox"
                                   aria-checked={checked}
-                                  onClick={() => toggleSelected(activity)}
+                                  onClick={() => toggleSelected(activity.name)}
                                   className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
                                     checked
                                       ? "bg-blue-500 border-blue-500 dark:bg-blue-500 dark:border-blue-500"
@@ -435,15 +482,16 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => toggleSelected(activity)}
+                                  onClick={() => toggleSelected(activity.name)}
                                   className="flex-1 min-w-0 truncate text-left text-base"
                                 >
-                                  {activity}
+                                  {activity.emoji ? `${activity.emoji} ` : ""}
+                                  {activity.name}
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => blacklistActivity(activity)}
-                                  aria-label={`Never suggest "${activity}"`}
+                                  onClick={() => blacklistActivity(activity.name)}
+                                  aria-label={`Never suggest "${activity.name}"`}
                                   className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
@@ -463,6 +511,20 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
           </div>
         </div>
       </div>
+
+      {/* Per-activity emoji picker for typed rows (reuses the poll picker).
+          Renders its own z-[80] portal above the sheet; relevance-sorted by
+          the row's typed name. */}
+      <EmojiPickerModal
+        open={emojiEditIndex !== null}
+        value={editingCustom?.emoji ?? ""}
+        onChange={(emoji) => {
+          if (emojiEditIndex !== null) setCustomEmoji(emojiEditIndex, emoji);
+        }}
+        onClose={() => setEmojiEditIndex(null)}
+        categoryWord={editingCustom?.name ?? ""}
+        placeholder={EMOJI_PLACEHOLDER}
+      />
     </ModalPortal>
   );
 }

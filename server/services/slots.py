@@ -17,7 +17,7 @@ sharing at least one selected day so the Python pass stays small.
 
 from __future__ import annotations
 
-from services.validation import truncate_text
+from services.validation import truncate_text, validate_category_icon
 
 MAX_ACTIVITY_LEN = 100
 SUGGESTIONS_PER_GROUP = 15
@@ -75,8 +75,10 @@ def _periods_overlap(a: dict[str, list[tuple[int, int]]], b: dict[str, list[tupl
 
 def create_slot(conn, *, user_id: str, day_time_windows, activities) -> str:
     """Persist a slot (owner + availability windows + activities) and return
-    its id. `activities` are normalized + deduped case-insensitively; the
-    caller has already resolved/minted `user_id`."""
+    its id. `activities` items are ``{"name", "emoji"}`` dicts (the router
+    coerces bare strings to that shape); they're normalized + deduped
+    case-insensitively on the name (the optional emoji is decoupled — it never
+    affects matching). The caller has already resolved/minted `user_id`."""
     import json
 
     row = conn.execute(
@@ -91,16 +93,20 @@ def create_slot(conn, *, user_id: str, day_time_windows, activities) -> str:
 
     seen: set[str] = set()
     for raw in activities or []:
-        act = normalize_activity(raw)
+        name, emoji = raw.get("name"), raw.get("emoji")
+        act = normalize_activity(name)
         if not act:
             continue
         key = act.lower()
         if key in seen:
             continue
         seen.add(key)
+        # Same validator as poll category emoji — lenient on emoji shape,
+        # rejects over-length / control-char / plain-text (raises 400).
+        clean_emoji = validate_category_icon(emoji)
         conn.execute(
-            "INSERT INTO slot_activities (slot_id, activity) VALUES (%(s)s::uuid, %(a)s)",
-            {"s": slot_id, "a": act},
+            "INSERT INTO slot_activities (slot_id, activity, emoji) VALUES (%(s)s::uuid, %(a)s, %(e)s)",
+            {"s": slot_id, "a": act, "e": clean_emoji},
         )
     return slot_id
 
@@ -109,18 +115,20 @@ def create_slot(conn, *, user_id: str, day_time_windows, activities) -> str:
 # Suggestions
 # ----------------------------------------------------------------------------
 
-def _rank(rows: list[dict]) -> list[str]:
-    """rows: [{key, display, count, last}] → display strings ordered by
+def _rank(rows: list[dict]) -> list[dict]:
+    """rows: [{key, display, emoji, count, last}] → [{name, emoji}] ordered by
     count desc then recency desc, capped."""
     ordered = sorted(rows, key=lambda r: (r["count"], r["last"] or ""), reverse=True)
-    return [r["display"] for r in ordered[:SUGGESTIONS_PER_GROUP]]
+    return [{"name": r["display"], "emoji": r["emoji"]} for r in ordered[:SUGGESTIONS_PER_GROUP]]
 
 
 def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
-    """Return {overlapping, yours, others} lists of activity strings for the
-    given account + current selection, blacklist-filtered, no cross-group
-    duplicates. `user_id` None (brand-new anonymous browser) → `yours` empty
-    and everyone counts as "others"."""
+    """Return {overlapping, yours, others} lists of {name, emoji} suggestions
+    for the given account + current selection, blacklist-filtered, no
+    cross-group duplicates. `user_id` None (brand-new anonymous browser) →
+    `yours` empty and everyone counts as "others". The emoji on each
+    suggestion is the freshest tagging user's pick for that activity (None if
+    the freshest row had none)."""
     selection = _windows_by_day(day_time_windows)
     selected_days = list(selection.keys())
 
@@ -131,7 +139,7 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
     if selected_days:
         cand = conn.execute(
             """
-            SELECT s.id, s.day_time_windows, sa.activity, sa.created_at
+            SELECT s.id, s.day_time_windows, sa.activity, sa.emoji, sa.created_at
               FROM slots s
               JOIN slot_activities sa ON sa.slot_id = s.id
              WHERE (%(uid)s::uuid IS NULL OR s.user_id <> %(uid)s::uuid)
@@ -150,14 +158,14 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
                 overlap_cache[sid] = _periods_overlap(selection, _windows_by_day(r["day_time_windows"]))
             if not overlap_cache[sid]:
                 continue
-            _accumulate(overlap_map, r["activity"], r["created_at"], blacklisted)
+            _accumulate(overlap_map, r["activity"], r["emoji"], r["created_at"], blacklisted)
 
     # --- Group 2: this account's own past activities ---------------------
     yours_map: dict[str, dict] = {}
     if user_id:
         rows = conn.execute(
             """
-            SELECT sa.activity, sa.created_at
+            SELECT sa.activity, sa.emoji, sa.created_at
               FROM slot_activities sa
               JOIN slots s ON s.id = sa.slot_id
              WHERE s.user_id = %(uid)s::uuid
@@ -165,13 +173,13 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
             {"uid": user_id},
         ).fetchall()
         for r in rows:
-            _accumulate(yours_map, r["activity"], r["created_at"], blacklisted, skip_keys=overlap_map.keys())
+            _accumulate(yours_map, r["activity"], r["emoji"], r["created_at"], blacklisted, skip_keys=overlap_map.keys())
 
     # --- Group 3: other users' activities, any time ----------------------
     others_map: dict[str, dict] = {}
     rows = conn.execute(
         """
-        SELECT sa.activity, sa.created_at
+        SELECT sa.activity, sa.emoji, sa.created_at
           FROM slot_activities sa
           JOIN slots s ON s.id = sa.slot_id
          WHERE (%(uid)s::uuid IS NULL OR s.user_id <> %(uid)s::uuid)
@@ -180,7 +188,7 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
     ).fetchall()
     for r in rows:
         _accumulate(
-            others_map, r["activity"], r["created_at"], blacklisted,
+            others_map, r["activity"], r["emoji"], r["created_at"], blacklisted,
             skip_keys=set(overlap_map.keys()) | set(yours_map.keys()),
         )
 
@@ -191,10 +199,11 @@ def suggest_activities(conn, *, user_id: str | None, day_time_windows) -> dict:
     }
 
 
-def _accumulate(acc: dict[str, dict], activity: str, created_at, blacklisted: set[str], *, skip_keys=None) -> None:
-    """Fold one (activity, created_at) into a key→{key,display,count,last}
-    accumulator, skipping blacklisted keys and any keys already claimed by a
-    higher-priority group."""
+def _accumulate(acc: dict[str, dict], activity: str, emoji, created_at, blacklisted: set[str], *, skip_keys=None) -> None:
+    """Fold one (activity, emoji, created_at) into a
+    key→{key,display,emoji,count,last} accumulator, skipping blacklisted keys
+    and any keys already claimed by a higher-priority group. The freshest row
+    wins both the casing AND the emoji."""
     act = normalize_activity(activity)
     if not act:
         return
@@ -204,14 +213,16 @@ def _accumulate(acc: dict[str, dict], activity: str, created_at, blacklisted: se
     if skip_keys and key in skip_keys:
         return
     stamp = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at or "")
+    clean_emoji = (emoji or "").strip() or None
     cur = acc.get(key)
     if cur is None:
-        acc[key] = {"key": key, "display": act, "count": 1, "last": stamp}
+        acc[key] = {"key": key, "display": act, "emoji": clean_emoji, "count": 1, "last": stamp}
     else:
         cur["count"] += 1
         if stamp > (cur["last"] or ""):
             cur["last"] = stamp
             cur["display"] = act  # freshest casing wins
+            cur["emoji"] = clean_emoji  # …and freshest emoji
 
 
 # ----------------------------------------------------------------------------
