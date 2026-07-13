@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Slot } from "@/lib/api/slots";
 import {
   formatDecimalHours,
-  slotHeader,
+  slotWindowLines,
   buildActivityColorMap,
   activityColor,
   sortSlotsChronological,
@@ -28,35 +28,48 @@ describe("formatDecimalHours", () => {
   });
 });
 
-describe("slotHeader", () => {
-  it("single-day single-window: times + duration, no end date", () => {
-    const h = slotHeader([{ day: "2099-06-15", windows: [{ min: "14:00", max: "16:15" }] }]);
-    expect(h).not.toBeNull();
-    expect(h!.startDate).toContain("Jun 15");
-    expect(h!.startTime).toBe("2:00 PM");
-    expect(h!.endTime).toBe("4:15 PM");
-    expect(h!.endDate).toBeNull();
-    expect(h!.duration).toBe("2.25h");
-    expect(typeof h!.relative).toBe("string");
+describe("slotWindowLines", () => {
+  it("single window: one line with its own times + duration, no end date", () => {
+    const lines = slotWindowLines([{ day: "2099-06-15", windows: [{ min: "14:00", max: "16:15" }] }]);
+    expect(lines).toHaveLength(1);
+    const l = lines[0];
+    expect(l.date).toContain("Jun 15");
+    expect(l.startTime).toBe("2:00 PM");
+    expect(l.endTime).toBe("4:15 PM");
+    expect(l.endDate).toBeNull();
+    expect(l.duration).toBe("2.25h");
+    expect(typeof l.relative).toBe("string");
   });
 
-  it("spans multiple days: end date shown, duration is the window total", () => {
-    const h = slotHeader([
-      { day: "2099-06-15", windows: [{ min: "09:00", max: "10:00" }] },
+  it("disjoint windows render as separate lines (NOT one collapsed span), chronological", () => {
+    const lines = slotWindowLines([
       { day: "2099-06-17", windows: [{ min: "18:00", max: "20:00" }] },
+      { day: "2099-06-15", windows: [{ min: "09:00", max: "10:00" }] },
     ]);
-    expect(h).not.toBeNull();
-    expect(h!.startDate).toContain("Jun 15");
-    expect(h!.startTime).toBe("9:00 AM");
-    expect(h!.endDate).toContain("Jun 17");
-    expect(h!.endTime).toBe("8:00 PM");
-    // 1h + 2h across the two windows.
-    expect(h!.duration).toBe("3h");
+    expect(lines).toHaveLength(2);
+    // Sorted soonest-first.
+    expect(lines[0].date).toContain("Jun 15");
+    expect(lines[0].startTime).toBe("9:00 AM");
+    expect(lines[0].endTime).toBe("10:00 AM");
+    expect(lines[0].duration).toBe("1h");
+    expect(lines[1].date).toContain("Jun 17");
+    expect(lines[1].startTime).toBe("6:00 PM");
+    expect(lines[1].endTime).toBe("8:00 PM");
+    expect(lines[1].duration).toBe("2h");
   });
 
-  it("returns null for a slot with no windows", () => {
-    expect(slotHeader([])).toBeNull();
-    expect(slotHeader([{ day: "2099-06-15", windows: [] }])).toBeNull();
+  it("two windows on the SAME day are two separate lines", () => {
+    const lines = slotWindowLines([
+      { day: "2099-06-15", windows: [{ min: "09:00", max: "10:00" }, { min: "14:00", max: "16:00" }] },
+    ]);
+    expect(lines).toHaveLength(2);
+    expect(lines[0].startTime).toBe("9:00 AM");
+    expect(lines[1].startTime).toBe("2:00 PM");
+  });
+
+  it("is empty for a slot with no windows", () => {
+    expect(slotWindowLines([])).toEqual([]);
+    expect(slotWindowLines([{ day: "2099-06-15", windows: [] }])).toEqual([]);
   });
 });
 

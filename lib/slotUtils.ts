@@ -156,46 +156,48 @@ function formatClock(hhmm: string): string {
   return `${h12}:${m.toString().padStart(2, "0")} ${period}`;
 }
 
-export interface SlotHeader {
-  /** Relative specifier for the START date, e.g. "Tomorrow" (rendered blue). */
+export interface SlotWindowLine {
+  /** Relative specifier for this window's date, e.g. "Tomorrow" (rendered blue). */
   relative: string;
-  /** Start date label, e.g. "Mon, Jan 16". */
-  startDate: string;
+  /** Date label, e.g. "Mon, Jan 16". */
+  date: string;
   /** Start time, e.g. "2:00 PM". */
   startTime: string;
   /** End time, e.g. "4:15 PM". */
   endTime: string;
-  /** End date label when the span crosses days, else null (omit end date). */
+  /** End date label when THIS window crosses midnight, else null (omit). */
   endDate: string | null;
-  /** Total availability across all windows, e.g. "2.25h". */
+  /** This window's duration, e.g. "2.25h". */
   duration: string;
+  /** Stable-ish React key ("<day>#<min>-<max>"; disambiguate with an index at
+   *  the callsite for the rare identical-window case). */
+  key: string;
 }
 
-/** Compute the display header for a slot's overall span: earliest window start
- *  → latest window end, with the total availability as a decimal-hour note.
- *  Null when the slot has no usable windows. */
-export function slotHeader(dayTimeWindows: DayTimeWindow[]): SlotHeader | null {
-  const ints = intervalsOf(dayTimeWindows);
-  if (ints.length === 0) return null;
-
-  const first = ints.reduce((a, b) => (b.startAbs < a.startAbs ? b : a));
-  const last = ints.reduce((a, b) => (b.endAbs > a.endAbs ? b : a));
-  const totalMin = ints.reduce((sum, i) => sum + i.durationMin, 0);
-
-  // The end date is the day the latest window ENDS on: its start day plus the
-  // intra-window rollover (0, or 1 for a cross-midnight window). Computed via
-  // date-string arithmetic to avoid any UTC/local offset skew.
-  const rollover = Math.floor((last.startMin + last.durationMin) / 1440);
-  const endDateStr = addDaysToDateStr(last.day, rollover);
-
-  return {
-    relative: getRelativeDayLabel(first.day),
-    startDate: formatDayLabel(first.day),
-    startTime: formatClock(first.min),
-    endTime: formatClock(last.max),
-    endDate: endDateStr !== first.day ? formatDayLabel(endDateStr) : null,
-    duration: formatDecimalHours(totalMin),
-  };
+/** One display line PER availability window (not a single collapsed span) —
+ *  chronologically sorted, each with its own date · start–end · duration. A
+ *  slot with several disjoint windows renders as several lines rather than one
+ *  big earliest→latest block. Empty for a slot with no usable windows. */
+export function slotWindowLines(dayTimeWindows: DayTimeWindow[]): SlotWindowLine[] {
+  return intervalsOf(dayTimeWindows)
+    .slice()
+    .sort((a, b) => a.startAbs - b.startAbs)
+    .map((iv) => {
+      // End date = this window's start day plus its intra-window rollover
+      // (0, or 1 for a cross-midnight window). Date-string arithmetic to avoid
+      // any UTC/local offset skew.
+      const rollover = Math.floor((iv.startMin + iv.durationMin) / 1440);
+      const endDateStr = addDaysToDateStr(iv.day, rollover);
+      return {
+        relative: getRelativeDayLabel(iv.day),
+        date: formatDayLabel(iv.day),
+        startTime: formatClock(iv.min),
+        endTime: formatClock(iv.max),
+        endDate: endDateStr !== iv.day ? formatDayLabel(endDateStr) : null,
+        duration: formatDecimalHours(iv.durationMin),
+        key: `${iv.day}#${iv.min}-${iv.max}`,
+      };
+    });
 }
 
 /** Add `days` to a "YYYY-MM-DD" string in local time, returning "YYYY-MM-DD". */
