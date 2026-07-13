@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import type React from 'react';
 import TimeGridModal from './TimeGridModal';
-import { windowDurationMinutes, formatDayLabel, pickNextTimeWindow, pickVoterSplitWindow, isWindowWithinQuestionWindows, windowsOverlap, periodColorClass } from '@/lib/timeUtils';
+import { windowDurationMinutes, formatDayLabel, getRelativeDayLabel, pickNextTimeWindow, pickVoterSplitWindow, isWindowWithinQuestionWindows, windowsOverlap, periodColorClass } from '@/lib/timeUtils';
 
 interface TimeWindow {
   min: string; // HH:MM format
@@ -60,23 +60,9 @@ function formatTime12Hour(time: string): { time: string; period: string } {
 
 
 
-function getRelativeDay(dateStr: string): string {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(dateStr + 'T00:00:00');
-  const diffMs = target.getTime() - today.getTime();
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Tomorrow';
-  if (diffDays < 14) return `${diffDays}d away`;
-  const weeks = Math.floor(diffDays / 7);
-  if (weeks < 8) return `${weeks}w away`;
-  const months = Math.floor(diffDays / 30.44);
-  if (months < 24) return `${months}mo away`;
-  const years = Math.floor(diffDays / 365.25);
-  return `${years}y away`;
-}
+// Relative-day label ("Today" / "Tomorrow" / "Nd away") — shared with the
+// Playlist slot cards via lib/timeUtils.
+const getRelativeDay = getRelativeDayLabel;
 
 // Pill background + text per state. The border color is computed separately
 // (pillBorderClass) so the voter form can show a thin outline on neutral pills

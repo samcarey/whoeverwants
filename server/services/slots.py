@@ -73,24 +73,10 @@ def _periods_overlap(a: dict[str, list[tuple[int, int]]], b: dict[str, list[tupl
 # Slot persistence
 # ----------------------------------------------------------------------------
 
-def create_slot(conn, *, user_id: str, day_time_windows, activities) -> str:
-    """Persist a slot (owner + availability windows + activities) and return
-    its id. `activities` items are ``{"name", "emoji"}`` dicts (the router
-    coerces bare strings to that shape); they're normalized + deduped
-    case-insensitively on the name (the optional emoji is decoupled — it never
-    affects matching). The caller has already resolved/minted `user_id`."""
-    import json
-
-    row = conn.execute(
-        """
-        INSERT INTO slots (user_id, day_time_windows)
-        VALUES (%(u)s::uuid, %(dtw)s::jsonb)
-        RETURNING id
-        """,
-        {"u": user_id, "dtw": json.dumps(day_time_windows or [])},
-    ).fetchone()
-    slot_id = str(row["id"])
-
+def _insert_slot_activities(conn, slot_id: str, activities) -> None:
+    """Normalize + dedup (case-insensitive on the name) `activities` dicts
+    (``{"name", "emoji"}``) and write one slot_activities row each. The
+    optional emoji is decoupled — it never affects matching."""
     seen: set[str] = set()
     for raw in activities or []:
         name, emoji = raw.get("name"), raw.get("emoji")
@@ -108,7 +94,99 @@ def create_slot(conn, *, user_id: str, day_time_windows, activities) -> str:
             "INSERT INTO slot_activities (slot_id, activity, emoji) VALUES (%(s)s::uuid, %(a)s, %(e)s)",
             {"s": slot_id, "a": act, "e": clean_emoji},
         )
+
+
+def create_slot(conn, *, user_id: str, day_time_windows, activities) -> str:
+    """Persist a slot (owner + availability windows + activities) and return
+    its id. `activities` items are ``{"name", "emoji"}`` dicts (the router
+    coerces bare strings to that shape). The caller has already
+    resolved/minted `user_id`."""
+    import json
+
+    row = conn.execute(
+        """
+        INSERT INTO slots (user_id, day_time_windows)
+        VALUES (%(u)s::uuid, %(dtw)s::jsonb)
+        RETURNING id
+        """,
+        {"u": user_id, "dtw": json.dumps(day_time_windows or [])},
+    ).fetchone()
+    slot_id = str(row["id"])
+    _insert_slot_activities(conn, slot_id, activities)
     return slot_id
+
+
+def list_slots(conn, *, user_id: str) -> list[dict]:
+    """Every slot the account owns, each with its activities ({name, emoji},
+    creation order). Newest slot first as a stable default — the FE re-sorts
+    by soonest availability start for display."""
+    rows = conn.execute(
+        """
+        SELECT id, day_time_windows, created_at
+          FROM slots
+         WHERE user_id = %(u)s::uuid
+         ORDER BY created_at DESC
+        """,
+        {"u": user_id},
+    ).fetchall()
+    slot_ids = [str(r["id"]) for r in rows]
+    acts: dict[str, list[dict]] = {}
+    if slot_ids:
+        arows = conn.execute(
+            """
+            SELECT slot_id, activity, emoji
+              FROM slot_activities
+             WHERE slot_id = ANY(%(ids)s::uuid[])
+             ORDER BY created_at
+            """,
+            {"ids": slot_ids},
+        ).fetchall()
+        for a in arows:
+            acts.setdefault(str(a["slot_id"]), []).append(
+                {"name": a["activity"], "emoji": (a["emoji"] or None)}
+            )
+    return [
+        {
+            "id": str(r["id"]),
+            "day_time_windows": r["day_time_windows"] or [],
+            "activities": acts.get(str(r["id"]), []),
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+
+
+def update_slot(conn, *, slot_id: str, user_id: str, day_time_windows, activities) -> bool:
+    """Replace a slot's windows + activities (owner-gated). Returns False when
+    the slot doesn't exist or isn't owned by `user_id` (→ 404). The activity
+    rows are wholesale-replaced (delete + re-insert), same dedup/validation as
+    create."""
+    import json
+
+    row = conn.execute(
+        """
+        UPDATE slots
+           SET day_time_windows = %(dtw)s::jsonb
+         WHERE id = %(id)s::uuid AND user_id = %(u)s::uuid
+        RETURNING id
+        """,
+        {"id": slot_id, "u": user_id, "dtw": json.dumps(day_time_windows or [])},
+    ).fetchone()
+    if not row:
+        return False
+    conn.execute("DELETE FROM slot_activities WHERE slot_id = %(id)s::uuid", {"id": slot_id})
+    _insert_slot_activities(conn, slot_id, activities)
+    return True
+
+
+def delete_slot(conn, *, slot_id: str, user_id: str) -> bool:
+    """Delete a slot (owner-gated; slot_activities cascade). Returns False when
+    the slot doesn't exist or isn't owned (→ 404)."""
+    row = conn.execute(
+        "DELETE FROM slots WHERE id = %(id)s::uuid AND user_id = %(u)s::uuid RETURNING id",
+        {"id": slot_id, "u": user_id},
+    ).fetchone()
+    return row is not None
 
 
 # ----------------------------------------------------------------------------

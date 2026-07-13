@@ -4,6 +4,39 @@ export function formatDayLabel(dateStr: string): string {
   return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+/**
+ * Relative-day label for a "YYYY-MM-DD" date, matching the create-poll time
+ * forms: "Today", "Tomorrow", then abbreviated "Nd/Nw/Nmo/Ny away". Shared by
+ * DayTimeWindowsInput (the form date column) and the Playlist slot cards.
+ */
+export function getRelativeDayLabel(dateStr: string): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(dateStr + 'T00:00:00');
+  const diffMs = target.getTime() - today.getTime();
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  if (diffDays === -1) return 'Yesterday';
+  if (diffDays < 0) {
+    const past = -diffDays;
+    if (past < 14) return `${past}d ago`;
+    const weeks = Math.floor(past / 7);
+    if (weeks < 8) return `${weeks}w ago`;
+    const months = Math.floor(past / 30.44);
+    if (months < 24) return `${months}mo ago`;
+    return `${Math.floor(past / 365.25)}y ago`;
+  }
+  if (diffDays < 14) return `${diffDays}d away`;
+  const weeks = Math.floor(diffDays / 7);
+  if (weeks < 8) return `${weeks}w away`;
+  const months = Math.floor(diffDays / 30.44);
+  if (months < 24) return `${months}mo away`;
+  const years = Math.floor(diffDays / 365.25);
+  return `${years}y away`;
+}
+
 /** Format a Date as "YYYY-MM-DD" using local-time components. */
 export function formatLocalDateISO(date: Date): string {
   const year = date.getFullYear();

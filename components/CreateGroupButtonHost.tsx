@@ -39,6 +39,7 @@ import { isValidUserName } from "@/lib/nameValidation";
 import { HOME_TAB_CHANGED_EVENT, getHomeTab, type HomeTab } from "@/lib/homeTabMemory";
 import AccountGateModal from "@/components/AccountGateModal";
 import NewSlotSheet from "@/components/NewSlotSheet";
+import { openSlotSheet } from "@/lib/slotEvents";
 
 const IS_CAPACITOR_NATIVE =
   typeof window !== "undefined" && Capacitor.isNativePlatform();
@@ -51,7 +52,6 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
   // Hide the FAB during a group→home swipe-back (shared listener hook).
   const swipeBackActive = useHomeBackdropActive();
   const [nameModalOpen, setNameModalOpen] = useState(false);
-  const [slotSheetOpen, setSlotSheetOpen] = useState(false);
   // Active home tab drives the FAB's identity: Groups tab → "+ Group",
   // Playlist tab → "+ Slot". Tracked via the module memory's change event
   // since this host lives at layout level (no home-page remount reaches it).
@@ -101,7 +101,7 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
   const onClick = () => {
     if (isSlotMode) {
       haptic.medium();
-      setSlotSheetOpen(true);
+      openSlotSheet();
       return;
     }
     if (inFlight.current) return;
@@ -148,7 +148,7 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
       </span>
       <span className="text-lg leading-none">{isSlotMode ? "Slot" : "Group"}</span>
     </button>
-    <NewSlotSheet isOpen={slotSheetOpen} onClose={() => setSlotSheetOpen(false)} />
+    <NewSlotSheet />
     <AccountGateModal
       isOpen={nameModalOpen}
       message="to create a new group"
