@@ -22,6 +22,18 @@ import type { Slot } from "@/lib/api/slots";
 import { slotWindowLines, activityColor, type ActivityColor } from "@/lib/slotUtils";
 import { openSlotSheet } from "@/lib/slotEvents";
 
+// The activity-bars column is a FIXED width — the space 4 bars occupy at the
+// comfortable "emojis just barely not touching" pitch — so every card's text
+// starts at the same x regardless of activity count. ≤4 activities center in it
+// at that pitch (empty margins for fewer); >4 compress (gap shrinks so they
+// still fit, emojis overlapping more and more).
+const BAR_WIDTH_PX = 3;
+// Center-to-center pitch where an ~20px emoji clears its neighbor with a hair
+// of gap. gap = pitch − bar width.
+const COMFORTABLE_GAP_PX = 20;
+// Width of exactly 4 bars at the comfortable gap: 4·bar + 3·gap.
+const BAR_AREA_WIDTH_PX = 4 * BAR_WIDTH_PX + 3 * COMFORTABLE_GAP_PX; // 72
+
 interface SlotCardProps {
   slot: Slot;
   colors: Map<string, ActivityColor>;
@@ -37,6 +49,14 @@ function SlotCardImpl({ slot, colors }: SlotCardProps) {
     color: activityColor(a.name, colors),
   }));
 
+  // Bars fill the fixed column: ≤4 keep the comfortable gap (centered, margins
+  // for fewer); >4 shrink the gap to pack N bars into BAR_AREA_WIDTH_PX.
+  const n = activities.length;
+  const barGap =
+    n <= 4
+      ? COMFORTABLE_GAP_PX
+      : Math.max(0, (BAR_AREA_WIDTH_PX - n * BAR_WIDTH_PX) / (n - 1));
+
   return (
     <button
       type="button"
@@ -45,9 +65,13 @@ function SlotCardImpl({ slot, colors }: SlotCardProps) {
       className="w-full text-left py-1.5 pl-3 flex items-start gap-[19.2px] active:opacity-70 transition-opacity"
     >
       {/* Vertical activity bars with the emoji centered atop each (overflowing
-          into neighbors a little by design). */}
+          into neighbors a little by design), in a fixed-width column so the
+          text always starts at the same x. */}
       {activities.length > 0 && (
-        <div className="flex items-end gap-3 shrink-0 pt-6">
+        <div
+          className="flex items-end justify-center shrink-0 pt-6"
+          style={{ width: `${BAR_AREA_WIDTH_PX}px`, columnGap: `${barGap}px` }}
+        >
           {activities.map((a, i) => (
             <div key={`${a.name}#${i}`} className="relative flex flex-col items-center">
               {a.emoji && (
