@@ -28,11 +28,11 @@ import { openSlotSheet } from "@/lib/slotEvents";
 // at that pitch (empty margins for fewer); >4 compress (gap shrinks so they
 // still fit, emojis overlapping more and more).
 const BAR_WIDTH_PX = 3;
-// Center-to-center pitch where an ~20px emoji clears its neighbor with a hair
-// of gap. gap = pitch − bar width.
-const COMFORTABLE_GAP_PX = 20;
+// Center-to-center gap between bars for ≤4 activities (gap = pitch − bar width).
+// Sized so 4 emojis sit close but readable within the fixed column.
+const COMFORTABLE_GAP_PX = 14;
 // Width of exactly 4 bars at the comfortable gap: 4·bar + 3·gap.
-const BAR_AREA_WIDTH_PX = 4 * BAR_WIDTH_PX + 3 * COMFORTABLE_GAP_PX; // 72
+const BAR_AREA_WIDTH_PX = 4 * BAR_WIDTH_PX + 3 * COMFORTABLE_GAP_PX; // 54
 
 interface SlotCardProps {
   slot: Slot;
