@@ -86,14 +86,17 @@ function SlotCardImpl({ slot, colors }: SlotCardProps) {
           style={{ width: `${BAR_AREA_WIDTH_PX}px`, columnGap: `${barGap}px` }}
         >
           {activities.map((a, i) => {
-            // Every other emoji shifts up / down so overlapping neighbors clear.
+            // Every other emoji sits higher / lower so overlapping neighbors
+            // clear. Its bar's TOP (start) moves by the same amount — bottoms
+            // stay aligned (items-end), so raising a bar makes it taller and the
+            // bottom-full emoji rides up with it (and vice versa), keeping each
+            // emoji glued to the top of its own line.
             const dy = emojiStagger === 0 ? 0 : i % 2 === 0 ? -emojiStagger : emojiStagger;
             return (
               <div key={`${a.name}#${i}`} className="relative flex flex-col items-center">
                 {a.emoji && (
                   <span
-                    className="absolute bottom-full left-1/2 mb-0.5 text-[18.4px] leading-none pointer-events-none"
-                    style={{ transform: `translate(-50%, ${dy}px)` }}
+                    className="absolute bottom-full left-1/2 -translate-x-1/2 mb-0.5 text-[18.4px] leading-none pointer-events-none"
                     aria-hidden="true"
                   >
                     {a.emoji}
@@ -101,7 +104,7 @@ function SlotCardImpl({ slot, colors }: SlotCardProps) {
                 )}
                 <div
                   className={`w-[3px] rounded-full ${a.color.bar}`}
-                  style={{ height: "3.25rem" }}
+                  style={{ height: `calc(3.25rem - ${dy}px)` }}
                   title={a.name}
                 />
               </div>
