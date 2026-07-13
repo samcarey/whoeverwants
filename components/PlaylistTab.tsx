@@ -75,7 +75,7 @@ export default function PlaylistTab() {
   }
 
   return (
-    <div className="space-y-5 pt-2">
+    <div className="space-y-3 pt-2">
       {sorted.map((slot) => (
         <SlotCard key={slot.id} slot={slot} colors={colors} />
       ))}
