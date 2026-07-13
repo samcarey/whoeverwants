@@ -39,7 +39,7 @@ function SlotCardImpl({ slot, colors }: SlotCardProps) {
       type="button"
       onClick={() => openSlotSheet(slot)}
       aria-label="Edit slot"
-      className="w-full text-left py-1.5 pl-3 flex items-center gap-3 active:opacity-70 transition-opacity"
+      className="w-full text-left py-1.5 pl-3 flex items-start gap-3 active:opacity-70 transition-opacity"
     >
       {/* Vertical activity bars with the emoji centered atop each (overflowing
           into neighbors a little by design). */}
@@ -65,18 +65,21 @@ function SlotCardImpl({ slot, colors }: SlotCardProps) {
         </div>
       )}
 
-      {/* Availability span, to the right of the bars. */}
+      {/* Availability span, to the right of the bars — vertically centered
+          with the emoji row atop the bars (min-h-6 = the pt-6 emoji band). */}
       {header && (
-        <div className="min-w-0 text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline gap-x-1">
-          <span className="text-blue-600 dark:text-blue-400 font-medium">
-            {header.relative}
-          </span>
-          <span>{header.startDate}</span>
-          <span>· {header.startTime}</span>
-          <span>–</span>
-          {header.endDate && <span>{header.endDate} ·</span>}
-          <span>{header.endTime}</span>
-          <span className="text-gray-400 dark:text-gray-500">· {header.duration}</span>
+        <div className="min-w-0 min-h-6 flex items-center">
+          <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline gap-x-1">
+            <span className="text-blue-600 dark:text-blue-400 font-medium">
+              {header.relative}
+            </span>
+            <span>{header.startDate}</span>
+            <span>· {header.startTime}</span>
+            <span>–</span>
+            {header.endDate && <span>{header.endDate} ·</span>}
+            <span>{header.endTime}</span>
+            <span className="text-gray-400 dark:text-gray-500">· {header.duration}</span>
+          </div>
         </div>
       )}
     </button>
