@@ -25,27 +25,28 @@ import {
 } from "@/lib/timeUtils";
 
 export interface ActivityColor {
-  /** Solid bar background (visible in both themes). */
+  /** Vertical-bar background — a DARKER shade in light mode, LIGHTER in dark
+   *  mode (`bg-*-600 dark:bg-*-400`), for contrast against each theme's bg. */
   bar: string;
-  /** Name / emoji-fallback text color, theme-aware. */
+  /** Matching text color, theme-aware. */
   text: string;
 }
 
 // Curated, evenly-spaced hues. Grays are excluded so bars never read as
 // "disabled"; the order interleaves warm/cool so early neighbors contrast.
 const ACTIVITY_COLORS: ActivityColor[] = [
-  { bar: "bg-blue-500", text: "text-blue-600 dark:text-blue-400" },
-  { bar: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
-  { bar: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
-  { bar: "bg-pink-500", text: "text-pink-600 dark:text-pink-400" },
-  { bar: "bg-violet-500", text: "text-violet-600 dark:text-violet-400" },
-  { bar: "bg-cyan-500", text: "text-cyan-600 dark:text-cyan-400" },
-  { bar: "bg-orange-500", text: "text-orange-600 dark:text-orange-400" },
-  { bar: "bg-teal-500", text: "text-teal-600 dark:text-teal-400" },
-  { bar: "bg-rose-500", text: "text-rose-600 dark:text-rose-400" },
-  { bar: "bg-indigo-500", text: "text-indigo-600 dark:text-indigo-400" },
-  { bar: "bg-lime-500", text: "text-lime-600 dark:text-lime-400" },
-  { bar: "bg-fuchsia-500", text: "text-fuchsia-600 dark:text-fuchsia-400" },
+  { bar: "bg-blue-600 dark:bg-blue-400", text: "text-blue-600 dark:text-blue-400" },
+  { bar: "bg-emerald-600 dark:bg-emerald-400", text: "text-emerald-600 dark:text-emerald-400" },
+  { bar: "bg-amber-600 dark:bg-amber-400", text: "text-amber-600 dark:text-amber-400" },
+  { bar: "bg-pink-600 dark:bg-pink-400", text: "text-pink-600 dark:text-pink-400" },
+  { bar: "bg-violet-600 dark:bg-violet-400", text: "text-violet-600 dark:text-violet-400" },
+  { bar: "bg-cyan-600 dark:bg-cyan-400", text: "text-cyan-600 dark:text-cyan-400" },
+  { bar: "bg-orange-600 dark:bg-orange-400", text: "text-orange-600 dark:text-orange-400" },
+  { bar: "bg-teal-600 dark:bg-teal-400", text: "text-teal-600 dark:text-teal-400" },
+  { bar: "bg-rose-600 dark:bg-rose-400", text: "text-rose-600 dark:text-rose-400" },
+  { bar: "bg-indigo-600 dark:bg-indigo-400", text: "text-indigo-600 dark:text-indigo-400" },
+  { bar: "bg-lime-600 dark:bg-lime-400", text: "text-lime-600 dark:text-lime-400" },
+  { bar: "bg-fuchsia-600 dark:bg-fuchsia-400", text: "text-fuchsia-600 dark:text-fuchsia-400" },
 ];
 
 /** Map every distinct activity (lowercased key) across `slots` to a stable
