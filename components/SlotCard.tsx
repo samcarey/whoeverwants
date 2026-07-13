@@ -39,7 +39,7 @@ function SlotCardImpl({ slot, colors }: SlotCardProps) {
       type="button"
       onClick={() => openSlotSheet(slot)}
       aria-label="Edit slot"
-      className="w-full text-left py-1.5 flex items-center gap-3 active:opacity-70 transition-opacity"
+      className="w-full text-left py-1.5 pl-3 flex items-center gap-3 active:opacity-70 transition-opacity"
     >
       {/* Vertical activity bars with the emoji centered atop each (overflowing
           into neighbors a little by design). */}
