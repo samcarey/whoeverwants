@@ -33,6 +33,10 @@ const BAR_WIDTH_PX = 3;
 const COMFORTABLE_GAP_PX = 14;
 // Width of exactly 4 bars at the comfortable gap: 4·bar + 3·gap.
 const BAR_AREA_WIDTH_PX = 4 * BAR_WIDTH_PX + 3 * COMFORTABLE_GAP_PX; // 54
+// Target min center-to-center distance between emoji glyphs before they read as
+// overlapping (the emoji box renders ~23px at text-[18.4px]; the visible glyph
+// is a hair smaller, so a slightly-under target avoids over-staggering).
+const EMOJI_CLEAR_PX = 21;
 
 interface SlotCardProps {
   slot: Slot;
@@ -57,6 +61,15 @@ function SlotCardImpl({ slot, colors }: SlotCardProps) {
       ? COMFORTABLE_GAP_PX
       : Math.max(0, (BAR_AREA_WIDTH_PX - n * BAR_WIDTH_PX) / (n - 1));
 
+  // As bars pack tighter the ~23px emojis start to overlap. Stagger every other
+  // emoji vertically (symmetric ±) by just enough that adjacent ones clear —
+  // growing as the pitch shrinks, zero once they'd already fit horizontally.
+  const pitch = BAR_WIDTH_PX + barGap;
+  const emojiStagger =
+    n < 2 || pitch >= EMOJI_CLEAR_PX
+      ? 0
+      : Math.sqrt(EMOJI_CLEAR_PX ** 2 - pitch ** 2) / 2;
+
   return (
     <button
       type="button"
@@ -72,23 +85,28 @@ function SlotCardImpl({ slot, colors }: SlotCardProps) {
           className="flex items-end justify-center shrink-0 pt-6"
           style={{ width: `${BAR_AREA_WIDTH_PX}px`, columnGap: `${barGap}px` }}
         >
-          {activities.map((a, i) => (
-            <div key={`${a.name}#${i}`} className="relative flex flex-col items-center">
-              {a.emoji && (
-                <span
-                  className="absolute bottom-full left-1/2 -translate-x-1/2 mb-0.5 text-[18.4px] leading-none pointer-events-none"
-                  aria-hidden="true"
-                >
-                  {a.emoji}
-                </span>
-              )}
-              <div
-                className={`w-[3px] rounded-full ${a.color.bar}`}
-                style={{ height: "3.25rem" }}
-                title={a.name}
-              />
-            </div>
-          ))}
+          {activities.map((a, i) => {
+            // Every other emoji shifts up / down so overlapping neighbors clear.
+            const dy = emojiStagger === 0 ? 0 : i % 2 === 0 ? -emojiStagger : emojiStagger;
+            return (
+              <div key={`${a.name}#${i}`} className="relative flex flex-col items-center">
+                {a.emoji && (
+                  <span
+                    className="absolute bottom-full left-1/2 mb-0.5 text-[18.4px] leading-none pointer-events-none"
+                    style={{ transform: `translate(-50%, ${dy}px)` }}
+                    aria-hidden="true"
+                  >
+                    {a.emoji}
+                  </span>
+                )}
+                <div
+                  className={`w-[3px] rounded-full ${a.color.bar}`}
+                  style={{ height: "3.25rem" }}
+                  title={a.name}
+                />
+              </div>
+            );
+          })}
         </div>
       )}
 
