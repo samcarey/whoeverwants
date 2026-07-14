@@ -18,7 +18,7 @@
   --background: #ffffff;
   --foreground: #171717;
   /* Emoji contour outline — dark on the light bg, light on the dark bg. */
-  --emoji-outline: rgba(0, 0, 0, 0.55);
+  --emoji-outline: rgba(0, 0, 0, 0.8);
 }
 
 @theme inline {
@@ -32,14 +32,14 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
-    --emoji-outline: rgba(255, 255, 255, 0.65);
+    --emoji-outline: rgba(255, 255, 255, 0.9);
   }
 }
 
 [data-theme="light"] {
   --background: #ffffff;
   --foreground: #171717;
-  --emoji-outline: rgba(0, 0, 0, 0.55);
+  --emoji-outline: rgba(0, 0, 0, 0.8);
   color-scheme: light;
 }
 
@@ -51,17 +51,18 @@
 }
 
 /* Thin outline hugging an emoji's outer contour (alpha-driven drop-shadows in
-   8 directions), sized to contrast the background in either theme. */
+   8 directions), sized to contrast the background in either theme. Chained
+   drop-shadows compound, so the ~1px offsets read as a crisp continuous edge. */
 .emoji-outline {
   filter:
-    drop-shadow(0.5px 0 0 var(--emoji-outline))
-    drop-shadow(-0.5px 0 0 var(--emoji-outline))
-    drop-shadow(0 0.5px 0 var(--emoji-outline))
-    drop-shadow(0 -0.5px 0 var(--emoji-outline))
-    drop-shadow(0.35px 0.35px 0 var(--emoji-outline))
-    drop-shadow(-0.35px 0.35px 0 var(--emoji-outline))
-    drop-shadow(0.35px -0.35px 0 var(--emoji-outline))
-    drop-shadow(-0.35px -0.35px 0 var(--emoji-outline));
+    drop-shadow(1px 0 0 var(--emoji-outline))
+    drop-shadow(-1px 0 0 var(--emoji-outline))
+    drop-shadow(0 1px 0 var(--emoji-outline))
+    drop-shadow(0 -1px 0 var(--emoji-outline))
+    drop-shadow(0.7px 0.7px 0 var(--emoji-outline))
+    drop-shadow(-0.7px 0.7px 0 var(--emoji-outline))
+    drop-shadow(0.7px -0.7px 0 var(--emoji-outline))
+    drop-shadow(-0.7px -0.7px 0 var(--emoji-outline));
 }
 
 html {
