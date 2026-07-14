@@ -141,6 +141,46 @@ def test_list_slots_round_trip(client):
     assert ("Coffee", None) in names
 
 
+def test_activity_participant_range_round_trips(client):
+    bid = str(uuid.uuid4())
+    _create_slot(
+        client,
+        browser_id=bid,
+        day_time_windows=_dtw("2026-11-01", "10:00", "12:15"),
+        activities=[
+            {"name": "Poker", "min_people": 2, "max_people": 6},
+            {"name": "Reading", "min_people": 3},  # min only
+            {"name": "Movie", "max_people": 8},  # max only
+            {"name": "Walk"},  # neither
+        ],
+    )
+    s = _list_slots(client, browser_id=bid).json()["slots"][0]
+    by_name = {a["name"]: a for a in s["activities"]}
+    assert (by_name["Poker"]["min_people"], by_name["Poker"]["max_people"]) == (2, 6)
+    assert (by_name["Reading"]["min_people"], by_name["Reading"]["max_people"]) == (3, None)
+    assert (by_name["Movie"]["min_people"], by_name["Movie"]["max_people"]) == (None, 8)
+    assert (by_name["Walk"]["min_people"], by_name["Walk"]["max_people"]) == (None, None)
+
+
+def test_activity_participant_range_sanitized(client):
+    bid = str(uuid.uuid4())
+    _create_slot(
+        client,
+        browser_id=bid,
+        day_time_windows=_dtw("2026-11-01"),
+        # min > max is bumped up; < 1 becomes unset; huge caps to MAX_PEOPLE.
+        activities=[
+            {"name": "Debate", "min_people": 5, "max_people": 2},
+            {"name": "Solo", "min_people": 0, "max_people": 5000},
+        ],
+    )
+    s = _list_slots(client, browser_id=bid).json()["slots"][0]
+    by_name = {a["name"]: a for a in s["activities"]}
+    assert (by_name["Debate"]["min_people"], by_name["Debate"]["max_people"]) == (5, 5)
+    assert by_name["Solo"]["min_people"] is None
+    assert by_name["Solo"]["max_people"] == 999
+
+
 def test_list_slots_empty_for_new_browser(client):
     r = _list_slots(client, browser_id=str(uuid.uuid4()))
     assert r.status_code == 200

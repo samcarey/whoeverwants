@@ -33,6 +33,11 @@ class ActivityInput(BaseModel):
     # Optional per-activity emoji (picked in the create-slot sheet). Decoupled
     # from the name — never affects suggestion matching / blacklist.
     emoji: str | None = None
+    # Optional per-activity participant range ("2–5 people"), both independent.
+    # Sanitized (clamped to [1, MAX_PEOPLE]) in services.slots; decoupled from
+    # the name like the emoji.
+    min_people: int | None = None
+    max_people: int | None = None
 
 
 class CreateSlotRequest(BaseModel):
@@ -56,6 +61,8 @@ class CreateSlotResponse(BaseModel):
 class SlotActivity(BaseModel):
     name: str
     emoji: str | None = None
+    min_people: int | None = None
+    max_people: int | None = None
 
 
 class SlotResponse(BaseModel):

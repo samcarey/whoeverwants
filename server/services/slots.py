@@ -21,11 +21,27 @@ from services.validation import truncate_text, validate_category_icon
 
 MAX_ACTIVITY_LEN = 100
 SUGGESTIONS_PER_GROUP = 15
+# Sanity bounds on a per-activity participant count (min/max people).
+MAX_PEOPLE = 999
 
 
 def normalize_activity(value: str | None) -> str | None:
     """Trim + length-cap an activity string; None/empty → None."""
     return truncate_text(value, MAX_ACTIVITY_LEN)
+
+
+def _clean_people(value) -> int | None:
+    """Coerce a per-activity participant count to an int in [1, MAX_PEOPLE];
+    None / non-numeric / < 1 → None (treated as unset)."""
+    if value is None:
+        return None
+    try:
+        n = int(value)
+    except (ValueError, TypeError):
+        return None
+    if n < 1:
+        return None
+    return min(n, MAX_PEOPLE)
 
 
 def _hhmm_to_minutes(value: str | None) -> int | None:
@@ -75,8 +91,10 @@ def _periods_overlap(a: dict[str, list[tuple[int, int]]], b: dict[str, list[tupl
 
 def _insert_slot_activities(conn, slot_id: str, activities) -> None:
     """Normalize + dedup (case-insensitive on the name) `activities` dicts
-    (``{"name", "emoji"}``) and write one slot_activities row each. The
-    optional emoji is decoupled — it never affects matching."""
+    (``{"name", "emoji", "min_people", "max_people"}``) and write one
+    slot_activities row each. The optional emoji + participant range are
+    decoupled — they never affect matching. When both people bounds are
+    present but min > max, max is bumped up to min."""
     seen: set[str] = set()
     for raw in activities or []:
         name, emoji = raw.get("name"), raw.get("emoji")
@@ -90,9 +108,16 @@ def _insert_slot_activities(conn, slot_id: str, activities) -> None:
         # Same validator as poll category emoji — lenient on emoji shape,
         # rejects over-length / control-char / plain-text (raises 400).
         clean_emoji = validate_category_icon(emoji)
+        min_people = _clean_people(raw.get("min_people"))
+        max_people = _clean_people(raw.get("max_people"))
+        if min_people is not None and max_people is not None and max_people < min_people:
+            max_people = min_people
         conn.execute(
-            "INSERT INTO slot_activities (slot_id, activity, emoji) VALUES (%(s)s::uuid, %(a)s, %(e)s)",
-            {"s": slot_id, "a": act, "e": clean_emoji},
+            """
+            INSERT INTO slot_activities (slot_id, activity, emoji, min_people, max_people)
+            VALUES (%(s)s::uuid, %(a)s, %(e)s, %(mn)s, %(mx)s)
+            """,
+            {"s": slot_id, "a": act, "e": clean_emoji, "mn": min_people, "mx": max_people},
         )
 
 
@@ -134,7 +159,7 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
     if slot_ids:
         arows = conn.execute(
             """
-            SELECT slot_id, activity, emoji
+            SELECT slot_id, activity, emoji, min_people, max_people
               FROM slot_activities
              WHERE slot_id = ANY(%(ids)s::uuid[])
              ORDER BY created_at
@@ -143,7 +168,12 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
         ).fetchall()
         for a in arows:
             acts.setdefault(str(a["slot_id"]), []).append(
-                {"name": a["activity"], "emoji": (a["emoji"] or None)}
+                {
+                    "name": a["activity"],
+                    "emoji": (a["emoji"] or None),
+                    "min_people": a["min_people"],
+                    "max_people": a["max_people"],
+                }
             )
     return [
         {
