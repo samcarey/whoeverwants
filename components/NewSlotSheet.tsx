@@ -16,9 +16,12 @@
  *   3. Activities — a "+" in the header inserts a typed activity row; below
  *      it, a CHECKBOX list of suggested activities in three labeled,
  *      priority-ordered groups (others planning this period / your past
- *      picks / others' past picks), each row with an ✕ to blacklist it
- *      (account-synced, never suggested again). Typed rows seed suggestions
- *      for everyone once saved.
+ *      picks / others' past picks). Activities already on the slot (typed
+ *      rows) are hidden from the suggestions so nothing appears twice. Only
+ *      the "you've picked before" group carries an ✕ — deleting one (behind a
+ *      confirmation) blacklists it so it's never suggested to you again;
+ *      activities suggested because OTHERS are doing them have no ✕. Typed
+ *      rows seed suggestions for everyone once saved.
  *
  * The ✓ saves the slot (selected windows + checked/typed activities) — via
  * apiCreateSlot for a new slot, or apiUpdateSlot when editing — fires
@@ -34,6 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DaysSelector from "@/components/DaysSelector";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import ModalPortal from "@/components/ModalPortal";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { useSheetDismissGesture } from "@/lib/useSheetDismissGesture";
@@ -119,6 +123,9 @@ export default function NewSlotSheet() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Activity name awaiting delete confirmation (null = no confirm open). Only
+  // "you've picked before" suggestions can be deleted (→ blacklisted).
+  const [pendingBlacklist, setPendingBlacklist] = useState<string | null>(null);
   const isEditing = editingSlot !== null;
 
   // Day selection is derived from the windows list (one entry per picked
@@ -156,6 +163,7 @@ export default function NewSlotSheet() {
       setSelected(new Set());
       setSaving(false);
       setDeleting(false);
+      setPendingBlacklist(null);
       resetDayWindowCache();
       setIsOpen(true);
     };
@@ -218,10 +226,11 @@ export default function NewSlotSheet() {
     setCustomActivities((prev) => prev.filter((_, j) => j !== i));
   }, []);
 
-  // ✕ on a suggestion: remove it from every group + selection immediately and
-  // add it to the account's blacklist so it's never suggested again.
+  // Confirmed ✕ on a "you've picked before" suggestion: remove it from every
+  // group + selection immediately and add it to the account's blacklist so
+  // it's never suggested again.
   const blacklistActivity = useCallback((activity: string) => {
-    haptic.light();
+    haptic.medium();
     setSuggestions((prev) => {
       const drop = (list: ActivitySuggestion[]) =>
         list.filter((a) => a.name.toLowerCase() !== activity.toLowerCase());
@@ -287,22 +296,45 @@ export default function NewSlotSheet() {
       .catch(() => setDeleting(false));
   }, [editingSlot, saving, deleting, close]);
 
-  // Any suggestion group has items?
+  // Activities already on the slot (typed custom rows) shouldn't ALSO appear
+  // as suggestions below — hide any suggestion whose name matches a typed row
+  // (case-insensitive). Chiefly visible when editing, where the slot's
+  // existing activities are pre-loaded as custom rows.
+  const addedKeys = useMemo(
+    () =>
+      new Set(
+        customActivities
+          .map((c) => c.name.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    [customActivities],
+  );
+  const filteredSuggestions = useMemo<ActivitySuggestions>(() => {
+    const drop = (list: ActivitySuggestion[]) =>
+      list.filter((a) => !addedKeys.has(a.name.trim().toLowerCase()));
+    return {
+      overlapping: drop(suggestions.overlapping),
+      yours: drop(suggestions.yours),
+      others: drop(suggestions.others),
+    };
+  }, [suggestions, addedKeys]);
+
+  // Any suggestion group has (visible) items?
   const hasSuggestions = useMemo(
-    () => SUGGESTION_GROUPS.some((g) => suggestions[g.key].length > 0),
-    [suggestions],
+    () => SUGGESTION_GROUPS.some((g) => filteredSuggestions[g.key].length > 0),
+    [filteredSuggestions],
   );
 
   useEffect(() => {
     if (!isOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
-      // While the emoji picker (a stacked modal with its own Escape handler)
-      // is open, let it consume Escape — don't also close the sheet.
-      if (e.key === "Escape" && emojiEditIndex === null) close();
+      // While a stacked modal (emoji picker or delete confirm) is open, let it
+      // consume Escape — don't also close the sheet.
+      if (e.key === "Escape" && emojiEditIndex === null && pendingBlacklist === null) close();
     };
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
-  }, [isOpen, close, emojiEditIndex]);
+  }, [isOpen, close, emojiEditIndex, pendingBlacklist]);
 
   // Collapsing snaps the month back to today's (the compact grid is
   // today-anchored, so a navigated-away month would disagree with it) —
@@ -516,11 +548,14 @@ export default function NewSlotSheet() {
                     </ul>
                   )}
                   {/* Suggested activities, grouped + labeled by priority. Each
-                      row: round checkbox (select → saved) + text + ✕
-                      (blacklist). */}
+                      row: round checkbox (select → saved) + text. Only the
+                      "you've picked before" group carries an ✕ to delete
+                      (behind a confirmation → blacklist); the others (things
+                      other people are doing) can't be deleted. */}
                   {SUGGESTION_GROUPS.map((group) => {
-                    const items = suggestions[group.key];
+                    const items = filteredSuggestions[group.key];
                     if (items.length === 0) return null;
+                    const canDelete = group.key === "yours";
                     return (
                       <div key={group.key} className="py-2">
                         <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
@@ -556,16 +591,18 @@ export default function NewSlotSheet() {
                                   {activity.emoji ? `${activity.emoji} ` : ""}
                                   {activity.name}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => blacklistActivity(activity.name)}
-                                  aria-label={`Never suggest "${activity.name}"`}
-                                  className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPendingBlacklist(activity.name)}
+                                    aria-label={`Delete "${activity.name}"`}
+                                    className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                )}
                               </li>
                             );
                           })}
@@ -604,6 +641,24 @@ export default function NewSlotSheet() {
         onClose={() => setEmojiEditIndex(null)}
         categoryWord={editingCustom?.name ?? ""}
         placeholder={EMOJI_PLACEHOLDER}
+      />
+
+      {/* Confirm before deleting one of your own past activities (blacklist).
+          Renders its own z-[70] portal above the sheet. */}
+      <ConfirmationModal
+        isOpen={pendingBlacklist !== null}
+        message={
+          pendingBlacklist
+            ? `Delete "${pendingBlacklist}" from your activities? It won't be suggested to you again.`
+            : ""
+        }
+        confirmText="Delete"
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        onConfirm={() => {
+          if (pendingBlacklist) blacklistActivity(pendingBlacklist);
+          setPendingBlacklist(null);
+        }}
+        onCancel={() => setPendingBlacklist(null)}
       />
     </ModalPortal>
   );
