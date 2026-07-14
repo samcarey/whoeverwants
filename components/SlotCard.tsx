@@ -96,7 +96,7 @@ function SlotCardImpl({ slot, colors }: SlotCardProps) {
               <div key={`${a.name}#${i}`} className="relative flex flex-col items-center">
                 {a.emoji && (
                   <span
-                    className="emoji-outline absolute bottom-full left-1/2 -translate-x-1/2 mb-0.5 text-[18.4px] leading-none pointer-events-none"
+                    className="emoji-outline absolute bottom-full left-1/2 -translate-x-1/2 mb-1 text-[18.4px] leading-none pointer-events-none"
                     aria-hidden="true"
                   >
                     {a.emoji}

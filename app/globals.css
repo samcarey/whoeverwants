@@ -18,7 +18,7 @@
   --background: #ffffff;
   --foreground: #171717;
   /* Emoji contour outline — dark on the light bg, light on the dark bg. */
-  --emoji-outline: rgba(0, 0, 0, 0.8);
+  --emoji-outline: rgba(0, 0, 0, 0.6);
 }
 
 @theme inline {
@@ -32,21 +32,21 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
-    --emoji-outline: rgba(255, 255, 255, 0.9);
+    --emoji-outline: rgba(255, 255, 255, 0.675);
   }
 }
 
 [data-theme="light"] {
   --background: #ffffff;
   --foreground: #171717;
-  --emoji-outline: rgba(0, 0, 0, 0.8);
+  --emoji-outline: rgba(0, 0, 0, 0.6);
   color-scheme: light;
 }
 
 [data-theme="dark"] {
   --background: #0a0a0a;
   --foreground: #ededed;
-  --emoji-outline: rgba(255, 255, 255, 0.65);
+  --emoji-outline: rgba(255, 255, 255, 0.675);
   color-scheme: dark;
 }
 
