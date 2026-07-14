@@ -17,6 +17,8 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Emoji contour outline — dark on the light bg, light on the dark bg. */
+  --emoji-outline: rgba(0, 0, 0, 0.55);
 }
 
 @theme inline {
@@ -30,19 +32,36 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --emoji-outline: rgba(255, 255, 255, 0.65);
   }
 }
 
 [data-theme="light"] {
   --background: #ffffff;
   --foreground: #171717;
+  --emoji-outline: rgba(0, 0, 0, 0.55);
   color-scheme: light;
 }
 
 [data-theme="dark"] {
   --background: #0a0a0a;
   --foreground: #ededed;
+  --emoji-outline: rgba(255, 255, 255, 0.65);
   color-scheme: dark;
+}
+
+/* Thin outline hugging an emoji's outer contour (alpha-driven drop-shadows in
+   8 directions), sized to contrast the background in either theme. */
+.emoji-outline {
+  filter:
+    drop-shadow(0.5px 0 0 var(--emoji-outline))
+    drop-shadow(-0.5px 0 0 var(--emoji-outline))
+    drop-shadow(0 0.5px 0 var(--emoji-outline))
+    drop-shadow(0 -0.5px 0 var(--emoji-outline))
+    drop-shadow(0.35px 0.35px 0 var(--emoji-outline))
+    drop-shadow(-0.35px 0.35px 0 var(--emoji-outline))
+    drop-shadow(0.35px -0.35px 0 var(--emoji-outline))
+    drop-shadow(-0.35px -0.35px 0 var(--emoji-outline));
 }
 
 html {
