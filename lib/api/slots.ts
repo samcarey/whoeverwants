@@ -10,10 +10,20 @@
 import type { DayTimeWindow } from "@/lib/types";
 import { slotFetch } from "./_internal";
 
-/** A suggested (or typed) activity + its optional emoji. */
+/** A suggested (or typed) activity + its optional emoji. Suggestions never
+ *  carry a participant range — that's a per-slot property (see SlotActivity). */
 export interface ActivitySuggestion {
   name: string;
   emoji: string | null;
+}
+
+/** A saved slot activity: a suggestion PLUS its optional participant range
+ *  (min/max people, "2–5"). Only saved activities carry the range; the
+ *  suggestion endpoint returns bare {name, emoji}. Mirrors the server's
+ *  separate ActivityInput / SlotActivity models. */
+export interface SlotActivity extends ActivitySuggestion {
+  min_people?: number | null;
+  max_people?: number | null;
 }
 
 export interface ActivitySuggestions {
@@ -30,13 +40,13 @@ export interface ActivitySuggestions {
 export interface Slot {
   id: string;
   day_time_windows: DayTimeWindow[];
-  activities: ActivitySuggestion[];
+  activities: SlotActivity[];
   created_at: string | null;
 }
 
 export async function apiCreateSlot(
   dayTimeWindows: DayTimeWindow[],
-  activities: ActivitySuggestion[],
+  activities: SlotActivity[],
 ): Promise<{ id: string }> {
   return slotFetch<{ id: string }>("", {
     method: "POST",
@@ -58,7 +68,7 @@ export async function apiListSlots(): Promise<Slot[]> {
 export async function apiUpdateSlot(
   slotId: string,
   dayTimeWindows: DayTimeWindow[],
-  activities: ActivitySuggestion[],
+  activities: SlotActivity[],
 ): Promise<{ id: string }> {
   return slotFetch<{ id: string }>(`/${slotId}`, {
     method: "PUT",

@@ -139,6 +139,22 @@ export function sortSlotsChronological(slots: Slot[]): Slot[] {
     .map((d) => d.slot);
 }
 
+/** Compact preview of a per-activity participant range, or null when neither
+ *  bound is set: both → "2–5", min only → "2+", max only → "≤5". Used faded
+ *  next to the activity name in the sheet AND tiny above the emoji on the
+ *  timeline. */
+export function formatPeopleRange(
+  min: number | null | undefined,
+  max: number | null | undefined,
+): string | null {
+  const lo = typeof min === "number" && min >= 1 ? min : null;
+  const hi = typeof max === "number" && max >= 1 ? max : null;
+  if (lo !== null && hi !== null) return `${lo}–${hi}`;
+  if (lo !== null) return `${lo}+`;
+  if (hi !== null) return `≤${hi}`;
+  return null;
+}
+
 /** "2.25h" — decimal hours, trailing zeros stripped (135min → "2.25h",
  *  60min → "1h", 90min → "1.5h"). */
 export function formatDecimalHours(minutes: number): string {

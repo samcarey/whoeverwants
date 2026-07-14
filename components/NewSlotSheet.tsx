@@ -13,15 +13,24 @@
  *   2. Time Windows — per-day time-slot pills via <DayTimeWindowsList>
  *      (+ button, tap-to-edit TimeGridModal), fed by
  *      useDayTimeWindowsState so newly-picked days inherit windows.
- *   3. Activities — a "+" in the header inserts a typed activity row; below
- *      it, a CHECKBOX list of suggested activities in three labeled,
- *      priority-ordered groups (others planning this period / your past
- *      picks / others' past picks). Activities already on the slot (typed
- *      rows) are hidden from the suggestions so nothing appears twice. Only
- *      the "you've picked before" group carries an ✕ — deleting one (behind a
- *      confirmation) blacklists it so it's never suggested to you again;
- *      activities suggested because OTHERS are doing them have no ✕. Typed
- *      rows seed suggestions for everyone once saved.
+ *   3. Activities — a "+" in the header appends a typed activity and opens the
+ *      activity EDITOR (see below); below it, a CHECKBOX list of suggested
+ *      activities in three labeled, priority-ordered groups (others planning
+ *      this period / your past picks / others' past picks). Activities already
+ *      on the slot (typed rows) are hidden from the suggestions so nothing
+ *      appears twice. Only the "you've picked before" group carries an ✕ —
+ *      deleting one (behind a confirmation) blacklists it so it's never
+ *      suggested to you again; activities suggested because OTHERS are doing
+ *      them have no ✕. Typed rows seed suggestions for everyone once saved.
+ *
+ * Each typed activity ROW is a button: tapping it slides in an activity EDITOR
+ * sub-panel (the same slide-in-over-the-sheet pattern the create-poll question
+ * editor uses — ← back + rightward-swipe-to-go-back). Edits apply LIVE (no
+ * per-activity accept button — the sheet's top-level ✓/✕ saves or cancels the
+ * whole slot). There you set the activity's name, emoji, and an optional
+ * PARTICIPANT range
+ * (min/max people via <MinMaxCounter>). The range, when set, previews faded
+ * next to the name on the row ("2–5") and tiny above the emoji on the timeline.
  *
  * The ✓ saves the slot (selected windows + checked/typed activities) — via
  * apiCreateSlot for a new slot, or apiUpdateSlot when editing — fires
@@ -38,11 +47,13 @@ import DaysSelector from "@/components/DaysSelector";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import MinMaxCounter from "@/components/MinMaxCounter";
 import ModalPortal from "@/components/ModalPortal";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { useSheetDismissGesture } from "@/lib/useSheetDismissGesture";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
 import { formatMonthYearLabel, shiftMonth } from "@/lib/timeUtils";
+import { formatPeopleRange } from "@/lib/slotUtils";
 import { haptic } from "@/lib/haptics";
 import {
   apiCreateSlot,
@@ -52,6 +63,7 @@ import {
   type ActivitySuggestion,
   type ActivitySuggestions,
   type Slot,
+  type SlotActivity,
 } from "@/lib/api/slots";
 import { apiAddActivityBlacklist } from "@/lib/api/users";
 import {
@@ -60,10 +72,13 @@ import {
 } from "@/lib/slotEvents";
 import type { DayTimeWindow } from "@/lib/types";
 
-/** A user-typed activity + its chosen emoji ("" = none, picker faded). */
+/** A user-typed activity + its chosen emoji ("" = none, picker faded) + an
+ *  optional participant range (null = unset). */
 interface CustomActivity {
   name: string;
   emoji: string;
+  minPeople: number | null;
+  maxPeople: number | null;
 }
 
 // Faded placeholder glyph on an activity row's emoji chip / in the picker
@@ -80,6 +95,20 @@ const SUGGESTION_GROUPS: { key: keyof ActivitySuggestions; label: string }[] = [
 
 // Same top gap as the create-poll sheets (SHEET_TOP_GAP there).
 const SHEET_HEIGHT = "calc(100dvh - env(safe-area-inset-top, 0px) - 1.25rem)";
+
+// Activity-editor sub-panel slide + swipe-back (ported from the create-poll
+// question editor). Edits apply LIVE to customActivities, so ← / ✓ / swipe all
+// just close — there's nothing to commit or revert.
+const SUB_SLIDE_MS = 300;
+const SUB_SLIDE_TRANSITION = `transform ${SUB_SLIDE_MS}ms ease`;
+const SUB_SWIPE_RECOGNIZE_PX = 10;
+const SUB_SWIPE_COMMIT_RATIO = 0.3;
+const SUB_SWIPE_COMMIT_VELOCITY = 0.5; // px/ms
+const SUB_SWIPE_SNAP_BACK_MS = 220;
+const SUB_SWIPE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
+// UI cap on the participants counter; the server clamps to the same bound in
+// services/slots.py (_clean_people). Keep in lockstep.
+const MAX_PEOPLE = 999;
 
 const monthOfToday = () => {
   const now = new Date();
@@ -111,10 +140,13 @@ export default function NewSlotSheet() {
   const [editingSlot, setEditingSlot] = useState<Slot | null>(null);
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
   // User-typed activities (added via the "+" next to the Activities header),
-  // each with an optional chosen emoji.
+  // each with an optional chosen emoji + participant range.
   const [customActivities, setCustomActivities] = useState<CustomActivity[]>([]);
   // Which custom row's emoji picker is open (null = closed).
   const [emojiEditIndex, setEmojiEditIndex] = useState<number | null>(null);
+  // Which custom row's editor sub-panel is open (null = none).
+  const [activityEditIndex, setActivityEditIndex] = useState<number | null>(null);
+  const [subSlideIn, setSubSlideIn] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState<Date>(monthOfToday);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
   const [suggestions, setSuggestions] = useState<ActivitySuggestions>(EMPTY_SUGGESTIONS);
@@ -142,18 +174,27 @@ export default function NewSlotSheet() {
   const close = useCallback(() => setIsOpen(false), []);
 
   // Open (create or edit) driven by the slot-sheet event channel. Editing
-  // prefills the windows + existing activities (loaded as editable typed rows)
-  // and centers the calendar on the slot's earliest day; a new slot starts
-  // blank on today's month.
+  // prefills the windows + existing activities (loaded as editable typed rows,
+  // with their emoji + participant range) and centers the calendar on the
+  // slot's earliest day; a new slot starts blank on today's month.
   useEffect(() => {
     const onOpen = (e: Event) => {
       const slot = (e as CustomEvent<{ slot: Slot | null }>).detail?.slot ?? null;
       setEditingSlot(slot);
       setDayTimeWindows(slot ? slot.day_time_windows : []);
       setCustomActivities(
-        slot ? slot.activities.map((a) => ({ name: a.name, emoji: a.emoji ?? "" })) : [],
+        slot
+          ? slot.activities.map((a) => ({
+              name: a.name,
+              emoji: a.emoji ?? "",
+              minPeople: a.min_people ?? null,
+              maxPeople: a.max_people ?? null,
+            }))
+          : [],
       );
       setEmojiEditIndex(null);
+      setActivityEditIndex(null);
+      setSubSlideIn(false);
       setCalendarMonth(monthForSlot(slot));
       // Editing: expand to the slot's real month so its picked days are
       // visible (the compact grid is a rolling 3 weeks from today, which may
@@ -202,29 +243,159 @@ export default function NewSlotSheet() {
     });
   }, []);
 
-  // Custom activity rows (added via the "+" in the Activities header). The
-  // newly appended row auto-focuses so the user can type immediately.
-  const lastCustomRef = useRef<HTMLInputElement | null>(null);
-  const focusLastCustomRef = useRef(false);
-  const addCustom = useCallback(() => {
-    focusLastCustomRef.current = true;
-    setCustomActivities((prev) => [...prev, { name: "", emoji: "" }]);
-  }, []);
-  useEffect(() => {
-    if (focusLastCustomRef.current) {
-      focusLastCustomRef.current = false;
-      lastCustomRef.current?.focus();
-    }
-  }, [customActivities.length]);
+  // ---- Custom activity rows + editor sub-panel ------------------------------
+
   const updateCustom = useCallback((i: number, name: string) => {
     setCustomActivities((prev) => prev.map((a, j) => (j === i ? { ...a, name } : a)));
   }, []);
   const setCustomEmoji = useCallback((i: number, emoji: string) => {
     setCustomActivities((prev) => prev.map((a, j) => (j === i ? { ...a, emoji } : a)));
   }, []);
+  const setMinPeople = useCallback((i: number, v: number | null) => {
+    setCustomActivities((prev) => prev.map((a, j) => (j === i ? { ...a, minPeople: v } : a)));
+  }, []);
+  const setMaxPeople = useCallback((i: number, v: number | null) => {
+    setCustomActivities((prev) => prev.map((a, j) => (j === i ? { ...a, maxPeople: v } : a)));
+  }, []);
   const removeCustom = useCallback((i: number) => {
     setCustomActivities((prev) => prev.filter((_, j) => j !== i));
   }, []);
+
+  // Slide the editor sub-panel in: mount it off-screen (subSlideIn=false) then,
+  // after the mount paints, flip to true so the transform transition runs.
+  const slideInSub = useCallback(() => {
+    setSubSlideIn(false);
+    requestAnimationFrame(() => requestAnimationFrame(() => setSubSlideIn(true)));
+  }, []);
+
+  const activityEditIndexRef = useRef<number | null>(null);
+  useEffect(() => {
+    activityEditIndexRef.current = activityEditIndex;
+  }, [activityEditIndex]);
+
+  // Auto-focus the name field only for a freshly-added ("+") activity, not when
+  // opening an existing row (avoids popping the keyboard on every edit).
+  const focusNameOnOpenRef = useRef(false);
+  const setNameInputRef = useCallback((el: HTMLInputElement | null) => {
+    if (el && focusNameOnOpenRef.current) {
+      focusNameOnOpenRef.current = false;
+      el.focus();
+    }
+  }, []);
+
+  // Tap a typed activity row → slide in its editor.
+  const openActivityEdit = useCallback((index: number) => {
+    setActivityEditIndex(index);
+    slideInSub();
+  }, [slideInSub]);
+
+  // "+" → append a blank activity and open its editor with the name focused
+  // (read customActivities.length directly, so NOT memoized).
+  const addActivity = () => {
+    const idx = customActivities.length;
+    focusNameOnOpenRef.current = true;
+    setCustomActivities((prev) => [...prev, { name: "", emoji: "", minPeople: null, maxPeople: null }]);
+    setActivityEditIndex(idx);
+    slideInSub();
+  };
+
+  // Close the editor and slide it back; a left-blank activity is dropped so an
+  // abandoned "+" doesn't leave an empty row.
+  const closeActivityEdit = useCallback(() => {
+    const idx = activityEditIndexRef.current;
+    setSubSlideIn(false);
+    window.setTimeout(() => {
+      if (idx !== null) {
+        setCustomActivities((prev) => {
+          const row = prev[idx];
+          return row && !row.name.trim() ? prev.filter((_, j) => j !== idx) : prev;
+        });
+      }
+      setActivityEditIndex(null);
+    }, SUB_SLIDE_MS);
+  }, []);
+
+  // Swipe-to-go-back on the editor sub-panel (mirrors the create-poll question
+  // editor). The resting transform is React-state-driven (subSlideIn); during a
+  // drag we imperatively override transform/transition, then commit (close) or
+  // snap back. closeActivityEdit is `[]`-stable (reads state via refs), so the
+  // touch handlers can depend on it directly and still never rebind.
+  const subPanelRef = useRef<HTMLDivElement | null>(null);
+  const subSwipeRef = useRef<{
+    startX: number;
+    startY: number;
+    startTime: number;
+    swiping: boolean;
+    ignored: boolean;
+  } | null>(null);
+
+  const handleSubPanelTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 1) {
+      subSwipeRef.current = null;
+      return;
+    }
+    subSwipeRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      startTime: Date.now(),
+      swiping: false,
+      ignored: false,
+    };
+  }, []);
+
+  const handleSubPanelTouchMove = useCallback((e: React.TouchEvent) => {
+    const st = subSwipeRef.current;
+    if (!st || st.ignored) return;
+    if (e.touches.length !== 1) {
+      st.ignored = true;
+      return;
+    }
+    const dx = e.touches[0].clientX - st.startX;
+    const dy = e.touches[0].clientY - st.startY;
+    if (!st.swiping) {
+      if (Math.abs(dx) < SUB_SWIPE_RECOGNIZE_PX && Math.abs(dy) < SUB_SWIPE_RECOGNIZE_PX) return;
+      if (Math.abs(dy) >= Math.abs(dx) || dx <= 0) {
+        st.ignored = true;
+        return;
+      }
+      st.swiping = true;
+    }
+    const el = subPanelRef.current;
+    if (el) {
+      el.style.transition = "none";
+      el.style.transform = `translateX(${Math.max(0, dx)}px)`;
+    }
+  }, []);
+
+  const handleSubPanelTouchEnd = useCallback((e: React.TouchEvent) => {
+    const st = subSwipeRef.current;
+    subSwipeRef.current = null;
+    if (!st || !st.swiping || st.ignored) return;
+    const endX = e.changedTouches[0]?.clientX ?? st.startX;
+    const dx = Math.max(0, endX - st.startX);
+    const dt = Date.now() - st.startTime;
+    const velocity = (endX - st.startX) / Math.max(1, dt);
+    const el = subPanelRef.current;
+    const width = el?.offsetWidth ?? window.innerWidth;
+    const shouldCommit = dx >= width * SUB_SWIPE_COMMIT_RATIO || velocity >= SUB_SWIPE_COMMIT_VELOCITY;
+    if (shouldCommit) {
+      // Restore the resting transition imperatively first: React won't re-apply
+      // it on the close re-render (the `transition` prop string is unchanged
+      // from the drag's `none` override), and only `transform` changes to
+      // translateX(100%) — so without this the slide-off would snap.
+      if (el) el.style.transition = SUB_SLIDE_TRANSITION;
+      closeActivityEdit();
+    } else if (el) {
+      el.style.transition = `transform ${SUB_SWIPE_SNAP_BACK_MS}ms ${SUB_SWIPE_EASING}`;
+      el.style.transform = "translateX(0)";
+      window.setTimeout(() => {
+        if (subPanelRef.current === el) {
+          el.style.transition = SUB_SLIDE_TRANSITION;
+          el.style.transform = "translateX(0)";
+        }
+      }, SUB_SWIPE_SNAP_BACK_MS + 20);
+    }
+  }, [closeActivityEdit]);
 
   // Confirmed ✕ on a "you've picked before" suggestion: remove it from every
   // group + selection immediately and add it to the account's blacklist so
@@ -257,19 +428,30 @@ export default function NewSlotSheet() {
       for (const s of suggestions[g.key]) suggEmoji.set(s.name.toLowerCase(), s.emoji);
     }
     // Merge checked suggestions + typed customs (selected first, so a shared
-    // name keeps the suggestion's emoji), deduped case-insensitively.
+    // name keeps the suggestion's emoji), deduped case-insensitively. Only the
+    // typed customs carry a participant range; suggestions don't.
     const seen = new Set<string>();
-    const activities: ActivitySuggestion[] = [];
-    const push = (name: string, emoji?: string | null) => {
+    const activities: SlotActivity[] = [];
+    const push = (
+      name: string,
+      emoji?: string | null,
+      minPeople?: number | null,
+      maxPeople?: number | null,
+    ) => {
       const t = name.trim();
       if (!t) return;
       const key = t.toLowerCase();
       if (seen.has(key)) return;
       seen.add(key);
-      activities.push({ name: t, emoji: emoji || null });
+      activities.push({
+        name: t,
+        emoji: emoji || null,
+        min_people: minPeople ?? null,
+        max_people: maxPeople ?? null,
+      });
     };
     for (const name of selected) push(name, suggEmoji.get(name.toLowerCase()));
-    for (const c of customActivities) push(c.name, c.emoji);
+    for (const c of customActivities) push(c.name, c.emoji, c.minPeople, c.maxPeople);
     setSaving(true);
     haptic.success();
     const req = editingSlot
@@ -328,13 +510,19 @@ export default function NewSlotSheet() {
   useEffect(() => {
     if (!isOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
-      // While a stacked modal (emoji picker or delete confirm) is open, let it
-      // consume Escape — don't also close the sheet.
-      if (e.key === "Escape" && emojiEditIndex === null && pendingBlacklist === null) close();
+      if (e.key !== "Escape") return;
+      // A stacked modal (emoji picker or delete confirm) consumes Escape.
+      if (emojiEditIndex !== null || pendingBlacklist !== null) return;
+      // Else the activity editor closes before the whole sheet.
+      if (activityEditIndex !== null) {
+        closeActivityEdit();
+        return;
+      }
+      close();
     };
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
-  }, [isOpen, close, emojiEditIndex, pendingBlacklist]);
+  }, [isOpen, close, emojiEditIndex, pendingBlacklist, activityEditIndex, closeActivityEdit]);
 
   // Collapsing snaps the month back to today's (the compact grid is
   // today-anchored, so a navigated-away month would disagree with it) —
@@ -350,16 +538,20 @@ export default function NewSlotSheet() {
   }, [calendarExpanded]);
 
   // Swipe-down-to-dismiss (native iOS sheet behavior), shared with the
-  // create-poll sheet. No sub-panel / discard-confirm here — there's nothing
-  // to lose, so a committed swipe just closes.
+  // create-poll sheet. Yields while the activity editor is open so its
+  // rightward-swipe-back doesn't fight the sheet's downward dismiss.
   const sheetScrollerNodeRef = useRef<HTMLDivElement | null>(null);
   const { sheetRef, backdropRef, touchHandlers } = useSheetDismissGesture({
     scrollerRef: sheetScrollerNodeRef,
     onDismiss: close,
+    canStart: () => activityEditIndexRef.current === null,
   });
 
   // The custom row whose emoji picker is open (undefined = closed).
   const editingCustom = emojiEditIndex !== null ? customActivities[emojiEditIndex] : undefined;
+  // The custom row whose editor sub-panel is open (undefined = closed).
+  const editingActivity =
+    activityEditIndex !== null ? customActivities[activityEditIndex] : undefined;
 
   if (!isOpen) return null;
 
@@ -498,7 +690,7 @@ export default function NewSlotSheet() {
                 </label>
                 <button
                   type="button"
-                  onClick={addCustom}
+                  onClick={addActivity}
                   aria-label="Add an activity"
                   className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full bg-blue-500 text-white hover:bg-blue-600 active:scale-95 transition"
                 >
@@ -509,42 +701,55 @@ export default function NewSlotSheet() {
               </div>
               {(customActivities.length > 0 || hasSuggestions) && (
                 <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-2 divide-y divide-gray-200 dark:divide-gray-700">
-                  {/* User-typed activity rows (always saved). */}
+                  {/* User-typed activity rows (always saved). Tapping a row opens
+                      the editor (name / emoji / participant range); the faded
+                      range previews next to the name. */}
                   {customActivities.length > 0 && (
                     <ul className="py-1">
-                      {customActivities.map((row, i) => (
-                        <li key={i} className="flex items-center gap-3 h-11">
-                          <button
-                            type="button"
-                            onClick={() => setEmojiEditIndex(i)}
-                            aria-label="Choose an emoji"
-                            className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-lg leading-none active:scale-95"
-                          >
-                            <span className={row.emoji.trim() ? "" : "opacity-40"}>
-                              {row.emoji.trim() || EMOJI_PLACEHOLDER}
-                            </span>
-                          </button>
-                          <input
-                            ref={i === customActivities.length - 1 ? lastCustomRef : undefined}
-                            value={row.name}
-                            onChange={(e) => updateCustom(i, e.target.value)}
-                            onBlur={(e) => updateCustom(i, e.target.value.trim())}
-                            placeholder="Activity"
-                            aria-label="Activity"
-                            className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeCustom(i)}
-                            aria-label="Remove activity"
-                            className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </li>
-                      ))}
+                      {customActivities.map((row, i) => {
+                        const range = formatPeopleRange(row.minPeople, row.maxPeople);
+                        return (
+                          <li key={i} className="flex items-center gap-3 h-11">
+                            <button
+                              type="button"
+                              onClick={() => openActivityEdit(i)}
+                              aria-label={`Edit ${row.name || "activity"}`}
+                              className="flex-1 min-w-0 flex items-center gap-3 text-left active:opacity-70"
+                            >
+                              <span
+                                className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-lg leading-none ${
+                                  row.emoji.trim() ? "" : "opacity-40"
+                                }`}
+                              >
+                                {row.emoji.trim() || EMOJI_PLACEHOLDER}
+                              </span>
+                              <span className="flex-1 min-w-0 flex items-baseline gap-2">
+                                <span className={`truncate text-base ${row.name ? "" : "text-gray-400 dark:text-gray-500"}`}>
+                                  {row.name || "Activity"}
+                                </span>
+                                {range && (
+                                  <span className="shrink-0 text-sm text-gray-400 dark:text-gray-500 tabular-nums">
+                                    {range}
+                                  </span>
+                                )}
+                              </span>
+                              <svg className="shrink-0 w-4 h-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeCustom(i)}
+                              aria-label="Remove activity"
+                              className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                   {/* Suggested activities, grouped + labeled by priority. Each
@@ -626,6 +831,100 @@ export default function NewSlotSheet() {
               </div>
             )}
           </div>
+
+          {/* Activity editor sub-panel — slides in over the sheet (same pattern
+              as the create-poll question editor). Edits apply LIVE, so there's
+              no accept button: the ← and rightward-swipe just slide it back.
+              Accept/cancel of the whole slot happens at the sheet's top-level
+              ✓/✕. */}
+          {activityEditIndex !== null && (
+            <div
+              ref={subPanelRef}
+              className="absolute inset-0 z-20 bg-gray-100 dark:bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col touch-pan-y"
+              style={{
+                transform: subSlideIn ? "translateX(0)" : "translateX(100%)",
+                transition: SUB_SLIDE_TRANSITION,
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Edit activity"
+              onTouchStart={handleSubPanelTouchStart}
+              onTouchMove={handleSubPanelTouchMove}
+              onTouchEnd={handleSubPanelTouchEnd}
+              onTouchCancel={handleSubPanelTouchEnd}
+            >
+              <div className="shrink-0 relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
+                <button
+                  type="button"
+                  onClick={closeActivityEdit}
+                  aria-label="Back"
+                  className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <span className="text-lg font-semibold select-none">Edit Activity</span>
+                {/* No accept button — edits apply live; the ← (and swipe-back)
+                    just return to the sheet, where the top-level ✓/✕ saves or
+                    cancels the whole slot. */}
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-6 space-y-[14.4px]">
+                {editingActivity && (
+                  <>
+                    {/* Emoji + name */}
+                    <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3 flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setEmojiEditIndex(activityEditIndex)}
+                        aria-label="Choose an emoji"
+                        className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-xl leading-none active:scale-95"
+                      >
+                        <span className={editingActivity.emoji.trim() ? "" : "opacity-40"}>
+                          {editingActivity.emoji.trim() || EMOJI_PLACEHOLDER}
+                        </span>
+                      </button>
+                      <input
+                        ref={setNameInputRef}
+                        value={editingActivity.name}
+                        onChange={(e) => updateCustom(activityEditIndex, e.target.value)}
+                        onBlur={(e) => updateCustom(activityEditIndex, e.target.value.trim())}
+                        placeholder="Activity"
+                        aria-label="Activity name"
+                        className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                      />
+                    </section>
+                    {/* Participants */}
+                    <div>
+                      <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
+                        Participants
+                      </label>
+                      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-4">
+                        <MinMaxCounter
+                          minValue={editingActivity.minPeople}
+                          maxValue={editingActivity.maxPeople}
+                          maxEnabled={editingActivity.maxPeople !== null}
+                          minCheckboxEnabled={editingActivity.minPeople !== null}
+                          // Checkbox only fires ON when the bound was off, and
+                          // off ⇔ null — so the "current value" operands are
+                          // dead; default min→1, max→min (else 1).
+                          onMinCheckboxChange={(on) => setMinPeople(activityEditIndex, on ? 1 : null)}
+                          onMinChange={(v) => setMinPeople(activityEditIndex, v)}
+                          onMaxChange={(v) => setMaxPeople(activityEditIndex, v)}
+                          onMaxEnabledChange={(on) =>
+                            setMaxPeople(activityEditIndex, on ? editingActivity.minPeople ?? 1 : null)
+                          }
+                          minLimit={1}
+                          maxLimit={MAX_PEOPLE}
+                          increment={1}
+                        />
+                      </section>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
