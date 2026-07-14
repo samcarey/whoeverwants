@@ -20,8 +20,14 @@
  *      (account-synced, never suggested again). Typed rows seed suggestions
  *      for everyone once saved.
  *
- * The ✓ saves the slot (selected windows + checked/typed activities) via
- * apiCreateSlot, then closes.
+ * The ✓ saves the slot (selected windows + checked/typed activities) — via
+ * apiCreateSlot for a new slot, or apiUpdateSlot when editing — fires
+ * SLOTS_CHANGED (so the Playlist tab re-fetches), then closes. In edit mode a
+ * "Delete slot" button at the bottom removes it (apiDeleteSlot).
+ *
+ * Mounted once at layout level (CreateGroupButtonHost) and opened via the
+ * slot-sheet event channel: the "+ Slot" FAB dispatches a new slot; a Playlist
+ * card tap dispatches the slot to edit. Self-manages its open + editing state.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -36,11 +42,18 @@ import { formatMonthYearLabel, shiftMonth } from "@/lib/timeUtils";
 import { haptic } from "@/lib/haptics";
 import {
   apiCreateSlot,
+  apiUpdateSlot,
+  apiDeleteSlot,
   apiGetActivitySuggestions,
   type ActivitySuggestion,
   type ActivitySuggestions,
+  type Slot,
 } from "@/lib/api/slots";
 import { apiAddActivityBlacklist } from "@/lib/api/users";
+import {
+  SLOT_SHEET_OPEN_EVENT,
+  notifySlotsChanged,
+} from "@/lib/slotEvents";
 import type { DayTimeWindow } from "@/lib/types";
 
 /** A user-typed activity + its chosen emoji ("" = none, picker faded). */
@@ -64,17 +77,34 @@ const SUGGESTION_GROUPS: { key: keyof ActivitySuggestions; label: string }[] = [
 // Same top gap as the create-poll sheets (SHEET_TOP_GAP there).
 const SHEET_HEIGHT = "calc(100dvh - env(safe-area-inset-top, 0px) - 1.25rem)";
 
-interface NewSlotSheetProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
 const monthOfToday = () => {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1);
 };
 
-export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
+/** The calendar month to show when opening: the slot's earliest day (edit) or
+ *  the current month (new). */
+function monthForSlot(slot: Slot | null): Date {
+  const days = (slot?.day_time_windows ?? [])
+    .map((dtw) => dtw.day)
+    .filter(Boolean)
+    .sort();
+  if (days.length > 0) {
+    const d = new Date(days[0] + "T00:00:00");
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  }
+  return monthOfToday();
+}
+
+/**
+ * Layout-level create/edit slot sheet. Opened via the slot-sheet event channel
+ * (openSlotSheet()) — the "+ Slot" FAB dispatches a new slot, a Playlist card
+ * tap dispatches the slot to edit. Self-manages its open + editing state.
+ */
+export default function NewSlotSheet() {
+  const [isOpen, setIsOpen] = useState(false);
+  // The slot being edited (null = creating a new one).
+  const [editingSlot, setEditingSlot] = useState<Slot | null>(null);
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
   // User-typed activities (added via the "+" next to the Activities header),
   // each with an optional chosen emoji.
@@ -88,6 +118,8 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
   // a typed custom with the same text don't double-save.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const isEditing = editingSlot !== null;
 
   // Day selection is derived from the windows list (one entry per picked
   // day); the hook seeds newly-added days with inherited/default windows
@@ -100,19 +132,36 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
 
   useBodyScrollLock(isOpen);
 
-  // Fresh state on every open (the host keeps this component mounted).
+  const close = useCallback(() => setIsOpen(false), []);
+
+  // Open (create or edit) driven by the slot-sheet event channel. Editing
+  // prefills the windows + existing activities (loaded as editable typed rows)
+  // and centers the calendar on the slot's earliest day; a new slot starts
+  // blank on today's month.
   useEffect(() => {
-    if (!isOpen) return;
-    setDayTimeWindows([]);
-    setCustomActivities([]);
-    setEmojiEditIndex(null);
-    setCalendarMonth(monthOfToday());
-    setCalendarExpanded(false);
-    setSuggestions(EMPTY_SUGGESTIONS);
-    setSelected(new Set());
-    setSaving(false);
-    resetDayWindowCache();
-  }, [isOpen, resetDayWindowCache]);
+    const onOpen = (e: Event) => {
+      const slot = (e as CustomEvent<{ slot: Slot | null }>).detail?.slot ?? null;
+      setEditingSlot(slot);
+      setDayTimeWindows(slot ? slot.day_time_windows : []);
+      setCustomActivities(
+        slot ? slot.activities.map((a) => ({ name: a.name, emoji: a.emoji ?? "" })) : [],
+      );
+      setEmojiEditIndex(null);
+      setCalendarMonth(monthForSlot(slot));
+      // Editing: expand to the slot's real month so its picked days are
+      // visible (the compact grid is a rolling 3 weeks from today, which may
+      // not include them). New: compact, today-anchored.
+      setCalendarExpanded(slot !== null);
+      setSuggestions(EMPTY_SUGGESTIONS);
+      setSelected(new Set());
+      setSaving(false);
+      setDeleting(false);
+      resetDayWindowCache();
+      setIsOpen(true);
+    };
+    window.addEventListener(SLOT_SHEET_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(SLOT_SHEET_OPEN_EVENT, onOpen);
+  }, [resetDayWindowCache]);
 
   // Fetch ranked activity suggestions, debounced on the selected period
   // (group 1 depends on which windows overlap other users' slots). A
@@ -214,10 +263,29 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
     for (const c of customActivities) push(c.name, c.emoji);
     setSaving(true);
     haptic.success();
-    apiCreateSlot(dayTimeWindows, activities)
-      .then(() => onClose())
+    const req = editingSlot
+      ? apiUpdateSlot(editingSlot.id, dayTimeWindows, activities)
+      : apiCreateSlot(dayTimeWindows, activities);
+    req
+      .then(() => {
+        notifySlotsChanged();
+        close();
+      })
       .catch(() => setSaving(false));
-  }, [saving, dayTimeWindows, selected, customActivities, suggestions, onClose]);
+  }, [saving, dayTimeWindows, selected, customActivities, suggestions, editingSlot, close]);
+
+  // Delete the slot being edited (edit mode only).
+  const handleDelete = useCallback(() => {
+    if (!editingSlot || saving || deleting) return;
+    setDeleting(true);
+    haptic.medium();
+    apiDeleteSlot(editingSlot.id)
+      .then(() => {
+        notifySlotsChanged();
+        close();
+      })
+      .catch(() => setDeleting(false));
+  }, [editingSlot, saving, deleting, close]);
 
   // Any suggestion group has items?
   const hasSuggestions = useMemo(
@@ -230,11 +298,11 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
     const handleEsc = (e: KeyboardEvent) => {
       // While the emoji picker (a stacked modal with its own Escape handler)
       // is open, let it consume Escape — don't also close the sheet.
-      if (e.key === "Escape" && emojiEditIndex === null) onClose();
+      if (e.key === "Escape" && emojiEditIndex === null) close();
     };
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
-  }, [isOpen, onClose, emojiEditIndex]);
+  }, [isOpen, close, emojiEditIndex]);
 
   // Collapsing snaps the month back to today's (the compact grid is
   // today-anchored, so a navigated-away month would disagree with it) —
@@ -255,7 +323,7 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
   const sheetScrollerNodeRef = useRef<HTMLDivElement | null>(null);
   const { sheetRef, backdropRef, touchHandlers } = useSheetDismissGesture({
     scrollerRef: sheetScrollerNodeRef,
-    onDismiss: onClose,
+    onDismiss: close,
   });
 
   // The custom row whose emoji picker is open (undefined = closed).
@@ -268,7 +336,7 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
       <div
         ref={backdropRef}
         className="fixed inset-0 z-[59] bg-black/40 dark:bg-black/60 animate-fade-in"
-        onClick={onClose}
+        onClick={close}
         aria-hidden="true"
       />
       <div className="fixed inset-0 z-[60] flex items-end justify-center pointer-events-none">
@@ -279,12 +347,12 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
           style={{ height: SHEET_HEIGHT }}
           role="dialog"
           aria-modal="true"
-          aria-label="New slot"
+          aria-label={isEditing ? "Edit slot" : "New slot"}
         >
           <div className="shrink-0 relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
             <button
               type="button"
-              onClick={onClose}
+              onClick={close}
               aria-label="Close slot form"
               className="absolute left-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer"
             >
@@ -292,11 +360,11 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            <span className="text-lg font-semibold select-none">New Slot</span>
+            <span className="text-lg font-semibold select-none">{isEditing ? "Edit Slot" : "New Slot"}</span>
             <button
               type="button"
               onClick={handleSave}
-              disabled={selectedDays.length === 0 || saving}
+              disabled={selectedDays.length === 0 || saving || deleting}
               aria-label="Confirm slot"
               className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -508,6 +576,18 @@ export default function NewSlotSheet({ isOpen, onClose }: NewSlotSheetProps) {
                 </section>
               )}
             </div>
+            {isEditing && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={saving || deleting}
+                  className="w-full h-11 rounded-2xl bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium hover:bg-red-100 dark:hover:bg-red-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {deleting ? "Deleting…" : "Delete slot"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

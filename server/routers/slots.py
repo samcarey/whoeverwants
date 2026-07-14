@@ -9,14 +9,21 @@ picked before" suggestion group works across that browser's future slots.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
 from database import get_db
 from middleware import browser_id_from_request as _browser_id
 from middleware import user_id_from_request as _user_id
 from services.auth import create_anonymous_user, resolve_actor_user_id
-from services.slots import create_slot, suggest_activities
+from services.groups import require_uuid
+from services.slots import (
+    create_slot,
+    delete_slot,
+    list_slots,
+    suggest_activities,
+    update_slot,
+)
 
 router = APIRouter(prefix="/api/slots", tags=["slots"])
 
@@ -44,6 +51,22 @@ class CreateSlotRequest(BaseModel):
 
 class CreateSlotResponse(BaseModel):
     id: str
+
+
+class SlotActivity(BaseModel):
+    name: str
+    emoji: str | None = None
+
+
+class SlotResponse(BaseModel):
+    id: str
+    day_time_windows: list[dict] = []
+    activities: list[SlotActivity] = []
+    created_at: str | None = None
+
+
+class SlotListResponse(BaseModel):
+    slots: list[SlotResponse] = []
 
 
 class SuggestionsRequest(BaseModel):
@@ -80,6 +103,47 @@ def create_slot_endpoint(req: CreateSlotRequest, request: Request):
             activities=[a.model_dump() for a in req.activities],
         )
     return CreateSlotResponse(id=slot_id)
+
+
+@router.get("", response_model=SlotListResponse)
+@router.get("/", response_model=SlotListResponse)
+def list_slots_endpoint(request: Request):
+    with get_db() as conn:
+        user_id = resolve_actor_user_id(conn, user_id=_user_id(request), browser_id=_browser_id(request))
+        # No account yet (fresh anonymous browser) → no slots.
+        slots = list_slots(conn, user_id=user_id) if user_id else []
+    return SlotListResponse(slots=[SlotResponse(**s) for s in slots])
+
+
+@router.put("/{slot_id}", response_model=CreateSlotResponse)
+def update_slot_endpoint(slot_id: str, req: CreateSlotRequest, request: Request):
+    require_uuid(slot_id, "slot id")
+    browser_id = _browser_id(request)
+    with get_db() as conn:
+        user_id = resolve_actor_user_id(conn, user_id=_user_id(request), browser_id=browser_id)
+        if not user_id:
+            raise HTTPException(status_code=404, detail="Slot not found")
+        ok = update_slot(
+            conn,
+            slot_id=slot_id,
+            user_id=user_id,
+            day_time_windows=req.day_time_windows,
+            activities=[a.model_dump() for a in req.activities],
+        )
+        if not ok:
+            raise HTTPException(status_code=404, detail="Slot not found")
+    return CreateSlotResponse(id=slot_id)
+
+
+@router.delete("/{slot_id}", status_code=204)
+def delete_slot_endpoint(slot_id: str, request: Request):
+    require_uuid(slot_id, "slot id")
+    with get_db() as conn:
+        user_id = resolve_actor_user_id(conn, user_id=_user_id(request), browser_id=_browser_id(request))
+        if not user_id:
+            raise HTTPException(status_code=404, detail="Slot not found")
+        if not delete_slot(conn, slot_id=slot_id, user_id=user_id):
+            raise HTTPException(status_code=404, detail="Slot not found")
 
 
 @router.post("/suggestions", response_model=ActivitySuggestionsResponse)

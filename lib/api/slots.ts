@@ -25,6 +25,15 @@ export interface ActivitySuggestions {
   others: ActivitySuggestion[];
 }
 
+/** A saved slot: availability windows + activities, as returned by the list
+ *  endpoint. `created_at` is a stable secondary sort key. */
+export interface Slot {
+  id: string;
+  day_time_windows: DayTimeWindow[];
+  activities: ActivitySuggestion[];
+  created_at: string | null;
+}
+
 export async function apiCreateSlot(
   dayTimeWindows: DayTimeWindow[],
   activities: ActivitySuggestion[],
@@ -36,6 +45,33 @@ export async function apiCreateSlot(
       activities,
     }),
   });
+}
+
+/** The caller's saved slots (server order: newest first; the FE re-sorts by
+ *  soonest availability start for the playlist). */
+export async function apiListSlots(): Promise<Slot[]> {
+  const res = await slotFetch<{ slots: Slot[] }>("", { method: "GET" });
+  return res.slots ?? [];
+}
+
+/** Replace a slot's windows + activities (owner-gated; 404 if not owned). */
+export async function apiUpdateSlot(
+  slotId: string,
+  dayTimeWindows: DayTimeWindow[],
+  activities: ActivitySuggestion[],
+): Promise<{ id: string }> {
+  return slotFetch<{ id: string }>(`/${slotId}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      day_time_windows: dayTimeWindows,
+      activities,
+    }),
+  });
+}
+
+/** Delete a slot (owner-gated; 404 if not owned). */
+export async function apiDeleteSlot(slotId: string): Promise<void> {
+  await slotFetch<void>(`/${slotId}`, { method: "DELETE" });
 }
 
 export async function apiGetActivitySuggestions(

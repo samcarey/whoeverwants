@@ -13,6 +13,7 @@ import { getCachedSessionUser, SESSION_CHANGED_EVENT, type SessionUser } from "@
 import { DEFAULT_HOME_TAB, HOME_TABS, HOME_TAB_ROW_CLASS, getHomeTab, homeTabPillClass, rememberHomeTab, type HomeTab } from "@/lib/homeTabMemory";
 import { isAppHydrated } from "@/lib/hydration";
 import GroupList from "@/components/GroupList";
+import PlaylistTab from "@/components/PlaylistTab";
 import SignInModal from "@/components/SignInModal";
 
 // Fun activity phrases (max 25 chars)
@@ -333,11 +334,7 @@ export default function Home() {
         ))}
       </div>
 
-      {homeTab === "playlist" && (
-        <div className="text-center py-8">
-          <p className="text-gray-500 dark:text-gray-400">Playlist coming soon!</p>
-        </div>
-      )}
+      {homeTab === "playlist" && <PlaylistTab />}
 
       {homeTab === "groups" && (
         <>

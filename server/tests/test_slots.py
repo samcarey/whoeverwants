@@ -27,6 +27,10 @@ def _suggestions(client, *, browser_id, day_time_windows):
     )
 
 
+def _list_slots(client, *, browser_id):
+    return client.get("/api/slots", headers=bid_headers(browser_id))
+
+
 def test_create_slot_round_trip(client):
     bid = str(uuid.uuid4())
     r = _create_slot(client, browser_id=bid, day_time_windows=_dtw("2026-08-01"), activities=["Hiking", "hiking", " "])
@@ -116,6 +120,104 @@ def test_create_slot_accepts_mixed_string_and_object_activities(client):
         activities=["Hiking", {"name": "Climbing", "emoji": "🧗"}],
     )
     assert r.status_code == 200, r.text
+
+
+def test_list_slots_round_trip(client):
+    bid = str(uuid.uuid4())
+    _create_slot(
+        client,
+        browser_id=bid,
+        day_time_windows=_dtw("2026-11-01", "10:00", "12:15"),
+        activities=[{"name": "Bowling", "emoji": "🎳"}, "Coffee"],
+    )
+    r = _list_slots(client, browser_id=bid)
+    assert r.status_code == 200, r.text
+    slots = r.json()["slots"]
+    assert len(slots) == 1
+    s = slots[0]
+    assert s["day_time_windows"] == _dtw("2026-11-01", "10:00", "12:15")
+    names = [(a["name"], a["emoji"]) for a in s["activities"]]
+    assert ("Bowling", "🎳") in names
+    assert ("Coffee", None) in names
+
+
+def test_list_slots_empty_for_new_browser(client):
+    r = _list_slots(client, browser_id=str(uuid.uuid4()))
+    assert r.status_code == 200
+    assert r.json()["slots"] == []
+
+
+def test_list_slots_scoped_to_owner(client):
+    a = str(uuid.uuid4())
+    b = str(uuid.uuid4())
+    _create_slot(client, browser_id=a, day_time_windows=_dtw("2026-11-02"), activities=["Yoga"])
+    # A fresh browser sees none of A's slots (its own account is separate).
+    r = _list_slots(client, browser_id=b)
+    assert r.status_code == 200
+    assert r.json()["slots"] == []
+
+
+def test_update_slot_replaces_windows_and_activities(client):
+    bid = str(uuid.uuid4())
+    r = _create_slot(client, browser_id=bid, day_time_windows=_dtw("2026-11-03"), activities=["Hiking"])
+    slot_id = r.json()["id"]
+
+    r = client.put(
+        f"/api/slots/{slot_id}",
+        json={
+            "day_time_windows": _dtw("2026-11-04", "14:00", "16:00"),
+            "activities": [{"name": "Climbing", "emoji": "🧗"}],
+        },
+        headers=bid_headers(bid),
+    )
+    assert r.status_code == 200, r.text
+
+    slots = _list_slots(client, browser_id=bid).json()["slots"]
+    assert len(slots) == 1
+    s = slots[0]
+    assert s["day_time_windows"] == _dtw("2026-11-04", "14:00", "16:00")
+    assert [(a["name"], a["emoji"]) for a in s["activities"]] == [("Climbing", "🧗")]
+
+
+def test_update_slot_404_for_non_owner(client):
+    owner = str(uuid.uuid4())
+    r = _create_slot(client, browser_id=owner, day_time_windows=_dtw("2026-11-05"), activities=["Yoga"])
+    slot_id = r.json()["id"]
+    other = str(uuid.uuid4())
+    r = client.put(
+        f"/api/slots/{slot_id}",
+        json={"day_time_windows": _dtw("2026-11-06"), "activities": ["Nope"]},
+        headers=bid_headers(other),
+    )
+    assert r.status_code == 404
+
+
+def test_update_slot_malformed_id_404_not_500(client):
+    r = client.put(
+        "/api/slots/not-a-uuid",
+        json={"day_time_windows": _dtw("2026-11-07"), "activities": []},
+        headers=bid_headers(str(uuid.uuid4())),
+    )
+    assert r.status_code == 404
+
+
+def test_delete_slot_removes_it(client):
+    bid = str(uuid.uuid4())
+    r = _create_slot(client, browser_id=bid, day_time_windows=_dtw("2026-11-08"), activities=["Hiking"])
+    slot_id = r.json()["id"]
+    r = client.delete(f"/api/slots/{slot_id}", headers=bid_headers(bid))
+    assert r.status_code == 204, r.text
+    assert _list_slots(client, browser_id=bid).json()["slots"] == []
+
+
+def test_delete_slot_404_for_non_owner(client):
+    owner = str(uuid.uuid4())
+    r = _create_slot(client, browser_id=owner, day_time_windows=_dtw("2026-11-09"), activities=["Yoga"])
+    slot_id = r.json()["id"]
+    r = client.delete(f"/api/slots/{slot_id}", headers=bid_headers(str(uuid.uuid4())))
+    assert r.status_code == 404
+    # Still there for the owner.
+    assert len(_list_slots(client, browser_id=owner).json()["slots"]) == 1
 
 
 def test_activity_emoji_round_trips_into_suggestions(client):
