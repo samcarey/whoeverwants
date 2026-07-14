@@ -174,30 +174,66 @@ export interface SlotWindowLine {
   key: string;
 }
 
+/** Build the display line for a single availability window. */
+function lineFromInterval(iv: Interval): SlotWindowLine {
+  // End date = this window's start day plus its intra-window rollover
+  // (0, or 1 for a cross-midnight window). Date-string arithmetic to avoid
+  // any UTC/local offset skew.
+  const rollover = Math.floor((iv.startMin + iv.durationMin) / 1440);
+  const endDateStr = addDaysToDateStr(iv.day, rollover);
+  return {
+    relative: getRelativeDayLabel(iv.day),
+    date: formatDayLabel(iv.day),
+    startTime: formatClock(iv.min),
+    endTime: formatClock(iv.max),
+    endDate: endDateStr !== iv.day ? formatDayLabel(endDateStr) : null,
+    duration: formatDecimalHours(iv.durationMin),
+    key: `${iv.day}#${iv.min}-${iv.max}`,
+  };
+}
+
 /** One display line PER availability window (not a single collapsed span) —
- *  chronologically sorted, each with its own date · start–end · duration. A
- *  slot with several disjoint windows renders as several lines rather than one
- *  big earliest→latest block. Empty for a slot with no usable windows. */
+ *  chronologically sorted, each with its own date · start–end · duration. */
 export function slotWindowLines(dayTimeWindows: DayTimeWindow[]): SlotWindowLine[] {
   return intervalsOf(dayTimeWindows)
     .slice()
     .sort((a, b) => a.startAbs - b.startAbs)
-    .map((iv) => {
-      // End date = this window's start day plus its intra-window rollover
-      // (0, or 1 for a cross-midnight window). Date-string arithmetic to avoid
-      // any UTC/local offset skew.
-      const rollover = Math.floor((iv.startMin + iv.durationMin) / 1440);
-      const endDateStr = addDaysToDateStr(iv.day, rollover);
-      return {
-        relative: getRelativeDayLabel(iv.day),
-        date: formatDayLabel(iv.day),
-        startTime: formatClock(iv.min),
-        endTime: formatClock(iv.max),
-        endDate: endDateStr !== iv.day ? formatDayLabel(endDateStr) : null,
-        duration: formatDecimalHours(iv.durationMin),
-        key: `${iv.day}#${iv.min}-${iv.max}`,
-      };
+    .map(lineFromInterval);
+}
+
+export interface SlotWindowEntry {
+  /** The owning slot (its activities render the bars; tapping edits it). */
+  slot: Slot;
+  /** This one window's date/time line. */
+  line: SlotWindowLine;
+  /** Absolute start (minutes since epoch) for the global chronological sort. */
+  startAbs: number;
+  /** Stable React key. */
+  key: string;
+}
+
+/** Explode every slot into ONE entry per availability window, sorted soonest
+ *  first across ALL slots. Each window then occupies its own row — its own set
+ *  of activity bars + its own vertical space in the playlist — rather than
+ *  several windows of a slot sharing one card. Slots with no windows contribute
+ *  nothing. */
+export function slotWindowEntries(slots: Slot[]): SlotWindowEntry[] {
+  const entries: SlotWindowEntry[] = [];
+  for (const slot of slots) {
+    intervalsOf(slot.day_time_windows).forEach((iv, i) => {
+      entries.push({
+        slot,
+        line: lineFromInterval(iv),
+        startAbs: iv.startAbs,
+        key: `${slot.id}#${iv.day}#${iv.min}-${iv.max}#${i}`,
+      });
     });
+  }
+  return entries.sort(
+    (a, b) =>
+      a.startAbs - b.startAbs ||
+      (a.slot.created_at ?? "").localeCompare(b.slot.created_at ?? ""),
+  );
 }
 
 /** Add `days` to a "YYYY-MM-DD" string in local time, returning "YYYY-MM-DD". */

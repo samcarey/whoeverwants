@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiListSlots, type Slot } from "@/lib/api/slots";
-import { buildActivityColorMap, sortSlotsChronological } from "@/lib/slotUtils";
+import { buildActivityColorMap, sortSlotsChronological, slotWindowEntries } from "@/lib/slotUtils";
 import { SLOTS_CHANGED_EVENT } from "@/lib/slotEvents";
 import SlotCard from "@/components/SlotCard";
 
@@ -43,10 +43,11 @@ export default function PlaylistTab() {
     };
   }, [load]);
 
-  // Chronological (soonest first) + a stable per-activity color map computed
-  // over that order (first-appearance = chronological).
+  // One row PER availability window across all slots, soonest first; a stable
+  // per-activity color map keyed to chronological first-appearance.
   const sorted = useMemo(() => (slots ? sortSlotsChronological(slots) : []), [slots]);
   const colors = useMemo(() => buildActivityColorMap(sorted), [sorted]);
+  const entries = useMemo(() => (slots ? slotWindowEntries(slots) : []), [slots]);
 
   if (slots === null) {
     return (
@@ -59,7 +60,7 @@ export default function PlaylistTab() {
     );
   }
 
-  if (sorted.length === 0) {
+  if (entries.length === 0) {
     return (
       <div className="text-center py-8">
         <p className="text-gray-500 dark:text-gray-400">
@@ -76,8 +77,8 @@ export default function PlaylistTab() {
 
   return (
     <div className="space-y-3 pt-2">
-      {sorted.map((slot) => (
-        <SlotCard key={slot.id} slot={slot} colors={colors} />
+      {entries.map((e) => (
+        <SlotCard key={e.key} slot={e.slot} line={e.line} colors={colors} />
       ))}
     </div>
   );

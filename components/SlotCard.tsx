@@ -1,25 +1,26 @@
 "use client";
 
 /**
- * One Playlist slot, borderless — vertical spacing alone separates cards:
+ * One availability WINDOW of a Playlist slot, borderless — vertical spacing
+ * alone separates rows. A slot with several windows explodes into several of
+ * these rows (each its own set of bars + its own vertical space); see
+ * slotWindowEntries.
  *   - Down the left: one thin vertical colored bar per activity (side by side
  *     with a small gap), each with its emoji at the top. The emoji is absolutely
  *     centered over its bar and allowed to overflow/overlap its neighbors a
- *     little. Colors come from the timeline-wide activity map (consistent per
- *     activity, contrasting, pretty in both themes; darker in light mode and
- *     lighter in dark mode).
- *   - To the RIGHT of the bars: ONE line per availability window (chronological)
- *     — each with its own date + relative specifier ("Tomorrow", in blue), the
- *     start–end time (with an end date only when that window crosses midnight),
- *     and a decimal-hour duration note ("2.25h"). Disjoint windows render as
- *     separate lines, not a single collapsed span.
+ *     little (every-other one staggers vertically as they compress). Colors come
+ *     from the timeline-wide activity map (consistent per activity, contrasting,
+ *     pretty in both themes; darker in light mode, lighter in dark mode).
+ *   - To the RIGHT of the bars: this window's date + relative specifier
+ *     ("Tomorrow", in blue), the start–end time (with an end date only when the
+ *     window crosses midnight), and a decimal-hour duration note ("2.25h").
  *
- * Tapping the card opens the create-slot sheet in edit mode.
+ * Tapping the row opens the create-slot sheet in edit mode (for the whole slot).
  */
 
 import { memo } from "react";
 import type { Slot } from "@/lib/api/slots";
-import { slotWindowLines, activityColor, type ActivityColor } from "@/lib/slotUtils";
+import { activityColor, type ActivityColor, type SlotWindowLine } from "@/lib/slotUtils";
 import { openSlotSheet } from "@/lib/slotEvents";
 
 // The activity-bars column is a FIXED width — the space 4 bars occupy at the
@@ -40,13 +41,12 @@ const EMOJI_CLEAR_PX = 21;
 
 interface SlotCardProps {
   slot: Slot;
+  /** The single availability window this row represents. */
+  line: SlotWindowLine;
   colors: Map<string, ActivityColor>;
 }
 
-function SlotCardImpl({ slot, colors }: SlotCardProps) {
-  // One line per availability window (chronological) — disjoint windows show
-  // as separate lines, not one collapsed span.
-  const lines = slotWindowLines(slot.day_time_windows);
+function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
   // Resolve each activity's color once.
   const activities = slot.activities.map((a) => ({
     ...a,
@@ -113,29 +113,21 @@ function SlotCardImpl({ slot, colors }: SlotCardProps) {
         </div>
       )}
 
-      {/* One line per availability window, to the right of the bars. A single
-          window sits centered against the emoji row atop the bars (min-h-6 =
-          the pt-6 emoji band); multiple windows stack downward from there. */}
-      {lines.length > 0 && (
-        <div className="min-w-0 min-h-6 flex flex-col justify-center gap-1">
-          {lines.map((line, i) => (
-            <div
-              key={`${line.key}#${i}`}
-              className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline gap-x-1"
-            >
-              <span className="text-blue-600 dark:text-blue-400 font-medium">
-                {line.relative}
-              </span>
-              <span>{line.date}</span>
-              <span>· {line.startTime}</span>
-              <span>–</span>
-              {line.endDate && <span>{line.endDate} ·</span>}
-              <span>{line.endTime}</span>
-              <span className="text-gray-400 dark:text-gray-500">· {line.duration}</span>
-            </div>
-          ))}
+      {/* This window's date/time, centered against the emoji row atop the bars
+          (min-h-6 = the pt-6 emoji band). */}
+      <div className="min-w-0 min-h-6 flex items-center">
+        <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline gap-x-1">
+          <span className="text-blue-600 dark:text-blue-400 font-medium">
+            {line.relative}
+          </span>
+          <span>{line.date}</span>
+          <span>· {line.startTime}</span>
+          <span>–</span>
+          {line.endDate && <span>{line.endDate} ·</span>}
+          <span>{line.endTime}</span>
+          <span className="text-gray-400 dark:text-gray-500">· {line.duration}</span>
         </div>
-      )}
+      </div>
     </button>
   );
 }

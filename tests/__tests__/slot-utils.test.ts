@@ -3,6 +3,7 @@ import type { Slot } from "@/lib/api/slots";
 import {
   formatDecimalHours,
   slotWindowLines,
+  slotWindowEntries,
   buildActivityColorMap,
   activityColor,
   sortSlotsChronological,
@@ -90,6 +91,39 @@ describe("buildActivityColorMap", () => {
     expect(hikingA).toEqual(hikingB); // req 1: consistent per activity
     // req 2: distinct activities get distinct palette entries
     expect(activityColor("Coffee", colors)).not.toEqual(hikingA);
+  });
+});
+
+describe("slotWindowEntries", () => {
+  it("explodes each slot into one entry per window, sorted soonest-first across slots", () => {
+    const a = slot(
+      "a",
+      [
+        { day: "2099-06-17", windows: [{ min: "18:00", max: "20:00" }] },
+        { day: "2099-06-15", windows: [{ min: "09:00", max: "10:00" }] },
+      ],
+      [{ name: "Hiking", emoji: null }],
+    );
+    const b = slot("b", [{ day: "2099-06-16", windows: [{ min: "12:00", max: "13:00" }] }], [
+      { name: "Coffee", emoji: null },
+    ]);
+    const entries = slotWindowEntries([a, b]);
+    // 3 windows total, chronological regardless of which slot they belong to.
+    expect(entries.map((e) => e.line.date.replace(/^\w+, /, ""))).toEqual([
+      "Jun 15",
+      "Jun 16",
+      "Jun 17",
+    ]);
+    // Both of slot "a"'s windows carry slot a (its activities render the bars).
+    expect(entries[0].slot.id).toBe("a");
+    expect(entries[2].slot.id).toBe("a");
+    expect(entries[1].slot.id).toBe("b");
+    // Keys are unique per window.
+    expect(new Set(entries.map((e) => e.key)).size).toBe(3);
+  });
+
+  it("returns nothing for a slot with no windows", () => {
+    expect(slotWindowEntries([slot("x", [])])).toEqual([]);
   });
 });
 
