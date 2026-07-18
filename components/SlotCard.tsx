@@ -12,9 +12,11 @@
  *     (bottom) clear their overlapping neighbors — the bar ends alternate too.
  *     Colors come from the timeline-wide activity map (consistent per activity,
  *     contrasting, pretty in both themes; darker in light mode, lighter in dark).
- *   - To the RIGHT of the bars: this window's date + relative specifier
- *     ("Tomorrow", in blue), the start–end time (with an end date only when the
- *     window crosses midnight), and a decimal-hour duration note ("2.25h").
+ *   - To the RIGHT of the bars: this window's start–end time (with an end date
+ *     only when the window crosses midnight) and a decimal-hour duration note
+ *     ("2.25h"). The day + relative specifier ("Tomorrow") is NOT here — it's a
+ *     per-day divider header rendered above each group of same-day rows in
+ *     PlaylistTab.
  *
  * Tapping the row opens the create-slot sheet in edit mode (for the whole slot).
  */
@@ -155,14 +157,11 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
         </div>
       )}
 
-      {/* This window's date/time, level with the emoji band at the bar tops. */}
+      {/* This window's time span, level with the emoji band at the bar tops.
+          The day/date lives in the group's divider header above, not here. */}
       <div className="min-w-0 min-h-6 flex items-center" style={{ marginTop: `${dateShiftPx}px` }}>
         <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline gap-x-1">
-          <span className="text-blue-600 dark:text-blue-400 font-medium">
-            {line.relative}
-          </span>
-          <span>{line.date}</span>
-          <span>· {line.startTime}</span>
+          <span>{line.startTime}</span>
           <span>–</span>
           {line.endDate && <span>{line.endDate} ·</span>}
           <span>{line.endTime}</span>

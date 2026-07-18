@@ -222,6 +222,10 @@ export interface SlotWindowEntry {
   slot: Slot;
   /** This one window's date/time line. */
   line: SlotWindowLine;
+  /** Raw "YYYY-MM-DD" of the window's START day — the grouping key for the
+   *  timeline's per-day divider headers (entries sort by startAbs, so all of a
+   *  day's windows are contiguous). */
+  day: string;
   /** Absolute start (minutes since epoch) for the global chronological sort. */
   startAbs: number;
   /** Stable React key. */
@@ -240,6 +244,7 @@ export function slotWindowEntries(slots: Slot[]): SlotWindowEntry[] {
       entries.push({
         slot,
         line: lineFromInterval(iv),
+        day: iv.day,
         startAbs: iv.startAbs,
         key: `${slot.id}#${iv.day}#${iv.min}-${iv.max}#${i}`,
       });
