@@ -84,6 +84,22 @@ export async function apiDeleteSlot(slotId: string): Promise<void> {
   await slotFetch<void>(`/${slotId}`, { method: "DELETE" });
 }
 
+/** A pickable person for the slot form's "Who With → Pick" list: an account
+ *  the caller has shared a group with (their contacts address book). Same
+ *  shape as the group invite-members candidate, without a group scope. */
+export interface Contact {
+  user_id: string;
+  name: string | null;
+  shared_group_count: number;
+  last_seen_at: string;
+}
+
+/** The caller's contacts (people they've shared any group with), newest-shared
+ *  first. Empty for a fresh anonymous browser with no account yet. */
+export async function apiListContacts(): Promise<Contact[]> {
+  return slotFetch<Contact[]>("/contacts", { method: "GET" });
+}
+
 export async function apiGetActivitySuggestions(
   dayTimeWindows: DayTimeWindow[],
 ): Promise<ActivitySuggestions> {

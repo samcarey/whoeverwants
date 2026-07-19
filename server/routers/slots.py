@@ -16,6 +16,7 @@ from database import get_db
 from middleware import browser_id_from_request as _browser_id
 from middleware import user_id_from_request as _user_id
 from services.auth import create_anonymous_user, resolve_actor_user_id
+from services.contacts import list_invitable_accounts, reconcile_contacts
 from services.groups import require_uuid
 from services.slots import (
     create_slot,
@@ -26,6 +27,12 @@ from services.slots import (
 )
 
 router = APIRouter(prefix="/api/slots", tags=["slots"])
+
+# A group id that no group has, so `list_invitable_accounts`' "not already a
+# member of THIS group" exclusion is a no-op → it returns the caller's whole
+# contact list. Lets the slot form's "Who With → Pick" picker reuse the same
+# address book the group invite-members search uses, minus any group scope.
+_NO_GROUP_ID = "00000000-0000-0000-0000-000000000000"
 
 
 class ActivityInput(BaseModel):
@@ -120,6 +127,40 @@ def list_slots_endpoint(request: Request):
         # No account yet (fresh anonymous browser) → no slots.
         slots = list_slots(conn, user_id=user_id) if user_id else []
     return SlotListResponse(slots=[SlotResponse(**s) for s in slots])
+
+
+class ContactResponse(BaseModel):
+    """One pickable person for the slot form's "Who With → Pick" list: an
+    account the caller has shared a group with (their `user_contacts` address
+    book). Mirrors the group invite-members row, without a group scope."""
+
+    user_id: str
+    name: str | None
+    shared_group_count: int
+    last_seen_at: str
+
+
+@router.get("/contacts", response_model=list[ContactResponse])
+def list_contacts_endpoint(request: Request):
+    # Read-only source for the "Who With → Pick" picker: every account the
+    # caller has encountered, newest-shared first. Empty for a fresh
+    # anonymous browser with no account yet. Reconciles inline so freshly
+    # shared contacts appear (same as the group invite-members endpoint).
+    with get_db() as conn:
+        user_id = resolve_actor_user_id(conn, user_id=_user_id(request), browser_id=_browser_id(request))
+        if not user_id:
+            return []
+        reconcile_contacts(conn, user_id)
+        accounts = list_invitable_accounts(conn, user_id, _NO_GROUP_ID)
+    return [
+        ContactResponse(
+            user_id=a.user_id,
+            name=a.name,
+            shared_group_count=a.shared_group_count,
+            last_seen_at=a.last_seen_at.isoformat() if a.last_seen_at else "",
+        )
+        for a in accounts
+    ]
 
 
 @router.put("/{slot_id}", response_model=CreateSlotResponse)
