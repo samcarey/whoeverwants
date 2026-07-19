@@ -98,7 +98,7 @@ export default function PlaylistTab() {
   return (
     <div className="pt-2">
       {dayGroups.map((g) => (
-        <div key={g.day} className="mb-3">
+        <div key={g.day} className="mb-1.5">
           {/* Per-day divider: centered date flanked by hairline rules,
               vertically centered with the text (items-center on the row). */}
           <div className="flex items-center gap-3 px-1 mb-1">
