@@ -49,6 +49,7 @@ import EmojiPickerModal from "@/components/EmojiPickerModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import ModalPortal from "@/components/ModalPortal";
+import WhoWithCard from "@/components/WhoWithCard";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { useSheetDismissGesture } from "@/lib/useSheetDismissGesture";
 import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
@@ -701,6 +702,8 @@ export default function NewSlotSheet() {
                 </section>
               </div>
             )}
+            {/* Who the caller is willing to do the slot's activities with. */}
+            <WhoWithCard />
             <div>
               {/* Header + "+" (aligned right) to insert a new activity row. */}
               <div className="flex items-center justify-between mb-1 px-1">
