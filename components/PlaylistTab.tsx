@@ -10,7 +10,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiListSlots, type Slot } from "@/lib/api/slots";
-import { buildActivityColorMap, sortSlotsChronological, slotWindowEntries } from "@/lib/slotUtils";
+import {
+  buildActivityColorMap,
+  sortSlotsChronological,
+  slotWindowEntries,
+  type SlotWindowEntry,
+} from "@/lib/slotUtils";
 import { SLOTS_CHANGED_EVENT } from "@/lib/slotEvents";
 import SlotCard from "@/components/SlotCard";
 
@@ -49,6 +54,21 @@ export default function PlaylistTab() {
   const colors = useMemo(() => buildActivityColorMap(sorted), [sorted]);
   const entries = useMemo(() => (slots ? slotWindowEntries(slots) : []), [slots]);
 
+  // Group consecutive entries by their start day (entries are already sorted
+  // soonest-first, so all of a day's windows are contiguous). Each day gets one
+  // divider header (its first entry's relative + date); its windows render as
+  // bare-time rows under it. A day appears exactly once, so `day` is a unique
+  // React key.
+  const dayGroups = useMemo(() => {
+    const out: { day: string; entries: SlotWindowEntry[] }[] = [];
+    for (const e of entries) {
+      const last = out[out.length - 1];
+      if (last && last.day === e.day) last.entries.push(e);
+      else out.push({ day: e.day, entries: [e] });
+    }
+    return out;
+  }, [entries]);
+
   if (slots === null) {
     return (
       <div className="flex justify-center items-center py-8">
@@ -76,9 +96,27 @@ export default function PlaylistTab() {
   }
 
   return (
-    <div className="space-y-3 pt-2">
-      {entries.map((e) => (
-        <SlotCard key={e.key} slot={e.slot} line={e.line} colors={colors} />
+    <div className="pt-2">
+      {dayGroups.map((g) => (
+        <div key={g.day} className="mb-1.5">
+          {/* Per-day divider: centered date flanked by hairline rules,
+              vertically centered with the text (items-center on the row). */}
+          <div className="flex items-center gap-3 px-1 mb-1">
+            <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                {g.entries[0].line.relative}
+              </span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">{g.entries[0].line.date}</span>
+            </div>
+            <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
+          </div>
+          <div className="space-y-3">
+            {g.entries.map((e) => (
+              <SlotCard key={e.key} slot={e.slot} line={e.line} colors={colors} />
+            ))}
+          </div>
+        </div>
       ))}
     </div>
   );
