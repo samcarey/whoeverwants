@@ -212,8 +212,12 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               if ('serviceWorker' in navigator) {
-                // Skip service worker on dev servers to avoid stale cache
-                if (location.hostname.endsWith('.dev.whoeverwants.com') || location.hostname === 'localhost') {
+                // Skip (and unregister) the service worker on dev/preview hosts
+                // to avoid a stale cached bundle. Covers the per-branch dev
+                // domains, localhost, and Tailscale-served demos (*.ts.net) —
+                // on those the SW would otherwise pin an old JS bundle across
+                // redeploys.
+                if (location.hostname.endsWith('.dev.whoeverwants.com') || location.hostname.endsWith('.ts.net') || location.hostname === 'localhost') {
                   navigator.serviceWorker.getRegistrations().then(function(regs) {
                     regs.forEach(function(r) { r.unregister(); });
                   });
