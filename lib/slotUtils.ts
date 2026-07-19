@@ -30,23 +30,27 @@ export interface ActivityColor {
   bar: string;
   /** Matching text color, theme-aware. */
   text: string;
+  /** Faded circle background (the hue at low opacity) — used to encapsulate an
+   *  activity's emoji + participant bubble on the timeline. Same hue as `bar`,
+   *  so an activity reads as one color across every surface. */
+  faded: string;
 }
 
 // Curated, evenly-spaced hues. Grays are excluded so bars never read as
 // "disabled"; the order interleaves warm/cool so early neighbors contrast.
 const ACTIVITY_COLORS: ActivityColor[] = [
-  { bar: "bg-blue-600 dark:bg-blue-400", text: "text-blue-600 dark:text-blue-400" },
-  { bar: "bg-emerald-600 dark:bg-emerald-400", text: "text-emerald-600 dark:text-emerald-400" },
-  { bar: "bg-amber-600 dark:bg-amber-400", text: "text-amber-600 dark:text-amber-400" },
-  { bar: "bg-pink-600 dark:bg-pink-400", text: "text-pink-600 dark:text-pink-400" },
-  { bar: "bg-violet-600 dark:bg-violet-400", text: "text-violet-600 dark:text-violet-400" },
-  { bar: "bg-cyan-600 dark:bg-cyan-400", text: "text-cyan-600 dark:text-cyan-400" },
-  { bar: "bg-orange-600 dark:bg-orange-400", text: "text-orange-600 dark:text-orange-400" },
-  { bar: "bg-teal-600 dark:bg-teal-400", text: "text-teal-600 dark:text-teal-400" },
-  { bar: "bg-rose-600 dark:bg-rose-400", text: "text-rose-600 dark:text-rose-400" },
-  { bar: "bg-indigo-600 dark:bg-indigo-400", text: "text-indigo-600 dark:text-indigo-400" },
-  { bar: "bg-lime-600 dark:bg-lime-400", text: "text-lime-600 dark:text-lime-400" },
-  { bar: "bg-fuchsia-600 dark:bg-fuchsia-400", text: "text-fuchsia-600 dark:text-fuchsia-400" },
+  { bar: "bg-blue-600 dark:bg-blue-400", text: "text-blue-600 dark:text-blue-400", faded: "bg-blue-500/15 dark:bg-blue-400/20" },
+  { bar: "bg-emerald-600 dark:bg-emerald-400", text: "text-emerald-600 dark:text-emerald-400", faded: "bg-emerald-500/15 dark:bg-emerald-400/20" },
+  { bar: "bg-amber-600 dark:bg-amber-400", text: "text-amber-600 dark:text-amber-400", faded: "bg-amber-500/15 dark:bg-amber-400/20" },
+  { bar: "bg-pink-600 dark:bg-pink-400", text: "text-pink-600 dark:text-pink-400", faded: "bg-pink-500/15 dark:bg-pink-400/20" },
+  { bar: "bg-violet-600 dark:bg-violet-400", text: "text-violet-600 dark:text-violet-400", faded: "bg-violet-500/15 dark:bg-violet-400/20" },
+  { bar: "bg-cyan-600 dark:bg-cyan-400", text: "text-cyan-600 dark:text-cyan-400", faded: "bg-cyan-500/15 dark:bg-cyan-400/20" },
+  { bar: "bg-orange-600 dark:bg-orange-400", text: "text-orange-600 dark:text-orange-400", faded: "bg-orange-500/15 dark:bg-orange-400/20" },
+  { bar: "bg-teal-600 dark:bg-teal-400", text: "text-teal-600 dark:text-teal-400", faded: "bg-teal-500/15 dark:bg-teal-400/20" },
+  { bar: "bg-rose-600 dark:bg-rose-400", text: "text-rose-600 dark:text-rose-400", faded: "bg-rose-500/15 dark:bg-rose-400/20" },
+  { bar: "bg-indigo-600 dark:bg-indigo-400", text: "text-indigo-600 dark:text-indigo-400", faded: "bg-indigo-500/15 dark:bg-indigo-400/20" },
+  { bar: "bg-lime-600 dark:bg-lime-400", text: "text-lime-600 dark:text-lime-400", faded: "bg-lime-500/15 dark:bg-lime-400/20" },
+  { bar: "bg-fuchsia-600 dark:bg-fuchsia-400", text: "text-fuchsia-600 dark:text-fuchsia-400", faded: "bg-fuchsia-500/15 dark:bg-fuchsia-400/20" },
 ];
 
 /** Map every distinct activity (lowercased key) across `slots` to a stable
