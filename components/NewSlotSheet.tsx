@@ -129,6 +129,25 @@ function monthForSlot(slot: Slot | null): Date {
   return monthOfToday();
 }
 
+/** Whether every day the slot picks already falls inside the compact grid's
+ *  rolling 21-day window (the Sunday of this week + 3 weeks — mirrors the
+ *  compact branch of DaysSelector's calendarDays). When true, editing can
+ *  open collapsed because the picked days are already visible; otherwise the
+ *  calendar must expand to the slot's month to show them. A slot with no days
+ *  (or none — new) counts as visible. */
+function slotDaysVisibleInCompact(slot: Slot | null): boolean {
+  const days = (slot?.day_time_windows ?? []).map((dtw) => dtw.day).filter(Boolean);
+  if (days.length === 0) return true;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 20);
+  return days.every((day) => {
+    const d = new Date(day + "T00:00:00");
+    return d >= start && d <= end;
+  });
+}
+
 /**
  * Layout-level create/edit slot sheet. Opened via the slot-sheet event channel
  * (openSlotSheet()) — the "+ Slot" FAB dispatches a new slot, a Playlist card
@@ -196,10 +215,10 @@ export default function NewSlotSheet() {
       setActivityEditIndex(null);
       setSubSlideIn(false);
       setCalendarMonth(monthForSlot(slot));
-      // Editing: expand to the slot's real month so its picked days are
-      // visible (the compact grid is a rolling 3 weeks from today, which may
-      // not include them). New: compact, today-anchored.
-      setCalendarExpanded(slot !== null);
+      // Editing: expand to the slot's real month ONLY when its picked days
+      // fall outside the compact grid's rolling 3 weeks from today; if they're
+      // already visible there, open collapsed. New: compact, today-anchored.
+      setCalendarExpanded(slot !== null && !slotDaysVisibleInCompact(slot));
       setSuggestions(EMPTY_SUGGESTIONS);
       setSelected(new Set());
       setSaving(false);
