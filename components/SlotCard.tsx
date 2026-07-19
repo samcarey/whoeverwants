@@ -49,9 +49,9 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
       aria-label="Edit slot"
       className="w-full text-left py-2 px-3 active:opacity-70 transition-opacity"
     >
-      {/* This window's time span, centered at the top of the slot area. Font is
-          bumped ~20% over the timeline's baseline for legibility. */}
-      <div className="text-[14.4px] text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline justify-center gap-x-1">
+      {/* This window's time span, left-justified at the top of the slot area.
+          Font is bumped ~20% over the timeline's baseline for legibility. */}
+      <div className="text-[14.4px] text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline gap-x-1">
         <span>{line.startTime}</span>
         <span>–</span>
         {line.endDate && <span>{line.endDate} ·</span>}
@@ -59,30 +59,36 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
         <span className="text-gray-400 dark:text-gray-500">· {line.duration}</span>
       </div>
 
-      {/* Activities fill the LEFT 60% of the remaining area: a faded circle per
-          activity, big emoji atop, participant bubble directly beneath. */}
-      {activities.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-2" style={{ width: "60%" }}>
-          {activities.map((a, i) => (
-            <div
-              key={`${a.name}#${i}`}
-              title={a.name}
-              className={`flex flex-col items-center justify-center shrink-0 rounded-full w-16 h-16 ${a.color.faded}`}
-            >
-              <span className="text-[30px] leading-none" aria-hidden="true">
-                {a.emoji || a.name.trim().charAt(0).toUpperCase()}
-              </span>
-              {a.range && (
-                <span
-                  className={`mt-0.5 text-[9px] leading-none font-semibold tabular-nums ${a.color.text}`}
-                >
-                  {a.range}
+      {/* Below the time: activities in the LEFT 60% (a faded circle per
+          activity, big emoji atop, participant bubble directly beneath), and an
+          events placeholder in the remaining right space. */}
+      <div className="mt-2 flex items-start">
+        {activities.length > 0 && (
+          <div className="flex flex-wrap gap-2" style={{ width: "60%" }}>
+            {activities.map((a, i) => (
+              <div
+                key={`${a.name}#${i}`}
+                title={a.name}
+                className={`flex flex-col items-center justify-center shrink-0 rounded-full w-16 h-16 ${a.color.faded}`}
+              >
+                <span className="text-[30px] leading-none" aria-hidden="true">
+                  {a.emoji || a.name.trim().charAt(0).toUpperCase()}
                 </span>
-              )}
-            </div>
-          ))}
+                {a.range && (
+                  <span
+                    className={`mt-0.5 text-[13.5px] leading-none font-semibold tabular-nums ${a.color.text}`}
+                  >
+                    {a.range}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex-1 min-w-0 self-center text-center text-sm text-gray-400 dark:text-gray-500">
+          No events yet…
         </div>
-      )}
+      </div>
     </button>
   );
 }
