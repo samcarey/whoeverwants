@@ -99,16 +99,16 @@ export default function PlaylistTab() {
     <div className="pt-2">
       {dayGroups.map((g) => (
         <div key={g.day} className="mb-1.5">
-          {/* Per-day divider: right-justified date (font +20% over the old
-              text-sm), hairline rule filling the rest of the row on the left. */}
+          {/* Per-day divider: left-justified date (font +20% over the old
+              text-sm), hairline rule filling the rest of the row on the right. */}
           <div className="flex items-center gap-3 px-1 mb-1">
-            <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
             <div className="flex items-baseline gap-1.5 shrink-0">
               <span className="text-[16.8px] font-semibold text-blue-600 dark:text-blue-400">
                 {g.entries[0].line.relative}
               </span>
               <span className="text-[16.8px] text-gray-500 dark:text-gray-400">{g.entries[0].line.date}</span>
             </div>
+            <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
           </div>
           <div>
             {g.entries.map((e) => (
