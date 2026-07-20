@@ -10,7 +10,7 @@
  *     events placeholder beneath. The day + relative specifier ("Tomorrow") is
  *     NOT here — it's a per-day divider header rendered above each group of
  *     same-day rows in PlaylistTab.
- *   - RIGHT 60% of the row: one faded circle per activity, tinted with that
+ *   - RIGHT (remaining space): one faded circle per activity, tinted with that
  *     activity's color (consistent per activity across the timeline). Each
  *     circle holds a large emoji and, when a participant range is set, a small
  *     "2–5" bubble directly beneath it.
@@ -50,17 +50,19 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
       aria-label="Edit slot"
       className="w-full text-left py-2 pr-3 pl-1 active:opacity-70 transition-opacity"
     >
-      {/* One row: the time span + events placeholder in the LEFT column,
-          activity circles filling the RIGHT 60% (a faded circle per activity,
-          big emoji atop, participant bubble directly beneath). The circles
-          START at the same horizontal level as the time text (items-start on
-          the row), rather than under it. */}
+      {/* One row: the time span + events placeholder in the LEFT column
+          (sized to the one-line time text), activity circles filling the
+          remaining RIGHT space (a faded circle per activity, big emoji atop,
+          participant bubble directly beneath). The circles START at the same
+          horizontal level as the time text (items-start on the row), rather
+          than under it. */}
       <div className="flex items-start">
-        <div className="flex-1 min-w-0">
-          {/* This window's time span, left-justified flush with the day header
-              text (pl-1 matches the divider's px-1). Font is bumped ~20% over
-              the timeline's baseline. */}
-          <div className="text-[14.4px] text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline gap-x-1">
+        <div className="shrink-0">
+          {/* This window's time span on ONE line (nowrap — the column sizes to
+              it, so the duration never wraps), left-justified flush with the
+              day header text (pl-1 matches the divider's px-1). Font is bumped
+              ~20% over the timeline's baseline. */}
+          <div className="text-[14.4px] text-gray-500 dark:text-gray-400 flex items-baseline gap-x-1 whitespace-nowrap">
             <span>{line.startTime}</span>
             <span>–</span>
             {line.endDate && <span>{line.endDate} ·</span>}
@@ -72,7 +74,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
           </div>
         </div>
         {activities.length > 0 && (
-          <div className="flex flex-wrap justify-end gap-2 shrink-0" style={{ width: "60%" }}>
+          <div className="flex-1 min-w-0 flex flex-wrap justify-end gap-2">
             {activities.map((a, i) => (
               <div
                 key={`${a.name}#${i}`}
