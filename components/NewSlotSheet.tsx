@@ -44,7 +44,6 @@ import EmojiPickerModal from "@/components/EmojiPickerModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import ModalPortal from "@/components/ModalPortal";
-import WhoWithCard from "@/components/WhoWithCard";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { useSheetDismissGesture } from "@/lib/useSheetDismissGesture";
 import { DEFAULT_TIME_WINDOW, formatMonthYearLabel, shiftMonth } from "@/lib/timeUtils";
@@ -55,12 +54,15 @@ import {
   apiUpdateSlot,
   apiDeleteSlot,
   apiGetActivitySuggestions,
+  apiListContacts,
   type ActivitySuggestion,
   type ActivitySuggestions,
   type Slot,
   type SlotActivity,
   type WhoWithEntry,
 } from "@/lib/api/slots";
+import { apiGetMyGroups, apiGetMyEmptyGroups } from "@/lib/api";
+import { buildGroups } from "@/lib/groupUtils";
 import { apiAddActivityBlacklist } from "@/lib/api/users";
 import {
   SLOT_SHEET_OPEN_EVENT,
@@ -70,16 +72,67 @@ import {
 } from "@/lib/slotEvents";
 import type { DayTimeWindow } from "@/lib/types";
 
-/** A user-typed activity + its chosen emoji ("" = none, picker faded) + an
- *  optional participant range (null = unset). `whoWith` is carried through
- *  from an existing activity so an activities edit doesn't drop it (there's
- *  no editor UI for the entries yet). */
+/** One editable who-with entry on an activity: a participant range (null =
+ *  unset bound) + the groups/people names selected for it. Empty names =
+ *  "Anyone". */
+interface EditableEntry {
+  minPeople: number | null;
+  maxPeople: number | null;
+  groups: string[];
+  people: string[];
+}
+
+/** A user-typed activity + its chosen emoji ("" = none, picker faded) + its
+ *  who-with entries (each a range with its own groups/people). The editor
+ *  writes who_with exclusively — the legacy activity-level range converts
+ *  into a single entry on load. */
 interface CustomActivity {
   name: string;
   emoji: string;
-  minPeople: number | null;
-  maxPeople: number | null;
-  whoWith: WhoWithEntry[] | null;
+  entries: EditableEntry[];
+}
+
+/** Seed the editable entries from a loaded activity: its who_with entries,
+ *  else its legacy activity-level range as one "Anyone" entry. */
+function entriesFromActivity(a: SlotActivity): EditableEntry[] {
+  if (a.who_with && a.who_with.length > 0) {
+    return a.who_with.map((w) => ({
+      minPeople: w.min_people ?? null,
+      maxPeople: w.max_people ?? null,
+      groups: w.groups ?? [],
+      people: w.people ?? [],
+    }));
+  }
+  if (a.min_people != null || a.max_people != null) {
+    return [{ minPeople: a.min_people ?? null, maxPeople: a.max_people ?? null, groups: [], people: [] }];
+  }
+  return [];
+}
+
+/** Editable entries → the wire shape, dropping empty entries. */
+function entriesToWire(entries: EditableEntry[]): WhoWithEntry[] | null {
+  const out: WhoWithEntry[] = [];
+  for (const e of entries) {
+    const groups = e.groups.filter(Boolean);
+    const people = e.people.filter(Boolean);
+    if (e.minPeople === null && e.maxPeople === null && groups.length === 0 && people.length === 0) continue;
+    out.push({
+      min_people: e.minPeople,
+      max_people: e.maxPeople,
+      groups: groups.length > 0 ? groups : null,
+      people: people.length > 0 ? people : null,
+    });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/** Compact preview of an activity's entries for the list row, e.g.
+ *  "2–5 · 2–3" (ranges only; null when no entry carries one). */
+function entriesRangePreview(entries: EditableEntry[]): string | null {
+  const parts = entries
+    .map((e) => formatPeopleRange(e.minPeople, e.maxPeople))
+    .filter((r): r is string => !!r);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 // Faded placeholder glyph on an activity row's emoji chip / in the picker
@@ -222,9 +275,7 @@ export default function NewSlotSheet() {
           ? slot.activities.map((a) => ({
               name: a.name,
               emoji: a.emoji ?? "",
-              minPeople: a.min_people ?? null,
-              maxPeople: a.max_people ?? null,
-              whoWith: a.who_with ?? null,
+              entries: entriesFromActivity(a),
             }))
           : [],
       );
@@ -270,6 +321,37 @@ export default function NewSlotSheet() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, showActivities, dtwKey]);
 
+  // Who-with picker sources: the caller's group names + contact names,
+  // fetched once per activities-mode open (null = loading). Names already on
+  // an entry but absent from these lists still render (checked) so seeded /
+  // stale selections stay toggleable.
+  const [availGroups, setAvailGroups] = useState<string[] | null>(null);
+  const [availPeople, setAvailPeople] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!isOpen || !showActivities) return;
+    let cancelled = false;
+    Promise.all([apiGetMyGroups().catch(() => []), apiGetMyEmptyGroups().catch(() => [])])
+      .then(([polls, empty]) => {
+        if (cancelled) return;
+        const gs = buildGroups(polls, new Set(), new Set(), empty).filter((g) => g.groupId);
+        setAvailGroups([...new Set(gs.map((g) => g.title).filter((t): t is string => !!t))]);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailGroups([]);
+      });
+    apiListContacts()
+      .then((cs) => {
+        if (cancelled) return;
+        setAvailPeople([...new Set(cs.map((c) => c.name).filter((n): n is string => !!n))]);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailPeople([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, showActivities]);
+
   const toggleSelected = useCallback((activity: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -287,15 +369,54 @@ export default function NewSlotSheet() {
   const setCustomEmoji = useCallback((i: number, emoji: string) => {
     setCustomActivities((prev) => prev.map((a, j) => (j === i ? { ...a, emoji } : a)));
   }, []);
-  const setMinPeople = useCallback((i: number, v: number | null) => {
-    setCustomActivities((prev) => prev.map((a, j) => (j === i ? { ...a, minPeople: v } : a)));
-  }, []);
-  const setMaxPeople = useCallback((i: number, v: number | null) => {
-    setCustomActivities((prev) => prev.map((a, j) => (j === i ? { ...a, maxPeople: v } : a)));
-  }, []);
   const removeCustom = useCallback((i: number) => {
     setCustomActivities((prev) => prev.filter((_, j) => j !== i));
   }, []);
+
+  // ---- Who-with entry helpers (operate on one activity's entries) ----------
+
+  const patchEntry = useCallback((ai: number, ei: number, patch: Partial<EditableEntry>) => {
+    setCustomActivities((prev) =>
+      prev.map((a, j) =>
+        j === ai
+          ? { ...a, entries: a.entries.map((e, k) => (k === ei ? { ...e, ...patch } : e)) }
+          : a,
+      ),
+    );
+  }, []);
+  const addEntry = useCallback((ai: number) => {
+    setCustomActivities((prev) =>
+      prev.map((a, j) =>
+        j === ai
+          ? { ...a, entries: [...a.entries, { minPeople: null, maxPeople: null, groups: [], people: [] }] }
+          : a,
+      ),
+    );
+  }, []);
+  const removeEntry = useCallback((ai: number, ei: number) => {
+    setCustomActivities((prev) =>
+      prev.map((a, j) => (j === ai ? { ...a, entries: a.entries.filter((_, k) => k !== ei) } : a)),
+    );
+  }, []);
+  const toggleEntryName = useCallback(
+    (ai: number, ei: number, field: "groups" | "people", name: string) => {
+      setCustomActivities((prev) =>
+        prev.map((a, j) => {
+          if (j !== ai) return a;
+          return {
+            ...a,
+            entries: a.entries.map((e, k) => {
+              if (k !== ei) return e;
+              const list = e[field];
+              const next = list.includes(name) ? list.filter((n) => n !== name) : [...list, name];
+              return { ...e, [field]: next };
+            }),
+          };
+        }),
+      );
+    },
+    [],
+  );
 
   // Slide the editor sub-panel in: mount it off-screen (subSlideIn=false) then,
   // after the mount paints, flip to true so the transform transition runs.
@@ -330,7 +451,7 @@ export default function NewSlotSheet() {
   const addActivity = () => {
     const idx = customActivities.length;
     focusNameOnOpenRef.current = true;
-    setCustomActivities((prev) => [...prev, { name: "", emoji: "", minPeople: null, maxPeople: null }]);
+    setCustomActivities((prev) => [...prev, { name: "", emoji: "", entries: [] }]);
     setActivityEditIndex(idx);
     slideInSub();
   };
@@ -477,16 +598,12 @@ export default function NewSlotSheet() {
       }
       // Merge checked suggestions + typed customs (selected first, so a shared
       // name keeps the suggestion's emoji), deduped case-insensitively. Only
-      // the typed customs carry a participant range / who-with entries.
+      // the typed customs carry who-with entries; the legacy activity-level
+      // range is always written null — who_with is the source of truth now
+      // (an edit converts a legacy range into an entry via entriesFromActivity).
       const seen = new Set<string>();
       const activities: SlotActivity[] = [];
-      const push = (
-        name: string,
-        emoji?: string | null,
-        minPeople?: number | null,
-        maxPeople?: number | null,
-        whoWith?: WhoWithEntry[] | null,
-      ) => {
+      const push = (name: string, emoji?: string | null, entries?: EditableEntry[]) => {
         const t = name.trim();
         if (!t) return;
         const key = t.toLowerCase();
@@ -495,13 +612,13 @@ export default function NewSlotSheet() {
         activities.push({
           name: t,
           emoji: emoji || null,
-          min_people: minPeople ?? null,
-          max_people: maxPeople ?? null,
-          who_with: whoWith ?? null,
+          min_people: null,
+          max_people: null,
+          who_with: entries ? entriesToWire(entries) : null,
         });
       };
       for (const name of selected) push(name, suggEmoji.get(name.toLowerCase()));
-      for (const c of customActivities) push(c.name, c.emoji, c.minPeople, c.maxPeople, c.whoWith);
+      for (const c of customActivities) push(c.name, c.emoji, c.entries);
       req = apiUpdateSlot(editingSlot.id, editingSlot.day_time_windows, activities);
     }
     setSaving(true);
@@ -737,8 +854,6 @@ export default function NewSlotSheet() {
             )}
             </>)}
             {showActivities && (<>
-            {/* Who the caller is willing to do the slot's activities with. */}
-            <WhoWithCard />
             <div>
               {/* Header + "+" (aligned right) to insert a new activity row. */}
               <div className="flex items-center justify-between mb-1 px-1">
@@ -764,7 +879,7 @@ export default function NewSlotSheet() {
                   {customActivities.length > 0 && (
                     <ul className="py-1">
                       {customActivities.map((row, i) => {
-                        const range = formatPeopleRange(row.minPeople, row.maxPeople);
+                        const range = entriesRangePreview(row.entries);
                         return (
                           <li key={i} className="flex items-center gap-3 h-11">
                             <button
@@ -952,31 +1067,131 @@ export default function NewSlotSheet() {
                         className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
                       />
                     </section>
-                    {/* Participants */}
+                    {/* Who With — one card per entry: a participant range plus
+                        that entry's groups/people. No entries = "Anyone, any
+                        number". The pickers list the caller's groups +
+                        contacts (plus any already-selected names not in those
+                        lists, so seeded selections stay toggleable). */}
                     <div>
-                      <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
-                        Participants
-                      </label>
-                      <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-4">
-                        <MinMaxCounter
-                          minValue={editingActivity.minPeople}
-                          maxValue={editingActivity.maxPeople}
-                          maxEnabled={editingActivity.maxPeople !== null}
-                          minCheckboxEnabled={editingActivity.minPeople !== null}
-                          // Checkbox only fires ON when the bound was off, and
-                          // off ⇔ null — so the "current value" operands are
-                          // dead; default min→1, max→min (else 1).
-                          onMinCheckboxChange={(on) => setMinPeople(activityEditIndex, on ? 1 : null)}
-                          onMinChange={(v) => setMinPeople(activityEditIndex, v)}
-                          onMaxChange={(v) => setMaxPeople(activityEditIndex, v)}
-                          onMaxEnabledChange={(on) =>
-                            setMaxPeople(activityEditIndex, on ? editingActivity.minPeople ?? 1 : null)
-                          }
-                          minLimit={1}
-                          maxLimit={MAX_PEOPLE}
-                          increment={1}
-                        />
-                      </section>
+                      <div className="flex items-center justify-between mb-1 px-1">
+                        <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
+                          Who With
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => addEntry(activityEditIndex)}
+                          aria-label="Add a who-with option"
+                          className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full bg-blue-500 text-white hover:bg-blue-600 active:scale-95 transition"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                          </svg>
+                        </button>
+                      </div>
+                      {editingActivity.entries.length === 0 && (
+                        <p className="px-1 text-sm text-gray-400 dark:text-gray-500">
+                          Anyone, any number of people. Add an option to set a
+                          participant range and who it applies to.
+                        </p>
+                      )}
+                      <div className="space-y-[14.4px]">
+                        {editingActivity.entries.map((entry, k) => {
+                          const groupOptions = [
+                            ...new Set([...(availGroups ?? []), ...entry.groups]),
+                          ];
+                          const peopleOptions = [
+                            ...new Set([...(availPeople ?? []), ...entry.people]),
+                          ];
+                          const nameRow = (
+                            field: "groups" | "people",
+                            name: string,
+                            checked: boolean,
+                          ) => (
+                            <li key={name}>
+                              <button
+                                type="button"
+                                onClick={() => toggleEntryName(activityEditIndex, k, field, name)}
+                                className="w-full flex items-center gap-3 h-10 text-left"
+                              >
+                                <span
+                                  role="checkbox"
+                                  aria-checked={checked}
+                                  className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                    checked
+                                      ? "bg-blue-500 border-blue-500"
+                                      : "border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-900"
+                                  }`}
+                                >
+                                  {checked && (
+                                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </span>
+                                <span className="flex-1 min-w-0 truncate text-base">{name}</span>
+                              </button>
+                            </li>
+                          );
+                          return (
+                            <section key={k} className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                                  Option {k + 1}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeEntry(activityEditIndex, k)}
+                                  aria-label={`Remove option ${k + 1}`}
+                                  className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                              <MinMaxCounter
+                                minValue={entry.minPeople}
+                                maxValue={entry.maxPeople}
+                                maxEnabled={entry.maxPeople !== null}
+                                minCheckboxEnabled={entry.minPeople !== null}
+                                // Checkbox only fires ON when the bound was
+                                // off, and off ⇔ null — default min→1,
+                                // max→min (else 1).
+                                onMinCheckboxChange={(on) => patchEntry(activityEditIndex, k, { minPeople: on ? 1 : null })}
+                                onMinChange={(v) => patchEntry(activityEditIndex, k, { minPeople: v })}
+                                onMaxChange={(v) => patchEntry(activityEditIndex, k, { maxPeople: v })}
+                                onMaxEnabledChange={(on) =>
+                                  patchEntry(activityEditIndex, k, { maxPeople: on ? entry.minPeople ?? 1 : null })
+                                }
+                                minLimit={1}
+                                maxLimit={MAX_PEOPLE}
+                                increment={1}
+                              />
+                              {groupOptions.length > 0 && (
+                                <div className="mt-3">
+                                  <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
+                                    Groups
+                                  </p>
+                                  <ul>{groupOptions.map((g) => nameRow("groups", g, entry.groups.includes(g)))}</ul>
+                                </div>
+                              )}
+                              {peopleOptions.length > 0 && (
+                                <div className="mt-3">
+                                  <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
+                                    People
+                                  </p>
+                                  <ul>{peopleOptions.map((n) => nameRow("people", n, entry.people.includes(n)))}</ul>
+                                </div>
+                              )}
+                              {groupOptions.length === 0 && peopleOptions.length === 0 && (
+                                <p className="mt-3 text-sm text-gray-400 dark:text-gray-500">
+                                  Anyone — no groups or contacts to pick from yet.
+                                </p>
+                              )}
+                            </section>
+                          );
+                        })}
+                      </div>
                     </div>
                   </>
                 )}
