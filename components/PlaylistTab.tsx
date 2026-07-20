@@ -99,21 +99,43 @@ export default function PlaylistTab() {
     <div className="pt-2">
       {dayGroups.map((g) => (
         <div key={g.day} className="mb-1.5">
-          {/* Per-day divider: centered date flanked by hairline rules,
-              vertically centered with the text (items-center on the row). */}
+          {/* Per-day divider: left-justified date (font +20% over the old
+              text-sm), hairline rule filling the rest of the row. */}
           <div className="flex items-center gap-3 px-1 mb-1">
-            <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+            <div className="flex items-baseline gap-1.5 shrink-0">
+              <span className="text-[16.8px] font-semibold text-blue-600 dark:text-blue-400">
                 {g.entries[0].line.relative}
               </span>
-              <span className="text-sm text-gray-500 dark:text-gray-400">{g.entries[0].line.date}</span>
+              <span className="text-[16.8px] text-gray-500 dark:text-gray-400">{g.entries[0].line.date}</span>
             </div>
             <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
           </div>
-          <div className="space-y-3">
-            {g.entries.map((e) => (
-              <SlotCard key={e.key} slot={e.slot} line={e.line} colors={colors} />
+          {/* Tree hierarchy: each time row hangs off the date via a little
+              right-angle connector — a vertical line descending from under the
+              date text, turning horizontal to butt against the left edge of the
+              time text (vertically centered with it). Rows are adjacent (no
+              space-y) so the trunk runs continuously through non-last rows. */}
+          <div>
+            {g.entries.map((e, idx) => (
+              <div key={e.key} className="relative">
+                {/* └ branch: down from under the date, across to the time text.
+                    Height = SlotCard's py-2 (8px) + half the 14.4px time line
+                    (line-height 1.5 → 21.6px / 2) ≈ 19px, so the horizontal arm
+                    is vertically centered with the time text. */}
+                <div
+                  className="absolute left-2 top-0 w-3 border-l border-b border-gray-300 dark:border-gray-600"
+                  style={{ height: "19px" }}
+                  aria-hidden="true"
+                />
+                {/* Continue the trunk through this row when more rows follow. */}
+                {idx < g.entries.length - 1 && (
+                  <div
+                    className="absolute left-2 top-0 bottom-0 border-l border-gray-300 dark:border-gray-600"
+                    aria-hidden="true"
+                  />
+                )}
+                <SlotCard slot={e.slot} line={e.line} colors={colors} />
+              </div>
             ))}
           </div>
         </div>
