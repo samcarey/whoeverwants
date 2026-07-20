@@ -48,7 +48,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
       type="button"
       onClick={() => openSlotSheet(slot)}
       aria-label="Edit slot"
-      className="w-full text-left py-2 pr-3 pl-5 active:opacity-70 transition-opacity"
+      className="w-full text-left py-2 pr-3 pl-1 active:opacity-70 transition-opacity"
     >
       {/* One row: the time span + events placeholder in the LEFT column,
           activity circles filling the RIGHT 60% (a faded circle per activity,
@@ -57,8 +57,9 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
           the row), rather than under it. */}
       <div className="flex items-start">
         <div className="flex-1 min-w-0">
-          {/* This window's time span, left-justified. Font is bumped ~20%
-              over the timeline's baseline. */}
+          {/* This window's time span, left-justified flush with the day header
+              text (pl-1 matches the divider's px-1). Font is bumped ~20% over
+              the timeline's baseline. */}
           <div className="text-[14.4px] text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline gap-x-1">
             <span>{line.startTime}</span>
             <span>–</span>
