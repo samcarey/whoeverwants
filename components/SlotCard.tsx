@@ -82,12 +82,15 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
               const people = a.with_people ?? [];
               return (
                 // pl reserves room for the emoji's out-hanging half. The
-                // emoji sits just below the card's top edge (top-0.5), still
-                // overlapping the card's left edge; the card's extra left
-                // padding keeps the text clear of it.
+                // emoji is centered on the card's FIRST text line (card py-1.5
+                // 6px + half the ~17px line box − half the 22px emoji ≈ 3px
+                // down) — which centers it on the whole card for the common
+                // one-line case, and keeps it at the first line when the names
+                // wrap. Still overlaps the card's left edge; the card's extra
+                // left padding keeps the text clear of it.
                 <div key={`${a.name}#${i}`} title={a.name} className="relative pl-2.5 max-w-full">
                   <span
-                    className="emoji-outline absolute top-0.5 left-0 text-[22px] leading-none z-10 pointer-events-none"
+                    className="emoji-outline absolute top-[3px] left-0 text-[22px] leading-none z-10 pointer-events-none"
                     aria-hidden="true"
                   >
                     {a.emoji || a.name.trim().charAt(0).toUpperCase()}
