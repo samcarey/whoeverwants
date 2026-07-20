@@ -29,6 +29,9 @@ interface DayTimeWindowsListProps {
   minDurationMinutes?: number | null;
   // Presence ⇒ voter form (constrains/soft-validates each day's windows).
   questionDayTimeWindows?: DayTimeWindow[];
+  // Omit the per-day "+" add-window button (single-window contexts, e.g. the
+  // Playlist slot sheet's one-day-one-window model).
+  hideAdd?: boolean;
 }
 
 const winKey = (day: string, index: number) => `${day}#${index}`;
@@ -39,6 +42,7 @@ export default function DayTimeWindowsList({
   disabled = false,
   minDurationMinutes,
   questionDayTimeWindows,
+  hideAdd = false,
 }: DayTimeWindowsListProps) {
   const [mode, setMode] = useState<'none' | 'windows' | 'copy'>('none');
   const [selectedWindows, setSelectedWindows] = useState<Set<string>>(() => new Set());
@@ -217,6 +221,7 @@ export default function DayTimeWindowsList({
             minDurationMinutes={minDurationMinutes}
             allDays={dayTimeWindows}
             borderless
+            hideAdd={hideAdd}
             selection={selectionEnabled ? {
               mode,
               isWindowSelected: (i) => selectedWindows.has(winKey(dtw.day, i)),

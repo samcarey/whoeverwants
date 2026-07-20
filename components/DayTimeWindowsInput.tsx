@@ -43,6 +43,9 @@ interface DayTimeWindowsInputProps {
   // cleanly inside a parent card's `divide-y` layout. Used by the create-poll
   // "Time Windows" card; default usage keeps the standalone-strip look.
   borderless?: boolean;
+  // When true, omit the "+" add-window button — for single-window contexts
+  // (the Playlist slot sheet allows exactly one time slot per day).
+  hideAdd?: boolean;
   // Cross-day long-press selection wiring (managed by DayTimeWindowsList).
   selection?: DayTimeSelection;
 }
@@ -266,6 +269,7 @@ export default function DayTimeWindowsInput({
   minDurationMinutes,
   allDays,
   borderless = false,
+  hideAdd = false,
   selection,
 }: DayTimeWindowsInputProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -509,7 +513,7 @@ export default function DayTimeWindowsInput({
           window into disconnected segments (each added slot soft-validated
           against the creator's allowed windows). Hidden during selection
           modes to keep the row focused on the active gesture. */}
-      {!selectionActive && (
+      {!selectionActive && !hideAdd && (
         <button
           type="button"
           onClick={handleAddWindow}

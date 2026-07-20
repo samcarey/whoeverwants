@@ -1,45 +1,40 @@
 "use client";
 
 /**
- * "New Slot" bottom sheet for the home Playlist tab.
+ * Slot sheet for the home Playlist tab — THREE MODES, one facet each:
  *
- * Mirrors the create-poll sheet chrome (stationary dim backdrop at z-[59],
+ *   - 'create' ("+ Slot" FAB): just the calendar + a SINGLE time slot for a
+ *     SINGLE day (picking another day moves the selection; the one window has
+ *     no "+" to add more). Saves a slot with NO activities — the timeline then
+ *     shows an "+ Add activities" button on it.
+ *   - 'time' (tap a slot's time text): the same calendar + single-slot UI,
+ *     prefilled, editing JUST the date/time. "Delete slot" lives here.
+ *   - 'activities' (tap a slot's activity cards / "+ Add activities"): JUST
+ *     the activities editor — typed rows + the suggestion checkbox list.
+ *
+ * Chrome mirrors the create-poll sheet (stationary dim backdrop at z-[59],
  * bottom-anchored opaque sheet at z-[60], fixed full height with the same
- * small top gap, ✕ / title / ✓ header) so the two sheets read as one
- * family. The body stacks three create-poll-style cards:
- *   1. Calendar picker — the create-poll Days card (month-label header
- *      row with the +/− expand toggle, compact 3-week grid ↔ full month
- *      with prev/next arrows, over an inline <DaysSelector>).
- *   2. Time Windows — per-day time-slot pills via <DayTimeWindowsList>
- *      (+ button, tap-to-edit TimeGridModal), fed by
- *      useDayTimeWindowsState so newly-picked days inherit windows.
- *   3. Activities — a "+" in the header appends a typed activity and opens the
- *      activity EDITOR (see below); below it, a CHECKBOX list of suggested
- *      activities in three labeled, priority-ordered groups (others planning
- *      this period / your past picks / others' past picks). Activities already
- *      on the slot (typed rows) are hidden from the suggestions so nothing
- *      appears twice. Only the "you've picked before" group carries an ✕ —
- *      deleting one (behind a confirmation) blacklists it so it's never
- *      suggested to you again; activities suggested because OTHERS are doing
- *      them have no ✕. Typed rows seed suggestions for everyone once saved.
+ * small top gap, ✕ / title / ✓ header) so the sheets read as one family.
  *
- * Each typed activity ROW is a button: tapping it slides in an activity EDITOR
- * sub-panel (the same slide-in-over-the-sheet pattern the create-poll question
- * editor uses — ← back + rightward-swipe-to-go-back). Edits apply LIVE (no
- * per-activity accept button — the sheet's top-level ✓/✕ saves or cancels the
- * whole slot). There you set the activity's name, emoji, and an optional
- * PARTICIPANT range
- * (min/max people via <MinMaxCounter>). The range, when set, previews faded
- * next to the name on the row ("2–5") and tiny above the emoji on the timeline.
+ * Activities mode: a "+" in the header appends a typed activity and opens the
+ * activity EDITOR sub-panel (the create-poll question-editor slide-in — ← back
+ * + rightward-swipe-back; edits apply LIVE, the sheet's ✓/✕ saves or cancels).
+ * There you set the activity's name, emoji, and an optional PARTICIPANT range
+ * (min/max people via <MinMaxCounter>). Below the typed rows, a CHECKBOX list
+ * of suggested activities in three labeled, priority-ordered groups (others
+ * planning this period / your past picks / others' past picks); already-added
+ * activities are hidden from it. Only the "you've picked before" group carries
+ * an ✕ — deleting one (behind a confirmation) blacklists it. An existing
+ * activity's who-with entries ride through the edit unchanged (no editor UI
+ * for them yet).
  *
- * The ✓ saves the slot (selected windows + checked/typed activities) — via
- * apiCreateSlot for a new slot, or apiUpdateSlot when editing — fires
- * SLOTS_CHANGED (so the Playlist tab re-fetches), then closes. In edit mode a
- * "Delete slot" button at the bottom removes it (apiDeleteSlot).
+ * The ✓ saves the touched facet only — apiCreateSlot in create mode,
+ * apiUpdateSlot (keeping the OTHER facet as-is) in the edit modes — fires
+ * SLOTS_CHANGED (so the Playlist tab re-fetches), then closes.
  *
  * Mounted once at layout level (CreateGroupButtonHost) and opened via the
- * slot-sheet event channel: the "+ Slot" FAB dispatches a new slot; a Playlist
- * card tap dispatches the slot to edit. Self-manages its open + editing state.
+ * slot-sheet event channel (openSlotSheet(slot?, mode?)). Self-manages its
+ * open + mode state.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -52,8 +47,7 @@ import ModalPortal from "@/components/ModalPortal";
 import WhoWithCard from "@/components/WhoWithCard";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { useSheetDismissGesture } from "@/lib/useSheetDismissGesture";
-import { useDayTimeWindowsState } from "@/lib/useDayTimeWindowsState";
-import { formatMonthYearLabel, shiftMonth } from "@/lib/timeUtils";
+import { DEFAULT_TIME_WINDOW, formatMonthYearLabel, shiftMonth } from "@/lib/timeUtils";
 import { formatPeopleRange } from "@/lib/slotUtils";
 import { haptic } from "@/lib/haptics";
 import {
@@ -65,21 +59,27 @@ import {
   type ActivitySuggestions,
   type Slot,
   type SlotActivity,
+  type WhoWithEntry,
 } from "@/lib/api/slots";
 import { apiAddActivityBlacklist } from "@/lib/api/users";
 import {
   SLOT_SHEET_OPEN_EVENT,
   notifySlotsChanged,
+  type SlotSheetMode,
+  type SlotSheetOpenDetail,
 } from "@/lib/slotEvents";
 import type { DayTimeWindow } from "@/lib/types";
 
 /** A user-typed activity + its chosen emoji ("" = none, picker faded) + an
- *  optional participant range (null = unset). */
+ *  optional participant range (null = unset). `whoWith` is carried through
+ *  from an existing activity so an activities edit doesn't drop it (there's
+ *  no editor UI for the entries yet). */
 interface CustomActivity {
   name: string;
   emoji: string;
   minPeople: number | null;
   maxPeople: number | null;
+  whoWith: WhoWithEntry[] | null;
 }
 
 // Faded placeholder glyph on an activity row's emoji chip / in the picker
@@ -156,6 +156,9 @@ function slotDaysVisibleInCompact(slot: Slot | null): boolean {
  */
 export default function NewSlotSheet() {
   const [isOpen, setIsOpen] = useState(false);
+  // Which facet the sheet edits: 'create' (new slot, schedule only), 'time'
+  // (existing slot's date/time), 'activities' (existing slot's activities).
+  const [mode, setMode] = useState<SlotSheetMode>("create");
   // The slot being edited (null = creating a new one).
   const [editingSlot, setEditingSlot] = useState<Slot | null>(null);
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
@@ -179,27 +182,39 @@ export default function NewSlotSheet() {
   // "you've picked before" suggestions can be deleted (→ blacklisted).
   const [pendingBlacklist, setPendingBlacklist] = useState<string | null>(null);
   const isEditing = editingSlot !== null;
+  const showSchedule = mode !== "activities";
+  const showActivities = mode === "activities";
 
-  // Day selection is derived from the windows list (one entry per picked
-  // day); the hook seeds newly-added days with inherited/default windows
-  // and caches removed days' windows for re-add — same as create-poll.
+  // Day selection is derived from the windows list. SINGLE-day model: picking
+  // another day MOVES the selection there (keeping the current time window);
+  // tapping the selected day clears it. DaysSelector reports the full new
+  // selection array, so the entry not matching the current day is the pick.
   const selectedDays = dayTimeWindows.map((dtw) => dtw.day);
-  const { onDaysSelected, reset: resetDayWindowCache } = useDayTimeWindowsState(
-    dayTimeWindows,
-    setDayTimeWindows,
-  );
+  const handleDaysSelected = useCallback((days: string[]) => {
+    setDayTimeWindows((prev) => {
+      const current = prev[0];
+      const newDay = days.find((d) => d !== current?.day);
+      if (newDay) {
+        return [{ day: newDay, windows: [current?.windows[0] ?? { ...DEFAULT_TIME_WINDOW }] }];
+      }
+      return days.length === 0 ? [] : prev;
+    });
+  }, []);
 
   useBodyScrollLock(isOpen);
 
   const close = useCallback(() => setIsOpen(false), []);
 
-  // Open (create or edit) driven by the slot-sheet event channel. Editing
-  // prefills the windows + existing activities (loaded as editable typed rows,
-  // with their emoji + participant range) and centers the calendar on the
-  // slot's earliest day; a new slot starts blank on today's month.
+  // Open driven by the slot-sheet event channel. Time mode prefills the
+  // window and centers the calendar on the slot's day; activities mode loads
+  // the slot's existing activities as editable typed rows (with their emoji +
+  // participant range + carried-through who-with). A new slot starts blank on
+  // today's month.
   useEffect(() => {
     const onOpen = (e: Event) => {
-      const slot = (e as CustomEvent<{ slot: Slot | null }>).detail?.slot ?? null;
+      const detail = (e as CustomEvent<SlotSheetOpenDetail>).detail;
+      const slot = detail?.slot ?? null;
+      setMode(detail?.mode ?? (slot ? "time" : "create"));
       setEditingSlot(slot);
       setDayTimeWindows(slot ? slot.day_time_windows : []);
       setCustomActivities(
@@ -209,6 +224,7 @@ export default function NewSlotSheet() {
               emoji: a.emoji ?? "",
               minPeople: a.min_people ?? null,
               maxPeople: a.max_people ?? null,
+              whoWith: a.who_with ?? null,
             }))
           : [],
       );
@@ -216,21 +232,21 @@ export default function NewSlotSheet() {
       setActivityEditIndex(null);
       setSubSlideIn(false);
       setCalendarMonth(monthForSlot(slot));
-      // Editing: expand to the slot's real month ONLY when its picked days
-      // fall outside the compact grid's rolling 3 weeks from today; if they're
-      // already visible there, open collapsed. New: compact, today-anchored.
+      // Editing time: expand to the slot's real month ONLY when its picked
+      // days fall outside the compact grid's rolling 3 weeks from today; if
+      // they're already visible there, open collapsed. New: compact,
+      // today-anchored.
       setCalendarExpanded(slot !== null && !slotDaysVisibleInCompact(slot));
       setSuggestions(EMPTY_SUGGESTIONS);
       setSelected(new Set());
       setSaving(false);
       setDeleting(false);
       setPendingBlacklist(null);
-      resetDayWindowCache();
       setIsOpen(true);
     };
     window.addEventListener(SLOT_SHEET_OPEN_EVENT, onOpen);
     return () => window.removeEventListener(SLOT_SHEET_OPEN_EVENT, onOpen);
-  }, [resetDayWindowCache]);
+  }, []);
 
   // Fetch ranked activity suggestions, debounced on the selected period
   // (group 1 depends on which windows overlap other users' slots). A
@@ -238,7 +254,7 @@ export default function NewSlotSheet() {
   const dtwKey = JSON.stringify(dayTimeWindows);
   const reqTokenRef = useRef(0);
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !showActivities) return;
     const token = ++reqTokenRef.current;
     const t = setTimeout(() => {
       apiGetActivitySuggestions(dayTimeWindows)
@@ -252,7 +268,7 @@ export default function NewSlotSheet() {
     return () => clearTimeout(t);
     // dtwKey is the stable content signature of dayTimeWindows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, dtwKey]);
+  }, [isOpen, showActivities, dtwKey]);
 
   const toggleSelected = useCallback((activity: string) => {
     setSelected((prev) => {
@@ -440,50 +456,63 @@ export default function NewSlotSheet() {
     void apiAddActivityBlacklist(activity).catch(() => {});
   }, []);
 
+  // ✓ saves the mode's facet only: create → new slot (no activities); time →
+  // just the schedule (activities as-is); activities → just the activities
+  // (schedule as-is).
   const handleSave = useCallback(() => {
-    if (saving || dayTimeWindows.length === 0) return;
-    // A checked suggestion carries the emoji from its suggestion row.
-    const suggEmoji = new Map<string, string | null>();
-    for (const g of SUGGESTION_GROUPS) {
-      for (const s of suggestions[g.key]) suggEmoji.set(s.name.toLowerCase(), s.emoji);
+    if (saving || deleting) return;
+    if (mode !== "activities" && dayTimeWindows.length === 0) return;
+    let req: Promise<unknown>;
+    if (mode === "create") {
+      req = apiCreateSlot(dayTimeWindows, []);
+    } else if (mode === "time") {
+      if (!editingSlot) return;
+      req = apiUpdateSlot(editingSlot.id, dayTimeWindows, editingSlot.activities);
+    } else {
+      if (!editingSlot) return;
+      // A checked suggestion carries the emoji from its suggestion row.
+      const suggEmoji = new Map<string, string | null>();
+      for (const g of SUGGESTION_GROUPS) {
+        for (const s of suggestions[g.key]) suggEmoji.set(s.name.toLowerCase(), s.emoji);
+      }
+      // Merge checked suggestions + typed customs (selected first, so a shared
+      // name keeps the suggestion's emoji), deduped case-insensitively. Only
+      // the typed customs carry a participant range / who-with entries.
+      const seen = new Set<string>();
+      const activities: SlotActivity[] = [];
+      const push = (
+        name: string,
+        emoji?: string | null,
+        minPeople?: number | null,
+        maxPeople?: number | null,
+        whoWith?: WhoWithEntry[] | null,
+      ) => {
+        const t = name.trim();
+        if (!t) return;
+        const key = t.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        activities.push({
+          name: t,
+          emoji: emoji || null,
+          min_people: minPeople ?? null,
+          max_people: maxPeople ?? null,
+          who_with: whoWith ?? null,
+        });
+      };
+      for (const name of selected) push(name, suggEmoji.get(name.toLowerCase()));
+      for (const c of customActivities) push(c.name, c.emoji, c.minPeople, c.maxPeople, c.whoWith);
+      req = apiUpdateSlot(editingSlot.id, editingSlot.day_time_windows, activities);
     }
-    // Merge checked suggestions + typed customs (selected first, so a shared
-    // name keeps the suggestion's emoji), deduped case-insensitively. Only the
-    // typed customs carry a participant range; suggestions don't.
-    const seen = new Set<string>();
-    const activities: SlotActivity[] = [];
-    const push = (
-      name: string,
-      emoji?: string | null,
-      minPeople?: number | null,
-      maxPeople?: number | null,
-    ) => {
-      const t = name.trim();
-      if (!t) return;
-      const key = t.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      activities.push({
-        name: t,
-        emoji: emoji || null,
-        min_people: minPeople ?? null,
-        max_people: maxPeople ?? null,
-      });
-    };
-    for (const name of selected) push(name, suggEmoji.get(name.toLowerCase()));
-    for (const c of customActivities) push(c.name, c.emoji, c.minPeople, c.maxPeople);
     setSaving(true);
     haptic.success();
-    const req = editingSlot
-      ? apiUpdateSlot(editingSlot.id, dayTimeWindows, activities)
-      : apiCreateSlot(dayTimeWindows, activities);
     req
       .then(() => {
         notifySlotsChanged();
         close();
       })
       .catch(() => setSaving(false));
-  }, [saving, dayTimeWindows, selected, customActivities, suggestions, editingSlot, close]);
+  }, [saving, deleting, mode, dayTimeWindows, selected, customActivities, suggestions, editingSlot, close]);
 
   // Delete the slot being edited (edit mode only).
   const handleDelete = useCallback(() => {
@@ -591,7 +620,7 @@ export default function NewSlotSheet() {
           style={{ height: SHEET_HEIGHT }}
           role="dialog"
           aria-modal="true"
-          aria-label={isEditing ? "Edit slot" : "New slot"}
+          aria-label={mode === "create" ? "New slot" : mode === "time" ? "Edit slot time" : "Edit slot activities"}
         >
           <div className="shrink-0 relative flex items-center justify-center px-4 py-2 min-h-[3.75rem]">
             <button
@@ -604,11 +633,13 @@ export default function NewSlotSheet() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            <span className="text-lg font-semibold select-none">{isEditing ? "Edit Slot" : "New Slot"}</span>
+            <span className="text-lg font-semibold select-none">
+              {mode === "create" ? "New Slot" : mode === "time" ? "Edit Time" : "Edit Activities"}
+            </span>
             <button
               type="button"
               onClick={handleSave}
-              disabled={selectedDays.length === 0 || saving || deleting}
+              disabled={(showSchedule && selectedDays.length === 0) || saving || deleting}
               aria-label="Confirm slot"
               className="absolute right-2 top-2 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -628,6 +659,7 @@ export default function NewSlotSheet() {
             ref={sheetScrollerNodeRef}
             className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-none px-3 pb-6 space-y-[14.4px]"
           >
+            {showSchedule && (<>
             <div>
               <div className="relative flex items-center justify-center mb-1 px-1 h-8">
                 {calendarExpanded && (
@@ -682,7 +714,7 @@ export default function NewSlotSheet() {
               <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
                 <DaysSelector
                   selectedDays={selectedDays}
-                  onChange={onDaysSelected}
+                  onChange={handleDaysSelected}
                   inline
                   currentMonth={calendarMonth}
                   compact={!calendarExpanded}
@@ -692,16 +724,19 @@ export default function NewSlotSheet() {
             {dayTimeWindows.length > 0 && (
               <div>
                 <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400 mb-1 px-1">
-                  Time Windows
+                  Time Slot
                 </label>
                 <section className="rounded-3xl bg-white dark:bg-gray-800 pl-4 pr-3">
                   <DayTimeWindowsList
                     dayTimeWindows={dayTimeWindows}
                     onChange={setDayTimeWindows}
+                    hideAdd
                   />
                 </section>
               </div>
             )}
+            </>)}
+            {showActivities && (<>
             {/* Who the caller is willing to do the slot's activities with. */}
             <WhoWithCard />
             <div>
@@ -840,7 +875,8 @@ export default function NewSlotSheet() {
                 </section>
               )}
             </div>
-            {isEditing && (
+            </>)}
+            {isEditing && mode === "time" && (
               <div className="pt-2">
                 <button
                   type="button"
