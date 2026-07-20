@@ -4,15 +4,16 @@
  * One availability WINDOW of a Playlist slot, borderless — vertical spacing
  * alone separates rows. A slot with several windows explodes into several of
  * these rows (each its own vertical space); see slotWindowEntries.
- *   - At the TOP, centered: this window's start–end time (with an end date only
- *     when the window crosses midnight) and a decimal-hour duration note
- *     ("2.25h"). The day + relative specifier ("Tomorrow") is NOT here — it's a
- *     per-day divider header rendered above each group of same-day rows in
- *     PlaylistTab.
- *   - Below the time, filling the LEFT 60% of the row: one faded circle per
- *     activity, tinted with that activity's color (consistent per activity
- *     across the timeline). Each circle holds a large emoji and, when a
- *     participant range is set, a small "2–5" bubble directly beneath it.
+ *   - LEFT 60% of the row: one faded circle per activity, tinted with that
+ *     activity's color (consistent per activity across the timeline). Each
+ *     circle holds a large emoji and, when a participant range is set, a small
+ *     "2–5" bubble directly beneath it.
+ *   - RIGHT column, starting level with the circles' top: this window's
+ *     start–end time (right-justified, with an end date only when the window
+ *     crosses midnight), a decimal-hour duration note ("2.25h"), and the
+ *     events placeholder beneath. The day + relative specifier ("Tomorrow") is
+ *     NOT here — it's a per-day divider header rendered above each group of
+ *     same-day rows in PlaylistTab.
  *
  * Tapping the row opens the create-slot sheet in edit mode (for the whole slot).
  */
@@ -49,23 +50,14 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
       aria-label="Edit slot"
       className="w-full text-left py-2 pr-3 pl-5 active:opacity-70 transition-opacity"
     >
-      {/* This window's time span, left-justified at the top of the slot area,
-          indented (pl-5) under the day header. Font is bumped ~20% over the
-          timeline's baseline. */}
-      <div className="text-[14.4px] text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline gap-x-1">
-        <span>{line.startTime}</span>
-        <span>–</span>
-        {line.endDate && <span>{line.endDate} ·</span>}
-        <span>{line.endTime}</span>
-        <span className="text-gray-400 dark:text-gray-500">· {line.duration}</span>
-      </div>
-
-      {/* Below the time: activities in the LEFT 60% (a faded circle per
-          activity, big emoji atop, participant bubble directly beneath), and an
-          events placeholder in the remaining right space. */}
-      <div className="mt-2 flex items-start">
+      {/* One row: activity circles fill the LEFT 60% (a faded circle per
+          activity, big emoji atop, participant bubble directly beneath) with
+          the time span + events placeholder in the right column. The circles
+          START at the same horizontal level as the time text (items-start on
+          the row), rather than under it. */}
+      <div className="flex items-start">
         {activities.length > 0 && (
-          <div className="flex flex-wrap gap-2" style={{ width: "60%" }}>
+          <div className="flex flex-wrap gap-2 shrink-0" style={{ width: "60%" }}>
             {activities.map((a, i) => (
               <div
                 key={`${a.name}#${i}`}
@@ -86,8 +78,19 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             ))}
           </div>
         )}
-        <div className="flex-1 min-w-0 self-center text-center text-sm text-gray-400 dark:text-gray-500">
-          No events yet…
+        <div className="flex-1 min-w-0">
+          {/* This window's time span, right-justified. Font is bumped ~20%
+              over the timeline's baseline. */}
+          <div className="text-[14.4px] text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline justify-end gap-x-1">
+            <span>{line.startTime}</span>
+            <span>–</span>
+            {line.endDate && <span>{line.endDate} ·</span>}
+            <span>{line.endTime}</span>
+            <span className="text-gray-400 dark:text-gray-500">· {line.duration}</span>
+          </div>
+          <div className="mt-2 text-right text-sm text-gray-400 dark:text-gray-500">
+            No events yet…
+          </div>
         </div>
       </div>
     </button>
