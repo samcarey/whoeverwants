@@ -181,6 +181,84 @@ def test_activity_participant_range_sanitized(client):
     assert by_name["Solo"]["max_people"] == 999
 
 
+def test_activity_who_with_round_trips(client):
+    bid = str(uuid.uuid4())
+    _create_slot(
+        client,
+        browser_id=bid,
+        day_time_windows=_dtw("2026-11-01"),
+        activities=[
+            {
+                "name": "Hiking",
+                "who_with": [
+                    {"min_people": 2, "max_people": 5, "groups": ["Climbing Crew"]},
+                    {"min_people": 2, "max_people": 3, "people": ["Alex"]},
+                ],
+            },
+            {"name": "Coffee"},  # no entries → null
+        ],
+    )
+    s = _list_slots(client, browser_id=bid).json()["slots"][0]
+    by_name = {a["name"]: a for a in s["activities"]}
+    ww = by_name["Hiking"]["who_with"]
+    assert len(ww) == 2
+    assert ww[0] == {"min_people": 2, "max_people": 5, "groups": ["Climbing Crew"], "people": None}
+    assert ww[1] == {"min_people": 2, "max_people": 3, "groups": None, "people": ["Alex"]}
+    assert by_name["Coffee"]["who_with"] is None
+
+
+def test_activity_who_with_sanitized(client):
+    bid = str(uuid.uuid4())
+    _create_slot(
+        client,
+        browser_id=bid,
+        day_time_windows=_dtw("2026-11-01"),
+        activities=[
+            {
+                "name": "Games",
+                "who_with": [
+                    # min > max bumps max up; blank names dropped.
+                    {"min_people": 6, "max_people": 2, "people": ["  Priya  ", "   "]},
+                    # Entirely empty entry → dropped.
+                    {"groups": [], "people": []},
+                ],
+            },
+            # Every entry empty → who_with stored NULL, not [].
+            {"name": "Chess", "who_with": [{}]},
+        ],
+    )
+    s = _list_slots(client, browser_id=bid).json()["slots"][0]
+    by_name = {a["name"]: a for a in s["activities"]}
+    ww = by_name["Games"]["who_with"]
+    assert len(ww) == 1
+    assert ww[0] == {"min_people": 6, "max_people": 6, "groups": None, "people": ["Priya"]}
+    assert by_name["Chess"]["who_with"] is None
+
+
+def test_update_slot_preserves_who_with_when_resent(client):
+    """The FE's edit-time save re-sends the slot's activities verbatim — the
+    who_with entries must survive the wholesale delete + re-insert."""
+    bid = str(uuid.uuid4())
+    slot_id = _create_slot(
+        client,
+        browser_id=bid,
+        day_time_windows=_dtw("2026-11-01"),
+        activities=[{"name": "Hiking", "who_with": [{"min_people": 2, "groups": ["Crew"]}]}],
+    ).json()["id"]
+    s = _list_slots(client, browser_id=bid).json()["slots"][0]
+    r = client.put(
+        f"/api/slots/{slot_id}",
+        json={"day_time_windows": _dtw("2026-11-02"), "activities": s["activities"]},
+        headers=bid_headers(bid),
+    )
+    assert r.status_code == 200
+    s2 = _list_slots(client, browser_id=bid).json()["slots"][0]
+    assert s2["day_time_windows"][0]["day"] == "2026-11-02"
+    assert s2["activities"][0]["who_with"] == [
+        {"min_people": 2, "max_people": None, "groups": ["Crew"], "people": None}
+    ]
+
+
 def test_list_slots_empty_for_new_browser(client):
     r = _list_slots(client, browser_id=str(uuid.uuid4()))
     assert r.status_code == 200
