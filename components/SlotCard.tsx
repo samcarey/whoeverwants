@@ -82,12 +82,12 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
               const people = a.with_people ?? [];
               return (
                 // pl reserves room for the emoji's out-hanging half. The
-                // emoji's TOP aligns with the card's top (both at y=0); it
-                // overlaps the card's left edge, and the card's extra left
+                // emoji sits just below the card's top edge (top-0.5), still
+                // overlapping the card's left edge; the card's extra left
                 // padding keeps the text clear of it.
                 <div key={`${a.name}#${i}`} title={a.name} className="relative pl-2.5 max-w-full">
                   <span
-                    className="emoji-outline absolute top-0 left-0 text-[22px] leading-none z-10 pointer-events-none"
+                    className="emoji-outline absolute top-0.5 left-0 text-[22px] leading-none z-10 pointer-events-none"
                     aria-hidden="true"
                   >
                     {a.emoji || a.name.trim().charAt(0).toUpperCase()}
