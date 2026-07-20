@@ -35,6 +35,16 @@ router = APIRouter(prefix="/api/slots", tags=["slots"])
 _NO_GROUP_ID = "00000000-0000-0000-0000-000000000000"
 
 
+class WhoWithEntry(BaseModel):
+    # One "who with" entry: an optional participant range with its own set of
+    # groups and/or specific people (display-name strings, sanitized + capped
+    # in services.slots).
+    min_people: int | None = None
+    max_people: int | None = None
+    groups: list[str] | None = None
+    people: list[str] | None = None
+
+
 class ActivityInput(BaseModel):
     name: str
     # Optional per-activity emoji (picked in the create-slot sheet). Decoupled
@@ -45,11 +55,10 @@ class ActivityInput(BaseModel):
     # the name like the emoji.
     min_people: int | None = None
     max_people: int | None = None
-    # Optional per-activity "who with": groups and/or specific people the
-    # owner is willing to do this with (display-name strings, sanitized +
-    # capped in services.slots). None/[] = "Anyone".
-    with_groups: list[str] | None = None
-    with_people: list[str] | None = None
+    # Optional per-activity "who with" entries — MULTIPLE participant ranges,
+    # each with its own groups/people. None/[] = the activity-level range with
+    # "Anyone".
+    who_with: list[WhoWithEntry] | None = None
 
 
 class CreateSlotRequest(BaseModel):
@@ -75,8 +84,7 @@ class SlotActivity(BaseModel):
     emoji: str | None = None
     min_people: int | None = None
     max_people: int | None = None
-    with_groups: list[str] | None = None
-    with_people: list[str] | None = None
+    who_with: list[WhoWithEntry] | None = None
 
 
 class SlotResponse(BaseModel):

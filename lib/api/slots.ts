@@ -21,13 +21,21 @@ export interface ActivitySuggestion {
  *  (min/max people, "2–5"). Only saved activities carry the range; the
  *  suggestion endpoint returns bare {name, emoji}. Mirrors the server's
  *  separate ActivityInput / SlotActivity models. */
+/** One "who with" entry on an activity: a participant range with its own set
+ *  of groups and/or specific people (display names). */
+export interface WhoWithEntry {
+  min_people?: number | null;
+  max_people?: number | null;
+  groups?: string[] | null;
+  people?: string[] | null;
+}
+
 export interface SlotActivity extends ActivitySuggestion {
   min_people?: number | null;
   max_people?: number | null;
-  /** Groups the owner is willing to do this with (display names). */
-  with_groups?: string[] | null;
-  /** Specific people the owner is willing to do this with (display names). */
-  with_people?: string[] | null;
+  /** Multiple participant ranges, each with its own groups/people. Empty =
+   *  the activity-level range with "Anyone". */
+  who_with?: WhoWithEntry[] | null;
 }
 
 export interface ActivitySuggestions {

@@ -13,9 +13,9 @@
  *   - RIGHT (remaining space): one faded CARD per activity, tinted with that
  *     activity's color (consistent per activity across the timeline). The
  *     activity's emoji hangs off the card's upper-left corner (outside it);
- *     inside, the participant range renders in the activity's color followed
- *     by the groups + people the owner is willing to do it with ("Anyone"
- *     when none are set).
+ *     inside, ONE LINE PER who-with entry — that entry's participant range in
+ *     the activity's color followed by its own groups + people ("Anyone" when
+ *     none are set; no entries → a single line with the activity-level range).
  *
  * Tapping the row opens the create-slot sheet in edit mode (for the whole slot).
  */
@@ -38,11 +38,15 @@ interface SlotCardProps {
 }
 
 function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
-  // Resolve each activity's color + participant range once.
+  // Resolve each activity's color + who-with entries once. No entries → one
+  // fallback line carrying the activity-level range (with "Anyone").
   const activities = slot.activities.map((a) => ({
     ...a,
     color: activityColor(a.name, colors),
-    range: formatPeopleRange(a.min_people, a.max_people),
+    entries:
+      a.who_with && a.who_with.length > 0
+        ? a.who_with
+        : [{ min_people: a.min_people, max_people: a.max_people, groups: null, people: null }],
   }));
 
   return (
@@ -77,57 +81,62 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
         </div>
         {activities.length > 0 && (
           <div className="flex-1 min-w-0 flex flex-wrap justify-end gap-x-2 gap-y-2 pl-2">
-            {activities.map((a, i) => {
-              const groups = a.with_groups ?? [];
-              const people = a.with_people ?? [];
-              return (
-                // pl reserves room for the emoji's out-hanging half. The
-                // emoji is centered on the card's FIRST text line (card py-1.5
-                // 6px + half the ~17px line box − half the 22px emoji ≈ 3px
-                // down) — which centers it on the whole card for the common
-                // one-line case, and keeps it at the first line when the names
-                // wrap. Still overlaps the card's left edge; the card's extra
-                // left padding keeps the text clear of it.
-                <div key={`${a.name}#${i}`} title={a.name} className="relative pl-2.5 max-w-full">
-                  <span
-                    className="emoji-outline absolute top-[3px] left-0 text-[22px] leading-none z-10 pointer-events-none"
-                    aria-hidden="true"
-                  >
-                    {a.emoji || a.name.trim().charAt(0).toUpperCase()}
-                  </span>
-                  <div className={`rounded-xl pl-[18px] pr-3 py-1.5 ${a.color.faded}`}>
-                    <span className="text-xs leading-tight">
-                      {a.range && (
-                        <span className={`text-[13.5px] font-semibold tabular-nums ${a.color.text}`}>
-                          {a.range}
-                        </span>
-                      )}
-                      {(groups.length > 0 || people.length > 0) ? (
-                        <>
-                          {a.range && " "}
-                          {groups.length > 0 && (
-                            <span className="font-medium text-gray-600 dark:text-gray-300">
-                              {groups.join(", ")}
-                            </span>
-                          )}
-                          {groups.length > 0 && people.length > 0 && (
-                            <span className="text-gray-400 dark:text-gray-500"> · </span>
-                          )}
-                          {people.length > 0 && (
-                            <span className="text-gray-600 dark:text-gray-300">{people.join(", ")}</span>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          {a.range && " "}
-                          <span className="text-gray-500 dark:text-gray-400">Anyone</span>
-                        </>
-                      )}
-                    </span>
-                  </div>
+            {activities.map((a, i) => (
+              // pl reserves room for the emoji's out-hanging half. The emoji
+              // is centered on the card's FIRST text line (card py-1.5 6px +
+              // half the ~17px line box − half the 22px emoji ≈ 3px down) —
+              // which centers it on the whole card for the common one-line
+              // case, and keeps it at the first line when the card has more
+              // who-with lines. Still overlaps the card's left edge; the
+              // card's extra left padding keeps the text clear of it.
+              <div key={`${a.name}#${i}`} title={a.name} className="relative pl-2.5 max-w-full">
+                <span
+                  className="emoji-outline absolute top-[3px] left-0 text-[22px] leading-none z-10 pointer-events-none"
+                  aria-hidden="true"
+                >
+                  {a.emoji || a.name.trim().charAt(0).toUpperCase()}
+                </span>
+                {/* One line per who-with entry: its range (activity color)
+                    then that entry's groups + people (or "Anyone"). */}
+                <div className={`rounded-xl pl-[18px] pr-3 py-1.5 space-y-0.5 ${a.color.faded}`}>
+                  {a.entries.map((w, j) => {
+                    const range = formatPeopleRange(w.min_people, w.max_people);
+                    const groups = w.groups ?? [];
+                    const people = w.people ?? [];
+                    return (
+                      <div key={j} className="text-xs leading-tight">
+                        {range && (
+                          <span className={`text-[13.5px] font-semibold tabular-nums ${a.color.text}`}>
+                            {range}
+                          </span>
+                        )}
+                        {groups.length > 0 || people.length > 0 ? (
+                          <>
+                            {range && " "}
+                            {groups.length > 0 && (
+                              <span className="font-medium text-gray-600 dark:text-gray-300">
+                                {groups.join(", ")}
+                              </span>
+                            )}
+                            {groups.length > 0 && people.length > 0 && (
+                              <span className="text-gray-400 dark:text-gray-500"> · </span>
+                            )}
+                            {people.length > 0 && (
+                              <span className="text-gray-600 dark:text-gray-300">{people.join(", ")}</span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {range && " "}
+                            <span className="text-gray-500 dark:text-gray-400">Anyone</span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </div>
