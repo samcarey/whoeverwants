@@ -110,32 +110,9 @@ export default function PlaylistTab() {
             </div>
             <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
           </div>
-          {/* Tree hierarchy: each time row hangs off the date via a little
-              right-angle connector — a vertical line descending from under the
-              date text, turning horizontal to butt against the left edge of the
-              time text (vertically centered with it). Rows are adjacent (no
-              space-y) so the trunk runs continuously through non-last rows. */}
           <div>
-            {g.entries.map((e, idx) => (
-              <div key={e.key} className="relative">
-                {/* └ branch: down from under the date, across to the time text.
-                    Height = SlotCard's py-2 (8px) + half the 14.4px time line
-                    (line-height 1.5 → 21.6px / 2) ≈ 19px, so the horizontal arm
-                    is vertically centered with the time text. */}
-                <div
-                  className="absolute left-2 top-0 w-3 border-l border-b border-gray-300 dark:border-gray-600"
-                  style={{ height: "19px" }}
-                  aria-hidden="true"
-                />
-                {/* Continue the trunk through this row when more rows follow. */}
-                {idx < g.entries.length - 1 && (
-                  <div
-                    className="absolute left-2 top-0 bottom-0 border-l border-gray-300 dark:border-gray-600"
-                    aria-hidden="true"
-                  />
-                )}
-                <SlotCard slot={e.slot} line={e.line} colors={colors} />
-              </div>
+            {g.entries.map((e) => (
+              <SlotCard key={e.key} slot={e.slot} line={e.line} colors={colors} />
             ))}
           </div>
         </div>

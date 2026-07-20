@@ -49,9 +49,9 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
       aria-label="Edit slot"
       className="w-full text-left py-2 pr-3 pl-5 active:opacity-70 transition-opacity"
     >
-      {/* This window's time span, left-justified at the top of the slot area
-          (pl-5 lines its left edge up with the tree connector's arm from
-          PlaylistTab). Font is bumped ~20% over the timeline's baseline. */}
+      {/* This window's time span, left-justified at the top of the slot area,
+          indented (pl-5) under the day header. Font is bumped ~20% over the
+          timeline's baseline. */}
       <div className="text-[14.4px] text-gray-500 dark:text-gray-400 flex flex-wrap items-baseline gap-x-1">
         <span>{line.startTime}</span>
         <span>–</span>
