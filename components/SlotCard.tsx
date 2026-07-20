@@ -81,17 +81,18 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
               const groups = a.with_groups ?? [];
               const people = a.with_people ?? [];
               return (
-                // pt/pl reserve room for the emoji hanging off the card's
-                // upper-left corner (absolute at the wrapper's origin, so it
-                // sits OUTSIDE the card, overlapping the corner).
-                <div key={`${a.name}#${i}`} title={a.name} className="relative pt-2.5 pl-2.5 max-w-full">
+                // pl reserves room for the emoji's out-hanging half. The
+                // emoji's TOP aligns with the card's top (both at y=0); it
+                // overlaps the card's left edge, and the card's extra left
+                // padding keeps the text clear of it.
+                <div key={`${a.name}#${i}`} title={a.name} className="relative pl-2.5 max-w-full">
                   <span
                     className="emoji-outline absolute top-0 left-0 text-[22px] leading-none z-10 pointer-events-none"
                     aria-hidden="true"
                   >
                     {a.emoji || a.name.trim().charAt(0).toUpperCase()}
                   </span>
-                  <div className={`rounded-xl px-3 py-1.5 ${a.color.faded}`}>
+                  <div className={`rounded-xl pl-[18px] pr-3 py-1.5 ${a.color.faded}`}>
                     <span className="text-xs leading-tight">
                       {a.range && (
                         <span className={`text-[13.5px] font-semibold tabular-nums ${a.color.text}`}>
