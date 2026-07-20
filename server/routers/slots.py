@@ -45,6 +45,11 @@ class ActivityInput(BaseModel):
     # the name like the emoji.
     min_people: int | None = None
     max_people: int | None = None
+    # Optional per-activity "who with": groups and/or specific people the
+    # owner is willing to do this with (display-name strings, sanitized +
+    # capped in services.slots). None/[] = "Anyone".
+    with_groups: list[str] | None = None
+    with_people: list[str] | None = None
 
 
 class CreateSlotRequest(BaseModel):
@@ -70,6 +75,8 @@ class SlotActivity(BaseModel):
     emoji: str | None = None
     min_people: int | None = None
     max_people: int | None = None
+    with_groups: list[str] | None = None
+    with_people: list[str] | None = None
 
 
 class SlotResponse(BaseModel):

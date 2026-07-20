@@ -23,6 +23,9 @@ MAX_ACTIVITY_LEN = 100
 SUGGESTIONS_PER_GROUP = 15
 # Sanity bounds on a per-activity participant count (min/max people).
 MAX_PEOPLE = 999
+# Per-activity "who with" caps (silent truncation, like COMMENT_MAX_CHARS).
+MAX_WITH_NAMES = 20
+MAX_WITH_NAME_CHARS = 50
 
 
 def normalize_activity(value: str | None) -> str | None:
@@ -89,12 +92,33 @@ def _periods_overlap(a: dict[str, list[tuple[int, int]]], b: dict[str, list[tupl
 # Slot persistence
 # ----------------------------------------------------------------------------
 
+def _clean_names(value) -> list[str] | None:
+    """Sanitize a per-activity "who with" name list: trim each entry, drop
+    blanks, cap entry length + list size (silent truncation, the
+    join-request-message convention). None/empty → None (= "Anyone")."""
+    if not isinstance(value, list):
+        return None
+    out: list[str] = []
+    for v in value:
+        if not isinstance(v, str):
+            continue
+        name = v.strip()[:MAX_WITH_NAME_CHARS].rstrip()
+        if name:
+            out.append(name)
+        if len(out) >= MAX_WITH_NAMES:
+            break
+    return out or None
+
+
 def _insert_slot_activities(conn, slot_id: str, activities) -> None:
     """Normalize + dedup (case-insensitive on the name) `activities` dicts
-    (``{"name", "emoji", "min_people", "max_people"}``) and write one
-    slot_activities row each. The optional emoji + participant range are
-    decoupled — they never affect matching. When both people bounds are
-    present but min > max, max is bumped up to min."""
+    (``{"name", "emoji", "min_people", "max_people", "with_groups",
+    "with_people"}``) and write one slot_activities row each. The optional
+    emoji + participant range + who-with lists are decoupled — they never
+    affect matching. When both people bounds are present but min > max, max is
+    bumped up to min."""
+    import json
+
     seen: set[str] = set()
     for raw in activities or []:
         name, emoji = raw.get("name"), raw.get("emoji")
@@ -112,12 +136,23 @@ def _insert_slot_activities(conn, slot_id: str, activities) -> None:
         max_people = _clean_people(raw.get("max_people"))
         if min_people is not None and max_people is not None and max_people < min_people:
             max_people = min_people
+        with_groups = _clean_names(raw.get("with_groups"))
+        with_people = _clean_names(raw.get("with_people"))
         conn.execute(
             """
-            INSERT INTO slot_activities (slot_id, activity, emoji, min_people, max_people)
-            VALUES (%(s)s::uuid, %(a)s, %(e)s, %(mn)s, %(mx)s)
+            INSERT INTO slot_activities
+                (slot_id, activity, emoji, min_people, max_people, with_groups, with_people)
+            VALUES (%(s)s::uuid, %(a)s, %(e)s, %(mn)s, %(mx)s, %(wg)s::jsonb, %(wp)s::jsonb)
             """,
-            {"s": slot_id, "a": act, "e": clean_emoji, "mn": min_people, "mx": max_people},
+            {
+                "s": slot_id,
+                "a": act,
+                "e": clean_emoji,
+                "mn": min_people,
+                "mx": max_people,
+                "wg": json.dumps(with_groups) if with_groups else None,
+                "wp": json.dumps(with_people) if with_people else None,
+            },
         )
 
 
@@ -159,7 +194,8 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
     if slot_ids:
         arows = conn.execute(
             """
-            SELECT slot_id, activity, emoji, min_people, max_people
+            SELECT slot_id, activity, emoji, min_people, max_people,
+                   with_groups, with_people
               FROM slot_activities
              WHERE slot_id = ANY(%(ids)s::uuid[])
              ORDER BY created_at
@@ -173,6 +209,8 @@ def list_slots(conn, *, user_id: str) -> list[dict]:
                     "emoji": (a["emoji"] or None),
                     "min_people": a["min_people"],
                     "max_people": a["max_people"],
+                    "with_groups": a["with_groups"] or None,
+                    "with_people": a["with_people"] or None,
                 }
             )
     return [

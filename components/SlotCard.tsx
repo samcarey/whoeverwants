@@ -10,10 +10,12 @@
  *     events placeholder beneath. The day + relative specifier ("Tomorrow") is
  *     NOT here — it's a per-day divider header rendered above each group of
  *     same-day rows in PlaylistTab.
- *   - RIGHT (remaining space): one faded circle per activity, tinted with that
- *     activity's color (consistent per activity across the timeline). Each
- *     circle holds a large emoji and, when a participant range is set, a small
- *     "2–5" bubble directly beneath it.
+ *   - RIGHT (remaining space): one faded CARD per activity, tinted with that
+ *     activity's color (consistent per activity across the timeline). The
+ *     activity's emoji hangs off the card's upper-left corner (outside it);
+ *     inside, the participant range renders in the activity's color followed
+ *     by the groups + people the owner is willing to do it with ("Anyone"
+ *     when none are set).
  *
  * Tapping the row opens the create-slot sheet in edit mode (for the whole slot).
  */
@@ -51,11 +53,11 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
       className="w-full text-left py-2 pr-3 pl-1 active:opacity-70 transition-opacity"
     >
       {/* One row: the time span + events placeholder in the LEFT column
-          (sized to the one-line time text), activity circles filling the
-          remaining RIGHT space (a faded circle per activity, big emoji atop,
-          participant bubble directly beneath). The circles START at the same
-          horizontal level as the time text (items-start on the row), rather
-          than under it. */}
+          (sized to the one-line time text), activity CARDS filling the
+          remaining RIGHT space. Each card: emoji hanging off the upper-left
+          corner (outside the card), then the participant range (activity
+          color) followed by the groups + people. The cards START at the same
+          horizontal level as the time text (items-start on the row). */}
       <div className="flex items-start">
         <div className="shrink-0">
           {/* This window's time span on ONE line (nowrap — the column sizes to
@@ -74,25 +76,54 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
           </div>
         </div>
         {activities.length > 0 && (
-          <div className="flex-1 min-w-0 flex flex-wrap justify-end gap-2">
-            {activities.map((a, i) => (
-              <div
-                key={`${a.name}#${i}`}
-                title={a.name}
-                className={`flex flex-col items-center justify-center shrink-0 rounded-full w-16 h-16 ${a.color.faded}`}
-              >
-                <span className="text-[30px] leading-none" aria-hidden="true">
-                  {a.emoji || a.name.trim().charAt(0).toUpperCase()}
-                </span>
-                {a.range && (
+          <div className="flex-1 min-w-0 flex flex-wrap justify-end gap-x-2 gap-y-2 pl-2">
+            {activities.map((a, i) => {
+              const groups = a.with_groups ?? [];
+              const people = a.with_people ?? [];
+              return (
+                // pt/pl reserve room for the emoji hanging off the card's
+                // upper-left corner (absolute at the wrapper's origin, so it
+                // sits OUTSIDE the card, overlapping the corner).
+                <div key={`${a.name}#${i}`} title={a.name} className="relative pt-2.5 pl-2.5 max-w-full">
                   <span
-                    className={`mt-0.5 text-[13.5px] leading-none font-semibold tabular-nums ${a.color.text}`}
+                    className="emoji-outline absolute top-0 left-0 text-[22px] leading-none z-10 pointer-events-none"
+                    aria-hidden="true"
                   >
-                    {a.range}
+                    {a.emoji || a.name.trim().charAt(0).toUpperCase()}
                   </span>
-                )}
-              </div>
-            ))}
+                  <div className={`rounded-xl px-3 py-1.5 ${a.color.faded}`}>
+                    <span className="text-xs leading-tight">
+                      {a.range && (
+                        <span className={`text-[13.5px] font-semibold tabular-nums ${a.color.text}`}>
+                          {a.range}
+                        </span>
+                      )}
+                      {(groups.length > 0 || people.length > 0) ? (
+                        <>
+                          {a.range && <span className="text-gray-400 dark:text-gray-500"> · </span>}
+                          {groups.length > 0 && (
+                            <span className="font-medium text-gray-600 dark:text-gray-300">
+                              {groups.join(", ")}
+                            </span>
+                          )}
+                          {groups.length > 0 && people.length > 0 && (
+                            <span className="text-gray-400 dark:text-gray-500"> · </span>
+                          )}
+                          {people.length > 0 && (
+                            <span className="text-gray-600 dark:text-gray-300">{people.join(", ")}</span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {a.range && <span className="text-gray-400 dark:text-gray-500"> · </span>}
+                          <span className="text-gray-500 dark:text-gray-400">Anyone</span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

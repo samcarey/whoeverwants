@@ -24,6 +24,10 @@ export interface ActivitySuggestion {
 export interface SlotActivity extends ActivitySuggestion {
   min_people?: number | null;
   max_people?: number | null;
+  /** Groups the owner is willing to do this with (display names). */
+  with_groups?: string[] | null;
+  /** Specific people the owner is willing to do this with (display names). */
+  with_people?: string[] | null;
 }
 
 export interface ActivitySuggestions {
