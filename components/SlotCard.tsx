@@ -124,15 +124,18 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
                     const groups = w.groups ?? [];
                     const people = w.people ?? [];
                     return (
-                      <div key={j} className="text-xs leading-tight">
+                      // Range in its own fixed column (shrink-0) with the
+                      // names wrapping in theirs — so a 2nd+ line of
+                      // groups/people hang-indents under the first name,
+                      // not under the range.
+                      <div key={j} className="text-xs leading-tight flex items-baseline gap-1">
                         {range && (
-                          <span className={`text-[13.5px] font-semibold tabular-nums ${a.color.text}`}>
+                          <span className={`shrink-0 text-[13.5px] font-semibold tabular-nums ${a.color.text}`}>
                             {range}
                           </span>
                         )}
                         {groups.length > 0 || people.length > 0 ? (
-                          <>
-                            {range && " "}
+                          <span className="min-w-0">
                             {groups.length > 0 && (
                               <span className="font-medium text-gray-600 dark:text-gray-300">
                                 {groups.join(", ")}
@@ -144,12 +147,9 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
                             {people.length > 0 && (
                               <span className="text-gray-600 dark:text-gray-300">{people.join(", ")}</span>
                             )}
-                          </>
+                          </span>
                         ) : (
-                          <>
-                            {range && " "}
-                            <span className="text-gray-500 dark:text-gray-400">Anyone</span>
-                          </>
+                          <span className="min-w-0 text-gray-500 dark:text-gray-400">Anyone</span>
                         )}
                       </div>
                     );
