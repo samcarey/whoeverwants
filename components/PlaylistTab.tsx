@@ -97,6 +97,22 @@ export default function PlaylistTab() {
 
   return (
     <div className="pt-2">
+      {/* Column headers naming the two halves of each row: the time span on
+          the left, the activity cards on the right. They stick to the top of
+          the viewport once scrolled to, with the rows passing underneath — the
+          opaque bar keeps the label legible and the gradient strip below it
+          fades that background out so there's no hard edge against content. */}
+      <div className="sticky top-0 z-10">
+        <div className="flex items-baseline justify-between bg-background pl-1 pr-3 pt-1 pb-1.5">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            Time Slots
+          </span>
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            My Interests
+          </span>
+        </div>
+        <div className="h-3 bg-gradient-to-b from-background to-transparent" />
+      </div>
       {dayGroups.map((g) => (
         <div key={g.day} className="mb-1.5">
           {/* Per-day divider: left-justified date (font +20% over the old
