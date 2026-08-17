@@ -53,7 +53,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
   }));
 
   return (
-    <div className="w-full py-2 pr-3 pl-1">
+    <div className="w-full py-1.5 pr-3 pl-1">
       {/* One row: the time span + events placeholder in the LEFT column
           (sized to the one-line time text), activity CARDS filling the
           remaining RIGHT space. Each card: emoji hanging off the upper-left
@@ -61,7 +61,17 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
           color) followed by the groups + people. The cards START at the same
           horizontal level as the time text (items-start on the row). */}
       <div className="flex items-start">
-        <div className="shrink-0">
+        {/* The time is this row's header, so it sticks under the day divider
+            (82.8px = the column headers' 39.6px + the divider's 29.2px + the
+            14px that separates them at rest, so nothing shifts when it locks)
+            while this row's activity cards scroll past it, and rides out as
+            the row ends and the next row's time takes its place.
+            Sticking is scoped to this row, so nothing ever passes underneath —
+            hence no background or fade of its own. z sits between the cards'
+            emoji (z-10) and the day divider (z-20): a time being pushed out by
+            the end of its row rides up UNDER the divider rather than over its
+            date. */}
+        <div className="sticky top-[82.8px] z-[15] shrink-0">
           {/* This window's time span on ONE line (nowrap — the column sizes to
               it, so the duration never wraps), left-justified flush with the
               day header text (pl-1 matches the divider's px-1). Font is bumped

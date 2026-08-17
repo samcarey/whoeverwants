@@ -99,44 +99,46 @@ export default function PlaylistTab() {
     <div className="pt-2">
       {/* Column headers naming the two halves of each row: the time span on
           the left, the activity cards on the right. They stick to the top of
-          the viewport once scrolled to, with the rows passing underneath — the
-          opaque bar keeps the label legible and the gradient strip below it
-          fades that background out so there's no hard edge against content. */}
-      {/* z-30 clears the day headers (z-20) and the activity emoji (z-10
-          inside each card) so both slide UNDER this bar + its fade instead of
-          painting over it. */}
-      <div className="sticky top-0 z-30">
+          the viewport once scrolled to, with the rows passing underneath.
+          Three sticky tiers stack here — these headers, then each day's
+          divider, then each row's time (in SlotCard) — and every tier's offset
+          is the bottom edge of the one above it, so the stack is opaque all
+          the way down and no half-scrolled row can show through between them.
+          That's also why this bar carries no fade of its own: the day divider
+          sits flush against its bottom edge, and a gradient there would only
+          be a strip of half-visible content. The fade lives at the bottom of
+          the stack instead (under the day divider). */}
+      {/* z-30 clears the day dividers (z-20) and the activity emoji (z-10
+          inside each card) so both slide UNDER this bar instead of over it. */}
+      {/* Heights are load-bearing — the tiers below offset off them:
+          7.6px + 28px line + 4px = 39.6px. */}
+      <div className="sticky top-0 z-30 flex items-baseline bg-background pl-1 pr-3 pt-[7.6px] pb-1">
         {/* Each label is centered over its own column. The rows' left column
             is content-sized (it hugs its own time text), so there's no single
             shared boundary to align to — 45% is where the widest time span
             ends, i.e. the visual split between the two halves. */}
-        {/* Spacing is tuned against the measured gaps: pt gives 15.6px above
-            the labels at rest (8px from the wrapper + 7.6px here) and 7.6px
-            once stuck to the screen top; pb + the 12px gradient below give
-            21.6px down to the first row. */}
-        <div className="flex items-baseline bg-background pl-1 pr-3 pt-[7.6px] pb-[9.6px]">
-          <span className="w-[45%] shrink-0 text-center text-lg font-semibold tracking-wide underline underline-offset-[3px] text-gray-900 dark:text-gray-100">
-            Time Slots
-          </span>
-          <span className="flex-1 text-center text-lg font-semibold tracking-wide underline underline-offset-[3px] text-gray-900 dark:text-gray-100">
-            My Interests
-          </span>
-        </div>
-        <div className="h-3 bg-gradient-to-b from-background to-transparent" />
+        <span className="w-[45%] shrink-0 text-center text-lg font-semibold tracking-wide underline underline-offset-[3px] text-gray-900 dark:text-gray-100">
+          Time Slots
+        </span>
+        <span className="flex-1 text-center text-lg font-semibold tracking-wide underline underline-offset-[3px] text-gray-900 dark:text-gray-100">
+          My Interests
+        </span>
       </div>
       {dayGroups.map((g) => (
         <div key={g.day} className="mb-1.5">
           {/* Per-day divider: left-justified date (font +20% over the old
               text-sm), hairline rule filling the rest of the row on the right.
-              It sticks just below the column headers (57.2px = that bar's
-              measured height plus its fade) so the day you're looking at stays named while its rows
+              It sticks flush against the bottom of the column headers
+              (39.6px) so the day you're looking at stays named while its rows
               scroll under it. Sticking is scoped to this day's block, so the
-              header rides up and out exactly as the next day's header arrives
-              and takes its place — that one paints over it, being later in the
+              divider rides up and out exactly as the next day's arrives and
+              takes its place — that one paints over it, being later in the
               DOM at the same z. z-20 sits above the cards' emoji (z-10) and
               below the column headers (z-30). */}
-          <div className="sticky top-[57.2px] z-20">
-            <div className="flex items-center gap-3 bg-background px-1 pt-0.5">
+          <div className="sticky top-[39.6px] z-20">
+            {/* 25.2px line + 4px = 29.2px, so this bar ends at 68.8px — the
+                offset each row's sticky time stacks against. */}
+            <div className="flex items-center gap-3 bg-background px-1 pb-1">
               <div className="flex items-baseline gap-1.5 shrink-0">
                 <span className="text-[16.8px] font-semibold text-blue-600 dark:text-blue-400">
                   {g.entries[0].line.relative}
@@ -145,9 +147,11 @@ export default function PlaylistTab() {
               </div>
               <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
             </div>
-            {/* Same trick as the column headers: fade the opaque background out
-                rather than cutting rows off at a hard edge. Doubles as the 4px
-                gap the old mb-1 gave. */}
+            {/* The stack's only transparent band: rows pass under the divider
+                on the RIGHT (activities) side, so soften that edge rather than
+                cutting them off. Nothing scrolls under it on the left — each
+                row's sticky time is bounded to its own row — so this is the
+                last thing in the stack that needs to be see-through. */}
             <div className="h-2 bg-gradient-to-b from-background to-transparent" />
           </div>
           <div>
