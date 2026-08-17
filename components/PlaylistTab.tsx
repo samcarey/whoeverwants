@@ -102,9 +102,10 @@ export default function PlaylistTab() {
           the viewport once scrolled to, with the rows passing underneath — the
           opaque bar keeps the label legible and the gradient strip below it
           fades that background out so there's no hard edge against content. */}
-      {/* z-20 clears the activity emoji (z-10 inside each card) so they slide
-          UNDER this bar + its fade instead of painting over it. */}
-      <div className="sticky top-0 z-20">
+      {/* z-30 clears the day headers (z-20) and the activity emoji (z-10
+          inside each card) so both slide UNDER this bar + its fade instead of
+          painting over it. */}
+      <div className="sticky top-0 z-30">
         {/* Each label is centered over its own column. The rows' left column
             is content-sized (it hugs its own time text), so there's no single
             shared boundary to align to — 45% is where the widest time span
@@ -126,15 +127,28 @@ export default function PlaylistTab() {
       {dayGroups.map((g) => (
         <div key={g.day} className="mb-1.5">
           {/* Per-day divider: left-justified date (font +20% over the old
-              text-sm), hairline rule filling the rest of the row on the right. */}
-          <div className="flex items-center gap-3 px-1 mb-1">
-            <div className="flex items-baseline gap-1.5 shrink-0">
-              <span className="text-[16.8px] font-semibold text-blue-600 dark:text-blue-400">
-                {g.entries[0].line.relative}
-              </span>
-              <span className="text-[16.8px] text-gray-500 dark:text-gray-400">{g.entries[0].line.date}</span>
+              text-sm), hairline rule filling the rest of the row on the right.
+              It sticks just below the column headers (57.2px = that bar's
+              measured height plus its fade) so the day you're looking at stays named while its rows
+              scroll under it. Sticking is scoped to this day's block, so the
+              header rides up and out exactly as the next day's header arrives
+              and takes its place — that one paints over it, being later in the
+              DOM at the same z. z-20 sits above the cards' emoji (z-10) and
+              below the column headers (z-30). */}
+          <div className="sticky top-[57.2px] z-20">
+            <div className="flex items-center gap-3 bg-background px-1 pt-0.5">
+              <div className="flex items-baseline gap-1.5 shrink-0">
+                <span className="text-[16.8px] font-semibold text-blue-600 dark:text-blue-400">
+                  {g.entries[0].line.relative}
+                </span>
+                <span className="text-[16.8px] text-gray-500 dark:text-gray-400">{g.entries[0].line.date}</span>
+              </div>
+              <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
             </div>
-            <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
+            {/* Same trick as the column headers: fade the opaque background out
+                rather than cutting rows off at a hard edge. Doubles as the 4px
+                gap the old mb-1 gave. */}
+            <div className="h-2 bg-gradient-to-b from-background to-transparent" />
           </div>
           <div>
             {g.entries.map((e) => (
