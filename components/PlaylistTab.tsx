@@ -102,16 +102,18 @@ export default function PlaylistTab() {
           the viewport once scrolled to, with the rows passing underneath — the
           opaque bar keeps the label legible and the gradient strip below it
           fades that background out so there's no hard edge against content. */}
-      <div className="sticky top-0 z-10">
+      {/* z-20 clears the activity emoji (z-10 inside each card) so they slide
+          UNDER this bar + its fade instead of painting over it. */}
+      <div className="sticky top-0 z-20">
         {/* Each label is centered over its own column. The rows' left column
             is content-sized (it hugs its own time text), so there's no single
             shared boundary to align to — 45% is where the widest time span
             ends, i.e. the visual split between the two halves. */}
         <div className="flex items-baseline bg-background pl-1 pr-3 pt-1 pb-1.5">
-          <span className="w-[45%] shrink-0 text-center text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          <span className="w-[45%] shrink-0 text-center text-lg font-semibold uppercase tracking-wide underline underline-offset-[3px] text-gray-500 dark:text-gray-400">
             Time Slots
           </span>
-          <span className="flex-1 text-center text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          <span className="flex-1 text-center text-lg font-semibold uppercase tracking-wide underline underline-offset-[3px] text-gray-500 dark:text-gray-400">
             My Interests
           </span>
         </div>
