@@ -109,11 +109,15 @@ export default function PlaylistTab() {
             is content-sized (it hugs its own time text), so there's no single
             shared boundary to align to — 45% is where the widest time span
             ends, i.e. the visual split between the two halves. */}
-        <div className="flex items-baseline bg-background pl-1 pr-3 pt-1 pb-1.5">
-          <span className="w-[45%] shrink-0 text-center text-lg font-semibold uppercase tracking-wide underline underline-offset-[3px] text-gray-500 dark:text-gray-400">
+        {/* Spacing is tuned against the measured gaps: pt gives 15.6px above
+            the labels at rest (8px from the wrapper + 7.6px here) and 7.6px
+            once stuck to the screen top; pb + the 12px gradient below give
+            21.6px down to the first row. */}
+        <div className="flex items-baseline bg-background pl-1 pr-3 pt-[7.6px] pb-[9.6px]">
+          <span className="w-[45%] shrink-0 text-center text-lg font-semibold tracking-wide underline underline-offset-[3px] text-gray-900 dark:text-gray-100">
             Time Slots
           </span>
-          <span className="flex-1 text-center text-lg font-semibold uppercase tracking-wide underline underline-offset-[3px] text-gray-500 dark:text-gray-400">
+          <span className="flex-1 text-center text-lg font-semibold tracking-wide underline underline-offset-[3px] text-gray-900 dark:text-gray-100">
             My Interests
           </span>
         </div>
