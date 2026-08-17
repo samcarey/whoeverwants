@@ -4,33 +4,28 @@
  * One availability WINDOW of a Playlist slot, borderless — vertical spacing
  * alone separates rows. A slot with several windows explodes into several of
  * these rows (each its own vertical space); see slotWindowEntries.
- *   - LEFT column, starting level with the circles' top: this window's
- *     start–end time (left-justified, with an end date only when the window
- *     crosses midnight), a decimal-hour duration note ("2.25h"), and the
- *     events placeholder beneath. The day + relative specifier ("Tomorrow") is
- *     NOT here — it's a per-day divider header rendered above each group of
- *     same-day rows in PlaylistTab.
- *   - RIGHT (remaining space): one faded CARD per activity, tinted with that
- *     activity's color (consistent per activity across the timeline). The
- *     activity's emoji hangs off the card's upper-left corner (outside it);
- *     inside, ONE LINE PER who-with entry — that entry's participant range in
- *     the activity's color followed by its own groups + people ("Anyone" when
- *     none are set; no entries → a single line with the activity-level range).
+ *   - LEFT column, top-aligned: this window's start–end time (left-justified,
+ *     with an end date only when the window crosses midnight), a decimal-hour
+ *     duration note ("2.25h"), and the events placeholder beneath. The day +
+ *     relative specifier ("Tomorrow") is NOT here — it's a per-day divider
+ *     header rendered above each group of same-day rows in PlaylistTab.
+ *   - RIGHT (remaining space): a CLUSTER of colored circles, one per activity,
+ *     each showing just that activity's symbol (its emoji, or the first letter
+ *     of its name) centered inside. The circle's color is the activity's color,
+ *     consistent for that activity across the whole timeline. The cluster is
+ *     centered both ways in the row; a "+" circle is pinned to the row's right
+ *     edge. Details (participant ranges, who-with) live in the per-activity
+ *     sheet, not on the circle.
  *
  * Tap targets (each opens the slot sheet on ONE facet):
  *   - the time text → edit just the date/time ('time' mode);
- *   - the activity cards (or the "+ Add activities" button shown while the
- *     slot has none) → edit just the activities ('activities' mode).
+ *   - an activity circle → edit just THAT activity ('activity' mode, its index);
+ *   - the "+" circle → add a new activity ('activity' mode, no index).
  */
 
 import { memo } from "react";
 import type { Slot } from "@/lib/api/slots";
-import {
-  activityColor,
-  formatPeopleRange,
-  type ActivityColor,
-  type SlotWindowLine,
-} from "@/lib/slotUtils";
+import { activityColor, type ActivityColor, type SlotWindowLine } from "@/lib/slotUtils";
 import { openSlotSheet } from "@/lib/slotEvents";
 
 interface SlotCardProps {
@@ -40,38 +35,41 @@ interface SlotCardProps {
   colors: Map<string, ActivityColor>;
 }
 
+/** The glyph shown inside an activity's circle: its emoji, else the first
+ *  letter of its name (uppercased). */
+function activitySymbol(name: string, emoji: string | null): string {
+  return emoji || name.trim().charAt(0).toUpperCase() || "?";
+}
+
 function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
-  // Resolve each activity's color + who-with entries once. No entries → one
-  // fallback line carrying the activity-level range (with "Anyone").
+  // Resolve each activity's color once (stable per activity name across the
+  // whole timeline — see buildActivityColorMap).
   const activities = slot.activities.map((a) => ({
     ...a,
     color: activityColor(a.name, colors),
-    entries:
-      a.who_with && a.who_with.length > 0
-        ? a.who_with
-        : [{ min_people: a.min_people, max_people: a.max_people, groups: null, people: null }],
   }));
 
   return (
     <div className="w-full py-1.5 pr-3 pl-1">
-      {/* One row: the time span + events placeholder in the LEFT column
-          (sized to the one-line time text), activity CARDS filling the
-          remaining RIGHT space. Each card: emoji hanging off the upper-left
-          corner (outside the card), then the participant range (activity
-          color) followed by the groups + people. The cards START at the same
-          horizontal level as the time text (items-start on the row). */}
-      <div className="flex items-start">
+      {/* One row: the time span + events placeholder in the LEFT column (sized
+          to the one-line time text), the activity cluster filling the
+          remaining RIGHT space with the "+" pinned to its right edge. The row
+          stretches so the right side can center its cluster against the full
+          height of the left column. */}
+      <div className="flex items-stretch">
         {/* The time is this row's header, so it sticks under the day divider
             (82.8px = the column headers' 39.6px + the divider's 29.2px + the
             14px that separates them at rest, so nothing shifts when it locks)
-            while this row's activity cards scroll past it, and rides out as
-            the row ends and the next row's time takes its place.
+            while this row's activities scroll past it, and rides out as the
+            row ends and the next row's time takes its place.
+            self-start is load-bearing: a stretched box has no room to slide
+            inside itself, so sticky would be a no-op without it.
             Sticking is scoped to this row, so nothing ever passes underneath —
-            hence no background or fade of its own. z sits between the cards'
-            emoji (z-10) and the day divider (z-20): a time being pushed out by
-            the end of its row rides up UNDER the divider rather than over its
+            hence no background or fade of its own. z sits between the circles
+            (z-10) and the day divider (z-20): a time being pushed out by the
+            end of its row rides up UNDER the divider rather than over its
             date. */}
-        <div className="sticky top-[82.8px] z-[15] shrink-0">
+        <div className="sticky top-[82.8px] z-[15] shrink-0 self-start">
           {/* This window's time span on ONE line (nowrap — the column sizes to
               it, so the duration never wraps), left-justified flush with the
               day header text (pl-1 matches the divider's px-1). Font is bumped
@@ -93,82 +91,36 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             No events yet…
           </div>
         </div>
-        {activities.length === 0 ? (
-          /* Blank slot: button to start adding activities. */
-          <div className="flex-1 min-w-0 flex justify-end pl-2">
-            <button
-              type="button"
-              onClick={() => openSlotSheet(slot, "activities")}
-              className="rounded-full px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 active:scale-95 transition"
-            >
-              + Add activities
-            </button>
+        <div className="flex-1 min-w-0 flex items-center gap-2 pl-2">
+          {/* The cluster itself: centered in whatever space the "+" leaves,
+              wrapping onto more rows as activities pile up. */}
+          <div className="flex-1 min-w-0 flex flex-wrap items-center justify-center gap-2 py-1">
+            {activities.map((a, i) => (
+              <button
+                key={`${a.name}#${i}`}
+                type="button"
+                onClick={() => openSlotSheet(slot, "activity", i)}
+                title={a.name}
+                aria-label={`Edit ${a.name}`}
+                className={`relative z-10 w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-[22px] leading-none text-white dark:text-gray-900 active:scale-95 transition ${a.color.bar}`}
+              >
+                <span aria-hidden="true">{activitySymbol(a.name, a.emoji)}</span>
+              </button>
+            ))}
           </div>
-        ) : (
+          {/* Always present, pinned to the row's right edge — the only way to
+              add an activity to this slot. */}
           <button
             type="button"
-            onClick={() => openSlotSheet(slot, "activities")}
-            aria-label="Edit slot activities"
-            className="flex-1 min-w-0 flex flex-wrap justify-end gap-x-2 gap-y-2 pl-2 text-left active:opacity-70"
+            onClick={() => openSlotSheet(slot, "activity")}
+            aria-label="Add an activity"
+            className="shrink-0 w-11 h-11 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 flex items-center justify-center hover:border-gray-400 dark:hover:border-gray-500 active:scale-95 transition"
           >
-            {activities.map((a, i) => (
-              // pl reserves room for the emoji's out-hanging half. The emoji
-              // is centered on the card's FIRST text line (card py-1.5 6px +
-              // half the ~17px line box − half the 22px emoji ≈ 3px down) —
-              // which centers it on the whole card for the common one-line
-              // case, and keeps it at the first line when the card has more
-              // who-with lines. Still overlaps the card's left edge; the
-              // card's extra left padding keeps the text clear of it.
-              <div key={`${a.name}#${i}`} title={a.name} className="relative pl-2.5 max-w-full">
-                <span
-                  className="emoji-outline absolute top-[3px] left-0 text-[22px] leading-none z-10 pointer-events-none"
-                  aria-hidden="true"
-                >
-                  {a.emoji || a.name.trim().charAt(0).toUpperCase()}
-                </span>
-                {/* One line per who-with entry: its range (activity color)
-                    then that entry's groups + people (or "Anyone"). */}
-                <div className={`rounded-xl pl-[18px] pr-3 py-1.5 space-y-0.5 ${a.color.faded}`}>
-                  {a.entries.map((w, j) => {
-                    const range = formatPeopleRange(w.min_people, w.max_people);
-                    const groups = w.groups ?? [];
-                    const people = w.people ?? [];
-                    return (
-                      // Range in its own fixed column (shrink-0) with the
-                      // names wrapping in theirs — so a 2nd+ line of
-                      // groups/people hang-indents under the first name,
-                      // not under the range.
-                      <div key={j} className="text-xs leading-tight flex items-baseline gap-1">
-                        {range && (
-                          <span className={`shrink-0 text-[13.5px] font-semibold tabular-nums ${a.color.text}`}>
-                            {range}
-                          </span>
-                        )}
-                        {groups.length > 0 || people.length > 0 ? (
-                          <span className="min-w-0">
-                            {groups.length > 0 && (
-                              <span className="font-medium text-gray-600 dark:text-gray-300">
-                                {groups.join(", ")}
-                              </span>
-                            )}
-                            {groups.length > 0 && people.length > 0 && (
-                              <span className="text-gray-400 dark:text-gray-500"> · </span>
-                            )}
-                            {people.length > 0 && (
-                              <span className="text-gray-600 dark:text-gray-300">{people.join(", ")}</span>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="min-w-0 text-gray-500 dark:text-gray-400">Anyone</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
           </button>
-        )}
+        </div>
       </div>
     </div>
   );
