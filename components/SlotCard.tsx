@@ -4,10 +4,10 @@
  * One availability WINDOW of a Playlist slot, borderless — vertical spacing
  * alone separates rows. A slot with several windows explodes into several of
  * these rows (each its own vertical space); see slotWindowEntries.
- *   - LEFT column, top-aligned: this window's start–end time (underlined and
- *     indented a step past the day header, with an end date only when the
- *     window crosses midnight), a decimal-hour duration note ("2.25h") trailing
- *     it undecorated, and the events placeholder beneath. The day +
+ *   - LEFT column, top-aligned: this window's start–end time (left-justified
+ *     and underlined, with an end date only when the window crosses midnight),
+ *     a decimal-hour duration note ("2.25h") trailing it undecorated, and the
+ *     events placeholder beneath. The day +
  *     relative specifier ("Tomorrow") is NOT here — it's a per-day divider
  *     header rendered above each group of same-day rows in PlaylistTab.
  *   - RIGHT (remaining space): a CLUSTER of tinted circles, one per activity,
@@ -84,10 +84,10 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             date. */}
         <div className="sticky top-[82.8px] z-[15] shrink-0 self-start">
           {/* This window's time span on ONE line (nowrap — the column sizes to
-              it, so the duration never wraps), indented one step past the day
-              header text it sits under (the row's pl-1 matches the divider's
-              px-1; this pl-1 is the indent). Font is bumped ~20% over the
-              timeline's baseline. Tapping it edits the slot's date/time.
+              it, so the duration never wraps), left-justified flush with the
+              day header text (the row's pl-1 matches the divider's px-1).
+              Font is bumped ~20% over the timeline's baseline. Tapping it
+              edits the slot's date/time.
               The range is ONE inline run rather than flex items so its
               underline stays unbroken across the spaces; the duration note
               trails it undecorated. */}
@@ -95,7 +95,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             type="button"
             onClick={() => openSlotSheet(slot, "time")}
             aria-label="Edit slot time"
-            className="pl-1 text-[14.4px] text-gray-500 dark:text-gray-400 whitespace-nowrap active:opacity-70"
+            className="text-[14.4px] text-gray-500 dark:text-gray-400 whitespace-nowrap active:opacity-70"
           >
             <span className="underline underline-offset-2 decoration-gray-300 dark:decoration-gray-600">
               {line.startTime} – {line.endDate ? `${line.endDate} · ` : ""}
