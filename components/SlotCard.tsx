@@ -9,13 +9,14 @@
  *     duration note ("2.25h"), and the events placeholder beneath. The day +
  *     relative specifier ("Tomorrow") is NOT here — it's a per-day divider
  *     header rendered above each group of same-day rows in PlaylistTab.
- *   - RIGHT (remaining space): a CLUSTER of colored circles, one per activity,
+ *   - RIGHT (remaining space): a CLUSTER of tinted circles, one per activity,
  *     each showing just that activity's symbol (its emoji, or the first letter
- *     of its name) centered inside. The circle's color is the activity's color,
- *     consistent for that activity across the whole timeline. The cluster is
- *     centered both ways in the row; a "+" circle is pinned to the row's right
- *     edge. Details (participant ranges, who-with) live in the per-activity
- *     sheet, not on the circle.
+ *     of its name) centered inside. The circle carries the activity's hue at
+ *     low opacity, consistent for that activity across the whole timeline.
+ *     The circles are hex-packed into balanced, half-pitch-offset rows (see
+ *     clusterLayout) with the "+" as the last circle of the pattern, and the
+ *     whole cluster is centered both ways in the row. Details (participant
+ *     ranges, who-with) live in the per-activity sheet, not on the circle.
  *
  * Tap targets (each opens the slot sheet on ONE facet):
  *   - the time text → edit just the date/time ('time' mode);
@@ -23,9 +24,15 @@
  *   - the "+" circle → add a new activity ('activity' mode, no index).
  */
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import type { Slot } from "@/lib/api/slots";
-import { activityColor, type ActivityColor, type SlotWindowLine } from "@/lib/slotUtils";
+import {
+  activityColor,
+  clusterLayout,
+  CLUSTER_CIRCLE_PX,
+  type ActivityColor,
+  type SlotWindowLine,
+} from "@/lib/slotUtils";
 import { openSlotSheet } from "@/lib/slotEvents";
 
 interface SlotCardProps {
@@ -48,6 +55,11 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
     ...a,
     color: activityColor(a.name, colors),
   }));
+
+  // One slot per activity plus a trailing one for the "+", so the add button
+  // is the last circle of the pattern rather than an outlier beside it.
+  const layout = useMemo(() => clusterLayout(activities.length + 1), [activities.length]);
+  const plusPosition = layout.positions[activities.length];
 
   return (
     <div className="w-full py-1.5 pr-3 pl-1">
@@ -91,10 +103,15 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             No events yet…
           </div>
         </div>
-        <div className="flex-1 min-w-0 flex items-center gap-2 pl-2">
-          {/* The cluster itself: centered in whatever space the "+" leaves,
-              wrapping onto more rows as activities pile up. */}
-          <div className="flex-1 min-w-0 flex flex-wrap items-center justify-center gap-2 py-1">
+        {/* pl-3 is the gutter between the two columns — the circles pack out
+            to the cluster's edge, so the time text needs the room. */}
+        <div className="flex-1 min-w-0 flex items-center justify-center pl-3 py-1">
+          {/* Every circle is absolutely placed from the hex layout, so the box
+              only has to reserve the cluster's measured size. */}
+          <div
+            className="relative shrink-0"
+            style={{ width: layout.width, height: layout.height }}
+          >
             {activities.map((a, i) => (
               <button
                 key={`${a.name}#${i}`}
@@ -102,24 +119,35 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
                 onClick={() => openSlotSheet(slot, "activity", i)}
                 title={a.name}
                 aria-label={`Edit ${a.name}`}
-                className={`relative z-10 w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-[22px] leading-none text-white dark:text-gray-900 active:scale-95 transition ${a.color.bar}`}
+                style={{
+                  left: layout.positions[i].x,
+                  top: layout.positions[i].y,
+                  width: CLUSTER_CIRCLE_PX,
+                  height: CLUSTER_CIRCLE_PX,
+                }}
+                className={`absolute rounded-full flex items-center justify-center text-[21px] leading-none active:scale-95 transition ${a.color.faded} ${a.color.text}`}
               >
                 <span aria-hidden="true">{activitySymbol(a.name, a.emoji)}</span>
               </button>
             ))}
+            {/* Last circle of the pattern — the only way to add an activity. */}
+            <button
+              type="button"
+              onClick={() => openSlotSheet(slot, "activity")}
+              aria-label="Add an activity"
+              style={{
+                left: plusPosition.x,
+                top: plusPosition.y,
+                width: CLUSTER_CIRCLE_PX,
+                height: CLUSTER_CIRCLE_PX,
+              }}
+              className="absolute rounded-full border border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 flex items-center justify-center hover:border-gray-400 dark:hover:border-gray-500 active:scale-95 transition"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
           </div>
-          {/* Always present, pinned to the row's right edge — the only way to
-              add an activity to this slot. */}
-          <button
-            type="button"
-            onClick={() => openSlotSheet(slot, "activity")}
-            aria-label="Add an activity"
-            className="shrink-0 w-11 h-11 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 flex items-center justify-center hover:border-gray-400 dark:hover:border-gray-500 active:scale-95 transition"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
         </div>
       </div>
     </div>

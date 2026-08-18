@@ -143,10 +143,102 @@ export function sortSlotsChronological(slots: Slot[]): Slot[] {
     .map((d) => d.slot);
 }
 
+// --- Activity cluster geometry ---------------------------------------------
+//
+// The timeline row's activities render as a hexagonally-packed cluster of
+// circles (the trailing "+" is the last circle in the pattern). Rows are
+// BALANCED rather than greedily filled — 4 circles read as 2+2, not 3+1 — and
+// each row is offset a half pitch from its neighbour so the rows nest.
+
+/** Circle diameter, px. */
+export const CLUSTER_CIRCLE_PX = 44;
+/** Gap between neighbouring circles, px — small, so the cluster reads as one
+ *  shape rather than a list. */
+export const CLUSTER_GAP_PX = 4;
+/** Widest a row may get. Also the balancing divisor: the row count is
+ *  ceil(total / this), so 4 circles land as two rows of 2. */
+export const CLUSTER_MAX_PER_ROW = 3;
+
+/** Centre-to-centre distance within a row. */
+const PITCH = CLUSTER_CIRCLE_PX + CLUSTER_GAP_PX;
+/** Centre-to-centre distance between rows. In a hex lattice the rows sit
+ *  √3/2 of a pitch apart, which is exactly what makes a half-pitch-offset
+ *  neighbour the same distance away as an in-row one. */
+const ROW_PITCH = (PITCH * Math.sqrt(3)) / 2;
+
+/**
+ * How many circles go on each row, top to bottom, for a cluster of `total`.
+ *
+ * Rows are as even as possible; leftovers land middle-out so the cluster reads
+ * as a circle rather than a triangle (7 → 2,3,2). Ties prefer the LOWER row,
+ * so two rows put the extra on the second (5 → 2,3).
+ */
+export function clusterRowCounts(
+  total: number,
+  maxPerRow: number = CLUSTER_MAX_PER_ROW,
+): number[] {
+  if (total <= 0) return [];
+  const rows = Math.ceil(total / maxPerRow);
+  const counts = new Array<number>(rows).fill(Math.floor(total / rows));
+  let extra = total % rows;
+  const middle = (rows - 1) / 2;
+  const order = counts
+    .map((_, i) => i)
+    .sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle) || b - a);
+  for (const i of order) {
+    if (extra <= 0) break;
+    counts[i] += 1;
+    extra -= 1;
+  }
+  return counts;
+}
+
+/** One circle's offset from the cluster box's top-left corner, in px. */
+export interface ClusterPosition {
+  x: number;
+  y: number;
+}
+
+/**
+ * Lay `total` circles out as a nested hex cluster. Returns the box to reserve
+ * plus one top-left offset per circle, in row-major order (so the LAST entry
+ * is the last circle of the last row — where the "+" goes).
+ */
+export function clusterLayout(
+  total: number,
+  maxPerRow: number = CLUSTER_MAX_PER_ROW,
+): { width: number; height: number; positions: ClusterPosition[] } {
+  const counts = clusterRowCounts(total, maxPerRow);
+  if (counts.length === 0) return { width: 0, height: 0, positions: [] };
+
+  // Walk the rows, centring each one and then nudging it a half pitch when it
+  // would otherwise land in phase with the row above (two rows of the same
+  // parity stack squarely instead of nesting).
+  const centers: number[] = [];
+  const tops: number[] = [];
+  let phase = 0;
+  counts.forEach((n, row) => {
+    const natural = n % 2 === 0 ? 0.5 : 0;
+    const shift = row === 0 ? 0 : (((phase + 0.5) % 1) - natural + 1) % 1;
+    phase = (natural + shift) % 1;
+    for (let i = 0; i < n; i++) {
+      centers.push((i - (n - 1) / 2 + shift) * PITCH);
+      tops.push(row * ROW_PITCH);
+    }
+  });
+
+  // Re-centre the whole cluster: a shifted row can overhang either side.
+  const left = Math.min(...centers);
+  return {
+    width: Math.max(...centers) - left + CLUSTER_CIRCLE_PX,
+    height: CLUSTER_CIRCLE_PX + (counts.length - 1) * ROW_PITCH,
+    positions: centers.map((c, i) => ({ x: c - left, y: tops[i] })),
+  };
+}
+
 /** Compact preview of a per-activity participant range, or null when neither
  *  bound is set: both → "2–5", min only → "2+", max only → "≤5". Used faded
- *  next to the activity name in the sheet AND tiny above the emoji on the
- *  timeline. */
+ *  next to the activity name in the slot sheet. */
 export function formatPeopleRange(
   min: number | null | undefined,
   max: number | null | undefined,

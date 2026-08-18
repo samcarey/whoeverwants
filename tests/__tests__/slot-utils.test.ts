@@ -8,6 +8,9 @@ import {
   activityColor,
   sortSlotsChronological,
   slotStartAbs,
+  clusterRowCounts,
+  clusterLayout,
+  CLUSTER_CIRCLE_PX,
 } from "@/lib/slotUtils";
 
 function slot(
@@ -143,5 +146,96 @@ describe("sortSlotsChronological", () => {
     const real = slot("real", [{ day: "2099-06-15", windows: [{ min: "09:00", max: "10:00" }] }]);
     expect(slotStartAbs(empty)).toBe(Number.POSITIVE_INFINITY);
     expect(sortSlotsChronological([empty, real]).map((s) => s.id)).toEqual(["real", "empty"]);
+  });
+});
+
+describe("clusterRowCounts", () => {
+  it("balances rows instead of filling them greedily", () => {
+    // 4 circles read as two rows of 2, never 3 + 1.
+    expect(clusterRowCounts(4)).toEqual([2, 2]);
+    expect(clusterRowCounts(6)).toEqual([3, 3]);
+  });
+
+  it("keeps a single row while it fits", () => {
+    expect(clusterRowCounts(1)).toEqual([1]);
+    expect(clusterRowCounts(2)).toEqual([2]);
+    expect(clusterRowCounts(3)).toEqual([3]);
+  });
+
+  it("puts the odd circle on the second row when there are two", () => {
+    expect(clusterRowCounts(5)).toEqual([2, 3]);
+  });
+
+  it("puts the odd circle on the middle row so the cluster reads round", () => {
+    expect(clusterRowCounts(7)).toEqual([2, 3, 2]);
+    expect(clusterRowCounts(10)).toEqual([2, 3, 3, 2]);
+  });
+
+  it("never exceeds the per-row cap and always totals the input", () => {
+    for (let n = 1; n <= 24; n++) {
+      const counts = clusterRowCounts(n);
+      expect(counts.reduce((a, b) => a + b, 0)).toBe(n);
+      expect(Math.max(...counts)).toBeLessThanOrEqual(3);
+      // Rows never differ by more than one circle.
+      expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("is empty for an empty cluster", () => {
+    expect(clusterRowCounts(0)).toEqual([]);
+  });
+});
+
+describe("clusterLayout", () => {
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.001;
+
+  it("reserves exactly the circle for a lone item", () => {
+    const { width, height, positions } = clusterLayout(1);
+    expect(width).toBe(CLUSTER_CIRCLE_PX);
+    expect(height).toBe(CLUSTER_CIRCLE_PX);
+    expect(positions).toEqual([{ x: 0, y: 0 }]);
+  });
+
+  it("offsets neighbouring rows by half a pitch so they nest", () => {
+    const { positions } = clusterLayout(4); // 2 + 2
+    const [a, b, c, d] = positions;
+    expect(a.y).toBe(0);
+    expect(b.y).toBe(0);
+    expect(c.y).toBe(d.y);
+    expect(c.y).toBeGreaterThan(0);
+    const pitch = b.x - a.x;
+    expect(near(d.x - c.x, pitch)).toBe(true);
+    expect(near(Math.abs(c.x - a.x), pitch / 2)).toBe(true);
+  });
+
+  it("packs rows closer than the circles are wide", () => {
+    const { positions, height } = clusterLayout(4);
+    const rowPitch = positions[2].y - positions[0].y;
+    expect(rowPitch).toBeLessThan(CLUSTER_CIRCLE_PX);
+    expect(near(height, CLUSTER_CIRCLE_PX + rowPitch)).toBe(true);
+  });
+
+  it("keeps every circle inside the reserved box", () => {
+    for (let n = 1; n <= 12; n++) {
+      const { width, height, positions } = clusterLayout(n);
+      expect(positions).toHaveLength(n);
+      for (const p of positions) {
+        expect(p.x).toBeGreaterThanOrEqual(-0.001);
+        expect(p.y).toBeGreaterThanOrEqual(-0.001);
+        expect(p.x + CLUSTER_CIRCLE_PX).toBeLessThanOrEqual(width + 0.001);
+        expect(p.y + CLUSTER_CIRCLE_PX).toBeLessThanOrEqual(height + 0.001);
+      }
+      // The box hugs the cluster on both axes.
+      expect(Math.min(...positions.map((p) => p.x))).toBeLessThan(0.001);
+      expect(near(Math.max(...positions.map((p) => p.x)) + CLUSTER_CIRCLE_PX, width)).toBe(true);
+    }
+  });
+
+  it("orders positions row-major, so the last one is the trailing '+'", () => {
+    const { positions } = clusterLayout(5); // 2 + 3
+    expect(positions.map((p) => p.y)).toEqual([
+      positions[0].y, positions[0].y, positions[2].y, positions[2].y, positions[2].y,
+    ]);
+    expect(positions[4].x).toBe(Math.max(...positions.map((p) => p.x)));
   });
 });
