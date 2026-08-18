@@ -13,7 +13,8 @@
  *   - RIGHT (remaining space): a CLUSTER of tinted circles, one per activity,
  *     each showing just that activity's symbol (its emoji, or the first letter
  *     of its name) centered inside. The circle carries the activity's hue at
- *     low opacity, consistent for that activity across the whole timeline.
+ *     low opacity behind a hairline border of the same hue, consistent for that
+ *     activity across the whole timeline.
  *     The circles are hex-packed into balanced, half-pitch-offset rows (see
  *     clusterLayout) with the "+" as the last circle of the pattern, and the
  *     whole cluster is centered both ways in the row. Details (participant
@@ -129,7 +130,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
                   width: CLUSTER_CIRCLE_PX,
                   height: CLUSTER_CIRCLE_PX,
                 }}
-                className={`absolute rounded-full flex items-center justify-center text-[21px] leading-none active:scale-95 transition ${a.color.faded} ${a.color.text}`}
+                className={`absolute rounded-full border-[0.5px] flex items-center justify-center text-[21px] leading-none active:scale-95 transition ${a.color.faded} ${a.color.border} ${a.color.text}`}
               >
                 <span aria-hidden="true">{activitySymbol(a.name, a.emoji)}</span>
               </button>
