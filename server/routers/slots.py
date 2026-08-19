@@ -22,6 +22,7 @@ from services.slots import (
     create_slot,
     delete_slot,
     list_slots,
+    purge_past_slots,
     suggest_activities,
     update_slot,
 )
@@ -140,7 +141,15 @@ def list_slots_endpoint(request: Request):
     with get_db() as conn:
         user_id = resolve_actor_user_id(conn, user_id=_user_id(request), browser_id=_browser_id(request))
         # No account yet (fresh anonymous browser) → no slots.
-        slots = list_slots(conn, user_id=user_id) if user_id else []
+        if user_id:
+            # Reap the owner's fully-past slots on their own read. A write on a
+            # read, like `grant_group_membership_inline` on the group read —
+            # but it keeps the playlist self-healing with no cron, which
+            # matters because dev tiers run no tick.
+            purge_past_slots(conn, user_id=user_id)
+            slots = list_slots(conn, user_id=user_id)
+        else:
+            slots = []
     return SlotListResponse(slots=[SlotResponse(**s) for s in slots])
 
 

@@ -3,8 +3,16 @@ suggestion ranking (overlap / yours / others, no cross-group dupes), and the
 account-synced blacklist filtering + editing."""
 
 import uuid
+from datetime import date, datetime, timedelta, timezone
 
 from tests.conftest import bid_headers
+
+
+def _day(offset: int) -> str:
+    """A day `offset` days from today. Any test that LISTS slots must use a
+    FUTURE day — the list endpoint reaps fully-past slots, so a hardcoded date
+    would silently start failing the suite once it went by."""
+    return (date.today() + timedelta(days=offset)).isoformat()
 
 
 def _dtw(day: str, min_: str = "09:00", max_: str = "17:00") -> list[dict]:
@@ -127,7 +135,7 @@ def test_list_slots_round_trip(client):
     _create_slot(
         client,
         browser_id=bid,
-        day_time_windows=_dtw("2026-11-01", "10:00", "12:15"),
+        day_time_windows=_dtw(_day(1), "10:00", "12:15"),
         activities=[{"name": "Bowling", "emoji": "🎳"}, "Coffee"],
     )
     r = _list_slots(client, browser_id=bid)
@@ -135,7 +143,7 @@ def test_list_slots_round_trip(client):
     slots = r.json()["slots"]
     assert len(slots) == 1
     s = slots[0]
-    assert s["day_time_windows"] == _dtw("2026-11-01", "10:00", "12:15")
+    assert s["day_time_windows"] == _dtw(_day(1), "10:00", "12:15")
     names = [(a["name"], a["emoji"]) for a in s["activities"]]
     assert ("Bowling", "🎳") in names
     assert ("Coffee", None) in names
@@ -146,7 +154,7 @@ def test_activity_participant_range_round_trips(client):
     _create_slot(
         client,
         browser_id=bid,
-        day_time_windows=_dtw("2026-11-01", "10:00", "12:15"),
+        day_time_windows=_dtw(_day(1), "10:00", "12:15"),
         activities=[
             {"name": "Poker", "min_people": 2, "max_people": 6},
             {"name": "Reading", "min_people": 3},  # min only
@@ -167,7 +175,7 @@ def test_activity_participant_range_sanitized(client):
     _create_slot(
         client,
         browser_id=bid,
-        day_time_windows=_dtw("2026-11-01"),
+        day_time_windows=_dtw(_day(1)),
         # min > max is bumped up; < 1 becomes unset; huge caps to MAX_PEOPLE.
         activities=[
             {"name": "Debate", "min_people": 5, "max_people": 2},
@@ -186,7 +194,7 @@ def test_activity_who_with_round_trips(client):
     _create_slot(
         client,
         browser_id=bid,
-        day_time_windows=_dtw("2026-11-01"),
+        day_time_windows=_dtw(_day(1)),
         activities=[
             {
                 "name": "Hiking",
@@ -212,7 +220,7 @@ def test_activity_who_with_sanitized(client):
     _create_slot(
         client,
         browser_id=bid,
-        day_time_windows=_dtw("2026-11-01"),
+        day_time_windows=_dtw(_day(1)),
         activities=[
             {
                 "name": "Games",
@@ -242,18 +250,18 @@ def test_update_slot_preserves_who_with_when_resent(client):
     slot_id = _create_slot(
         client,
         browser_id=bid,
-        day_time_windows=_dtw("2026-11-01"),
+        day_time_windows=_dtw(_day(1)),
         activities=[{"name": "Hiking", "who_with": [{"min_people": 2, "groups": ["Crew"]}]}],
     ).json()["id"]
     s = _list_slots(client, browser_id=bid).json()["slots"][0]
     r = client.put(
         f"/api/slots/{slot_id}",
-        json={"day_time_windows": _dtw("2026-11-02"), "activities": s["activities"]},
+        json={"day_time_windows": _dtw(_day(2)), "activities": s["activities"]},
         headers=bid_headers(bid),
     )
     assert r.status_code == 200
     s2 = _list_slots(client, browser_id=bid).json()["slots"][0]
-    assert s2["day_time_windows"][0]["day"] == "2026-11-02"
+    assert s2["day_time_windows"][0]["day"] == _day(2)
     assert s2["activities"][0]["who_with"] == [
         {"min_people": 2, "max_people": None, "groups": ["Crew"], "people": None}
     ]
@@ -268,7 +276,7 @@ def test_list_slots_empty_for_new_browser(client):
 def test_list_slots_scoped_to_owner(client):
     a = str(uuid.uuid4())
     b = str(uuid.uuid4())
-    _create_slot(client, browser_id=a, day_time_windows=_dtw("2026-11-02"), activities=["Yoga"])
+    _create_slot(client, browser_id=a, day_time_windows=_dtw(_day(2)), activities=["Yoga"])
     # A fresh browser sees none of A's slots (its own account is separate).
     r = _list_slots(client, browser_id=b)
     assert r.status_code == 200
@@ -277,13 +285,13 @@ def test_list_slots_scoped_to_owner(client):
 
 def test_update_slot_replaces_windows_and_activities(client):
     bid = str(uuid.uuid4())
-    r = _create_slot(client, browser_id=bid, day_time_windows=_dtw("2026-11-03"), activities=["Hiking"])
+    r = _create_slot(client, browser_id=bid, day_time_windows=_dtw(_day(3)), activities=["Hiking"])
     slot_id = r.json()["id"]
 
     r = client.put(
         f"/api/slots/{slot_id}",
         json={
-            "day_time_windows": _dtw("2026-11-04", "14:00", "16:00"),
+            "day_time_windows": _dtw(_day(4), "14:00", "16:00"),
             "activities": [{"name": "Climbing", "emoji": "🧗"}],
         },
         headers=bid_headers(bid),
@@ -293,18 +301,18 @@ def test_update_slot_replaces_windows_and_activities(client):
     slots = _list_slots(client, browser_id=bid).json()["slots"]
     assert len(slots) == 1
     s = slots[0]
-    assert s["day_time_windows"] == _dtw("2026-11-04", "14:00", "16:00")
+    assert s["day_time_windows"] == _dtw(_day(4), "14:00", "16:00")
     assert [(a["name"], a["emoji"]) for a in s["activities"]] == [("Climbing", "🧗")]
 
 
 def test_update_slot_404_for_non_owner(client):
     owner = str(uuid.uuid4())
-    r = _create_slot(client, browser_id=owner, day_time_windows=_dtw("2026-11-05"), activities=["Yoga"])
+    r = _create_slot(client, browser_id=owner, day_time_windows=_dtw(_day(5)), activities=["Yoga"])
     slot_id = r.json()["id"]
     other = str(uuid.uuid4())
     r = client.put(
         f"/api/slots/{slot_id}",
-        json={"day_time_windows": _dtw("2026-11-06"), "activities": ["Nope"]},
+        json={"day_time_windows": _dtw(_day(6)), "activities": ["Nope"]},
         headers=bid_headers(other),
     )
     assert r.status_code == 404
@@ -313,7 +321,7 @@ def test_update_slot_404_for_non_owner(client):
 def test_update_slot_malformed_id_404_not_500(client):
     r = client.put(
         "/api/slots/not-a-uuid",
-        json={"day_time_windows": _dtw("2026-11-07"), "activities": []},
+        json={"day_time_windows": _dtw(_day(7)), "activities": []},
         headers=bid_headers(str(uuid.uuid4())),
     )
     assert r.status_code == 404
@@ -321,7 +329,7 @@ def test_update_slot_malformed_id_404_not_500(client):
 
 def test_delete_slot_removes_it(client):
     bid = str(uuid.uuid4())
-    r = _create_slot(client, browser_id=bid, day_time_windows=_dtw("2026-11-08"), activities=["Hiking"])
+    r = _create_slot(client, browser_id=bid, day_time_windows=_dtw(_day(8)), activities=["Hiking"])
     slot_id = r.json()["id"]
     r = client.delete(f"/api/slots/{slot_id}", headers=bid_headers(bid))
     assert r.status_code == 204, r.text
@@ -330,7 +338,7 @@ def test_delete_slot_removes_it(client):
 
 def test_delete_slot_404_for_non_owner(client):
     owner = str(uuid.uuid4())
-    r = _create_slot(client, browser_id=owner, day_time_windows=_dtw("2026-11-09"), activities=["Yoga"])
+    r = _create_slot(client, browser_id=owner, day_time_windows=_dtw(_day(9)), activities=["Yoga"])
     slot_id = r.json()["id"]
     r = client.delete(f"/api/slots/{slot_id}", headers=bid_headers(str(uuid.uuid4())))
     assert r.status_code == 404
@@ -356,3 +364,55 @@ def test_activity_emoji_round_trips_into_suggestions(client):
     assert match is not None
     # The suggestion carries the tagging user's emoji.
     assert match["emoji"] == "🎳"
+
+
+# --- Auto-delete of fully-past slots ----------------------------------------
+
+
+def test_list_purges_slot_entirely_in_the_past(client):
+    bid = str(uuid.uuid4())
+    _create_slot(client, browser_id=bid, day_time_windows=_dtw(_day(-30)), activities=["Yoga"])
+    assert _list_slots(client, browser_id=bid).json()["slots"] == []
+
+
+def test_list_keeps_future_slot(client):
+    bid = str(uuid.uuid4())
+    _create_slot(client, browser_id=bid, day_time_windows=_dtw(_day(30)), activities=["Yoga"])
+    assert len(_list_slots(client, browser_id=bid).json()["slots"]) == 1
+
+
+def test_list_keeps_slot_with_any_future_window(client):
+    """Only a slot whose LAST window has ended is past — an old window
+    alongside an upcoming one keeps the whole slot alive."""
+    bid = str(uuid.uuid4())
+    dtw = _dtw(_day(-30)) + _dtw(_day(30))
+    _create_slot(client, browser_id=bid, day_time_windows=dtw, activities=["Yoga"])
+    assert len(_list_slots(client, browser_id=bid).json()["slots"]) == 1
+
+
+def test_slot_end_is_the_latest_window_end():
+    """`_slot_end` drives the purge, so pin its two non-obvious rules: it takes
+    the LATEST end across every window, and `max <= min` is the cross-midnight
+    convention (the window ends on the following day)."""
+    from services.slots import PAST_GRACE_HOURS, _slot_end
+
+    assert _slot_end(_dtw("2026-03-01", "09:00", "17:00")) == datetime(2026, 3, 1, 17, tzinfo=timezone.utc)
+    # Latest wins regardless of the order the days arrive in.
+    both = _dtw("2026-03-05", "09:00", "10:00") + _dtw("2026-03-01", "09:00", "10:00")
+    assert _slot_end(both) == datetime(2026, 3, 5, 10, tzinfo=timezone.utc)
+    # 22:00 -> 02:00 rolls into the next day; 09:00 -> 09:00 is a full 24h.
+    assert _slot_end(_dtw("2026-03-01", "22:00", "02:00")) == datetime(2026, 3, 2, 2, tzinfo=timezone.utc)
+    assert _slot_end(_dtw("2026-03-01", "09:00", "09:00")) == datetime(2026, 3, 2, 9, tzinfo=timezone.utc)
+    # No usable window -> no end -> never purged.
+    assert _slot_end([]) is None
+    assert _slot_end([{"day": "2026-03-01", "windows": []}]) is None
+    # The grace must clear UTC-12 or a slot could be reaped while its owner is
+    # still living in it.
+    assert PAST_GRACE_HOURS >= 12
+
+
+def test_list_keeps_windowless_slot(client):
+    """No usable window = no "past" to be in; never auto-deleted."""
+    bid = str(uuid.uuid4())
+    _create_slot(client, browser_id=bid, day_time_windows=[], activities=["Yoga"])
+    assert len(_list_slots(client, browser_id=bid).json()["slots"]) == 1

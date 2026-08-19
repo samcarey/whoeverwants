@@ -17,9 +17,15 @@ sharing at least one selected day so the Python pass stays small.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from services.validation import truncate_text, validate_category_icon
 
 MAX_ACTIVITY_LEN = 100
+# A slot's day/times are wall clock with no timezone, so it is only definitely
+# past once it is past in every timezone: 14h clears UTC-12 with a DST margin.
+# Mirrors `services.questions._SLOT_PAST_GRACE`.
+PAST_GRACE_HOURS = 14
 SUGGESTIONS_PER_GROUP = 15
 # Sanity bounds on a per-activity participant count (min/max people).
 MAX_PEOPLE = 999
@@ -197,6 +203,53 @@ def create_slot(conn, *, user_id: str, day_time_windows, activities) -> str:
     slot_id = str(row["id"])
     _insert_slot_activities(conn, slot_id, activities)
     return slot_id
+
+
+def _slot_end(day_time_windows) -> datetime | None:
+    """The latest window end across a slot, as a tz-naive wall clock read as
+    UTC. None when the slot declares no usable window — such a slot has no
+    "past" to be in, so it is never auto-deleted."""
+    latest: datetime | None = None
+    for day, windows in _windows_by_day(day_time_windows).items():
+        try:
+            base = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        for mn, mx in windows:
+            # `max <= min` is the cross-midnight convention (equal = 24h), so
+            # the window ends on the following day.
+            end_min = mx if mx > mn else mx + 1440
+            end = base + timedelta(minutes=end_min)
+            if latest is None or end > latest:
+                latest = end
+    return latest
+
+
+def purge_past_slots(conn, *, user_id: str, now: datetime | None = None) -> int:
+    """Delete the account's slots whose every window has ended, returning how
+    many were removed (activities cascade). A slot is availability, so once it
+    is entirely behind us it is dead weight on the playlist.
+
+    Slot days/times are wall clock with no timezone, so a slot only counts as
+    past once it is past in EVERY timezone — hence the PAST_GRACE_HOURS margin,
+    the same convention `services.questions._time_outcome_settled` uses for
+    tz-naive time slots. Erring late costs a stale row for a few hours; erring
+    early would delete a slot the owner is still living in."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=PAST_GRACE_HOURS)
+    rows = conn.execute(
+        "SELECT id, day_time_windows FROM slots WHERE user_id = %(u)s::uuid",
+        {"u": user_id},
+    ).fetchall()
+    dead = []
+    for r in rows:
+        end = _slot_end(r["day_time_windows"])
+        if end is not None and end <= cutoff:
+            dead.append(str(r["id"]))
+    if not dead:
+        return 0
+    conn.execute("DELETE FROM slots WHERE id = ANY(%(ids)s::uuid[])", {"ids": dead})
+    return len(dead)
 
 
 def list_slots(conn, *, user_id: str) -> list[dict]:
