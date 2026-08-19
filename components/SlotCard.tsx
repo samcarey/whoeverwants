@@ -7,7 +7,7 @@
  *   - LEFT column, top-aligned: this window's start–end time (left-justified
  *     and underlined, with an end date only when the window crosses midnight),
  *     a decimal-hour duration note ("2.25h") trailing it undecorated, and the
- *     events placeholder beneath. The day +
+ *     events (placeholder for now) indented beneath it. The day +
  *     relative specifier ("Tomorrow") is NOT here — it's a per-day divider
  *     header rendered above each group of same-day rows in PlaylistTab.
  *   - RIGHT (remaining space): a CLUSTER of tinted circles, one per activity,
@@ -104,7 +104,10 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             </span>{" "}
             <span className="text-gray-400 dark:text-gray-500">· {line.duration}</span>
           </button>
-          <div className="mt-2 text-sm text-gray-400 dark:text-gray-500">
+          {/* Events hang under their time as children of it, so they're
+              indented a step past the time text — pl-3 is the nesting step and
+              applies to the placeholder and to real events alike. */}
+          <div className="mt-2 pl-3 text-sm text-gray-400 dark:text-gray-500">
             No events yet…
           </div>
         </div>
