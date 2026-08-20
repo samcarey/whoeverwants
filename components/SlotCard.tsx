@@ -104,20 +104,23 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
               card's inner left edge (a touch right of the day divider's text).
               Font is bumped ~20% over the timeline's baseline. Tapping it
               edits the slot's date/time.
-              The range is ONE inline run rather than flex items so its
-              underline stays unbroken across the spaces; the duration note
-              trails it undecorated. */}
+              It's a CHIP, not underlined text: the card's tappable things are
+              already chips (the activity circles, the header pill), so a soft
+              gray pill on the card's background says "control" where a hairline
+              underline just read as metadata. Gray rather than the header's
+              blue — one of these per row would flood the timeline with blue,
+              and blue is reserved for the single add-a-slot action.
+              The whole chip is the button, so the visual target matches the
+              tap target; the duration rides inside it as a muted note. */}
           <button
             type="button"
             onClick={() => openSlotSheet(slot, "time")}
             aria-label="Edit slot time"
-            className="text-[14.4px] text-gray-500 dark:text-gray-400 whitespace-nowrap active:opacity-70"
+            className="inline-flex items-center rounded-full bg-gray-200 dark:bg-gray-800 px-2.5 py-0.5 text-[14.4px] text-gray-700 dark:text-gray-300 whitespace-nowrap active:scale-95 transition-transform"
           >
-            <span className="underline underline-offset-2 decoration-gray-300 dark:decoration-gray-600">
-              {line.startTime} – {line.endDate ? `${line.endDate} · ` : ""}
-              {line.endTime}
-            </span>{" "}
-            <span className="text-gray-400 dark:text-gray-500">· {line.duration}</span>
+            {line.startTime} – {line.endDate ? `${line.endDate} · ` : ""}
+            {line.endTime}
+            <span className="ml-1 text-gray-400 dark:text-gray-500">· {line.duration}</span>
           </button>
           {/* Events hang under their time as children of it, so they're
               indented a step past the time text — pl-3 is the nesting step and
