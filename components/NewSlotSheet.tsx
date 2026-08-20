@@ -748,10 +748,9 @@ export default function NewSlotSheet() {
                   );
                   return (
                     <section key={k} className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                          Option {k + 1}
-                        </span>
+                      {/* No "Option N" heading — the entries read as a plain
+                          stack of cards; only the remove ✕ sits on this row. */}
+                      <div className="flex items-center justify-end">
                         <button
                           type="button"
                           onClick={() => removeEntry(k)}
@@ -779,6 +778,8 @@ export default function NewSlotSheet() {
                         minLimit={1}
                         maxLimit={MAX_PEOPLE}
                         increment={1}
+                        minLabel="At Least"
+                        maxLabel="No More Than"
                       />
                       {groupOptions.length > 0 && (
                         <div className="mt-3">

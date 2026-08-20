@@ -19,6 +19,11 @@ interface MinMaxCounterProps {
   minCheckboxEnabled?: boolean;
   onMinCheckboxChange?: (enabled: boolean) => void;
   suffix?: string;
+  /** Optional captions rendered above the counters — each centered over its
+   *  half of the row, faded when that bound is off/disabled. Omit both to
+   *  render the bare counter row (the Duration counter's shape). */
+  minLabel?: string;
+  maxLabel?: string;
 }
 
 export default function MinMaxCounter({
@@ -38,7 +43,14 @@ export default function MinMaxCounter({
   minCheckboxEnabled = false,
   onMinCheckboxChange,
   suffix,
+  minLabel,
+  maxLabel,
 }: MinMaxCounterProps) {
+  // A bound is "off" when its checkbox is unchecked (the min checkbox is
+  // optional — without it the min is always on). Drives both the counter's
+  // fade and its caption's, so the two can't drift.
+  const minOff = onMinCheckboxChange !== undefined && !minCheckboxEnabled;
+  const maxOff = !maxEnabled;
   const handleMinChange = (newMin: number | null) => {
     onMinChange(newMin);
     // Push max up to stay >= min, within limits
@@ -81,6 +93,16 @@ export default function MinMaxCounter({
 
   return (
     <div>
+      {(minLabel || maxLabel) && (
+        <div className="flex text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <span className={`flex-1 text-center ${disabled || minOff ? "opacity-40" : ""}`}>
+            {minLabel}
+          </span>
+          <span className={`flex-1 text-center ${disabled || maxOff ? "opacity-40" : ""}`}>
+            {maxLabel}
+          </span>
+        </div>
+      )}
       <div className="relative flex justify-center items-center">
         {/* Min checkbox */}
         {onMinCheckboxChange && (
@@ -98,14 +120,14 @@ export default function MinMaxCounter({
             narrow phones. */}
         <div className="flex items-center gap-2">
           {/* Min counter */}
-          <div className={onMinCheckboxChange && !minCheckboxEnabled ? 'opacity-40' : ''}>
+          <div className={minOff ? 'opacity-40' : ''}>
             <CounterInput
-              value={onMinCheckboxChange && !minCheckboxEnabled ? null : minValue}
+              value={minOff ? null : minValue}
               onChange={handleMinChange}
               increment={increment}
               min={minLimit}
               max={maxLimit}
-              disabled={disabled || (onMinCheckboxChange !== undefined && !minCheckboxEnabled)}
+              disabled={disabled || minOff}
               arrowPosition="left"
               formatValue={formatValue}
               suffix={suffix}
@@ -115,14 +137,14 @@ export default function MinMaxCounter({
           <span className="text-xl text-gray-500 dark:text-gray-400">—</span>
 
           {/* Max counter */}
-          <div className={!maxEnabled ? 'opacity-40' : ''}>
+          <div className={maxOff ? 'opacity-40' : ''}>
             <CounterInput
-              value={maxEnabled ? maxValue : null}
+              value={maxOff ? null : maxValue}
               onChange={handleMaxChange}
               increment={increment}
               min={minLimit}
               max={maxLimit}
-              disabled={disabled || !maxEnabled}
+              disabled={disabled || maxOff}
               arrowPosition="right"
               formatValue={formatValue}
               suffix={suffix}
