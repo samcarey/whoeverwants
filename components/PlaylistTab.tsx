@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * The home page's Playlist tab: the caller's saved availability slots, soonest
- * first, each rendered as a <SlotCard>. Refreshes when a slot is created /
+ * The home page: the caller's saved availability slots, soonest first, each
+ * rendered as a <SlotCard>. (Also rendered by HomeBackdropHost as the
+ * swipe-back mirror of home, which is why it seeds from the slots cache.) Refreshes when a slot is created /
  * edited / deleted (SLOTS_CHANGED_EVENT, fired by the New Slot sheet) and when
  * the tab regains visibility. Tapping the "+" beside the "Time Slots" header
  * or a card opens the sheet — it's mounted once at layout level (inside
@@ -11,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiListSlots, type Slot } from "@/lib/api/slots";
+import { apiListSlots, getCachedSlots, type Slot } from "@/lib/api/slots";
 import { haptic } from "@/lib/haptics";
 import {
   buildActivityColorMap,
@@ -24,7 +25,11 @@ import { SLOTS_CHANGED_EVENT, openSlotSheet } from "@/lib/slotEvents";
 import SlotCard from "@/components/SlotCard";
 
 export default function PlaylistTab() {
-  const [slots, setSlots] = useState<Slot[] | null>(null);
+  // Seed from the last-resolved list so a first commit paints the timeline
+  // instead of a spinner. Load-bearing for the swipe-back backdrop, which
+  // mounts this component fresh under the sliding page (see the "destination
+  // must paint settled content on its first commit" rule in CLAUDE.md).
+  const [slots, setSlots] = useState<Slot[] | null>(() => getCachedSlots());
   const [error, setError] = useState(false);
 
   const load = useCallback(async () => {

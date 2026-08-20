@@ -48,6 +48,10 @@ export function clearGroupScroll(): void {
 
 export const HOME_SCROLL_KEY = "home";
 
+/** Scroll key for the groups list page (`/groups`). Separate from home,
+ *  which is the playlist now. */
+export const GROUPS_SCROLL_KEY = "groups";
+
 const GROUP_SCROLL_PREFIX = "group:";
 
 export function groupScrollKey(groupRouteId: string): string {

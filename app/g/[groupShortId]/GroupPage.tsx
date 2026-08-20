@@ -22,8 +22,8 @@ import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
   POLL_FAILED_EVENT,
-  SHOW_HOME_BACKDROP_EVENT,
-  HIDE_HOME_BACKDROP_EVENT,
+  SHOW_GROUPS_BACKDROP_EVENT,
+  HIDE_GROUPS_BACKDROP_EVENT,
   HIDE_GROUP_BACKDROP_EVENT,
   GROUP_MEMBERS_CHANGED_EVENT,
   type GroupMembersChangedDetail,
@@ -1023,12 +1023,12 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
   const { swipeWrapperRef, touchHandlers: swipeTouchHandlers } = useSwipeBackGesture({
     headerRef,
     extraTargets: [upArrowRef, fabPortalRef],
-    showBackdrop: () => window.dispatchEvent(new Event(SHOW_HOME_BACKDROP_EVENT)),
-    hideBackdrop: () => window.dispatchEvent(new Event(HIDE_HOME_BACKDROP_EVENT)),
-    // No scroll save here: returning home intentionally resets every group's
-    // scroll (home's mount clears it via clearGroupScroll), so this group
-    // re-opens at the bottom rather than restoring this position.
-    onCommit: () => router.push('/'),
+    showBackdrop: () => window.dispatchEvent(new Event(SHOW_GROUPS_BACKDROP_EVENT)),
+    hideBackdrop: () => window.dispatchEvent(new Event(HIDE_GROUPS_BACKDROP_EVENT)),
+    // No scroll save here: returning to the list intentionally resets every
+    // group's scroll (/groups' mount clears it via clearGroupScroll), so this
+    // group re-opens at the bottom rather than restoring this position.
+    onCommit: () => router.push('/groups'),
   });
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
@@ -1915,9 +1915,11 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           slideToGroupInfo({ groupId });
         }}
         onBack={() => {
-          // No scroll save: returning home resets this group's scroll (home's
-          // mount clears it), so re-entry lands at the bottom (the default).
-          navigateWithTransition(router, '/', 'back');
+          // Back goes to the group LIST (/groups), not home — home is the
+          // playlist now, and /groups is the only way into a group.
+          // No scroll save: returning to the list resets this group's scroll
+          // (/groups' mount clears it), so re-entry lands at the bottom.
+          navigateWithTransition(router, '/groups', 'back');
         }}
         backIconVariant="menu"
         // "Scheduled" lives in the header's right end as a timer icon +
@@ -1960,8 +1962,8 @@ export function GroupContent({ groupId, overlayCardsOffset, inOverlay }: GroupCo
           with the content per the WebKit contain:strict quirk. */}
       {/* Home backdrop is rendered by <HomeBackdropHost /> at the layout
           level (see components/HomeBackdropHost.tsx). GroupContent
-          dispatches SHOW_HOME_BACKDROP_EVENT on swipe lock and
-          HIDE_HOME_BACKDROP_EVENT on snap-back/cancel; the home page's
+          dispatches SHOW_GROUPS_BACKDROP_EVENT on swipe lock and
+          HIDE_GROUPS_BACKDROP_EVENT on snap-back/cancel; the groups page's
           mount effect dispatches HIDE so the backdrop dismisses itself
           once home has rendered. Living outside this component is what
           eliminates the blank frame between router.push commit and home's

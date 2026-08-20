@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Layout-level mount of the home page's "+ Group" button.
+ * Layout-level mount of the groups page's "+ Group" button.
  *
  * Previously rendered inline in `app/template.tsx` via createPortal and
  * gated on `pathname === '/'`. The group→home swipe-back gesture revealed a
@@ -16,18 +16,19 @@
  * and toggling its visibility via opacity. The DOM node is the same the
  * entire time, so its position can't jump between states.
  *
- * Visible when the home page's GROUPS tab is showing, i.e.:
- *   - on home (`/`), OR
- *   - a swipe-back gesture is active (SHOW/HIDE events from GroupContent)
- * and the active home tab isn't Playlist (that tab creates slots from the
- * "+" beside its own header, so it has no floating button).
+ * Visible when the group list is showing, i.e.:
+ *   - on `/groups`, OR
+ *   - a group→/groups swipe-back is in flight (SHOW/HIDE events from
+ *     GroupContent), so the button is revealed with the rest of that page.
+ * Home is the playlist and creates slots from the "+" beside its own header,
+ * so it has no floating button.
  *
  * Hidden everywhere else; the hidden state uses opacity:0 +
  * pointer-events:none so the element stays in flow with identical layout.
  *
  * Also the layout-level mount point for <NewSlotSheet> — the sheet is driven
- * by the slot-sheet event channel, so it stays mounted regardless of which
- * tab is showing or whether this button is visible.
+ * by the slot-sheet event channel (the playlist's header "+" opens it), so it
+ * stays mounted on every route, whether or not this button is visible.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -35,14 +36,13 @@ import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
 import { slideToNewGroup } from "@/lib/slideOverlay";
-import { rememberCurrentScroll, HOME_SCROLL_KEY } from "@/lib/scrollMemory";
+import { rememberCurrentScroll, GROUPS_SCROLL_KEY } from "@/lib/scrollMemory";
 import { apiCreateGroup } from "@/lib/api";
 import { GROUP_ID_ATTR } from "@/lib/groupDomMarkers";
-import { useHomeBackdropActive } from "@/lib/useHomeBackdropActive";
+import { useHomeBackdropActive, useGroupsBackdropActive } from "@/lib/useHomeBackdropActive";
 import { haptic } from "@/lib/haptics";
 import { getUserName } from "@/lib/userProfile";
 import { isValidUserName } from "@/lib/nameValidation";
-import { HOME_TAB_CHANGED_EVENT, getHomeTab, type HomeTab } from "@/lib/homeTabMemory";
 import AccountGateModal from "@/components/AccountGateModal";
 import NewSlotSheet from "@/components/NewSlotSheet";
 
@@ -54,41 +54,35 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
   const pathname = usePathname();
   const inFlight = useRef(false);
   const [mounted, setMounted] = useState(false);
-  // Hide the FAB during a group→home swipe-back (shared listener hook).
-  const swipeBackActive = useHomeBackdropActive();
+  // Two gestures matter here (shared listener hooks):
+  //   - group→/groups: this backdrop is what the FAB belongs to, so it must be
+  //     REVEALED under the sliding group page (z-1, below).
+  //   - /groups→home: the FAB is leaving with the page, so it just hides.
+  const groupsBackdropActive = useGroupsBackdropActive();
+  const homeBackdropActive = useHomeBackdropActive();
   const [nameModalOpen, setNameModalOpen] = useState(false);
-  // Active home tab gates the FAB: it belongs to the Groups tab only (the
-  // Playlist tab creates slots from its own header "+"). Tracked via the
-  // module memory's change event since this host lives at layout level (no
-  // home-page remount reaches it).
-  const [homeTab, setHomeTab] = useState<HomeTab>(() => getHomeTab());
 
   useEffect(() => {
     setMounted(true);
-    const update = () => setHomeTab(getHomeTab());
-    // Re-read on mount too — the module memory may have changed while this
-    // effect wasn't yet registered.
-    update();
-    window.addEventListener(HOME_TAB_CHANGED_EVENT, update);
-    return () => window.removeEventListener(HOME_TAB_CHANGED_EVENT, update);
   }, []);
 
   if (!mounted) return null;
   const target = document.getElementById("floating-fab-portal");
   if (!target) return null;
 
-  // The Playlist tab has no floating button — slots are created from the "+"
-  // beside its "Time Slots" header. The sheet itself still mounts here (it's
-  // driven by the slot-sheet event channel, not by this button).
-  const isSlotTab = homeTab === "playlist";
-  const isHome = pathname === "/";
-  const visible = (isHome || swipeBackActive) && !isSlotTab;
+  // The button belongs to the group list at /groups. Home is the playlist,
+  // which creates slots from the "+" beside its own header — so no floating
+  // button there. Visible on /groups (but not while it's sliding away toward
+  // home), and during a group→/groups swipe so it's revealed with the rest of
+  // that page.
+  const isGroups = pathname === "/groups" || pathname === "/groups/";
+  const visible = (isGroups && !homeBackdropActive) || groupsBackdropActive;
 
   const startCreate = () => {
     if (inFlight.current) return;
     inFlight.current = true;
     haptic.medium();
-    rememberCurrentScroll(HOME_SCROLL_KEY);
+    rememberCurrentScroll(GROUPS_SCROLL_KEY);
     slideToNewGroup();
     apiCreateGroup()
       .then((summary) => {
@@ -119,12 +113,12 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
       onClick={onClick}
       className="fixed h-12 px-[16.56px] rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-normal"
       style={{
-        // z-50 normally (floats above page content). DURING a home-revealing
-        // swipe-back from another page (group / settings / explore), drop to
-        // z-1: that's above the z-0 home backdrop but below the sliding
-        // page's z-2 wrapper, so the button is REVEALED as the page slides
-        // off rather than popping on top at swipe start.
-        zIndex: swipeBackActive && !isHome ? 1 : 50,
+        // z-50 normally (floats above page content). DURING a group→/groups
+        // swipe-back, drop to z-1: that's above the z-0 groups backdrop but
+        // below the sliding group page's z-2 wrapper, so the button is
+        // REVEALED as that page slides off rather than popping on top at
+        // swipe start.
+        zIndex: groupsBackdropActive && !isGroups ? 1 : 50,
         right: "max(1.5rem, env(safe-area-inset-right, 0px))",
         bottom: IS_CAPACITOR_NATIVE ? "2.65rem" : "1.9rem",
         // Pin to a permanent GPU layer so the button's subpixel

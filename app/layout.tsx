@@ -7,6 +7,7 @@ import CommitInfo from "@/components/CommitInfo";
 import ResponsiveScaling from "@/components/ResponsiveScaling";
 import { SlideOverlayHost } from "@/lib/slideOverlay";
 import HomeBackdropHost from "@/components/HomeBackdropHost";
+import GroupsBackdropHost from "@/components/GroupsBackdropHost";
 import GroupBackdropHost from "@/components/GroupBackdropHost";
 import PollBackdropHost from "@/components/PollBackdropHost";
 import ExploreBackdropHost from "@/components/ExploreBackdropHost";
@@ -148,6 +149,10 @@ export default function RootLayout({
             frame between GroupContent's unmount and the real home page's
             first paint. */}
         <HomeBackdropHost />
+
+        {/* Mirrors /groups (the group list) for the group detail page's
+            swipe-back gesture — see components/GroupsBackdropHost.tsx. */}
+        <GroupsBackdropHost />
 
         {/* Persistent group backdrop for the poll→group swipe-back gesture.
             Mirrors HomeBackdropHost but for the poll detail page's

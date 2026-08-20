@@ -177,6 +177,18 @@ export const SHOW_HOME_BACKDROP_EVENT = 'home-backdrop:show';
  *  through it). */
 export const HIDE_HOME_BACKDROP_EVENT = 'home-backdrop:hide';
 
+/** Fired by GroupContent's swipe-back gesture. The group list lives at
+ *  `/groups` (home is the playlist), so a group→back swipe reveals THAT page,
+ *  not home — GroupsBackdropHost mounts a body-level portal showing the
+ *  cached group list. Same architecture as the home backdrop; the two are
+ *  distinct because they mirror different destinations (settings / explore /
+ *  the groups page itself still swipe back to HOME). */
+export const SHOW_GROUPS_BACKDROP_EVENT = 'groups-backdrop:show';
+
+/** Fired by snap-back / cancel paths in GroupContent AND by the groups page's
+ *  mount effect. */
+export const HIDE_GROUPS_BACKDROP_EVENT = 'groups-backdrop:hide';
+
 /** Fired by PollDetail's swipe-back gesture when motion is recognized AND
  *  when it commits to navigation. GroupBackdropHost (in app/layout.tsx)
  *  mounts a body-level portal showing the cached group page underneath the

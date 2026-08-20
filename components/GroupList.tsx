@@ -11,7 +11,7 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import HeaderPortal from "@/components/HeaderPortal";
 import { usePrefetch } from "@/lib/prefetch";
 import { slideToGroup } from "@/lib/slideOverlay";
-import { HOME_SCROLL_KEY, rememberCurrentScroll } from "@/lib/scrollMemory";
+import { GROUPS_SCROLL_KEY, rememberCurrentScroll } from "@/lib/scrollMemory";
 import { apiGetVotes, apiGetQuestionResults } from "@/lib/api";
 import { forgetGroup } from "@/lib/forgetQuestion";
 import { HOME_SELECTION_MODE_CHANGE_EVENT } from "@/lib/eventChannels";
@@ -310,7 +310,7 @@ export default function GroupList({ polls, emptyGroups = [], onGroupsForgotten }
           // Save home scroll so back-nav restores here. The destination
           // group's saved scroll is intentionally preserved — entering
           // from any source resumes the last position.
-          rememberCurrentScroll(HOME_SCROLL_KEY);
+          rememberCurrentScroll(GROUPS_SCROLL_KEY);
           // Overlay-slide: mount destination above current page + start CSS
           // slide on the same frame as the tap. router.push fires in parallel
           // from inside SlideOverlayHost. Eliminates the view-transitions

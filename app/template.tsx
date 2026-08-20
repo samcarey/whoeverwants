@@ -9,6 +9,7 @@ import { navigateWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isGroupRootView } from '@/lib/questionId';
 import { HOME_SELECTION_MODE_CHANGE_EVENT, type HomeSelectionModeChangeDetail } from '@/lib/eventChannels';
+import { GearIcon, GlobeIcon, GroupsIcon, GROUPS_BUTTON_RIGHT, EXPLORE_BUTTON_RIGHT } from '@/components/homeChromeIcons';
 import { markAppHydrated } from '@/lib/hydration';
 import { EXPLORE_BUTTON_CHANGED_EVENT, exploreParamPresent, syncExploreParam } from '@/lib/exploreButtonFlag';
 
@@ -170,6 +171,10 @@ function TemplateInner({ children }: AppTemplateProps) {
   // /explore renders its own title ("Explore") + floating back button via
   // HeaderPortal, so it must opt out of the fallback header.
   const isExplorePage = pathname === '/explore' || pathname === '/explore/';
+  // /groups (the group list, reached from home's upper-right button) renders
+  // its own title bar + floating back button via HeaderPortal, so it opts out
+  // of the fallback header too.
+  const isGroupsPage = pathname === '/groups' || pathname === '/groups/';
 
   // The draft poll card on every group-like page hosts the inline question
   // form (category/for fields + question fields) plus the staged-questions
@@ -181,7 +186,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   return (
     <>
       {/* Fallback header for pages without a page-specific header (not group, settings, home, invite redemption, explore, or create-modal). */}
-      {!isGroupFamilyPage && !isSettingsPage && !isSettingsEditPage && !isInvitePage && !isExplorePage && pathname !== '/' && (
+      {!isGroupFamilyPage && !isSettingsPage && !isSettingsEditPage && !isInvitePage && !isExplorePage && !isGroupsPage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -236,10 +241,7 @@ function TemplateInner({ children }: AppTemplateProps) {
                 }}
                 aria-label="Settings"
               >
-                <svg className="w-6 h-6 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+                <GearIcon />
               </button>
               )}
               {/* Explore — mirrors the settings gear (upper-left) at the
@@ -253,14 +255,25 @@ function TemplateInner({ children }: AppTemplateProps) {
                 onClick={() => navigateWithTransition(router, '/explore', 'forward')}
                 {...prefetchOnHover('/explore')}
                 className="absolute top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
-                style={{
-                  right: 'max(0.25rem, env(safe-area-inset-right, 0px))',
-                }}
+                style={{ right: EXPLORE_BUTTON_RIGHT }}
                 aria-label="Explore"
               >
-                <svg className="w-6 h-6 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
-                </svg>
+                <GlobeIcon />
+              </button>
+              )}
+              {/* Groups — the mirror of the settings gear at the other end
+                  of the row. Home is the playlist; the group list lives at
+                  /groups. Hidden during bulk-forget selection mode, like the
+                  gear (that mode's trashcan portals into this same slot). */}
+              {!homeSelectionMode && (
+              <button
+                onClick={() => navigateWithTransition(router, '/groups', 'forward')}
+                {...prefetchOnHover('/groups')}
+                className="absolute top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
+                style={{ right: GROUPS_BUTTON_RIGHT }}
+                aria-label="Groups"
+              >
+                <GroupsIcon />
               </button>
               )}
               <h1 className="text-2xl font-bold mb-1 select-none" {...longPressProps}>

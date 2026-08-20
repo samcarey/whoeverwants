@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import {
   HIDE_HOME_BACKDROP_EVENT,
   SHOW_HOME_BACKDROP_EVENT,
+  HIDE_GROUPS_BACKDROP_EVENT,
+  SHOW_GROUPS_BACKDROP_EVENT,
 } from "@/lib/eventChannels";
 
 /**
@@ -32,6 +34,27 @@ export function useHomeBackdropActive(): boolean {
     return () => {
       window.removeEventListener(SHOW_HOME_BACKDROP_EVENT, onShow);
       window.removeEventListener(HIDE_HOME_BACKDROP_EVENT, onHide);
+    };
+  }, []);
+  return active;
+}
+
+/**
+ * The groups-page equivalent: true while a group→/groups swipe-back is in
+ * flight. Consumed by GroupsBackdropHost (mounts the cached group list) and
+ * CreateGroupButtonHost (drops the "+ Group" FAB to z-1 so it's REVEALED
+ * under the sliding group page rather than floating over it).
+ */
+export function useGroupsBackdropActive(): boolean {
+  const [active, setActive] = useState(false);
+  useEffect(() => {
+    const onShow = () => setActive(true);
+    const onHide = () => setActive(false);
+    window.addEventListener(SHOW_GROUPS_BACKDROP_EVENT, onShow);
+    window.addEventListener(HIDE_GROUPS_BACKDROP_EVENT, onHide);
+    return () => {
+      window.removeEventListener(SHOW_GROUPS_BACKDROP_EVENT, onShow);
+      window.removeEventListener(HIDE_GROUPS_BACKDROP_EVENT, onHide);
     };
   }, []);
   return active;

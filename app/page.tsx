@@ -1,20 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { GroupSummary, Poll } from "@/lib/types";
-import { getCachedEmptyGroups, getMyGroups } from "@/lib/simpleQuestionQueries";
-import { getCachedAccessiblePolls } from "@/lib/questionCache";
-import { HIDE_HOME_BACKDROP_EVENT, POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { getMyGroups } from "@/lib/simpleQuestionQueries";
+import { HIDE_HOME_BACKDROP_EVENT } from "@/lib/eventChannels";
 import { resetSwipeBackChrome } from "@/lib/useSwipeBackGesture";
 import { usePageReady } from "@/lib/usePageReady";
-import { HOME_SCROLL_KEY, getRememberedScroll, clearGroupScroll } from "@/lib/scrollMemory";
-import { clearGroupTabs } from "@/lib/groupTabMemory";
-import { getCachedSessionUser, SESSION_CHANGED_EVENT, type SessionUser } from "@/lib/session";
-import { DEFAULT_HOME_TAB, HOME_TABS, HOME_TAB_ROW_CLASS, getHomeTab, homeTabPillClass, rememberHomeTab, type HomeTab } from "@/lib/homeTabMemory";
-import { isAppHydrated } from "@/lib/hydration";
-import GroupList from "@/components/GroupList";
+import { HOME_SCROLL_KEY, getRememberedScroll } from "@/lib/scrollMemory";
 import PlaylistTab from "@/components/PlaylistTab";
-import SignInModal from "@/components/SignInModal";
 
 // Fun activity phrases (max 25 chars)
 const activityPhrases = [
@@ -41,55 +33,11 @@ const activityPhrases = [
 ];
 
 export default function Home() {
-  // Cache-seed avoids loading flash on view-transition return from a group.
-  const [{ polls: initialPolls, emptyGroups: initialEmptyGroups, loading: initialLoading }] = useState(() => {
-    const cachedPolls = typeof window === "undefined" ? null : getCachedAccessiblePolls();
-    const cachedEmptyGroups = typeof window === "undefined" ? [] : getCachedEmptyGroups();
-    return {
-      polls: cachedPolls ?? [],
-      emptyGroups: cachedEmptyGroups,
-      loading: cachedPolls === null && cachedEmptyGroups.length === 0,
-    };
-  });
-  const [polls, setPolls] = useState<Poll[]>(initialPolls);
-  const [emptyGroups, setEmptyGroups] = useState<GroupSummary[]>(initialEmptyGroups);
-  const [loading, setLoading] = useState(initialLoading);
-  const [error, setError] = useState<string | null>(null);
   const [currentPhrase, setCurrentPhrase] = useState<string>("");
   const [displayedPhrase, setDisplayedPhrase] = useState<string>("");
   const [fontSize, setFontSize] = useState<string>("text-xl");
-  const [session, setSession] = useState<SessionUser | null>(null);
-  const [signInOpen, setSignInOpen] = useState(false);
-  // The chosen tab persists in localStorage (via homeTabMemory), so it
-  // survives back-nav remounts AND hard reloads. Eager seeding is gated on
-  // isAppHydrated() — on a direct load the server HTML was rendered with
-  // the default, so reading localStorage in the initializer would diverge
-  // from it; the mount effect below covers that case (one-frame default
-  // flash on hard reload only, the settings-page convention).
-  const [homeTab, setHomeTabState] = useState<HomeTab>(() =>
-    isAppHydrated() ? getHomeTab() : DEFAULT_HOME_TAB,
-  );
-  useEffect(() => {
-    setHomeTabState(getHomeTab());
-  }, []);
-
-  const selectHomeTab = (tab: HomeTab) => {
-    setHomeTabState(tab);
-    rememberHomeTab(tab);
-  };
 
   usePageReady(true);
-
-  // Seed from the localStorage session cache after mount (null on first
-  // render keeps SSR/hydration in lockstep), then track live sign-in /
-  // sign-out so the empty-state swaps between the "Sign In" button and the
-  // "not in any groups" message without a navigation.
-  useEffect(() => {
-    setSession(getCachedSessionUser());
-    const update = () => setSession(getCachedSessionUser());
-    window.addEventListener(SESSION_CHANGED_EVENT, update);
-    return () => window.removeEventListener(SESSION_CHANGED_EVENT, update);
-  }, []);
 
   // Dismiss the swipe-back home backdrop on mount. The backdrop persists
   // across the router.push that commits the swipe (mounted at layout
@@ -130,14 +78,9 @@ export default function Home() {
     if (remembered !== undefined) {
       window.scrollTo(0, remembered);
     }
-    // Returning to home resets every group page's saved scroll, so
-    // re-entering any group lands at the bottom (the default) rather than
-    // wherever the user last left it. Home's own scroll (restored above)
-    // and poll-detail scroll are untouched.
-    clearGroupScroll();
-    // Same lifecycle: returning to home resets every group's active tab
-    // (To Do · New · Old) so re-entry shows the default tab again.
-    clearGroupTabs();
+    // (Resetting every group's remembered scroll + tab now happens on
+    // /groups — that's the list you return to, and it's where that browsing
+    // session actually ends.)
   }, []);
 
   // Initialize and rotate phrases
@@ -216,186 +159,12 @@ export default function Home() {
     }
   }, [fontSize, displayedPhrase]);
 
-  // Fetch the caller's groups, retrying on transient failures. Cold-launch
-  // (esp. the iOS WebView) routinely fires this before the network path is
-  // fully up, so a single attempt would turn a sub-second blip into a
-  // permanent dead-end error card with no recovery. Back off a few times
-  // before surfacing an error, and expose `fetchQuestions` so the error
-  // card's "Try again" button can re-run it.
-  const fetchQuestions = useCallback(async (opts?: { isRetry?: boolean }) => {
-    // Only show the spinner when the cache was COLD at mount (genuine first
-    // load) or on an explicit retry. `initialLoading` is the stable
-    // useState-initializer flag for "accessible-polls cache was null". Don't
-    // key off `initialPolls.length > 0` here: an empty-but-fetched cache
-    // (`[]`, e.g. a signed-out / groupless user) renders the empty-state
-    // synchronously, and re-showing the spinner over it on every mount
-    // refetch (e.g. a swipe-back from /explore or /settings) is the flash
-    // the user sees. A populated cache (GroupList) had the same issue.
-    if (initialLoading || opts?.isRetry) setLoading(true);
-    setError(null);
-
-    // Delays before attempts 2/3/4 — attempt 1 fires immediately.
-    const retryDelaysMs = [500, 1000, 2000];
-    let lastError: unknown = null;
-
-    for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
-      try {
-        // One round-trip pair — the server returns every group the caller
-        // is a member of (populated + empty), with results inline.
-        // Membership (`group_members`) is the single source of truth.
-        const { polls: nextPolls, emptyGroups: nextEmptyGroups } = await getMyGroups();
-        // Preserve previous array identity when the data is unchanged so
-        // GroupList's memo can skip re-rendering every card on every mount.
-        setPolls((prev) =>
-          prev.length === nextPolls.length && prev.every((p, i) => p.id === nextPolls[i].id)
-            ? prev
-            : nextPolls,
-        );
-        setEmptyGroups((prev) =>
-          prev.length === nextEmptyGroups.length && prev.every((g, i) => g.id === nextEmptyGroups[i].id)
-            ? prev
-            : nextEmptyGroups,
-        );
-        setLoading(false);
-        return;
-      } catch (error) {
-        lastError = error;
-        if (attempt < retryDelaysMs.length) {
-          await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
-        }
-      }
-    }
-
-    console.error("Unexpected error:", lastError);
-    setError("Couldn't load your groups. Check your connection and try again.");
-    setLoading(false);
-  }, [initialLoading]);
-
+  // Warm the groups cache in the background so tapping the groups button
+  // paints the list instantly instead of spinning. Fire-and-forget: nothing
+  // here renders groups, and getMyGroups() coalesces in-flight calls.
   useEffect(() => {
-    fetchQuestions();
-  }, [fetchQuestions]);
-
-  // Re-fetch groups when the session changes (sign-in / sign-out). Signing
-  // in from the home empty-state's "Sign In" button fires
-  // SESSION_CHANGED_EVENT but doesn't remount this page, so without an
-  // explicit refetch the membership-driven group list stays empty until the
-  // user navigates away and back (e.g. to settings). The new bearer token is
-  // already in lib/session's module cache by the time the event fires, so
-  // getMyGroups() carries it and the server returns the account's groups.
-  useEffect(() => {
-    const refetch = () => {
-      void fetchQuestions();
-    };
-    window.addEventListener(SESSION_CHANGED_EVENT, refetch);
-    return () => window.removeEventListener(SESSION_CHANGED_EVENT, refetch);
-  }, [fetchQuestions]);
-
-  // Live-refresh the polls list on poll creation. User submits from /g
-  // (empty placeholder), router.replace lands them on /g/<short_id>, and
-  // when they navigate home the list would otherwise be stale until refresh.
-  // POLL_FAILED is intentionally not listened to: placeholder polls never
-  // reach the home cache, so a failure can't change the home list.
-  useEffect(() => {
-    const handler = async () => {
-      try {
-        const { polls: nextPolls, emptyGroups: nextEmptyGroups } = await getMyGroups();
-        setPolls((prev) =>
-          prev.length === nextPolls.length && prev.every((p, i) => p.id === nextPolls[i].id)
-            ? prev
-            : nextPolls,
-        );
-        setEmptyGroups((prev) =>
-          prev.length === nextEmptyGroups.length && prev.every((g, i) => g.id === nextEmptyGroups[i].id)
-            ? prev
-            : nextEmptyGroups,
-        );
-      } catch {}
-    };
-    window.addEventListener(POLL_HYDRATED_EVENT, handler);
-    return () => window.removeEventListener(POLL_HYDRATED_EVENT, handler);
+    void getMyGroups().catch(() => {});
   }, []);
 
-
-  return (
-    <>
-      {/* Tab bubbles just below the page title (the title lives in
-          template.tsx; this is the first element of the page content). */}
-      <div className={HOME_TAB_ROW_CLASS}>
-        {HOME_TABS.map(({ value, label }) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => selectHomeTab(value)}
-            aria-pressed={homeTab === value}
-            className={homeTabPillClass(homeTab === value)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {homeTab === "playlist" && <PlaylistTab />}
-
-      {homeTab === "groups" && (
-        <>
-        {loading && (
-          <div className="flex justify-center items-center py-8">
-            <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-          </div>
-        )}
-
-        {error && (
-          <div className="p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-center">
-            <p>{error}</p>
-            <button
-              type="button"
-              onClick={() => fetchQuestions({ isRetry: true })}
-              className="mt-3 inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
-            >
-              Try again
-            </button>
-          </div>
-        )}
-
-        {!loading && !error && polls.length === 0 && emptyGroups.length === 0 && (
-          <div className="text-center py-8">
-            <p className="text-gray-500 dark:text-gray-400">You don&apos;t have access to any groups</p>
-            {!session && (
-              <button
-                type="button"
-                onClick={() => setSignInOpen(true)}
-                className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-              >
-                Sign In
-              </button>
-            )}
-          </div>
-        )}
-
-        {!loading && !error && (
-          <GroupList
-            polls={polls}
-            emptyGroups={emptyGroups}
-            onGroupsForgotten={(forgottenPollIds, forgottenGroupIds) => {
-              // Drop the forgotten groups optimistically — caches were
-              // already invalidated inside forgetGroup, so the next natural
-              // refresh re-syncs; no immediate fetch needed.
-              const forgottenPolls = new Set(forgottenPollIds);
-              setPolls((prev) => prev.filter((p) => !forgottenPolls.has(p.id)));
-              if (forgottenGroupIds && forgottenGroupIds.length > 0) {
-                const forgottenGroups = new Set(forgottenGroupIds);
-                setEmptyGroups((prev) => prev.filter((g) => !forgottenGroups.has(g.id)));
-              }
-            }}
-          />
-        )}
-        </>
-      )}
-
-      <SignInModal isOpen={signInOpen} onClose={() => setSignInOpen(false)} />
-    </>
-  );
+  return <PlaylistTab />;
 }

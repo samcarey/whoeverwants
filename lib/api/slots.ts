@@ -71,9 +71,21 @@ export async function apiCreateSlot(
 
 /** The caller's saved slots (server order: newest first; the FE re-sorts by
  *  soonest availability start for the playlist). */
+/** Last-resolved slot list. Lets a surface that must paint on its FIRST
+ *  commit — the playlist tab under a swipe-back backdrop — render the
+ *  timeline synchronously instead of flashing a spinner while it refetches.
+ *  Refreshed by every apiListSlots; never cleared (a stale list is corrected
+ *  by the refetch that always follows). */
+let cachedSlots: Slot[] | null = null;
+
+export function getCachedSlots(): Slot[] | null {
+  return cachedSlots;
+}
+
 export async function apiListSlots(): Promise<Slot[]> {
   const res = await slotFetch<{ slots: Slot[] }>("", { method: "GET" });
-  return res.slots ?? [];
+  cachedSlots = res.slots ?? [];
+  return cachedSlots;
 }
 
 /** Replace a slot's windows + activities (owner-gated; 404 if not owned). */

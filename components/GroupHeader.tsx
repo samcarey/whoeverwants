@@ -79,7 +79,11 @@ export default function GroupHeader({
 }: GroupHeaderProps) {
   const router = useRouter();
   const hasRightSlot = !!rightSlot;
-  const handleBack = onBack ?? (() => navigateWithTransition(router, '/', 'back'));
+  // Default back destination is the group LIST, not home — home is the
+  // playlist, and every group surface is reached from /groups. Callers with a
+  // nearer parent (poll detail → its group, /info → the group root) pass their
+  // own onBack.
+  const handleBack = onBack ?? (() => navigateWithTransition(router, '/groups', 'back'));
 
   const backIcon = backIconVariant === "menu" ? (
     <svg className="w-6 h-6 text-gray-700 dark:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
