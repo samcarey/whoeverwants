@@ -113,13 +113,12 @@ export default function PlaylistTab() {
             is content-sized (it hugs its own time text), so there's no single
             shared boundary to align to — 45% is where the widest time span
             ends, i.e. the visual split between the two halves.
-            The label + "+" pair is centered together in the left column; the
-            button is shorter than the text's line box, so the bar's height
-            (load-bearing, above) is still set by the text. */}
-        <span className="w-[45%] shrink-0 flex items-center justify-center gap-1.5">
-          <span className="text-lg font-semibold tracking-wide underline underline-offset-[3px] text-gray-900 dark:text-gray-100">
-            Time Slots
-          </span>
+            The whole left header is the add-a-slot button — a pill in the
+            app's subtle-blue stack (the SearchRadiusBubble convention), which
+            is affordance enough that the label drops its underline. It has no
+            vertical padding: the text's own 28px line box gives the pill its
+            height, so the bar's height (load-bearing, above) is unchanged. */}
+        <span className="w-[45%] shrink-0 flex items-center justify-center">
           {/* The only way to add a slot (there's no floating button). */}
           <button
             type="button"
@@ -127,10 +126,11 @@ export default function PlaylistTab() {
               haptic.medium();
               openSlotSheet();
             }}
-            aria-label="Add a time slot"
-            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-blue-500 dark:bg-blue-600 active:scale-95 text-white transition-transform"
+            aria-label="Time Slots — add a time slot"
+            className="shrink-0 flex items-center gap-1.5 px-3 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 active:scale-95 transition-transform"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
+            <span className="text-lg font-semibold tracking-wide">Time Slots</span>
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
             </svg>
           </button>
