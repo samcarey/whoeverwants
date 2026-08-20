@@ -176,7 +176,7 @@ export default function PlaylistTab() {
               style={edgeToEdgeStyle("0.25rem", "0.25rem")}
             >
               <div className="flex items-baseline gap-1.5 shrink-0">
-                <span className="text-[16.8px] font-semibold text-blue-600 dark:text-blue-400">
+                <span className="text-[16.8px] font-semibold text-gray-900 dark:text-gray-100">
                   {g.entries[0].line.relative}
                 </span>
                 <span className="text-[16.8px] text-gray-500 dark:text-gray-400">{g.entries[0].line.date}</span>
