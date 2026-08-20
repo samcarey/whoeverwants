@@ -77,7 +77,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
       // stretch the card past both page edges (`width: 100%` would pin it to
       // the padded container and only the left margin would take effect).
       className="rounded-3xl bg-gray-100 dark:bg-gray-900 py-1"
-      style={edgeToEdgeStyle("0.75rem", "0.75rem")}
+      style={edgeToEdgeStyle("0.5rem", "0.75rem")}
     >
       {/* One row: the time span + events placeholder in the LEFT column (sized
           to the one-line time text), the activity cluster filling the
