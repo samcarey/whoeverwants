@@ -5,9 +5,9 @@
  * edge-to-edge card (a shade off the page background, very rounded corners,
  * minimal vertical padding). A slot with several windows explodes into several
  * of these cards (each its own row); see slotWindowEntries.
- *   - LEFT column, top-aligned: this window's start–end time (left-justified
- *     and underlined, with an end date only when the window crosses midnight),
- *     a decimal-hour duration note ("2.25h") trailing it undecorated, and the
+ *   - LEFT column, top-aligned: this window's start–end time as a tappable
+ *     chip (with an end date only when the window crosses midnight, and a
+ *     decimal-hour duration note — "2.25h" — trailing inside it), and the
  *     events (placeholder for now) indented beneath it. The day +
  *     relative specifier ("Tomorrow") is NOT here — it's a per-day divider
  *     header rendered above each group of same-day rows in PlaylistTab.
@@ -76,7 +76,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
       // No `w-full`: width must stay auto so the negative margins actually
       // stretch the card past both page edges (`width: 100%` would pin it to
       // the padded container and only the left margin would take effect).
-      className="rounded-3xl bg-gray-100 dark:bg-gray-900 py-1"
+      className="rounded-3xl bg-gray-100 dark:bg-gray-900 pt-2 pb-1"
       style={edgeToEdgeStyle("0.25rem", "0.75rem")}
     >
       {/* One row: the time span + events placeholder in the LEFT column (sized
@@ -86,8 +86,8 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
           height of the left column. */}
       <div className="flex items-stretch">
         {/* The time is this row's header, so it sticks under the day divider
-            (72.8px = the column headers' 39.6px + the divider's 29.2px + the
-            card's own 4px top padding, which is exactly where the time sits
+            (76.8px = the column headers' 39.6px + the divider's 29.2px + the
+            card's own 8px top padding, which is exactly where the time sits
             below the divider at rest — so nothing shifts when it locks)
             while this row's activities scroll past it, and rides out as the
             row ends and the next row's time takes its place.
@@ -98,7 +98,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             (z-10) and the day divider (z-20): a time being pushed out by the
             end of its row rides up UNDER the divider rather than over its
             date. */}
-        <div className="sticky top-[72.8px] z-[15] shrink-0 self-start">
+        <div className="sticky top-[76.8px] z-[15] shrink-0 self-start">
           {/* This window's time span on ONE line (nowrap — the column sizes to
               it, so the duration never wraps), left-justified against the
               card's inner left edge (a touch right of the day divider's text).
@@ -116,7 +116,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             type="button"
             onClick={() => openSlotSheet(slot, "time")}
             aria-label="Edit slot time"
-            className="inline-flex items-center rounded-full bg-gray-200 dark:bg-gray-800 px-2.5 py-0.5 text-[14.4px] text-gray-700 dark:text-gray-300 whitespace-nowrap active:scale-95 transition-transform"
+            className="inline-flex items-center rounded-full border-[0.5px] border-gray-300 dark:border-gray-700 bg-gray-200 dark:bg-gray-800 px-2.5 py-0.5 text-[14.4px] text-gray-700 dark:text-gray-300 whitespace-nowrap active:scale-95 transition-transform"
           >
             {line.startTime} – {line.endDate ? `${line.endDate} · ` : ""}
             {line.endTime}
