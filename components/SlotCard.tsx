@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * One availability WINDOW of a Playlist slot, borderless — vertical spacing
- * alone separates rows. A slot with several windows explodes into several of
- * these rows (each its own vertical space); see slotWindowEntries.
+ * One availability WINDOW of a Playlist slot, rendered as a borderless
+ * edge-to-edge card (a shade off the page background, very rounded corners,
+ * minimal vertical padding). A slot with several windows explodes into several
+ * of these cards (each its own row); see slotWindowEntries.
  *   - LEFT column, top-aligned: this window's start–end time (left-justified
  *     and underlined, with an end date only when the window crosses midnight),
  *     a decimal-hour duration note ("2.25h") trailing it undecorated, and the
@@ -64,7 +65,23 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
   const plusPosition = layout.positions[activities.length];
 
   return (
-    <div className="w-full py-1.5 pr-3 pl-1">
+    // The row sits in a borderless card a shade off the page background, with
+    // very rounded corners, running edge-to-edge: the negative margins cancel
+    // the page's safe-area padding so the card touches both screen edges, and
+    // the matching padding puts the content back where it was (so the time
+    // text stays flush with the day divider's text above it).
+    <div
+      // No `w-full`: width must stay auto so the negative margins actually
+      // stretch the card past both page edges (`width: 100%` would pin it to
+      // the padded container and only the left margin would take effect).
+      className="rounded-3xl bg-gray-50 dark:bg-gray-800 py-1"
+      style={{
+        marginLeft: 'calc(-1 * max(0.35rem, env(safe-area-inset-left, 0px)))',
+        marginRight: 'calc(-1 * max(0.35rem, env(safe-area-inset-right, 0px)))',
+        paddingLeft: 'calc(0.25rem + max(0.35rem, env(safe-area-inset-left, 0px)))',
+        paddingRight: 'calc(0.75rem + max(0.35rem, env(safe-area-inset-right, 0px)))',
+      }}
+    >
       {/* One row: the time span + events placeholder in the LEFT column (sized
           to the one-line time text), the activity cluster filling the
           remaining RIGHT space with the "+" pinned to its right edge. The row
@@ -86,7 +103,8 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
         <div className="sticky top-[82.8px] z-[15] shrink-0 self-start">
           {/* This window's time span on ONE line (nowrap — the column sizes to
               it, so the duration never wraps), left-justified flush with the
-              day header text (the row's pl-1 matches the divider's px-1).
+              day header text (the card's compensating left padding lands the
+              content at the same x as the divider's px-1).
               Font is bumped ~20% over the timeline's baseline. Tapping it
               edits the slot's date/time.
               The range is ONE inline run rather than flex items so its

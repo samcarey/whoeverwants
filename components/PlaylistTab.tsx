@@ -154,7 +154,10 @@ export default function PlaylistTab() {
                 last thing in the stack that needs to be see-through. */}
             <div className="h-2 bg-gradient-to-b from-background to-transparent" />
           </div>
-          <div>
+          {/* Cards are edge-to-edge (each SlotCard cancels the page's
+              safe-area padding itself), so the only gap here is the thin
+              vertical one between them. */}
+          <div className="space-y-1">
             {g.entries.map((e) => (
               <SlotCard key={e.key} slot={e.slot} line={e.line} colors={colors} />
             ))}
