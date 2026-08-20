@@ -68,17 +68,18 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
     // The row sits in a borderless card a shade off the page background, with
     // very rounded corners, running edge-to-edge: the negative margins cancel
     // the page's safe-area padding so the card touches both screen edges, and
-    // the matching padding puts the content back where it was (so the time
-    // text stays flush with the day divider's text above it).
+    // the padding puts the content back inside — a touch further right than
+    // the day divider's text above it, so the content reads as sitting inside
+    // the card rather than hugging its rounded left edge.
     <div
       // No `w-full`: width must stay auto so the negative margins actually
       // stretch the card past both page edges (`width: 100%` would pin it to
       // the padded container and only the left margin would take effect).
-      className="rounded-3xl bg-gray-50 dark:bg-gray-800 py-1"
+      className="rounded-3xl bg-gray-100 dark:bg-gray-900 py-1"
       style={{
         marginLeft: 'calc(-1 * max(0.35rem, env(safe-area-inset-left, 0px)))',
         marginRight: 'calc(-1 * max(0.35rem, env(safe-area-inset-right, 0px)))',
-        paddingLeft: 'calc(0.25rem + max(0.35rem, env(safe-area-inset-left, 0px)))',
+        paddingLeft: 'calc(0.75rem + max(0.35rem, env(safe-area-inset-left, 0px)))',
         paddingRight: 'calc(0.75rem + max(0.35rem, env(safe-area-inset-right, 0px)))',
       }}
     >
@@ -102,9 +103,8 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             date. */}
         <div className="sticky top-[82.8px] z-[15] shrink-0 self-start">
           {/* This window's time span on ONE line (nowrap — the column sizes to
-              it, so the duration never wraps), left-justified flush with the
-              day header text (the card's compensating left padding lands the
-              content at the same x as the divider's px-1).
+              it, so the duration never wraps), left-justified against the
+              card's inner left edge (a touch right of the day divider's text).
               Font is bumped ~20% over the timeline's baseline. Tapping it
               edits the slot's date/time.
               The range is ONE inline run rather than flex items so its
