@@ -31,7 +31,7 @@
  * Self-manages its open + editing state.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DaysSelector from "@/components/DaysSelector";
 import DayTimeWindowsList from "@/components/DayTimeWindowsList";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
@@ -690,9 +690,11 @@ export default function NewSlotSheet() {
             </section>
 
             {/* Who With — one card per entry: a participant range plus that
-                entry's groups/people. No entries = "Anyone, any number". The
-                pickers list the caller's groups + contacts (plus any
-                already-selected names not in those lists, so seeded
+                entry's candidates (groups first, then individual people, as
+                one wrapping row of selectable pills). Entries are
+                alternatives, separated by an "or". No entries = "Anyone, any
+                number". The pickers list the caller's groups + contacts (plus
+                any already-selected names not in those lists, so seeded
                 selections stay toggleable). */}
             <div>
               <div className="flex items-center justify-between mb-1 px-1">
@@ -720,34 +722,48 @@ export default function NewSlotSheet() {
                 {draft.entries.map((entry, k) => {
                   const groupOptions = [...new Set([...(availGroups ?? []), ...entry.groups])];
                   const peopleOptions = [...new Set([...(availPeople ?? []), ...entry.people])];
-                  const nameRow = (field: "groups" | "people", name: string, checked: boolean) => (
-                    <li key={name}>
-                      <button
-                        type="button"
-                        onClick={() => toggleEntryName(k, field, name)}
-                        className="w-full flex items-center gap-3 h-10 text-left"
-                      >
-                        <span
-                          role="checkbox"
-                          aria-checked={checked}
-                          className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                            checked
-                              ? "bg-blue-500 border-blue-500"
-                              : "border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-900"
-                          }`}
-                        >
-                          {checked && (
-                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </span>
-                        <span className="flex-1 min-w-0 truncate text-base">{name}</span>
-                      </button>
-                    </li>
+                  // Groups and people share one wrapping pill row (groups
+                  // first); a group is distinguished by its leading glyph, a
+                  // person is just the name. Selection is the pill's own
+                  // blue-tinted state — no separate checkbox.
+                  const candidatePill = (field: "groups" | "people", name: string, checked: boolean) => (
+                    <button
+                      key={`${field}:${name}`}
+                      type="button"
+                      onClick={() => toggleEntryName(k, field, name)}
+                      aria-pressed={checked}
+                      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors active:scale-95 ${
+                        checked
+                          ? "border-blue-500 bg-blue-100 text-blue-700 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-300"
+                          : "border-gray-300 bg-white text-gray-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"
+                      }`}
+                    >
+                      {field === "groups" && (
+                        // Same "people" glyph as GroupsIcon (inlined per the
+                        // codebase's SVG convention — it needs pill sizing +
+                        // currentColor rather than that component's fixed chrome).
+                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                          />
+                        </svg>
+                      )}
+                      <span className="truncate">{name}</span>
+                    </button>
                   );
                   return (
-                    <section key={k} className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+                    <Fragment key={k}>
+                    {/* Entries are alternatives, so they read as "this OR
+                        that" rather than a numbered list. */}
+                    {k > 0 && (
+                      <div className="text-center text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                        or
+                      </div>
+                    )}
+                    <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
                       {/* No "Option N" heading — the entries read as a plain
                           stack of cards; only the remove ✕ sits on this row. */}
                       <div className="flex items-center justify-end">
@@ -781,28 +797,21 @@ export default function NewSlotSheet() {
                         minLabel="At Least"
                         maxLabel="No More Than"
                       />
-                      {groupOptions.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
-                            Groups
-                          </p>
-                          <ul>{groupOptions.map((g) => nameRow("groups", g, entry.groups.includes(g)))}</ul>
-                        </div>
-                      )}
-                      {peopleOptions.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
-                            People
-                          </p>
-                          <ul>{peopleOptions.map((n) => nameRow("people", n, entry.people.includes(n)))}</ul>
-                        </div>
-                      )}
-                      {groupOptions.length === 0 && peopleOptions.length === 0 && (
-                        <p className="mt-3 text-sm text-gray-400 dark:text-gray-500">
+                      <p className="mt-3 mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                        Candidates
+                      </p>
+                      {groupOptions.length === 0 && peopleOptions.length === 0 ? (
+                        <p className="text-sm text-gray-400 dark:text-gray-500">
                           Anyone — no groups or contacts to pick from yet.
                         </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {groupOptions.map((g) => candidatePill("groups", g, entry.groups.includes(g)))}
+                          {peopleOptions.map((n) => candidatePill("people", n, entry.people.includes(n)))}
+                        </div>
                       )}
                     </section>
+                    </Fragment>
                   );
                 })}
               </div>
