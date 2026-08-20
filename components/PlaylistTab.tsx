@@ -15,6 +15,7 @@ import {
   sortSlotsChronological,
   slotWindowEntries,
   type SlotWindowEntry,
+  edgeToEdgeStyle,
 } from "@/lib/slotUtils";
 import { SLOTS_CHANGED_EVENT } from "@/lib/slotEvents";
 import SlotCard from "@/components/SlotCard";
@@ -104,15 +105,20 @@ export default function PlaylistTab() {
           divider, then each row's time (in SlotCard) — and every tier's offset
           is the bottom edge of the one above it, so the stack is opaque all
           the way down and no half-scrolled row can show through between them.
-          That's also why this bar carries no fade of its own: the day divider
-          sits flush against its bottom edge, and a gradient there would only
-          be a strip of half-visible content. The fade lives at the bottom of
-          the stack instead (under the day divider). */}
+          No tier fades out at its bottom edge — the rows underneath are
+          edge-to-edge, so a gradient would just be a strip of half-visible
+          content; every tier cuts cleanly instead.
+          The bar's background runs to both screen edges (edgeToEdgeStyle) so
+          a row scrolling underneath can't peek through the page's safe-area
+          padding at the sides. */}
       {/* z-30 clears the day dividers (z-20) and the activity emoji (z-10
           inside each card) so both slide UNDER this bar instead of over it. */}
       {/* Heights are load-bearing — the tiers below offset off them:
           7.6px + 28px line + 4px = 39.6px. */}
-      <div className="sticky top-0 z-30 flex items-baseline bg-background pl-1 pr-3 pt-[7.6px] pb-1">
+      <div
+        className="sticky top-0 z-30 flex items-baseline bg-background pt-[7.6px] pb-1"
+        style={edgeToEdgeStyle("0.25rem", "0.75rem")}
+      >
         {/* Each label is centered over its own column. The rows' left column
             is content-sized (it hugs its own time text), so there's no single
             shared boundary to align to — 45% is where the widest time span
@@ -138,7 +144,10 @@ export default function PlaylistTab() {
           <div className="sticky top-[39.6px] z-20">
             {/* 25.2px line + 4px = 29.2px, so this bar ends at 68.8px — the
                 offset each row's sticky time stacks against. */}
-            <div className="flex items-center gap-3 bg-background px-1 pb-1">
+            <div
+              className="flex items-center gap-3 bg-background pb-1"
+              style={edgeToEdgeStyle("0.25rem", "0.25rem")}
+            >
               <div className="flex items-baseline gap-1.5 shrink-0">
                 <span className="text-[16.8px] font-semibold text-blue-600 dark:text-blue-400">
                   {g.entries[0].line.relative}
@@ -147,12 +156,6 @@ export default function PlaylistTab() {
               </div>
               <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
             </div>
-            {/* The stack's only transparent band: rows pass under the divider
-                on the RIGHT (activities) side, so soften that edge rather than
-                cutting them off. Nothing scrolls under it on the left — each
-                row's sticky time is bounded to its own row — so this is the
-                last thing in the stack that needs to be see-through. */}
-            <div className="h-2 bg-gradient-to-b from-background to-transparent" />
           </div>
           {/* Cards are edge-to-edge (each SlotCard cancels the page's
               safe-area padding itself), so the only gap here is the thin

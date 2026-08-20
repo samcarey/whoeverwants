@@ -14,6 +14,7 @@
  *      of vivid, evenly-spaced hues with light/dark text variants.
  */
 
+import type { CSSProperties } from "react";
 import type { DayTimeWindow, TimeWindow } from "@/lib/types";
 import type { Slot } from "@/lib/api/slots";
 import {
@@ -23,6 +24,28 @@ import {
   formatLocalDateISO,
   getRelativeDayLabel,
 } from "@/lib/timeUtils";
+
+/** Horizontal safe-area padding the page wrapper (app/template.tsx) applies. */
+const SAFE_LEFT = "max(0.35rem, env(safe-area-inset-left, 0px))";
+const SAFE_RIGHT = "max(0.35rem, env(safe-area-inset-right, 0px))";
+
+/**
+ * Style for a Playlist element whose BACKGROUND must run to both screen edges:
+ * the negative margins cancel the page's safe-area padding, and the padding
+ * puts the content back inside by the requested amount.
+ *
+ * The element must not carry `w-full` — `width: 100%` resolves against the
+ * padded container, so only the left margin would take effect and the right
+ * edge would come up short.
+ */
+export function edgeToEdgeStyle(padLeft: string, padRight: string): CSSProperties {
+  return {
+    marginLeft: `calc(-1 * ${SAFE_LEFT})`,
+    marginRight: `calc(-1 * ${SAFE_RIGHT})`,
+    paddingLeft: `calc(${padLeft} + ${SAFE_LEFT})`,
+    paddingRight: `calc(${padRight} + ${SAFE_RIGHT})`,
+  };
+}
 
 export interface ActivityColor {
   /** Vertical-bar background — a DARKER shade in light mode, LIGHTER in dark

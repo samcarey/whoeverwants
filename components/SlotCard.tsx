@@ -32,6 +32,7 @@ import type { Slot } from "@/lib/api/slots";
 import {
   activityColor,
   clusterLayout,
+  edgeToEdgeStyle,
   CLUSTER_CIRCLE_PX,
   type ActivityColor,
   type SlotWindowLine,
@@ -76,12 +77,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
       // stretch the card past both page edges (`width: 100%` would pin it to
       // the padded container and only the left margin would take effect).
       className="rounded-3xl bg-gray-100 dark:bg-gray-900 py-1"
-      style={{
-        marginLeft: 'calc(-1 * max(0.35rem, env(safe-area-inset-left, 0px)))',
-        marginRight: 'calc(-1 * max(0.35rem, env(safe-area-inset-right, 0px)))',
-        paddingLeft: 'calc(0.75rem + max(0.35rem, env(safe-area-inset-left, 0px)))',
-        paddingRight: 'calc(0.75rem + max(0.35rem, env(safe-area-inset-right, 0px)))',
-      }}
+      style={edgeToEdgeStyle("0.75rem", "0.75rem")}
     >
       {/* One row: the time span + events placeholder in the LEFT column (sized
           to the one-line time text), the activity cluster filling the
@@ -90,8 +86,9 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
           height of the left column. */}
       <div className="flex items-stretch">
         {/* The time is this row's header, so it sticks under the day divider
-            (82.8px = the column headers' 39.6px + the divider's 29.2px + the
-            14px that separates them at rest, so nothing shifts when it locks)
+            (72.8px = the column headers' 39.6px + the divider's 29.2px + the
+            card's own 4px top padding, which is exactly where the time sits
+            below the divider at rest — so nothing shifts when it locks)
             while this row's activities scroll past it, and rides out as the
             row ends and the next row's time takes its place.
             self-start is load-bearing: a stretched box has no room to slide
@@ -101,7 +98,7 @@ function SlotCardImpl({ slot, line, colors }: SlotCardProps) {
             (z-10) and the day divider (z-20): a time being pushed out by the
             end of its row rides up UNDER the divider rather than over its
             date. */}
-        <div className="sticky top-[82.8px] z-[15] shrink-0 self-start">
+        <div className="sticky top-[72.8px] z-[15] shrink-0 self-start">
           {/* This window's time span on ONE line (nowrap — the column sizes to
               it, so the duration never wraps), left-justified against the
               card's inner left edge (a touch right of the day divider's text).
