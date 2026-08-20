@@ -4,12 +4,15 @@
  * The home page's Playlist tab: the caller's saved availability slots, soonest
  * first, each rendered as a <SlotCard>. Refreshes when a slot is created /
  * edited / deleted (SLOTS_CHANGED_EVENT, fired by the New Slot sheet) and when
- * the tab regains visibility. Tapping the "+ Slot" FAB or a card opens the
- * sheet (handled by CreateGroupButtonHost via the slot-sheet event channel).
+ * the tab regains visibility. Tapping the "+" beside the "Time Slots" header
+ * or a card opens the sheet — it's mounted once at layout level (inside
+ * CreateGroupButtonHost) and listens on the slot-sheet event channel, so there
+ * is no floating button for this tab.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiListSlots, type Slot } from "@/lib/api/slots";
+import { haptic } from "@/lib/haptics";
 import {
   buildActivityColorMap,
   sortSlotsChronological,
@@ -17,7 +20,7 @@ import {
   type SlotWindowEntry,
   edgeToEdgeStyle,
 } from "@/lib/slotUtils";
-import { SLOTS_CHANGED_EVENT } from "@/lib/slotEvents";
+import { SLOTS_CHANGED_EVENT, openSlotSheet } from "@/lib/slotEvents";
 import SlotCard from "@/components/SlotCard";
 
 export default function PlaylistTab() {
@@ -81,23 +84,10 @@ export default function PlaylistTab() {
     );
   }
 
-  if (entries.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-gray-500 dark:text-gray-400">
-          No slots yet. Tap <span className="font-medium">+ Slot</span> to add your availability.
-        </p>
-        {error && (
-          <p className="mt-2 text-xs text-red-500 dark:text-red-400">
-            Couldn&apos;t load your slots — check your connection.
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="pt-2">
+  // The header renders in BOTH states — it carries the "+" that creates a
+  // slot, so an empty playlist still has a way in.
+  const header = (
+    <>
       {/* Column headers naming the two halves of each row: the time span on
           the left, the activity cards on the right. They stick to the top of
           the viewport once scrolled to, with the rows passing underneath.
@@ -116,20 +106,57 @@ export default function PlaylistTab() {
       {/* Heights are load-bearing — the tiers below offset off them:
           7.6px + 28px line + 4px = 39.6px. */}
       <div
-        className="sticky top-0 z-30 flex items-baseline bg-background pt-[7.6px] pb-1"
+        className="sticky top-0 z-30 flex items-center bg-background pt-[7.6px] pb-1"
         style={edgeToEdgeStyle("0.25rem", "0.75rem")}
       >
         {/* Each label is centered over its own column. The rows' left column
             is content-sized (it hugs its own time text), so there's no single
             shared boundary to align to — 45% is where the widest time span
-            ends, i.e. the visual split between the two halves. */}
-        <span className="w-[45%] shrink-0 text-center text-lg font-semibold tracking-wide underline underline-offset-[3px] text-gray-900 dark:text-gray-100">
-          Time Slots
+            ends, i.e. the visual split between the two halves.
+            The label + "+" pair is centered together in the left column; the
+            button is shorter than the text's line box, so the bar's height
+            (load-bearing, above) is still set by the text. */}
+        <span className="w-[45%] shrink-0 flex items-center justify-center gap-1.5">
+          <span className="text-lg font-semibold tracking-wide underline underline-offset-[3px] text-gray-900 dark:text-gray-100">
+            Time Slots
+          </span>
+          {/* The only way to add a slot (there's no floating button). */}
+          <button
+            type="button"
+            onClick={() => {
+              haptic.medium();
+              openSlotSheet();
+            }}
+            aria-label="Add a time slot"
+            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-blue-500 dark:bg-blue-600 active:scale-95 text-white transition-transform"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
         </span>
         <span className="flex-1 text-center text-lg font-semibold tracking-wide underline underline-offset-[3px] text-gray-900 dark:text-gray-100">
           My Interests
         </span>
       </div>
+    </>
+  );
+
+  return (
+    <div className="pt-2">
+      {header}
+      {entries.length === 0 && (
+        <div className="text-center py-8">
+          <p className="text-gray-500 dark:text-gray-400">
+            No slots yet. Tap <span className="font-medium">+</span> above to add your availability.
+          </p>
+          {error && (
+            <p className="mt-2 text-xs text-red-500 dark:text-red-400">
+              Couldn&apos;t load your slots — check your connection.
+            </p>
+          )}
+        </div>
+      )}
       {dayGroups.map((g) => (
         <div key={g.day} className="mb-1.5">
           {/* Per-day divider: left-justified date (font +20% over the old

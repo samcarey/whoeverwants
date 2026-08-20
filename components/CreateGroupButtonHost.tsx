@@ -16,12 +16,18 @@
  * and toggling its visibility via opacity. The DOM node is the same the
  * entire time, so its position can't jump between states.
  *
- * Visible when:
+ * Visible when the home page's GROUPS tab is showing, i.e.:
  *   - on home (`/`), OR
- *   - a swipe-back gesture is active (SHOW/HIDE events from GroupContent).
+ *   - a swipe-back gesture is active (SHOW/HIDE events from GroupContent)
+ * and the active home tab isn't Playlist (that tab creates slots from the
+ * "+" beside its own header, so it has no floating button).
  *
  * Hidden everywhere else; the hidden state uses opacity:0 +
  * pointer-events:none so the element stays in flow with identical layout.
+ *
+ * Also the layout-level mount point for <NewSlotSheet> — the sheet is driven
+ * by the slot-sheet event channel, so it stays mounted regardless of which
+ * tab is showing or whether this button is visible.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -39,7 +45,6 @@ import { isValidUserName } from "@/lib/nameValidation";
 import { HOME_TAB_CHANGED_EVENT, getHomeTab, type HomeTab } from "@/lib/homeTabMemory";
 import AccountGateModal from "@/components/AccountGateModal";
 import NewSlotSheet from "@/components/NewSlotSheet";
-import { openSlotSheet } from "@/lib/slotEvents";
 
 const IS_CAPACITOR_NATIVE =
   typeof window !== "undefined" && Capacitor.isNativePlatform();
@@ -52,9 +57,10 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
   // Hide the FAB during a group→home swipe-back (shared listener hook).
   const swipeBackActive = useHomeBackdropActive();
   const [nameModalOpen, setNameModalOpen] = useState(false);
-  // Active home tab drives the FAB's identity: Groups tab → "+ Group",
-  // Playlist tab → "+ Slot". Tracked via the module memory's change event
-  // since this host lives at layout level (no home-page remount reaches it).
+  // Active home tab gates the FAB: it belongs to the Groups tab only (the
+  // Playlist tab creates slots from its own header "+"). Tracked via the
+  // module memory's change event since this host lives at layout level (no
+  // home-page remount reaches it).
   const [homeTab, setHomeTab] = useState<HomeTab>(() => getHomeTab());
 
   useEffect(() => {
@@ -71,8 +77,12 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
   const target = document.getElementById("floating-fab-portal");
   if (!target) return null;
 
+  // The Playlist tab has no floating button — slots are created from the "+"
+  // beside its "Time Slots" header. The sheet itself still mounts here (it's
+  // driven by the slot-sheet event channel, not by this button).
+  const isSlotTab = homeTab === "playlist";
   const isHome = pathname === "/";
-  const visible = isHome || swipeBackActive;
+  const visible = (isHome || swipeBackActive) && !isSlotTab;
 
   const startCreate = () => {
     if (inFlight.current) return;
@@ -94,16 +104,7 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
       });
   };
 
-  // On the Playlist tab the FAB creates a slot (bottom sheet) instead of a
-  // group. No name gate — nothing is persisted yet.
-  const isSlotMode = homeTab === "playlist";
-
   const onClick = () => {
-    if (isSlotMode) {
-      haptic.medium();
-      openSlotSheet();
-      return;
-    }
     if (inFlight.current) return;
     if (!isValidUserName(getUserName())) {
       setNameModalOpen(true);
@@ -139,14 +140,14 @@ export default function CreateGroupButtonHost(): React.ReactElement | null {
         visibility: visible ? "visible" : "hidden",
         pointerEvents: visible ? "auto" : "none",
       }}
-      aria-label={isSlotMode ? "Create new slot" : "Create new group"}
+      aria-label="Create new group"
       aria-hidden={!visible}
       tabIndex={visible ? 0 : -1}
     >
       <span aria-hidden="true" className="text-[28.8px] leading-none">
         +
       </span>
-      <span className="text-lg leading-none">{isSlotMode ? "Slot" : "Group"}</span>
+      <span className="text-lg leading-none">Group</span>
     </button>
     <NewSlotSheet />
     <AccountGateModal

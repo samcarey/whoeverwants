@@ -181,6 +181,12 @@ export default function HomeBackdropHost(): React.ReactElement | null {
             ))}
           </div>
           {homeTab === "playlist" ? (
+            // TODO: stale mirror — the real Playlist tab renders the slot
+            // timeline now (components/PlaylistTab.tsx), so a swipe-back to
+            // home on this tab reveals "coming soon" for the slide's duration
+            // and then snaps to the timeline on commit. Mirroring it properly
+            // means rendering a read-only PlaylistTab off the cached slots
+            // (the tab currently fetches on mount, so it needs a cache first).
             <div className="text-center py-8">
               <p className="text-gray-500 dark:text-gray-400">Playlist coming soon!</p>
             </div>
