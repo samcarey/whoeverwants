@@ -37,6 +37,7 @@ import DayTimeWindowsList from "@/components/DayTimeWindowsList";
 import EmojiPickerModal from "@/components/EmojiPickerModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import MinMaxCounter from "@/components/MinMaxCounter";
+import CandidatePicker, { candidateKey, type Candidate } from "@/components/CandidatePicker";
 import ModalPortal from "@/components/ModalPortal";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { useSheetDismissGesture } from "@/lib/useSheetDismissGesture";
@@ -44,6 +45,8 @@ import { DEFAULT_TIME_WINDOW, formatMonthYearLabel, shiftMonth } from "@/lib/tim
 import { haptic } from "@/lib/haptics";
 import {
   apiCreateSlot,
+  apiListSlots,
+  getCachedSlots,
   apiUpdateSlot,
   apiDeleteSlot,
   apiGetActivitySuggestions,
@@ -122,6 +125,32 @@ function entriesToWire(entries: EditableEntry[]): WhoWithEntry[] | null {
 }
 
 const nameKey = (s: string) => s.trim().toLowerCase();
+
+/** "Last time the caller referenced this candidate in a who-with" → ms, keyed
+ *  by candidateKey. Derived from the caller's OWN saved slots (so it follows
+ *  the account across devices without a new endpoint); a candidate they've
+ *  never picked is simply absent. Slot created_at is the timestamp — the
+ *  closest thing we store to "when this pick was made". */
+function whoWithRecencyFromSlots(slots: Slot[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const slot of slots) {
+    const ts = slot.created_at ? Date.parse(slot.created_at) : NaN;
+    if (Number.isNaN(ts)) continue;
+    for (const activity of slot.activities ?? []) {
+      for (const entry of activity.who_with ?? []) {
+        const bump = (kind: Candidate["kind"], names: string[] | null | undefined) => {
+          for (const name of names ?? []) {
+            const key = candidateKey({ kind, name });
+            if ((out.get(key) ?? -Infinity) < ts) out.set(key, ts);
+          }
+        };
+        bump("groups", entry.groups);
+        bump("people", entry.people);
+      }
+    }
+  }
+  return out;
+}
 
 // Faded placeholder glyph on the emoji chip / in the picker input when no
 // emoji is chosen (activities have no per-category default).
@@ -322,6 +351,40 @@ export default function NewSlotSheet() {
       cancelled = true;
     };
   }, [isOpen, showActivity]);
+
+  // How recently the caller last picked each candidate in a who-with. Seeded
+  // synchronously from the slot list the Playlist tab already loaded, then
+  // refreshed on open.
+  const [whoWithRecency, setWhoWithRecency] = useState<Map<string, number>>(() =>
+    whoWithRecencyFromSlots(getCachedSlots() ?? []),
+  );
+  useEffect(() => {
+    if (!isOpen || !showActivity) return;
+    let cancelled = false;
+    apiListSlots()
+      .then((slots) => {
+        if (!cancelled) setWhoWithRecency(whoWithRecencyFromSlots(slots));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, showActivity]);
+
+  // Every pickable candidate, ordered LEAST relevant first so the picker's
+  // bottom row (nearest its box) is the most-recently-referenced one. Names
+  // never picked before tie at the bottom of the ranking and fall back to
+  // their source order, reversed for the same reason.
+  const candidateOptions = useMemo<Candidate[]>(() => {
+    const all: Candidate[] = [
+      ...(availGroups ?? []).map((name) => ({ kind: "groups" as const, name })),
+      ...(availPeople ?? []).map((name) => ({ kind: "people" as const, name })),
+    ];
+    return all
+      .map((c, i) => ({ c, i, r: whoWithRecency.get(candidateKey(c)) ?? 0 }))
+      .sort((a, b) => a.r - b.r || b.i - a.i)
+      .map((x) => x.c);
+  }, [availGroups, availPeople, whoWithRecency]);
 
   // ---- Draft helpers --------------------------------------------------------
 
@@ -689,13 +752,12 @@ export default function NewSlotSheet() {
               />
             </section>
 
-            {/* Who With — one card per entry: the candidates (groups first,
-                then individual people, as one wrapping row of selectable
-                pills) over that entry's participant range. Entries are
-                alternatives, separated by an "or". No entries = "Anyone, any
-                number". The pickers list the caller's groups + contacts (plus
-                any already-selected names not in those lists, so seeded
-                selections stay toggleable). */}
+            {/* Who With — one card per entry: the picked candidates (pills
+                with an ✕) + a search box to add more, over that entry's
+                participant range. Entries are alternatives, separated by an
+                "or". No entries = "Anyone, any number". The search offers the
+                caller's groups + contacts, most-recently-referenced nearest
+                the box. */}
             <div>
               <div className="flex items-center justify-between mb-1 px-1">
                 <label className="block text-[17.5px] font-medium text-gray-500 dark:text-gray-400">
@@ -720,40 +782,13 @@ export default function NewSlotSheet() {
               )}
               <div className="space-y-[14.4px]">
                 {draft.entries.map((entry, k) => {
-                  const groupOptions = [...new Set([...(availGroups ?? []), ...entry.groups])];
-                  const peopleOptions = [...new Set([...(availPeople ?? []), ...entry.people])];
-                  // Groups and people share one wrapping pill row (groups
-                  // first); a group is distinguished by its leading glyph, a
-                  // person is just the name. Selection is the pill's own
-                  // blue-tinted state — no separate checkbox.
-                  const candidatePill = (field: "groups" | "people", name: string, checked: boolean) => (
-                    <button
-                      key={`${field}:${name}`}
-                      type="button"
-                      onClick={() => toggleEntryName(k, field, name)}
-                      aria-pressed={checked}
-                      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors active:scale-95 ${
-                        checked
-                          ? "border-blue-500 bg-blue-100 text-blue-700 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-300"
-                          : "border-gray-300 bg-white text-gray-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"
-                      }`}
-                    >
-                      {field === "groups" && (
-                        // Same "people" glyph as GroupsIcon (inlined per the
-                        // codebase's SVG convention — it needs pill sizing +
-                        // currentColor rather than that component's fixed chrome).
-                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                          />
-                        </svg>
-                      )}
-                      <span className="truncate">{name}</span>
-                    </button>
-                  );
+                  // Pills are the entry's own picks (groups first, then
+                  // people) — anything seeded but no longer in the source
+                  // lists still shows, and stays removable.
+                  const selected: Candidate[] = [
+                    ...entry.groups.map((name) => ({ kind: "groups" as const, name })),
+                    ...entry.people.map((name) => ({ kind: "people" as const, name })),
+                  ];
                   return (
                     <Fragment key={k}>
                     {/* Entries are alternatives, so they read as "this OR
@@ -778,16 +813,14 @@ export default function NewSlotSheet() {
                           </svg>
                         </button>
                       </div>
-                      {groupOptions.length === 0 && peopleOptions.length === 0 ? (
-                        <p className="mb-3 text-sm text-gray-400 dark:text-gray-500">
-                          Anyone — no groups or contacts to pick from yet.
-                        </p>
-                      ) : (
-                        <div className="mb-3 flex flex-wrap gap-2">
-                          {groupOptions.map((g) => candidatePill("groups", g, entry.groups.includes(g)))}
-                          {peopleOptions.map((n) => candidatePill("people", n, entry.people.includes(n)))}
-                        </div>
-                      )}
+                      <div className="mb-3">
+                        <CandidatePicker
+                          selected={selected}
+                          options={candidateOptions}
+                          onAdd={(c) => toggleEntryName(k, c.kind, c.name)}
+                          onRemove={(c) => toggleEntryName(k, c.kind, c.name)}
+                        />
+                      </div>
                       <MinMaxCounter
                         minValue={entry.minPeople}
                         maxValue={entry.maxPeople}
