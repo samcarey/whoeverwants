@@ -68,6 +68,23 @@ export default function CandidatePicker({ selected, options, onAdd, onRemove }: 
     if (el) el.scrollTop = el.scrollHeight;
   }, [open, matches.length]);
 
+  // The list opens ABOVE the box (pushing it down) and the sheet around us
+  // shrinks to the visual viewport as the keyboard animates in — both move the
+  // box, and the keyboard's resize lands well after focus. Re-assert on every
+  // visual-viewport resize while open (NOT `scroll`, which also fires while
+  // the user pans and would fight them).
+  useEffect(() => {
+    if (!open) return;
+    const reveal = () => inputRef.current?.scrollIntoView({ block: "center" });
+    const raf = requestAnimationFrame(reveal);
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", reveal);
+    return () => {
+      cancelAnimationFrame(raf);
+      vv?.removeEventListener("resize", reveal);
+    };
+  }, [open]);
+
   const pick = (c: Candidate) => {
     onAdd(c);
     setQuery("");
@@ -126,13 +143,7 @@ export default function CandidatePicker({ selected, options, onAdd, onRemove }: 
         ref={inputRef}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        onFocus={(e) => {
-          setOpen(true);
-          // The list opens ABOVE the box and pushes it down — keep it visible
-          // (and clear of the soft keyboard) once it has rendered.
-          const el = e.currentTarget;
-          requestAnimationFrame(() => el.scrollIntoView({ block: "center" }));
-        }}
+        onFocus={() => setOpen(true)}
         onBlur={() => {
           setOpen(false);
           setQuery("");
