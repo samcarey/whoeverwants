@@ -689,9 +689,9 @@ export default function NewSlotSheet() {
               />
             </section>
 
-            {/* Who With — one card per entry: a participant range plus that
-                entry's candidates (groups first, then individual people, as
-                one wrapping row of selectable pills). Entries are
+            {/* Who With — one card per entry: the candidates (groups first,
+                then individual people, as one wrapping row of selectable
+                pills) over that entry's participant range. Entries are
                 alternatives, separated by an "or". No entries = "Anyone, any
                 number". The pickers list the caller's groups + contacts (plus
                 any already-selected names not in those lists, so seeded
@@ -778,6 +778,16 @@ export default function NewSlotSheet() {
                           </svg>
                         </button>
                       </div>
+                      {groupOptions.length === 0 && peopleOptions.length === 0 ? (
+                        <p className="mb-3 text-sm text-gray-400 dark:text-gray-500">
+                          Anyone — no groups or contacts to pick from yet.
+                        </p>
+                      ) : (
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {groupOptions.map((g) => candidatePill("groups", g, entry.groups.includes(g)))}
+                          {peopleOptions.map((n) => candidatePill("people", n, entry.people.includes(n)))}
+                        </div>
+                      )}
                       <MinMaxCounter
                         minValue={entry.minPeople}
                         maxValue={entry.maxPeople}
@@ -797,19 +807,6 @@ export default function NewSlotSheet() {
                         minLabel="At Least"
                         maxLabel="No More Than"
                       />
-                      <p className="mt-3 mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                        Candidates
-                      </p>
-                      {groupOptions.length === 0 && peopleOptions.length === 0 ? (
-                        <p className="text-sm text-gray-400 dark:text-gray-500">
-                          Anyone — no groups or contacts to pick from yet.
-                        </p>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {groupOptions.map((g) => candidatePill("groups", g, entry.groups.includes(g)))}
-                          {peopleOptions.map((n) => candidatePill("people", n, entry.people.includes(n)))}
-                        </div>
-                      )}
                     </section>
                     </Fragment>
                   );
