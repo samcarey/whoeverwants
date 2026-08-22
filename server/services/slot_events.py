@@ -511,9 +511,17 @@ def list_events(conn, *, user_id: str | None) -> list[dict]:
         out.extend(
             _cards_for_key(day, cands, confirmations.get((day, key), {}), user_id, members)
         )
-    # Chronological across keys; _cards_for_key already ordered within a key
-    # (own party, fullest, fresh) — Python's stable sort keeps that.
-    out.sort(key=lambda e: (e["day"], (e["window"] or {}).get("min", ""), e["activity"].lower()))
+    # Chronological across keys BY THE DISPLAYED "@ time" (falling back to the
+    # anchor window) so the list order matches what the cards say;
+    # _cards_for_key already ordered within a key (own party, joinable,
+    # fresh) — Python's stable sort keeps that for ties.
+    out.sort(
+        key=lambda e: (
+            e["day"],
+            e["time"] or (e["window"] or {}).get("min", ""),
+            e["activity"].lower(),
+        )
+    )
     return out
 
 
