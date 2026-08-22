@@ -11,9 +11,11 @@
  *     prefilled, editing JUST the date/time. "Delete slot" lives here.
  *   - 'activity' (tap an activity circle, or the cluster's "+"): JUST ONE
  *     activity. ADDING (no index) is only "which activity?" — the name +
- *     emoji field, nothing else; you tap the activity afterward to say who
- *     it's with. EDITING (with an index) adds the who-with card + a red
- *     "Delete activity". In BOTH, focusing the name field drops down its
+ *     emoji field, injected at the TOP OF THE PAGE over the still-visible
+ *     timeline rather than in the sheet (no dim; an outside tap closes it);
+ *     you tap the activity afterward to say who it's with. EDITING (with an
+ *     index) is the full sheet: that same field plus the who-with card and a
+ *     red "Delete activity". In BOTH, focusing the name field drops down its
  *     suggestions (others planning this period / your past picks / others'
  *     past picks), grouped + narrowed by what's typed. Activities already on
  *     the slot are hidden from it (except the one being edited); only the
@@ -646,14 +648,169 @@ export default function NewSlotSheet() {
         : isNewActivity
           ? "Add Activity"
           : "Edit Activity";
+  // Adding an activity is a lightweight top-of-page panel, not the sheet:
+  // it's only "which activity?", so it doesn't need the full-height chrome.
+  const isAddActivity = showActivity && isNewActivity;
   const saveDisabled =
     saving ||
     deleting ||
     (showSchedule && selectedDays.length === 0) ||
     (showActivity && !draft.name.trim());
 
+  // The activity's name + emoji field with its suggestion dropdown. Shared
+  // by BOTH containers: the top-of-page add panel and the edit sheet.
+  const activityField = (
+    <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setEmojiOpen(true)}
+          aria-label="Choose an emoji"
+          className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-xl leading-none active:scale-95"
+        >
+          <span className={draft.emoji.trim() ? "" : "opacity-40"}>
+            {draft.emoji.trim() || EMOJI_PLACEHOLDER}
+          </span>
+        </button>
+        <input
+          value={draft.name}
+          onChange={(e) => setName(e.target.value)}
+          onFocus={(e) => {
+            setNameFocused(true);
+            // Pre-filled (edit mode): select all so the first keystroke
+            // replaces the name — and the dropdown, which narrows on
+            // what's typed, opens back up to the full list.
+            e.currentTarget.select();
+          }}
+          onBlur={(e) => {
+            setName(e.target.value.trim());
+            setNameFocused(false);
+          }}
+          placeholder="Activity"
+          aria-label="Activity name"
+          className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+        />
+      </div>
+      {/* The field's own dropdown: suggested activities
+          grouped + labeled by priority, narrowed by what's typed.
+          Tapping one names the draft (and takes its emoji); tapping
+          the chosen one clears it. Only the "you've picked before"
+          group carries an ✕ to delete (behind a confirmation →
+          blacklist); the others (things other people are doing) can't
+          be deleted. */}
+      {(nameFocused || isAddActivity) && hasSuggestions && (
+        <div className="mt-3 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
+          {SUGGESTION_GROUPS.map((group) => {
+            const items = filteredSuggestions[group.key];
+            if (items.length === 0) return null;
+            const canDelete = group.key === "yours";
+            return (
+              <div key={group.key} className="px-3 py-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
+                  {group.label}
+                </p>
+                <ul>
+                  {items.map((activity) => {
+                    const checked = nameKey(draft.name) === nameKey(activity.name);
+                    return (
+                      <li
+                        key={activity.name}
+                        className="flex items-center gap-3 h-11"
+                        // Commit before the input blurs (blur closes
+                        // the dropdown).
+                        onMouseDown={(e) => e.preventDefault()}
+                      >
+                        <button
+                          type="button"
+                          role="checkbox"
+                          aria-checked={checked}
+                          onClick={() => pickSuggestion(activity)}
+                          className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                            checked
+                              ? "bg-blue-500 border-blue-500 dark:bg-blue-500 dark:border-blue-500"
+                              : "border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-900"
+                          }`}
+                        >
+                          {checked && (
+                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => pickSuggestion(activity)}
+                          className="flex-1 min-w-0 truncate text-left text-base"
+                        >
+                          {activity.emoji ? `${activity.emoji} ` : ""}
+                          {activity.name}
+                        </button>
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => setPendingBlacklist(activity.name)}
+                            aria-label={`Delete "${activity.name}"`}
+                            className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+
   return (
     <ModalPortal>
+      {isAddActivity ? (
+        /* ADDING: not a sheet — the field is injected at the top of the page,
+           over the still-visible timeline. A transparent full-screen catcher
+           (no dim) closes it on an outside tap. */
+        <>
+          <div className="fixed inset-0 z-[59]" onClick={close} aria-hidden="true" />
+          <div
+            className="fixed left-0 right-0 top-0 z-[60] px-3 pointer-events-none"
+            style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.5rem)" }}
+          >
+            <div
+              className="pointer-events-auto mx-auto w-full sm:max-w-md rounded-3xl bg-gray-100 dark:bg-gray-900 p-2 shadow-2xl flex items-start gap-2"
+              role="dialog"
+              aria-modal="true"
+              aria-label={title}
+            >
+              <div className="min-w-0 flex-1">{activityField}</div>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saveDisabled}
+                aria-label="Confirm slot"
+                className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {saving ? (
+                  <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
       <div
         ref={backdropRef}
         className="fixed inset-0 z-[59] bg-black/40 dark:bg-black/60 animate-fade-in"
@@ -785,113 +942,7 @@ export default function NewSlotSheet() {
 
             {showActivity && (<>
             {/* Emoji + name — the activity itself. */}
-            <section className="rounded-3xl bg-white dark:bg-gray-800 px-4 py-3">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setEmojiOpen(true)}
-                  aria-label="Choose an emoji"
-                  className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-xl leading-none active:scale-95"
-                >
-                  <span className={draft.emoji.trim() ? "" : "opacity-40"}>
-                    {draft.emoji.trim() || EMOJI_PLACEHOLDER}
-                  </span>
-                </button>
-                <input
-                  value={draft.name}
-                  onChange={(e) => setName(e.target.value)}
-                  onFocus={(e) => {
-                    setNameFocused(true);
-                    // Pre-filled (edit mode): select all so the first keystroke
-                    // replaces the name — and the dropdown, which narrows on
-                    // what's typed, opens back up to the full list.
-                    e.currentTarget.select();
-                  }}
-                  onBlur={(e) => {
-                    setName(e.target.value.trim());
-                    setNameFocused(false);
-                  }}
-                  placeholder="Activity"
-                  aria-label="Activity name"
-                  className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                />
-              </div>
-              {/* The field's own dropdown: suggested activities
-                  grouped + labeled by priority, narrowed by what's typed.
-                  Tapping one names the draft (and takes its emoji); tapping
-                  the chosen one clears it. Only the "you've picked before"
-                  group carries an ✕ to delete (behind a confirmation →
-                  blacklist); the others (things other people are doing) can't
-                  be deleted. */}
-              {nameFocused && hasSuggestions && (
-                <div className="mt-3 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
-                  {SUGGESTION_GROUPS.map((group) => {
-                    const items = filteredSuggestions[group.key];
-                    if (items.length === 0) return null;
-                    const canDelete = group.key === "yours";
-                    return (
-                      <div key={group.key} className="px-3 py-2">
-                        <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
-                          {group.label}
-                        </p>
-                        <ul>
-                          {items.map((activity) => {
-                            const checked = nameKey(draft.name) === nameKey(activity.name);
-                            return (
-                              <li
-                                key={activity.name}
-                                className="flex items-center gap-3 h-11"
-                                // Commit before the input blurs (blur closes
-                                // the dropdown).
-                                onMouseDown={(e) => e.preventDefault()}
-                              >
-                                <button
-                                  type="button"
-                                  role="checkbox"
-                                  aria-checked={checked}
-                                  onClick={() => pickSuggestion(activity)}
-                                  className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                    checked
-                                      ? "bg-blue-500 border-blue-500 dark:bg-blue-500 dark:border-blue-500"
-                                      : "border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-900"
-                                  }`}
-                                >
-                                  {checked && (
-                                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                  )}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => pickSuggestion(activity)}
-                                  className="flex-1 min-w-0 truncate text-left text-base"
-                                >
-                                  {activity.emoji ? `${activity.emoji} ` : ""}
-                                  {activity.name}
-                                </button>
-                                {canDelete && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setPendingBlacklist(activity.name)}
-                                    aria-label={`Delete "${activity.name}"`}
-                                    className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                  </button>
-                                )}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+            {activityField}
 
             {/* The activity's who-with condition, EDIT MODE ONLY — adding is
                 just "which activity?", and you tap the activity afterward to
@@ -953,6 +1004,9 @@ export default function NewSlotSheet() {
           </div>
         </div>
       </div>
+
+        </>
+      )}
 
       {/* Emoji picker for the activity (reuses the poll picker). Renders its
           own z-[80] portal above the sheet; relevance-sorted by the typed
